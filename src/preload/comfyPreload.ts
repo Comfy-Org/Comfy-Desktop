@@ -1,25 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-
-export interface ComfyDownloadProgress {
-  url: string
-  filename: string
-  directory?: string
-  progress: number
-  receivedBytes?: number
-  totalBytes?: number
-  speedBytesPerSec?: number
-  etaSeconds?: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-  isImage?: boolean
-}
-
-export interface TerminalRestore {
-  buffer: string[]
-  size: { cols: number; rows: number }
-  exited: boolean
-}
+import type {
+  ComfyDesktop2Bridge,
+  ComfyDesktop2LogsBridge,
+  ComfyDesktop2TerminalBridge,
+  ComfyDownloadProgress,
+  LogsOutputMsg,
+  LogsRestore,
+  TerminalRestore
+} from '../types/comfyDesktopBridge'
 
 /**
  * Interactive terminal bridge for the served ComfyUI frontend.
@@ -30,7 +19,7 @@ export interface TerminalRestore {
  * explicitly because its webContents isn't registered as a comfyView.
  * Per-install shared shell — multiple subscribers see the same output.
  */
-const Terminal = {
+const Terminal: ComfyDesktop2TerminalBridge = {
   /** Spawn the shell if needed, register this view as a subscriber, and
    *  return the current scrollback/size/exited state. */
   subscribe: (installationId?: string): Promise<TerminalRestore> =>
@@ -61,23 +50,13 @@ const Terminal = {
   },
 }
 
-export interface LogsRestore {
-  installationId: string
-  buffer: string[]
-}
-
-export interface LogsOutputMsg {
-  installationId: string
-  text: string
-}
-
 /**
  * Read-only logs bridge. Subscribes to the shared per-install log
  * broadcast that mirrors every `comfy-output` IPC send. Used by the
  * pop-out logs window and (eventually) any other surface that wants the
  * raw stdout/stderr stream without owning the launcher.
  */
-const Logs = {
+const Logs: ComfyDesktop2LogsBridge = {
   /** Register as a subscriber and return the current ring-buffer
    *  contents for an immediate paint. Subsequent chunks arrive on
    *  the `onOutput` channel. */
@@ -97,7 +76,7 @@ const Logs = {
   },
 }
 
-contextBridge.exposeInMainWorld('__comfyDesktop2', {
+const bridge = {
   downloadModel: (url: string, filename: string, directory: string): Promise<boolean> => {
     return ipcRenderer.invoke('desktop2-download-model', { url, filename, directory })
   },
@@ -125,5 +104,7 @@ contextBridge.exposeInMainWorld('__comfyDesktop2', {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
   Terminal,
-  Logs,
-})
+  Logs
+} satisfies ComfyDesktop2Bridge
+
+contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)
