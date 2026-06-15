@@ -80,6 +80,17 @@ describe('settings unset/default semantics', () => {
     expect(persisted).not.toHaveProperty('onAppClose')
   })
 
+  it('persists and clears the nullable lastSaveDialogDir', () => {
+    const dir = path.join(homePath, 'Pictures', 'renders')
+    settings.set('lastSaveDialogDir', dir)
+    expect(settings.get('lastSaveDialogDir')).toBe(dir)
+    expect(readPersistedSettings()['lastSaveDialogDir']).toBe(dir)
+
+    settings.set('lastSaveDialogDir', undefined)
+    expect(settings.get('lastSaveDialogDir')).toBeUndefined()
+    expect(readPersistedSettings()).not.toHaveProperty('lastSaveDialogDir')
+  })
+
   it('normalizes legacy null values to unset on write', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(
@@ -123,6 +134,35 @@ describe('settings unset/default semantics', () => {
     expect(persisted['theme']).toBe('dark')
   })
 
+  it('discards the legacy maxCachedFiles key and defaults maxCachedDownloads to 1', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ maxCachedFiles: 5, theme: 'dark' }, null, 2),
+      'utf-8'
+    )
+
+    expect(settings.get('maxCachedDownloads')).toBe(1)
+    expect(settings.get('maxCachedFiles' as string)).toBeUndefined()
+    expect(settings.get('theme')).toBe('dark')
+
+    const persisted = readPersistedSettings()
+    expect(persisted).not.toHaveProperty('maxCachedFiles')
+    expect(persisted['maxCachedDownloads']).toBe(1)
+  })
+
+  it('preserves a manual maxCachedDownloads edit', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ maxCachedDownloads: 9 }, null, 2),
+      'utf-8'
+    )
+
+    expect(settings.get('maxCachedDownloads')).toBe(9)
+    expect(readPersistedSettings()['maxCachedDownloads']).toBe(9)
+  })
+
   it('treats null for unknown keys as passthrough values', () => {
     settings.set('customKey' as string, null)
     expect(settings.get('customKey' as string)).toBeNull()
@@ -141,6 +181,22 @@ describe('settings unset/default semantics', () => {
     settings.set('installDir', undefined)
     expect(settings.get('installDir')).toBe(builtinDefault)
     expect(readPersistedSettings()).not.toHaveProperty('installDir')
+  })
+
+  it('autoLaunchOnStartup defaults to "none" when absent and persists explicit choices', () => {
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
+
+    settings.set('autoLaunchOnStartup', 'last')
+    expect(settings.get('autoLaunchOnStartup')).toBe('last')
+    expect(readPersistedSettings()['autoLaunchOnStartup']).toBe('last')
+
+    settings.set('autoLaunchOnStartup', 'inst-12345')
+    expect(settings.get('autoLaunchOnStartup')).toBe('inst-12345')
+    expect(readPersistedSettings()['autoLaunchOnStartup']).toBe('inst-12345')
+
+    settings.set('autoLaunchOnStartup', 'none')
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
+    expect(readPersistedSettings()).not.toHaveProperty('autoLaunchOnStartup')
   })
 
   it('treats empty and whitespace-only strings as unset for pypiMirror', () => {

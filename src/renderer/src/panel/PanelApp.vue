@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
@@ -33,13 +33,15 @@ import { useChooserHandoff } from './useChooserHandoff'
 import { useFirstUseChain } from './useFirstUseChain'
 import { bindE2EPanelHooks } from './e2eRendererHooks'
 import { resolvePickerTab } from '../lib/pickerTabs'
+import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import type { Installation } from '../types/ipc'
 
-const { mergeLocaleMessage, locale, t } = useI18n()
+const { t } = useI18n()
+const { syncLocale } = useAppLocale(windowApiLocaleSource())
 useTheme()
 
 const params = new URLSearchParams(window.location.search)
@@ -188,6 +190,23 @@ chooserHandoff = useChooserHandoff({
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
+// Boot-time restore: the host window is hidden until we tell main the outcome.
+// Use `performChooserLaunch` (NOT `handleChooserPick`) so a missing launch
+// action falls back to the dashboard instead of opening the new-install wizard.
+// Reveal the launching takeover when it comes up; otherwise (already running,
+// missing action, console/external mode, error) fall back to the dashboard.
+async function handleStartupRestorePick(inst: Installation): Promise<void> {
+  try {
+    const outcome = await chooserHandoff.performChooserLaunch(inst)
+    await nextTick()
+    const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
+    window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
+  } catch (err) {
+    console.error('startup restore launch failed', err)
+    window.api.resolveStartupRestoreReveal('dashboard-fallback')
+  }
+}
+
 // When an overlay closes on a chooser host without producing an attach
 // (cancel / error / dismiss), revert the install identity preview that
 // `claimAttachHost` pushed to the title bar — otherwise the chooser host
@@ -203,7 +222,6 @@ if (!installationId) {
 }
 
 let unsubPanel: (() => void) | null = null
-let unsubLocale: (() => void) | null = null
 let unsubCloseRequest: (() => void) | null = null
 let unsubReturnToDashboardRequest: (() => void) | null = null
 let unsubAppUpdatePromptRestart: (() => void) | null = null
@@ -237,7 +255,7 @@ useDeepLinkRouter({
   openOverlay,
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
-  pickInstallFromPicker: async (inst) => {
+  pickInstallFromPicker: async (inst, pickOpts) => {
     // Chooser-host pick (no installationId backing this host) → swap
     // in-place via the same path the dashboard chooser uses, so the
     // dashboard window becomes the picked install. Install-backed
@@ -247,7 +265,11 @@ useDeepLinkRouter({
     // window before this IPC fires, so we only ever see launches
     // here for installs that aren't running yet).
     if (!installationId) {
-      await chooserHandoff.handleChooserPick(inst)
+      if (pickOpts?.startupRestore) {
+        await handleStartupRestorePick(inst)
+      } else {
+        await chooserHandoff.handleChooserPick(inst)
+      }
     } else {
       await chooserHandoff.performPickerLaunch(inst)
     }
@@ -289,17 +311,6 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-async function loadLocale(): Promise<void> {
-  const messages = await window.api.getLocaleMessages()
-  // Merge — not replace — so the renderer-side catalog from
-  // `lib/i18nMessages.ts` (the authoritative en source for keys main
-  // doesn't yet ship in `locales/en.json`, e.g. `downloadsTab.*`,
-  // `downloadsPopup.*`, `fileMenu.*`) survives this layer-on of
-  // main's JSON.
-  mergeLocaleMessage('en', messages)
-  locale.value = 'en'
-}
-
 // `'downloads-v2'` brings the panel forward in an overlay mode; the renderer
 // mounts `DownloadsModal` and dismiss routes back through `closeCurrentPanel`
 // so the body returns to comfy/lifecycle without leaving stale state.
@@ -331,10 +342,6 @@ onMounted(async () => {
   registerMigrateTakeover({
     open: (title, confirmLabel) => migrateTakeoverRef.value!.open(title, confirmLabel),
     update: (opts) => migrateTakeoverRef.value?.update(opts)
-  })
-
-  unsubLocale = window.api.onLocaleChanged((messages) => {
-    mergeLocaleMessage('en', messages as Record<string, unknown>)
   })
 
   // Main can request a panel switch (e.g. from title-bar buttons, or when
@@ -462,8 +469,8 @@ onMounted(async () => {
       sessionStore.init(),
       installationStore.fetchInstallations(),
       launcherPrefs.loadPrefs(),
-      loadLocale().catch((err) => {
-        console.error('Panel: loadLocale failed', err)
+      syncLocale().catch((err) => {
+        console.error('Panel: syncLocale failed', err)
       })
     ])
 
@@ -499,7 +506,6 @@ onMounted(async () => {
 onUnmounted(() => {
   registerMigrateTakeover(null)
   unsubPanel?.()
-  unsubLocale?.()
   unsubCloseRequest?.()
   unsubReturnToDashboardRequest?.()
   unsubAppUpdatePromptRestart?.()

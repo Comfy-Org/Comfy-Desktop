@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import os from 'os'
 import path from 'path'
+import type { buildExistenceCandidates as BuildExistenceCandidates } from './comfyDownloadManager'
 
 vi.mock('electron', () => ({
   app: {
@@ -20,6 +21,8 @@ let hasValidExtension: (filename: string) => boolean
 let isPathContained: (filePath: string, baseDir: string) => boolean
 let sanitizeAssetFilename: (filename: string, outputDir: string) => string | null
 let parseContentDispositionFilename: (header: string | null) => string | null
+let buildSaveDialogFilters: (suggestedName: string) => Electron.FileFilter[]
+let buildExistenceCandidates: typeof BuildExistenceCandidates
 
 beforeAll(async () => {
   const mod = await import('./comfyDownloadManager')
@@ -28,6 +31,80 @@ beforeAll(async () => {
   isPathContained = mod.isPathContained
   sanitizeAssetFilename = mod.sanitizeAssetFilename
   parseContentDispositionFilename = mod.parseContentDispositionFilename
+  buildSaveDialogFilters = mod.buildSaveDialogFilters
+  buildExistenceCandidates = mod.buildExistenceCandidates
+})
+
+describe('buildExistenceCandidates', () => {
+  it('uses only the destination when there is no install context', () => {
+    const candidates = buildExistenceCandidates(null, '/shared', 'loras', 'x.safetensors')
+    expect(candidates).toEqual([path.join('/shared', 'loras', 'x.safetensors')])
+  })
+
+  it('probes every model root for the folder type', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models', '/external'],
+      extraPaths: [],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras', 'x.safetensors')
+    expect(candidates).toContain(path.join('/install/models', 'loras', 'x.safetensors'))
+    expect(candidates).toContain(path.join('/external', 'loras', 'x.safetensors'))
+    // The global shared dir is NOT a root here, so it must not be probed.
+    expect(candidates).not.toContain(path.join('/shared', 'loras', 'x.safetensors'))
+  })
+
+  it('probes arbitrarily-mapped extra_model_paths dirs for the type', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [
+        { section: 's', basePath: null, type: 'loras', rawType: 'loras', dir: '/custom/somedir/myname', isDefault: false },
+        { section: 's', basePath: null, type: 'checkpoints', rawType: 'checkpoints', dir: '/custom/cp', isDefault: false },
+      ],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras', 'x.safetensors')
+    expect(candidates).toContain(path.join('/custom/somedir/myname', 'x.safetensors'))
+    // checkpoints mapping must not be probed for a loras download.
+    expect(candidates).not.toContain(path.join('/custom/cp', 'x.safetensors'))
+  })
+
+  it('probes a model root for both controlnet/ and its t2i_adapter/ alternate', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'controlnet', 'x.safetensors')
+    // ComfyUI's controlnet defaults also search <root>/t2i_adapter, and the
+    // launcher YAML registers it under controlnet, so both must be probed.
+    expect(candidates).toContain(path.join('/install/models', 'controlnet', 'x.safetensors'))
+    expect(candidates).toContain(path.join('/install/models', 't2i_adapter', 'x.safetensors'))
+  })
+
+  it('matches legacy folder aliases (clip → text_encoders)', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [
+        { section: 's', basePath: null, type: 'text_encoders', rawType: 'clip', dir: '/custom/clip', isDefault: false },
+      ],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'clip', 'x.safetensors')
+    expect(candidates).toContain(path.join('/custom/clip', 'x.safetensors'))
+  })
+
+  it('appends a nested directory remainder when probing extra dirs', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [
+        { section: 's', basePath: null, type: 'loras', rawType: 'loras', dir: '/custom/loras', isDefault: false },
+      ],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras/sub', 'x.safetensors')
+    expect(candidates).toContain(path.join('/custom/loras', 'sub', 'x.safetensors'))
+  })
 })
 
 describe('ALLOWED_EXTENSIONS', () => {
@@ -142,5 +219,66 @@ describe('parseContentDispositionFilename', () => {
   it('returns null for header without filename', () => {
     expect(parseContentDispositionFilename('inline')).toBeNull()
     expect(parseContentDispositionFilename('attachment')).toBeNull()
+  })
+})
+
+/**
+ * The Preview Image "Save image..." right-click goes through Electron's
+ * generic Save dialog; Windows collapses the "Save as type" dropdown to
+ * "All Files (*.*)" if `filters` is omitted, which is the symptom field-
+ * reported in #989. These tests lock the primary-extension inference and
+ * the All Files fallback so the dialog always opens on a sensible format.
+ */
+describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
+  it('picks PNG as the primary filter for a .png filename', () => {
+    const filters = buildSaveDialogFilters('ComfyUI_00001_.png')
+    expect(filters[0]).toEqual({ name: 'PNG Image', extensions: ['png'] })
+    expect(filters.at(-1)).toEqual({ name: 'All Files', extensions: ['*'] })
+  })
+
+  it('groups jpg and jpeg under the same JPEG family filter', () => {
+    expect(buildSaveDialogFilters('photo.jpg')[0]).toEqual({
+      name: 'JPEG Image',
+      extensions: ['jpg', 'jpeg'],
+    })
+    expect(buildSaveDialogFilters('photo.jpeg')[0]).toEqual({
+      name: 'JPEG Image',
+      extensions: ['jpg', 'jpeg'],
+    })
+  })
+
+  it.each([
+    ['out.webp', 'WebP Image', 'webp'],
+    ['anim.gif', 'GIF Image', 'gif'],
+    ['clip.mp4', 'MP4 Video', 'mp4'],
+    ['clip.webm', 'WebM Video', 'webm'],
+    ['clip.mov', 'QuickTime Video', 'mov'],
+    ['voice.wav', 'WAV Audio', 'wav'],
+    ['voice.mp3', 'MP3 Audio', 'mp3'],
+    ['voice.flac', 'FLAC Audio', 'flac'],
+    ['voice.ogg', 'OGG Audio', 'ogg'],
+  ] as const)('maps %s to %s', (filename, expectedName, expectedExt) => {
+    const filters = buildSaveDialogFilters(filename)
+    expect(filters[0]).toEqual({ name: expectedName, extensions: [expectedExt] })
+    expect(filters.at(-1)).toEqual({ name: 'All Files', extensions: ['*'] })
+  })
+
+  it('is case-insensitive on the input extension', () => {
+    expect(buildSaveDialogFilters('CAPS.PNG')[0]).toEqual({
+      name: 'PNG Image',
+      extensions: ['png'],
+    })
+  })
+
+  it('falls back to a literal-extension filter for unknown types', () => {
+    const filters = buildSaveDialogFilters('weird.xyz')
+    expect(filters[0]).toEqual({ name: 'XYZ File', extensions: ['xyz'] })
+    expect(filters.at(-1)).toEqual({ name: 'All Files', extensions: ['*'] })
+  })
+
+  it('returns only All Files when there is no extension at all', () => {
+    expect(buildSaveDialogFilters('justname')).toEqual([
+      { name: 'All Files', extensions: ['*'] },
+    ])
   })
 })

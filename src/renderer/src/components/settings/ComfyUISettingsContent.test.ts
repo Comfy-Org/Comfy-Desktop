@@ -6,6 +6,7 @@ import { computed, ref, nextTick } from 'vue'
 
 import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
+import { TID } from '../../../../shared/testIds'
 
 /**
  * Tests for the picker/drawer's per-install settings body. Locks: (1) overlay
@@ -24,12 +25,15 @@ const messages = {
       tabUpdate: 'Update',
       tabSnapshots: 'Snapshots',
       tabStorage: 'Storage',
+      tabTerminal: 'Terminal',
       relaunch: 'Relaunch',
       more: 'More',
     },
     tooltips: {
       snapshots:
         'A saved point-in-time state of an installation (versions + custom nodes) you can restore later.',
+      console:
+        "An interactive shell running in this installation's folder. Works whether ComfyUI is running or stopped.",
     },
     instancePicker: {
       open: 'Start',
@@ -114,6 +118,9 @@ vi.mock('../../views/comfyUISettings/StatusFactPanel.vue', () => ({
 }))
 vi.mock('../../views/comfyUISettings/StoragePane.vue', () => ({
   default: { template: '<div />' },
+}))
+vi.mock('../../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
+  default: { name: 'ConsoleTerminalPane', props: ['installationId'], template: '<div data-testid="console-terminal-pane-stub" />' },
 }))
 vi.mock('../../views/comfyUISettings/ArgsBuilderPage.vue', () => ({
   default: { template: '<div />' },
@@ -212,6 +219,32 @@ describe('ComfyUISettingsContent', () => {
         },
       })
       expect(w.find('.op-title').text()).toBe('Update complete')
+    })
+  })
+
+  describe('error overlay', () => {
+    // Regression: the error was once rendered in a single-line, ellipsis-clamped
+    // <p>, hiding the actionable detail (issue #1023). It must render in full.
+    it('renders the full multi-line error message with a copy button', async () => {
+      const detail = [
+        'Update process failed with exit code 1.',
+        '',
+        'Traceback (most recent call last):',
+        '  File "main.py", line 42, in <module>',
+        'ModuleNotFoundError: No module named "foo"',
+      ].join('\n')
+      const w = await mountContent({
+        activeOperation: {
+          actionId: 'update-comfyui', actionData: {},
+          done: true, ok: false, error: detail,
+          percent: 100, status: '', cancellable: false, title: '',
+        },
+      })
+      const msg = w.find(`[data-testid="${TID.pickerOpErrorMessage}"]`)
+      expect(msg.exists()).toBe(true)
+      expect(msg.text()).toContain('Update process failed with exit code 1.')
+      expect(msg.text()).toContain('ModuleNotFoundError: No module named "foo"')
+      expect(w.find(`[data-testid="${TID.pickerOpErrorCopy}"]`).exists()).toBe(true)
     })
   })
 
@@ -414,23 +447,41 @@ describe('ComfyUISettingsContent', () => {
 
     const SNAPSHOTS_TOOLTIP =
       'A saved point-in-time state of an installation (versions + custom nodes) you can restore later.'
+    const CONSOLE_TOOLTIP =
+      "An interactive shell running in this installation's folder. Works whether ComfyUI is running or stopped."
 
-    /** Disabled flags for tabs that only echo their label (excludes Snapshots,
-     *  which carries a real concept tooltip). */
-    function labelEchoDisabledFlags(w: VueWrapper): boolean[] {
+    /** Static text labels carried by tabs that have no concept tooltip wired.
+     *  Every current tab carries a concept tooltip, so finding a Tooltip whose
+     *  text is one of these would mean the tab fell back to the label-echo
+     *  path — what these tests are guarding against. */
+    const TAB_LABELS = new Set(['Update', 'Startup Args', 'Snapshots', 'Storage', 'Terminal', 'About'])
+
+    function tabTooltips(w: VueWrapper) {
       return w
         .findAllComponents({ name: 'Tooltip' })
-        .filter((tt) => tt.props('text') !== SNAPSHOTS_TOOLTIP)
-        .map((tt) => tt.props('disabled') as boolean)
+        .filter((tt) => !TAB_LABELS.has(tt.props('text') as string))
     }
 
-    it('disables label-echo tab tooltips at full width (label is visible → pure echo)', async () => {
+    it('wires a concept tooltip on every install-settings tab (no label-echo fallback in use)', async () => {
       const w = await mountContent()
       roHandles.forEach((h) => h.fire(900))
       await nextTick()
-      const flags = labelEchoDisabledFlags(w)
-      expect(flags.length).toBeGreaterThan(0)
-      expect(flags.every((d) => d === true)).toBe(true)
+      const allTabTooltips = w.findAllComponents({ name: 'Tooltip' })
+      const concept = tabTooltips(w)
+      // No tab fell back to label-echo. Reflects the new "every tab has its
+      // own one-line description" wiring — the previous shape kept Update /
+      // Startup Args / Storage / About on the label-echo path so they had
+      // no hover description at full width.
+      expect(concept.length).toBe(allTabTooltips.length)
+      expect(concept.length).toBeGreaterThan(0)
+      const texts = concept.map((tt) => tt.props('text') as string)
+      // The two canonical entries still carry their original copy; guards
+      // against an accidental rewire that would change visible UX text.
+      expect(texts).toContain(SNAPSHOTS_TOOLTIP)
+      expect(texts).toContain(CONSOLE_TOOLTIP)
+      // Every concept tooltip is live at full width — the collapse-only
+      // fallback has nothing to disable.
+      expect(concept.every((tt) => tt.props('disabled') === false)).toBe(true)
     })
 
     it('always shows the Snapshots concept tooltip regardless of strip width', async () => {
@@ -449,17 +500,15 @@ describe('ComfyUISettingsContent', () => {
       expect(snapshotTip()?.props('disabled')).toBe(false)
     })
 
-    it('keeps the tooltip on collapsed icon-only tabs but not the active one', async () => {
+    it('keeps every tab tooltip live when the strip collapses to icon-only', async () => {
       const w = await mountContent({ initialTab: 'update' })
       roHandles.forEach((h) => h.fire(300))
       await nextTick()
-      const tooltips = w.findAllComponents({ name: 'Tooltip' })
-      // Active tab keeps its label → tooltip disabled.
-      const updateTip = tooltips.find((tt) => tt.props('text') === 'Update')
-      expect(updateTip?.props('disabled')).toBe(true)
-      // Collapsed inactive tab hides its label → tooltip live.
-      const statusTip = tooltips.find((tt) => tt.props('text') === 'About')
-      expect(statusTip?.props('disabled')).toBe(false)
+      // Concept tooltips ignore the collapse breakpoint — width changes
+      // should not flip any of them off.
+      const tips = tabTooltips(w)
+      expect(tips.length).toBeGreaterThan(0)
+      expect(tips.every((tt) => tt.props('disabled') === false)).toBe(true)
     })
   })
 

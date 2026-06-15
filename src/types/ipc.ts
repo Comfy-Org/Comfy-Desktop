@@ -29,7 +29,7 @@ export interface Installation {
   sourceLabel: string
   sourceCategory: string
   version?: string
-  statusTag?: { style: string; label: string }
+  statusTag?: { style: string; label: string; version?: string }
   seen?: boolean
   listPreview?: string
   launchMode?: string
@@ -115,7 +115,9 @@ export interface ComfyArgDef {
   name: string
   flag: string
   help: string
-  type: 'boolean' | 'value' | 'optional-value'
+  /** `multi-value` is a variadic flag (argparse nargs `*`/`+`, shown as `[X ...]`
+   *  in --help) that accepts several space-separated values, e.g. `--cache-ram 4 8`. */
+  type: 'boolean' | 'value' | 'optional-value' | 'multi-value'
   metavar?: string
   choices?: string[]
   exclusiveGroup?: string
@@ -125,17 +127,19 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value: string | boolean | number | Record<string, string> | null
+  value: string | boolean | number | string[] | Record<string, string> | null
   editable?: boolean
   editType?:
-    | 'select'
-    | 'boolean'
-    | 'text'
-    | 'number'
-    | 'path'
-    | 'channel-cards'
-    | 'args-builder'
-    | 'env-vars'
+  | 'select'
+  | 'boolean'
+  | 'text'
+  | 'number'
+  | 'path'
+  | 'channel-cards'
+  | 'args-builder'
+  | 'env-vars'
+  | 'model-dirs'
+  | 'hidden'
   options?: DetailFieldOption[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
@@ -426,6 +430,10 @@ export interface ProgressData {
 export interface ProgressStep {
   phase: string
   label: string
+  /** Share of the 0→100 bar this phase owns. When set on any step, the
+   *  renderer paces the bar from these (the producer is the single source of
+   *  truth); when absent it falls back to a curated weight table. */
+  weight?: number
 }
 
 /**
@@ -461,6 +469,14 @@ export interface AdoptPromptResponse {
 export interface ComfyOutputData {
   installationId: string
   text: string
+}
+
+/** Snapshot for repainting an interactive console: the retained scrollback,
+ *  the shell's current size, and whether the session has been killed. */
+export interface TerminalRestore {
+  buffer: string[]
+  size: { cols: number; rows: number }
+  exited: boolean
 }
 
 export interface ComfyExitedData {
@@ -918,11 +934,8 @@ export interface ElectronApi {
   getLocaleMessages(): Promise<Record<string, unknown>>
   getAvailableLocales(): Promise<{ value: string; label: string }[]>
   /** Resolved locale string from main (`language` setting or
-   *  `app.getLocale()` fallback). The renderer's vue-i18n locale is
-   *  always 'en' (messages are deep-merged onto the en bundle), so
-   *  consumers needing the user's actual language — e.g. the first-use
-   *  takeover deciding whether to insert the China-mirror sub-step —
-   *  must read it from main via this call. */
+   *  `app.getLocale()` fallback). Renderers mirror this into vue-i18n;
+   *  main is the single locale authority. */
   getLocale(): Promise<string>
 
   /** Categorised snapshot of the persisted installs for the first-use
@@ -966,6 +979,16 @@ export interface ElectronApi {
    *  to `true` when a window (or external process window) was focused,
    *  `false` when none exists. */
   focusComfyWindow(installationId: string): Promise<boolean>
+
+  // Interactive console (per-installation shell, shared across windows)
+  /** Spawn the install's shell if needed, subscribe this surface, and return
+   *  the current scrollback/size/exited state to repaint. */
+  terminalSubscribe(installationId: string): Promise<TerminalRestore>
+  terminalUnsubscribe(installationId: string): Promise<void>
+  terminalWrite(installationId: string, data: string): Promise<void>
+  terminalResize(installationId: string, cols: number, rows: number): Promise<void>
+  /** Kill the current shell (if any) and start a fresh one. */
+  terminalRestart(installationId: string): Promise<TerminalRestore>
   /** Open a window for the install backing `installationId`. Focuses
    *  any existing install-backed window; otherwise opens a fresh
    *  chooser host so the user can pick the install from the dashboard.
@@ -1001,6 +1024,12 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** Boot-time restore reveal handshake. The restore window is opened
+   *  hidden; the panel calls this once it knows whether its launch
+   *  takeover came up (`'takeover-ready'` → reveal the launching surface)
+   *  or it fell back to the dashboard (`'dashboard-fallback'`). Main
+   *  reveals the sender's hidden host either way. Fire-and-forget. */
+  resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   /** Open the Global Settings popup for the panel's host window. Used
    *  by the panel-side file-menu "Settings" item and the
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
@@ -1020,7 +1049,7 @@ export interface ElectronApi {
    *  `comfy://open-settings?tab=comfy`). */
   openInstancePicker(opts?: {
     installationId?: string | null
-    initialTab?: 'config' | 'status' | 'update' | 'snapshots' | 'storage'
+    initialTab?: 'config' | 'status' | 'update' | 'snapshots' | 'storage' | 'console'
     autoAction?: string | null
   }): void
   /** Push the first-use takeover's current step to main so it can
@@ -1194,6 +1223,10 @@ export interface ElectronApi {
 
   // App
   getAppVersion(): Promise<string>
+  /** Every stable ComfyUI release tag, newest first. Returns `[]` when the
+   *  remote is unreachable. Used by the install-wizard version dropdown and
+   *  the per-install ChannelPicker. */
+  getStableTags(): Promise<string[]>
   /** Capacity-protection switch for Cloud entry points. Resolved at boot
    *  from the `desktop-cloud-capacity` PostHog flag (variants `normal` |
    *  `degraded` | `disabled`); defaults to `'normal'` when the flag is
@@ -1264,6 +1297,10 @@ export interface ElectronApi {
    *  reaches the launching window). Lets any open dashboard show the red
    *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
+  onTerminalOutput(
+    callback: (data: { installationId: string; data: string }) => void
+  ): Unsubscribe
+  onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
   onComfyBootLog(callback: (data: ComfyBootLogData) => void): Unsubscribe
   onInstanceLaunching(
     callback: (data: { installationId: string; installationName: string }) => void
@@ -1273,7 +1310,9 @@ export interface ElectronApi {
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
-  onLocaleChanged(callback: (messages: Record<string, unknown>) => void): Unsubscribe
+  onLocaleChanged(
+    callback: (payload: { locale: string; messages: Record<string, unknown> }) => void
+  ): Unsubscribe
   onConfirmQuit(callback: (details: QuitActiveItem[]) => void): Unsubscribe
   onInstallationsChanged(callback: () => void): Unsubscribe
   onInstallationsVersionsUpdated(
@@ -1430,13 +1469,13 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-        | 'install-update'
-        | 'app-update-restart-prompt'
-        | 'app-update-download-prompt'
-        | 'open-settings'
-        | 'picker-pick-install'
-        | 'picker-install-action'
-        | 'picker-show-progress'
+      | 'install-update'
+      | 'app-update-restart-prompt'
+      | 'app-update-download-prompt'
+      | 'open-settings'
+      | 'picker-pick-install'
+      | 'picker-install-action'
+      | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>
@@ -1444,6 +1483,10 @@ export interface ElectronApi {
       settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global'
       title?: string
       cancellable?: boolean
+      /** Picker-only (`picker-pick-install`): set on boot-time restore. The
+       *  panel takes the dashboard-fallback path on a missing launch action
+       *  (instead of opening new-install) and resolves the reveal handshake. */
+      startupRestore?: boolean
       triggersInstanceStart?: boolean
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean
@@ -1500,5 +1543,7 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
-  getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages'
+  getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
+  getLocale: 'comfy-titlepopup:picker-settings-get-locale',
+  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags'
 } as const

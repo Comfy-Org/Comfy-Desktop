@@ -7,7 +7,7 @@ import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useModal } from '../composables/useModal'
-import { Cloud, MoreVertical, Plus, Search } from 'lucide-vue-next'
+import { Plus, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
@@ -25,10 +25,8 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
  *
  * Layout:
  *   - Top-left: "New Install" (always present).
- *   - Next: "Cloud" — opens an existing cloud install or routes to
- *     new-install as a Try-Cloud CTA.
- *   - Following: every other install ordered by `lastLaunchedAt` desc,
- *     never-launched at the end.
+ *   - Following: every install (local / cloud / remote) ordered by
+ *     `lastLaunchedAt` desc, never-launched at the end.
  *   - Filter chips above the grid narrow by source category.
  *
  * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`.
@@ -67,24 +65,23 @@ onMounted(() => {
   }
 })
 
-// Filter / search / recency / cloud-split logic is shared with the
-// title-bar instance picker popover via `useInstallList` so the two
-// surfaces cannot drift. The chip UI is currently hidden in the brand
-// redesign but the underlying `activeFilter` ref + filter switch stay
-// wired; tests reach into `vm.activeFilter` to drive the filter-based
+// Filter / search / recency logic is shared with the title-bar
+// instance picker popover via `useInstallList` so the two surfaces
+// cannot drift. The chip UI is currently hidden in the brand redesign
+// but the underlying `activeFilter` ref + filter switch stay wired;
+// tests reach into `vm.activeFilter` to drive the filter-based
 // regressions guard.
 //
 // "Local" includes both standalone local installs and Legacy Desktop
 // installs (both report `sourceCategory === 'local'`) — they're
-// conceptually the same family from the user's POV.
+// conceptually the same family from the user's POV. Cloud installs
+// flow through `visibleInstalls` like every other source — there is no
+// special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
 const {
   searchQuery,
   activeFilter,
-  cloudInstall,
-  nonCloudInstalls,
   visibleInstalls,
-  showCloudCard,
   showEmptyHint,
   lastLaunchedLabel
 } = useInstallList({ installations: installationsRef })
@@ -97,22 +94,19 @@ defineExpose({ activeFilter })
 
 // --- Cluster top offset ---
 
-/** Unfiltered tile count: New Install + Cloud slot are always present. Reads
- *  the raw list, not `visibleInstalls`, so search never shifts the cluster. */
-const baseTileCount = computed(() => 2 + nonCloudInstalls.value.length)
+/** Unfiltered tile count: New Install + every install (cloud included).
+ *  Reads the raw list, not `visibleInstalls`, so search never shifts the
+ *  cluster. */
+const baseTileCount = computed(
+  () => 1 + installationStore.installations.length
+)
 
 const TILES_PER_ROW = 4
-const TOP_MAX_PX = 220 // 1-row resting spot (centered hero)
-const TOP_MIN_PX = 32 // floor once the grid claims the height
-const TOP_STEP_PX = 110 // shed per extra row
 
-/** Top offset for `--cluster-top`: shrinks as rows grow, so the cluster rises
- *  and hands its space to the grid; bottoms out at `TOP_MIN_PX`. */
-const clusterTop = computed(() => {
-  const rows = Math.ceil(baseTileCount.value / TILES_PER_ROW)
-  const px = TOP_MAX_PX - Math.max(0, rows - 1) * TOP_STEP_PX
-  return `${Math.max(TOP_MIN_PX, px)}px`
-})
+/** Unfiltered tile rows. Drives the grid's reserved `min-height` so the box
+ *  doesn't shrink while filtering — that's what keeps the centered cluster
+ *  from shifting when the user types in search. */
+const clusterRows = computed(() => Math.ceil(baseTileCount.value / TILES_PER_ROW))
 
 /** Freeze a leaving tile's box so it doesn't collapse under `position:
  *  absolute`, letting survivors FLIP into the gap immediately. */
@@ -207,7 +201,10 @@ function viewError(inst: Installation): void {
   let message = err.message
   if (!message) {
     if (err.signal && err.exitCode != null) {
-      message = t('comfyLifecycle.crashedDescWithCodeAndSignal', { code: err.exitCode, signal: err.signal })
+      message = t('comfyLifecycle.crashedDescWithCodeAndSignal', {
+        code: err.exitCode,
+        signal: err.signal
+      })
     } else if (err.signal) {
       message = t('comfyLifecycle.crashedDescWithSignal', { signal: err.signal })
     } else if (err.exitCode != null) {
@@ -225,31 +222,6 @@ function viewError(inst: Installation): void {
 // users can't enter cloud during an outage. When `degraded`, the tile
 // surfaces a "Heavy usage" meta pill but the click still proceeds.
 const cloudCapacity = useCloudCapacity()
-/** The capacity tier the tile should render as — collapses raw flag
- *  status with the signed-in tier so a paying user sees a heads-up
- *  chip on `disabled` instead of a "Temporarily unavailable" lockout
- *  they can actually click through. Mirrors what `confirmEntry`
- *  would do on click. */
-const dashboardCapacityStatus = computed(() => cloudCapacity.effectiveStatus())
-
-async function handleCloudClick(): Promise<void> {
-  // Two paths from the dashboard cloud tile: an existing cloud install
-  // (delegate to `pickInstall`, which has its own capacity gate), or
-  // promote new-install as a Try-Cloud CTA (no install to pick, so the
-  // gate fires here). Calling `confirmEntry` in both branches would
-  // double-fire the degraded confirm modal on the existing-install
-  // path. The tile is also click-disabled when capacity is `disabled`
-  // (free / unknown), so this only really matters for the `degraded`
-  // and paid-on-disabled cases.
-  if (cloudInstall.value) {
-    if (sessionStore.isStopping(cloudInstall.value.id)) return
-    void pickInstall(cloudInstall.value)
-    return
-  }
-  if (!(await cloudCapacity.confirmEntry())) return
-  emit('show-new-install')
-}
-
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
@@ -257,7 +229,7 @@ function handleNewInstallClick(): void {
 
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div class="chooser-view" :style="{ '--cluster-top': clusterTop }">
+    <div class="chooser-view" :style="{ '--rows': clusterRows }">
       <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
       <div class="chooser-search">
         <BaseInput
@@ -270,7 +242,7 @@ function handleNewInstallClick(): void {
       </div>
 
       <div
-        v-if="installationStore.loading && nonCloudInstalls.length === 0"
+        v-if="installationStore.loading && installationStore.installations.length === 0"
         class="chooser-loading"
       >
         {{ t('common.loading') }}
@@ -297,59 +269,6 @@ function handleNewInstallClick(): void {
           <div class="chooser-tile-name">{{ t('chooser.newInstall') }}</div>
           <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
         </button>
-
-        <div
-          v-if="showCloudCard"
-          key="__cloud"
-          role="button"
-          :tabindex="dashboardCapacityStatus === 'disabled' ? -1 : 0"
-          :aria-disabled="dashboardCapacityStatus === 'disabled' ? true : undefined"
-          class="chooser-tile chooser-tile-cloud"
-          :class="{ 'chooser-tile--cloud-disabled': dashboardCapacityStatus === 'disabled' }"
-          :data-cloud-capacity="dashboardCapacityStatus"
-          @click="handleCloudClick"
-          @keydown.enter="handleCloudClick"
-          @keydown.space.prevent="handleCloudClick"
-          @contextmenu.prevent="cloudInstall ? openCardMenu($event, cloudInstall) : null"
-        >
-          <div class="chooser-tile-icon"><Cloud :size="32" /></div>
-          <!-- Kebab options menu — only when a real cloud install exists to
-               manage (parity with the per-install tiles; the Try-Cloud CTA
-               has nothing to manage). Keeps the cloud tile consistent with
-               the rest of the dashboard pills instead of right-click only. -->
-          <div v-if="cloudInstall" class="chooser-tile-actions">
-            <button
-              type="button"
-              class="chooser-tile-kebab"
-              :title="t('chooser.moreActions')"
-              :aria-label="t('chooser.moreActions')"
-              @click.stop="openKebabMenu($event, cloudInstall)"
-              @contextmenu.stop="openKebabMenu($event, cloudInstall)"
-            >
-              <MoreVertical :size="16" />
-            </button>
-          </div>
-          <div class="chooser-tile-name">
-            {{ cloudInstall ? cloudInstall.name : t('cloud.label') }}
-          </div>
-          <div class="chooser-tile-meta">
-            <span
-              v-if="dashboardCapacityStatus !== 'normal'"
-              class="chooser-tile-pill chooser-tile-pill--capacity"
-              :class="{ 'chooser-tile-pill--capacity-disabled': dashboardCapacityStatus === 'disabled' }"
-              :title="dashboardCapacityStatus === 'disabled' ? t('cloud.capacityDisabledHint') : t('cloud.capacityDegradedHint')"
-            >
-              {{ dashboardCapacityStatus === 'disabled' ? t('cloud.capacityDisabled') : t('cloud.capacityDegraded') }}
-            </span>
-            <span
-              v-else
-              class="chooser-tile-pill"
-              :title="cloudInstall ? cloudInstall.sourceLabel : t('cloud.desc')"
-            >
-              {{ cloudInstall ? cloudInstall.sourceLabel : t('cloud.desc') }}
-            </span>
-          </div>
-        </div>
 
         <ChooserInstallTile
           v-for="inst in visibleInstalls"
@@ -395,24 +314,31 @@ function handleNewInstallClick(): void {
   left: anchor(center, clamp(39%, calc(52.5vw - 135px), 44%));
 }
 
-/* `--cluster-top` drives the top spacer (see `clusterTop`). Registered as a
- * <length> so it interpolates — a bare custom property won't transition. */
-@property --cluster-top {
-  syntax: '<length>';
+/* Unitless tile-row count from JS (see `clusterRows`). Registered as <integer>
+ * so it's a typed number usable in the grid's reserved-height calc() below. */
+@property --rows {
+  syntax: '<integer>';
   inherits: true;
-  initial-value: 220px;
+  initial-value: 1;
 }
 
 .chooser-view {
-  /* Only the top spacer flexes; wordmark/search/grid stay tight. Shrinking
-   * `--cluster-top` raises the cluster and hands height to the grid, which
-   * scrolls internally once the bottom spacer (1fr) runs out.
-   * Rows: [top spacer] [wordmark] [search] [grid] [bottom spacer] */
+  /* Symmetric top + bottom spacers (both 1fr) center the wordmark→grid block
+   * as a group whenever it fits — looks deliberate at any viewport height.
+   * When the (unfiltered) content is taller than the viewport, the
+   * `minmax(0, 1fr)` spacers collapse to 0 and the grid scrolls internally.
+   * Rows: [top spacer] [wordmark] [search] [grid] [bottom spacer]
+   *
+   * No-shift guarantee: the grid row reserves its height from the UNFILTERED
+   * `--rows` (see `.chooser-grid` min-height), so typing in search empties
+   * tiles without shrinking the grid box — the centered cluster stays put. */
+  --chooser-pad-y: clamp(12px, 2.5vh, 24px);
+  --chooser-row-gap: clamp(16px, 3.5vh, 32px);
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
   grid-template-rows:
-    var(--cluster-top)
+    minmax(0, 1fr)
     auto
     auto
     minmax(0, auto)
@@ -421,15 +347,8 @@ function handleNewInstallClick(): void {
   justify-items: center;
   width: 100%;
   max-width: 1280px;
-  padding: 24px;
-  row-gap: 32px;
-  transition: --cluster-top 260ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chooser-view {
-    transition-duration: 1ms;
-  }
+  padding: var(--chooser-pad-y) 24px;
+  row-gap: var(--chooser-row-gap);
 }
 
 .chooser-wordmark {
@@ -486,11 +405,17 @@ function handleNewInstallClick(): void {
    * fixed-track contract from the comment below intact while letting
    * wide viewports surface a 4-up row instead of capping at 3. */
   max-width: 1168px;
-  /* When the row collapses (tall grid in a short viewport), the grid
-   * stops growing and scrolls internally. `min-height: 0` + an
-   * explicit `max-height: 100%` are required so the grid can't push
-   * its row past the viewport. */
-  min-height: 0;
+  /* Reserve height for the UNFILTERED row count so the grid box doesn't
+   * shrink while typing in search — that's what keeps the centered cluster
+   * from jumping (replaces the old top-anchor no-shift trick). One tile is
+   * 280px × 280·156.678/246 ≈ 178px tall; rows are 178px + a 16px gap each.
+   * `max-height: 100%` still caps it on short viewports, where the grid
+   * scrolls internally and the 1fr spacers collapse to 0. */
+  --tile-h: 178px;
+  min-height: min(
+    100%,
+    calc(var(--rows) * var(--tile-h) + max(0, var(--rows) - 1) * 16px + 2 * var(--chooser-fade))
+  );
   max-height: 100%;
   overflow-y: auto;
   display: grid;
@@ -503,20 +428,23 @@ function handleNewInstallClick(): void {
   justify-content: center;
   gap: 16px;
   align-content: start;
-  /* Vertical padding pushes the first/last rows into the mask fade
-   * so they appear to glide under it rather than clip abruptly. */
-  padding: 24px 0;
+  /* Vertical padding pushes the first/last rows into the mask fade so they
+   * glide under it rather than clip abruptly. Fluid on height (`--chooser-fade`)
+   * so short viewports reclaim the band for an extra tile row. */
+  --chooser-fade: clamp(12px, 2.5vh, 24px);
+  padding: var(--chooser-fade) 0;
 }
 
 /* Soft top + bottom fade on the scroll viewport so the edge of the
- * grid feels like a smooth dissolve instead of a hard cut. */
+ * grid feels like a smooth dissolve instead of a hard cut. Fade distance
+ * tracks the grid's vertical padding so the first/last rows still tuck under. */
 @supports (mask-image: linear-gradient(black, black)) {
   .chooser-grid {
     mask-image: linear-gradient(
       to bottom,
       transparent 0,
-      black 32px,
-      black calc(100% - 32px),
+      black var(--chooser-fade),
+      black calc(100% - var(--chooser-fade)),
       transparent 100%
     );
   }
@@ -563,5 +491,4 @@ function handleNewInstallClick(): void {
     transform: none;
   }
 }
-
 </style>

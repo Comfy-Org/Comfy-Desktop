@@ -14,6 +14,7 @@ import { installationEvents } from '../installations'
 import * as mainTelemetry from '../lib/telemetry'
 import * as updater from '../lib/updater'
 import * as i18n from '../lib/i18n'
+import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
 import {
   openPath as openPathHelper,
@@ -31,6 +32,7 @@ import {
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
+import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
@@ -184,6 +186,7 @@ export interface GlobalSettingsModelsDir {
  *  `Record<string, unknown>` to keep the preload boundary type-safe
  *  without dragging renderer types into main. */
 export interface GlobalSettingsSnapshot {
+  languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
   desktopUpdateFields: Record<string, unknown>[]
@@ -297,8 +300,17 @@ export function resolvePickerSelectedInstallId(
 export function buildInstancePickerSnapshot(
   args: BuildInstancePickerSnapshotArgs
 ): InstancePickerSnapshot {
+  // Respect the global `hideCloudFromPicker` opt-out across the IPP too,
+  // not just the dashboard chooser. When on, strip cloud installs from
+  // the picker payload so the user truly never sees Cloud in the app's
+  // top dropdown. The setting is a pure visibility toggle — Cloud
+  // sessions themselves are unaffected.
+  const hideCloud = settings.get('hideCloudFromPicker') === true
+  const installs = hideCloud
+    ? args.installs.filter((i) => i.sourceCategory !== 'cloud')
+    : args.installs
   return {
-    installs: args.installs,
+    installs,
     // Use the real attached install when available; fall back to the
     // chooser's preview claim (set by `applyAttachHostPreview` when
     // the chooser stakes an in-place attach claim ahead of a launch).
@@ -736,10 +748,10 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   const items: TitlePopupMenuItem[] = [
     { id: 'new-window', label: 'New Window', labelKey: 'fileMenu.newWindow' },
     { kind: 'separator' },
-    { id: 'new-install', label: 'New Install', labelKey: 'fileMenu.newInstall' },
+    { id: 'new-install', label: 'New Instance', labelKey: 'fileMenu.newInstall' },
     {
       id: 'track',
-      label: 'Add Existing Install',
+      label: 'Add Existing Instance',
       labelKey: 'fileMenu.addExistingInstall'
     },
     { id: 'load-snapshot', label: 'Load Snapshot', labelKey: 'fileMenu.loadSnapshot' },
@@ -1644,6 +1656,8 @@ function openGlobalSettingsForHost(
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
+    // Rebroadcast hydrates per-install options into the auto-launch
+    // dropdown (the fast-open snapshot only carries none/last).
     await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })()
 }
@@ -2006,13 +2020,20 @@ function findSettingsFields(
   return src.map(toDetailField)
 }
 
-function buildGlobalSettingsSnapshot(): GlobalSettingsSnapshot {
-  const settingsSections = buildSettingsSections()
+function buildGlobalSettingsSnapshot(
+  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[]
+): GlobalSettingsSnapshot {
+  const settingsSections = buildSettingsSections(installs)
   const mediaSections = buildMediaSections()
   const modelsPayload = buildModelsPayload()
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
+  // Locale picker lives above the "App Behavior" microsection without a
+  // header of its own, so it gets pulled out of generalFields here.
   const desktopUpdateFields = generalRaw.filter((f) => f.id === 'autoInstallUpdates')
-  const generalFields = generalRaw.filter((f) => f.id !== 'autoInstallUpdates')
+  const languageFields = generalRaw.filter((f) => f.id === 'language')
+  const generalFields = generalRaw.filter(
+    (f) => f.id !== 'autoInstallUpdates' && f.id !== 'language'
+  )
   const telemetryFields = findSettingsFields(settingsSections, 'settings.telemetry', 1)
   const cache = findSettingsFields(settingsSections, 'settings.cache', 2)
   const advanced = findSettingsFields(settingsSections, 'settings.advanced', 3)
@@ -2026,6 +2047,7 @@ function buildGlobalSettingsSnapshot(): GlobalSettingsSnapshot {
   const githubStars = getCachedGithubStarCount('comfy-org/ComfyUI')
   const githubStarsLoading = githubStars == null && !githubStarsFetchAttempted
   return {
+    languageFields,
     generalFields,
     telemetryFields,
     desktopUpdateFields,
@@ -2071,11 +2093,14 @@ async function broadcastGlobalSettingsSnapshotToTitlePopups(
     (e) => e.kind === 'global-settings' && (e.view.isOpen || e.view.pendingShowTimer !== null)
   )
   if (!hasOpen) return
+  // Load installs once so each open popup gets the same hydrated list
+  // for the auto-launch dropdown — and we don't re-read the file per popup.
+  const installs = (await installations.list()).map((i) => ({ id: i.id, name: i.name }))
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue
     if (entry.view.popup.webContents.isDestroyed()) continue
-    const snapshot = buildGlobalSettingsSnapshot()
+    const snapshot = buildGlobalSettingsSnapshot(installs)
     const snapshotJson = JSON.stringify(snapshot)
     if (entry.lastGlobalSettingsBroadcastJson === snapshotJson) continue
     entry.lastGlobalSettingsBroadcastJson = snapshotJson
@@ -2872,6 +2897,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const targetPath = payload?.path
     if (typeof targetPath !== 'string' || targetPath.length === 0) return
     void openPathHelper(targetPath)
+  })
+
+  // Reveal a file in the OS file manager (highlights it in its parent folder),
+  // e.g. extra_model_paths.yaml, which shouldn't open in its default app.
+  ipcMain.on('comfy-titlepopup:global-settings-reveal-path', (event, payload: { path?: unknown }) => {
+    if (!settingsEntryFor(event.sender.id)) return
+    const targetPath = payload?.path
+    if (typeof targetPath !== 'string' || targetPath.length === 0) return
+    shell.showItemInFolder(targetPath)
   })
 
   // External URL — restricted to http/https.

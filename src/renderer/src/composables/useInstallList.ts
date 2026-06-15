@@ -35,10 +35,7 @@ export interface UseInstallListOpts {
 export interface UseInstallListApi {
   searchQuery: Ref<string>
   activeFilter: Ref<FilterKey>
-  cloudInstall: ComputedRef<Installation | null>
-  nonCloudInstalls: ComputedRef<Installation[]>
   visibleInstalls: ComputedRef<Installation[]>
-  showCloudCard: ComputedRef<boolean>
   showEmptyHint: ComputedRef<boolean>
   matchesQuery: (name: string) => boolean
   lastLaunchedLabel: (inst: Installation) => string
@@ -47,14 +44,23 @@ export interface UseInstallListApi {
 }
 
 // Shared install-list state for the dashboard and the instance picker.
-// Pure-data (no IPC/Pinia/DOM); Cloud is always split out as its own surface.
-// Owns a 60s `now` tick so relative time labels stay fresh.
+// Pure-data (no Pinia/DOM); cloud is folded into the same recency-sorted
+// list as every other install. Owns a 60s `now` tick so relative time
+// labels stay fresh.
+//
+// The `hideCloudFromPicker` setting is read on mount and refreshed on
+// any settings broadcast — toggling Global Settings filters cloud out
+// without requiring a window reopen.
 export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   const { t } = useI18n()
   const { installations } = opts
 
   const searchQuery = ref('')
   const activeFilter = ref<FilterKey>('all')
+  // Mirrors the `hideCloudFromPicker` setting. Starts `false` so cloud
+  // renders by default while the initial IPC fetch is in flight and in
+  // test/preload environments where the bridge isn't available.
+  const hideCloudFromPicker = ref<boolean>(false)
 
   function matchesQuery(name: string): boolean {
     const q = searchQuery.value.trim().toLowerCase()
@@ -62,22 +68,20 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
     return scoreName(q, name.toLowerCase()) > 0
   }
 
-  const cloudInstall = computed<Installation | null>(
-    () => installations.value.find((i) => i.sourceCategory === 'cloud') ?? null,
-  )
-
-  const nonCloudInstalls = computed<Installation[]>(() =>
-    installations.value.filter((i) => i.sourceCategory !== 'cloud'),
-  )
-
   function sortByRecency(a: Installation, b: Installation): number {
     const ta = typeof a.lastLaunchedAt === 'number' ? a.lastLaunchedAt : -Infinity
     const tb = typeof b.lastLaunchedAt === 'number' ? b.lastLaunchedAt : -Infinity
     return tb - ta
   }
 
+  const effectiveInstalls = computed<Installation[]>(() =>
+    hideCloudFromPicker.value
+      ? installations.value.filter((i) => i.sourceCategory !== 'cloud')
+      : installations.value,
+  )
+
   const visibleInstalls = computed<Installation[]>(() => {
-    const sorted = [...nonCloudInstalls.value].sort(sortByRecency)
+    const sorted = [...effectiveInstalls.value].sort(sortByRecency)
     const byCategory = (() => {
       switch (activeFilter.value) {
         case 'all':
@@ -87,8 +91,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
         case 'remote':
           return sorted.filter((i) => i.sourceCategory === 'remote')
         case 'cloud':
-          // Cloud installs only appear in the dedicated Cloud surface.
-          return []
+          return sorted.filter((i) => i.sourceCategory === 'cloud')
         default:
           return sorted
       }
@@ -96,33 +99,51 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
     return byCategory.filter((i) => matchesQuery(i.name))
   })
 
-  const showCloudCard = computed<boolean>(() => {
-    const inCategory = activeFilter.value === 'all' || activeFilter.value === 'cloud'
-    if (!inCategory) return false
-    // When a real cloud install exists, gate visibility on the query —
-    // the generic Try-Cloud CTA tile stays visible until the user types
-    // anything.
-    if (cloudInstall.value) return matchesQuery(cloudInstall.value.name)
-    return !searchQuery.value.trim()
-  })
-
   const showEmptyHint = computed<boolean>(
     () =>
       !!searchQuery.value.trim() &&
-      visibleInstalls.value.length === 0 &&
-      !showCloudCard.value,
+      visibleInstalls.value.length === 0,
   )
 
   // 60-second tick so "Nm ago" / "Nh ago" labels stay fresh.
   const now = ref(Date.now())
   let nowTimer: ReturnType<typeof setInterval> | null = null
+  // Live updates: any setting change on main broadcasts here, so the
+  // dashboard re-fetches `hideCloudFromPicker` without the user having to
+  // close + reopen the window after toggling in Global Settings.
+  let unsubSettingsChanged: (() => void) | null = null
+
+  const refetchHideCloud = async (): Promise<void> => {
+    try {
+      const value = await window.api.getSetting('hideCloudFromPicker')
+      hideCloudFromPicker.value = value === true
+    } catch {
+      hideCloudFromPicker.value = false
+    }
+  }
+
   onMounted(() => {
     nowTimer = setInterval(() => {
       now.value = Date.now()
     }, 60_000)
+    // Best-effort initial read. Failures resolve to `false` so Cloud
+    // renders by default — never silently hide on a missing IPC bridge
+    // (e.g. tests or pre-attach mounts).
+    void refetchHideCloud()
+    // Re-read on any settings broadcast keyed to hideCloudFromPicker so
+    // toggling the Global Settings opt-out takes effect immediately on
+    // the live dashboard (no close + reopen required).
+    try {
+      unsubSettingsChanged = window.api.onSettingsChanged((data) => {
+        if (data?.key === 'hideCloudFromPicker') void refetchHideCloud()
+      })
+    } catch {
+      // tests / older preloads without the listener: fall back to mount-only
+    }
   })
   onBeforeUnmount(() => {
     if (nowTimer) clearInterval(nowTimer)
+    if (unsubSettingsChanged) unsubSettingsChanged()
   })
 
   function timeAgo(timestamp: number): string {
@@ -151,10 +172,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   return {
     searchQuery,
     activeFilter,
-    cloudInstall,
-    nonCloudInstalls,
     visibleInstalls,
-    showCloudCard,
     showEmptyHint,
     matchesQuery,
     lastLaunchedLabel,

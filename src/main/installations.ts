@@ -10,6 +10,11 @@ import type { ComfyVersion } from './lib/version'
  *  list-affecting mutation and is rebroadcast as `installations-changed`. */
 export const installationEvents = new EventEmitter()
 
+/** Source id of the always-seeded Comfy Cloud entry. */
+export const CLOUD_SOURCE_ID = 'cloud'
+/** Canonical, non-user-editable name of the Comfy Cloud entry (issue #922). */
+export const CLOUD_INSTALL_NAME = 'Comfy Cloud'
+
 export interface InstallationRecord {
   id: string
   name: string
@@ -31,6 +36,13 @@ export interface InstallationRecord {
    *  `--output-directory` from the global settings; else uses the per-install
    *  dirs below or ComfyUI's `<installPath>/{input,output}` defaults. */
   useSharedInputOutput?: boolean
+  /** Per-install extra (external) model directories, used only when
+   *  `useSharedModels === false`. Never includes the install's own models dir.
+   *  Written to a per-install `--extra-model-paths-config` YAML at launch. */
+  modelDirs?: string[]
+  /** External `modelDirs` entry promoted to primary (`is_default`). Null/absent
+   *  means the install's own models dir is primary (ComfyUI's built-in default). */
+  modelDirsPrimary?: string | null
   /** Per-install input dir, used only when `useSharedInputOutput === false`. */
   inputDir?: string
   /** Per-install output dir, used only when `useSharedInputOutput === false`. */
@@ -198,6 +210,27 @@ export async function ensureExists(sourceId: string, data: Record<string, unknow
   if (added) installationEvents.emit('changed')
 }
 
+/** Force the seeded Cloud entry back to its canonical name. The Cloud install
+ *  is not user-renamable (issue #922); this self-heals any entry that a prior
+ *  build let the user rename. No-op when the name already matches or no Cloud
+ *  entry exists. */
+export async function enforceCloudName(): Promise<void> {
+  const updated = await enqueue(async () => {
+    const all = await load()
+    const index = all.findIndex((i) => i.sourceId === CLOUD_SOURCE_ID)
+    if (index === -1) return null
+    const existing = all[index]!
+    if (existing.name === CLOUD_INSTALL_NAME) return null
+    all[index] = { ...existing, name: CLOUD_INSTALL_NAME } as InstallationRecord
+    await save(all)
+    return all[index]!
+  })
+  if (updated) {
+    installationEvents.emit('updated', updated)
+    installationEvents.emit('changed')
+  }
+}
+
 /**
  * Stamp `lastLaunchedAt` and (when `resolveCategory` returns a value)
  * `lastLaunchedAtByCategory[category]` in one atomic write, firing the same
@@ -282,6 +315,27 @@ export async function getRecentByCategory(
     }
   }
   return best && bestTs > -Infinity ? best : null
+}
+
+/** Sentinels for the global auto-launch setting. Duplicated from
+ *  `settings.ts` to keep this module free of a settings dependency (which
+ *  would cycle: settings depends on paths, paths depends on this module's
+ *  `dataDir`). Callers pass the raw setting value through.
+ *
+ *  - `'none'` / empty / undefined → return null (no auto-launch).
+ *  - `'last'` → resolve via `getRecent()`; null when nothing has ever launched.
+ *  - any other string → look up by id; null when the id is gone (caller
+ *    treats that as "stale selection, fall back to dashboard silently"). */
+export async function resolveAutoLaunchInstall(
+  autoLaunchValue: string | undefined | null,
+): Promise<InstallationRecord | null> {
+  if (autoLaunchValue == null || autoLaunchValue === '' || autoLaunchValue === 'none') {
+    return null
+  }
+  if (autoLaunchValue === 'last') {
+    return getRecent()
+  }
+  return get(autoLaunchValue)
 }
 
 export async function seedDefaults(defaults: Record<string, unknown>[]): Promise<void> {

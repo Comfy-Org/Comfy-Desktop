@@ -4,7 +4,7 @@ import { fetchJSON } from '../../lib/fetch'
 import { parseArgs, extractPort, formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
-import { getLatestStableTag } from '../../lib/comfyui-releases'
+import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
 import {
   PLATFORM_PREFIX, DEFAULT_LAUNCH_ARGS,
@@ -54,6 +54,64 @@ interface VariantData {
   downloadFiles: { url: string; filename: string; size: number }[]
 }
 
+/**
+ * Build a variant card FieldOption from a single R2 bundle release. Shared by
+ * the install-wizard variant list (newest bundle per vendor) and the
+ * snapshot-load flow (a specific historical bundle). `displayStableTag`, when
+ * set, advertises the upstream stable version the post-install update lands on
+ * instead of the bundle's checked-in ComfyUI version.
+ */
+function buildVariantOption(
+  vendorId: string,
+  release: R2Variant,
+  displayStableTag: string | null,
+  gpu: string | undefined
+): FieldOption {
+  const sizeMB = (release.size / 1048576).toFixed(0)
+  const downloadFiles = [{
+    url: `${R2_BASE_URL}/${vendorId}/${release.tag}/${release.file}`,
+    filename: release.file,
+    size: release.size,
+  }]
+  const displayVersion = displayStableTag
+    ? displayStableTag.replace(/^v/, '')
+    : release.comfyui_version
+  return {
+    value: vendorId,
+    label: getVariantLabel(vendorId),
+    description: `ComfyUI ${displayVersion}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
+    data: {
+      variantId: vendorId,
+      manifest: { id: vendorId, comfyui_ref: release.comfyui_version, python_version: release.python_version },
+      downloadFiles,
+      downloadUrl: downloadFiles[0]!.url,
+      r2Release: release,
+    } as unknown as Record<string, unknown>,
+    recommended: recommendVariant(vendorId, gpu),
+  }
+}
+
+/**
+ * Resolve a variant card pinned to a specific historical bundle `releaseTag`
+ * for `variantId`, using the vendor history carried on a 'release' FieldOption.
+ * Lets the snapshot-load flow recreate the exact standalone environment a
+ * snapshot was captured on. Returns null when that tag is no longer in R2
+ * (pruned), so the caller can fall back to the newest bundle for the channel.
+ */
+export function buildPinnedVariant(
+  release: FieldOption,
+  variantId: string,
+  releaseTag: string,
+  gpu?: string
+): FieldOption | null {
+  const releaseData = release.data as { vendorReleases?: Record<string, R2Variant[]> } | undefined
+  const history = releaseData?.vendorReleases?.[variantId]
+  if (!history) return null
+  const exact = history.find((r) => r.tag === releaseTag)
+  if (!exact) return null
+  return buildVariantOption(variantId, exact, null, gpu)
+}
+
 export const standalone: SourcePlugin = {
   id: 'standalone',
   get label() { return t('standalone.label') },
@@ -63,6 +121,11 @@ export const standalone: SourcePlugin = {
   get fields() {
     return [
       { id: 'release', label: t('common.release'), type: 'select' as const },
+      // Last-N stable tags ordered newest first. Only shown for the 'stable'
+      // channel; the 'latest' channel always follows master HEAD by definition,
+      // and a tag picker there would contradict the channel intent. The
+      // wizard renders an empty/disabled select on 'latest' (zero options).
+      { id: 'comfyVersion', label: t('standalone.comfyVersion'), type: 'select' as const },
       { id: 'variant', label: t('standalone.variant'), type: 'select' as const, renderAs: 'cards' as const },
     ]
   },
@@ -108,6 +171,14 @@ export const standalone: SourcePlugin = {
     const isStable = selections.release?.value === 'stable'
     const isLatest = selections.release?.value === 'latest'
     const releaseTag = r2Release?.tag || (selections.release?.value || 'unknown')
+    // Only honour a comfyVersion pick on the stable channel; getFieldOptions
+    // returns [] for 'latest', so any stale value carried in selections from
+    // a prior channel toggle is dropped here as a defence-in-depth.
+    const pickedComfyTag = isStable
+      ? (typeof selections.comfyVersion?.value === 'string' && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+          ? selections.comfyVersion.value
+          : undefined)
+      : undefined
     return {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
@@ -128,6 +199,7 @@ export const standalone: SourcePlugin = {
       ...(isStable || isLatest ? { autoUpdateComfyUI: true } : {}),
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
+      ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
     }
   },
 
@@ -349,6 +421,23 @@ export const standalone: SourcePlugin = {
       return options
     }
 
+    if (fieldId === 'comfyVersion') {
+      // The picker is only meaningful on 'stable' — 'latest' tracks master
+      // HEAD by intent, and the post-install update already fast-forwards
+      // there. Returning [] makes the wizard render an empty/disabled select.
+      if (selections.release?.value !== 'stable') return []
+      const tags = await getStableTags()
+      if (tags.length === 0) return []
+      // Newest first; the wizard auto-selects the `recommended` option so
+      // the default lands on the most recent stable tag.
+      return tags.map((tag, i) => ({
+        value: tag,
+        label: tag,
+        recommended: i === 0,
+        description: i === 0 ? t('newInstall.latestStable') : undefined,
+      }))
+    }
+
     if (fieldId === 'variant') {
       const releaseData = selections.release?.data as { tag: string; vendorReleases: Record<string, R2Variant[]>; latestStableTag?: string | null } | undefined
       if (!releaseData) return []
@@ -357,42 +446,29 @@ export const standalone: SourcePlugin = {
 
       const isStable = selections.release?.value === 'stable'
       const gpu = context?.gpu as string | undefined
+      // When the user picked a specific stable tag from the comfyVersion
+      // dropdown, the variant card should advertise THAT version (the one
+      // the post-install update checks out), not the channel head. Falls
+      // back to the channel-head's resolved tag when no pick was made.
+      const pickedComfyTag =
+        isStable && typeof selections.comfyVersion?.value === 'string'
+          && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+          ? selections.comfyVersion.value
+          : null
 
       return Object.entries(releaseData.vendorReleases)
         .filter(([vendorId]) => vendorId.startsWith(prefix))
         .map(([vendorId, releases]): FieldOption | null => {
           const release = releases[0]
           if (!release) return null
-
-          const sizeMB = (release.size / 1048576).toFixed(0)
-          const downloadFiles = [{
-            url: `${R2_BASE_URL}/${vendorId}/${release.tag}/${release.file}`,
-            filename: release.file,
-            size: release.size,
-          }]
-          // For Stable, the card must advertise the version the user
-          // ends up with after post-install auto-update (the upstream stable
-          // tag), not the older ComfyUI bundled in the R2 standalone build.
-          // Strip a leading `v` to match the bare-version card format
-          // (`ComfyUI 0.22.3`). Falls back to the bundled version when the
-          // upstream tag couldn't be resolved (offline, etc.).
-          const displayVersion =
-            isStable && releaseData.latestStableTag
-              ? releaseData.latestStableTag.replace(/^v/, '')
-              : release.comfyui_version
-          return {
-            value: vendorId,
-            label: getVariantLabel(vendorId),
-            description: `ComfyUI ${displayVersion}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
-            data: {
-              variantId: vendorId,
-              manifest: { id: vendorId, comfyui_ref: release.comfyui_version, python_version: release.python_version },
-              downloadFiles,
-              downloadUrl: downloadFiles[0]!.url,
-              r2Release: release,
-            } as unknown as Record<string, unknown>,
-            recommended: recommendVariant(vendorId, gpu),
-          }
+          // Stable: advertise the upstream tag the user lands on after the
+          // post-install auto-update (picked tag wins; otherwise channel
+          // head). Falls back to the bundled version when neither is
+          // resolvable (offline, etc.).
+          const displayStableTag = isStable
+            ? pickedComfyTag ?? releaseData.latestStableTag ?? null
+            : null
+          return buildVariantOption(vendorId, release, displayStableTag, gpu)
         })
         .filter((item): item is FieldOption => item != null)
     }

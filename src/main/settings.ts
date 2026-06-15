@@ -7,7 +7,9 @@ import { readFileSafe, writeFileSafe } from './lib/safe-file'
 
 export interface KnownSettings {
   cacheDir: string
-  maxCachedFiles: number
+  /** Number of completed downloads kept in the cache before eviction. Not
+   *  exposed in the UI; editable only by hand in settings.json. */
+  maxCachedDownloads: number
   onAppClose: 'tray' | 'quit'
   modelsDirs: string[]
   inputDir: string
@@ -22,6 +24,16 @@ export interface KnownSettings {
   /** When true (default), Desktop updates download and install silently; when
    *  false, the user is prompted before any download/install. */
   autoInstallUpdates?: boolean
+  /** Opt-in auto-launch on Desktop startup. Values:
+   *  - `'none'` (default) — land on the dashboard, current behavior.
+   *  - `'last'` — launch the install with the largest `lastLaunchedAt`.
+   *  - any other string — launch the install with that id; falls back to
+   *    `'none'` silently when the id is gone. */
+  autoLaunchOnStartup?: string
+  /** When true, closing a local-install window asks the user to confirm first
+   *  (guards against accidentally killing a ComfyUI that took minutes to boot).
+   *  Default false — windows close without a prompt. */
+  confirmBeforeClosingWindow?: boolean
   pypiMirror?: string
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
@@ -29,15 +41,48 @@ export interface KnownSettings {
   /** `true` once the first-use takeover is finished. Mid-flow cancel does NOT
    *  flip this, so the takeover replays from step 1 next launch. */
   firstUseCompleted?: boolean
+  /** When true, hide the Cloud tile (and the Try-Cloud CTA) from the
+   *  Dashboard / Instance Picker. Local-only users who never use Cloud
+   *  can opt out of seeing it without us removing the feature. Default
+   *  false — Cloud stays visible. */
+  hideCloudFromPicker?: boolean
   oemManagedModelDirs?: string[]
   oemWorkflowImportVersion?: number
+  /** Directory the user last chose in the general "Save image/file" dialog.
+   *  Used to seed the dialog's defaultPath so it matches browser behavior. */
+  lastSaveDialogDir?: string
+  /** Version of a Desktop update whose installer finished downloading in a
+   *  previous session and is staged on disk. Gates the bounded startup
+   *  install check so boots without a staged update aren't delayed. Cleared
+   *  once that version is actually running. */
+  pendingDownloadedUpdateVersion?: string
+  /** Version we last auto-attempted to install at startup. Loop-breaker: if an
+   *  attempt didn't take (still running the old version), we don't auto-retry
+   *  the same version on the next boot — the user can still install it manually
+   *  via the update pill. Cleared once that version is actually running. */
+  lastStartupUpdateAttemptVersion?: string
+  /** Windows-only gate (default on) for applying a staged Desktop update on the
+   *  next launch instead of letting electron-updater install it on quit. Ignored
+   *  on macOS/Linux, whose updaters don't have the shutdown install-corruption
+   *  this addresses. On (default): install-on-quit is disabled and the update
+   *  applies at startup. Set to `false` to opt back out — install-on-quit stays
+   *  armed and is only suppressed while the OS is shutting down. */
+  installUpdatesOnStartup?: boolean
+  /** Windows-only gate (default on) for showing the NSIS installer's own
+   *  progress window while an update installs, instead of installing fully
+   *  silently. Ignored on macOS/Linux — `isSilent` is an NSIS concept. On update
+   *  the assisted installer skips the welcome/license/directory pages and our
+   *  `customFinishPage` auto-launches + skips the finish page, so the user only
+   *  sees a progress window (no clicks). Set to `false` for a fully silent
+   *  install. */
+  showInstallerUI?: boolean
 }
 
 export type Settings = KnownSettings & Record<string, unknown>
 
 type DefaultedSettingKey =
   | 'cacheDir'
-  | 'maxCachedFiles'
+  | 'maxCachedDownloads'
   | 'onAppClose'
   | 'modelsDirs'
   | 'inputDir'
@@ -51,7 +96,7 @@ const SHARED_ROOT = path.join(homeDir(), "ComfyUI-Shared")
 
 const SETTINGS_SCHEMA = {
   cacheDir: { nullable: false },
-  maxCachedFiles: { nullable: false },
+  maxCachedDownloads: { nullable: false },
   onAppClose: { nullable: false },
   modelsDirs: { nullable: false },
   inputDir: { nullable: false },
@@ -61,13 +106,21 @@ const SETTINGS_SCHEMA = {
   theme: { nullable: false },
   autoUpdate: { nullable: false },
   autoInstallUpdates: { nullable: false },
+  autoLaunchOnStartup: { nullable: false },
+  confirmBeforeClosingWindow: { nullable: false },
   pypiMirror: { nullable: false },
   useChineseMirrors: { nullable: false },
   chineseMirrorsPrompted: { nullable: false },
   telemetryEnabled: { nullable: false },
   firstUseCompleted: { nullable: false },
+  hideCloudFromPicker: { nullable: false },
   oemManagedModelDirs: { nullable: false },
   oemWorkflowImportVersion: { nullable: false },
+  lastSaveDialogDir: { nullable: true },
+  pendingDownloadedUpdateVersion: { nullable: true },
+  lastStartupUpdateAttemptVersion: { nullable: true },
+  installUpdatesOnStartup: { nullable: false },
+  showInstallerUI: { nullable: false },
 } as const satisfies Record<keyof KnownSettings, { nullable: boolean }>
 
 export type KnownSettingKey = keyof typeof SETTINGS_SCHEMA
@@ -87,7 +140,7 @@ function isNullableKnownSettingKey(key: KnownSettingKey): key is NullableKnownSe
 
 export const defaults: SettingsDefaults = {
   cacheDir: path.join(cacheDir(), "download-cache"),
-  maxCachedFiles: 5,
+  maxCachedDownloads: 1,
   // Docking-to-tray is disabled (createTray() is currently a no-op).
   onAppClose: "quit",
   modelsDirs: [path.join(SHARED_ROOT, "models")],
@@ -205,8 +258,17 @@ function load(): Settings {
   const result: Settings = { ...defaults, ...(parsed || {}) }
   let changed = false
 
-  // Drop legacy pin keys that no longer back any UI.
-  for (const key of ['primaryInstallId', 'pinnedInstallIds']) {
+  // Drop legacy keys that no longer back any setting. `maxCachedFiles` was the
+  // user-editable predecessor of `maxCachedDownloads`; its old value is
+  // discarded so everyone adopts the new default. `closeDirectlyOnLastWindow`
+  // backed the removed last-window quit toggle (close confirmation is now gated
+  // by `confirmBeforeClosingWindow`, off by default).
+  for (const key of [
+    'primaryInstallId',
+    'pinnedInstallIds',
+    'maxCachedFiles',
+    'closeDirectlyOnLastWindow',
+  ]) {
     if (Object.prototype.hasOwnProperty.call(result, key)) {
       delete result[key]
       changed = true
@@ -330,14 +392,31 @@ function save(settings: Settings): void {
   writeFileSafe(dataPath, JSON.stringify(settings, null, 2), true)
 }
 
+/** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
+ *  is treated as an installation id. */
+export const AUTO_LAUNCH_NONE = 'none'
+export const AUTO_LAUNCH_LAST = 'last'
+
 export function get<K extends KnownSettingKey>(key: K): KnownSettings[K]
 export function get(key: string): unknown
 export function get(key: string): unknown {
-  return load()[key]
+  const value = load()[key]
+  // Absence means the default — surface `'none'` to callers so they don't have
+  // to special-case undefined everywhere they branch on the auto-launch mode.
+  if (key === 'autoLaunchOnStartup' && (value === undefined || value === null)) {
+    return AUTO_LAUNCH_NONE
+  }
+  return value
 }
 
 /** Keys whose values should be deleted when set to an empty or whitespace-only string. */
 const EMPTY_STRING_MEANS_UNSET: ReadonlySet<string> = new Set<KnownSettingKey>(['pypiMirror'])
+
+/** Keys whose default value should be persisted as absence — `set(k, default)`
+ *  drops the key so the file doesn't accumulate no-op writes. */
+const DEFAULT_VALUE_MEANS_UNSET: ReadonlyMap<string, unknown> = new Map<KnownSettingKey, unknown>([
+  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE],
+])
 
 export function set<K extends string>(
   key: K,
@@ -350,6 +429,7 @@ export function set<K extends string>(
     value === undefined
     || (value === null && isKnownSettingKey(key) && !isNullableKnownSettingKey(key))
     || (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key))
+    || (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
   ) {
     delete settings[key]
     save(settings)

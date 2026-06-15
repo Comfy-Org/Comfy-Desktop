@@ -8,7 +8,10 @@ import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import { useModal } from '../composables/useModal'
 import { dismissPickerModals } from './dismissPickerModals'
+import { popupLocaleSource } from './pickerSettingsApiShim'
+import { useAppLocale } from '../lib/useAppLocale'
 import type { DetailSection, SnapshotListData } from '../types/ipc'
+import { isColorLight } from '../lib/colorScheme'
 
 // Title-bar dropdown popup shell. Hosts every title-bar dropdown in one
 // reused transparent WebContentsView attached to the host window. Each open
@@ -91,6 +94,7 @@ interface GlobalSettingsModelsDir {
 
 interface GlobalSettingsSnapshot {
   generalFields: Record<string, unknown>[]
+  languageFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
   desktopUpdateFields: Record<string, unknown>[]
   cacheFields: Record<string, unknown>[]
@@ -183,6 +187,7 @@ const pickerSnapshot = ref<PickerSnapshot>({
 })
 const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   generalFields: [],
+  languageFields: [],
   telemetryFields: [],
   desktopUpdateFields: [],
   cacheFields: [],
@@ -217,23 +222,17 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
 const downloadsState = ref<DownloadsState>({ active: [], recent: [] })
 
 /** Body-luminance test driving is-light styling; matches TitleBarApp.vue. */
-const isLight = computed(() => {
-  const ctx = document.createElement('canvas').getContext('2d')
-  if (!ctx) return false
-  ctx.fillStyle = themeBg.value
-  const hex = ctx.fillStyle as string
-  if (!hex.startsWith('#') || hex.length < 7) return false
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return (r * 299 + g * 587 + b * 114) / 1000 >= 128
-})
+const isLight = computed(() => isColorLight(themeBg.value))
 
 function handleActivate(id: string): void {
   bridge?.activate(id)
 }
 
 const { state: modalState } = useModal()
+
+// Locale lives at the popup root so every kind (menu / downloads / picker /
+// settings) tracks main's language live — the language picker is in this popup.
+const { syncLocale } = useAppLocale(popupLocaleSource())
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
@@ -290,6 +289,7 @@ function measureAndRequestSize(): void {
 }
 
 onMounted(() => {
+  void syncLocale()
   unsubConfig = bridge?.onConfig((cfg) => {
     kind.value = cfg.kind
     items.value = cfg.kind === 'menu' ? cfg.items : []
@@ -325,8 +325,13 @@ onMounted(() => {
   // WebContentsView is visible caused flicker on 2nd+ opens. Picker local
   // state persists across reopens; transient resets ride on the
   // activeInstallationId prop watcher in InstancePickerView.vue.
+  //
+  // Every reopen also clears any pending `useModal` / `useDialogs` entry —
+  // a confirm prompt left open when the user blurred the popup would
+  // otherwise resurface on top of the picker the next time it's shown,
+  // looking stuck (issue raised during version-picker review).
   unsubWillShow = bridge?.onWillShow(() => {
-    /* kept registered for forward compatibility */
+    dismissPickerModals()
   })
   unsubDismissModals = bridge?.onDismissModals(() => {
     dismissPickerModals()

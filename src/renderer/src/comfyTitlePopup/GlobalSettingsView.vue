@@ -7,6 +7,7 @@ import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSect
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
 import GitHubLinkCard from './globalSettings/GitHubLinkCard.vue'
 import SettingsSectionList from '../views/comfyUISettings/SettingsSectionList.vue'
+import StorageDirRow from '../views/comfyUISettings/StorageDirRow.vue'
 import { withMinDuration } from '../lib/uiTiming'
 import type {
   AppUpdateDownloadProgress,
@@ -29,6 +30,7 @@ interface ModelsDir {
 }
 
 interface Snapshot {
+  languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
   desktopUpdateFields: Record<string, unknown>[]
@@ -98,6 +100,9 @@ const storageSnapshot = computed(() => ({
   modelsSystemDefault: props.snapshot.modelsSystemDefault,
 }))
 
+const languageSections = computed<DetailSection[]>(() => [
+  { fields: props.snapshot.languageFields as unknown as DetailField[] }
+])
 const generalSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.generalFields as unknown as DetailField[] }
 ])
@@ -107,15 +112,52 @@ const telemetrySections = computed<DetailSection[]>(() => [
 const desktopUpdatePreferenceFields = computed<DetailField[]>(
   () => props.snapshot.desktopUpdateFields as unknown as DetailField[]
 )
-const cacheSections = computed<DetailSection[]>(() => [
-  { fields: props.snapshot.cacheFields as unknown as DetailField[] }
-])
+/** The cache directory path field, rendered as a readonly path row (same UI as
+ *  the shared input/output dirs) instead of a generic textbox. */
+const cacheDirField = computed<DetailField | undefined>(() => {
+  const fields = props.snapshot.cacheFields as unknown as DetailField[]
+  return fields.find((f) => f.id === 'cacheDir') ?? fields[0]
+})
+
+function fieldPath(field: DetailField | undefined): string {
+  return typeof field?.value === 'string' ? field.value : ''
+}
+
+async function handleBrowseCacheDir(): Promise<void> {
+  const field = cacheDirField.value
+  if (!field) return
+  const picked = await bridge?.globalSettingsBrowseFolder(fieldPath(field) || undefined)
+  if (!picked || picked === field.value) return
+  await bridge?.globalSettingsUpdateField(field.id, picked)
+}
+
+function handleOpenCacheDir(): void {
+  const p = fieldPath(cacheDirField.value)
+  if (p) bridge?.globalSettingsOpenPath(p)
+}
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
 ])
-const installLocationSections = computed<DetailSection[]>(() => [
-  { fields: props.snapshot.installLocationFields as unknown as DetailField[] }
-])
+
+/** The default install-location path field, rendered as a readonly path row
+ *  (same UI as the cache + shared input/output dirs) instead of a textbox. */
+const installDirField = computed<DetailField | undefined>(() => {
+  const fields = props.snapshot.installLocationFields as unknown as DetailField[]
+  return fields.find((f) => f.id === 'installDir') ?? fields[0]
+})
+
+async function handleBrowseInstallDir(): Promise<void> {
+  const field = installDirField.value
+  if (!field) return
+  const picked = await bridge?.globalSettingsBrowseFolder(fieldPath(field) || undefined)
+  if (!picked || picked === field.value) return
+  await bridge?.globalSettingsUpdateField(field.id, picked)
+}
+
+function handleOpenInstallDir(): void {
+  const p = fieldPath(installDirField.value)
+  if (p) bridge?.globalSettingsOpenPath(p)
+}
 const appUpdateState = computed<AppUpdateState>(
   () => props.snapshot.appUpdate.state as unknown as AppUpdateState
 )
@@ -232,7 +274,11 @@ onMounted(() => {
         :aria-labelledby="`gs-tab-${activeTab}`"
       >
         <template v-if="activeTab === 'general'">
-          <GlobalSettingsMicroSection :title="t('settings.preferences', 'Preferences')">
+          <!-- Locale picker first, no microsection header — it's a single
+               control and the lone "Language" label on it is enough. -->
+          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" />
+
+          <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
             <SettingsSectionList :sections="generalSections" @update-field="handleUpdateField" />
           </GlobalSettingsMicroSection>
 
@@ -275,9 +321,12 @@ onMounted(() => {
             :title="t('settings.installLocation', 'Default Install Location')"
             :tooltip="t('tooltips.installDir')"
           >
-            <SettingsSectionList
-              :sections="installLocationSections"
-              @update-field="handleUpdateField"
+            <StorageDirRow
+              v-if="installDirField"
+              :label="installDirField.label"
+              :path="fieldPath(installDirField)"
+              @open="handleOpenInstallDir"
+              @browse="handleBrowseInstallDir"
             />
           </GlobalSettingsMicroSection>
 
@@ -286,7 +335,13 @@ onMounted(() => {
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.cache', 'Cache')">
-            <SettingsSectionList :sections="cacheSections" @update-field="handleUpdateField" />
+            <StorageDirRow
+              v-if="cacheDirField"
+              :label="cacheDirField.label || t('settings.cacheDir', 'Cache Directory')"
+              :path="fieldPath(cacheDirField)"
+              @open="handleOpenCacheDir"
+              @browse="handleBrowseCacheDir"
+            />
           </GlobalSettingsMicroSection>
         </template>
       </section>
@@ -308,7 +363,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 6px 12px;
   border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
   flex: 0 0 auto;
 }
@@ -358,9 +413,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 0 0 196px;
-  width: 196px;
-  padding: 12px 8px;
+  flex: 0 0 160px;
+  width: 160px;
+  padding: 6px 4px;
   background: var(--neutral-800);
   border-right: 1px solid var(--chooser-surface-border);
   overflow-y: auto;
@@ -405,10 +460,29 @@ onMounted(() => {
   flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 10px;
+}
+
+/* Compress the SettingsSectionList stack inside the Global Settings
+ * panel. The component's scoped defaults (gap: 32px between sections,
+ * 16px within, 44px min-height per boolean row) are tuned for the
+ * full-width install Settings surface; the dense popup needs less air.
+ * Targeting via :deep so we don't have to fork the component. */
+.gs-pane :deep(.settings-v2-sections) {
+  gap: 8px;
+}
+.gs-pane :deep(.settings-v2-section) {
+  gap: 4px;
+}
+.gs-pane :deep(.settings-v2-boolean-row) {
+  min-height: 28px;
+  padding: 0;
+}
+.gs-pane :deep(.settings-v2-field) {
+  gap: 4px;
 }
 
 .global-settings :deep(.ui-input),

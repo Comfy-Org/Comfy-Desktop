@@ -6,6 +6,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { en } from '../lib/i18nMessages.ts'
 import type { SnapshotListData } from '../types/ipc'
 
+// The interactive console pane drives a real xterm terminal (needs a canvas);
+// stub it so the picker's detail pane renders without a terminal host.
+vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
+  default: {
+    name: 'ConsoleTerminalPane',
+    props: ['installationId'],
+    template: '<div data-testid="console-terminal-pane-stub" />',
+  },
+}))
+
 const emptySnapshotListPayload: SnapshotListData = {
   snapshots: [],
   copyEvents: [],
@@ -105,6 +115,8 @@ function installMockBridge(): BridgeState {
       },
     ),
     pickerSettingsGetLocaleMessages: vi.fn(async () => ({})),
+    pickerSettingsGetLocale: vi.fn(async () => 'en'),
+    pickerSettingsOnLocaleChanged: vi.fn(() => () => {}),
   }
     ; (window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
@@ -191,6 +203,34 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         .findAll('.picker-row-name')
         .map((n) => n.text())
       expect(namesInOrder).toEqual(['New', 'Old', 'Never'])
+    })
+
+    // Regression: cloud rows are no longer pinned ahead of more-recent
+    // installs — they sort by their own lastLaunchedAt like everyone else.
+    it('places a cloud row below a more-recent local row (no cloud pinning)', async () => {
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({
+            id: 'old-cloud',
+            name: 'OldCloud',
+            sourceCategory: 'cloud',
+            sourceLabel: 'Cloud',
+            lastLaunchedAt: 100,
+          }),
+          makeInstall({
+            id: 'recent-local',
+            name: 'RecentLocal',
+            sourceCategory: 'local',
+            lastLaunchedAt: 1_000,
+          }),
+        ],
+        activeInstallationId: null,
+        runningInstallationIds: [],
+      })
+      const namesInOrder = wrapper
+        .findAll('.picker-row-name')
+        .map((n) => n.text())
+      expect(namesInOrder).toEqual(['RecentLocal', 'OldCloud'])
     })
 
     it('marks running rows with the is-running class', async () => {
@@ -387,19 +427,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
     })
-
-    it('pulls main\'s locale catalog on mount', async () => {
-      await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
-        activeInstallationId: 'a',
-        runningInstallationIds: [],
-      })
-      await flushPromises()
-      const bridgeRef = (window as unknown as {
-        __comfyTitlePopup: { pickerSettingsGetLocaleMessages: ReturnType<typeof vi.fn> }
-      }).__comfyTitlePopup
-      expect(bridgeRef.pickerSettingsGetLocaleMessages).toHaveBeenCalled()
-    })
+    // Locale loading moved to the popup root (TitlePopupApp) so every kind
+    // tracks main's language live — see TitlePopupApp.test.ts.
   })
 
   describe('primary action dispatch', () => {

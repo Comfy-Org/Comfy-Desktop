@@ -129,12 +129,21 @@ async function loadReleaseOptions(): Promise<void> {
     if (gen !== optionsGeneration) return
     detectedGpu.value = gpu
 
-    const options = await window.api.getFieldOptions('standalone', 'release', {})
+    // `includeLatestStable: true` is the gate that opens the standalone source's
+    // release list (see `standalone/index.ts:328`). Without it the source returns
+    // an empty array and the Create Installation button stays disabled with no
+    // visible reason. Mirrors the InstallWizardModal / QuickInstallModal calls
+    // — the snapshot-import path was the only place that forgot to pass it.
+    const options = await window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })
     if (gen !== optionsGeneration) return
     releaseOptions.value = options
 
-    const snapshotTag = preview.value?.newestSnapshot.comfyui.releaseTag
-    const match = snapshotTag ? options.find((o) => o.value === snapshotTag) : null
+    // The release dropdown only offers the 'stable'/'latest' channels, so
+    // match on the snapshot's update channel (a per-version releaseTag could
+    // never equal a channel id). The created install is frozen regardless;
+    // this only preselects the channel the snapshot was tracking.
+    const snapshotChannel = preview.value?.newestSnapshot.updateChannel
+    const match = snapshotChannel ? options.find((o) => o.value === snapshotChannel) : null
     selectedRelease.value = match || options[0] || null
   } finally {
     if (gen === optionsGeneration) releaseLoading.value = false
@@ -301,10 +310,11 @@ watch(isOpen, async (open) => {
     document.addEventListener('keydown', onKeydown)
     returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
     await nextTick()
-    const target = cardRef.value?.querySelector<HTMLElement>(
-      'input, button, select, [tabindex]:not([tabindex="-1"])'
-    )
-    target?.focus()
+    // Prefer a real field (user types right away); otherwise focus the dialog
+    // container itself — never a button — so opening doesn't paint a focus-
+    // visible ring. Focus stays trapped for keyboard/AT either way.
+    const field = cardRef.value?.querySelector<HTMLElement>('input, select, textarea')
+    ;(field ?? cardRef.value)?.focus()
   } else {
     document.removeEventListener('keydown', onKeydown)
     returnFocusTo?.focus()
@@ -340,6 +350,7 @@ defineExpose({ open })
         role="dialog"
         aria-modal="true"
         :aria-label="$t('loadSnapshot.grandTitle')"
+        tabindex="-1"
         @dragover="!preview && handleDragOver($event)"
         @dragleave="!preview && handleDragLeave($event)"
         @drop="!preview && handleDrop($event)"

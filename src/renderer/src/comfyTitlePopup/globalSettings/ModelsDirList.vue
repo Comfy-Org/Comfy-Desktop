@@ -1,12 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Folder, FolderOpen, MoreHorizontal, Plus } from 'lucide-vue-next'
+import { ChevronRight, FileText, Folder, FolderLock, FolderOpen, MoreHorizontal, Plus } from 'lucide-vue-next'
 import InfoTooltip from '../../components/InfoTooltip.vue'
+import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
 interface ModelsDir {
   path: string
   isPrimary: boolean
+  /** Locked rows (e.g. the install's own models dir) can't be removed or
+   *  browsed/replaced; they show a lock icon. */
+  locked?: boolean
+  /** Set false to also forbid promoting the row to primary (e.g. the
+   *  install's own models dir while shared models is on — the primary is a
+   *  global shared dir there). Defaults to true. */
+  promotable?: boolean
+  /** Read-only row for the install's `extra_model_paths.yaml` file: opens a
+   *  detail modal (via `details`), no browse/promote/remove. */
+  kind?: 'extra'
+  /** Globally-shared dir → shows the shared badge on its icon. */
+  shared?: boolean
 }
 
 interface Props {
@@ -16,9 +29,12 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  open: [path: string]
+  change: [index: number]
   remove: [index: number]
   'make-primary': [index: number]
+  open: [index: number]
+  /** Open the detail modal for a read-only `kind: 'extra'` row. */
+  details: [index: number]
   add: []
 }>()
 
@@ -37,9 +53,16 @@ function setMenuRef(index: number, el: Element | null): void {
   else menuRefs.delete(index)
 }
 
+function canPromote(dir: ModelsDir): boolean {
+  return dir.kind !== 'extra' && !dir.isPrimary && dir.promotable !== false
+}
+
+function canRemove(dir: ModelsDir): boolean {
+  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked
+}
+
 function hasMenuActions(dir: ModelsDir): boolean {
-  // Both "Make primary" and "Remove" are available on any non-primary row.
-  return !dir.isPrimary
+  return canPromote(dir) || canRemove(dir)
 }
 
 async function toggleMenu(index: number): Promise<void> {
@@ -76,9 +99,9 @@ function handleMenuArrow(index: number, direction: 1 | -1, event: KeyboardEvent)
   items[next]?.focus()
 }
 
-function handleOpen(path: string): void {
+function handleChange(index: number): void {
   closeMenu()
-  emit('open', path)
+  emit('change', index)
 }
 
 function handleRemove(index: number): void {
@@ -116,7 +139,11 @@ const rows = computed(() =>
   props.dirs.map((dir, index) => ({
     ...dir,
     index,
-    showMenu: hasMenuActions(dir)
+    locked: dir.locked === true,
+    isExtra: dir.kind === 'extra',
+    showMenu: hasMenuActions(dir),
+    canPromote: canPromote(dir),
+    canRemove: canRemove(dir)
   }))
 )
 </script>
@@ -129,24 +156,45 @@ const rows = computed(() =>
       class="models-dir-row"
       :class="{ 'is-just-promoted': row.path === justPromotedPath }"
     >
-      <Folder
-        :size="14"
-        class="models-dir-icon"
+      <StorageItemIcon
+        :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
+        :shared="row.shared"
+        :title="row.locked ? t('models.lockedDir', 'This directory is always used and cannot be removed.') : undefined"
       />
       <div class="models-dir-main">
-        <span class="models-dir-name" :title="row.path">{{ row.path }}</span>
+        <button
+          type="button"
+          class="models-dir-name"
+          :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details') : t('models.openDir', 'Open folder')"
+          @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
+        >{{ row.path }}</button>
       </div>
       <span v-if="row.isPrimary" class="models-dir-tag tag-primary">
-        {{ t('models.primary', 'Primary') }}
+        {{ t('models.primary', 'Downloads') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
+      </span>
+      <span v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
+        {{ row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance') }}
+        <InfoTooltip :text="row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')" />
       </span>
       <div class="models-dir-actions">
         <button
+          v-if="row.isExtra"
           type="button"
           class="models-dir-action"
-          :aria-label="t('settings.open', 'Open')"
-          :title="t('settings.open', 'Open')"
-          @click.stop="handleOpen(row.path)"
+          :aria-label="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
+          :title="t('comfyUISettings.viewCustomPathDetails', 'View custom path details')"
+          @click.stop="emit('details', row.index)"
+        >
+          <ChevronRight :size="14" aria-hidden="true" />
+        </button>
+        <button
+          v-if="!row.locked && !row.isExtra"
+          type="button"
+          class="models-dir-action"
+          :aria-label="t('common.browse', 'Browse')"
+          :title="t('common.browse', 'Browse')"
+          @click.stop="handleChange(row.index)"
         >
           <FolderOpen :size="14" aria-hidden="true" />
         </button>
@@ -174,15 +222,15 @@ const rows = computed(() =>
             @keydown.up.stop.prevent="handleMenuArrow(row.index, -1, $event)"
           >
             <button
-              v-if="!row.isPrimary"
+              v-if="row.canPromote"
               type="button"
               role="menuitem"
               @click="handleMakePrimary(row.index)"
             >
-              {{ t('models.makePrimary', 'Make primary') }}
+              {{ t('models.makePrimary', 'Use for Model Downloads') }}
             </button>
             <button
-              v-if="!row.isPrimary"
+              v-if="row.canRemove"
               type="button"
               role="menuitem"
               class="danger"
@@ -244,11 +292,6 @@ const rows = computed(() =>
   }
 }
 
-.models-dir-icon {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
 .models-dir-main {
   display: flex;
   align-items: center;
@@ -265,6 +308,19 @@ const rows = computed(() =>
   white-space: nowrap;
   min-width: 0;
   max-width: 100%;
+  /* Reset button chrome — this is a clickable path that opens the folder. */
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.models-dir-name:hover,
+.models-dir-name:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
 }
 
 .models-dir-tag {
@@ -285,6 +341,13 @@ const rows = computed(() =>
   color: var(--accent);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* Marks the install's own models dir: always used, never shared. */
+.models-dir-tag.tag-local {
+  color: var(--text-muted);
+  border: 1px solid var(--chooser-surface-border);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .models-dir-actions {

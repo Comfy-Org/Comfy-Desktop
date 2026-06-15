@@ -9,12 +9,19 @@ import type { ChildProcess } from 'child_process'
 import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
+import type { ExitCallbackInfo } from './lib/ipc'
+import { closeAllPopouts } from './lib/popoutWindows'
+import { disposeAllTerminals } from './lib/terminal'
 import * as updater from './lib/updater'
 import * as settings from './settings'
 import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
+import {
+  flushLastSessionSync,
+  recordDashboardSurface
+} from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
@@ -26,7 +33,13 @@ import {
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
 import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
-import { isQuitInProgress, setQuitReason } from './lib/quit-state'
+import {
+  clearQuitReason,
+  isQuitInProgress,
+  setQuitReason,
+  setSessionEnding
+} from './lib/quit-state'
+import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
   cleanupTempDownloads,
@@ -58,11 +71,13 @@ import {
 } from './lib/ipc/shared'
 import { enrichInstallationsForRenderer } from './lib/ipc/registerInstallationHandlers'
 import { getSnapshotListData } from './lib/snapshots'
-import { update as updateInstallation } from './installations'
+import { update as updateInstallation, resolveAutoLaunchInstall } from './installations'
+import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
 import {
   clearPendingAlias,
+  consumeFirstLaunch,
   getDeviceId,
   getIdClass,
   initDeviceId,
@@ -80,6 +95,7 @@ import {
   dropAttachClaimsForWindow,
   findEntryByTitleBarSender,
   findEntryByHostWindow,
+  forceRevealHostWindow,
   getEntryByInstallationId,
   isChooserHost,
   isInstallHost,
@@ -193,8 +209,115 @@ function quitApp(): void {
   app.quit()
 }
 
-function onComfyExited({ installationId }: { installationId?: string } = {}): void {
+/** Restore windows are opened hidden and revealed only once their launch
+ *  takeover is up (or a fallback fires); this guards against a renderer that
+ *  never reaches the restore handler, so the window can't stay invisible. */
+const STARTUP_RESTORE_REVEAL_BACKSTOP_MS = 10_000
+const pendingStartupRestoreRevealTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+/** A successful startup update install quits the app within a tick. If the quit
+ *  hasn't happened by now the install didn't proceed, so we recover into the
+ *  normal surface rather than leaving the user on the "Updating…" splash. */
+const STARTUP_INSTALL_QUIT_BACKSTOP_MS = 4_000
+
+function clearStartupRestoreRevealTimer(windowKey: number): void {
+  const timer = pendingStartupRestoreRevealTimers.get(windowKey)
+  if (timer) clearTimeout(timer)
+  pendingStartupRestoreRevealTimers.delete(windowKey)
+}
+
+/** Give up on the in-place restore and just show the dashboard: the surface the
+ *  user lands on is now the dashboard, so persist that and reveal the window. */
+function revealStartupRestoreDashboard(windowKey: number): void {
+  clearStartupRestoreRevealTimer(windowKey)
+  recordDashboardSurface()
+  forceRevealHostWindow(windowKey)
+}
+
+/**
+ * Boot surface. Normally just opens the chooser host (dashboard). When the
+ * reopen setting is on and the user last left an instance window, instead open
+ * the chooser host HIDDEN and restore that instance on top of it via the
+ * dashboard's own launch path (the `picker-pick-install` deep link →
+ * `performChooserLaunch`), revealing the window only once its launch takeover is
+ * showing — so the dashboard never flashes. Any failure (install gone, launch
+ * error, console/external mode, slow/absent renderer) falls back to revealing
+ * the dashboard.
+ */
+async function openStartupSurface(): Promise<void> {
+  // Single auto-launch path: the user-configured `autoLaunchOnStartup`
+  // dropdown is the only opt-in to "boot straight into an instance". When
+  // unset (`'none'` / first-use not yet completed) we just open the
+  // dashboard like today.
+  const firstUseDone = settings.get('firstUseCompleted') === true
+  const autoLaunchValue = firstUseDone
+    ? (settings.get('autoLaunchOnStartup') as string | undefined)
+    : undefined
+  const explicitInst = autoLaunchValue && autoLaunchValue !== AUTO_LAUNCH_NONE
+    ? await resolveAutoLaunchInstall(autoLaunchValue)
+    : null
+
+  // Restore opens hidden (revealed on takeover-ready / fallback); the plain
+  // dashboard boot reveals on first paint as before.
+  const chooserWindow = explicitInst
+    ? openChooserHostWindow('comfy', { deferColdStartReveal: true })
+    : openOrFocusChooserHostWindow()
+
+  if (!explicitInst) return
+  const installationId = explicitInst.id
+
+  void (async () => {
+    const entry = findEntryByHostWindow(chooserWindow)
+    if (!entry || entry.window.isDestroyed() || !isChooserHost(entry)) {
+      // Lost the entry right after creating it (shouldn't happen) — reveal the
+      // raw window so a hidden restore window can't get stranded invisible.
+      if (!chooserWindow.isDestroyed()) chooserWindow.show()
+      return
+    }
+
+    // Backstop: if the renderer never resolves the reveal (failed load, hung
+    // guard), show the dashboard rather than leaving the window invisible.
+    const timer = setTimeout(
+      () => revealStartupRestoreDashboard(entry.windowKey),
+      STARTUP_RESTORE_REVEAL_BACKSTOP_MS,
+    )
+    pendingStartupRestoreRevealTimers.set(entry.windowKey, timer)
+
+    const inst = await getInstallation(installationId)
+    if (!inst) {
+      // Raced with a delete between `resolveAutoLaunchInstall` and this IPC
+      // dispatch — silently fall back to the dashboard.
+      revealStartupRestoreDashboard(entry.windowKey)
+      return
+    }
+    const panelView =
+      entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+    if (panelView.webContents.isDestroyed()) {
+      revealStartupRestoreDashboard(entry.windowKey)
+      return
+    }
+    // `sendToPanelDeferred` holds the IPC until the panel renderer's
+    // `did-finish-load`; the deep-link handler then awaits its own bootstrap
+    // before launching, so this is safe to fire immediately after open. The
+    // `startupRestore` flag tells the renderer to (a) take the dashboard-
+    // fallback path on a missing launch action instead of opening new-install,
+    // and (b) resolve the reveal once the launch takeover is up.
+    sendToPanelDeferred(panelView, 'panel-trigger-overlay', {
+      kind: 'picker-pick-install',
+      installationId,
+      startupRestore: true
+    })
+  })()
+}
+
+function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
   if (!installationId) return
+  // A crashed instance is no longer a healthy restore target: drop it back to
+  // the dashboard so the next boot doesn't relaunch straight into the crash.
+  // `recordDashboardSurface` only overwrites when this install is still the
+  // recorded surface's intent (it's a simple last-writer), which is correct
+  // here — the crashed window is the one the user was on.
+  if (crashed) recordDashboardSurface()
   // The window stays alive — exit (clean or crash) just swaps the body to the
   // lifecycle panel so the user can re-launch, look at logs, or close the
   // window themselves. Window destruction only happens via explicit close
@@ -593,6 +716,31 @@ ipcMain.handle('app:relaunch', () => {
 ipcMain.handle('reset-zoom', () => {
   // no-op
 })
+
+/**
+ * Startup-restore reveal handshake. The boot flow opens the restore window
+ * hidden and asks the panel renderer to launch the remembered instance; the
+ * renderer fires this once it knows the outcome:
+ *   - `'takeover-ready'`     → the launch takeover is up, reveal the window so
+ *     the user lands on the launching surface (no dashboard flash).
+ *   - `'dashboard-fallback'` → the launch didn't produce a takeover (already
+ *     running, missing action, console/external mode, error), so reveal the
+ *     dashboard instead.
+ * Resolved by sender so we reveal the exact hidden host that asked.
+ */
+ipcMain.on(
+  'comfy-window:startup-restore-reveal',
+  (event, payload: { result?: unknown }) => {
+    const result = payload?.result === 'dashboard-fallback' ? 'dashboard-fallback' : 'takeover-ready'
+    for (const [windowKey, entry] of comfyWindows) {
+      if (entry.panelView?.webContents !== event.sender) continue
+      clearStartupRestoreRevealTimer(windowKey)
+      if (result === 'dashboard-fallback') recordDashboardSurface()
+      forceRevealHostWindow(windowKey)
+      return
+    }
+  }
+)
 
 /**
  * First-use takeover step plumbing.
@@ -1091,6 +1239,33 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
   }
 
+  // Record OS session-end (Windows shutdown / restart / logoff, also macOS) so
+  // the update install paths can bail out — spawning the installer while the OS
+  // is tearing everything down risks it being force-killed mid-write, which is
+  // the corruption mode behind the "reinstall on every shutdown" reports.
+  // `session-end` is a BrowserWindow event, so attach it to every window as it
+  // is created.
+  app.on('browser-window-created', (_event, window) => {
+    // `query-session-end` (WM_QUERYENDSESSION) fires earlier than `session-end`,
+    // but the shutdown it announces can still be canceled (by us or another app)
+    // — so only suppress install-on-quit here (reversible / re-armed next
+    // launch). Flipping it off now widens the margin to keep the quit handler
+    // electron-updater registered after a download from spawning the installer
+    // the OS is about to kill mid-write.
+    window.on('query-session-end', () => {
+      updater.suppressInstallOnQuit()
+    })
+    // `session-end` (WM_ENDSESSION) means the session ending is finalized and
+    // can't be prevented — only now is it safe to latch `setSessionEnding()`,
+    // which permanently bails the install paths. Latching on the cancellable
+    // query event would brick installs (incl. the "Restart to update" pill) for
+    // the rest of the session if the shutdown were canceled.
+    window.on('session-end', () => {
+      setSessionEnding()
+      updater.suppressInstallOnQuit()
+    })
+  })
+
   app.whenReady().then(async () => {
     // Test-only hooks for the E2E suite. Registered before any host
     // opens so seeded state (downloads, install-update overrides,
@@ -1144,6 +1319,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         void updater.runCheck('app-menu').catch(() => {})
       }
     })
+
+    // Hide the bar on every window (incl. window.open popups) while keeping
+    // its accelerators live — the app uses a custom title bar throughout.
+    if (process.platform !== 'darwin') {
+      app.on('browser-window-created', (_event, window) => {
+        window.setMenuBarVisibility(false)
+        window.autoHideMenuBar = true
+      })
+    }
 
     // Bring up main-process telemetry as early as possible so install/migrate
     // sub-step events can fire even before the renderer mounts.
@@ -1234,6 +1418,23 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)
+
+    // Desktop-side anchor of the website → download → first-launch acquisition
+    // funnel. Fires exactly once per installation, ever (guard file alongside
+    // device-id.txt). app_version / app_channel / platform / arch ride in as
+    // default event properties; id_class + locale are added here.
+    //
+    // `captureFirstLaunch` (not plain `capture`) because this fires on a fresh
+    // install, when consent is still `'undecided'` — a plain capture would be
+    // dropped on the consent gate while the once-ever guard stays burned,
+    // losing the event forever. The deferred path ships it on the first
+    // `undecided → granted` transition and never on a decline.
+    if (consumeFirstLaunch()) {
+      mainTelemetry.captureFirstLaunch({
+        id_class: getIdClass(),
+        locale
+      })
+    }
     registerTitleTooltipIpc({
       findParentByTitleBarSender: (wc) => findEntryByTitleBarSender(wc)?.entry.window ?? null
     })
@@ -1830,11 +2031,51 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // and the tray-aware `window-all-closed` gating will all come back
     // when the docked-app flow is reinstated. Until then, see git
     // history for the previous tray construction code.
-    // The install-less chooser host is the primary surface. Each
-    // install gets its own ComfyUI window via openComfyWindow()
-    // when launched, and the chooser host is the entry-point for
-    // picking / creating installs.
-    openOrFocusChooserHostWindow()
+    // Apply a previously-downloaded Desktop update at startup rather than on
+    // quit (installing on quit is what a Windows shutdown interrupts and
+    // corrupts). When an update is staged we show a brief "Updating…" splash
+    // while the bounded check runs; if it commits to installing, the app quits
+    // here and the installer relaunches it — so we skip opening the normal UI.
+    const updateSplash = updater.hasPendingStartupUpdate() ? showUpdateInstallSplash() : undefined
+    // Timestamp the splash so the install can keep it up for a readable minimum
+    // (the bounded check usually resolves instantly, which would otherwise flash
+    // the splash by before the app quits to install).
+    const updateSplashShownAt = updateSplash ? Date.now() : undefined
+    // Track whether the install actually started quitting the app. Quit intent
+    // (`quitReason`) alone isn't proof — `restartAndInstall` can return without
+    // quitting if the staged installer is gone — so key the backstop off a real
+    // `before-quit`.
+    let updateInstallQuitStarted = false
+    const onUpdateInstallQuit = (): void => {
+      updateInstallQuitStarted = true
+    }
+    app.once('before-quit', onUpdateInstallQuit)
+    const installingUpdate = await updater.applyPendingUpdateOnStartup(updateSplashShownAt)
+    if (installingUpdate) {
+      // Safety net: a successful install quits the app within a tick (firing
+      // before-quit). If that didn't happen the install didn't proceed — recover
+      // into the normal surface instead of stranding the user on the splash, and
+      // clear the now-stale 'update-install' quit intent so the next real quit
+      // still runs its cleanup.
+      setTimeout(() => {
+        if (updateInstallQuitStarted) return
+        app.removeListener('before-quit', onUpdateInstallQuit)
+        clearQuitReason()
+        if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
+        mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
+        void openStartupSurface()
+      }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
+    } else {
+      app.removeListener('before-quit', onUpdateInstallQuit)
+      if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
+      // The install-less chooser host is the primary surface. Each
+      // install gets its own ComfyUI window via openComfyWindow()
+      // when launched, and the chooser host is the entry-point for
+      // picking / creating installs. When the user last left an instance
+      // window (and the reopen setting is on), restore that instance
+      // in-place on top of the freshly-opened chooser host.
+      void openStartupSurface()
+    }
 
     // Single subscription rebroadcasts every install-list mutation
     // (add/remove/update/markLaunched/reorder/...) to all renderers as
@@ -1902,6 +2143,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (!entry.window.isDestroyed()) entry.window.destroy()
       }
       comfyWindows.clear()
+      // Pop-out terminal/logs windows live outside `comfyWindows`; close them
+      // here too and kill their shared shells so no window or PTY child lingers.
+      closeAllPopouts()
+      disposeAllTerminals()
       if (tray) {
         tray.destroy()
         tray = null
@@ -1911,6 +2156,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       _stopPeriodicReleaseChecks()
       _stopPeriodicReleaseChecks = null
     }
+    // Persist any pending last-active-surface write so the next boot can
+    // restore it. Synchronous: the app exits without awaiting promises, so an
+    // async write would be torn down mid-flight and lose a just-made change.
+    flushLastSessionSync()
     cleanupTempDownloads()
   })
 

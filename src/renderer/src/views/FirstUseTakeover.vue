@@ -233,10 +233,12 @@ const cloudDescriptionKey = computed(() => {
   if (cloudCapacity.isDegraded()) return 'cloud.capacityDegradedHint'
   return 'firstUse.cloudDesc'
 })
-/** Express-install opt-out modifier on the start screen. Pre-ticked.
- *  Functional wiring (skipping optional setup steps) lands separately;
- *  for now the value is captured for telemetry only. */
-const expressInstall = ref(true)
+/** Express-install opt-in modifier on the start screen. Defaults OFF
+ *  so users land on Configure (install path, GPU, options) before any
+ *  files are written — too many people zoomed past the default-on
+ *  modifier and ended up with an unwanted C:\ install. Ticking it
+ *  restores the express skip-Configure path. */
+const expressInstall = ref(false)
 /** Peer modifier alongside Express Install, only rendered when an
  *  auto-tracked legacy install was detected on the machine. When
  *  checked, Continue routes straight to chain-migrate so the existing
@@ -455,7 +457,7 @@ async function routePostStart(): Promise<void> {
     // does on chain-local: with both ticked, the host runs the
     // migration straight through (preview + auto-pick + run) without
     // surfacing the confirm step.
-    emitTelemetryAction('desktop2.first_use.local_branch_chosen', { choice: 'migrate' })
+    emitTelemetryAction('comfy.desktop.first_use.local_branch_chosen', { choice: 'migrate' })
     emitCompleted('local-migrate')
     emit('chain-migrate', { express: expressInstall.value })
   } else if (hasLegacyDesktop.value && !expressInstall.value) {
@@ -590,7 +592,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   if (forkExperimentVariant.value) {
     applyForkExperimentDefault(forkExperimentVariant.value)
   }
-  expressInstall.value = true
+  expressInstall.value = false
   migrateExisting.value = true
   // `onContinue` keeps `isContinuing` true past `routePostStart()`
   // because the chain handlers normally unmount this takeover within
@@ -860,10 +862,12 @@ defineExpose({ open, resetContinue })
           </div>
           <button
             class="brand-primary start-continue"
+            :class="{ 'start-continue--locked': !acceptedTos }"
             type="button"
             data-testid="first-use-continue"
             :disabled="isContinuing || pickedChoice === null"
             :aria-busy="isContinuing"
+            :aria-disabled="!acceptedTos"
             @click="onContinue"
           >
             <Loader2
@@ -1283,6 +1287,15 @@ defineExpose({ open, resetContinue })
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+.start-continue--locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.start-continue--locked:hover {
+  background: var(--comfy-yellow);
+  border-color: var(--comfy-yellow);
 }
 .start-continue__spinner {
   animation: start-continue-spin 750ms linear infinite;

@@ -3,12 +3,62 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
+import * as installations from '../installations'
+import { findInstallationIdByComfySender } from '../host/registry'
+import {
+  resolveInstallModelSearchPaths,
+  mapLegacyFolderType,
+  isSamePath,
+  TEMP_DIR_NAME,
+  type InstallModelSearch,
+} from './models'
 import { _broadcastToRenderer } from './ipc/shared'
 
 export const ALLOWED_EXTENSIONS = ['.safetensors', '.sft', '.ckpt', '.pth', '.pt']
 
 /** Asset (output) downloads whose final file is itself an image we can preview. */
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
+
+/**
+ * Build "Save as type" filters for the generic Save dialog from the suggested
+ * filename. Electron's `showSaveDialog`/`showSaveDialogSync` does not infer
+ * filters from the default filename — on Windows the dropdown collapses to
+ * "All Files (*.*)" if you omit `filters`, which is the symptom field-reported
+ * as "Can't save image from Preview Image node" (#989). Pick a primary filter
+ * matching the file's actual extension so the dialog opens on the right
+ * format, with "All Files" as a fallback escape hatch.
+ */
+export function buildSaveDialogFilters(suggestedName: string): Electron.FileFilter[] {
+  const ext = path.extname(suggestedName).toLowerCase().replace(/^\./, '')
+  const ALL_FILES: Electron.FileFilter = { name: 'All Files', extensions: ['*'] }
+  if (!ext) return [ALL_FILES]
+
+  // Group images / video / audio by family so the user can switch between
+  // related extensions inside the same Save dialog instead of being locked
+  // to the single one we infer. Comfy outputs png/webp/jpg images, mp4/webm
+  // video, and wav/mp3/flac/ogg audio depending on the node graph.
+  const FAMILIES: Record<string, { name: string; extensions: string[] }> = {
+    png:  { name: 'PNG Image',  extensions: ['png'] },
+    jpg:  { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+    jpeg: { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+    webp: { name: 'WebP Image', extensions: ['webp'] },
+    gif:  { name: 'GIF Image',  extensions: ['gif'] },
+    bmp:  { name: 'Bitmap Image', extensions: ['bmp'] },
+    mp4:  { name: 'MP4 Video',  extensions: ['mp4'] },
+    webm: { name: 'WebM Video', extensions: ['webm'] },
+    mov:  { name: 'QuickTime Video', extensions: ['mov'] },
+    wav:  { name: 'WAV Audio',  extensions: ['wav'] },
+    mp3:  { name: 'MP3 Audio',  extensions: ['mp3'] },
+    flac: { name: 'FLAC Audio', extensions: ['flac'] },
+    ogg:  { name: 'OGG Audio',  extensions: ['ogg'] },
+  }
+
+  const primary = FAMILIES[ext]
+  if (primary) return [primary, ALL_FILES]
+  // Unknown extension — keep it as a literal filter so the dialog still shows
+  // the user what file type they're saving instead of collapsing to *.
+  return [{ name: `${ext.toUpperCase()} File`, extensions: [ext] }, ALL_FILES]
+}
 
 export interface DownloadProgress {
   url: string
@@ -62,6 +112,9 @@ interface RetryParams {
   directory?: string
   outputDir?: string
   authToken?: string
+  /** Install that initiated the download, so a retry resolves the same
+   *  destination even after the originating comfy view is gone. */
+  installationId?: string | null
 }
 const retryParamsByUrl = new Map<string, RetryParams>()
 
@@ -123,10 +176,97 @@ function getModelsBaseDir(): string {
   return modelsDirs?.[0] || settings.defaults.modelsDirs[0]!
 }
 
-const TEMP_DIR_NAME = '.desktop2-downloads'
+/** Global shared model dirs; the fallback search set when a download can't be
+ *  attributed to a specific install. */
+function getSharedModelsDirs(): string[] {
+  const modelsDirs = settings.get('modelsDirs') as string[] | undefined
+  return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
+}
+
+/** installationId backing a download's originating comfy webview, or null when
+ *  it can't be attributed (destroyed view / non-comfy sender). */
+function resolveSenderInstallationId(senderContents?: Electron.WebContents): string | null {
+  if (!senderContents || senderContents.isDestroyed()) return null
+  return findInstallationIdByComfySender(senderContents)
+}
+
+/** Resolve an install's model search context (shared vs per-install dirs + its
+ *  `extra_model_paths.yaml`). Null when unattributable; callers then fall back
+ *  to the global shared dir. */
+async function resolveDownloadContextById(
+  installationId: string | null,
+): Promise<InstallModelSearch | null> {
+  if (!installationId) return null
+  try {
+    const inst = await installations.get(installationId)
+    if (!inst || !inst.installPath) return null
+    return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+  } catch {
+    return null
+  }
+}
+
+/** Folder types whose ComfyUI defaults register multiple dirs, so a download
+ *  must also check the alternates. Mirrors `folder_paths.py`. */
+const ROOT_FOLDER_ALTERNATES: Readonly<Record<string, string[]>> = {
+  text_encoders: ['text_encoders', 'clip'],
+  diffusion_models: ['diffusion_models', 'unet'],
+  controlnet: ['controlnet', 't2i_adapter'],
+}
+
+/** Relative `<type>/<remainder>` directory candidates for a download hint,
+ *  expanded to include a model root's legacy/secondary type dirs. */
+function rootRelDirsForDirectory(directory: string): string[] {
+  const segments = directory.split(/[\\/]+/).filter(Boolean)
+  if (segments.length === 0) return [directory]
+  const rawType = segments[0]!
+  const remainder = segments.slice(1)
+  const heads = ROOT_FOLDER_ALTERNATES[mapLegacyFolderType(rawType)] ?? [rawType]
+  return heads.map((head) => path.join(head, ...remainder))
+}
+
+/** Every place a model file could already exist for an install — so an instant
+ *  "completed" only fires when its ComfyUI would actually find the file:
+ *  destination, every model root, and matching `extra_model_paths.yaml` dirs. */
+export function buildExistenceCandidates(
+  ctx: InstallModelSearch | null,
+  baseDir: string,
+  directory: string,
+  filename: string,
+): string[] {
+  const out = new Set<string>()
+  out.add(path.join(baseDir, directory, filename))
+  if (ctx) {
+    // Each complete root, including legacy/secondary type dirs ComfyUI also
+    // searches (e.g. a `text_encoders` download is satisfied by `<root>/clip`).
+    const relDirs = rootRelDirsForDirectory(directory)
+    for (const root of ctx.modelRoots) {
+      for (const rel of relDirs) {
+        out.add(path.join(root, rel, filename))
+      }
+    }
+    // Arbitrarily-mapped dirs from the install's own extra_model_paths.yaml.
+    const segments = directory.split(/[\\/]+/).filter(Boolean)
+    if (segments.length > 0) {
+      const type = mapLegacyFolderType(segments[0]!)
+      const remainder = segments.slice(1)
+      for (const extra of ctx.extraPaths) {
+        if (extra.type === type) {
+          out.add(path.join(extra.dir, ...remainder, filename))
+        }
+      }
+    }
+  }
+  return [...out]
+}
+
+/** Temp dir on the destination's volume so the final rename is atomic (no EXDEV). */
+function modelTempDirFor(baseDir: string): string {
+  return path.join(baseDir, TEMP_DIR_NAME)
+}
 
 function getTempDir(): string {
-  return path.join(getModelsBaseDir(), TEMP_DIR_NAME)
+  return modelTempDirFor(getModelsBaseDir())
 }
 
 function getAssetTempDir(): string {
@@ -276,6 +416,16 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/** True only for an existing regular file, so the instant-complete shortcut
+ *  doesn't fire on a directory that merely shares the model's name. */
+async function regularFileExists(filePath: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(filePath)).isFile()
+  } catch {
+    return false
+  }
+}
+
 export function parseContentDispositionFilename(header: string | null): string | null {
   if (!header) return null
   // Try filename*= (RFC 5987 encoded)
@@ -323,16 +473,29 @@ export async function startModelDownload(
   rawFilename: string,
   directory: string,
   senderContents?: Electron.WebContents,
+  installationId?: string | null,
 ): Promise<boolean> {
   const filename = stripQueryParams(rawFilename)
-  const baseDir = getModelsBaseDir()
+  // Resolve the initiating install so destination + existence check follow its
+  // model settings. An explicit `installationId` (from retries) wins over the
+  // live sender so a retry still targets the right install after its view is gone.
+  const resolvedInstallId = installationId ?? resolveSenderInstallationId(senderContents)
+  const ctx = await resolveDownloadContextById(resolvedInstallId)
+  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const savePath = path.join(baseDir, directory, filename)
-  const tempDir = getTempDir()
+  const tempDir = modelTempDirFor(baseDir)
   const tempPath = path.join(tempDir, `${Date.now()}-${filename}.tmp`)
 
   // Capture before the validation early-returns so even a synchronous
   // error (bad path / extension) lands a retryable terminal entry.
-  retryParamsByUrl.set(url, { kind: 'model', filename, directory, window: win, senderContents })
+  retryParamsByUrl.set(url, {
+    kind: 'model',
+    filename,
+    directory,
+    window: win,
+    senderContents,
+    installationId: resolvedInstallId,
+  })
 
   const makeProgress = (
     overrides: Partial<DownloadProgress>,
@@ -358,15 +521,23 @@ export async function startModelDownload(
     return false
   }
 
-  if (await fileExists(savePath)) {
-    // File already exists — report completed without starting a download
-    const progress = makeProgress({ progress: 1, status: 'completed', savePath })
-    broadcastProgress(progress)
-    return true
+  // Report completed without downloading only when the file already exists
+  // somewhere the install's ComfyUI actually searches.
+  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+    if (await regularFileExists(candidate)) {
+      const progress = makeProgress({ progress: 1, status: 'completed', savePath: candidate })
+      broadcastProgress(progress)
+      return true
+    }
   }
-
   const existing = pendingDownloads.get(url)
   if (existing) {
+    // Downloads are keyed solely by URL, so one URL can't carry two concurrent
+    // destinations. If another install is already fetching this URL into a
+    // different dir, fail closed rather than complete into the wrong place.
+    if (!isSamePath(path.dirname(existing.savePath), path.dirname(savePath))) {
+      return false
+    }
     if (win !== existing.window) {
       existing.subscriberWindows.add(win)
     }
@@ -650,6 +821,10 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       // General download — browser-like save dialog
       const suggestedName = item.getFilename()
       const downloadsDir = app.getPath('downloads')
+      // Seed the dialog with the directory the user last saved to, matching
+      // browser behavior. Fall back to Downloads if unset or no longer present.
+      const remembered = settings.get('lastSaveDialogDir')
+      const startDir = remembered && fs.existsSync(remembered) ? remembered : downloadsDir
       // `webContents` is null for `session.downloadURL(...)`-initiated downloads
       // (Electron only sets it for page-initiated ones), so fall back to the
       // focused window for the Save dialog parent.
@@ -659,22 +834,24 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       let savePath: string | undefined
       if (win) {
         const filePath = dialog.showSaveDialogSync(win, {
-          defaultPath: path.join(downloadsDir, suggestedName),
+          defaultPath: path.join(startDir, suggestedName),
+          filters: buildSaveDialogFilters(suggestedName),
         })
         if (filePath) {
           savePath = filePath
+          settings.set('lastSaveDialogDir', path.dirname(filePath))
         } else {
           item.cancel()
           return
         }
       } else {
         // setSavePath must be synchronous within will-download
-        let candidate = path.join(downloadsDir, suggestedName)
+        let candidate = path.join(startDir, suggestedName)
         let i = 1
         while (fs.existsSync(candidate)) {
           const ext = path.extname(suggestedName)
           const base = path.basename(suggestedName, ext)
-          candidate = path.join(downloadsDir, `${base} (${i})${ext}`)
+          candidate = path.join(startDir, `${base} (${i})${ext}`)
           i++
         }
         savePath = candidate
@@ -782,7 +959,7 @@ export function retryDownload(url: string): boolean {
     // download simply re-enters `error` and stays retryable.
     void startAssetDownload(win, url, params.filename, params.outputDir!, params.authToken, sender)
   } else {
-    void startModelDownload(win, url, params.filename, params.directory ?? '', sender)
+    void startModelDownload(win, url, params.filename, params.directory ?? '', sender, params.installationId)
   }
   return true
 }

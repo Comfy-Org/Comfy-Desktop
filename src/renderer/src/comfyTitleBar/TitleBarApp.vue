@@ -18,9 +18,11 @@ import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useCentralPillCoachmark } from './useCentralPillCoachmark'
+import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
 const { t, locale } = useI18n()
+const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
 // Inlined to keep the title-bar renderer self-contained — the preload TS
 // file isn't visible to tsconfig.web (only its .d.ts would be). Kept in
@@ -212,6 +214,7 @@ const isInstallLess = ref((bridge?.getInstallationId() ?? '') === '')
 const {
   installLabel,
   sourceCategory,
+  themeBg,
   themeText,
   isFullscreen,
   firstUseMode,
@@ -541,6 +544,10 @@ onMounted(() => {
   // on a narrow boot width.
   evaluateFit()
 
+  syncLocale().catch((err) => {
+    console.error('TitleBar: syncLocale failed', err)
+  })
+
   if (!bridge) return
   unsubPanel = bridge.onPanelChanged((panel) => {
     activePanel.value = panel
@@ -639,6 +646,8 @@ onUnmounted(() => {
     :data-collapse-mode="collapseMode"
     :style="{
       color: themeText ?? undefined,
+      '--titlebar-bg-active': themeBg ?? undefined,
+      '--titlebar-icon': themeText ?? undefined,
       '--title-trailing-width': `${trailingWidthPx}px`
     }"
   >
@@ -900,7 +909,10 @@ onUnmounted(() => {
      reserves 140px on the right for native min/max/close. */
   padding: 0 12px;
   box-sizing: border-box;
-  background: var(--titlebar-bg);
+  /* `--titlebar-bg-active` is set inline from the reported ComfyUI bg while
+     inside an instance; install-less / pre-report hosts fall back to the
+     static brand `--titlebar-bg`. */
+  background: var(--titlebar-bg-active, var(--titlebar-bg));
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   font: 12px/1 var(--font-sans, 'Inter', system-ui, sans-serif);
@@ -1078,6 +1090,27 @@ onUnmounted(() => {
   border-color: var(--neutral-50);
   color: var(--neutral-50);
 }
+/* Light comfy theme: the resting surface (`rgba(255,255,255,.04)`) and text
+ * (`--neutral-100`, light grey) vanish on a white bar. Swap to a faint dark
+ * film + dark text so the pill — and its `currentColor` brand mark / caret —
+ * stay legible. Mirrors the `.is-light` treatment on the update chip. */
+.title-bar.is-light .title-install-pill {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--neutral-700);
+}
+.title-bar.is-light.is-hover-active .title-install-pill.is-interactive:hover:not(.is-open),
+.title-bar.is-light .title-install-pill.is-interactive:focus-visible:not(.is-open) {
+  background: rgba(0, 0, 0, 0.07);
+  border-color: color-mix(in srgb, var(--neutral-700) 35%, transparent);
+  color: var(--neutral-700);
+}
+/* Open state: the dark-theme yellow lift (`--neutral-50`) is near-invisible on
+ * a white bar, so commit border + text (and the `currentColor` mark / caret)
+ * to full-strength dark instead. */
+.title-bar.is-light .title-install-pill.is-interactive.is-open {
+  border-color: color-mix(in srgb, var(--neutral-700) 55%, transparent);
+  color: var(--neutral-700);
+}
 
 /* Inline instance-update CTA, sitting just after the install name inside
  * the identity pill. Brand-yellow chip so it reads as the actionable
@@ -1124,9 +1157,10 @@ onUnmounted(() => {
   gap: 4px;
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--comfy-yellow) 45%, transparent);
-  background: color-mix(in srgb, var(--comfy-yellow) 12%, transparent);
-  color: var(--comfy-yellow);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--titlebar-icon);
+  opacity: 0.85;
   font: inherit;
   font-size: 11px;
   line-height: 14px;
@@ -1134,14 +1168,21 @@ onUnmounted(() => {
   cursor: pointer;
   transition:
     background-color 0.12s,
-    border-color 0.12s;
+    opacity 0.12s,
+    border-color 0.12s,
+    color 0.12s;
 }
 .title-zoom-reset-percent {
   letter-spacing: 0.01em;
 }
 .title-bar.is-hover-active .title-zoom-reset:hover {
-  background: color-mix(in srgb, var(--comfy-yellow) 20%, transparent);
-  border-color: var(--comfy-yellow);
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.title-bar.is-light.is-hover-active .title-zoom-reset:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.18);
 }
 .title-zoom-reset:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -1311,8 +1352,11 @@ onUnmounted(() => {
 .title-bar.is-hover-active .title-downloads-tray:hover:not(:disabled) {
   color: var(--comfy-yellow);
 }
-.title-bar.is-light .title-downloads-tray {
-  color: var(--comfy-yellow);
+/* Light comfy theme: yellow hover/open lift is near-invisible on a white bar,
+ * so deepen the muted resting icon to full-strength dark text instead — the
+ * same active cue, kept in the light theme's color family. */
+.title-bar.is-light.is-hover-active .title-downloads-tray:hover:not(:disabled) {
+  color: var(--neutral-700);
 }
 
 .title-downloads-badge {
@@ -1333,7 +1377,7 @@ onUnmounted(() => {
   border-radius: 999px;
   /* Subtle ring against the title-bar background so the badge reads
    * as a separate token from the icon underneath at any zoom. */
-  box-shadow: 0 0 0 2px var(--titlebar-bg, var(--neutral-900));
+  box-shadow: 0 0 0 2px var(--titlebar-bg-active, var(--titlebar-bg, var(--neutral-900)));
   background: var(--accent, #60a5fa);
   color: #fff;
   font-size: 9px;
@@ -1358,6 +1402,10 @@ onUnmounted(() => {
 .title-downloads-tray.is-open,
 .title-bar.is-hover-active .title-downloads-tray.is-open:hover {
   color: var(--neutral-50);
+}
+.title-bar.is-light .title-downloads-tray.is-open,
+.title-bar.is-light.is-hover-active .title-downloads-tray.is-open:hover {
+  color: var(--neutral-700);
 }
 
 .title-downloads-tray.is-flashing .title-downloads-badge {
@@ -1408,7 +1456,7 @@ onUnmounted(() => {
   height: 8px;
   border-radius: 999px;
   background: var(--danger);
-  box-shadow: 0 0 0 2px var(--titlebar-bg, var(--neutral-900));
+  box-shadow: 0 0 0 2px var(--titlebar-bg-active, var(--titlebar-bg, var(--neutral-900)));
   pointer-events: none;
 }
 

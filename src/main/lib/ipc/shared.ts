@@ -22,6 +22,7 @@ import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
 import { _broadcastToRenderer } from './broadcast'
+import { appendLog } from '../logsBroadcast'
 import {
   spawnProcess, waitForPort, waitForUrl, killProcessTree, killByPort,
   findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
@@ -38,13 +39,13 @@ import { formatTime } from '../util'
 import { getActiveDownloads } from '../comfyDownloadManager'
 import * as releaseCache from '../release-cache'
 import * as i18n from '../i18n'
-import { syncCustomModelFolders, discoverExtraModelFolders } from '../models'
+import { syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath } from '../models'
 import { copyDirWithProgress } from '../copy'
 import { fetchJSON } from '../fetch'
-import { fetchLatestRelease, getLatestStableTag } from '../comfyui-releases'
-import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
+import { fetchLatestRelease, getLatestStableTag, getStableTags } from '../comfyui-releases'
+import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
 import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
-import { getVariantLabel } from '../../sources/standalone'
+import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
 import type { Theme, ResolvedTheme, QuitActiveItem } from '../../../types/ipc'
@@ -73,13 +74,13 @@ export {
   performLocalMigration, stageLocalSnapshot,
   getDiskSpace, getDirectorySize, validateInstallPath,
   syncOemSeed, formatTime, getActiveDownloads,
-  syncCustomModelFolders, discoverExtraModelFolders,
-  copyDirWithProgress, fetchJSON, fetchLatestRelease, getLatestStableTag,
+  syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
+  copyDirWithProgress, fetchJSON, fetchLatestRelease, getLatestStableTag, getStableTags,
   captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData,
   getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, diffSnapshots,
   buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, deleteSnapshot,
-  restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, formatSnapshotVersion, resolveSnapshotVersion,
-  getVariantLabel, REQUIRES_STOPPED, findLockingProcesses,
+  restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion,
+  getVariantLabel, buildPinnedVariant, REQUIRES_STOPPED, findLockingProcesses,
   getComfyArgsSchema, filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
 }
@@ -123,6 +124,9 @@ export interface StopCallbackInfo {
 
 export interface ExitCallbackInfo {
   installationId?: string
+  /** True when the process exited unexpectedly (non-zero code or a signal),
+   *  as opposed to a clean user-initiated stop. */
+  crashed?: boolean
 }
 
 export interface RestartCallbackInfo {
@@ -213,12 +217,19 @@ export function _clearLaunchingFailed(installationId: string): void {
 /**
  * Installs currently being stopped (between `instance-stopping` and `instance-stopped`).
  * Lets a window opened mid-stop hydrate the "Stopping…" state instead of missing the
- * one-shot broadcast. Maintained by `stopRunning`.
+ * one-shot broadcast. Maintained by `stopRunning`; read via `_isStopping`. Exported
+ * (like `_runningSessions`) so unit tests can seed body-mode scenarios.
  */
-const _stoppingInstallationIds = new Set<string>()
+export const _stoppingInstallationIds = new Set<string>()
 
 export function _getStoppingInstallationIds(): string[] {
   return Array.from(_stoppingInstallationIds)
+}
+
+/** O(1) membership test for the body-mode computation, which runs on every
+ *  layout pass and shouldn't allocate an array. */
+export function _isStopping(installationId: string): boolean {
+  return _stoppingInstallationIds.has(installationId)
 }
 
 export interface PickerOperationStatus {
@@ -416,11 +427,11 @@ export async function performCopy(
         adoptedAt: new Date().toISOString(),
         adoptedBaseDir: newComfyUI,
         adoptedPythonPath: newAdoptedPython,
-        // Point per-install I/O at the deep-copied data so launches don't write to the
-        // legacy workspace.
+        // Use per-install I/O so launches write to the deep-copied data, not the
+        // legacy workspace. inputDir/outputDir are left unset so launch falls
+        // back to this copy's own `<comfyDir>/{input,output}` — keeping the
+        // record clone-safe (no absolute path pointing at a specific install).
         useSharedInputOutput: false,
-        inputDir: path.join(newComfyUI, 'input'),
-        outputDir: path.join(newComfyUI, 'output'),
       }
     }
 
@@ -462,7 +473,14 @@ export function buildLaunchEnv(inst: InstallationRecord, sessionPath?: string): 
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
-    ...(inst.sourceId === 'standalone' ? { CM_USE_PYGIT2: '1' } : {}),
+    // Only force ComfyUI-Manager onto the pygit2 backend when a developer
+    // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
+    // unset so Manager's git_compat prefers system git when available (honoring
+    // the user's full git config: proxy, insteadOf, ssh keys), and auto-falls
+    // back to its bundled pygit2 only when system git is absent.
+    ...(inst.sourceId === 'standalone' && process.env.COMFY_FORCE_PYGIT2 === '1'
+      ? { CM_USE_PYGIT2: '1' }
+      : {}),
   }
 }
 
@@ -721,15 +739,29 @@ export function makeSendProgress(sender: Electron.WebContents, installationId: s
 export function makeSendOutput(sender: Electron.WebContents, installationId: string): (text: string) => void {
   return (text: string): void => {
     try { if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text }) } catch {}
+    appendLog(installationId, text)
   }
 }
 
-export async function stopRunning(installationId?: string): Promise<void> {
+/**
+ * Stop running session(s) and kill their process tree(s).
+ *
+ * @param onEnterStopping Fires once an install is flagged stopping, before the
+ *   slow `killProcessTree` await. The interactive `stop-comfyui` handler uses it
+ *   to show the "Stopping…" panel up front (avoiding a black flash mid-kill);
+ *   quit/detach/update callers omit it so the primitive stays free of host-
+ *   layout side effects.
+ */
+export async function stopRunning(
+  installationId?: string,
+  onEnterStopping?: (info: { installationId: string }) => void,
+): Promise<void> {
   if (installationId) {
     const session = _runningSessions.get(installationId)
     if (!session) return
     _stoppingInstallationIds.add(installationId)
     _broadcastToRenderer('instance-stopping', { installationId })
+    onEnterStopping?.({ installationId })
     if (session.port) removePortLock(session.port)
     _runningSessions.delete(installationId)
     if (session.proc && !session.proc.killed) {
@@ -743,6 +775,7 @@ export async function stopRunning(installationId?: string): Promise<void> {
     for (const [id] of sessions) {
       _stoppingInstallationIds.add(id)
       _broadcastToRenderer('instance-stopping', { installationId: id })
+      onEnterStopping?.({ installationId: id })
     }
     for (const [, session] of sessions) {
       if (session.port) removePortLock(session.port)

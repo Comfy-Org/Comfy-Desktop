@@ -9,6 +9,8 @@ export const TID = {
   pickerNewWindow: 'picker-new-window',
   pickerSettingsLoading: 'picker-settings-loading',
   pickerSettingsSections: 'picker-settings-sections',
+  pickerOpErrorMessage: 'picker-op-error-message',
+  pickerOpErrorCopy: 'picker-op-error-copy',
 
   dashboardTile: (installId: string) => `dashboard-tile-${installId}`,
   dashboardTileKebab: (installId: string) => `dashboard-tile-kebab-${installId}`,
@@ -45,6 +47,10 @@ export const TID = {
   snapshotsOpCardCancel: 'snapshots-op-card-cancel',
   snapshotsOpCardRetry: 'snapshots-op-card-retry',
   snapshotsOpCardDismiss: 'snapshots-op-card-dismiss',
+
+  consoleTerminal: 'console-terminal',
+  consoleSessionEnded: 'console-session-ended',
+  consoleRestart: 'console-restart',
 
   progressErrorMessage: 'progress-error-message',
   progressLogs: 'progress-logs',
