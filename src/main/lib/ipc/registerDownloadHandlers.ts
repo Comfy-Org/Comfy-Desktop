@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
+import { findEntryByComfySender } from '../../host/registry'
 import {
   cancelModelDownload,
   clearFinishedDownloads,
@@ -13,6 +14,11 @@ import {
 } from '../comfyDownloadManager'
 
 export function registerDownloadHandlers(): void {
+  ipcMain.on('desktop2-is-remote', (event) => {
+    const entry = findEntryByComfySender(event.sender)
+    event.returnValue = entry?.sourceCategory === 'cloud' || entry?.sourceCategory === 'remote'
+  })
+
   ipcMain.handle(
     'desktop2-download-model',
     (event, { url, filename, directory }: { url: string; filename: string; directory: string }) => {

@@ -77,6 +77,7 @@ const Logs: ComfyDesktop2LogsBridge = {
 }
 
 const bridge = {
+  isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
   downloadModel: (url: string, filename: string, directory: string): Promise<boolean> => {
     return ipcRenderer.invoke('desktop2-download-model', { url, filename, directory })
   },

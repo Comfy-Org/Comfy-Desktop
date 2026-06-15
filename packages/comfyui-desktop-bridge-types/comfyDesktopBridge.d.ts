@@ -49,6 +49,7 @@ export interface ComfyDesktop2TelemetryBridge {
     capture(event: string, properties?: ComfyDesktop2TelemetryProperties): void;
 }
 export interface ComfyDesktop2Bridge {
+    isRemote(): boolean;
     downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>;
     downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>;
     pauseDownload?: (url: string) => Promise<boolean>;
