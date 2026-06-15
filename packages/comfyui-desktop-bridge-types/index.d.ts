@@ -1,1 +1,1 @@
-export * from './comfyDesktopBridge'
+export * from './comfyDesktopBridge.js'
