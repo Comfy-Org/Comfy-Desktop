@@ -2,14 +2,11 @@ import { onMounted, onUnmounted } from 'vue'
 import { useDialogs } from './useDialogs'
 import type { AdoptPromptRequest } from '../types/ipc'
 
-// Bridges main-process mid-operation prompts (e.g. Legacy Desktop adoption)
-// to the in-app dialog system, replacing native OS message boxes. Mount once
-// per renderer entry point that can run adoption (PanelApp), alongside
-// <DialogHost />. The renderer ACKs delivery immediately, then replies with
-// the chosen button index; on any failure it falls back to the cancel button
-// so the backend never blocks.
-//
-// Labels arrive pre-translated from main, so they are rendered as-is.
+// Bridges main-process adopt prompts into the in-app dialogs (replacing native
+// OS message boxes): ACKs delivery immediately, then replies with the chosen
+// button index, falling back to cancel on any failure so the backend never
+// blocks. Mount once per renderer entry point that can run adoption (PanelApp),
+// alongside <DialogHost />. Labels arrive pre-translated from main.
 export function useAdoptPromptBridge(): void {
   const dialogs = useDialogs()
   let unsubscribe: (() => void) | null = null

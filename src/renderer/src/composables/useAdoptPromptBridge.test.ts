@@ -45,16 +45,14 @@ beforeEach(() => {
   capturedCallback = null
   ackMock = vi.fn()
   respondMock = vi.fn()
-  ;(globalThis as unknown as { window: { api: unknown } }).window = {
-    api: {
-      onAdoptPrompt: (cb: (req: AdoptPromptRequest) => void) => {
-        capturedCallback = cb
-        return () => {}
-      },
-      ackAdoptPrompt: ackMock,
-      respondAdoptPrompt: respondMock,
+  window.api = {
+    onAdoptPrompt: (cb: (req: AdoptPromptRequest) => void) => {
+      capturedCallback = cb
+      return () => {}
     },
-  }
+    ackAdoptPrompt: ackMock,
+    respondAdoptPrompt: respondMock,
+  } as unknown as typeof window.api
 })
 
 describe('useAdoptPromptBridge', () => {
