@@ -186,15 +186,14 @@ describe('telemetry.bucketError', () => {
     expect(telemetry.bucketError('validation_failed for node 5')).toBe('validation')
   })
   it('classifies migration source-missing failures', () => {
-    // Observed at launch: gitcode mirror clones that stall mid-stream
+    // Observed at launch: gitcode mirror clones that stall mid-stream,
     // and Desktop 1 trees that lost their ComfyUI source path so the
-    // adopter tries to "switch to managed" and finds nothing to copy.
+    // adopter has neither a staged copy nor a working clone to source.
     expect(
       telemetry.bucketError(
         'source-missing: Downloading ComfyUI source from https://gitcode.com/gh_mirrors/co/ComfyUI.git'
       )
     ).toBe('source_missing')
-    expect(telemetry.bucketError('source-missing-switch-to-managed')).toBe('source_missing')
     expect(telemetry.bucketError('source_missing')).toBe('source_missing')
   })
   it('keeps "other" for messages with no known signal', () => {
