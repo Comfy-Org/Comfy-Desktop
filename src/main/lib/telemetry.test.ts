@@ -3,11 +3,16 @@ import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
 
+// Mutable so individual tests can drive `app.getLocaleCountryCode()`'s
+// return value (including empty / junk) to exercise the `country` default.
+let mockCountryCode = 'US'
+
 vi.mock('electron', () => ({
   app: {
     getPath: () => path.join(os.tmpdir(), 'launcher-test'),
     isPackaged: true,
-    on: () => {}
+    on: () => {},
+    getLocaleCountryCode: () => mockCountryCode
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -205,12 +210,14 @@ describe('telemetry.bucketError', () => {
 describe('telemetry default event properties', () => {
   beforeEach(() => {
     captured.length = 0
+    mockCountryCode = 'US'
     process.env['POSTHOG_API_KEY'] = 'test-key'
     process.env['POSTHOG_ENABLED'] = '1'
     telemetry._resetForTest()
   })
 
   afterEach(() => {
+    mockCountryCode = 'US'
     delete process.env['POSTHOG_API_KEY']
     delete process.env['POSTHOG_ENABLED']
     telemetry._resetForTest()
@@ -261,6 +268,39 @@ describe('telemetry default event properties', () => {
 
     telemetry.capture('any.event', { app_version: 'override-value' })
     expect(captured[0]!.properties).toMatchObject({ app_version: 'override-value' })
+  })
+
+  it('injects an uppercased OS-region country (not IP-geo) on every capture', () => {
+    mockCountryCode = 'de'
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('id')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    telemetry.capture('any.event')
+    expect(captured[0]!.properties).toMatchObject({ country: 'DE' })
+  })
+
+  it('omits country (does not send empty string) when the OS returns no region', () => {
+    mockCountryCode = ''
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('id')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    telemetry.capture('any.event')
+    expect(captured[0]!.properties).not.toHaveProperty('country')
+  })
+
+  it('omits country when the OS returns a non-ISO-3166 value', () => {
+    mockCountryCode = 'USA'
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('id')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    telemetry.capture('any.event')
+    expect(captured[0]!.properties).not.toHaveProperty('country')
   })
 })
 

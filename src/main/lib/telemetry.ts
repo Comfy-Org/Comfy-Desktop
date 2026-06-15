@@ -434,6 +434,42 @@ export interface InitOptions {
 }
 
 /**
+ * Privacy-preserving country signal.
+ *
+ * Derived from the OS region (`app.getLocaleCountryCode()`), NOT from IP.
+ * The OS returns the user's configured region as an ISO 3166-1 alpha-2 code
+ * (e.g. `"US"`, `"CN"`, `"DE"`) with no network call, no geoip, and no new
+ * dependency. This is deliberately the opposite of IP-based geo: we keep
+ * `disableGeoip: true` at PostHog init and force `$ip: ''` on every event
+ * (see `capture`), so PostHog never sees the user IP or derives city-level
+ * geo. The country cohort rides only on the OS region instead.
+ *
+ * Validation: enforce a 2-letter uppercase shape at the call site (per the
+ * telemetry-discipline note at the top of this file). Anything that isn't a
+ * clean ISO-3166 alpha-2 code (empty string, unexpected length, non-letters)
+ * resolves to `undefined` so the property is OMITTED rather than sent as
+ * `''` or a junk value.
+ *
+ * Caveat for analysis: OS region reflects the user's chosen locale, not their
+ * physical location. VPN users, travelers, and people who set a non-local
+ * region will be attributed to their configured region, not where they sit.
+ * That is an acceptable tradeoff for a coarse cohort and is exactly why this
+ * is a low-cardinality categorical, not a precise-location field.
+ */
+function deriveCountry(): string | undefined {
+  let raw: string
+  try {
+    raw = app.getLocaleCountryCode()
+  } catch {
+    return undefined
+  }
+  if (typeof raw !== 'string') return undefined
+  const code = raw.trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(code)) return undefined
+  return code
+}
+
+/**
  * Initialize PostHog Node. Safe to call before consent decision is known —
  * events are queued by setConsent(false) and dropped at capture time.
  *
@@ -456,6 +492,16 @@ export function initTelemetry(opts: InitOptions): void {
     is_packaged: opts.isPackaged,
     platform: process.platform,
     arch: process.arch
+  }
+
+  // `country` = OS region (ISO 3166-1 alpha-2), NOT IP-geo. See
+  // `deriveCountry`. Omitted entirely when the OS returns no usable region
+  // so we never ship an empty string. Rides as a default event property
+  // alongside `platform` / `app_channel`; deliberately NOT routed through
+  // `identify()` / person properties.
+  const country = deriveCountry()
+  if (country !== undefined) {
+    defaultEventProperties.country = country
   }
 
   // Suppress event capture on unpackaged (developer / `pnpm dev`) runs.
