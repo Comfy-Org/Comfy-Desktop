@@ -44,6 +44,18 @@ describe('resolveProgressRouting — same vs inline vs target', () => {
     )
     expect(r.routing).toBe('target-host')
   })
+
+  // migrate/adopt asks main-process follow-up prompts only the panel can
+  // bridge, so it must run through the panel ProgressModal — never the
+  // picker's inline background op (whose stub sender can't deliver prompts).
+  it('routes same-host for migrate-to-standalone (panel owns the adopt prompts)', () => {
+    const r = resolveProgressRouting(
+      opts({ actionId: 'migrate-to-standalone', opKind: 'migrate', installationId: 'inst-B' }),
+      'inst-A',
+    )
+    expect(r.routing).toBe('same-host')
+    expect(r.successChoice).toBe(false)
+  })
 })
 
 describe('resolveProgressRouting — successChoice gating', () => {
