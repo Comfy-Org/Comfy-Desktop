@@ -83,8 +83,27 @@ const metaEl = ref<HTMLElement | null>(null)
 const { isTruncated: nameTruncated, check: checkNameTruncation } = useTruncation(nameEl)
 const { isTruncated: metaTruncated, check: checkMetaTruncation } = useTruncation(metaEl)
 
-/** The bare "Update" pill hides the target version; the tooltip surfaces it. */
-const updateTooltip = computed(() => inst.value.statusTag?.label || t('chooser.updatePill'))
+/** The single update/migrate affordance, or null when the install has neither.
+ *  The Update tooltip surfaces the target version the bare pill hides. */
+const actionPill = computed(() => {
+  if (hasUpdate.value)
+    return {
+      action: 'update' as const,
+      icon: ArrowDownToLine,
+      label: t('chooser.updatePill'),
+      tooltip: inst.value.statusTag?.label || t('chooser.updatePill'),
+      pillClass: 'chooser-tile-pill-update'
+    }
+  if (hasMigratePrompt.value)
+    return {
+      action: 'migrate' as const,
+      icon: ArrowRightLeft,
+      label: t('chooser.migratePill'),
+      tooltip: t('dashboard.migrateBannerTitle'),
+      pillClass: 'chooser-tile-pill-migrate'
+    }
+  return null
+})
 
 /** Precise fallback for the relative recency label; empty when never booted. */
 const absoluteLaunchedTime = computed(() => {
@@ -193,38 +212,19 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           <span class="chooser-tile-recency-text">{{ lastLaunchedLabel }}</span>
         </Tooltip>
         <!-- Action pill (update / migrate); pinned right, never truncates. -->
-        <Tooltip v-if="hasUpdate" :text="updateTooltip" class="chooser-tile-pill-action">
+        <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
           <span
-            class="chooser-tile-pill chooser-tile-pill-update"
-            :class="{ 'chooser-tile-pill-disabled': isStoppedActionGated }"
+            class="chooser-tile-pill"
+            :class="[actionPill.pillClass, { 'chooser-tile-pill-disabled': isStoppedActionGated }]"
             role="button"
             tabindex="0"
             :aria-disabled="isStoppedActionGated || undefined"
-            @click.stop="triggerInstallAction('update')"
-            @keydown.enter.stop="triggerInstallAction('update')"
-            @keydown.space.prevent.stop="triggerInstallAction('update')"
+            @click.stop="triggerInstallAction(actionPill.action)"
+            @keydown.enter.stop="triggerInstallAction(actionPill.action)"
+            @keydown.space.prevent.stop="triggerInstallAction(actionPill.action)"
           >
-            <ArrowDownToLine :size="11" />
-            {{ t('chooser.updatePill') }}
-          </span>
-        </Tooltip>
-        <Tooltip
-          v-else-if="hasMigratePrompt"
-          :text="t('dashboard.migrateBannerTitle')"
-          class="chooser-tile-pill-action"
-        >
-          <span
-            class="chooser-tile-pill chooser-tile-pill-migrate"
-            :class="{ 'chooser-tile-pill-disabled': isStoppedActionGated }"
-            role="button"
-            tabindex="0"
-            :aria-disabled="isStoppedActionGated || undefined"
-            @click.stop="triggerInstallAction('migrate')"
-            @keydown.enter.stop="triggerInstallAction('migrate')"
-            @keydown.space.prevent.stop="triggerInstallAction('migrate')"
-          >
-            <ArrowRightLeft :size="11" />
-            {{ t('chooser.migratePill') }}
+            <component :is="actionPill.icon" :size="11" />
+            {{ actionPill.label }}
           </span>
         </Tooltip>
       </div>
