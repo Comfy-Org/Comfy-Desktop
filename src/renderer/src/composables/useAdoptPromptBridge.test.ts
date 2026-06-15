@@ -71,7 +71,7 @@ describe('useAdoptPromptBridge', () => {
         title: 'ComfyUI source unavailable',
         confirmLabel: 'Retry',
         cancelLabel: 'Cancel',
-        tone: 'danger',
+        tone: 'primary',
         showCancel: true,
         messageDetails: [{ label: 'Details', items: ['git clone failed'] }],
       })
@@ -101,7 +101,7 @@ describe('useAdoptPromptBridge', () => {
     await flushPromises()
 
     expect(alertMock).toHaveBeenCalledWith(
-      expect.objectContaining({ buttonLabel: 'Cancel', tone: 'primary' })
+      expect.objectContaining({ buttonLabel: 'Cancel' })
     )
     expect(confirmMock).not.toHaveBeenCalled()
     expect(respondMock).toHaveBeenCalledWith({ promptId: 'p-1', buttonIndex: 0 })
@@ -116,6 +116,47 @@ describe('useAdoptPromptBridge', () => {
     await flushPromises()
 
     expect(respondMock).toHaveBeenCalledWith({ promptId: 'p-1', buttonIndex: 1 })
+    wrapper.unmount()
+  })
+
+  it('ACKs a second prompt immediately even while the first dialog is still open', async () => {
+    // First prompt's dialog never resolves, so its respond is pending.
+    let resolveFirst: ((v: 'primary' | 'secondary' | false) => void) | undefined
+    confirmMock.mockImplementationOnce(
+      () => new Promise((r) => { resolveFirst = r })
+    )
+    const wrapper = mount(Host)
+
+    capturedCallback!(makeRequest({ promptId: 'p-1' }))
+    await flushPromises()
+    expect(ackMock).toHaveBeenCalledWith({ promptId: 'p-1' })
+
+    // Second prompt arrives while the first is still open: it must be ACKed
+    // right away (delivery confirmed) even though its dialog is queued.
+    capturedCallback!(makeRequest({ promptId: 'p-2' }))
+    await flushPromises()
+    expect(ackMock).toHaveBeenCalledWith({ promptId: 'p-2' })
+    // The second dialog has NOT opened yet (serialized behind the first).
+    expect(confirmMock).toHaveBeenCalledTimes(1)
+
+    resolveFirst!('primary')
+    wrapper.unmount()
+  })
+
+  it('keeps serving prompts after a response send throws (chain not poisoned)', async () => {
+    confirmMock.mockResolvedValue('primary')
+    respondMock.mockImplementationOnce(() => {
+      throw new Error('send failed')
+    })
+    const wrapper = mount(Host)
+
+    capturedCallback!(makeRequest({ promptId: 'p-1' }))
+    await flushPromises()
+
+    capturedCallback!(makeRequest({ promptId: 'p-2' }))
+    await flushPromises()
+
+    expect(respondMock).toHaveBeenCalledWith({ promptId: 'p-2', buttonIndex: 0 })
     wrapper.unmount()
   })
 })

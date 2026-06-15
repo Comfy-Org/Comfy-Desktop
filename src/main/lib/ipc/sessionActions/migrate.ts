@@ -166,17 +166,23 @@ function requestAdoptPromptButton(
     }
     signal.addEventListener('abort', onAbort, { once: true })
     sender.once('destroyed', onDestroyed)
-    sender.send('adopt-prompt', {
-      promptId,
-      type: spec.type,
-      title: spec.title,
-      message: spec.message,
-      detail: spec.detail,
-      detailLabel: spec.detail ? i18n.t('desktop.adoptPromptDetail') : undefined,
-      buttons: spec.buttons.map((b) => b.label),
-      defaultId: spec.defaultId,
-      cancelId: spec.cancelId
-    })
+    try {
+      sender.send('adopt-prompt', {
+        promptId,
+        type: spec.type,
+        title: spec.title,
+        message: spec.message,
+        detail: spec.detail,
+        detailLabel: spec.detail ? i18n.t('desktop.adoptPromptDetail') : undefined,
+        buttons: spec.buttons.map((b) => b.label),
+        defaultId: spec.defaultId,
+        cancelId: spec.cancelId
+      })
+    } catch (err) {
+      // Sender went away between the isDestroyed() check and send. Settle now
+      // so the pending entry, listeners, and timer are cleaned up immediately.
+      settle(() => reject(err instanceof Error ? err : new Error(String(err))))
+    }
   })
 }
 
@@ -198,8 +204,11 @@ async function showAdoptPrompt(
   } catch {
     idx = spec.cancelId
   }
-  const clamped = Math.max(0, Math.min(idx, spec.buttons.length - 1))
-  return spec.buttons[clamped]!.choice
+  // A malformed index (NaN / out of range / non-integer from a buggy renderer)
+  // falls back to cancel rather than throwing.
+  const safe = Number.isInteger(idx) ? idx : spec.cancelId
+  const clamped = Math.max(0, Math.min(safe, spec.buttons.length - 1))
+  return (spec.buttons[clamped] ?? spec.buttons[spec.cancelId] ?? spec.buttons[0]!).choice
 }
 
 export async function handleMigrateToStandalone({

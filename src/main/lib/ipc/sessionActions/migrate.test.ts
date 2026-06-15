@@ -151,6 +151,77 @@ describe('handleMigrateToStandalone — desktop branch', () => {
       newInstallationId: 'inst-adopted-1',
     })
   })
+
+  it('ignores a prompt response from the wrong renderer, then resolves on the right one', async () => {
+    type SentMessage = { channel: string; payload: { promptId: string; cancelId: number } }
+    const sent: SentMessage[] = []
+    const sender = {
+      id: 7,
+      send: vi.fn((channel: string, payload: SentMessage['payload']) =>
+        sent.push({ channel, payload })
+      ),
+      isDestroyed: () => false,
+      once: vi.fn(),
+      removeListener: vi.fn(),
+    }
+
+    adoptDesktopInstallMock.mockImplementationOnce(
+      async ({ tools }: { tools: { promptUser: (k: string, c: unknown) => Promise<unknown> } }) => {
+        const choicePromise = tools.promptUser('source-missing', { message: 'boom' })
+        await Promise.resolve()
+        const req = sent.find((s) => s.channel === 'adopt-prompt')!.payload
+        // Wrong sender id → must be ignored.
+        ipcMainHandlers.get('adopt-prompt-response')!(
+          { sender: { id: 999 } },
+          { promptId: req.promptId, buttonIndex: 0 }
+        )
+        // Right sender id → resolves with cancel.
+        ipcMainHandlers.get('adopt-prompt-response')!(
+          { sender: { id: 7 } },
+          { promptId: req.promptId, buttonIndex: req.cancelId }
+        )
+        const choice = await choicePromise
+        expect(choice).toEqual({ kind: 'source-missing', choice: 'cancel' })
+        throw new Error('source-missing: cancelled')
+      }
+    )
+
+    const result = await handleMigrateToStandalone(makeContext({ sourceId: 'desktop' }, sender))
+    expect(result).toEqual({ ok: false, message: 'desktop.adoptSourceMissingFailed' })
+  })
+
+  it('falls back to cancel when the renderer sends a malformed button index', async () => {
+    type SentMessage = { channel: string; payload: { promptId: string } }
+    const sent: SentMessage[] = []
+    const sender = {
+      id: 8,
+      send: vi.fn((channel: string, payload: SentMessage['payload']) =>
+        sent.push({ channel, payload })
+      ),
+      isDestroyed: () => false,
+      once: vi.fn(),
+      removeListener: vi.fn(),
+    }
+
+    adoptDesktopInstallMock.mockImplementationOnce(
+      async ({ tools }: { tools: { promptUser: (k: string, c: unknown) => Promise<unknown> } }) => {
+        const choicePromise = tools.promptUser('source-missing', { message: 'boom' })
+        await Promise.resolve()
+        const req = sent.find((s) => s.channel === 'adopt-prompt')!.payload
+        // NaN is not a valid index — must map to cancel, never throw.
+        ipcMainHandlers.get('adopt-prompt-response')!(
+          { sender: { id: 8 } },
+          { promptId: req.promptId, buttonIndex: Number.NaN }
+        )
+        const choice = await choicePromise
+        expect(choice).toEqual({ kind: 'source-missing', choice: 'cancel' })
+        throw new Error('source-missing: cancelled')
+      }
+    )
+
+    const result = await handleMigrateToStandalone(makeContext({ sourceId: 'desktop' }, sender))
+    expect(result).toEqual({ ok: false, message: 'desktop.adoptSourceMissingFailed' })
+  })
 })
 
 describe('handleMigrateToStandalone — non-desktop branch', () => {

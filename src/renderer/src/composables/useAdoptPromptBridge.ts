@@ -27,40 +27,54 @@ export function useAdoptPromptBridge(): void {
         title: req.title,
         message: req.message,
         buttonLabel: req.buttons[0],
-        tone: req.type === 'error' ? 'danger' : 'primary',
         messageDetails: detailGroups
       })
       return req.cancelId
     }
 
+    // None of the adopt prompts is destructive (Retry / Adopt anyway / Adopt),
+    // so the primary button stays `primary` regardless of message severity.
     const result = await dialogs.confirm({
       title: req.title,
       message: req.message,
       confirmLabel: req.buttons[req.defaultId] ?? req.buttons[0],
       cancelLabel: req.buttons[req.cancelId] ?? req.buttons[req.buttons.length - 1],
-      tone: req.type === 'error' ? 'danger' : 'primary',
+      tone: 'primary',
       showCancel: true,
       messageDetails: detailGroups
     })
     return result === 'primary' ? req.defaultId : req.cancelId
   }
 
-  async function handle(req: AdoptPromptRequest): Promise<void> {
-    window.api.ackAdoptPrompt({ promptId: req.promptId })
+  // Runs after the prompt has already been ACKed. Always sends a response so
+  // the backend never blocks; falls back to the cancel button on any dialog
+  // error, and swallows send errors so one bad prompt can't poison the chain.
+  async function respondTo(req: AdoptPromptRequest): Promise<void> {
     let buttonIndex: number
     try {
       buttonIndex = await pickButton(req)
     } catch {
       buttonIndex = req.cancelId
     }
-    window.api.respondAdoptPrompt({ promptId: req.promptId, buttonIndex })
+    try {
+      window.api.respondAdoptPrompt({ promptId: req.promptId, buttonIndex })
+    } catch {
+      // Main falls back to cancel via its ACK timeout / abort / destroyed guards.
+    }
   }
 
   onMounted(() => {
     unsubscribe = window.api.onAdoptPrompt((req) => {
+      // ACK delivery immediately — before queueing behind any in-flight prompt —
+      // so the backend knows a renderer is handling it and won't time out.
+      try {
+        window.api.ackAdoptPrompt({ promptId: req.promptId })
+      } catch {
+        // If the ACK send fails, main's timeout will fall back to cancel.
+      }
       chain = chain.then(
-        () => handle(req),
-        () => handle(req)
+        () => respondTo(req),
+        () => respondTo(req)
       )
     })
   })
