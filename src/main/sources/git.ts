@@ -146,9 +146,10 @@ export const gitSource: SourcePlugin = {
     // A git install runs from its own venv (`venvPath`), not the standalone
     // `ComfyUI/.venv`, and has no bundled `standalone-env/uv.exe`. Activate that
     // venv so its own `pip` is on PATH; leave pip unaliased. Return an empty env
-    // (plain shell, no broken standalone-env reference) when no venv is tracked.
+    // (plain shell, no broken standalone-env reference) when there's no usable
+    // venv — `resolveVenvPython` confirms the interpreter actually exists.
     const venvPath = installation.venvPath as string | undefined
-    if (!venvPath) return {}
+    if (!venvPath || !resolveVenvPython(installation)) return {}
     return { venvDir: venvPath, promptName: path.basename(venvPath) }
   },
 

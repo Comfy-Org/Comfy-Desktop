@@ -41,7 +41,13 @@ interface GitHubAsset {
 
 function findPortableRoot(installPath: string): string | null {
   if (fs.existsSync(path.join(installPath, 'python_embeded'))) return installPath
-  const entries = fs.readdirSync(installPath, { withFileTypes: true })
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(installPath, { withFileTypes: true })
+  } catch {
+    // installPath missing/unreadable (e.g. drive unplugged) — no root to find.
+    return null
+  }
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const sub = path.join(installPath, entry.name)

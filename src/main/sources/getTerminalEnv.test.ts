@@ -13,6 +13,7 @@ vi.mock('electron', () => ({
 
 import { gitSource } from './git'
 import { portable } from './portable'
+import { desktop } from './desktop'
 import type { InstallationRecord } from '../installations'
 
 function asInstall(record: Record<string, unknown>): InstallationRecord {
@@ -20,11 +21,26 @@ function asInstall(record: Record<string, unknown>): InstallationRecord {
 }
 
 describe('gitSource.getTerminalEnv', () => {
+  let existsSyncSpy: MockInstance
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    existsSyncSpy = vi.spyOn(fs, 'existsSync')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('activates the tracked venvPath and never references standalone-env', () => {
+    const venvPath = path.join('repos', 'comfy', '.venv')
+    // resolveVenvPython confirms the interpreter exists before activating.
+    existsSyncSpy.mockReturnValue(true)
+
     const env = gitSource.getTerminalEnv!(
-      asInstall({ installPath: '/repos/comfy', venvPath: '/repos/comfy/.venv' }),
+      asInstall({ installPath: path.join('repos', 'comfy'), venvPath }),
     )
-    expect(env).toEqual({ venvDir: '/repos/comfy/.venv', promptName: '.venv' })
+    expect(env).toEqual({ venvDir: venvPath, promptName: '.venv' })
     // No pip override: a git venv ships its own pip; the bug was aliasing pip to
     // a nonexistent standalone-env/uv.exe.
     expect(env?.pip).toBeUndefined()
@@ -32,6 +48,40 @@ describe('gitSource.getTerminalEnv', () => {
 
   it('returns a bare env (plain shell) when no venv is tracked', () => {
     const env = gitSource.getTerminalEnv!(asInstall({ installPath: '/repos/comfy' }))
+    expect(env).toEqual({})
+  })
+
+  it('returns a bare env when the tracked venv no longer exists on disk', () => {
+    existsSyncSpy.mockReturnValue(false)
+    const env = gitSource.getTerminalEnv!(
+      asInstall({ installPath: '/repos/comfy', venvPath: '/repos/comfy/.venv' }),
+    )
+    expect(env).toEqual({})
+  })
+})
+
+describe('desktop.getTerminalEnv', () => {
+  let existsSyncSpy: MockInstance
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    existsSyncSpy = vi.spyOn(fs, 'existsSync')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('activates the legacy <installPath>/.venv, not the standalone layout', () => {
+    const installPath = path.join('C:', 'ComfyUI')
+    existsSyncSpy.mockReturnValue(true)
+    const env = desktop.getTerminalEnv!(asInstall({ installPath }))
+    expect(env).toEqual({ venvDir: path.join(installPath, '.venv'), promptName: '.venv' })
+  })
+
+  it('returns a bare env when the legacy venv is missing', () => {
+    existsSyncSpy.mockReturnValue(false)
+    const env = desktop.getTerminalEnv!(asInstall({ installPath: path.join('C:', 'ComfyUI') }))
     expect(env).toEqual({})
   })
 })
