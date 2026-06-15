@@ -34,33 +34,56 @@ function isTelemetryValue(v: unknown): v is mainTelemetry.TelemetryValue {
   )
 }
 
-function isTelemetryValueArray(v: unknown): v is mainTelemetry.TelemetryValue[] {
-  return Array.isArray(v) && v.every(isTelemetryValue)
+const MAX_TELEMETRY_KEYS = 128
+const MAX_TELEMETRY_ARRAY_ITEMS = 128
+const MAX_TELEMETRY_STRING_LENGTH = 2048
+
+function clampTelemetryValue(v: mainTelemetry.TelemetryValue): mainTelemetry.TelemetryValue {
+  return typeof v === 'string' ? v.slice(0, MAX_TELEMETRY_STRING_LENGTH) : v
 }
 
-// Per-key filter to the TelemetryContext contract.
-function asProps(value: unknown): mainTelemetry.TelemetryContext {
+function asTelemetryValueArray(v: unknown): mainTelemetry.TelemetryValue[] | null {
+  if (!Array.isArray(v)) return null
+  const out: mainTelemetry.TelemetryValue[] = []
+  for (let i = 0; i < v.length && i < MAX_TELEMETRY_ARRAY_ITEMS; i++) {
+    const raw = v[i]
+    if (!isTelemetryValue(raw)) return null
+    out.push(clampTelemetryValue(raw))
+  }
+  return out
+}
+
+function asTelemetryObject(value: unknown, allowArrays: true): mainTelemetry.TelemetryContext
+function asTelemetryObject(
+  value: unknown,
+  allowArrays: false
+): Record<string, mainTelemetry.TelemetryValue>
+function asTelemetryObject(value: unknown, allowArrays: boolean): mainTelemetry.TelemetryContext {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const source = value as Record<string, unknown>
   const out: mainTelemetry.TelemetryContext = {}
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof key !== 'string') continue
+  let count = 0
+  for (const key in source) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue
+    if (count++ >= MAX_TELEMETRY_KEYS) break
+    const raw = source[key]
     if (isTelemetryValue(raw)) {
-      out[key] = raw
-    } else if (isTelemetryValueArray(raw)) {
-      out[key] = raw
+      out[key] = clampTelemetryValue(raw)
+    } else if (allowArrays) {
+      const array = asTelemetryValueArray(raw)
+      if (array) out[key] = array
     }
   }
   return out
 }
 
+// Per-key filter to the TelemetryContext contract.
+function asProps(value: unknown): mainTelemetry.TelemetryContext {
+  return asTelemetryObject(value, true)
+}
+
 function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryValue> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const out: Record<string, mainTelemetry.TelemetryValue> = {}
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof key !== 'string') continue
-    if (isTelemetryValue(raw)) out[key] = raw
-  }
-  return out
+  return asTelemetryObject(value, false)
 }
 
 export function registerTelemetryHandlers(): void {
