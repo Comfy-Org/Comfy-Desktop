@@ -6,6 +6,7 @@
   "main": "./index.js",
   "types": "./index.d.ts",
   "files": [
+    "comfyDesktopBridge.d.ts",
     "index.d.ts",
     "index.js"
   ],

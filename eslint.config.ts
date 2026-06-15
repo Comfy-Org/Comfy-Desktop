@@ -29,7 +29,7 @@ export default defineConfig([
       'node_modules/*',
       '.claude/**',
       '.worktrees/**',
-      'packages/comfyui-desktop-bridge-types/index.d.ts'
+      'packages/comfyui-desktop-bridge-types/*.d.ts'
     ]
   },
   {
