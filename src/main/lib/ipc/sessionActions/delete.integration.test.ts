@@ -150,6 +150,30 @@ describe('handleDelete browser-partition cleanup', () => {
     expect(installationsStore.has(id)).toBe(false)
   })
 
+  it('removes a per-install partition dir even after the setting was toggled to shared', async () => {
+    // browserPartition is user-editable: an install created as 'unique' (which
+    // already created Partitions/<id>) can later read as 'shared'. Its own dir
+    // must still be cleaned up on delete, while persist:shared is untouched.
+    const id = 'inst-toggled'
+    const installPath = path.join(tmpRoot, 'toggled-install')
+    seedInstall(installPath, id)
+    fs.mkdirSync(partitionDir(id), { recursive: true })
+    fs.writeFileSync(path.join(partitionDir(id), 'cookies.db'), 'x')
+    const sharedDir = partitionDir('shared')
+    fs.mkdirSync(sharedDir, { recursive: true })
+
+    const inst = { id, name: 'toggled', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'shared', createdAt: new Date(0).toISOString() } as InstallationRecord
+    installationsStore.set(id, inst)
+
+    const result = await handleDelete({ event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent, installationId: id, inst })
+
+    expect(result.ok).toBe(true)
+    expect(fs.existsSync(partitionDir(id))).toBe(false)
+    expect(fs.existsSync(sharedDir)).toBe(true)
+    expect(fromPartition).toHaveBeenCalledWith(`persist:${id}`)
+    expect(installationsStore.has(id)).toBe(false)
+  })
+
   it('still completes the delete when clearing the session storage fails', async () => {
     clearStorageData.mockRejectedValueOnce(new Error('session busy'))
     const id = 'inst-clear-fail'

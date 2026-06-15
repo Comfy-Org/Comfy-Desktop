@@ -354,11 +354,19 @@ export async function copyBrowserPartition(sourceId: string, destId: string, sou
  *  installs each own a `persist:${id}` bucket under userData/Partitions/<id>
  *  (created lazily by Electron, deep-copied on install-copy); nothing else ever
  *  reuses it, so it must be removed when the install is deleted or it leaks
- *  forever. No-op for shared-partition installs (they all share `persist:shared`,
- *  which must never be deleted). Best-effort: clears the session first to release
- *  file handles (Windows locks LevelDB/IndexedDB while open). */
+ *  forever. Never touches `persist:shared` (Partitions/shared), the bucket all
+ *  shared-partition installs collectively own. Best-effort: clears the session
+ *  first to release file handles (Windows locks LevelDB/IndexedDB while open). */
 export async function deleteBrowserPartition(id: string, browserPartition?: string): Promise<void> {
-  if (browserPartition !== 'unique') return
+  // Guard the shared bucket explicitly (ids are generated, so this never matches
+  // a real install, but it makes the invariant impossible to violate).
+  if (id === 'shared') return
+  const partitionDir = path.join(app.getPath('userData'), 'Partitions', id)
+  // The browserPartition setting is user-editable, so an install created as
+  // 'unique' (which already created Partitions/<id>) may now read as 'shared'.
+  // Clean up whenever the per-install dir exists, not just when the current
+  // setting is 'unique', or a toggled install's partition leaks forever.
+  if (browserPartition !== 'unique' && !fs.existsSync(partitionDir)) return
   // Best-effort, fully bounded: this runs after the install record is already
   // removed, so it must never hang the delete operation or hold its lock.
   // clearStorageData has no hard completion guarantee, so race it against a
@@ -370,7 +378,6 @@ export async function deleteBrowserPartition(id: string, browserPartition?: stri
   } catch (err) {
     console.warn('Failed to clear browser partition storage:', (err as Error).message)
   }
-  const partitionDir = path.join(app.getPath('userData'), 'Partitions', id)
   try {
     await fs.promises.rm(partitionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   } catch (err) {
