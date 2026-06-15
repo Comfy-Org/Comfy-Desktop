@@ -4,7 +4,7 @@ import { spawn } from 'child_process'
 import { killProcTree } from '../../lib/process'
 import { resolveLocalVersion, clearVersionCache, type LatestTagOverride } from '../../lib/version-resolve'
 import { readGitHead, rollbackComfySource, fetchTags, findLatestVersionTag, revParseRef } from '../../lib/git'
-import { PYTORCH_RE, installFilteredRequirementsDetailed, getPipIndexArgs } from '../../lib/pip'
+import { PYTORCH_RE, installFilteredRequirementsDetailed, runUvPipDetailed, getPipIndexArgs } from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
@@ -304,12 +304,12 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
 
           if (!signal?.aborted) {
             sendProgress('deps', { percent: -1, status: t('standalone.updateDepsInstalling') })
-            const pipResult = await spawnCommand(
+            const pipResult = await runUvPipDetailed(
               uvPath, ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
-              installPath, sendOutput, sendOutput, signal
+              installPath, sendOutput ?? (() => {}), signal
             )
             if (pipResult.code !== 0) {
-              depFailure = withOutputTail(`requirements install exited with code ${pipResult.code}`, pipResult.stderr || pipResult.stdout)
+              depFailure = withOutputTail(`requirements install exited with code ${pipResult.code}`, pipResult.output)
             }
           }
         } catch (err) {

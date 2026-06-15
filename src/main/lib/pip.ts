@@ -6,12 +6,12 @@ import { killProcTree } from './process'
 /** Regex matching PyTorch-family packages that must never be overwritten by pip. */
 export const PYTORCH_RE = /^(torch|torchvision|torchaudio|torchsde)(\s*[<>=!~;[#]|$)/i
 
-/** Cap on captured pip output so a verbose install can't grow an unbounded string in memory. */
+/** Cap on captured pip output (characters) so a verbose install can't grow an unbounded string in memory. */
 const MAX_CAPTURED_OUTPUT_CHARS = 256 * 1024
 
 export interface UvPipResult {
   code: number
-  /** Combined stdout+stderr in arrival order, capped to the last 256 KB. */
+  /** Combined stdout+stderr in arrival order, capped to the last ~256K characters. */
   output: string
 }
 

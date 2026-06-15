@@ -134,9 +134,12 @@ export async function handleAction(
         ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
         : 'Package changes were reverted where possible, but ComfyUI source rollback failed.'
       // Surface which packages failed (the full pip output streams to the logs panel)
-      // so the error explains WHY instead of a bare "restore failed".
-      const pkgDetail = !signal?.aborted && pipResult.errors.length > 0
-        ? `\n\n${pipResult.errors.join('\n')}`
+      // so the error explains WHY instead of a bare "restore failed". Cap the list so
+      // a large restore can't produce a wall-of-text dialog.
+      const shownErrors = pipResult.errors.slice(0, 20)
+      const omittedErrors = pipResult.errors.length - shownErrors.length
+      const pkgDetail = !signal?.aborted && shownErrors.length > 0
+        ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
         : ''
       // Leave the op marker so recoverInterruptedComfyOp retries on next launch
       // if the in-process rollback failed; a successful rollback makes it a no-op.
