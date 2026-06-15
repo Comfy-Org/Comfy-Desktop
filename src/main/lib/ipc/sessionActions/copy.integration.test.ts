@@ -80,6 +80,7 @@ vi.mock('../../snapshots', () => ({
 }))
 vi.mock('../../../lib/pip', () => ({
   installFilteredRequirements: vi.fn(async () => 0),
+  installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' })),
 }))
 
 import { handleReleaseUpdate } from './copy'

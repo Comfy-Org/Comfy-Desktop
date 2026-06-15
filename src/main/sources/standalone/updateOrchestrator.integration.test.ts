@@ -377,6 +377,21 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect(calls.some((c) => c.lastSnapshot !== undefined)).toBe(false)
     })
 
+    it('includes the captured pip output in the failure message', async () => {
+      spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
+      spawnState.uvHandler = () => fakeProc({
+        stderr: ['error: could not find a version that satisfies the requirement nonexistent-pkg\n'],
+        exitCode: 1,
+      })
+
+      const result = await runComfyUIUpdate(makeBaseOpts(installPath))
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain('requirements install exited with code 1')
+      expect(result.message).toContain('could not find a version that satisfies')
+      expect(result.message).toMatch(/rolled back/i)
+    })
+
     it('fails fast and skips the manager requirements install when the main one fails', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
       spawnState.uvHandler = () => fakeProc({ exitCode: 1 })
