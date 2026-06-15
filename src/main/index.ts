@@ -1359,20 +1359,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     const installationId = getDeviceId()
 
-    // Bind the anonymous distinct id FIRST so distinctId is set before any
-    // capture path runs (incl. the deferred migration alias's capture below).
-    // Without this the migrated event silently dropped on the !distinctId
-    // guard.
-    //
-    // This deliberately does NOT emit a PostHog `$identify` for the
-    // installation_id. Identifying the anonymous id would mark it an
-    // identified person, and PostHog refuses to merge one identified id into
-    // another — so the login-time alias(installation_id → user_id) in
-    // bindUserId would become a no-op and anonymous device history would
-    // never stitch onto the account (prod symptom: 0 of 13,528 device ids
-    // stitched). The 4 person properties below ride out as a capture-`$set`
-    // (no `$identify`) on the next/first event instead. See the identity-model
-    // docstring in lib/telemetry.ts.
+    // Bind the anonymous distinct id before any capture runs. Does NOT
+    // `$identify` the installation_id (that would block the login stitch —
+    // see identity model in lib/telemetry.ts); the props below ship as a
+    // capture-`$set`.
     mainTelemetry.identify(installationId, {
       app_version: APP_VERSION,
       platform: process.platform,

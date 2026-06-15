@@ -38,37 +38,18 @@
  *
  * ## Identity model
  *
- *   - `installation_id` = `SHA-256(machine_id + salt)`, computed in
- *     `deviceId.ts`. Deterministic per machine; can be matched against
- *     the same hash computed by other Comfy products on the same machine.
- *     Bound at boot via `setAnonymousDistinctId(installation_id)` — this
- *     sets the `distinctId` used for capture attribution but does NOT call
- *     `client.identify()` on it. That is the load-bearing invariant of the
- *     whole identity model: the anonymous `installation_id` must NEVER be
- *     the `distinctId` of an `identify()` call.
- *   - **Why never `identify(installation_id)`**: PostHog marks any id passed
- *     to `identify()` as an *identified* person, and it will NOT merge one
- *     identified id into another. If we identify the anonymous id at boot,
- *     the login-time `alias(installation_id → user_id)` becomes a silent
- *     no-op and anonymous device history never stitches onto the account.
- *     (Observed in prod: 0 of 13,528 device ids stitched.) Anonymous
- *     person-property writes therefore go through `client.capture()` with a
- *     `$set` / `$set_once` property key — in posthog-node, `$set` on a
- *     captured event updates the person WITHOUT emitting `$identify`, so it
- *     does not burn the id.
- *   - `download_token` (TODO): web-session → desktop bridge for acquisition
- *     attribution. Set as a person property on first launch from a
- *     tokenised installer download.
- *   - `user_id`: set on successful login via `bindUserId(user_id)`. This is
- *     the ONLY place `client.identify()` is called, and it is always called
- *     with the authenticated Firebase `user_id`. It aliases
- *     `installation_id` → `user_id` (PostHog merges histories, which now
- *     works because the anon id was never identified), switches the active
- *     `distinct_id` to the user id, and sets `is_authenticated: true`.
- *     Clear on logout via `unbindUserId()` — DO NOT call `posthog.reset()`;
- *     it would clobber `installation_id` and `download_token`. Logout flips
- *     `is_authenticated` back to `false` via a capture-`$set`, never an
- *     `identify()` on the anon id (which would re-burn it).
+ *   - `installation_id` = `SHA-256(machine_id + salt)`, from `deviceId.ts`.
+ *     The anonymous distinct_id. INVARIANT: never pass it to
+ *     `client.identify()` — PostHog would mark it identified, and it won't
+ *     merge one identified id into another, so the login alias below silently
+ *     no-ops (prod: 0/13,528 stitched). Anonymous person-prop writes go
+ *     through capture-`$set` instead, which updates the person without
+ *     identifying the id.
+ *   - `download_token` (TODO): web → desktop acquisition bridge.
+ *   - `user_id`: set on login via `bindUserId`. The ONLY `client.identify()`
+ *     call. Aliases `installation_id` → `user_id` (now merges, since the anon
+ *     id was never identified). Logout (`unbindUserId`) restores the anon
+ *     distinct_id — not `posthog.reset()`, which would clobber it.
  *
  * ## Consent (three-state)
  *
@@ -541,21 +522,9 @@ let pendingSessionStart: Record<string, TelemetryValue> | null = null
  * intended consent outcome.
  */
 let pendingFirstLaunch: TelemetryContext | null = null
-/**
- * Deferred `$set` person properties for the ANONYMOUS identity. Flushed via
- * a capture-with-`$set` (NOT `client.identify()`) so the anonymous
- * `installation_id` is never marked an identified person — see the identity
- * model docstring at the top of this file for why that matters
- * (login-time alias merge depends on it).
- */
+/** Deferred anon person-prop writes, flushed via capture-`$set` on consent grant. */
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
-/**
- * Deferred `$set_once` person properties — write-once activation markers
- * (e.g. `first_generation_at`) that PostHog ignores on every call after the
- * first. Kept separate from `pendingPersonSet` (`$set`) so the two merge
- * semantics don't collide in the same payload. Flushed the same way: a
- * capture-with-`$set_once`, never an `identify()` on the anon id.
- */
+/** Same, for write-once (`$set_once`) markers; kept separate so merges don't collide. */
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
 
 /**
@@ -651,22 +620,10 @@ export function deferMigrationAlias(opts: {
 }
 
 /**
- * Bind the persistent ANONYMOUS device id once it is known.
- *
- * Sets `distinctId` (used for capture attribution) and the `installationId`
- * baseline, and stashes the supplied person properties to be flushed via a
- * capture-`$set` (NOT `client.identify()`). Calling `identify()` on the
- * anonymous id would mark it an identified person, which permanently breaks
- * the login-time alias merge — see the identity-model docstring at the top
- * of this file (prod symptom: 0 of 13,528 device ids stitched).
- *
- * If consent is granted, fires the deferred session-start event and ships
- * the person-property `$set`. If consent is `'denied'` or `'undecided'`, the
- * binding happens in module state (so `capture` works once consent flips to
- * granted) but no network calls are made until `setConsentState('granted')`.
- *
- * Kept named `identify` for call-site compatibility; it deliberately does
- * NOT call `client.identify`. `bindUserId` is the only path that does.
+ * Bind the anonymous device id. Sets `distinctId` for capture attribution
+ * and queues the person props as a capture-`$set`. Despite the name it does
+ * NOT call `client.identify()` (that would burn the anon id — see the
+ * identity model up top); only `bindUserId` identifies.
  */
 export function identify(id: string, properties: Record<string, TelemetryValue> = {}): void {
   distinctId = id
@@ -725,12 +682,8 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  * the remembered baseline so subsequent events ride under the device
  * identity (not the prior user).
  *
- * Person-property `is_authenticated` is flipped back to `false` on the
- * anonymous identity so cohort filters reading it stay consistent. This goes
- * through a capture-`$set`, NOT `client.identify()`: identifying the anon id
- * here would re-burn it as an identified person and break the NEXT login's
- * alias merge (the original 0/13,528-stitched bug). See the identity-model
- * docstring at the top of this file.
+ * Flips `is_authenticated` back to `false` via a capture-`$set` (not
+ * `identify()`, which would re-burn the anon id for the next login).
  *
  * Caller responsibility (renderer): also clear Datadog
  * (`datadogRum.setUser({})` / `clearUser`) so RUM stops tagging events
@@ -768,19 +721,10 @@ function scrubProperties(properties: TelemetryContext): TelemetryContext {
 }
 
 /**
- * Persist person properties WITHOUT marking the distinct id identified.
- *
- * This is the anon-safe replacement for `client.identify({ $set })`. In
- * posthog-node, a `$set` / `$set_once` key on a *captured* event updates the
- * person profile but does NOT emit an `$identify` — so the current
- * `distinctId` (which, pre-login, is the anonymous `installation_id`) is left
- * un-identified and can still be merged by the login-time alias. See the
- * identity-model docstring at the top of this file.
- *
- * Carried on a dedicated low-volume `comfy.desktop.person.set` event rather
- * than folded into an arbitrary product event so the write is explicit and
- * greppable. Honors the consent gate via the shared `isAllowedToFire` /
- * rate-limit path (callers also gate on `consentState === 'granted'`).
+ * Persist person props without identifying the distinct id: a `$set` /
+ * `$set_once` on a captured event updates the person but emits no
+ * `$identify`, so the anon id stays mergeable at login. Uses a dedicated
+ * `comfy.desktop.person.set` event so the write is explicit and greppable.
  */
 function capturePersonProperties(
   set: Record<string, TelemetryValue> | null,
@@ -853,20 +797,10 @@ export function captureFirstLaunch(properties: TelemetryContext = {}): void {
 /**
  * Update PostHog person properties for the current distinct id (`$set`).
  *
- * Used by the renderer's cohort-context register pass and any other
- * caller that wants to attach durable user-level properties without
- * firing a product event. Honors three-state consent: queued in
- * `pendingPersonSet` until consent grants, at which point
- * `tryFlushDeferred()` ships the merged set.
- *
- * Routes the write through a capture-`$set` (NOT `client.identify()`) so it
- * does not mark the current distinct id identified. Pre-login the distinct id
- * is the anonymous `installation_id`; identifying it would break the
- * login-time alias merge (the 0/13,528-stitched bug). Post-login the distinct
- * id is the already-identified `user_id`, for which a capture-`$set` updates
- * the person just the same — so the single path is correct in both states.
- *
- * Repeated calls in the queued state merge (latest write wins per key).
+ * Attach durable person props without firing a product event. Consent-gated:
+ * queued in `pendingPersonSet` until granted. Routes through capture-`$set`
+ * (not `identify()`) so it never burns the anon id; correct post-login too,
+ * where the distinct id is the already-identified `user_id`.
  */
 export function registerPersonProperties(properties: Record<string, TelemetryValue>): void {
   if (!canEmit()) return
@@ -885,15 +819,8 @@ export function registerPersonProperties(properties: Record<string, TelemetryVal
  * lifetime, even when the per-installation event that fires them can recur on
  * a reinstall or a second machine.
  *
- * Honors the same three-state consent gate as `registerPersonProperties`:
- * queued in `pendingPersonSetOnce` until consent grants, at which point
- * `tryFlushDeferred()` ships it. Repeated queued calls merge per key;
- * `$set_once` makes the server-side write idempotent regardless.
- *
- * Like `registerPersonProperties`, this routes through a capture-`$set_once`
- * (NOT `client.identify()`) so a pre-login activation marker (e.g.
- * `first_generation_at`) does not mark the anonymous `installation_id`
- * identified and break the login-time alias merge.
+ * Like `registerPersonProperties` but `$set_once` (write-once markers such
+ * as `first_generation_at`). Same anon-safe capture-`$set_once` path.
  */
 export function registerPersonPropertiesOnce(properties: Record<string, TelemetryValue>): void {
   if (!canEmit()) return
