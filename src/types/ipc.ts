@@ -436,6 +436,35 @@ export interface ProgressStep {
   weight?: number
 }
 
+/**
+ * A mid-operation prompt the main process needs the user to answer (e.g.
+ * during Legacy Desktop adoption). Surfaced as an in-app dialog above the
+ * ProgressModal — never a native OS message box. Labels arrive pre-translated
+ * from main; the renderer must not re-translate them. The renderer ACKs
+ * delivery, then replies with the chosen `buttonIndex`.
+ */
+export interface AdoptPromptRequest {
+  promptId: string
+  type: 'info' | 'warning' | 'error' | 'question'
+  title: string
+  message: string
+  detail?: string
+  /** Pre-translated heading for the `detail` block. */
+  detailLabel?: string
+  buttons: string[]
+  defaultId: number
+  cancelId: number
+}
+
+export interface AdoptPromptAck {
+  promptId: string
+}
+
+export interface AdoptPromptResponse {
+  promptId: string
+  buttonIndex: number
+}
+
 // --- Event data types ---
 export interface ComfyOutputData {
   installationId: string
@@ -1252,6 +1281,13 @@ export interface ElectronApi {
   /** Downscaled `data:` URL preview of a completed image download, or null for
    *  non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
+
+  // Adopt prompts: in-app replacement for native message boxes shown
+  // mid-operation (e.g. Legacy Desktop adoption). The renderer subscribes,
+  // ACKs delivery, and replies with the chosen button index.
+  onAdoptPrompt(callback: (request: AdoptPromptRequest) => void): Unsubscribe
+  ackAdoptPrompt(payload: AdoptPromptAck): void
+  respondAdoptPrompt(payload: AdoptPromptResponse): void
 
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
