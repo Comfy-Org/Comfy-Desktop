@@ -1,7 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import {
   fs,
-  dialog,
-  BrowserWindow,
+  ipcMain,
   installations,
   i18n,
   performLocalMigration,
@@ -14,6 +14,7 @@ import {
 import type { InstallationRecord } from '../shared'
 import { adoptDesktopInstall, type AdoptPromptKind, type UserChoice } from '../../desktopAdopt'
 import type { ActionContext, ActionResult } from './types'
+import type { AdoptPromptAck, AdoptPromptResponse } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 
 interface PromptSpec {
@@ -26,7 +27,7 @@ interface PromptSpec {
   cancelId: number
 }
 
-// Build the native-modal spec for a prompt kind; each button maps to a UserChoice.
+// Build the in-app prompt spec for a prompt kind; each button maps to a UserChoice.
 function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
   const data = (ctx ?? {}) as Record<string, unknown>
   switch (kind) {
@@ -90,25 +91,115 @@ function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
   }
 }
 
-// Resolve a UserChoice via a native modal anchored to the focused window.
-async function showAdoptPrompt(kind: AdoptPromptKind, ctx: unknown): Promise<UserChoice> {
+// Pending adopt prompts awaiting a renderer response, keyed by promptId.
+interface PendingAdoptPrompt {
+  webContentsId: number
+  ack: () => void
+  resolve: (buttonIndex: number) => void
+  reject: (err: Error) => void
+}
+const pendingAdoptPrompts = new Map<string, PendingAdoptPrompt>()
+
+// How long to wait for the renderer to ACK delivery before giving up. This
+// only guards delivery (no window listening) — once ACKed, the user may take
+// as long as they like to answer.
+const ADOPT_PROMPT_ACK_TIMEOUT_MS = 5_000
+
+let adoptPromptHandlersRegistered = false
+function ensureAdoptPromptHandlers(): void {
+  if (adoptPromptHandlersRegistered) return
+  adoptPromptHandlersRegistered = true
+  ipcMain.on('adopt-prompt-ack', (event, payload: AdoptPromptAck) => {
+    const pending = pendingAdoptPrompts.get(payload?.promptId)
+    if (!pending || pending.webContentsId !== event.sender.id) return
+    pending.ack()
+  })
+  ipcMain.on('adopt-prompt-response', (event, payload: AdoptPromptResponse) => {
+    const pending = pendingAdoptPrompts.get(payload?.promptId)
+    if (!pending || pending.webContentsId !== event.sender.id) return
+    pending.resolve(payload.buttonIndex)
+  })
+}
+
+// Ask the originating renderer to surface an in-app prompt and resolve to the
+// chosen button index. Rejects (so the caller can fall back to cancel) if the
+// window never ACKs, is destroyed, or the operation aborts mid-prompt.
+function requestAdoptPromptButton(
+  sender: Electron.WebContents,
+  signal: AbortSignal,
+  spec: PromptSpec
+): Promise<number> {
+  ensureAdoptPromptHandlers()
+  const promptId = randomUUID()
+  return new Promise<number>((resolve, reject) => {
+    let settled = false
+    const cleanup = (): void => {
+      pendingAdoptPrompts.delete(promptId)
+      signal.removeEventListener('abort', onAbort)
+      sender.removeListener('destroyed', onDestroyed)
+      clearTimeout(ackTimer)
+    }
+    const settle = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      cleanup()
+      fn()
+    }
+    const onAbort = (): void => settle(() => reject(new Error('adopt-prompt-aborted')))
+    const onDestroyed = (): void =>
+      settle(() => reject(new Error('adopt-prompt-window-destroyed')))
+    const ackTimer = setTimeout(
+      () => settle(() => reject(new Error('adopt-prompt-unavailable'))),
+      ADOPT_PROMPT_ACK_TIMEOUT_MS
+    )
+
+    pendingAdoptPrompts.set(promptId, {
+      webContentsId: sender.id,
+      ack: () => clearTimeout(ackTimer),
+      resolve: (buttonIndex) => settle(() => resolve(buttonIndex)),
+      reject: (err) => settle(() => reject(err))
+    })
+
+    if (signal.aborted) {
+      settle(() => reject(new Error('adopt-prompt-aborted')))
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    sender.once('destroyed', onDestroyed)
+    sender.send('adopt-prompt', {
+      promptId,
+      type: spec.type,
+      title: spec.title,
+      message: spec.message,
+      detail: spec.detail,
+      detailLabel: spec.detail ? i18n.t('desktop.adoptPromptDetail') : undefined,
+      buttons: spec.buttons.map((b) => b.label),
+      defaultId: spec.defaultId,
+      cancelId: spec.cancelId
+    })
+  })
+}
+
+// Resolve a UserChoice via an in-app dialog in the originating renderer.
+// On any delivery failure we fall back to the prompt's cancel choice so
+// adoption fails cleanly instead of blocking forever.
+async function showAdoptPrompt(
+  sender: Electron.WebContents,
+  signal: AbortSignal,
+  kind: AdoptPromptKind,
+  ctx: unknown
+): Promise<UserChoice> {
   const spec = buildAdoptPromptSpec(kind, ctx)
-  const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
-  const opts = {
-    type: spec.type,
-    title: spec.title,
-    message: spec.message,
-    detail: spec.detail,
-    buttons: spec.buttons.map((b) => b.label),
-    defaultId: spec.defaultId,
-    cancelId: spec.cancelId,
-    noLink: true
+  let idx = spec.cancelId
+  try {
+    if (!sender.isDestroyed()) {
+      idx = await requestAdoptPromptButton(sender, signal, spec)
+    }
+  } catch {
+    idx = spec.cancelId
   }
-  const result = parent
-    ? await dialog.showMessageBox(parent, opts)
-    : await dialog.showMessageBox(opts)
-  const idx = Math.max(0, Math.min(result.response, spec.buttons.length - 1))
-  return spec.buttons[idx]!.choice
+  const clamped = Math.max(0, Math.min(idx, spec.buttons.length - 1))
+  return spec.buttons[clamped]!.choice
 }
 
 export async function handleMigrateToStandalone({
@@ -144,7 +235,7 @@ export async function handleMigrateToStandalone({
             sendProgress,
             sendOutput,
             signal: abort.signal,
-            promptUser: showAdoptPrompt
+            promptUser: (kind, ctx) => showAdoptPrompt(sender, abort.signal, kind, ctx)
           }
         })
       })
