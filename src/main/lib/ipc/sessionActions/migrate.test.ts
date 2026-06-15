@@ -222,6 +222,34 @@ describe('handleMigrateToStandalone — desktop branch', () => {
     const result = await handleMigrateToStandalone(makeContext({ sourceId: 'desktop' }, sender))
     expect(result).toEqual({ ok: false, message: 'desktop.adoptSourceMissingFailed' })
   })
+
+  it('falls back to cancel without crashing when the sender cannot deliver prompts (no EventEmitter methods)', async () => {
+    type SentMessage = { channel: string; payload: { promptId: string } }
+    const sent: SentMessage[] = []
+    // Mirrors the picker background-op stub sender: has send/isDestroyed but
+    // no once/removeListener. Must reject cleanly, never arm a timer, and
+    // never throw an uncaught exception in main.
+    const sender = {
+      id: 5,
+      send: vi.fn((channel: string, payload: SentMessage['payload']) =>
+        sent.push({ channel, payload })
+      ),
+      isDestroyed: () => false,
+    }
+
+    adoptDesktopInstallMock.mockImplementationOnce(
+      async ({ tools }: { tools: { promptUser: (k: string, c: unknown) => Promise<unknown> } }) => {
+        const choice = await tools.promptUser('source-missing', { message: 'boom' })
+        // Incapable sender: no prompt sent, immediate cancel fallback.
+        expect(sent.some((s) => s.channel === 'adopt-prompt')).toBe(false)
+        expect(choice).toEqual({ kind: 'source-missing', choice: 'cancel' })
+        throw new Error('source-missing: cancelled')
+      }
+    )
+
+    const result = await handleMigrateToStandalone(makeContext({ sourceId: 'desktop' }, sender))
+    expect(result).toEqual({ ok: false, message: 'desktop.adoptSourceMissingFailed' })
+  })
 })
 
 describe('handleMigrateToStandalone — non-desktop branch', () => {

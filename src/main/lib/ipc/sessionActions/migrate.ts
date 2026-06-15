@@ -121,9 +121,52 @@ function ensureAdoptPromptHandlers(): void {
   })
 }
 
+// A real renderer WebContents is an EventEmitter we can talk to. Synthetic
+// dispatch paths (e.g. the picker's background-op stub) pass an object with
+// only `send`/`isDestroyed`, which can't deliver an interactive prompt — and
+// calling EventEmitter methods on it would throw. Validate up front so those
+// callers fall back to cancel instead of crashing the main process.
+function isPromptCapableSender(sender: Electron.WebContents): boolean {
+  const maybe = sender as Partial<Electron.WebContents>
+  return (
+    typeof maybe.id === 'number' &&
+    typeof maybe.isDestroyed === 'function' &&
+    typeof maybe.send === 'function' &&
+    typeof maybe.once === 'function' &&
+    !maybe.isDestroyed()
+  )
+}
+
+// Best-effort listener removal that can never throw — a destroyed or stale
+// wrapper may have lost its EventEmitter methods, and prompt cleanup must not
+// surface an uncaught exception on the main-process event loop.
+function removeDestroyedListenerSafe(
+  sender: Electron.WebContents,
+  listener: () => void
+): void {
+  type ListenerRemover = (event: string, listener: (...args: unknown[]) => void) => void
+  const maybe = sender as unknown as {
+    removeListener?: ListenerRemover
+    off?: ListenerRemover
+  }
+  const remove =
+    typeof maybe.removeListener === 'function'
+      ? maybe.removeListener
+      : typeof maybe.off === 'function'
+        ? maybe.off
+        : null
+  if (!remove) return
+  try {
+    remove.call(sender, 'destroyed', listener)
+  } catch {
+    // ignore
+  }
+}
+
 // Ask the originating renderer to surface an in-app prompt and resolve to the
 // chosen button index. Rejects (so the caller can fall back to cancel) if the
-// window never ACKs, is destroyed, or the operation aborts mid-prompt.
+// window never ACKs, is destroyed, can't deliver prompts, or the operation
+// aborts mid-prompt.
 function requestAdoptPromptButton(
   sender: Electron.WebContents,
   signal: AbortSignal,
@@ -133,11 +176,16 @@ function requestAdoptPromptButton(
   const promptId = randomUUID()
   return new Promise<number>((resolve, reject) => {
     let settled = false
+    let ackTimer: ReturnType<typeof setTimeout> | null = null
+    let destroyedListenerRegistered = false
     const cleanup = (): void => {
       pendingAdoptPrompts.delete(promptId)
       signal.removeEventListener('abort', onAbort)
-      sender.removeListener('destroyed', onDestroyed)
-      clearTimeout(ackTimer)
+      if (destroyedListenerRegistered) removeDestroyedListenerSafe(sender, onDestroyed)
+      if (ackTimer) {
+        clearTimeout(ackTimer)
+        ackTimer = null
+      }
     }
     const settle = (fn: () => void): void => {
       if (settled) return
@@ -148,24 +196,44 @@ function requestAdoptPromptButton(
     const onAbort = (): void => settle(() => reject(new Error('adopt-prompt-aborted')))
     const onDestroyed = (): void =>
       settle(() => reject(new Error('adopt-prompt-window-destroyed')))
-    const ackTimer = setTimeout(
+
+    if (signal.aborted) {
+      reject(new Error('adopt-prompt-aborted'))
+      return
+    }
+    // Synthetic / destroyed senders can't deliver a prompt — bail before
+    // arming any timer or registering listeners on a non-EventEmitter.
+    if (!isPromptCapableSender(sender)) {
+      reject(new Error('adopt-prompt-unavailable'))
+      return
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      sender.once('destroyed', onDestroyed)
+      destroyedListenerRegistered = true
+    } catch (err) {
+      settle(() => reject(err instanceof Error ? err : new Error(String(err))))
+      return
+    }
+
+    ackTimer = setTimeout(
       () => settle(() => reject(new Error('adopt-prompt-unavailable'))),
       ADOPT_PROMPT_ACK_TIMEOUT_MS
     )
 
     pendingAdoptPrompts.set(promptId, {
       webContentsId: sender.id,
-      ack: () => clearTimeout(ackTimer),
+      ack: () => {
+        if (ackTimer) {
+          clearTimeout(ackTimer)
+          ackTimer = null
+        }
+      },
       resolve: (buttonIndex) => settle(() => resolve(buttonIndex)),
       reject: (err) => settle(() => reject(err))
     })
 
-    if (signal.aborted) {
-      settle(() => reject(new Error('adopt-prompt-aborted')))
-      return
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    sender.once('destroyed', onDestroyed)
     try {
       sender.send('adopt-prompt', {
         promptId,
@@ -179,7 +247,7 @@ function requestAdoptPromptButton(
         cancelId: spec.cancelId
       })
     } catch (err) {
-      // Sender went away between the isDestroyed() check and send. Settle now
+      // Sender went away between the capability check and send. Settle now
       // so the pending entry, listeners, and timer are cleaned up immediately.
       settle(() => reject(err instanceof Error ? err : new Error(String(err))))
     }
