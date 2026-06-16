@@ -46,6 +46,16 @@
 .chooser-tile:focus-visible .chooser-tile-meta {
   color: var(--text);
 }
+.chooser-tile:hover .chooser-tile-meta-line,
+.chooser-tile:focus-visible .chooser-tile-meta-line,
+.chooser-tile:hover .chooser-tile-meta-source,
+.chooser-tile:focus-visible .chooser-tile-meta-source,
+.chooser-tile:hover .chooser-tile-meta-sep,
+.chooser-tile:focus-visible .chooser-tile-meta-sep,
+.chooser-tile:hover .chooser-tile-recency-text,
+.chooser-tile:focus-visible .chooser-tile-recency-text {
+  color: var(--text-muted);
+}
 .chooser-tile:hover .chooser-tile-icon,
 .chooser-tile:focus-visible .chooser-tile-icon {
   /* Drop the resting opacity so the icon matches the brightened text. */
@@ -64,35 +74,108 @@
   color: var(--neutral-100);
 }
 
+.chooser-tile--install .chooser-tile-body {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
 .chooser-tile-name {
   font-size: 16px;
   font-weight: 600;
   display: block;
   color: var(--neutral-100);
-  /* Reserve space for the type icon at top-left so name doesn't collide. */
+  /* Reserve space for the type icon at top-left so name doesn't collide
+   * (New-Install / Cloud tiles, where the icon is absolute). */
   margin-top: auto;
   /* Single-line ellipsis: long install names (cloud workspace names,
    * user-renamed installs) must not blow out the tile's fixed width
-   * or wrap into the pill row below. */
+   * or wrap into the rows below. Highest truncation priority — only the
+   * name's own length ellipsizes it, never a long source/meta line. */
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.chooser-tile-meta {
-  /* Single-row pill layout: no wrap, so a long source pill shrinks
-   * (via the pill's own max-width / min-width: 0) and triggers
-   * ellipsis. Wrapping pills would otherwise size each one to its
-   * content and defeat truncation. */
+.chooser-tile--install .chooser-tile-name {
+  margin-top: 0;
+}
+.chooser-tile-name-tip {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.chooser-tile-name-tip .chooser-tile-name {
+  min-width: 0;
+}
+.chooser-tile-meta-tip {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+}
+.chooser-tile-meta-tip .chooser-tile-meta-line {
+  display: block;
+  min-width: 0;
+}
+
+.chooser-tile-meta-line {
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chooser-tile-meta-source {
+  color: var(--text-faint);
+}
+.chooser-tile-meta-sep {
+  margin: 0 5px;
+  color: var(--text-faint);
+}
+.chooser-tile-meta-version {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.chooser-tile:hover .chooser-tile-meta-version,
+.chooser-tile:focus-visible .chooser-tile-meta-version {
+  color: var(--text);
+}
+
+.chooser-tile-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.chooser-tile-recency {
+  min-width: 0;
+}
+.chooser-tile-recency-text {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* New-Install / Cloud tiles: simple single-line text meta (no pills). */
+.chooser-tile-meta {
   width: 100%;
   min-width: 0;
   font-size: 12px;
   color: var(--neutral-100);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chooser-tile-pill {
@@ -113,29 +196,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chooser-tile-pill-version {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  /* Secondary shrink target: with source + version + a (possibly
-   * versioned) action pill in one no-wrap row, the source pill
-   * ellipsizes first, then the version. The action pill holds its
-   * width (see `.chooser-tile-pill-action`). */
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-/* Action pill (update / migrate) — right-aligned so it sits apart from the
- * source + version metadata cluster (App-Store-style action), and holds its
+/* Action pill (update / migrate) — pinned right in the footer row so it
+ * reads as the affordance, apart from the quiet recency text, and holds its
  * width so the interactive label never truncates. */
 .chooser-tile-pill-action {
   margin-left: auto;
   flex-shrink: 0;
-}
-
-/* Launched-time pill — secondary info, lower contrast so it doesn't
- * compete with source/action pills. Holds its width like the others. */
-.chooser-tile-pill-launched {
-  flex-shrink: 0;
-  opacity: 0.7;
 }
 
 /* Update-available pill — accent-blue tinted, click-target. */
