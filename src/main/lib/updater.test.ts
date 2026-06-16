@@ -484,7 +484,9 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     updater.suppressInstallOnQuit()
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
 
-    // A settings toggle mid-shutdown must NOT re-arm it (mid-write corruption guard).
+    // Mid-shutdown setting flips must never re-arm install-on-quit.
+    settingsStore['autoInstallUpdates'] = false
+    updater.notifyAutoUpdateChanged()
     settingsStore['autoInstallUpdates'] = true
     updater.notifyAutoUpdateChanged()
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
