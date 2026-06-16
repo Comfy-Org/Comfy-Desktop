@@ -37,7 +37,6 @@
     "filterCloud": "Cloud",
     "filterRemote": "Remote",
     "updatePill": "Update",
-    "updatePillVersion": "Update {version}",
     "migratePill": "Migrate",
     "openInstall": "Open",
     "manageInstall": "Manage",

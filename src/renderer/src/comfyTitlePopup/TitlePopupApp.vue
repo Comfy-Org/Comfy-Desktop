@@ -291,6 +291,11 @@ function measureAndRequestSize(): void {
 onMounted(() => {
   void syncLocale()
   unsubConfig = bridge?.onConfig((cfg) => {
+    // Clear stale picker modals before the new snapshot can auto-fire a fresh
+    // confirm; the picker always sends a new config, so this owns its cleanup.
+    if (cfg.kind === 'instance-picker') {
+      dismissPickerModals()
+    }
     kind.value = cfg.kind
     items.value = cfg.kind === 'menu' ? cfg.items : []
     if (cfg.kind === 'instance-picker') {
@@ -326,11 +331,11 @@ onMounted(() => {
   // state persists across reopens; transient resets ride on the
   // activeInstallationId prop watcher in InstancePickerView.vue.
   //
-  // Every reopen also clears any pending `useModal` / `useDialogs` entry —
-  // a confirm prompt left open when the user blurred the popup would
-  // otherwise resurface on top of the picker the next time it's shown,
-  // looking stuck (issue raised during version-picker review).
-  unsubWillShow = bridge?.onWillShow(() => {
+  // Clear a confirm left pending when the popup was blurred so it can't
+  // resurface on reopen. The picker is handled in `onConfig`; skip it here so
+  // its freshly auto-fired confirm survives.
+  unsubWillShow = bridge?.onWillShow(({ kind: showKind }) => {
+    if (showKind === 'instance-picker') return
     dismissPickerModals()
   })
   unsubDismissModals = bridge?.onDismissModals(() => {

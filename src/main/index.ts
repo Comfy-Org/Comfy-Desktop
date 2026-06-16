@@ -1359,9 +1359,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     const installationId = getDeviceId()
 
-    // identify() FIRST so distinctId is bound before any capture path
-    // runs (incl. the deferred migration alias's capture below). Without
-    // this the migrated event silently dropped on the !distinctId guard.
+    // Bind the anonymous distinct id before any capture runs. Does NOT
+    // `$identify` the installation_id (that would block the login stitch —
+    // see identity model in lib/telemetry.ts); the props below ship as a
+    // capture-`$set`.
     mainTelemetry.identify(installationId, {
       app_version: APP_VERSION,
       platform: process.platform,

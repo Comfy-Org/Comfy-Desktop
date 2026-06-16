@@ -361,4 +361,40 @@ describe('TitlePopupApp', () => {
     await expect(pending).resolves.toBe(false)
     expect(modal.state.visible).toBe(false)
   })
+
+  // A reopened picker auto-fires its action confirm right after `set-config`.
+  // Because `will-show` arrives AFTER `set-config`, a `will-show` dismiss would
+  // kill that freshly opened confirm — the exact bug where reopening the SAME
+  // install's pill never re-showed the modal. The picker is dismissed in
+  // `onConfig` instead, so `will-show` must NOT dismiss for the picker.
+  it('does NOT dismiss an open modal on will-show for the instance-picker', async () => {
+    const { useModal } = await import('../composables/useModal')
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const modal = useModal()
+    const pending = modal.confirm({ title: 'Update ComfyUI', message: 'Confirm?' })
+    expect(modal.state.visible).toBe(true)
+    bridgeState.willShowCallbacks.forEach((cb) => cb({ kind: 'instance-picker' }))
+    await flushPromises()
+    expect(modal.state.visible).toBe(true)
+    modal.dismiss()
+    await expect(pending).resolves.toBe(false)
+  })
+
+  // Non-picker kinds still rely on will-show to clear a confirm left pending
+  // when the user blurred the popup (those kinds may hit the fast path and skip
+  // set-config, so onConfig can't own their cleanup).
+  it('still dismisses an open modal on will-show for non-picker kinds', async () => {
+    const { useModal } = await import('../composables/useModal')
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const modal = useModal()
+    const pending = modal.confirm({ title: 'Confirm?', message: 'Confirm?' })
+    expect(modal.state.visible).toBe(true)
+    bridgeState.willShowCallbacks.forEach((cb) => cb({ kind: 'global-settings' }))
+    await expect(pending).resolves.toBe(false)
+    expect(modal.state.visible).toBe(false)
+  })
 })
