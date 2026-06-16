@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import MenuView from './MenuView.vue'
 import DownloadsView from './DownloadsView.vue'
+import DownloadsFullView from './DownloadsFullView.vue'
 import InstancePickerView from './InstancePickerView.vue'
 import GlobalSettingsView from './GlobalSettingsView.vue'
 import ModalDialog from '../components/ModalDialog.vue'
@@ -136,6 +137,10 @@ type PopupConfig =
       theme: { bg: string; text: string }
     }
   | {
+      kind: 'downloads-full'
+      theme: { bg: string; text: string }
+    }
+  | {
       kind: 'instance-picker'
       snapshot: PickerSnapshot
       theme: { bg: string; text: string }
@@ -158,9 +163,7 @@ interface Bridge {
   /** Resize the popup view to fit the given natural content height (CSS px).
    *  Menu kind is sized deterministically main-side instead. */
   requestSize(height: number): void
-  onWillShow(
-    cb: (info: { kind: 'menu' | 'downloads' | 'instance-picker' | 'global-settings' }) => void
-  ): () => void
+  onWillShow(cb: (info: { kind: PopupConfig['kind'] }) => void): () => void
   /** Cancel any open useModal / useDialogs entry so a half-open confirm
    *  doesn't survive a kind-switch as orphaned Vue state. */
   onDismissModals(cb: () => void): () => void
@@ -168,7 +171,7 @@ interface Bridge {
 
 const bridge = (window as unknown as { __comfyTitlePopup?: Bridge }).__comfyTitlePopup
 
-const kind = ref<'menu' | 'downloads' | 'instance-picker' | 'global-settings'>('menu')
+const kind = ref<PopupConfig['kind']>('menu')
 const items = ref<MenuItem[]>([])
 const themeBg = ref<string>('#262729')
 const themeText = ref<string>('#dddddd')
@@ -392,12 +395,14 @@ onUnmounted(() => {
       'is-light': isLight,
       'is-menu': kind === 'menu',
       'is-picker': kind === 'instance-picker',
-      'is-global-settings': kind === 'global-settings'
+      'is-global-settings': kind === 'global-settings',
+      'is-downloads-full': kind === 'downloads-full'
     }"
     :style="{ background: themeBg, color: themeText }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
+    <DownloadsFullView v-else-if="kind === 'downloads-full'" :state="downloadsState" />
     <InstancePickerView v-else-if="kind === 'instance-picker'" :snapshot="pickerSnapshot" />
     <GlobalSettingsView v-else :snapshot="globalSettingsSnapshot" />
     <!-- Keeps useModal working inside the popup's separate WebContentsView. -->
@@ -437,9 +442,10 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-/* Instance picker + Global Settings share the in-app modal-card chrome. */
+/* Centred-card popups share the in-app modal-card chrome. */
 .popup.is-picker,
-.popup.is-global-settings {
+.popup.is-global-settings,
+.popup.is-downloads-full {
   background: var(--modal-surface-bg) !important;
   border: 1px solid var(--modal-surface-border);
   border-radius: 14px;
