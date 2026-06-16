@@ -95,16 +95,21 @@ describe('TemplatePickerStep', () => {
     expect(meta).toContain('VRAM')
   })
 
+  // The picker exposes the alert messages (shownDiskError / shownVramWarning);
+  // the host wizard renders them above the card and owns the blocked-Install shake.
+  type PickerVm = {
+    shownDiskError: string | null
+    shownVramWarning: string | null
+  }
+  const vmOf = (w: ReturnType<typeof mountPicker>) => w.vm as unknown as PickerVm
+
   describe('disk hard-block', () => {
-    it('renders the block alert when free space is below model + headroom', () => {
+    it('exposes the block message when free space is below model + headroom', () => {
       const wrapper = mountPicker({
         selectedValue: VIDEO.value, // 16GB model
         diskSpace: { free: 1 * GB, total: 500 * GB },
       })
-      const err = wrapper.find('.tps__alert--error')
-      expect(err.exists()).toBe(true)
-      expect(err.attributes('role')).toBe('alert')
-      expect(err.text().length).toBeGreaterThan(0)
+      expect(vmOf(wrapper).shownDiskError).toBeTruthy()
     })
 
     it('does not block while disk space is still loading', () => {
@@ -113,7 +118,7 @@ describe('TemplatePickerStep', () => {
         diskSpace: { free: 1 * GB, total: 500 * GB },
         diskSpaceLoading: true,
       })
-      expect(wrapper.find('.tps__alert--error').exists()).toBe(false)
+      expect(vmOf(wrapper).shownDiskError).toBeNull()
     })
 
     it('does not block when free space covers the model', () => {
@@ -121,7 +126,7 @@ describe('TemplatePickerStep', () => {
         selectedValue: VIDEO.value,
         diskSpace: { free: 100 * GB, total: 500 * GB },
       })
-      expect(wrapper.find('.tps__alert--error').exists()).toBe(false)
+      expect(vmOf(wrapper).shownDiskError).toBeNull()
     })
 
     it('never blocks the model-free none sentinel even on a full disk', () => {
@@ -129,27 +134,7 @@ describe('TemplatePickerStep', () => {
         selectedValue: NONE.value,
         diskSpace: { free: 0, total: 500 * GB },
       })
-      expect(wrapper.find('.tps__alert--error').exists()).toBe(false)
-    })
-
-    it('nudgeDiskError() shakes the block alert when blocked', async () => {
-      const wrapper = mountPicker({
-        selectedValue: VIDEO.value,
-        diskSpace: { free: 1 * GB, total: 500 * GB },
-      })
-      ;(wrapper.vm as unknown as { nudgeDiskError: () => void }).nudgeDiskError()
-      await wrapper.vm.$nextTick()
-      expect(wrapper.find('.tps__alert--error').classes()).toContain('tps__alert--nudge')
-    })
-
-    it('nudgeDiskError() is a no-op when not blocked', async () => {
-      const wrapper = mountPicker({
-        selectedValue: VIDEO.value,
-        diskSpace: { free: 100 * GB, total: 500 * GB },
-      })
-      ;(wrapper.vm as unknown as { nudgeDiskError: () => void }).nudgeDiskError()
-      await wrapper.vm.$nextTick()
-      expect(wrapper.find('.tps__alert--nudge').exists()).toBe(false)
+      expect(vmOf(wrapper).shownDiskError).toBeNull()
     })
   })
 
@@ -159,9 +144,7 @@ describe('TemplatePickerStep', () => {
         selectedValue: VIDEO.value, // recommends 24GB
         detectedVramBytes: 8 * GB,
       })
-      const warn = wrapper.find('.tps__alert--warn')
-      expect(warn.exists()).toBe(true)
-      expect(warn.attributes('role')).toBe('status')
+      expect(vmOf(wrapper).shownVramWarning).toBeTruthy()
     })
 
     it('stays silent when detected VRAM meets the recommendation', () => {
@@ -169,12 +152,12 @@ describe('TemplatePickerStep', () => {
         selectedValue: VIDEO.value,
         detectedVramBytes: 32 * GB,
       })
-      expect(wrapper.find('.tps__alert--warn').exists()).toBe(false)
+      expect(vmOf(wrapper).shownVramWarning).toBeNull()
     })
 
     it('stays silent when VRAM is undetected (never false-warns)', () => {
       const wrapper = mountPicker({ selectedValue: VIDEO.value })
-      expect(wrapper.find('.tps__alert--warn').exists()).toBe(false)
+      expect(vmOf(wrapper).shownVramWarning).toBeNull()
     })
   })
 
@@ -185,5 +168,10 @@ describe('TemplatePickerStep', () => {
     await firstIcon.find('img').trigger('error')
     expect(firstIcon.find('img').exists()).toBe(false) // swapped for the glyph
     expect(firstIcon.find('svg').exists()).toBe(true)
+  })
+
+  it('renders the bundled preview src for a template thumbnail', () => {
+    const icon = mountPicker({ selectedValue: IMAGE.value }).findAll('.brand-variant-row__icon')[0]!
+    expect(icon.find('img').attributes('src')).toBe('./x.webp')
   })
 })

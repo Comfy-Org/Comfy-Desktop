@@ -1,15 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch, type Component } from 'vue'
+import { computed, nextTick, reactive, ref, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  Check,
-  CircleAlert,
-  TriangleAlert,
-  Image as ImageIcon,
-  Video,
-  AudioLines,
-  Box
-} from 'lucide-vue-next'
+import { Check, Image as ImageIcon, Video, AudioLines, Box } from 'lucide-vue-next'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
 import { templateDiskRequiredBytes, isTemplateDiskBlocked } from '../lib/installHelpers'
@@ -34,12 +26,11 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const listRef = ref<HTMLElement | null>(null)
-const alertsRef = ref<HTMLElement | null>(null)
 
 const templateCards = computed(() => props.options.filter((o) => o.value !== props.noneValue))
 
 const selectedOption = computed(
-  () => props.options.find((o) => o.value === props.selectedValue) ?? null,
+  () => props.options.find((o) => o.value === props.selectedValue) ?? null
 )
 const recommendedValue = computed(() => templateCards.value[0]?.value ?? null)
 
@@ -75,6 +66,23 @@ function thumbnailOf(option: FieldOption): string | null {
   const url = option.data?.thumbnailUrl
   return typeof url === 'string' && url ? url : null
 }
+function isAnimated(option: FieldOption): boolean {
+  return option.data?.previewKind === 'animated'
+}
+
+const reduceMotion = ref(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+
+/** Preview URL for a row: the paired `<id>-still.webp` frame when the template
+ *  is animated AND the user prefers reduced motion, otherwise the bundled
+ *  `<id>.webp` (which itself animates for motion templates). */
+function previewSrcOf(option: FieldOption): string | null {
+  const url = thumbnailOf(option)
+  if (!url) return null
+  if (isAnimated(option) && reduceMotion.value) {
+    return url.replace(/\.webp$/, '-still.webp')
+  }
+  return url
+}
 function sizeLabelOf(option: FieldOption): string {
   const bytes = sizeBytesOf(option)
   return bytes > 0 ? `~${formatBytesCoarse(bytes)}` : ''
@@ -88,7 +96,7 @@ function metaLabelOf(option: FieldOption): string {
   return parts.join(' · ')
 }
 
-const vramWarning = computed<string | null>(() => {
+const shownVramWarning = computed<string | null>(() => {
   const recommended = vramOf(selectedOption.value)
   if (!recommended || props.detectedVramBytes === undefined) return null
   if (props.detectedVramBytes >= recommended) return null
@@ -98,12 +106,13 @@ const vramWarning = computed<string | null>(() => {
   })
 })
 
-const diskBlocked = computed(() =>
-  !props.diskSpaceLoading &&
-  isTemplateDiskBlocked(props.diskSpace, sizeBytesOf(selectedOption.value)),
+const diskBlocked = computed(
+  () =>
+    !props.diskSpaceLoading &&
+    isTemplateDiskBlocked(props.diskSpace, sizeBytesOf(selectedOption.value))
 )
 
-const diskErrorMessage = computed<string | null>(() => {
+const shownDiskError = computed<string | null>(() => {
   if (!diskBlocked.value || !props.diskSpace) return null
   const required = templateDiskRequiredBytes(sizeBytesOf(selectedOption.value))
   return t('diskSpace.templateBlockMessage', {
@@ -112,7 +121,6 @@ const diskErrorMessage = computed<string | null>(() => {
   })
 })
 
-const hasAlerts = computed(() => !!(diskErrorMessage.value || vramWarning.value))
 
 function focusRow(index: number): void {
   nextTick(() => {
@@ -137,29 +145,9 @@ function onRowKeydown(e: KeyboardEvent, index: number): void {
   focusRow(nextIndex)
 }
 
-watch(diskBlocked, (blocked) => {
-  if (!blocked) return
-  nextTick(() => {
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    alertsRef.value?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest' })
-  })
-})
-
-/** Shake the disk-error alert so a blocked Install click is impossible to miss
- *  (mirrors the consent-row nudge on the first-use screen). No-op when not
- *  blocked. Exposed so the host wizard — which owns the Install button — can
- *  trigger it. Auto-resets so it can replay on the next click. */
-const diskErrorNudge = ref(false)
-let diskNudgeTimer: ReturnType<typeof setTimeout> | undefined
-function nudgeDiskError(): void {
-  if (!diskBlocked.value) return
-  diskErrorNudge.value = true
-  clearTimeout(diskNudgeTimer)
-  diskNudgeTimer = setTimeout(() => {
-    diskErrorNudge.value = false
-  }, 600)
-}
-defineExpose({ nudgeDiskError })
+// Disk / VRAM alert messages; the host wizard renders them above the card (so
+// they're never clipped by the list scroll) and owns the blocked-Install shake.
+defineExpose({ shownDiskError, shownVramWarning })
 </script>
 
 <template>
@@ -178,20 +166,20 @@ defineExpose({ nudgeDiskError })
         :aria-checked="selectedValue === opt.value"
         :class="[
           'brand-variant-row',
-          { 'brand-variant-row--selected': selectedValue === opt.value },
+          { 'brand-variant-row--selected': selectedValue === opt.value }
         ]"
         @click="emit('select', opt)"
         @keydown="onRowKeydown($event, index)"
       >
         <span class="brand-variant-row__icon" aria-hidden="true">
           <img
-            v-if="thumbnailOf(opt) && !thumbFailed[opt.value]"
-            :src="thumbnailOf(opt)!"
+            v-if="previewSrcOf(opt) && !thumbFailed[opt.value]"
+            :src="previewSrcOf(opt)!"
             :alt="opt.label"
             draggable="false"
             @error="thumbFailed[opt.value] = true"
           />
-          <component :is="modalityGlyph(opt)" v-else-if="modalityGlyph(opt)" :size="20" />
+          <component :is="modalityGlyph(opt)" v-else-if="modalityGlyph(opt)" :size="24" />
         </span>
         <span class="brand-variant-row__body">
           <span class="brand-variant-row__head">
@@ -224,27 +212,6 @@ defineExpose({ nudgeDiskError })
         </span>
       </button>
     </div>
-
-    <div
-      v-if="hasAlerts"
-      id="tps-alerts"
-      ref="alertsRef"
-      class="tps__alerts"
-    >
-      <div
-        v-if="diskErrorMessage"
-        class="tps__alert tps__alert--error"
-        :class="{ 'tps__alert--nudge': diskErrorNudge }"
-        role="alert"
-      >
-        <CircleAlert :size="15" aria-hidden="true" />
-        <span>{{ diskErrorMessage }}</span>
-      </div>
-      <div v-if="vramWarning" class="tps__alert tps__alert--warn" role="status">
-        <TriangleAlert :size="15" aria-hidden="true" />
-        <span>{{ vramWarning }}</span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -262,8 +229,8 @@ defineExpose({ nudgeDiskError })
 
 .brand-variant-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 14px;
   width: 100%;
   padding: 10px 12px;
   border: 1px solid transparent;
@@ -298,11 +265,11 @@ defineExpose({ nudgeDiskError })
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  margin-top: 1px;
+  width: 100px;
+  aspect-ratio: 4 / 3;
   border-radius: 6px;
   background: var(--chooser-surface-bg);
+  box-shadow: inset 0 0 0 1px var(--brand-surface-border);
   overflow: hidden;
   color: var(--neutral-500);
 }
@@ -390,57 +357,6 @@ defineExpose({ nudgeDiskError })
   color: var(--neutral-200);
 }
 
-.tps__alerts {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--brand-surface-border);
-}
-.tps__alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: var(--takeover-fs-caption);
-  line-height: 1.4;
-  text-align: left;
-}
-.tps__alert svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-.tps__alert--error {
-  color: var(--danger);
-}
-.tps__alert--warn {
-  color: var(--warning);
-}
-
-/* Shake when a blocked Install is clicked (mirrors the consent-row nudge). */
-.tps__alert--nudge {
-  animation: tps-alert-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-}
-@keyframes tps-alert-shake {
-  10%,
-  90% {
-    transform: translateX(-1px);
-  }
-  20%,
-  80% {
-    transform: translateX(2px);
-  }
-  30%,
-  50%,
-  70% {
-    transform: translateX(-3px);
-  }
-  40%,
-  60% {
-    transform: translateX(3px);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .brand-variant-row,
   .tps__row-detail,
@@ -449,9 +365,6 @@ defineExpose({ nudgeDiskError })
   }
   .tps__row-detail:not(.tps__row-detail--open) {
     display: none;
-  }
-  .tps__alert--nudge {
-    animation: none;
   }
 }
 </style>

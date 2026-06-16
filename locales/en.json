@@ -300,7 +300,7 @@
     "warningMessage": "The target drive only has {free} free. This operation may require approximately {required}. You may run out of space during the process.",
     "warningMessageGeneric": "The target drive only has {free} free. You may run out of space during the process.",
     "templateBlockTitle": "Not Enough Space for Template Models",
-    "templateBlockMessage": "The starter template needs about {required} for its models, but the target drive only has {free} free. Free up space or pick a lighter workflow.",
+    "templateBlockMessage": "Needs ~{required}, only {free} free. Free up space or pick a lighter workflow.",
     "continueAnyway": "Continue Anyway",
     "calculatingSize": "Calculating…",
     "sizeLabel": "Disk Usage",

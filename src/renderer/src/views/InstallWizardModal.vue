@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, HardDrive } from 'lucide-vue-next'
+import { ChevronRight, HardDrive, CircleAlert, TriangleAlert } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 
 import type {
@@ -130,6 +130,26 @@ const templateInstallBlocked = computed(() => {
 
 const pickerRef = ref<InstanceType<typeof TemplatePickerStep> | null>(null)
 
+/** Alert state surfaced by the picker, rendered above the card so it's always
+ *  visible (never clipped by the card's scroll). */
+const templateDiskError = computed(() => pickerRef.value?.shownDiskError ?? null)
+const templateVramWarning = computed(() => pickerRef.value?.shownVramWarning ?? null)
+const hasTemplateAlerts = computed(
+  () => !!(templateDiskError.value || templateVramWarning.value)
+)
+
+/** Shake the disk-error alert when a blocked Install is clicked (mirrors the
+ *  first-use consent gate). Auto-resets so it can replay on the next click. */
+const templateAlertNudge = ref(false)
+let templateNudgeTimer: ReturnType<typeof setTimeout> | undefined
+function nudgeTemplateAlert(): void {
+  templateAlertNudge.value = true
+  clearTimeout(templateNudgeTimer)
+  templateNudgeTimer = setTimeout(() => {
+    templateAlertNudge.value = false
+  }, 600)
+}
+
 /** Which step of the takeover is showing: Configure, then the (optional,
  *  standalone-only) starter-template picker before install. */
 const step = ref<'configure' | 'template'>('configure')
@@ -220,7 +240,7 @@ async function handleConfigureContinue(): Promise<void> {
  *  first-use consent gate). */
 async function handleTemplateInstall(): Promise<void> {
   if (templateInstallBlocked.value) {
-    pickerRef.value?.nudgeDiskError()
+    nudgeTemplateAlert()
     return
   }
   const tpl = selectedTemplate.value
@@ -365,6 +385,7 @@ onBeforeUnmount(() => {
     returnFocusTo.focus()
   }
   returnFocusTo = null
+  clearTimeout(templateNudgeTimer)
 })
 
 interface OpenOpts {
@@ -1125,6 +1146,21 @@ defineExpose({ open })
     <div v-else-if="step === 'template'" class="template-shell">
       <h1 class="brand-title">{{ $t('standalone.templatePickerTitle') }}</h1>
       <p class="brand-lead">{{ $t('standalone.templatePickerLead') }}</p>
+      <div
+        v-if="hasTemplateAlerts"
+        id="tps-alerts"
+        class="template-alerts"
+        :class="{ 'template-alerts--nudge': templateAlertNudge }"
+      >
+        <div v-if="templateDiskError" class="template-alert template-alert--error" role="alert">
+          <CircleAlert :size="16" aria-hidden="true" />
+          <span>{{ templateDiskError }}</span>
+        </div>
+        <div v-if="templateVramWarning" class="template-alert template-alert--warn" role="status">
+          <TriangleAlert :size="16" aria-hidden="true" />
+          <span>{{ templateVramWarning }}</span>
+        </div>
+      </div>
       <div class="brand-card template-card">
         <div class="brand-card__body template-card__body">
           <TemplatePickerStep
@@ -1218,7 +1254,66 @@ defineExpose({ open })
 }
 .template-card {
   width: 100%;
-  max-height: 100%;
+  min-height: clamp(360px, 56vh, 560px);
+  max-height: min(70vh, 100%);
+}
+.template-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+  text-align: left;
+}
+.template-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: var(--takeover-fs-caption);
+  line-height: 1.4;
+}
+.template-alert svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.template-alert--error {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 28%, transparent);
+}
+.template-alert--warn {
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warning) 26%, transparent);
+}
+.template-alerts--nudge {
+  animation: template-alert-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes template-alert-shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-3px);
+  }
+  40%,
+  60% {
+    transform: translateX(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .template-alerts--nudge {
+    animation: none;
+  }
 }
 .template-card__footer {
   flex-direction: column;
@@ -1246,6 +1341,13 @@ defineExpose({ open })
 .template-shell__opt-out .brand-checkbox__text {
   line-height: 1.4;
 }
+.template-card__footer-actions .brand-ghost,
+.template-card__footer-actions .brand-primary {
+  height: 34px;
+  padding-block: 0;
+  padding-inline: 14px;
+  font-size: var(--takeover-fs-caption);
+}
 .template-skip {
   margin-right: auto;
   border: 1px solid var(--brand-surface-border);
@@ -1257,7 +1359,7 @@ defineExpose({ open })
   background: var(--brand-surface-bg);
 }
 .template-install {
-  min-width: 120px;
+  min-width: 104px;
 }
 /* Reads as disabled but stays clickable so the click can shake the disk-error
  *  alert (mirrors the first-use consent gate). */
