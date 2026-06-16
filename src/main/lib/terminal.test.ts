@@ -164,6 +164,23 @@ describe('terminal manager', () => {
     expect(init).not.toContain('VIRTUAL_ENV =')
   })
 
+  it('opens the shell in the resolved ComfyUI code folder when it exists', async () => {
+    // process.cwd() is a real, existing dir, so it survives the existence guard.
+    const codeDir = process.cwd()
+    setTerminalEnvResolver(() => ({ cwd: codeDir }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
+    expect(opts?.cwd).toBe(codeDir)
+  })
+
+  it('falls back to the install path when the resolved cwd is missing', async () => {
+    setTerminalEnvResolver(() => ({ cwd: '/definitely/not/a/real/dir' }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
+    // installPath is /installs/inst-a (see the installations mock above).
+    expect(opts?.cwd).toBe('/installs/inst-a')
+  })
+
   it('streams output to subscribers and retains scrollback', async () => {
     const wc = makeWebContents()
     await subscribeTerminal('inst-a', asWc(wc))

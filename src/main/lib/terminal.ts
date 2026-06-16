@@ -122,6 +122,8 @@ export function setTerminalEnvResolver(resolver: TerminalEnvResolver): void {
 function defaultTerminalEnv(inst: InstallationRecord): TerminalEnv {
   const venvDir = getActiveVenvDir(inst)
   return {
+    // Standalone/adopted keep their ComfyUI code under `<installPath>/ComfyUI`.
+    cwd: path.join(inst.installPath, 'ComfyUI'),
     venvDir,
     promptName: path.basename(venvDir),
     pip: { exe: getActiveUvPath(inst), args: ['pip'] },
@@ -269,12 +271,15 @@ class InstallTerminal {
     // the user typed `exit` would leak the dead session's buffer into restore.
     this.sessionBuffer.length = 0
     const env = envResolver(inst) ?? defaultTerminalEnv(inst)
+    // Open the shell on the ComfyUI code folder (issue #1070); fall back to the
+    // install path when the source didn't resolve one or it no longer exists.
+    const cwd = env.cwd && fs.existsSync(env.cwd) ? env.cwd : inst.installPath
     const pty = await loadPty()
     const instance = pty.spawn(getDefaultShell(), [], {
       name: 'xterm-256color',
       cols: this.size.cols,
       rows: this.size.rows,
-      cwd: inst.installPath,
+      cwd,
       env: process.env as Record<string, string>,
     })
 

@@ -145,12 +145,14 @@ export const gitSource: SourcePlugin = {
   getTerminalEnv(installation: InstallationRecord): TerminalEnv {
     // A git install runs from its own venv (`venvPath`), not the standalone
     // `ComfyUI/.venv`, and has no bundled `standalone-env/uv.exe`. Activate that
-    // venv so its own `pip` is on PATH; leave pip unaliased. Return an empty env
-    // (plain shell, no broken standalone-env reference) when there's no usable
-    // venv — `resolveVenvPython` confirms the interpreter actually exists.
+    // venv so its own `pip` is on PATH; leave pip unaliased. Open the shell on
+    // the ComfyUI code folder (where `main.py` lives) regardless of whether a
+    // venv is usable.
+    const mainPy = findMainPy(installation.installPath)
+    const base: TerminalEnv = mainPy ? { cwd: path.dirname(mainPy) } : {}
     const venvPath = installation.venvPath as string | undefined
-    if (!venvPath || !resolveVenvPython(installation)) return {}
-    return { venvDir: venvPath, promptName: path.basename(venvPath) }
+    if (!venvPath || !resolveVenvPython(installation)) return base
+    return { ...base, venvDir: venvPath, promptName: path.basename(venvPath) }
   },
 
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {

@@ -133,6 +133,8 @@ export const portable: SourcePlugin = {
     if (!root) return {}
     const embedded = path.join(root, 'python_embeded')
     return {
+      // Open the shell on the ComfyUI code folder, not the portable root.
+      cwd: path.join(root, 'ComfyUI'),
       pathPrepends: [embedded, path.join(embedded, 'Scripts')],
       promptName: 'python_embeded',
       pip: { exe: path.join(embedded, 'python.exe'), args: ['-s', '-m', 'pip'] },

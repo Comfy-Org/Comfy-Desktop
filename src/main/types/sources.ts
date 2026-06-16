@@ -92,6 +92,10 @@ export interface TerminalPipCommand {
  * instead of assuming the standalone `ComfyUI/.venv` + bundled-uv layout.
  */
 export interface TerminalEnv {
+  /** Directory the shell should open in — the ComfyUI code folder (where
+   *  `main.py` lives), so the terminal lands on the repo regardless of how the
+   *  install is packaged. Falls back to the install path when unset or missing. */
+  cwd?: string
   /** venv dir to activate: sets VIRTUAL_ENV, prepends its Scripts/bin to PATH,
    *  and shows the venv prompt. Omit when there is no venv to activate. */
   venvDir?: string
