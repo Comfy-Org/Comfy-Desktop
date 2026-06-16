@@ -628,6 +628,39 @@ describe('ComfyUISettingsContent', () => {
 
       useComfyUISettingsState.sections.value = priorSections
     })
+
+    it('does NOT latch onto the Console tab when a local install retargets through stale/empty sections', async () => {
+      // Repro for "portable opens to the Terminal tab": for a local install,
+      // only the section-less Console tab survives a transient empty/stale
+      // sections list, so the tab-fallback used to latch onto it and never
+      // revert. The fix gates the fallback on `sectionsFresh`.
+      const priorSections = useComfyUISettingsState.sections.value
+      const fullSections = [
+        { tab: 'update', fields: [] },
+        { tab: 'settings', fields: [] },
+        { tab: 'storage', fields: [] },
+        { tab: 'status', fields: [] },
+      ]
+      useComfyUISettingsState.sectionsFresh.value = true
+      useComfyUISettingsState.sections.value = fullSections
+      const w = await mountContent({ initialTab: 'update' })
+      expect(w.find('[data-testid="console-terminal-pane-stub"]').exists()).toBe(false)
+
+      // Retarget: sections go empty + stale → tabs collapse to [console].
+      useComfyUISettingsState.sections.value = []
+      useComfyUISettingsState.sectionsFresh.value = false
+      await nextTick()
+      expect(w.find('[data-testid="console-terminal-pane-stub"]').exists()).toBe(false)
+
+      // Real payload lands: must end on Update, never stuck on Console.
+      useComfyUISettingsState.sections.value = fullSections
+      useComfyUISettingsState.sectionsFresh.value = true
+      await nextTick()
+      expect(w.find('[data-testid="console-terminal-pane-stub"]').exists()).toBe(false)
+
+      useComfyUISettingsState.sections.value = priorSections
+      useComfyUISettingsState.sectionsFresh.value = true
+    })
   })
 
   // Each pane is keyed by install id so `<Transition>` fires on install switch

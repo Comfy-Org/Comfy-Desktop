@@ -262,14 +262,14 @@ describe('comfyTitlePopup/DownloadsView', () => {
     ])
   })
 
-  it('routes the footer link to the standalone DownloadsModal (not the Settings tab)', async () => {
+  it('routes the footer link to the full downloads popup (not the Settings tab)', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const wrapper = mount(DownloadsView, { props: { state: EMPTY_STATE } })
     await flushPromises()
     expect(wrapper.find('.downloads-link').text()).toBe('View All Downloads')
     await wrapper.find('.downloads-link').trigger('click')
     expect(bridgeState.openDownloadsModalCalls).toBe(1)
-    // The modal, not `openSettingsTab('downloads')`, is now the destination.
+    // The full popup, not `openSettingsTab('downloads')`, is now the destination.
     expect(bridgeState.openSettingsTabCalls).toEqual([])
   })
 })

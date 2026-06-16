@@ -310,7 +310,15 @@ const showUpdateBadge = computed(() => {
 // If the selected tab disappeared, fall back to the requested
 // `initialTab` if now available, else the first surviving tab. Prefer
 // the requested tab over `next[0]` so deep links honour caller intent.
-watch(tabs, (next) => {
+//
+// Gated on `sectionsFresh`: while a local install's sections are empty or
+// stale (initial load / retarget), every backend-gated tab vanishes and
+// only the section-less Console tab survives, so an ungated fallback would
+// latch `activeTab` onto Console and never revert once the real sections
+// arrive (the Console tab stays valid). Only reconcile against a payload
+// that actually belongs to the current install.
+watch([tabs, sectionsFresh], ([next, isFresh]) => {
+  if (!isFresh) return
   if (next.length === 0) return
   if (next.some((tab) => tab.key === activeTab.value)) return
   const requested = next.find((tab) => tab.key === props.initialTab)
