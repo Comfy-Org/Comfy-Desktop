@@ -473,6 +473,31 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
   })
 
+  it('notifyAutoUpdateChanged() never re-arms install-on-quit after session-end suppression', async () => {
+    // Opt out of startup install so install-on-quit would otherwise be armed.
+    settingsStore['installUpdatesOnStartup'] = false
+    const updater = await import('./updater')
+    updater.register()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+
+    // OS session ends → guard suppresses install-on-quit for the session.
+    updater.suppressInstallOnQuit()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+
+    // A settings toggle mid-shutdown must NOT re-arm it (mid-write corruption guard).
+    settingsStore['autoInstallUpdates'] = true
+    updater.notifyAutoUpdateChanged()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('register() disables install-on-quit on macOS when auto-install is off', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    settingsStore['autoInstallUpdates'] = false
+    const updater = await import('./updater')
+    updater.register()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+  })
+
   it('installUpdate() is a no-op while the OS session is ending', async () => {
     sessionEnding = true
     const updater = await import('./updater')

@@ -181,16 +181,23 @@ function isInstallerUIEnabled(): boolean {
   return isWindowsOptOutGate('showInstallerUI')
 }
 
+/** Set once the OS session-end guard suppresses install-on-quit; never cleared
+ *  for the life of the process. Latches the suppression so a later settings
+ *  toggle (which re-runs `syncInstallOnQuitPolicy`) can't re-arm install-on-quit
+ *  mid-shutdown and reintroduce the mid-write corruption the guard prevents. */
+let _installOnQuitSuppressedForSession = false
+
 /**
  * Disable electron-updater's install-on-quit. Called when the OS signals the
  * session is ending (Windows shutdown / restart / logoff) so the quit handler
  * electron-updater registers after a download won't spawn the installer while
  * the OS tears everything down — that mid-write kill is the corruption mode
  * behind the "reinstall on every shutdown" loop. The quit handler re-reads this
- * flag at quit time, so flipping it here is enough. Safe to call in any mode (a
- * no-op when the startup-install path already disabled it at register time).
+ * flag at quit time, so flipping it here is enough. Latches for the session so
+ * `syncInstallOnQuitPolicy` can't undo it. Safe to call in any mode.
  */
 export function suppressInstallOnQuit(): void {
+  _installOnQuitSuppressedForSession = true
   try {
     electronAutoUpdater.autoInstallOnAppQuit = false
   } catch {}
@@ -198,13 +205,15 @@ export function suppressInstallOnQuit(): void {
 
 /**
  * Reconcile electron-updater's install-on-quit flag with current settings.
- * Install-on-quit is disabled when either:
+ * Install-on-quit is disabled when any of:
+ *   - the OS session-end guard already suppressed it for this session
+ *     (`suppressInstallOnQuit` — never re-arm mid-shutdown), or
  *   - the startup-install path owns the install (Windows default — the staged
  *     update applies on the next launch, not on quit), or
  *   - the user disabled auto-install (Issue #1104 — a staged update must wait
  *     for an explicit "Desktop Update Ready" pill click rather than installing
  *     on the next quit/close).
- * It stays enabled only when neither holds (non-Windows with auto-install on),
+ * It stays enabled only when none hold (non-Windows with auto-install on),
  * where a normal quit still applies a staged update. Re-applied on the
  * `autoInstallUpdates` toggle so flipping the setting takes effect without a
  * restart. The download itself is unaffected — updates still download in the
@@ -212,7 +221,8 @@ export function suppressInstallOnQuit(): void {
  */
 export function syncInstallOnQuitPolicy(): void {
   try {
-    electronAutoUpdater.autoInstallOnAppQuit = !isStartupInstallEnabled() && isAutoInstallEnabled()
+    electronAutoUpdater.autoInstallOnAppQuit =
+      !_installOnQuitSuppressedForSession && !isStartupInstallEnabled() && isAutoInstallEnabled()
   } catch {}
 }
 
