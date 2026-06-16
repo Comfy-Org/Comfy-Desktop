@@ -113,14 +113,6 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../components/DownloadsModal.vue', () => ({
-  default: {
-    name: 'DownloadsModal',
-    props: ['open'],
-    emits: ['close'],
-    template: '<div data-testid="downloads-modal" />'
-  }
-}))
 vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   default: {
     name: 'MigrateConfirmTakeover',
