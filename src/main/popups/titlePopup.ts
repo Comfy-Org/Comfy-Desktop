@@ -1907,14 +1907,10 @@ export function activateTitlePopupMenuItem(
     // two entry points in the telemetry payload.
     bindings.triggerOpenFeedback(entry.parentEntryId, 'menu')
   } else if (id === 'reset-zoom') {
-    // The menu entry exists only when zoom is non-zero (see
-    // `buildTitlePopupMenuItems`). Route through the shared reset so the
-    // title-bar pill gets the `comfy-titlebar:zoom-changed` push and clears:
-    // that event only fires for mouse-wheel zoom, never the programmatic
-    // `setZoomLevel` reset, so the pill won't update on its own. Explicit
-    // null check matches the builder's gate at line 761 so a future
-    // `installationId: ''` from a serialization quirk can't show the menu
-    // and silently swallow the click here.
+    // Route through the shared reset so the title-bar pill picks up the
+    // `comfy-titlebar:zoom-changed` push (that event fires only for
+    // mouse-wheel zoom, never the programmatic `setZoomLevel`). `!== null`
+    // (not truthy) keeps this gate aligned with the builder at line 761.
     if (parentEntry != null && parentEntry.installationId !== null) {
       bindings.resetComfyZoom(parentEntry.installationId)
     }
