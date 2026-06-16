@@ -48,24 +48,11 @@ test.beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 test('Reset Zoom menu item is absent at zoom level 0 @windows @macos @linux', async () => {
-  await setComfyViewZoomLevel(ctx.app, 0)
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForSelector('[role="menuitem"]', { timeout: 5_000 })
-
-  const labels = await popup.allText('[role="menuitem"]')
-  expect(labels.some((l) => /reset zoom/i.test(l))).toBe(false)
+  await expectNoResetZoomAtLevel(ctx.app, 0)
 })
 
 test('Reset Zoom menu item is absent on the dashboard even when the dummy comfyView zoom is non-zero @windows @macos @linux', async () => {
-  await setComfyViewZoomLevel(ctx.app, 1)
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForSelector('[role="menuitem"]', { timeout: 5_000 })
-
-  const labels = await popup.allText('[role="menuitem"]')
-  expect(labels.some((l) => /reset zoom/i.test(l))).toBe(false)
-
-  // Reset for downstream tests in the serial run.
-  await setComfyViewZoomLevel(ctx.app, 0)
+  await expectNoResetZoomAtLevel(ctx.app, 1)
 })
 
 // ---------------------------------------------------------------------------
@@ -158,6 +145,19 @@ async function setComfyViewZoomLevel(app: ElectronApplication, level: number): P
       }
     }
   }, level)
+}
+
+async function expectNoResetZoomAtLevel(app: ElectronApplication, level: number): Promise<void> {
+  await setComfyViewZoomLevel(app, level)
+  try {
+    await openTitleMenu(ctx.titleBar)
+    await popup.waitForSelector('[role="menuitem"]', { timeout: 5_000 })
+
+    const labels = await popup.allText('[role="menuitem"]')
+    expect(labels.some((l) => /reset zoom/i.test(l))).toBe(false)
+  } finally {
+    await setComfyViewZoomLevel(app, 0)
+  }
 }
 
 async function waitForPopupHidden(app: ElectronApplication): Promise<void> {
