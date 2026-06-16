@@ -49,11 +49,20 @@ export async function expectNoIpcInvocation(
 ): Promise<void> {
   const windowMs = opts?.windowMs ?? 2_000
   const intervalMs = opts?.intervalMs ?? 200
-  const deadline = Date.now() + windowMs
-  do {
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+  const assertNoHit = async (): Promise<void> => {
     const calls = (await getIpcInvocations(app, channel)) as Record<string, unknown>[]
     const hit = calls.find(match)
     expect(hit, opts?.message ?? `unexpected ${channel} IPC: ${JSON.stringify(hit)}`).toBeUndefined()
-    await new Promise((r) => setTimeout(r, intervalMs))
-  } while (Date.now() < deadline)
+  }
+
+  const deadline = Date.now() + windowMs
+  let remaining = windowMs
+  while (remaining > 0) {
+    await assertNoHit()
+    await sleep(Math.min(intervalMs, remaining))
+    remaining = deadline - Date.now()
+  }
+  await assertNoHit()
 }
