@@ -331,9 +331,11 @@ test('View All Downloads opens the full downloads popup with the seeded rows @wi
   })
   await openDownloadsTray(ctx.titleBar)
   await waitForPopupVisible(ctx.app)
+  await waitForStableBounds(ctx.app)
 
   // Tray view is showing first; its footer link triggers the full popup.
   expect(await popup.count('.downloads')).toBe(1)
+  await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
   expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
 
   // The reused view flips to the `downloads-full` kind: the tray markup is
@@ -354,6 +356,8 @@ test('View All Downloads opens the full downloads popup with the seeded rows @wi
 test('the full downloads popup shows the empty state when nothing is seeded @windows @macos @linux', async () => {
   await openDownloadsTray(ctx.titleBar)
   await waitForPopupVisible(ctx.app)
+  await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
+  await waitForStableBounds(ctx.app)
   expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
 
   await popup.waitForSelector('.dlm-panel', { timeout: 5_000 })
