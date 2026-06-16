@@ -329,18 +329,10 @@ test('View All Downloads opens the full downloads popup with the seeded rows @wi
       makeEntry({ url: 'u-er', filename: 'er.safetensors', status: 'error', progress: 0, error: 'boom' }),
     ],
   })
-  await openDownloadsTray(ctx.titleBar)
-  await waitForPopupVisible(ctx.app)
-  await waitForStableBounds(ctx.app)
-
-  // Tray view is showing first; its footer link triggers the full popup.
-  expect(await popup.count('.downloads')).toBe(1)
-  await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
-  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  await openFullDownloadsPopup()
 
   // The reused view flips to the `downloads-full` kind: the tray markup is
   // gone and the full `.dlm-panel` is rendered with every seeded row.
-  await popup.waitForSelector('.dlm-panel', { timeout: 5_000 })
   expect(await popup.count('.downloads')).toBe(0)
   await expect.poll(() => popup.count('.dlm-row'), {
     timeout: 5_000,
@@ -354,13 +346,8 @@ test('View All Downloads opens the full downloads popup with the seeded rows @wi
 })
 
 test('the full downloads popup shows the empty state when nothing is seeded @windows @macos @linux', async () => {
-  await openDownloadsTray(ctx.titleBar)
-  await waitForPopupVisible(ctx.app)
-  await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
-  await waitForStableBounds(ctx.app)
-  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  await openFullDownloadsPopup()
 
-  await popup.waitForSelector('.dlm-panel', { timeout: 5_000 })
   expect(await popup.count('.dlm-empty')).toBe(1)
   expect(await popup.count('.dlm-row')).toBe(0)
   // No footer summary bar when there are no downloads.
@@ -394,6 +381,18 @@ async function waitForPopupVisible(app: ElectronApplication): Promise<void> {
     timeout: 5_000,
     intervals: [100, 200],
   }).toBe(true)
+}
+
+/** Open the tray and click its "View All" footer to flip the reused popup view
+ *  to the `downloads-full` kind. Waits for the footer link and stable bounds
+ *  first so the kind-switch isn't raced on the empty (fast-rendering) path. */
+async function openFullDownloadsPopup(): Promise<void> {
+  await openDownloadsTray(ctx.titleBar)
+  await waitForPopupVisible(ctx.app)
+  await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
+  await waitForStableBounds(ctx.app)
+  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  await popup.waitForSelector('.dlm-panel', { timeout: 5_000 })
 }
 
 /** Wait until the popup's bounds height stops changing for `settleMs`,

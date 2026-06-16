@@ -18,44 +18,19 @@ import {
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
+import type {
+  PopupDownloadAction,
+  PopupDownloadEntry as DownloadEntry,
+  PopupDownloadsState as DownloadsState
+} from '../../../preload/comfyTitlePopupPreload'
 
 const { t } = useI18n()
-
-interface DownloadEntry {
-  url: string
-  filename: string
-  directory?: string
-  savePath?: string
-  progress: number
-  receivedBytes?: number
-  totalBytes?: number
-  speedBytesPerSec?: number
-  etaSeconds?: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-  createdAt?: number
-  isImage?: boolean
-}
-
-interface DownloadsState {
-  active: DownloadEntry[]
-  recent: DownloadEntry[]
-}
-
-type DownloadAction =
-  | { action: 'pause'; url: string }
-  | { action: 'resume'; url: string }
-  | { action: 'cancel'; url: string }
-  | { action: 'show-in-folder'; url: string; savePath: string }
-  | { action: 'dismiss'; url: string }
-  | { action: 'retry'; url: string }
-  | { action: 'clear-finished' }
 
 type StatusFilter = 'all' | 'active' | 'completed' | 'error'
 
 interface PopupBridge {
   platform?: string
-  downloadsAction(action: DownloadAction): void
+  downloadsAction(action: PopupDownloadAction): void
   getDownloadThumbnail(savePath: string): Promise<string | null>
   close(): void
 }
@@ -159,16 +134,12 @@ function progressPercent(d: DownloadEntry): number {
   return Math.round(d.progress * 100)
 }
 
-function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
-  switch (d.status) {
-    case 'error':
-      return { label: t('downloadsTab.badgeFailed'), cls: 'dlm-badge-error' }
-    case 'cancelled':
-      return { label: t('downloadsTab.badgeCancelled'), cls: 'dlm-badge-muted' }
-    default:
-      return null
-  }
-}
+type StatusBadge = { label: string; cls: string }
+
+const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBadge>>>(() => ({
+  error: { label: t('downloadsTab.badgeFailed'), cls: 'dlm-badge-error' },
+  cancelled: { label: t('downloadsTab.badgeCancelled'), cls: 'dlm-badge-muted' }
+}))
 </script>
 
 <template>
@@ -260,8 +231,12 @@ function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
             </div>
 
             <div class="dlm-actions">
-              <span v-if="statusBadge(d)" class="dlm-badge" :class="statusBadge(d)!.cls">
-                {{ statusBadge(d)!.label }}
+              <span
+                v-if="statusBadgeFor[d.status]"
+                class="dlm-badge"
+                :class="statusBadgeFor[d.status]!.cls"
+              >
+                {{ statusBadgeFor[d.status]!.label }}
               </span>
 
               <span v-if="d.status === 'downloading'" class="dlm-pct">
