@@ -394,37 +394,34 @@ export const standalone: SourcePlugin = {
       const options: FieldOption[] = []
 
       // Same two channel options the IPP Update tab uses (see
-      // `getChannelDefs()` in `./updateSections.ts`). 'stable' is
-      // recommended and triggers the post-install update-to-stable
-      // step. 'latest' (master HEAD) leaves the bundle's checked-in
-      // commit alone — the user can fast-forward from the IPP Update
-      // tab. Per-bundle-tag entries (v0.20.1-env1, etc.) were dropped
-      // at the same time; they exposed an implementation detail
-      // (the R2 bundle tag) instead of the channel users actually
-      // care about.
+      // `getChannelDefs()` in `./updateSections.ts`). Both trigger a
+      // post-install auto-update: 'stable' to the latest stable tag,
+      // 'latest' to master HEAD. Per-bundle-tag entries (v0.20.1-env1,
+      // etc.) were dropped at the same time; they exposed an
+      // implementation detail (the R2 bundle tag) instead of the channel
+      // users actually care about.
       if (tags.length > 0 && context?.includeLatestStable) {
         const latestStableTag = await getLatestStableTag()
         const newestBundle = tags[0]!
+        // `latestStableTag` is the upstream ComfyUI version the post-install
+        // auto-update resolves to. Thread it through so the variant cards show
+        // that (the latest stable tag for 'stable'; the same tag marked as a
+        // nightly for 'latest', which fast-forwards a few commits past it)
+        // rather than the older ComfyUI baked into the standalone bundle
+        // (issues #708, #1068).
+        const channelData = { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>
         options.push({
           value: 'stable',
           label: t('standalone.channelStable'),
           description: t('standalone.channelStableDesc'),
           recommended: true,
-          // `latestStableTag` is the upstream ComfyUI version the post-install
-          // "update to stable" step resolves to. Thread it through so the
-          // variant cards show that same version rather than the older
-          // ComfyUI baked into the standalone bundle (issue #708).
-          data: { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>,
+          data: channelData,
         })
         options.push({
           value: 'latest',
           label: t('standalone.channelLatest'),
           description: t('standalone.channelLatestDesc'),
-          // Picking 'latest' fast-forwards the install to master HEAD, a few
-          // commits past `latestStableTag`. Thread the tag through so the
-          // variant cards advertise that (as a nightly) rather than the much
-          // older ComfyUI baked into the standalone bundle (issue #1068).
-          data: { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>,
+          data: channelData,
         })
       }
       return options
