@@ -75,7 +75,7 @@ vi.mock('../../../lib/pip', () => ({
 }))
 
 import { handleDelete } from './delete'
-import { MARKER_FILE } from '../shared'
+import { MARKER_FILE, sweepOrphanPartitions } from '../shared'
 
 function makeSender(): Electron.WebContents {
   return { isDestroyed: () => false, send: vi.fn() } as unknown as Electron.WebContents
@@ -216,5 +216,49 @@ describe('handleDelete browser-partition cleanup', () => {
     expect(fs.existsSync(partitionDir(id))).toBe(false)
     expect(fromPartition).toHaveBeenCalledWith(`persist:${id}`)
     expect(installationsStore.has(id)).toBe(false)
+  })
+})
+
+describe('sweepOrphanPartitions', () => {
+  let tmpRoot: string
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-partition-'))
+    h.userDataDir.value = path.join(tmpRoot, 'userData')
+    fs.mkdirSync(path.join(h.userDataDir.value, 'Partitions'), { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  function seedPartition(name: string): void {
+    const d = partitionDir(name)
+    fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(d, 'data.txt'), 'x')
+  }
+
+  it('removes orphan per-install partitions but keeps known ones, shared, and non-install dirs', () => {
+    seedPartition('inst-keep-1')
+    seedPartition('inst-keep-2')
+    seedPartition('inst-orphan-1')
+    seedPartition('inst-orphan-2')
+    seedPartition('shared')
+    seedPartition('some-other-session') // not install-id shaped
+
+    sweepOrphanPartitions(new Set(['inst-keep-1', 'inst-keep-2']))
+
+    expect(fs.existsSync(partitionDir('inst-keep-1'))).toBe(true)
+    expect(fs.existsSync(partitionDir('inst-keep-2'))).toBe(true)
+    expect(fs.existsSync(partitionDir('inst-orphan-1'))).toBe(false)
+    expect(fs.existsSync(partitionDir('inst-orphan-2'))).toBe(false)
+    // Never touch the shared bucket or anything not install-id shaped.
+    expect(fs.existsSync(partitionDir('shared'))).toBe(true)
+    expect(fs.existsSync(partitionDir('some-other-session'))).toBe(true)
+  })
+
+  it('is a no-op when there is no Partitions directory', () => {
+    fs.rmSync(path.join(h.userDataDir.value, 'Partitions'), { recursive: true, force: true })
+    expect(() => sweepOrphanPartitions(new Set())).not.toThrow()
   })
 })

@@ -385,6 +385,33 @@ export async function deleteBrowserPartition(id: string, browserPartition?: stri
   }
 }
 
+/** Reclaim leftover per-install browser partitions at startup. Each unique
+ *  install owns `Partitions/<id>`; deleting an install whose session is still
+ *  alive can't remove that dir on Windows (the live session holds file locks),
+ *  so the inline cleanup in deleteBrowserPartition can leak it. At startup no
+ *  install session exists yet, so removing any `Partitions/inst-*` whose id is
+ *  not a current install reliably reclaims those (and crash leftovers). Only
+ *  touches install-id-shaped dirs; never `shared` (the collective bucket) or any
+ *  other session dir. */
+export function sweepOrphanPartitions(knownIds: ReadonlySet<string>): void {
+  const partitionsDir = path.join(app.getPath('userData'), 'Partitions')
+  let names: string[]
+  try {
+    names = fs.readdirSync(partitionsDir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!name.startsWith('inst-')) continue // only per-install partitions
+    if (knownIds.has(name)) continue
+    try {
+      fs.rmSync(path.join(partitionsDir, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    } catch (err) {
+      console.warn('Failed to sweep orphan browser partition:', name, (err as Error).message)
+    }
+  }
+}
+
 export async function performCopy(
   inst: InstallationRecord,
   name: string,
