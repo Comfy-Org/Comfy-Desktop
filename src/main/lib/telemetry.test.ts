@@ -345,11 +345,14 @@ describe('telemetry SDK-level privacy safety nets', () => {
     delete process.env['POSTHOG_ENABLED']
   })
 
-  it('strips $ip from every emit so PostHog can never store it', () => {
+  it('does not strip $ip: PostHog needs it to derive country (GeoIP enabled)', () => {
+    // The raw IP and sub-country geo are dropped by a PostHog ingestion
+    // transformation, not at the SDK; the SDK must send the IP so the
+    // server can resolve $geoip_country_code. So no forced `$ip: ''`.
     captured.length = 0
     telemetry.capture('comfy.desktop.session.started', { foo: 'bar' })
     expect(captured).toHaveLength(1)
-    expect(captured[0]!.properties?.['$ip']).toBe('')
+    expect(captured[0]!.properties).not.toHaveProperty('$ip')
   })
 
   it('scrubs string properties as a last-resort safety net for emit sites that forget', () => {

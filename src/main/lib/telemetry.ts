@@ -486,15 +486,16 @@ export function initTelemetry(opts: InitOptions): void {
       host: cfg.host,
       flushAt: 20,
       flushInterval: 10_000,
-      // Privacy: posthog-node runs in the desktop main process ON the
-      // user's machine, so the request IP would be the real user IP and
-      // the server would derive city-level geo. Both are high-cardinality
-      // identifiers we don't need for product analytics — explicitly
-      // disable server-side GeoIP derivation. Also strip `$ip` from
-      // every event payload (see `capture`) so PostHog never stores it.
-      // If we ever need country-level cohorts for paying users, derive
-      // it from Stripe checkout country at subscription time instead.
-      disableGeoip: true
+      // GeoIP: posthog-node runs in the desktop main process ON the user's
+      // machine, so the request IP is the real user IP and PostHog can derive
+      // the user's location. We opt IN to country-level cohorts (the IP is no
+      // longer stripped in `capture`). Precision is bounded to COUNTRY by a
+      // PostHog ingestion transformation that drops the raw `$ip` plus the
+      // sub-country geo props (`$geoip_city_name`, `$geoip_subdivision_*`,
+      // `$geoip_latitude` / `_longitude`, `$geoip_postal_code`) and keeps only
+      // `$geoip_country_code` / `$geoip_country_name`. Net: country distribution,
+      // no stored IP, no city/coordinate "where are they now" tracking.
+      disableGeoip: false
     })
   } catch {
     client = null
@@ -746,10 +747,11 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
     // Per-call properties override defaults on key collision — callers
     // that explicitly pass `app_version` (e.g. session-start payload,
     // legacy event re-emitters) win.
-    // `$ip: ''` tells the PostHog server to treat the request as
-    // IP-less — paired with `disableGeoip: true` at init, this
-    // suppresses both raw IP storage and server-side geo derivation.
-    const merged = { ...defaultEventProperties, ...properties, $ip: '' }
+    // `$ip` is intentionally NOT stripped here: PostHog needs the request IP
+    // to derive country (`disableGeoip: false` at init). The raw IP and all
+    // sub-country geo are then discarded by an ingestion transformation, so
+    // only the country code/name is retained. See the init comment.
+    const merged = { ...defaultEventProperties, ...properties }
     client!.capture({
       distinctId,
       event,
