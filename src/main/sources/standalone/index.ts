@@ -527,6 +527,7 @@ export const standalone: SourcePlugin = {
             thumbnailUrl: tpl.thumbnailUrl,
             sizeBytes: tpl.sizeBytes,
             recommendedVramBytes: tpl.recommendedVramBytes ?? 0,
+            previewKind: tpl.previewKind,
           },
         })),
       ]

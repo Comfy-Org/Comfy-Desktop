@@ -16,7 +16,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
 }))
 
 import { standalone, buildPinnedVariant } from './index'
-import { NO_TEMPLATE_VALUE } from './bundledTemplates'
+import { BUNDLED_TEMPLATES, NO_TEMPLATE_VALUE } from './bundledTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
 import { PLATFORM_PREFIX } from './envPaths'
@@ -141,9 +141,10 @@ describe('standalone.buildInstallation', () => {
     })
 
     it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template('flux_schnell') })
-      expect(result.bundledTemplateId).toBe('flux_schnell')
-      expect(result.pendingTemplateOpen).toBe('flux_schnell')
+      const realId = BUNDLED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateId).toBe(realId)
+      expect(result.pendingTemplateOpen).toBe(realId)
       expect(result.downloadTemplateModels).toBe(true)
     })
   })

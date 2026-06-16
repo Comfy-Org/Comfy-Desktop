@@ -41,6 +41,10 @@ export interface BundledTemplate {
   /** Recommended VRAM (bytes), from the index's `vram`. The picker warns —
    *  never blocks — when detected VRAM is below this. */
   recommendedVramBytes?: number
+  /** Whether the bundled preview `.webp` is animated (motion templates) or a
+   *  still frame. Drives the card's motion affordance + the reduced-motion swap
+   *  to the paired `<id>-still.webp`. */
+  previewKind: 'animated' | 'static'
 }
 
 /** Display order + i18n label key per modality, for the picker grid. */
@@ -105,42 +109,43 @@ const thumb = (id: string): string => `./images/templates/${id}.webp`
  */
 export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
   {
-    // Z-Image-Turbo looks great but its workflow JSON carries no embedded
-    // models[], so nothing pre-downloads — defeating "ready to run". Flux.1
-    // Schnell is a recognizable image showcase that DOES embed its model.
-    id: 'flux_schnell',
+    id: 'image_z_image_turbo',
     modality: 'image',
-    title: 'Flux.1 Schnell FP8',
-    description: 'Fast Flux.1 images in 4 steps. Runs well on modest hardware.',
-    thumbnailUrl: thumb('flux_schnell'),
-    sizeBytes: 17233556275,
-    recommendedVramBytes: 18253611008,
+    title: 'Z-Image-Turbo Text to Image',
+    description: 'Efficient single-stream diffusion transformer.',
+    thumbnailUrl: thumb('image_z_image_turbo'),
+    sizeBytes: 20830591386,
+    recommendedVramBytes: 20830591386,
+    previewKind: 'static',
   },
   {
     id: 'text_to_video_wan',
     modality: 'video',
     title: 'Wan 2.1 Text to Video',
-    description: 'Text-to-video with Wan 2.1.',
+    description: 'Generate videos from text prompts using Wan 2.1.',
     thumbnailUrl: thumb('text_to_video_wan'),
     sizeBytes: 9824737690,
     recommendedVramBytes: 9824737690,
+    previewKind: 'animated',
   },
   {
-    id: 'audio_stable_audio_example',
+    id: 'audio_stable_audio_3_medium',
     modality: 'audio',
-    title: 'Stable Audio 1.0: Text to Audio',
-    description: 'Text-to-audio with Stable Audio 1.0.',
-    thumbnailUrl: thumb('audio_stable_audio_example'),
-    sizeBytes: 5690831667,
-    recommendedVramBytes: 5690831667,
+    title: 'Stable Audio 3.0 Medium',
+    description: 'Text-to-audio (music, SFX, instruments) with Stable Audio 3.',
+    thumbnailUrl: thumb('audio_stable_audio_3_medium'),
+    sizeBytes: 15676630630,
+    recommendedVramBytes: 15676630630,
+    previewKind: 'static',
   },
   {
-    id: '3d_hunyuan3d_image_to_model',
+    id: '3d_triposplat_image_to_gaussian_splat',
     modality: '3d',
-    title: 'HY 3D 2.0',
-    description: 'Image-to-3D with Hunyuan3D 2.0.',
-    thumbnailUrl: thumb('3d_hunyuan3d_image_to_model'),
-    sizeBytes: 4928474972,
-    recommendedVramBytes: 4928474972,
+    title: 'TripoSplat: Image to Gaussian Splat',
+    description: 'Turn a single 2D image into a 3D Gaussian splat.',
+    thumbnailUrl: thumb('3d_triposplat_image_to_gaussian_splat'),
+    sizeBytes: 3972844749,
+    recommendedVramBytes: 3972844749,
+    previewKind: 'animated',
   },
 ] as const
