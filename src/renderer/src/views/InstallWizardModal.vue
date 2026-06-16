@@ -47,17 +47,6 @@ const props = withDefaults(
   { hideBackToDashboard: false }
 )
 
-/**
- * A/B experiment: do we show the starter-template picker step at install time?
- * `treatment` → picker step is offered (subject to the user's opt-out + the
- * standalone-source gating); `control` → picker is suppressed regardless and
- * the legacy single-screen Configure flow ships. Variant is locked for the
- * lifetime of the modal open (re-read on each open, so the next install can
- * pick up a fresh assignment).
- */
-const STARTER_TEMPLATES_EXPERIMENT_KEY = 'desktop-starter-templates-picker'
-type StarterTemplatesVariant = 'control' | 'treatment'
-
 const { t } = useI18n()
 const modal = useModal()
 
@@ -160,11 +149,6 @@ const dontShowTemplatePicker = ref(false)
  *  already has ≥1 local install (a first-ever user always sees the step). */
 const pickerEnabled = ref(true)
 const hasLocalInstall = ref(false)
-/** Experiment variant locked on modal open. Defaults to `control` until the
- *  cache-first flag fetch resolves (boot fetch typically lands long before
- *  the user reaches the picker), so a slow / failed fetch defaults to the
- *  legacy flow. */
-const starterTemplatesVariant = ref<StarterTemplatesVariant>('control')
 
 const templateOptions = computed<FieldOption[]>(
   () => fieldOptions.value.get('bundledTemplate') ?? []
@@ -183,15 +167,13 @@ const diskTooSmallForAnyTemplate = computed(() => {
 })
 
 /** Show the picker step only for the standalone source when it's enabled,
- *  the user is in the `treatment` arm of the picker experiment, the template
- *  field produced options, and the volume can fit at least one template's
- *  models. `control` users never see the step regardless of the
- *  `skipTemplatePickerStep` setting. */
+ *  the template field produced options, and the volume can fit at least one
+ *  template's models. Gated only by the `skipTemplatePickerStep` user opt-out
+ *  (`pickerEnabled`) — shown to everyone on the standalone install path. */
 const shouldShowPickerStep = computed(
   () =>
     currentSource.value?.id === 'standalone' &&
     pickerEnabled.value &&
-    starterTemplatesVariant.value === 'treatment' &&
     templateOptions.value.length > 0 &&
     !diskTooSmallForAnyTemplate.value
 )
@@ -205,14 +187,14 @@ function selectTemplate(option: FieldOption): void {
     const sizeBytes = (option.data?.sizeBytes as number | undefined) ?? 0
     emitTelemetryAction('comfy.desktop.template.selected', {
       template_id: option.value,
-      size_bucket: toSizeBucket(sizeBytes),
-      variant: starterTemplatesVariant.value
+      size_bucket: toSizeBucket(sizeBytes)
     })
   }
 }
 
 /** Configure's primary button: advance to the picker step, or install directly
- *  when the picker is gated off. */
+ *  when the picker is gated off (non-standalone source, no template options,
+ *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
     // Default the selection to the first real template (Image) rather than the
@@ -226,8 +208,7 @@ async function handleConfigureContinue(): Promise<void> {
     emitTelemetryAction('comfy.desktop.template.picker_shown', {
       template_count: templateOptions.value.length,
       has_local_install: hasLocalInstall.value,
-      default_template_id: selections.value.bundledTemplate?.value ?? null,
-      variant: starterTemplatesVariant.value
+      default_template_id: selections.value.bundledTemplate?.value ?? null
     })
     return
   }
@@ -248,8 +229,7 @@ async function handleTemplateInstall(): Promise<void> {
     template_id: tpl?.value ?? NO_TEMPLATE_VALUE,
     size_bucket: toSizeBucket((tpl?.data?.sizeBytes as number | undefined) ?? 0),
     has_models: templateHasModels.value,
-    dont_show_again: dontShowTemplatePicker.value,
-    variant: starterTemplatesVariant.value
+    dont_show_again: dontShowTemplatePicker.value
   })
   await persistDontShowAgain()
   await handleSave()
@@ -260,8 +240,7 @@ async function handleTemplateSkip(): Promise<void> {
   emitTelemetryAction('comfy.desktop.template.skipped', {
     had_template_selected: !!selectedTemplate.value,
     candidate_template_id: selectedTemplate.value?.value ?? null,
-    dont_show_again: dontShowTemplatePicker.value,
-    variant: starterTemplatesVariant.value
+    dont_show_again: dontShowTemplatePicker.value
   })
   const none = templateOptions.value.find((o) => o.value === NO_TEMPLATE_VALUE)
   if (none) selections.value.bundledTemplate = none
@@ -438,32 +417,6 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       pickerEnabled.value = skip !== true
     })
     .catch(() => {})
-  // A/B: cache-first flag lookup. `null` (no cache, no remote) defaults to
-  // `control` so a first-ever boot with no network keeps the legacy flow.
-  // The exposure event is recorded once per session main-side regardless of
-  // how many times the modal opens.
-  void window.api
-    .telemetryGetExperimentFlag(STARTER_TEMPLATES_EXPERIMENT_KEY)
-    .then((value) => {
-      if (gen !== loadGeneration) return
-      const variant: StarterTemplatesVariant =
-        value === 'treatment' ? 'treatment' : 'control'
-      starterTemplatesVariant.value = variant
-      window.api.telemetryRecordExposure({
-        experimentKey: STARTER_TEMPLATES_EXPERIMENT_KEY,
-        variant,
-        source: value == null ? 'fallback' : 'cache'
-      })
-      // Pin the variant as a person property so any downstream activation
-      // event (workflow_executed, comfyui.boot_success) can be sliced by arm
-      // without joining back through `experiment.exposed`.
-      window.api.registerTelemetryProperties({
-        [`experiment_${STARTER_TEMPLATES_EXPERIMENT_KEY}`]: variant
-      })
-    })
-    .catch(() => {
-      /* fail closed to `control`, already the default. */
-    })
   void window.api
     .getInstallationsSummary()
     .then((summary) => {
