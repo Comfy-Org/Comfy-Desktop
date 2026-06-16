@@ -41,7 +41,7 @@ function cacheFilePath(): string {
 }
 
 let cached: Record<string, FeatureFlagValue> | null = null
-let initStarted = false
+let initPromise: Promise<void> | null = null
 const exposedThisSession = new Set<string>()
 
 function isFeatureFlagValue(v: unknown): v is FeatureFlagValue {
@@ -102,28 +102,27 @@ function backfillSessionCache(flags: Record<string, FeatureFlagValue>): void {
  * and back-fills any boot-absent keys into the current session (see
  * `backfillSessionCache`).
  *
- * Returns a promise that resolves when the background fetch settles, so
- * tests can deterministically observe the refresh. Production callers
- * can ignore the returned promise.
+ * The returned promise is cached so `getFlagAsync()` can await it — a
+ * renderer query landing before the fetch settles then sees the resolved
+ * value instead of falling back to control (mirrors `cloudCapacity`).
  *
  * Idempotent within a process.
  */
-export async function initExperiments(opts: {
+export function initExperiments(opts: {
   distinctId: string
   personProperties: Record<string, string>
   timeoutMs?: number
 }): Promise<void> {
-  // Idempotent within a process: repeated calls return without re-running
-  // the cache load or the background fetch. The `opts.distinctId` and
-  // `opts.personProperties` of subsequent calls are intentionally ignored
+  // Idempotent within a process: repeated calls return the same in-flight
+  // promise without re-running the cache load or fetch. The `opts.distinctId`
+  // and `opts.personProperties` of subsequent calls are intentionally ignored
   // — identity changes mid-session (e.g. after `bindUserId`) do not
   // re-evaluate experiments. Variant stability for an installation is a
   // property we want; rotating variants when a user logs in would
   // contaminate the experiment population.
-  if (initStarted) return Promise.resolve()
-  initStarted = true
+  if (initPromise) return initPromise
   cached = readCacheSync() ?? {}
-  return mainTelemetry
+  initPromise = mainTelemetry
     .loadFeatureFlagsImmediate(
       opts.distinctId,
       opts.personProperties,
@@ -137,6 +136,7 @@ export async function initExperiments(opts: {
     .catch(() => {
       /* fail closed: keep current cache on disk and in memory */
     })
+  return initPromise
 }
 
 /**
@@ -149,6 +149,23 @@ export async function initExperiments(opts: {
  * synchronously-loaded cache values, which is intended).
  */
 export function getFlag(key: string): FeatureFlagValue | undefined {
+  return cached?.[key]
+}
+
+/**
+ * Awaitable flag accessor. Awaits the in-flight boot fetch (if any) before
+ * reading, so a query landing before the fetch settles sees the resolved
+ * value rather than falling back to control. Prefer this from IPC handlers;
+ * `getFlag()` stays for hot sync reads. Mirrors `getCloudCapacityStatusAsync`.
+ */
+export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
+  if (initPromise) {
+    try {
+      await initPromise
+    } catch {
+      /* keep whatever loaded from the on-disk cache */
+    }
+  }
   return cached?.[key]
 }
 
@@ -185,6 +202,6 @@ export function recordExposure(
 /** @internal — exposed for tests. */
 export function _resetForTest(): void {
   cached = null
-  initStarted = false
+  initPromise = null
   exposedThisSession.clear()
 }

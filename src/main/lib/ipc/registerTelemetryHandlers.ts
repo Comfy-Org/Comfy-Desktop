@@ -4,7 +4,7 @@
 import { ipcMain } from 'electron'
 import * as mainTelemetry from '../telemetry'
 import {
-  getFlag as getExperimentFlag,
+  getFlagAsync as getExperimentFlagAsync,
   recordExposure,
   type ExperimentExposureSource
 } from '../experiments'
@@ -86,11 +86,12 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.unbindUserId()
   })
 
-  // Cache-first flag lookup for renderer A/B branches; null → control.
-  ipcMain.handle('telemetry:getExperimentFlag', (_event, key: unknown) => {
+  // Flag lookup for renderer A/B branches; awaits the boot fetch so a query
+  // landing before it settles still gets the real variant. null → control.
+  ipcMain.handle('telemetry:getExperimentFlag', async (_event, key: unknown) => {
     const flagKey = asString(key)
     if (!flagKey) return null
-    const value = getExperimentFlag(flagKey)
+    const value = await getExperimentFlagAsync(flagKey)
     return value === undefined ? null : value
   })
 

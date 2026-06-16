@@ -196,6 +196,32 @@ describe('experiments', () => {
     })
   })
 
+  describe('getFlagAsync', () => {
+    it('awaits the in-flight fetch so a first-boot query gets the real variant, not control', async () => {
+      // No on-disk cache + a slow fetch: sync getFlag would miss the value
+      // mid-fetch (control), but getFlagAsync awaits the settle.
+      mockFlags = { 'flag.x': 'treatment' }
+      mockFlagsDelayMs = 50
+      const refresh = experiments.initExperiments({
+        distinctId: 'test-distinct-id',
+        personProperties: {}
+      })
+
+      expect(experiments.getFlag('flag.x')).toBeUndefined() // race window
+      await expect(experiments.getFlagAsync('flag.x')).resolves.toBe('treatment')
+      await refresh
+    })
+
+    it('resolves immediately from the synchronous cache for a boot-cached flag', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'control' })
+      )
+      experiments.initExperiments({ distinctId: 'test-distinct-id', personProperties: {} })
+      await expect(experiments.getFlagAsync('flag.a')).resolves.toBe('control')
+    })
+  })
+
   describe('recordExposure', () => {
     it('fires comfy.desktop.experiment.exposed once per (experiment, variant) per session', () => {
       experiments.recordExposure('auth_banner_smoketest_v1', 'treatment', 'cache')
