@@ -202,11 +202,7 @@ defineExpose({ shownDiskError, shownVramWarning })
               aria-hidden="true"
             />
           </span>
-          <span
-            v-if="opt.description"
-            class="tps__row-detail"
-            :class="{ 'tps__row-detail--open': selectedValue === opt.value }"
-          >
+          <span v-if="opt.description" class="tps__row-detail">
             <span class="tps__row-detail-inner">{{ opt.description }}</span>
           </span>
         </span>
@@ -334,37 +330,18 @@ defineExpose({ shownDiskError, shownVramWarning })
   backdrop-filter: blur(8px);
 }
 
-.tps__row-detail {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 220ms ease;
-}
-.tps__row-detail--open {
-  grid-template-rows: 1fr;
-}
+/* Description is always shown for every row (no expand-on-select animation). */
 .tps__row-detail-inner {
-  overflow: hidden;
-  padding-top: 0;
+  display: block;
+  padding-top: 6px;
   font-size: var(--takeover-fs-caption);
   line-height: 1.45;
   color: var(--neutral-300);
-  transition:
-    padding-top 220ms ease,
-    color 220ms ease;
-}
-.tps__row-detail--open .tps__row-detail-inner {
-  padding-top: 6px;
-  color: var(--neutral-200);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-variant-row,
-  .tps__row-detail,
-  .tps__row-detail-inner {
+  .brand-variant-row {
     transition: none;
-  }
-  .tps__row-detail:not(.tps__row-detail--open) {
-    display: none;
   }
 }
 </style>
