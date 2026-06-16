@@ -81,6 +81,14 @@ function makeSender(): Electron.WebContents {
   return { isDestroyed: () => false, send: vi.fn() } as unknown as Electron.WebContents
 }
 
+function invokeDelete(id: string, inst: InstallationRecord) {
+  return handleDelete({
+    event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+    installationId: id,
+    inst,
+  })
+}
+
 function seedInstall(installPath: string, id: string): void {
   fs.mkdirSync(installPath, { recursive: true })
   fs.writeFileSync(path.join(installPath, MARKER_FILE), id)
@@ -119,7 +127,7 @@ describe('handleDelete browser-partition cleanup', () => {
     const inst = { id, name: 'unique', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'unique', createdAt: new Date(0).toISOString() } as InstallationRecord
     installationsStore.set(id, inst)
 
-    const result = await handleDelete({ event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent, installationId: id, inst })
+    const result = await invokeDelete(id, inst)
 
     expect(result.ok).toBe(true)
     expect(fs.existsSync(installPath)).toBe(false)
@@ -140,7 +148,7 @@ describe('handleDelete browser-partition cleanup', () => {
     const inst = { id, name: 'shared', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'shared', createdAt: new Date(0).toISOString() } as InstallationRecord
     installationsStore.set(id, inst)
 
-    const result = await handleDelete({ event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent, installationId: id, inst })
+    const result = await invokeDelete(id, inst)
 
     expect(result.ok).toBe(true)
     expect(fs.existsSync(installPath)).toBe(false)
@@ -165,7 +173,7 @@ describe('handleDelete browser-partition cleanup', () => {
     const inst = { id, name: 'toggled', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'shared', createdAt: new Date(0).toISOString() } as InstallationRecord
     installationsStore.set(id, inst)
 
-    const result = await handleDelete({ event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent, installationId: id, inst })
+    const result = await invokeDelete(id, inst)
 
     expect(result.ok).toBe(true)
     expect(fs.existsSync(partitionDir(id))).toBe(false)
@@ -184,7 +192,7 @@ describe('handleDelete browser-partition cleanup', () => {
     const inst = { id, name: 'clear-fail', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'unique', createdAt: new Date(0).toISOString() } as InstallationRecord
     installationsStore.set(id, inst)
 
-    const result = await handleDelete({ event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent, installationId: id, inst })
+    const result = await invokeDelete(id, inst)
 
     expect(result.ok).toBe(true)
     expect(fs.existsSync(installPath)).toBe(false)
@@ -202,7 +210,7 @@ describe('handleDelete browser-partition cleanup', () => {
     const inst = { id, name: 'gone', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'unique', createdAt: new Date(0).toISOString() } as InstallationRecord
     installationsStore.set(id, inst)
 
-    const result = await handleDelete({ event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent, installationId: id, inst })
+    const result = await invokeDelete(id, inst)
 
     expect(result.ok).toBe(true)
     expect(fs.existsSync(partitionDir(id))).toBe(false)

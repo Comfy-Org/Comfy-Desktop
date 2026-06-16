@@ -49,6 +49,31 @@ describe('drive-aware defaults', () => {
     expect(p.defaultDownloadCacheDir()).toBe(path.join(dataRoot, 'ComfyUI-Cache', 'download-cache'))
   })
 
+  it('anchors on the system drive, not the profile drive (win32)', async () => {
+    // App on the system drive (C:) but the user profile redirected to another
+    // drive must NOT be treated as a redirected install — it uses the
+    // system-drive branch (grouped under %LOCALAPPDATA%), not D:\Comfy-Desktop.
+    const prevSystemDrive = process.env.SystemDrive
+    const prevLocalAppData = process.env.LOCALAPPDATA
+    process.env.SystemDrive = 'C:'
+    process.env.LOCALAPPDATA = 'C:\\Users\\me\\AppData\\Local'
+    try {
+      stubPlatform('win32')
+      exePath = 'C:\\Program Files\\Comfy Desktop\\Comfy Desktop.exe'
+      const p = await loadPaths()
+
+      // HOME (/mock/home) parses to a non-C: drive; the old home-anchored logic
+      // would have wrongly redirected to C:\Comfy-Desktop.
+      expect(p.defaultDataRoot()).toBe(path.join('C:\\Users\\me\\AppData\\Local', 'Comfy-Desktop'))
+      expect(p.defaultDataRoot()).not.toBe(path.join('C:\\', 'Comfy-Desktop'))
+    } finally {
+      if (prevSystemDrive === undefined) delete process.env.SystemDrive
+      else process.env.SystemDrive = prevSystemDrive
+      if (prevLocalAppData === undefined) delete process.env.LOCALAPPDATA
+      else process.env.LOCALAPPDATA = prevLocalAppData
+    }
+  })
+
   it('never redirects on non-Windows platforms', async () => {
     stubPlatform('linux')
     exePath = '/opt/Comfy Desktop/comfy-desktop'

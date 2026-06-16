@@ -61,9 +61,16 @@ function selectedInstallDrive(): string | null {
     // Explicit win32 parsing so the drive is extracted correctly regardless of
     // the host the code is exercised on (matches the platform `path` at runtime).
     const exeDrive = path.win32.parse(app.getPath("exe")).root;   // e.g. "D:\\"
-    const homeDrive = path.win32.parse(app.getPath("home")).root; // e.g. "C:\\"
     if (!exeDrive) return null;
-    if (exeDrive.toLowerCase() === homeDrive.toLowerCase()) return null;
+    // Anchor on the OS system drive, not the user profile: a profile can be
+    // redirected to another drive (e.g. home on D: while Windows is on C:), so
+    // comparing against home would misclassify a normal system-drive install as
+    // a redirected one. Fall back to the home drive only if SystemDrive is unset.
+    const systemDrive = process.env.SystemDrive
+      ? path.win32.parse(path.win32.join(process.env.SystemDrive, "\\")).root // "C:" → "C:\\"
+      : path.win32.parse(app.getPath("home")).root;
+    if (!systemDrive) return null;
+    if (exeDrive.toLowerCase() === systemDrive.toLowerCase()) return null;
     return exeDrive;
   } catch {
     return null;

@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
-import { configDir, homeDir, defaultDataRoot, defaultDownloadCacheDir, setInstallDirResolver } from './lib/paths'
+import { configDir, homeDir, defaultDataRoot, defaultDownloadCacheDir, builtinDefaultInstallDir, setInstallDirResolver } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
 
@@ -146,7 +146,7 @@ export const defaults: SettingsDefaults = {
   modelsDirs: [path.join(SHARED_ROOT, "models")],
   inputDir: path.join(SHARED_ROOT, "input"),
   outputDir: path.join(SHARED_ROOT, "output"),
-  installDir: path.join(defaultDataRoot(), "ComfyUI-Installs"),
+  installDir: builtinDefaultInstallDir(),
 }
 
 const systemDefault = defaults.modelsDirs[0]!
