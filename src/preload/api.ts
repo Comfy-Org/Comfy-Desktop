@@ -9,7 +9,7 @@
  */
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronApi, ResolvedTheme } from '../types/ipc'
+import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -210,6 +210,16 @@ export function buildElectronApi(): ElectronApi {
     installUpdate: () => ipcRenderer.invoke('install-update'),
     getUpdateCapabilities: () => ipcRenderer.invoke('get-update-capabilities'),
     getAppUpdateState: () => ipcRenderer.invoke('get-app-update-state'),
+
+    // Adopt prompts (in-app modal bridge; replaces native message boxes)
+    onAdoptPrompt: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as AdoptPromptRequest)
+      ipcRenderer.on('adopt-prompt', handler)
+      return () => ipcRenderer.removeListener('adopt-prompt', handler)
+    },
+    ackAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-ack', payload),
+    respondAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-response', payload),
 
     // Event listeners (return unsubscribe functions)
     onInstallProgress: (callback) => {
