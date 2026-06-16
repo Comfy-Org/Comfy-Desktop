@@ -136,9 +136,10 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             | Record<string, unknown>
             | undefined
           const wasRunning = sessionStore.isRunning(id)
-          const requiresStoppedGuard = !isRestart
-            && actionId !== 'migrate-to-standalone'
-            && REQUIRES_STOPPED.has(actionId)
+          // migrate-to-standalone owns its confirm UI upstream, but the
+          // reconstructed apiCall must still self-stop a running install so
+          // main doesn't reject with stopRequired.
+          const requiresStoppedGuard = !isRestart && REQUIRES_STOPPED.has(actionId)
           const needsSelfStop = wasRunning && requiresStoppedGuard
           const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(actionId)
           const isRunning = (): boolean => sessionStore.isRunning(id)
