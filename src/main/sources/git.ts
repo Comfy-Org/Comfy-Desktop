@@ -9,7 +9,7 @@ import { parseArgs, extractPort } from '../lib/util'
 import { t } from '../lib/i18n'
 import { buildLaunchSettingsFields } from './common/launchSettingsFields'
 import type { InstallationRecord } from '../installations'
-import type { SourcePlugin, FieldOption, ActionResult, ActionTools, LaunchCommand, StatusTag } from '../types/sources'
+import type { SourcePlugin, FieldOption, ActionResult, ActionTools, LaunchCommand, StatusTag, TerminalEnv } from '../types/sources'
 
 const DEFAULT_REPO = 'https://github.com/Comfy-Org/ComfyUI/'
 const DEFAULT_LAUNCH_ARGS = ''
@@ -140,6 +140,19 @@ export const gitSource: SourcePlugin = {
     const branch = installation.branch as string | undefined
     if (repo && branch) return `${repo} (${branch})`
     return repo || null
+  },
+
+  getTerminalEnv(installation: InstallationRecord): TerminalEnv {
+    // A git install runs from its own venv (`venvPath`), not the standalone
+    // `ComfyUI/.venv`, and has no bundled `standalone-env/uv.exe`. Activate that
+    // venv so its own `pip` is on PATH; leave pip unaliased. Open the shell on
+    // the ComfyUI code folder (where `main.py` lives) regardless of whether a
+    // venv is usable.
+    const mainPy = findMainPy(installation.installPath)
+    const base: TerminalEnv = mainPy ? { cwd: path.dirname(mainPy) } : {}
+    const venvPath = installation.venvPath as string | undefined
+    if (!venvPath || !resolveVenvPython(installation)) return base
+    return { ...base, venvDir: venvPath, promptName: path.basename(venvPath) }
   },
 
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {

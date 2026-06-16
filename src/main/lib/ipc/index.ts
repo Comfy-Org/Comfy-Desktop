@@ -27,6 +27,7 @@ import { registerSnapshotHandlers } from './registerSnapshotHandlers'
 import { registerSettingsHandlers } from './registerSettingsHandlers'
 import { registerSessionHandlers } from './registerSessionHandlers'
 import { registerTerminalHandlers } from './registerTerminalHandlers'
+import { setTerminalEnvResolver } from '../terminal'
 import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
@@ -222,6 +223,9 @@ export function register(callbacks: RegisterCallbacks = {}): void {
   registerSnapshotHandlers()
   registerSettingsHandlers()
   registerSessionHandlers()
+  // Let the Console activate each install's actual environment (git venv,
+  // portable embedded python, …) instead of assuming the standalone layout.
+  setTerminalEnvResolver((inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null)
   registerTerminalHandlers()
   registerLogsHandlers()
   registerCrashHandlers()

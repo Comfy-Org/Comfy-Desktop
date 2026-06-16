@@ -410,16 +410,28 @@ describe('standalone.getFieldOptions variant version display', () => {
     expect(card.description).toContain('ComfyUI 0.20.1')
   })
 
-  it('variant card shows the bundled version when "Latest on GitHub" is selected', async () => {
+  it('variant card shows the upstream version as a nightly (not the bundled one) when "Latest on GitHub" is selected', async () => {
     const { vendorId } = setupVersionGap()
     mockedGetLatestStableTag.mockResolvedValue('v0.22.3')
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // Latest-on-GitHub leaves the install on whatever the bundle
-    // shipped with (master-ish HEAD); the card advertises that, not
-    // the stable tag the OTHER channel would land on.
+    // Picking 'latest' fast-forwards the install to master HEAD (a few commits
+    // past the latest stable tag), so the card advertises that as a nightly â€”
+    // not the much older ComfyUI baked into the bundle (issue #1068).
+    expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
+    expect(card.description).not.toContain('ComfyUI 0.20.1')
+  })
+
+  it('variant card falls back to the bundled version on "Latest on GitHub" when the upstream tag is unresolved', async () => {
+    const { vendorId } = setupVersionGap()
+    mockedGetLatestStableTag.mockResolvedValue(null)
+    const release = await getReleaseOption('latest')
+
+    const variants = await standalone.getFieldOptions!('variant', { release }, {})
+    const card = variants.find((o) => o.value === vendorId)!
     expect(card.description).toContain('ComfyUI 0.20.1')
+    expect(card.description).not.toContain('nightly')
   })
 })

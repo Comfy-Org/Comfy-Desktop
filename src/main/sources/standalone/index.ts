@@ -57,15 +57,18 @@ interface VariantData {
 /**
  * Build a variant card FieldOption from a single R2 bundle release. Shared by
  * the install-wizard variant list (newest bundle per vendor) and the
- * snapshot-load flow (a specific historical bundle). `displayStableTag`, when
- * set, advertises the upstream stable version the post-install update lands on
- * instead of the bundle's checked-in ComfyUI version.
+ * snapshot-load flow (a specific historical bundle). `displayTag`, when set,
+ * advertises the upstream version the post-install update lands on instead of
+ * the bundle's checked-in ComfyUI version; pass `nightly: true` for the
+ * "Latest on GitHub" channel, where the install fast-forwards to master HEAD
+ * (a few commits past `displayTag`, the latest stable tag).
  */
 function buildVariantOption(
   vendorId: string,
   release: R2Variant,
-  displayStableTag: string | null,
-  gpu: string | undefined
+  displayTag: string | null,
+  gpu: string | undefined,
+  nightly = false
 ): FieldOption {
   const sizeMB = (release.size / 1048576).toFixed(0)
   const downloadFiles = [{
@@ -73,8 +76,10 @@ function buildVariantOption(
     filename: release.file,
     size: release.size,
   }]
-  const displayVersion = displayStableTag
-    ? displayStableTag.replace(/^v/, '')
+  // The description is a fixed-format, non-localized string ("ComfyUI X ·
+  // Python Y · Z MB"), so the nightly marker is a plain literal too.
+  const displayVersion = displayTag
+    ? `${displayTag.replace(/^v/, '')}${nightly ? ' (nightly)' : ''}`
     : release.comfyui_version
   return {
     value: vendorId,
@@ -389,33 +394,34 @@ export const standalone: SourcePlugin = {
       const options: FieldOption[] = []
 
       // Same two channel options the IPP Update tab uses (see
-      // `getChannelDefs()` in `./updateSections.ts`). 'stable' is
-      // recommended and triggers the post-install update-to-stable
-      // step. 'latest' (master HEAD) leaves the bundle's checked-in
-      // commit alone — the user can fast-forward from the IPP Update
-      // tab. Per-bundle-tag entries (v0.20.1-env1, etc.) were dropped
-      // at the same time; they exposed an implementation detail
-      // (the R2 bundle tag) instead of the channel users actually
-      // care about.
+      // `getChannelDefs()` in `./updateSections.ts`). Both trigger a
+      // post-install auto-update: 'stable' to the latest stable tag,
+      // 'latest' to master HEAD. Per-bundle-tag entries (v0.20.1-env1,
+      // etc.) were dropped at the same time; they exposed an
+      // implementation detail (the R2 bundle tag) instead of the channel
+      // users actually care about.
       if (tags.length > 0 && context?.includeLatestStable) {
         const latestStableTag = await getLatestStableTag()
         const newestBundle = tags[0]!
+        // `latestStableTag` is the upstream ComfyUI version the post-install
+        // auto-update resolves to. Thread it through so the variant cards show
+        // that (the latest stable tag for 'stable'; the same tag marked as a
+        // nightly for 'latest', which fast-forwards a few commits past it)
+        // rather than the older ComfyUI baked into the standalone bundle
+        // (issues #708, #1068).
+        const channelData = { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>
         options.push({
           value: 'stable',
           label: t('standalone.channelStable'),
           description: t('standalone.channelStableDesc'),
           recommended: true,
-          // `latestStableTag` is the upstream ComfyUI version the post-install
-          // "update to stable" step resolves to. Thread it through so the
-          // variant cards show that same version rather than the older
-          // ComfyUI baked into the standalone bundle (issue #708).
-          data: { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>,
+          data: channelData,
         })
         options.push({
           value: 'latest',
           label: t('standalone.channelLatest'),
           description: t('standalone.channelLatestDesc'),
-          data: { tag: newestBundle.tag, vendorReleases } as unknown as Record<string, unknown>,
+          data: channelData,
         })
       }
       return options
@@ -445,6 +451,7 @@ export const standalone: SourcePlugin = {
       if (!prefix) return []
 
       const isStable = selections.release?.value === 'stable'
+      const isLatest = selections.release?.value === 'latest'
       const gpu = context?.gpu as string | undefined
       // When the user picked a specific stable tag from the comfyVersion
       // dropdown, the variant card should advertise THAT version (the one
@@ -463,12 +470,16 @@ export const standalone: SourcePlugin = {
           if (!release) return null
           // Stable: advertise the upstream tag the user lands on after the
           // post-install auto-update (picked tag wins; otherwise channel
-          // head). Falls back to the bundled version when neither is
-          // resolvable (offline, etc.).
-          const displayStableTag = isStable
+          // head). Latest: advertise the latest stable tag as a nightly,
+          // since the install fast-forwards to master HEAD (a few commits
+          // past it). Both fall back to the bundled version when the tag is
+          // unresolvable (offline, etc.).
+          const displayTag = isStable
             ? pickedComfyTag ?? releaseData.latestStableTag ?? null
-            : null
-          return buildVariantOption(vendorId, release, displayStableTag, gpu)
+            : isLatest
+              ? releaseData.latestStableTag ?? null
+              : null
+          return buildVariantOption(vendorId, release, displayTag, gpu, isLatest)
         })
         .filter((item): item is FieldOption => item != null)
     }

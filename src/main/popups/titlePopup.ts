@@ -1,4 +1,6 @@
 import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
+import { POPUP_KIND } from '../../types/ipc'
+import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -73,13 +75,14 @@ interface TitlePopupMenuItem {
   kind?: 'separator'
 }
 
-type TitlePopupKind = 'menu' | 'downloads' | 'instance-picker' | 'global-settings'
-
-/** Kinds that dim the host body with the shared backdrop view. Single source
- *  of truth — geometry, blur-dismiss opt-out, and backdrop show/hide all key
- *  off this so a new kind only has to opt in here. */
+/** Kinds that dim the host body with the shared backdrop view — geometry,
+ *  blur-dismiss opt-out, and backdrop show/hide all key off this. */
 function kindUsesBackdrop(kind: TitlePopupKind): boolean {
-  return kind === 'instance-picker' || kind === 'global-settings'
+  return (
+    kind === POPUP_KIND.instancePicker ||
+    kind === POPUP_KIND.globalSettings ||
+    kind === POPUP_KIND.downloadsFull
+  )
 }
 
 /** Single install row pushed to the instance-picker popup. Mirrors the
@@ -354,26 +357,15 @@ function buildPickerStorageSlice(): PickerStorageSlice {
   }
 }
 
+/** Process-local mirror of the popup config. The `kind` tags are shared via
+ *  `POPUP_KIND`; the snapshot shapes stay main-specific (rich types here vs the
+ *  loosened serialized mirrors in `comfyTitlePopupPreload.ts`). */
 type TitlePopupConfig =
-  | {
-      kind: 'menu'
-      items: TitlePopupMenuItem[]
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'downloads'
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'instance-picker'
-      snapshot: InstancePickerSnapshot
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'global-settings'
-      snapshot: GlobalSettingsSnapshot
-      theme: { bg: string; text: string }
-    }
+  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[]; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.downloads; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot; theme: PopupTheme }
 
 /**
  * One reusable popup `WebContentsView` per parent BrowserWindow.
@@ -1194,30 +1186,58 @@ function computePickerBounds(parent: BrowserWindow): PickerBounds {
   return { x, y, width, height }
 }
 
-/** Global-settings popup sizing — two-pane tabbed card. Width and
- *  height are computed once per open from host content bounds (no
- *  renderer-driven `requestSize` loop) so the popup stays a fixed
- *  size regardless of which tab is selected and only re-fits when the
- *  host window itself resizes. Clamps keep the card usable on both
- *  narrow and ultra-wide windows. */
-const GLOBAL_SETTINGS_POPUP_MIN_WIDTH = 640
-const GLOBAL_SETTINGS_POPUP_MAX_WIDTH = 880
-const GLOBAL_SETTINGS_POPUP_WIDTH_RATIO = 0.65
-const GLOBAL_SETTINGS_POPUP_MIN_HEIGHT = 420
-const GLOBAL_SETTINGS_POPUP_MAX_HEIGHT = 560
-const GLOBAL_SETTINGS_POPUP_HEIGHT_RATIO = 0.7
+/** Fluid clamp for a centred-card popup, per axis: min/max px + target ratio of host content. */
+interface CenteredCardClamp {
+  minWidth: number
+  maxWidth: number
+  widthRatio: number
+  minHeight: number
+  maxHeight: number
+  heightRatio: number
+}
 
-function computeGlobalSettingsBounds(parent: BrowserWindow): { width: number; height: number } {
+type CenteredCardKind = typeof POPUP_KIND.globalSettings | typeof POPUP_KIND.downloadsFull
+
+/** Per-kind clamps for centred-card popups — fixed-size, only re-fit on host resize. */
+const CENTERED_CARD_CLAMPS: Record<CenteredCardKind, CenteredCardClamp> = {
+  [POPUP_KIND.globalSettings]: {
+    minWidth: 640,
+    maxWidth: 880,
+    widthRatio: 0.65,
+    minHeight: 420,
+    maxHeight: 560,
+    heightRatio: 0.7
+  },
+  [POPUP_KIND.downloadsFull]: {
+    minWidth: 640,
+    maxWidth: 900,
+    widthRatio: 0.7,
+    minHeight: 440,
+    maxHeight: 680,
+    heightRatio: 0.75
+  }
+}
+
+/** Renders as a large card centred in the host content area, vs anchored under its trigger. */
+function kindIsCentered(kind: TitlePopupKind): kind is CenteredCardKind {
+  return kind === POPUP_KIND.globalSettings || kind === POPUP_KIND.downloadsFull
+}
+
+/** Size + centred x/y for a centred-card popup, centred in the band below the title bar. */
+function computeCenteredCardBounds(
+  kind: CenteredCardKind,
+  parent: BrowserWindow
+): { x: number; y: number; width: number; height: number } {
+  const clamp = CENTERED_CARD_CLAMPS[kind]
   const { width: cw, height: ch } = parent.getContentBounds()
-  const width = Math.min(
-    GLOBAL_SETTINGS_POPUP_MAX_WIDTH,
-    Math.max(GLOBAL_SETTINGS_POPUP_MIN_WIDTH, Math.round(cw * GLOBAL_SETTINGS_POPUP_WIDTH_RATIO))
-  )
+  const width = Math.min(clamp.maxWidth, Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio)))
   const height = Math.min(
-    GLOBAL_SETTINGS_POPUP_MAX_HEIGHT,
-    Math.max(GLOBAL_SETTINGS_POPUP_MIN_HEIGHT, Math.round(ch * GLOBAL_SETTINGS_POPUP_HEIGHT_RATIO))
+    clamp.maxHeight,
+    Math.max(clamp.minHeight, Math.round(ch * clamp.heightRatio))
   )
-  return { width, height }
+  const x = Math.max(0, Math.round((cw - width) / 2))
+  const y = Math.max(TITLEBAR_HEIGHT, Math.round(TITLEBAR_HEIGHT + (ch - TITLEBAR_HEIGHT - height) / 2))
+  return { x, y, width, height }
 }
 
 /** Right-edge gutter when the popup gets shifted away from its
@@ -1282,44 +1302,31 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
     return
   }
 
-  const contentHeight = parent.getContentBounds().height
+  if (kindIsCentered(entry.kind)) {
+    const target = computeCenteredCardBounds(entry.kind, parent)
+    if (
+      target.x === cur.x &&
+      target.y === cur.y &&
+      target.width === cur.width &&
+      target.height === cur.height
+    ) {
+      return
+    }
+    entry.view.popup.setBounds(target)
+    return
+  }
 
   let height = cur.height
-  let width = cur.width
   if (entry.kind === 'downloads') {
     const ceiling = Math.min(
       DOWNLOADS_POPUP_MAX_HEIGHT_PX,
-      Math.round(contentHeight * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
+      Math.round(parent.getContentBounds().height * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
     )
     height = Math.max(1, Math.min(cur.height, ceiling))
-  } else if (entry.kind === 'global-settings') {
-    // Recompute both dimensions from the same clamp the open path uses
-    // — the popup tracks the host window proportionally as it resizes,
-    // not the renderer-reported content height (the right pane scrolls,
-    // not the popup).
-    ;({ width, height } = computeGlobalSettingsBounds(parent))
   }
-
-  // Re-anchor the centred-card kinds (global-settings) on the new
-  // window centre so they don't drift off-axis after a resize. Other
-  // kinds anchor at their trigger button — that's already in title-
-  // bar-local coords (which don't move on resize) so a fresh
-  // `clampPopupX` of the existing X is sufficient.
-  let x: number
-  let y = cur.y
-  if (entry.kind === 'global-settings') {
-    const { width: contentWidth, height: contentHeightForY } = parent.getContentBounds()
-    x = Math.max(0, Math.round((contentWidth - width) / 2))
-    y = Math.max(
-      TITLEBAR_HEIGHT,
-      Math.round(TITLEBAR_HEIGHT + (contentHeightForY - TITLEBAR_HEIGHT - height) / 2)
-    )
-  } else {
-    x = clampPopupX(cur.x, cur.width, parent)
-  }
-
-  if (x === cur.x && y === cur.y && width === cur.width && height === cur.height) return
-  entry.view.popup.setBounds({ x, y, width, height })
+  const x = clampPopupX(cur.x, cur.width, parent)
+  if (x === cur.x && height === cur.height) return
+  entry.view.popup.setBounds({ x, y: cur.y, width: cur.width, height })
 }
 
 type OpenTitlePopupOpts = {
@@ -1329,10 +1336,11 @@ type OpenTitlePopupOpts = {
   theme: { bg: string; text: string }
   titleBarSender: Electron.WebContents
 } & (
-  | { kind: 'menu'; items: TitlePopupMenuItem[] }
-  | { kind: 'downloads' }
-  | { kind: 'instance-picker'; snapshot: InstancePickerSnapshot }
-  | { kind: 'global-settings'; snapshot: GlobalSettingsSnapshot }
+  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[] }
+  | { kind: typeof POPUP_KIND.downloads }
+  | { kind: typeof POPUP_KIND.downloadsFull }
+  | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot }
+  | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot }
 )
 
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
@@ -1389,43 +1397,20 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     x = clampPopupX(rawX, width, opts.parent)
   } else if (opts.kind === 'downloads') {
     width = DOWNLOADS_POPUP_WIDTH
-    const contentHeight = opts.parent.getContentBounds().height
-    // Open at the ceiling (smaller of the fixed pixel cap or 60% of the
-    // host window's content height, so the popup never overflows tiny
-    // windows). The renderer immediately measures its natural content
-    // height and asks for it via `requestSize`, which clamps back into
-    // this band. The popup stays hidden until the renderer's
-    // `notifyRendered` ack arrives, so the user never sees this
-    // provisional size.
+    /** Provisional ceiling; the renderer measures and `requestSize`s its real height. */
     height = Math.min(
       DOWNLOADS_POPUP_MAX_HEIGHT_PX,
-      Math.round(contentHeight * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
+      Math.round(opts.parent.getContentBounds().height * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
     )
     x = clampPopupX(rawX, width, opts.parent)
   } else if (opts.kind === 'instance-picker') {
-    // instance-picker geometry is delegated to `computePickerBounds`
-    // — single source of truth shared with the parent-resize refit so
-    // both paths produce consistent bounds. Geometry function owns the
-    // title-bar inset, so the popup never paints over the title chrome.
     const bounds = computePickerBounds(opts.parent)
     width = bounds.width
     height = bounds.height
     x = bounds.x
     y = bounds.y
   } else {
-    // global-settings — fluid-clamped centred card. Width + height are
-    // pinned once from host content bounds; tab switches inside the
-    // popup never trigger a resize. Both axes centre on the area
-    // below the title bar. Anchor coords are title-bar-local so `y=0`
-    // sits at the title-bar top; the centred-y formula recentres
-    // inside the `contentHeight - TITLEBAR_HEIGHT` band beneath it.
-    ;({ width, height } = computeGlobalSettingsBounds(opts.parent))
-    const { width: contentWidth, height: contentHeight } = opts.parent.getContentBounds()
-    x = Math.max(0, Math.round((contentWidth - width) / 2))
-    y = Math.max(
-      TITLEBAR_HEIGHT,
-      Math.round(TITLEBAR_HEIGHT + (contentHeight - TITLEBAR_HEIGHT - height) / 2)
-    )
+    ;({ x, y, width, height } = computeCenteredCardBounds(opts.kind, opts.parent))
   }
 
   // Update bounds while still hidden — the popup is flipped visible
@@ -1439,11 +1424,11 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // leaving the downloads popup stuck at the ceiling height.
   entry.view.popup.setBounds({ x, y, width, height })
 
-  // Downloads popup feeds on a separate channel — push the latest
-  // snapshot now so the first paint shows current state instead of
-  // the empty-state placeholder. Subsequent updates arrive via the
-  // tray-state-changed broadcast.
-  if (opts.kind === 'downloads' && entry.view.rendererReady) {
+  /** Seed first paint with current state; live updates arrive via tray-state-changed. */
+  if (
+    (opts.kind === POPUP_KIND.downloads || opts.kind === POPUP_KIND.downloadsFull) &&
+    entry.view.rendererReady
+  ) {
     notifyTitlePopupDownloads(entry.view.popup)
   }
 
@@ -1453,21 +1438,18 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // Vue is still processing the config update.
   entry.view.cancelPendingShow()
   let config: TitlePopupConfig
-  if (opts.kind === 'menu') {
-    config = { kind: 'menu', items: opts.items, theme: opts.theme }
-  } else if (opts.kind === 'downloads') {
-    config = { kind: 'downloads', theme: opts.theme }
-  } else if (opts.kind === 'instance-picker') {
-    config = { kind: 'instance-picker', snapshot: opts.snapshot, theme: opts.theme }
-    // Seed the broadcast-dedupe cache with the snapshot we're about to
-    // ship as the initial config. Without this, a subsequent live
-    // broadcast that happens to equal a *previous* session's last
-    // broadcast (but differs from the snapshot the renderer is currently
-    // displaying) would be silently skipped by the dedupe check in
-    // `broadcastInstancePickerUpdate` / `broadcastGlobalSettingsUpdate`.
+  if (opts.kind === POPUP_KIND.menu) {
+    config = { kind: POPUP_KIND.menu, items: opts.items, theme: opts.theme }
+  } else if (opts.kind === POPUP_KIND.downloads) {
+    config = { kind: POPUP_KIND.downloads, theme: opts.theme }
+  } else if (opts.kind === POPUP_KIND.downloadsFull) {
+    config = { kind: POPUP_KIND.downloadsFull, theme: opts.theme }
+  } else if (opts.kind === POPUP_KIND.instancePicker) {
+    config = { kind: POPUP_KIND.instancePicker, snapshot: opts.snapshot, theme: opts.theme }
+    /** Seed the dedupe cache so a later broadcast equal to a prior session's isn't skipped. */
     entry.lastPickerBroadcastJson = JSON.stringify(opts.snapshot)
   } else {
-    config = { kind: 'global-settings', snapshot: opts.snapshot, theme: opts.theme }
+    config = { kind: POPUP_KIND.globalSettings, snapshot: opts.snapshot, theme: opts.theme }
     entry.lastGlobalSettingsBroadcastJson = JSON.stringify(opts.snapshot)
   }
   const configJson = JSON.stringify(config)
@@ -1660,6 +1642,24 @@ function openGlobalSettingsForHost(
     // dropdown (the fast-open snapshot only carries none/last).
     await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })()
+}
+
+/** Open the large centred "View All Downloads" popup. Reuses the tray popup's
+ *  live download feed, so no snapshot is built here. */
+function openDownloadsFullForHost(
+  parentEntry: ComfyWindowEntry,
+  parentEntryId: number,
+  titleBarSender: Electron.WebContents
+): void {
+  if (parentEntry.window.isDestroyed()) return
+  openTitlePopup({
+    parent: parentEntry.window,
+    parentEntryId,
+    kind: POPUP_KIND.downloadsFull,
+    anchor: { x: 0, y: TITLEBAR_HEIGHT },
+    theme: parentEntry.lastTheme,
+    titleBarSender
+  })
 }
 
 /**
@@ -2134,7 +2134,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       entry.lastConfigJson = JSON.stringify(flushed)
       entry.view.popup.webContents.send('comfy-titlepopup:set-config', flushed)
       entry.pendingConfig = null
-      if (flushed.kind === 'downloads') {
+      if (flushed.kind === POPUP_KIND.downloads || flushed.kind === POPUP_KIND.downloadsFull) {
         notifyTitlePopupDownloads(entry.view.popup)
       }
     }
@@ -2283,19 +2283,18 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     })
   })
 
-  // Popup → host deep-link to the standalone "View All Downloads" modal.
-  // Flips the host into the `'downloads-v2'` overlay panel mode, which
-  // `layoutViews` recognises as a transparent panel-forward state. The
-  // renderer mounts `DownloadsModal` by watching `activePanel === 'downloads-v2'`.
-  // No deep-link IPC needed — the mode swap IS the open signal — and dismiss
-  // routes through `closeCurrentPanel()` which returns the body to `'comfy'`.
+  /** Tray popup's "View All Downloads" → reopen the same WebContentsView as the
+   *  large centred `downloads-full` popup (replaces the outgoing tray kind). */
   ipcMain.on('comfy-titlepopup:open-downloads-modal', (event) => {
     const popupEntry = titlePopupsByWebContents.get(event.sender.id)
     if (!popupEntry) return
     const parentEntry = comfyWindows.get(popupEntry.parentEntryId)
     if (!parentEntry) return
-    hideTitlePopup(popupEntry, { releaseFocusToParent: false })
-    bindings.setActivePanel(popupEntry.parentEntryId, 'downloads-v2')
+    openDownloadsFullForHost(
+      parentEntry,
+      popupEntry.parentEntryId,
+      parentEntry.titleBarView.webContents
+    )
   })
 
   // Title-bar downloads-tray click. Opens the title-bar dropdown popup
