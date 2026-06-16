@@ -67,6 +67,12 @@ const props = defineProps<{ state: DownloadsState }>()
 
 const filter = ref<StatusFilter>('all')
 
+
+const pointerTick = ref(0)
+function onPointerMove(): void {
+  pointerTick.value = (pointerTick.value + 1) & 0xff
+}
+
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
@@ -166,20 +172,17 @@ function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
 </script>
 
 <template>
-  <div class="dlm-panel">
-    <button
-      type="button"
-      class="dlm-close"
-      :aria-label="t('common.close')"
-      @click="bridge?.close()"
-    >
-      <X :size="18" />
-    </button>
-
+  <div class="dlm-panel" @mousemove="onPointerMove">
     <header class="dlm-modal-header">
-      <div class="dlm-header">
-        <h2 class="dlm-title">{{ t('downloadsTab.title') }}</h2>
-      </div>
+      <h2 class="dlm-title">{{ t('downloadsTab.title') }}</h2>
+      <button
+        type="button"
+        class="dlm-close"
+        :aria-label="t('common.close')"
+        @click="bridge?.close()"
+      >
+        <X :size="18" />
+      </button>
     </header>
 
     <div class="dlm-modal-body">
@@ -354,7 +357,6 @@ function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
 
 <style scoped>
 .dlm-panel {
-  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -362,11 +364,17 @@ function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
   color: var(--neutral-100);
 }
 
+.dlm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
+}
+
 .dlm-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -393,11 +401,6 @@ function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
-
-.dlm-modal-header {
-  padding: 20px 56px 12px 24px;
-  border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
 .dlm-modal-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -409,12 +412,6 @@ function statusBadge(d: DownloadEntry): { label: string; cls: string } | null {
 .dlm-modal-footer {
   padding: 12px 24px 16px;
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-
-.dlm-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .dlm-title {
