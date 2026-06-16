@@ -51,6 +51,8 @@ const messages = {
       statusError: 'Error',
       viewErrorTooltip: 'View error details',
       errorTitle: 'Error',
+      updatePill: 'Update',
+      migratePill: 'Migrate',
     },
   },
 }
@@ -316,6 +318,53 @@ describe('ChooserView', () => {
     await flushPromises()
     expect(api.focusComfyWindow).toHaveBeenCalledWith('a')
     expect(wrapper.emitted('pick')).toHaveLength(1)
+  })
+
+  it('shows a relative recency line for a booted install and "not launched yet" for a fresh one', async () => {
+    installMockApi([
+      makeInstall({ id: 'booted', name: 'Booted', lastLaunchedAt: Date.now() - 2 * 60_000 }),
+      makeInstall({ id: 'fresh', name: 'Fresh' }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tiles = wrapper.findAll('.chooser-tile')
+    const bootedTile = tiles.find((t) => t.text().includes('Booted'))!
+    const freshTile = tiles.find((t) => t.text().includes('Fresh'))!
+    expect(bootedTile.find('.chooser-tile-recency-text').text()).toContain('Launched')
+    expect(freshTile.find('.chooser-tile-recency-text').text()).toBe('Not launched yet')
+  })
+
+  it('renders the update affordance as a bare "Update" pill — the target version lives in the meta line', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Updatable',
+        version: 'v0.22.3',
+        statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' },
+      }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
+    const pill = tile.find('.chooser-tile-pill-update')
+    expect(pill.exists()).toBe(true)
+    expect(pill.text().trim()).toBe('Update')
+    // Current version stays visible in the quiet meta line, not on the pill.
+    expect(tile.find('.chooser-tile-meta-line').text()).toContain('v0.22.3')
+  })
+
+  it('keeps the action pill present even when the name is very long', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'long',
+        name: 'ComfyUI (Copy) (Copy) (Copy) — an extremely long instance name that must ellipsize',
+        statusTag: { style: 'migrate', label: 'Migrate' },
+      }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('ComfyUI (Copy)'))!
+    expect(tile.find('.chooser-tile-pill-migrate').exists()).toBe(true)
   })
 
   it('does not emit pick when the kebab button is clicked — only the menu opens', async () => {
