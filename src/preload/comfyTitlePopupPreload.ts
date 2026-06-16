@@ -397,9 +397,9 @@ function isPopupConfig(value: unknown): value is TitlePopupConfig {
   if (!v.theme || typeof v.theme !== 'object') return false
   const theme = v.theme as { bg?: unknown; text?: unknown }
   if (typeof theme.bg !== 'string' || typeof theme.text !== 'string') return false
-  if (v.kind === 'menu' && !Array.isArray(v.items)) return false
-  if (v.kind === 'instance-picker' && !isInstancePickerSnapshot(v.snapshot)) return false
-  if (v.kind === 'global-settings' && !isGlobalSettingsSnapshot(v.snapshot)) return false
+  if (v.kind === POPUP_KIND.menu && !Array.isArray(v.items)) return false
+  if (v.kind === POPUP_KIND.instancePicker && !isInstancePickerSnapshot(v.snapshot)) return false
+  if (v.kind === POPUP_KIND.globalSettings && !isGlobalSettingsSnapshot(v.snapshot)) return false
   return true
 }
 

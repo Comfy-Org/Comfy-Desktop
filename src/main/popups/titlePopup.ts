@@ -1336,11 +1336,11 @@ type OpenTitlePopupOpts = {
   theme: { bg: string; text: string }
   titleBarSender: Electron.WebContents
 } & (
-  | { kind: 'menu'; items: TitlePopupMenuItem[] }
-  | { kind: 'downloads' }
-  | { kind: 'downloads-full' }
-  | { kind: 'instance-picker'; snapshot: InstancePickerSnapshot }
-  | { kind: 'global-settings'; snapshot: GlobalSettingsSnapshot }
+  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[] }
+  | { kind: typeof POPUP_KIND.downloads }
+  | { kind: typeof POPUP_KIND.downloadsFull }
+  | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot }
+  | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot }
 )
 
 function openTitlePopup(opts: OpenTitlePopupOpts): void {

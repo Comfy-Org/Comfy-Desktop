@@ -12,6 +12,7 @@ import { dismissPickerModals } from './dismissPickerModals'
 import { popupLocaleSource } from './pickerSettingsApiShim'
 import { useAppLocale } from '../lib/useAppLocale'
 import type { DetailSection, SnapshotListData } from '../types/ipc'
+import type { PopupDownloadsState as DownloadsState } from '../../../preload/comfyTitlePopupPreload'
 import { isColorLight } from '../lib/colorScheme'
 
 // Title-bar dropdown popup shell. Hosts every title-bar dropdown in one
@@ -24,27 +25,6 @@ interface MenuItem {
   labelKey?: string
   checked?: boolean
   kind?: 'separator'
-}
-
-interface DownloadEntry {
-  url: string
-  filename: string
-  directory?: string
-  savePath?: string
-  progress: number
-  receivedBytes?: number
-  totalBytes?: number
-  speedBytesPerSec?: number
-  etaSeconds?: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-  createdAt?: number
-  isImage?: boolean
-}
-
-interface DownloadsState {
-  active: DownloadEntry[]
-  recent: DownloadEntry[]
 }
 
 interface PickerInstall {
