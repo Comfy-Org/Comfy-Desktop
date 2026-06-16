@@ -18,6 +18,7 @@ import * as updater from '../lib/updater'
 import * as i18n from '../lib/i18n'
 import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
+import { convertLevelToZoomPercent } from '../lib/zoom'
 import {
   openPath as openPathHelper,
   getAppVersion,
@@ -760,7 +761,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
-      const percent = Math.round(Math.pow(1.2, level) * 100)
+      const percent = convertLevelToZoomPercent(level)
       items.push({ id: 'reset-zoom', label: `Reset Zoom (${percent}%)` })
     }
   }

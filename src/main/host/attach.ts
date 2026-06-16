@@ -11,6 +11,7 @@ import { refreshCloudUserTier } from '../lib/userTier'
 import { noteCloudEntered } from '../lib/cloudEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
+import { convertLevelToZoomPercent } from '../lib/zoom'
 import { installationEvents, type InstallationRecord } from '../installations'
 import {
   dropInstallationIndex,
@@ -503,7 +504,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       parent_entry_id: entry.windowKey,
       installation_id: entry.installationId,
       previous_zoom_level: previousLevel,
-      previous_zoom_percent: Math.round(Math.pow(1.2, previousLevel) * 100)
+      previous_zoom_percent: convertLevelToZoomPercent(previousLevel)
     })
   }
 
