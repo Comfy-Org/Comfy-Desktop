@@ -4,6 +4,8 @@ import path from 'path'
 import { createRequire } from 'module'
 import type { WebContents } from 'electron'
 import * as installations from '../installations'
+import type { InstallationRecord } from '../installations'
+import type { TerminalEnv } from '../types/sources'
 import { getActiveVenvDir, getActiveUvPath } from './pythonEnv'
 
 /**
@@ -101,33 +103,86 @@ function getDefaultShell(): string {
   return process.env.SHELL || '/bin/bash'
 }
 
-/** Commands written into a fresh shell: activate the install's venv and make
- *  `pip` route through the bundled uv, mirroring legacy desktop. A final clear
- *  hides the activation echo so the session opens on a clean prompt. */
-function initCommands(venvDir: string, uvPath: string): string[] {
+/**
+ * Resolves the {@link TerminalEnv} for an install. Set by the IPC layer (which
+ * owns the source map) so this module stays free of the source-plugin graph —
+ * importing `sources/index` here would drag Electron's `app` into the eagerly
+ * imported terminal graph and break unit tests. Default returns `null` (every
+ * install uses the standalone fallback) until wired at startup.
+ */
+type TerminalEnvResolver = (installation: InstallationRecord) => TerminalEnv | null
+let envResolver: TerminalEnvResolver = () => null
+
+export function setTerminalEnvResolver(resolver: TerminalEnvResolver): void {
+  envResolver = resolver
+}
+
+/** Standalone/adopted layout: `ComfyUI/.venv` (or the adopted legacy venv) with
+ *  `pip` routed through the bundled uv. Used when a source has no special env. */
+function defaultTerminalEnv(inst: InstallationRecord): TerminalEnv {
+  const venvDir = getActiveVenvDir(inst)
+  return {
+    // Standalone/adopted keep their ComfyUI code under `<installPath>/ComfyUI`.
+    cwd: path.join(inst.installPath, 'ComfyUI'),
+    venvDir,
+    promptName: path.basename(venvDir),
+    pip: { exe: getActiveUvPath(inst), args: ['pip'] },
+  }
+}
+
+/** Commands written into a fresh shell: activate the install's environment and
+ *  (when provided) route `pip` through the right executable. A final clear hides
+ *  the activation echo so the session opens on a clean prompt. */
+function initCommands(env: TerminalEnv): string[] {
+  const hasActivation = !!env.venvDir || !!env.pathPrepends?.length
+  const promptName = env.promptName ?? (env.venvDir ? path.basename(env.venvDir) : '')
+
   if (process.platform === 'win32') {
     // We can't `& Activate.ps1`: PowerShell's ExecutionPolicy blocks running
     // script *files*, and on locked-down machines even `Set-ExecutionPolicy`
     // is unavailable, so relaxing it isn't an option. Inline commands typed
     // into the shell are never gated by ExecutionPolicy, so replicate what
-    // Activate.ps1 does directly: set VIRTUAL_ENV, prepend the venv's Scripts
-    // dir to PATH, drop any PYTHONHOME, and add the `(.venv)` prompt prefix.
-    const promptName = path.basename(venvDir)
-    return [
-      `$env:VIRTUAL_ENV = "${venvDir}"`,
-      `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
-      `$env:PATH = "${venvDir}\\Scripts;$env:PATH"`,
-      'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }',
-      'function global:prompt { Write-Host -NoNewline -ForegroundColor Green "($env:VIRTUAL_ENV_PROMPT) "; "PS $($executionContext.SessionState.Path.CurrentLocation)$(\'>\' * ($nestedPromptLevel + 1)) " }',
-      `function pip { & "${uvPath}" pip $args }`,
-      'Clear-Host',
-    ]
+    // Activate.ps1 does directly: set VIRTUAL_ENV, prepend the env's bin dir to
+    // PATH, drop any PYTHONHOME, and add the `(name)` prompt prefix.
+    const cmds: string[] = []
+    if (env.venvDir) {
+      cmds.push(
+        `$env:VIRTUAL_ENV = "${env.venvDir}"`,
+        `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
+        `$env:PATH = "${env.venvDir}\\Scripts;$env:PATH"`,
+        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }',
+      )
+    } else if (env.pathPrepends?.length) {
+      cmds.push(
+        `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
+        `$env:PATH = "${env.pathPrepends.join(';')};$env:PATH"`,
+        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }',
+      )
+    }
+    if (hasActivation) {
+      cmds.push(
+        'function global:prompt { Write-Host -NoNewline -ForegroundColor Green "($env:VIRTUAL_ENV_PROMPT) "; "PS $($executionContext.SessionState.Path.CurrentLocation)$(\'>\' * ($nestedPromptLevel + 1)) " }',
+      )
+    }
+    if (env.pip) {
+      cmds.push(`function pip { & "${env.pip.exe}" ${env.pip.args.join(' ')} $args }`)
+    }
+    cmds.push('Clear-Host')
+    return cmds
   }
-  return [
-    `source "${venvDir}/bin/activate"`,
-    `alias pip='"${uvPath}" pip'`,
-    'clear',
-  ]
+
+  const cmds: string[] = []
+  if (env.venvDir) {
+    cmds.push(`source "${env.venvDir}/bin/activate"`)
+  } else if (env.pathPrepends?.length) {
+    cmds.push(`export VIRTUAL_ENV_PROMPT="${promptName}"`)
+    cmds.push(`export PATH="${env.pathPrepends.join(':')}:$PATH"`)
+  }
+  if (env.pip) {
+    cmds.push(`alias pip='"${env.pip.exe}" ${env.pip.args.join(' ')}'`)
+  }
+  cmds.push('clear')
+  return cmds
 }
 
 class InstallTerminal {
@@ -215,14 +270,16 @@ class InstallTerminal {
     // A fresh shell starts with a fresh scrollback; otherwise a respawn after
     // the user typed `exit` would leak the dead session's buffer into restore.
     this.sessionBuffer.length = 0
-    const venvDir = getActiveVenvDir(inst)
-    const uvPath = getActiveUvPath(inst)
+    const env = envResolver(inst) ?? defaultTerminalEnv(inst)
+    // Open the shell on the ComfyUI code folder (issue #1070); fall back to the
+    // install path when the source didn't resolve one or it no longer exists.
+    const cwd = env.cwd && fs.existsSync(env.cwd) ? env.cwd : inst.installPath
     const pty = await loadPty()
     const instance = pty.spawn(getDefaultShell(), [], {
       name: 'xterm-256color',
       cols: this.size.cols,
       rows: this.size.rows,
-      cwd: inst.installPath,
+      cwd,
       env: process.env as Record<string, string>,
     })
 
@@ -246,7 +303,7 @@ class InstallTerminal {
       this.#broadcast('terminal-exited', { installationId: this.installationId })
     })
 
-    for (const cmd of initCommands(venvDir, uvPath)) {
+    for (const cmd of initCommands(env)) {
       instance.write(`${cmd}\r`)
     }
   }
