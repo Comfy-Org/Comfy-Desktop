@@ -21,6 +21,7 @@ import type {
   InstallTools,
   LaunchCommand,
   StatusTag,
+  TerminalEnv,
 } from '../types/sources'
 
 const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
@@ -40,7 +41,13 @@ interface GitHubAsset {
 
 function findPortableRoot(installPath: string): string | null {
   if (fs.existsSync(path.join(installPath, 'python_embeded'))) return installPath
-  const entries = fs.readdirSync(installPath, { withFileTypes: true })
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(installPath, { withFileTypes: true })
+  } catch {
+    // installPath missing/unreadable (e.g. drive unplugged) — no root to find.
+    return null
+  }
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const sub = path.join(installPath, entry.name)
@@ -113,6 +120,24 @@ export const portable: SourcePlugin = {
       args: ['-s', path.join(root, 'ComfyUI', 'main.py'), ...parsed],
       cwd: root,
       port,
+    }
+  },
+
+  getTerminalEnv(installation: InstallationRecord): TerminalEnv {
+    // A portable build has no venv — it runs the embedded `python_embeded`
+    // interpreter and has no bundled `standalone-env/uv.exe`. Put that
+    // interpreter (and its Scripts) on PATH and route pip through it; return an
+    // empty env (plain shell, no broken standalone-env reference) if the
+    // embedded layout can't be located.
+    const root = findPortableRoot(installation.installPath)
+    if (!root) return {}
+    const embedded = path.join(root, 'python_embeded')
+    return {
+      // Open the shell on the ComfyUI code folder, not the portable root.
+      cwd: path.join(root, 'ComfyUI'),
+      pathPrepends: [embedded, path.join(embedded, 'Scripts')],
+      promptName: 'python_embeded',
+      pip: { exe: path.join(embedded, 'python.exe'), args: ['-s', '-m', 'pip'] },
     }
   },
 

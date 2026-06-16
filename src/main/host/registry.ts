@@ -19,7 +19,6 @@ export const hostInstallEvents = new EventEmitter()
  */
 export type ComfyPanelKey =
   | 'comfy'
-  | 'downloads-v2'
   | 'feedback'
   | 'new-install'
   | 'track'
@@ -32,7 +31,6 @@ export type ComfyPanelKey =
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
-  'downloads-v2',
   'feedback',
   'new-install',
   'track',
@@ -49,7 +47,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
 export type BodyMode =
   | 'comfy'
   | 'comfy-lifecycle'
-  | 'downloads-v2'
   | 'feedback'
   | 'chooser'
   /** Mirror of the `'progress'` ComfyPanelKey; forces the panel to fully cover

@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import { PICKER_SETTINGS_CHANNELS as CH } from '../types/ipc'
-import type { TerminalRestore } from '../types/ipc'
 import type { Category, ViewKind } from '../shared/viewKind'
+import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
+import type { PopupTheme, TerminalRestore } from '../types/ipc'
 
 /** Bridge for the title-bar dropdown popup (waffle menu, downloads tray,
  *  instance-picker, global-settings), which share one reused child
@@ -120,25 +120,11 @@ export interface PopupGlobalSettingsSnapshot {
 }
 
 export type TitlePopupConfig =
-  | {
-      kind: 'menu'
-      items: TitlePopupMenuItem[]
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'downloads'
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'instance-picker'
-      snapshot: PopupInstancePickerSnapshot
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'global-settings'
-      snapshot: PopupGlobalSettingsSnapshot
-      theme: { bg: string; text: string }
-    }
+  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[]; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.downloads; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.instancePicker; snapshot: PopupInstancePickerSnapshot; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.globalSettings; snapshot: PopupGlobalSettingsSnapshot; theme: PopupTheme }
 
 /** Mirrors `DownloadProgress` in `src/main/lib/comfyDownloadManager.ts`. */
 export interface PopupDownloadEntry {
@@ -414,17 +400,18 @@ function isPopupConfig(value: unknown): value is TitlePopupConfig {
     snapshot?: unknown
   }
   if (
-    v.kind !== 'menu'
-    && v.kind !== 'downloads'
-    && v.kind !== 'instance-picker'
-    && v.kind !== 'global-settings'
+    v.kind !== POPUP_KIND.menu
+    && v.kind !== POPUP_KIND.downloads
+    && v.kind !== POPUP_KIND.downloadsFull
+    && v.kind !== POPUP_KIND.instancePicker
+    && v.kind !== POPUP_KIND.globalSettings
   ) return false
   if (!v.theme || typeof v.theme !== 'object') return false
   const theme = v.theme as { bg?: unknown; text?: unknown }
   if (typeof theme.bg !== 'string' || typeof theme.text !== 'string') return false
-  if (v.kind === 'menu' && !Array.isArray(v.items)) return false
-  if (v.kind === 'instance-picker' && !isInstancePickerSnapshot(v.snapshot)) return false
-  if (v.kind === 'global-settings' && !isGlobalSettingsSnapshot(v.snapshot)) return false
+  if (v.kind === POPUP_KIND.menu && !Array.isArray(v.items)) return false
+  if (v.kind === POPUP_KIND.instancePicker && !isInstancePickerSnapshot(v.snapshot)) return false
+  if (v.kind === POPUP_KIND.globalSettings && !isGlobalSettingsSnapshot(v.snapshot)) return false
   return true
 }
 
@@ -613,10 +600,11 @@ const bridge: ComfyTitlePopupBridge = {
       if (!data || typeof data !== 'object') return
       const kind = (data as { kind?: unknown }).kind
       if (
-        kind !== 'menu'
-        && kind !== 'downloads'
-        && kind !== 'instance-picker'
-        && kind !== 'global-settings'
+        kind !== POPUP_KIND.menu
+        && kind !== POPUP_KIND.downloads
+        && kind !== POPUP_KIND.downloadsFull
+        && kind !== POPUP_KIND.instancePicker
+        && kind !== POPUP_KIND.globalSettings
       ) return
       cb({ kind })
     }
@@ -759,5 +747,5 @@ const bridge: ComfyTitlePopupBridge = {
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('__comfyTitlePopup', bridge)
 } else {
-  ;(globalThis as Record<string, unknown>).__comfyTitlePopup = bridge
+  ; (globalThis as Record<string, unknown>).__comfyTitlePopup = bridge
 }
