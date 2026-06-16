@@ -54,22 +54,22 @@ export const NAV_LABEL = {
 export type NavLabelKey = (typeof NAV_LABEL)[keyof typeof NAV_LABEL]
 
 export interface NavDecision {
-  window: 'same' | 'new'
-  verb: Verb
+  readonly window: 'same' | 'new'
+  readonly verb: Verb
   /** i18n key for the primary CTA label (resolved by the renderer). */
-  primaryLabel: NavLabelKey
+  readonly primaryLabel: NavLabelKey
   /** Caret/dropdown alternatives for this exact cell. Each is a fully-formed
    *  decision (its own intent already applied), so the dropdown renders them
    *  directly. Empty when the cell has no alternative. */
-  secondary: NavDecision[]
+  readonly secondary: readonly NavDecision[]
   /** Telemetry event to emit when this decision executes, if any. */
-  telemetry: 'instance.switched' | 'instance.opened_new_window' | null
+  readonly telemetry: 'instance.switched' | 'instance.opened_new_window' | null
   /** Reserved (currently unset by every cell). Allows a SECOND window for an
    *  install that already owns one, bypassing `openInstallInNewWindow`'s
    *  focus-existing guard. Kept wired end-to-end for a future "second cloud/
    *  remote window"; cloud-self currently resolves to Restart instead (a true
    *  second view of one session isn't supported). */
-  allowDuplicate?: true
+  readonly allowDuplicate?: true
 }
 
 export interface NavInput {
@@ -91,21 +91,23 @@ const cellKey = (view: ViewKind, target: TargetKind, run: TargetRun): CellKey =>
   `${view}|${target}|${run}`
 
 // ── decision constructors ───────────────────────────────────────────────────
-const NO_OP: NavDecision = {
+const NO_OP: NavDecision = Object.freeze({
   window: 'same',
   verb: 'no-op',
   primaryLabel: NAV_LABEL.start,
   secondary: [],
   telemetry: null,
-}
+})
 
-/** Build a decision with sane defaults (no secondary / telemetry). */
+/** Build a decision with sane defaults (no secondary / telemetry). Frozen — incl.
+ *  the `secondary` array — so a consumer can't mutate a shared `TABLE` singleton
+ *  and poison later calls. */
 const dec = (
   over: Partial<NavDecision> & Pick<NavDecision, 'window' | 'verb' | 'primaryLabel'>,
-): NavDecision => ({
-  secondary: [],
+): NavDecision => Object.freeze({
   telemetry: null,
   ...over,
+  secondary: Object.freeze(over.secondary ?? []),
 })
 
 /** The "Open in new window" caret alternative shared by several cells. */

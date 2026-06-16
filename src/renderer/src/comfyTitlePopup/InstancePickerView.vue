@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
@@ -437,6 +438,7 @@ function handleSettingsNavigateList(): void {
 // when disabled, the primary action no-ops for a cloud install.
 const cloudCapacity = useCloudCapacity()
 const dialogs = useDialogs()
+const { t } = useI18n()
 const ippCapacityStatus = computed(() => cloudCapacity.effectiveStatus())
 
 // Single funnel for navigation decisions (primary CTA + caret). The decision is
@@ -452,16 +454,16 @@ const instanceActions = useInstanceActions({
   confirmLocalKill: async (inst) => {
     if (inst.sourceCategory !== 'local') return true
     const result = await dialogs.confirm({
-      title: 'Restart instance?',
-      message: 'Restart this instance?',
-      confirmLabel: 'Restart',
-      cancelLabel: 'Cancel',
+      title: t('instancePicker.restartConfirmHeading'),
+      message: t('instancePicker.restartConfirmTitle'),
+      confirmLabel: t('instancePicker.restartConfirmAction'),
+      cancelLabel: t('common.cancel'),
       messageDetails: [
         {
-          label: 'Heads up',
+          label: t('instancePicker.confirmHeadsUp'),
           items: [
-            'Restarting will stop the running session.',
-            'Any unsaved work in the workflow will be lost.',
+            t('instancePicker.restartConfirmItem1'),
+            t('instancePicker.restartConfirmItem2'),
           ],
         },
       ],
@@ -476,18 +478,18 @@ const instanceActions = useInstanceActions({
       props.snapshot.currentView === 'instance' && props.snapshot.currentCategory === 'local'
     if (!hostIsLocalRunning) return 'switch'
     const result = await dialogs.confirm({
-      title: 'Switch instance?',
-      message: `Switch to ${inst.name}?`,
-      confirmLabel: 'Switch',
-      secondaryLabel: 'Open in new window',
-      cancelLabel: 'Cancel',
+      title: t('instancePicker.switchConfirmTitle'),
+      message: t('instancePicker.switchConfirmMessage', { name: inst.name }),
+      confirmLabel: t('instancePicker.switchConfirmAction'),
+      secondaryLabel: t('instancePicker.switchConfirmSecondary'),
+      cancelLabel: t('common.cancel'),
       showCancel: true,
       messageDetails: [
         {
-          label: 'Heads up',
+          label: t('instancePicker.confirmHeadsUp'),
           items: [
-            'Switch stops the current instance and replaces it in this window.',
-            'Open in new window keeps the current instance running.',
+            t('instancePicker.switchConfirmItem1'),
+            t('instancePicker.switchConfirmItem2'),
           ],
         },
       ],

@@ -23,7 +23,6 @@ import { expectChooserVisible } from './support/chooserHelpers'
 import {
   closeTitlePopupIfOpen,
   titlePopupPage,
-  waitForWebContents,
 } from './support/cdpPages'
 import {
   clearRunningSessions,
@@ -31,6 +30,7 @@ import {
   resetIpcInvocations,
   seedRunningSession,
 } from './support/devHooks'
+import { liveWindowCount, openPicker } from './support/navMatrixHelpers'
 
 let ctx: AppContext
 let installPathA: string
@@ -43,22 +43,6 @@ const INSTALL_B_NAME = 'Nav Inst B'
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
 test.describe.configure({ mode: 'serial' })
-
-async function liveWindowCount(): Promise<number> {
-  return ctx.app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
-  )
-}
-
-async function openPicker(): Promise<void> {
-  await ctx.panel.evaluate<boolean>(`(() => { window.api.openInstancePicker({}); return true })()`)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitFor(
-    async () => popup.evaluate<boolean>('typeof window.__comfyTitlePopup?.openInstallNewWindow === "function"'),
-    { timeout: 10_000, message: 'picker bridge never appeared' },
-  )
-}
 
 test.beforeAll(async () => {
   installPathA = await mkdtemp(path.join(os.tmpdir(), 'comfyui-nav-inst-a-'))
@@ -79,8 +63,10 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  await clearRunningSessions(ctx.app)
-  await ctx?.cleanup()
+  if (ctx) {
+    await clearRunningSessions(ctx.app)
+    await ctx.cleanup()
+  }
   if (installPathA) await rm(installPathA, { recursive: true, force: true })
   if (installPathB) await rm(installPathB, { recursive: true, force: true })
 })
@@ -96,8 +82,8 @@ test.beforeEach(async () => {
 test('Instance B via "Open in new window": spawns a new window (no swap of the host) @lifecycle', async () => {
   // B has no window of its own, so the caret action spawns a fresh host for it
   // without touching the picker's host. Mirrors the passing dashboard→cloud case.
-  const before = await liveWindowCount()
-  await openPicker()
+  const before = await liveWindowCount(ctx.app)
+  await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(`window.__comfyTitlePopup.openInstallNewWindow(${JSON.stringify(INSTALL_B_ID)})`)
@@ -109,15 +95,19 @@ test('Instance B via "Open in new window": spawns a new window (no swap of the h
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
   // A fresh window was added (a swap would keep the count flat) and the host was
-  // not focused away — the picker's host is left untouched.
-  await expect.poll(() => liveWindowCount(), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
-  expect((await getIpcInvocations(ctx.app, 'focus-comfy-window')).length).toBe(0)
+  // not focused away — the picker's host is left untouched. Poll the negative so
+  // a late `focus-comfy-window` IPC can't slip past a one-shot check.
+  await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
+  await expect.poll(
+    async () => (await getIpcInvocations(ctx.app, 'focus-comfy-window')).length,
+    { timeout: 2_000, intervals: [200, 500] },
+  ).toBe(0)
 })
 
 test('Instance B (running elsewhere): focus its existing window @lifecycle', async () => {
   await seedRunningSession(ctx.app, { installationId: INSTALL_B_ID, installationName: INSTALL_B_NAME })
-  const before = await liveWindowCount()
-  await openPicker()
+  const before = await liveWindowCount(ctx.app)
+  await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(`window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_B_ID)})`)
@@ -127,7 +117,13 @@ test('Instance B (running elsewhere): focus its existing window @lifecycle', asy
     return calls.some((c) => c.installationId === INSTALL_B_ID)
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  expect(await liveWindowCount()).toBe(before)
+  // Focus path, NOT a relaunch: no `launch` run-action fired. Poll the negative
+  // so a late `launch` IPC can't slip past a one-shot check.
+  await expect.poll(async () => {
+    const runActions = (await getIpcInvocations(ctx.app, 'run-action')) as { actionId?: string }[]
+    return runActions.some((c) => c.actionId === 'launch')
+  }, { timeout: 2_000, intervals: [200, 500] }).toBe(false)
+  expect(await liveWindowCount(ctx.app)).toBe(before)
 })
 
 // NOTE: the "already-running local install focuses instead of duplicating"

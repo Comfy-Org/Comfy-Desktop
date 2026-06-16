@@ -157,9 +157,12 @@ export function openSystemModal(opts: OpenSystemModalOpts): string {
   return id
 }
 
-/** Promise wrapper around `openSystemModal`. Resolves `true` on confirm,
- *  `false` on cancel / superseded / parent destroyed. */
-export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean> {
+/** Open the modal and resolve once it settles, mapping the raw action to the
+ *  caller's shape. Runs the caller's own `callback` (guarded) before resolving. */
+function openSystemModalResolving<T>(
+  opts: OpenSystemModalOpts,
+  map: (action: SystemModalAction) => T,
+): Promise<T> {
   return new Promise((resolve) => {
     openSystemModal({
       parent: opts.parent,
@@ -168,10 +171,16 @@ export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean
         if (opts.callback) {
           try { opts.callback(action) } catch {}
         }
-        resolve(action === 'confirm')
+        resolve(map(action))
       },
     })
   })
+}
+
+/** Promise wrapper around `openSystemModal`. Resolves `true` on confirm,
+ *  `false` on cancel / superseded / parent destroyed. */
+export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean> {
+  return openSystemModalResolving(opts, (action) => action === 'confirm')
 }
 
 /** Three-way variant of `openSystemModalAsync`. Resolves the raw action so a
@@ -180,18 +189,7 @@ export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean
 export function openSystemModalChoiceAsync(
   opts: OpenSystemModalOpts,
 ): Promise<'confirm' | 'cancel' | 'secondary'> {
-  return new Promise((resolve) => {
-    openSystemModal({
-      parent: opts.parent,
-      spec: opts.spec,
-      callback: (action) => {
-        if (opts.callback) {
-          try { opts.callback(action) } catch {}
-        }
-        resolve(action)
-      },
-    })
-  })
+  return openSystemModalResolving(opts, (action) => action)
 }
 
 /** Wire the IPC handlers that drive the system-modal popup. Called once at app ready. */

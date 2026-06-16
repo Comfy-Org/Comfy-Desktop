@@ -2604,7 +2604,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     'comfy-titlepopup:pick-install',
     (event, payload: { installationId?: unknown; confirmed?: unknown }) => {
       const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry) return
+      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
       const installationId = payload?.installationId
       if (typeof installationId !== 'string' || installationId.length === 0) return
       const confirmed = payload?.confirmed === true
@@ -2621,7 +2621,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     'comfy-titlepopup:open-install-new-window',
     (event, payload: { installationId?: unknown; allowDuplicate?: unknown }) => {
       const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry) return
+      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
       const installationId = payload?.installationId
       if (typeof installationId !== 'string' || installationId.length === 0) return
       hideTitlePopup(entry, { releaseFocusToParent: false })
@@ -2641,7 +2641,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     'comfy-titlepopup:restart-install',
     (event, payload: { installationId?: unknown; confirmed?: unknown }) => {
       const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry) return
+      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
       const installationId = payload?.installationId
       if (typeof installationId !== 'string' || installationId.length === 0) return
       const confirmed = payload?.confirmed === true

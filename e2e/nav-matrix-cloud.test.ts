@@ -19,13 +19,13 @@ import {
   closeTitlePopupIfOpen,
   isPopupVisible,
   titlePopupPage,
-  waitForWebContents,
 } from './support/cdpPages'
 import {
   clearRunningSessions,
   getIpcInvocations,
   resetIpcInvocations,
 } from './support/devHooks'
+import { liveWindowCount, openPicker } from './support/navMatrixHelpers'
 
 let ctx: AppContext
 
@@ -34,30 +34,14 @@ const CLOUD_NAME = 'Nav Cloud Target'
 
 test.describe.configure({ mode: 'serial' })
 
-async function liveWindowCount(): Promise<number> {
-  return ctx.app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
-  )
-}
-
 async function newWindowCalls(): Promise<{ installationId?: string; allowDuplicate?: boolean; focusedExisting?: boolean }[]> {
   return (await getIpcInvocations(ctx.app, 'open-install-new-window')) as never
-}
-
-async function openPicker(): Promise<void> {
-  await ctx.panel.evaluate<boolean>(`(() => { window.api.openInstancePicker({}); return true })()`)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitFor(
-    async () => popup.evaluate<boolean>('typeof window.__comfyTitlePopup?.openInstallNewWindow === "function"'),
-    { timeout: 10_000, message: 'picker bridge never appeared' },
-  )
 }
 
 /** Open the picker and fire one `openInstallNewWindow` call, returning once the
  *  popup has dismissed (so the IPC has reached main). */
 async function openInNewWindow(installationId: string, opts?: { allowDuplicate?: boolean }): Promise<void> {
-  await openPicker()
+  await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
   const popup = titlePopupPage(ctx.app)
   const optsArg = opts ? `, ${JSON.stringify(opts)}` : ''
   await popup.evaluate<void>(`window.__comfyTitlePopup.openInstallNewWindow(${JSON.stringify(installationId)}${optsArg})`)
@@ -75,8 +59,9 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
+  if (!ctx) return
   await clearRunningSessions(ctx.app)
-  await ctx?.cleanup()
+  await ctx.cleanup()
 })
 
 test.beforeEach(async () => {
@@ -86,20 +71,20 @@ test.beforeEach(async () => {
 })
 
 test('cloud target with no window: opens a new window @lifecycle', async () => {
-  const before = await liveWindowCount()
+  const before = await liveWindowCount(ctx.app)
   await openInNewWindow(CLOUD_ID)
 
   await expect.poll(
     async () => (await newWindowCalls()).some((c) => c.installationId === CLOUD_ID && c.focusedExisting === false),
     { timeout: 5_000, intervals: [100, 250] },
   ).toBe(true)
-  await expect.poll(() => liveWindowCount(), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
+  await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
 })
 
 test('cloud self with allowDuplicate: always spawns a window (matrix row 16) @lifecycle', async () => {
   // allowDuplicate bypasses the focus-existing guard unconditionally, so it
   // spawns regardless of whether a window already exists for the install.
-  const before = await liveWindowCount()
+  const before = await liveWindowCount(ctx.app)
   await openInNewWindow(CLOUD_ID, { allowDuplicate: true })
 
   await expect.poll(
@@ -108,7 +93,7 @@ test('cloud self with allowDuplicate: always spawns a window (matrix row 16) @li
     ),
     { timeout: 5_000, intervals: [100, 250] },
   ).toBe(true)
-  await expect.poll(() => liveWindowCount(), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
+  await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
 })
 
 test('allowDuplicate flag is threaded through to main intact @lifecycle', async () => {
