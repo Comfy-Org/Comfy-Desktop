@@ -804,6 +804,13 @@ defineExpose({ startOperation, showOperation })
   align-items: center;
   text-align: center;
   overflow: visible;
+  /* Vertical rhythm between the plate and the finished-state rows
+     (success actions, error message, error CTAs). In-flight the stack has a
+     single child so this is inert; the error-row's negative margin-top
+     fine-tunes its distance from the banner. Intentionally tighter than
+     BrandFinishedSurface's stack gap: this stack also hosts the in-flight
+     stepper, so the finished rows need less breathing room here. */
+  gap: clamp(0.75rem, 1.8vh, 1.125rem);
 }
 /* Scrim plate: dark radial sits above the glyph, below text — extended
    downward during in-flight ops so the stepper stays readable. */
