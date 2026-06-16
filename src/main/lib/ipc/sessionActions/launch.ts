@@ -36,6 +36,11 @@ import * as telemetry from '../../telemetry'
 import { appendLog } from '../../logsBroadcast'
 import { ensureManagerMirrorConfig } from '../../managerConfig'
 import type { WriteStream } from 'fs'
+import {
+  isLocalComfyPythonLaunch,
+  resolveDesktop2FrontendRoot,
+  setDesktop2FrontendRootArg,
+} from '../../desktopFrontendRoot'
 
 // Feature flags injected on every spawned ComfyUI, gated by the running
 // install's --list-feature-flags registry so we never inject unrecognized keys.
@@ -232,6 +237,15 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       } catch {
         // Schema not available — pass args as-is.
       }
+    }
+  }
+
+  if (isLocalComfyPythonLaunch(launchCmd)) {
+    try {
+      const frontendRoot = await resolveDesktop2FrontendRoot(launchCmd.cmd, launchCmd.cwd)
+      launchCmd.args = setDesktop2FrontendRootArg(launchCmd.args, frontendRoot)
+    } catch (err) {
+      return { ok: false, message: (err as Error).message }
     }
   }
 
