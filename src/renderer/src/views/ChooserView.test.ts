@@ -52,7 +52,6 @@ const messages = {
       viewErrorTooltip: 'View error details',
       errorTitle: 'Error',
       updatePill: 'Update',
-      updatePillVersion: 'Update {version}',
       migratePill: 'Migrate',
     },
   },
@@ -76,14 +75,14 @@ interface MockApi {
 function installMockApi(initial: Installation[]): MockApi {
   const api: MockApi = {
     getInstallations: vi.fn().mockResolvedValue(initial),
-    onInstallationsChanged: vi.fn(() => () => { }),
-    onInstallationsVersionsUpdated: vi.fn(() => () => { }),
+    onInstallationsChanged: vi.fn(() => () => {}),
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     getSetting: vi.fn().mockResolvedValue(undefined),
     runAction: vi.fn().mockResolvedValue({ ok: true }),
-    onErrorDetail: vi.fn(() => () => { }),
+    onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
   }
-    ; (window as unknown as { api: MockApi }).api = api
+  ;(window as unknown as { api: MockApi }).api = api
   return api
 }
 
@@ -391,9 +390,9 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-      // The filter UI is hidden in the redesign but `activeFilter` is
-      // preserved, so drive it through the vm directly.
-      ; (wrapper.vm as unknown as { activeFilter: string }).activeFilter = 'remote'
+    // The filter UI is hidden in the redesign but `activeFilter` is
+    // preserved, so drive it through the vm directly.
+    ;(wrapper.vm as unknown as { activeFilter: string }).activeFilter = 'remote'
     await flushPromises()
 
     const tiles = wrapper.findAll('.chooser-tile')
@@ -415,7 +414,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-      ; (wrapper.vm as unknown as { activeFilter: string }).activeFilter = 'local'
+    ;(wrapper.vm as unknown as { activeFilter: string }).activeFilter = 'local'
     await flushPromises()
 
     const tiles = wrapper.findAll('.chooser-tile')
