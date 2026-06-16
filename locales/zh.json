@@ -1192,6 +1192,8 @@
     "open": "启动",
     "restart": "重启",
     "switch": "切换",
+    "openCloud": "打开云端",
+    "openInNewWindow": "在新窗口中打开",
     "restartConfirmTitle": "重启此实例？",
     "restartConfirmDetail": "重启将停止正在运行的会话。工作流中任何未保存的工作都会丢失。",
     "restartConfirmAction": "重启",

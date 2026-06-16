@@ -26,7 +26,7 @@ import {
   resetIpcInvocations,
   seedRunningSession,
 } from './support/devHooks'
-import { liveWindowCount, openPicker } from './support/navMatrixHelpers'
+import { expectNoIpcInvocation, liveWindowCount, openPicker } from './support/navMatrixHelpers'
 
 let ctx: AppContext
 let installPathA: string
@@ -95,13 +95,12 @@ test('Dashboard → stopped instance: same-window launch, no new window @lifecyc
     return calls.some((c) => c.installationId === INSTALL_A_ID && c.actionId === 'launch')
   }, { timeout: 10_000, intervals: [200, 500] }).toBe(true)
 
-  // Same window — no new host spawned, no focus-existing. Poll the negative so a
-  // late `focus-comfy-window` IPC can't slip in after a one-shot check passes.
+  // Same window — no new host spawned, no focus-existing. Sample the full window
+  // so a late `focus-comfy-window` IPC can't slip in (a poll would pass at t=0).
   expect(await liveWindowCount(ctx.app)).toBe(before)
-  await expect.poll(
-    async () => (await getIpcInvocations(ctx.app, 'focus-comfy-window')).length,
-    { timeout: 2_000, intervals: [200, 500] },
-  ).toBe(0)
+  await expectNoIpcInvocation(ctx.app, 'focus-comfy-window', () => true, {
+    message: 'unexpected focus-comfy-window on a same-window launch',
+  })
 })
 
 test('Dashboard → running instance: focus existing window @lifecycle', async () => {
@@ -117,12 +116,11 @@ test('Dashboard → running instance: focus existing window @lifecycle', async (
     return calls.some((c) => c.installationId === INSTALL_A_ID)
   }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  // Focus path, NOT a relaunch: no `launch` run-action, and no new window. Poll
-  // the negative so a late `launch` IPC can't slip past a one-shot check.
-  await expect.poll(async () => {
-    const runActions = (await getIpcInvocations(ctx.app, 'run-action')) as { actionId?: string }[]
-    return runActions.some((c) => c.actionId === 'launch')
-  }, { timeout: 2_000, intervals: [200, 500] }).toBe(false)
+  // Focus path, NOT a relaunch: no `launch` run-action, and no new window.
+  // Sample the full window so a late `launch` IPC can't slip past.
+  await expectNoIpcInvocation(ctx.app, 'run-action', (c) => c.actionId === 'launch', {
+    message: 'unexpected run-action launch on a focus-existing path',
+  })
   expect(await liveWindowCount(ctx.app)).toBe(before)
 })
 

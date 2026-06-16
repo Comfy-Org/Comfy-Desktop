@@ -8,6 +8,7 @@ import {
   type TargetRun,
 } from './navDecision'
 import type { NavClass, ViewKind } from '../viewKind'
+import en from '../../../locales/en.json'
 
 const VIEWS: ViewKind[] = ['dashboard', 'instance', 'cloud']
 const TARGETS: TargetKind[] = ['dashboard', 'instance', 'cloud', 'new-instance']
@@ -207,5 +208,15 @@ describe('decideNavigation — caret (new-window intent)', () => {
       input({ currentView: 'dashboard', currentClass: null, target: 'cloud', targetRun: 'stopped', intent: 'new-window' }),
     )
     expect(caret).toMatchObject({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openInNewWindow })
+  })
+})
+
+describe('NAV_LABEL i18n keys', () => {
+  it('all resolve to a defined string in locales/en.json', () => {
+    const messages = en as unknown as Record<string, Record<string, unknown>>
+    for (const key of Object.values(NAV_LABEL)) {
+      const [ns, leaf] = key.split('.') as [string, string]
+      expect(messages[ns]?.[leaf], `missing i18n key: ${key}`).toBeTypeOf('string')
+    }
   })
 })
