@@ -26,5 +26,16 @@ export function resolveProgressRouting(
     return { routing: 'target-host', successChoice: false }
   }
 
+  // Legacy Desktop adoption can ask main-process follow-up questions
+  // (venv-broken, source-missing). Those prompts are bridged only by the
+  // panel (useAdoptPromptBridge), so migrate must run through the panel
+  // ProgressModal rather than the picker's inline background op — whose
+  // stub sender can't deliver prompts. ProgressModal.handleDone already
+  // opens the newly adopted install via `newInstallationId`, so no success
+  // choice screen is needed.
+  if (opts.actionId === 'migrate-to-standalone') {
+    return { routing: 'same-host', successChoice: false }
+  }
+
   return { routing: 'inline-picker', successChoice: true }
 }

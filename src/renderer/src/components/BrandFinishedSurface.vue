@@ -154,6 +154,8 @@ function getLogText(): string {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* This standalone finished surface can use a roomier gap than ProgressModal's
+     stack, which also hosts the in-flight stepper and is deliberately tighter. */
   gap: clamp(1rem, 3vh, 2rem);
   text-align: center;
   overflow: hidden;
