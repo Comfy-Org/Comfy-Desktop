@@ -156,6 +156,25 @@ function resolveIfNonEmpty(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? path.resolve(value) : null
 }
 
+/** Whether a configured path lives on a currently-accessible volume. We check
+ *  the path *root* (e.g. `D:\`), not the leaf, so a custom location that simply
+ *  hasn't been created yet stays configured — installs/cache are created on
+ *  demand. Returns false only when the drive/volume itself is gone (reinstall on
+ *  a different drive, a removed disk), so callers can fall back to a usable
+ *  default instead of pointing at a dead path. On POSIX the root is always `/`,
+ *  so this is effectively a no-op there. */
+function isOnAccessibleVolume(value: unknown): boolean {
+  const resolved = resolveIfNonEmpty(value)
+  if (!resolved) return false
+  const root = path.parse(resolved).root
+  if (!root) return false
+  try {
+    return fs.existsSync(root)
+  } catch {
+    return false
+  }
+}
+
 function getRelativeDefaultFromHome(currentDefault: string): string | null {
   const home = path.resolve(homeDir())
   const rel = path.relative(home, path.resolve(currentDefault))
@@ -383,6 +402,18 @@ function load(): Settings {
     try {
       fs.mkdirSync(defaults[key], { recursive: true })
     } catch {}
+  }
+
+  // installDir/cacheDir are created on demand, so (unlike input/output) a custom
+  // location may legitimately not exist yet — only fall back when the whole
+  // volume is gone (e.g. reinstall on a different drive, a removed disk) so the
+  // app never strands installs/cache on a dead path.
+  for (const key of ["installDir", "cacheDir"] as const) {
+    if (isOnAccessibleVolume(result[key])) continue
+    if (result[key] !== defaults[key]) {
+      result[key] = defaults[key]
+      changed = true
+    }
   }
   if (changed) save(result)
   return result

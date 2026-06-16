@@ -187,6 +187,47 @@ describe('settings unset/default semantics', () => {
     expect(readPersistedSettings()).not.toHaveProperty('installDir')
   })
 
+  // The volume check keys off the path root, which is always `/` on POSIX, so
+  // this dead-drive fallback only meaningfully applies on Windows.
+  it.runIf(process.platform === 'win32')(
+    'falls back installDir/cacheDir to defaults when their volume is gone',
+    () => {
+      const builtinDefault = path.join(homePath, 'ComfyUI-Installs')
+      const deadInstall = 'Z:\\Comfy-Desktop\\ComfyUI-Installs'
+      const deadCache = 'Z:\\Comfy-Desktop\\ComfyUI-Cache\\download-cache'
+      settings.set('installDir', deadInstall)
+      settings.set('cacheDir', deadCache)
+
+      const realExistsSync = fs.existsSync.bind(fs)
+      const spy = vi
+        .spyOn(fs, 'existsSync')
+        .mockImplementation((p: fs.PathLike) =>
+          p.toString().toUpperCase().startsWith('Z:\\') ? false : realExistsSync(p)
+        )
+      try {
+        // Drive Z: is gone, so both fall back to the (home-layout) defaults...
+        expect(settings.get('installDir')).toBe(builtinDefault)
+        expect(settings.get('cacheDir')).toBe(expectedCacheDir)
+        // ...and the fallback is persisted so it's deterministic next launch.
+        const persisted = readPersistedSettings()
+        expect(persisted['installDir']).toBe(builtinDefault)
+        expect(persisted['cacheDir']).toBe(expectedCacheDir)
+      } finally {
+        spy.mockRestore()
+      }
+    }
+  )
+
+  it('keeps a custom installDir on a live volume even if it does not exist yet', () => {
+    // Created-on-demand parent dirs must not be reset just because the leaf is
+    // absent — only a missing volume triggers fallback.
+    const custom = path.join(homePath, 'Not', 'Yet', 'Created', 'Installs')
+    expect(fs.existsSync(custom)).toBe(false)
+    settings.set('installDir', custom)
+    expect(settings.get('installDir')).toBe(custom)
+    expect(readPersistedSettings()['installDir']).toBe(custom)
+  })
+
   it('autoLaunchOnStartup defaults to "none" when absent and persists explicit choices', () => {
     expect(settings.get('autoLaunchOnStartup')).toBe('none')
 
