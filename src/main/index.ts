@@ -113,7 +113,7 @@ import {
   rebuildComfyViewIfNeeded,
   setHostWindowFactories
 } from './host/createHostWindow'
-import { attachInstall, setAttachFactories } from './host/attach'
+import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
@@ -344,8 +344,9 @@ const comfyFailRetryTimerCancels = new Map<string, () => void>()
  *  `attachInstall`; reached by the title-bar refresh button's IPC handler. */
 const comfyReloads = new Map<string, () => void>()
 /** comfyView zoom reset (→ 100%) per installation. Registered by
- *  `attachInstall`; reached by the title-bar zoom pill's IPC handler. */
-const comfyZoomResets = new Map<string, () => void>()
+ *  `attachInstall`; reached by the title-bar zoom pill's IPC handler and
+ *  the title menu's "Reset Zoom" entry (`source` distinguishes them). */
+const comfyZoomResets = new Map<string, (source: ZoomResetSource) => void>()
 /** Counter for generating unique relaunch tokens. */
 let relaunchTokenCounter = 0
 /** Per-install token guarding the async splash-then-reveal in the `onLaunch`
@@ -857,7 +858,7 @@ ipcMain.on('comfy-window:reset-zoom', (event) => {
   if (entry.window.isDestroyed()) return
   const id = entry.installationId
   if (id === null) return
-  comfyZoomResets.get(id)?.()
+  comfyZoomResets.get(id)?.('titlebar')
   focusActiveBody(entry)
 })
 
@@ -1568,6 +1569,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseHostWindow,
       setActivePanel,
       triggerOpenFeedback,
+      resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>
         entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry)),
