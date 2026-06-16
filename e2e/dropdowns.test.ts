@@ -45,11 +45,14 @@ test.beforeEach(async () => {
 
 // ---------------------------------------------------------------------------
 // `Reset Zoom` menu-item gating.
+//
+// The dashboard / chooser host has no install bound to it, so the menu
+// builder's `installationId !== null` gate hides Reset Zoom regardless of
+// the dummy comfyView's zoom level. Asserting against a non-zero zoom is
+// the stronger case — it would catch a future regression where the gate
+// flipped to `zoomLevel > 0` (which would resurface the dashboard zoom
+// path the PR explicitly removed). The zoom=0 case is implied.
 // ---------------------------------------------------------------------------
-
-test('Reset Zoom menu item is absent at zoom level 0 @windows @macos @linux', async () => {
-  await expectNoResetZoomAtLevel(ctx.app, 0)
-})
 
 test('Reset Zoom menu item is absent on the dashboard even when the dummy comfyView zoom is non-zero @windows @macos @linux', async () => {
   await expectNoResetZoomAtLevel(ctx.app, 1)

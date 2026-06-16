@@ -1911,8 +1911,11 @@ export function activateTitlePopupMenuItem(
     // `buildTitlePopupMenuItems`). Route through the shared reset so the
     // title-bar pill gets the `comfy-titlebar:zoom-changed` push and clears:
     // that event only fires for mouse-wheel zoom, never the programmatic
-    // `setZoomLevel` reset, so the pill won't update on its own.
-    if (parentEntry?.installationId) {
+    // `setZoomLevel` reset, so the pill won't update on its own. Explicit
+    // null check matches the builder's gate at line 761 so a future
+    // `installationId: ''` from a serialization quirk can't show the menu
+    // and silently swallow the click here.
+    if (parentEntry != null && parentEntry.installationId !== null) {
       bindings.resetComfyZoom(parentEntry.installationId)
     }
   } else if (isFlowMenuItemId(id)) {
