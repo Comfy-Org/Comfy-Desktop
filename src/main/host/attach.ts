@@ -378,7 +378,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
-    comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
+    const preamble = isLocal ? '' : 'window.__comfyDesktop2Remote = true;\n'
+    comfyContents.executeJavaScript(preamble + getModelDownloadContentScript()).catch(() => {})
     // Always inject the Terminal bottom-panel tab on standalone installs.
     //
     // Originally gated on `!supports_terminal` to avoid duplicating the
