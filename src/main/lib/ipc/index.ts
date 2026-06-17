@@ -16,6 +16,7 @@ import {
   migrateDefaults,
   checkInstallationUpdates,
   isEffectivelyEmptyInstallDir,
+  sweepOrphanPartitions,
   UPDATE_CHECK_INTERVAL
 } from './shared'
 import { R2_BASE_URL } from '../r2Mirror'
@@ -114,6 +115,12 @@ export function register(callbacks: RegisterCallbacks = {}): void {
       }
 
       if (swept) _broadcastToRenderer('installations-changed', {})
+
+      // Reclaim per-install browser partitions left behind by deletes (the
+      // inline cleanup can't remove them on Windows while their session is
+      // alive). Uses the post-sweep id set so swept installs are reclaimed too.
+      const remaining = await installations.list()
+      sweepOrphanPartitions(new Set(remaining.map((i) => i.id)))
     } catch {}
   })()
 
