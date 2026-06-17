@@ -1280,6 +1280,22 @@ function handleDeepLink(rawUrl: string): void {
  *  - Otherwise stamp the URL onto the cloud install and launch it through the
  *    normal cloud source path, which opens the host window via `onLaunch`.
  */
+/** Open the normal cold-start surface (dashboard / restore-last) unless a
+ *  cold-start `comfy://` deep link is pending — in which case go straight to
+ *  the cloud window so the user doesn't see the dashboard and the deep-linked
+ *  cloud window pop up side-by-side. */
+function openColdStartSurface(): void {
+  if (pendingDeepLink !== null) {
+    const link = pendingDeepLink
+    pendingDeepLink = null
+    void routeCloudDeepLink(link).catch((err) => {
+      console.warn('[deeplink] failed to route buffered link', err)
+    })
+    return
+  }
+  void openStartupSurface()
+}
+
 async function routeCloudDeepLink(targetUrl: string): Promise<void> {
   for (const entry of comfyWindows.values()) {
     if (entry.window.isDestroyed()) continue
@@ -2178,7 +2194,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         clearQuitReason()
         if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
         mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
-        void openStartupSurface()
+        openColdStartSurface()
       }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
     } else {
       app.removeListener('before-quit', onUpdateInstallQuit)
@@ -2188,8 +2204,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // when launched, and the chooser host is the entry-point for
       // picking / creating installs. When the user last left an instance
       // window (and the reopen setting is on), restore that instance
-      // in-place on top of the freshly-opened chooser host.
-      void openStartupSurface()
+      // in-place on top of the freshly-opened chooser host. A pending
+      // cold-start deep link short-circuits the dashboard inside
+      // openColdStartSurface and goes straight to the cloud window.
+      openColdStartSurface()
     }
 
     // Single subscription rebroadcasts every install-list mutation
@@ -2235,16 +2253,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         : {})
     })
 
-    // App is fully up: flush any `comfy://` link buffered during cold start
-    // (macOS `open-url` before `whenReady`, or Windows/Linux launch argv).
+    // App is fully up. Subsequent `comfy://` arrivals (open-url on macOS,
+    // second-instance argv on Windows/Linux) route directly via
+    // `handleDeepLink` now that `appIsReady` is true; cold-start links are
+    // already handled by `openColdStartSurface` above.
     appIsReady = true
-    if (pendingDeepLink) {
-      const link = pendingDeepLink
-      pendingDeepLink = null
-      void routeCloudDeepLink(link).catch((err) => {
-        console.warn('[deeplink] failed to route buffered link', err)
-      })
-    }
   })
 
   app.on('activate', () => {
