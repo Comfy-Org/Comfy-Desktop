@@ -70,8 +70,14 @@ export function createLaunchProgressTracker(opts: {
   nodeCount?: number
   /** Bound `makeSendProgress(sender, installationId)`. */
   sendProgress: (phase: string, detail: Record<string, unknown>) => void
+  /** Fires once per phase, the first time the tracker advances INTO it (after
+   *  any skip-advance). Used by the boot-phase telemetry buffer to record
+   *  per-phase entry timings; those are emitted only if the boot later fails
+   *  (see `bootPhaseBuffer`). Pure side-channel — a throwing callback must not
+   *  break progress, so it is swallowed. */
+  onPhaseEnter?: (phase: string) => void
 }): LaunchProgressTracker {
-  const { phases, sendProgress } = opts
+  const { phases, sendProgress, onPhaseEnter } = opts
   const nodeCount = opts.nodeCount && opts.nodeCount > 0 ? opts.nodeCount : 0
 
   // Index of the currently-active phase; -1 until the first milestone.
@@ -98,6 +104,13 @@ export function createLaunchProgressTracker(opts: {
     if (idx <= activeIdx) return
     activeIdx = idx
     const def = phases[idx]!
+    if (onPhaseEnter) {
+      try {
+        onPhaseEnter(def.phase)
+      } catch {
+        // side-channel telemetry must never break progress reporting
+      }
+    }
     sendProgress(def.phase, {
       status: entryStatus(def),
       percent: entryPercent(def),

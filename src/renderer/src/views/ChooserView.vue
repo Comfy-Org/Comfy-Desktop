@@ -180,7 +180,7 @@ async function pickInstall(inst: Installation): Promise<void> {
   // Cloud capacity gate — catches the case where a cloud install
   // already exists and the user clicks its per-install tile (the
   // generic "Try Cloud" tile gates separately in `handleCloudClick`).
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry())) return
+  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry('picker'))) return
   emit('pick', inst)
 }
 

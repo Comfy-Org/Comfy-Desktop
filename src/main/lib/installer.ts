@@ -7,7 +7,16 @@ import { isDownloadComplete } from './download'
 import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
 
-interface InstallerContext {
+/** Per-phase boundary signal for `comfy.desktop.install.phase` telemetry. The
+ *  installer owns the genuine download↔extract seam (the two are one call from
+ *  the caller's view but distinct work here), so it reports the boundaries; the
+ *  caller in `install.ts` maps them to the consent-gated telemetry pipeline with
+ *  the installation_id / variant it holds. Optional + best-effort so a throwing
+ *  callback never breaks an install. `info.error` is pre-bucketed by the caller's
+ *  emitter — the installer only forwards the raw Error for classification. */
+export type InstallPhaseName = 'download' | 'extract'
+export type InstallPhaseStatus = 'start' | 'end' | 'error'
+export interface InstallerContext {
   sendProgress: (step: string, data: { percent: number; status: string }) => void
   download: (
     url: string,
@@ -23,6 +32,32 @@ interface InstallerContext {
     options?: { signal?: AbortSignal }
   ) => Promise<void>
   signal?: AbortSignal
+  /** Optional per-phase boundary tap. See `InstallPhaseName`. */
+  onPhase?: (
+    phase: InstallPhaseName,
+    status: InstallPhaseStatus,
+    info?: { durationMs?: number; error?: unknown }
+  ) => void
+}
+
+/** Run an installer phase, emitting start/end/error boundaries through the
+ *  optional `onPhase` tap. Re-throws so existing control flow (cancel, retry)
+ *  is unchanged; telemetry is a pure side-channel. */
+async function withInstallPhase<T>(
+  onPhase: InstallerContext['onPhase'],
+  phase: InstallPhaseName,
+  fn: () => Promise<T>
+): Promise<T> {
+  onPhase?.(phase, 'start')
+  const t0 = Date.now()
+  try {
+    const result = await fn()
+    onPhase?.(phase, 'end', { durationMs: Date.now() - t0 })
+    return result
+  } catch (err) {
+    onPhase?.(phase, 'error', { durationMs: Date.now() - t0, error: err })
+    throw err
+  }
 }
 
 interface DownloadFile {
@@ -91,56 +126,60 @@ export async function downloadAndExtract(
   ctx: InstallerContext,
   expectedSize?: number
 ): Promise<void> {
-  const { sendProgress, download, cache, extract, signal } = ctx
+  const { sendProgress, download, cache, extract, signal, onPhase } = ctx
   const filename = url.split('/').pop()!
   const cacheBase = cache.getCachePath(cacheKey)
   fs.mkdirSync(cacheBase, { recursive: true })
   const cachePath = path.join(cacheBase, filename)
 
-  await withDownloadLock(cachePath, {
-    signal,
-    onWait: () => sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') }),
-  }, async () => {
-    if (isCacheValid(cachePath, expectedSize)) {
-      sendProgress('download', { percent: 100, status: t('installer.cachedDownload') })
-    } else {
-      sendProgress('download', { percent: 0, status: t('installer.startingDownload') })
-      await download(
-        url,
-        cachePath,
-        (p) => {
-          const speed = `${p.speedMBs.toFixed(1)} MB/s`
-          const elapsed = formatTime(p.elapsedSecs)
-          const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
-          sendProgress('download', {
-            percent: p.percent,
-            status: t('installer.downloading', {
-              progress: `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-            }),
-          })
-        },
-        { signal, expectedSize }
-      )
-      cache.evict()
-    }
-    cache.touch(cacheKey)
-  })
+  await withInstallPhase(onPhase, 'download', () =>
+    withDownloadLock(cachePath, {
+      signal,
+      onWait: () => sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') }),
+    }, async () => {
+      if (isCacheValid(cachePath, expectedSize)) {
+        sendProgress('download', { percent: 100, status: t('installer.cachedDownload') })
+      } else {
+        sendProgress('download', { percent: 0, status: t('installer.startingDownload') })
+        await download(
+          url,
+          cachePath,
+          (p) => {
+            const speed = `${p.speedMBs.toFixed(1)} MB/s`
+            const elapsed = formatTime(p.elapsedSecs)
+            const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
+            sendProgress('download', {
+              percent: p.percent,
+              status: t('installer.downloading', {
+                progress: `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
+              }),
+            })
+          },
+          { signal, expectedSize }
+        )
+        cache.evict()
+      }
+      cache.touch(cacheKey)
+    })
+  )
 
   sendProgress('extract', { percent: 0, status: t('installer.extracting', { progress: '' }).trim() })
-  await extract(
-    cachePath,
-    dest,
-    (p) => {
-      const elapsed = formatTime(p.elapsedSecs)
-      const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
-      sendProgress('extract', {
-        percent: p.percent,
-        status: t('installer.extracting', {
-          progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-        }),
-      })
-    },
-    { signal }
+  await withInstallPhase(onPhase, 'extract', () =>
+    extract(
+      cachePath,
+      dest,
+      (p) => {
+        const elapsed = formatTime(p.elapsedSecs)
+        const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
+        sendProgress('extract', {
+          percent: p.percent,
+          status: t('installer.extracting', {
+            progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
+          }),
+        })
+      },
+      { signal }
+    )
   )
 }
 
@@ -150,7 +189,7 @@ export async function downloadAndExtractMulti(
   cacheDir: string,
   ctx: InstallerContext
 ): Promise<void> {
-  const { sendProgress, download, cache, extract, signal } = ctx
+  const { sendProgress, download, cache, extract, signal, onPhase } = ctx
   const cacheBase = cache.getCachePath(cacheDir)
   fs.mkdirSync(cacheBase, { recursive: true })
 
@@ -161,6 +200,7 @@ export async function downloadAndExtractMulti(
   let allCached = true
   const overallStart = Date.now()
 
+  await withInstallPhase(onPhase, 'download', async () => {
   for (let i = 0; i < count; i++) {
     const file = files[i]!
     const fileCachePath = path.join(cacheBase, file.filename)
@@ -221,6 +261,7 @@ export async function downloadAndExtractMulti(
       }
     })
   }
+  })
 
   cache.touch(cacheDir)
   if (!allCached) {
@@ -236,19 +277,21 @@ export async function downloadAndExtractMulti(
   const extractPath = path.join(cacheBase, extractFile)
 
   sendProgress('extract', { percent: 0, status: t('installer.extracting', { progress: '' }).trim() })
-  await extract(
-    extractPath,
-    dest,
-    (p) => {
-      const elapsed = formatTime(p.elapsedSecs)
-      const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
-      sendProgress('extract', {
-        percent: p.percent,
-        status: t('installer.extracting', {
-          progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-        }),
-      })
-    },
-    { signal }
+  await withInstallPhase(onPhase, 'extract', () =>
+    extract(
+      extractPath,
+      dest,
+      (p) => {
+        const elapsed = formatTime(p.elapsedSecs)
+        const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
+        sendProgress('extract', {
+          percent: p.percent,
+          status: t('installer.extracting', {
+            progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
+          }),
+        })
+      },
+      { signal }
+    )
   )
 }
