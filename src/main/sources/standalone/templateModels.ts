@@ -110,7 +110,15 @@ export function sanitizeModelPath(
   name: string,
 ): { directory: string; filename: string } | null {
   const normalizedDir = path.posix.normalize(directory.replace(/\\/g, '/'))
+  // Trailing-slash-stripped form for the root check only: `''`, `'.'`, and
+  // `'./'` all normalize to a current-dir reference that would drop the model
+  // into the models ROOT instead of a typed subfolder (e.g. `checkpoints/`).
+  // Reject so a malformed/empty directory is skipped rather than scattering
+  // files at the root.
+  const dirNoTrail = normalizedDir.replace(/\/+$/, '')
   if (
+    dirNoTrail === '' ||
+    dirNoTrail === '.' ||
     path.posix.isAbsolute(normalizedDir) ||
     normalizedDir === '..' ||
     normalizedDir.startsWith('../') ||

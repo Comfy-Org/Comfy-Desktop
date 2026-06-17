@@ -1487,19 +1487,17 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
 /**
  * Open the downloads tray popup for an install's host window without a user
  * click — used to surface a still-running starter-template download a few
- * seconds after launch. No-op if the window is gone or a downloads popup is
- * already open (don't toggle an open tray closed). Anchored at the right edge,
+ * seconds after launch. No-op if the window is gone or ANY popup is already
+ * open/opening for this host — this is an unsolicited auto-open, so it must
+ * never replace whatever the user currently has open (instance picker,
+ * settings, etc.), not just a downloads tray. Anchored at the right edge,
  * where the tray button sits; `clampPopupX` keeps it on-screen.
  */
 export function openDownloadsTrayForInstall(installationId: string): void {
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return
   const existing = titlePopupsByParent.get(entry.window.id)
-  if (
-    existing &&
-    existing.kind === 'downloads' &&
-    (existing.view.isOpen || existing.view.pendingShowTimer !== null)
-  ) {
+  if (existing && (existing.view.isOpen || existing.view.pendingShowTimer !== null)) {
     return
   }
   openTitlePopup({

@@ -57,6 +57,12 @@ describe('sanitizeModelPath', () => {
     expect(sanitizeModelPath('/abs', 'm.safetensors')).toBeNull()
   })
 
+  it('rejects an empty or current (".") directory (would land in the models root)', () => {
+    expect(sanitizeModelPath('', 'm.safetensors')).toBeNull()
+    expect(sanitizeModelPath('.', 'm.safetensors')).toBeNull()
+    expect(sanitizeModelPath('./', 'm.safetensors')).toBeNull()
+  })
+
   it('rejects a filename with separators or traversal', () => {
     expect(sanitizeModelPath('checkpoints', '../m.safetensors')).toBeNull()
     expect(sanitizeModelPath('checkpoints', 'sub/m.safetensors')).toBeNull()

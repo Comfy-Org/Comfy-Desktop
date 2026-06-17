@@ -70,7 +70,7 @@ function isAnimated(option: FieldOption): boolean {
   return option.data?.previewKind === 'animated'
 }
 
-const reduceMotion = ref(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+const reduceMotion = ref(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false)
 
 /** Preview URL for a row: the paired `<id>-still.webp` frame when the template
  *  is animated AND the user prefers reduced motion, otherwise the bundled
