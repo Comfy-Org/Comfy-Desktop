@@ -20,7 +20,7 @@ import {
   getComfyFeatureFlagRegistry,
   _broadcastToRenderer,
 } from '../shared'
-import type { ChildProcess, LaunchCmd } from '../shared'
+import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
@@ -45,14 +45,25 @@ import { appendLog } from '../../logsBroadcast'
 import { ensureManagerMirrorConfig } from '../../managerConfig'
 import type { WriteStream } from 'fs'
 
-// Feature flags injected on every spawned ComfyUI, gated by the running
-// install's --list-feature-flags registry so we never inject unrecognized keys.
-const DESKTOP_FEATURE_FLAGS: Record<string, string> = {
-  show_signin_button: 'true',
-  // Advertises that an interactive terminal host is available, so the frontend
-  // may surface its bottom-panel terminal. The actual transport is the
-  // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
-  supports_terminal: 'true',
+// Feature flags injected on a spawned ComfyUI, gated by the running install's
+// --list-feature-flags registry so we never inject unrecognized keys.
+export function desktopFeatureFlags(
+  inst: InstallationRecord,
+  telemetryEnabled: boolean
+): Record<string, string> {
+  const flags: Record<string, string> = {
+    show_signin_button: 'true',
+    // Advertises that an interactive terminal host is available, so the frontend
+    // may surface its bottom-panel terminal. The actual transport is the
+    // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
+    supports_terminal: 'true',
+  }
+  // Telemetry is opt-in (default off) and only signaled for managed standalone
+  // installs — never for portable or user-managed git clones.
+  if (inst.sourceId === 'standalone' && telemetryEnabled) {
+    flags.enable_telemetry = 'true'
+  }
+  return flags
 }
 
 // A clean exit is code 0 with no signal; anything else (non-zero code or a
@@ -240,7 +251,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
           const registry = await getComfyFeatureFlagRegistry(launchCmd.cmd, mainPyAbs, launchCmd.cwd, installationId, version)
-          for (const [key, value] of Object.entries(DESKTOP_FEATURE_FLAGS)) {
+          const flagEntries = Object.entries(
+            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
+          )
+          for (const [key, value] of flagEntries) {
             if (key in registry) {
               desktopFlagArgs.push('--feature-flag', `${key}=${value}`)
             }
