@@ -8,6 +8,7 @@ import {
 } from '../../lib/comfyDownloadManager'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels } from './templateModels'
+import { copyTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
   runPool,
@@ -238,6 +239,11 @@ async function runTask(
   { sendOutput }: StartOpts,
 ): Promise<void> {
   const templateId = installation.bundledTemplateId as string
+
+  // Up front, before the model early-return, so a zero-model template still
+  // gets its LoadImage input(s) placed in the install's input/ dir.
+  await copyTemplateInputAssets(installation, templateId, sendOutput)
+
   sendOutput(`[templates] Resolving model list for "${templateId}"…\n`)
   const models = await resolveTemplateModels(installation, templateId)
 

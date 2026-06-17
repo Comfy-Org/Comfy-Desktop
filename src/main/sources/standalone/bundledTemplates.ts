@@ -1,10 +1,16 @@
 /**
  * Starter-template picker shown as the final step of the standalone install
  * wizard. Each entry's `id` is a real template id served by the
- * `comfyui_workflow_templates` package the install already ships, so opening it
- * needs no bundled assets — the desktop app appends `?template=<id>` to the
- * ComfyUI URL on first launch and the frontend's existing deeplink loader
- * (`useTemplateUrlLoader`) opens it on the canvas.
+ * `comfyui_workflow_templates` package the install already ships — the desktop
+ * app appends `?template=<id>` to the ComfyUI URL on first launch and the
+ * frontend's existing deeplink loader (`useTemplateUrlLoader`) opens it on the
+ * canvas.
+ *
+ * A template whose workflow has a `LoadImage` node also needs that image on
+ * disk in the install's `input/` dir, or the node resolves to a missing file.
+ * Neither ComfyUI core nor the frontend copies the package's bundled `input/`
+ * images out, so we ship the referenced file in-repo (`inputAssets`) and copy
+ * it in at install time (see `templateInputAssets.ts`).
  *
  * The OFFERED list is intentionally curated (we keep it lightweight). The
  * REQUIRED MODELS for each, however, are derived dynamically at install time
@@ -42,6 +48,10 @@ export interface BundledTemplate {
    *  still frame. Drives the card's motion affordance + the reduced-motion swap
    *  to the paired `<id>-still.webp`. */
   previewKind: 'animated' | 'static'
+  /** Bare filenames the template's `LoadImage` node(s) reference, shipped in-repo
+   *  under `lib/template-assets/` and copied into the install's `input/` dir at
+   *  install time. Omit for templates with no image input. */
+  inputAssets?: readonly string[]
 }
 
 /** Display order + i18n label key per modality, for the picker grid. */
@@ -124,5 +134,6 @@ export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
     thumbnailUrl: thumb('3d_triposplat_image_to_gaussian_splat'),
     sizeBytes: 3972844749,
     previewKind: 'animated',
+    inputAssets: ['white-hotel-on-rocky-island.png'],
   },
 ] as const
