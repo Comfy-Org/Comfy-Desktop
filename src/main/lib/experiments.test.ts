@@ -120,30 +120,32 @@ describe('experiments', () => {
       expect(experiments.getFlag('nope.flag')).toBeUndefined()
     })
 
-    it('writes refreshed values to disk for the next boot WITHOUT changing this session', async () => {
+    it('keeps boot-cached keys locked this session but back-fills new ones, and writes all to disk', async () => {
       fs.writeFileSync(
         path.join(testUserData, 'experiment-flags.json'),
         JSON.stringify({ 'flag.x': 'control', 'flag.y': true })
       )
-      mockFlags = { 'flag.x': 'variant_a', 'flag.y': false }
+      mockFlags = { 'flag.x': 'variant_a', 'flag.y': false, 'flag.z': 'treatment' }
 
       await experiments.initExperiments({
         distinctId: 'test-distinct-id',
         personProperties: {}
       })
 
-      // In-memory cache stays locked to boot values; no mid-session flips.
+      // Keys present at boot stay locked (no mid-session flips)...
       expect(experiments.getFlag('flag.x')).toBe('control')
       expect(experiments.getFlag('flag.y')).toBe(true)
+      // ...but a key absent at boot is back-filled for this session.
+      expect(experiments.getFlag('flag.z')).toBe('treatment')
 
-      // Disk reflects the refreshed values for the next boot.
+      // Disk reflects the full refreshed set for the next boot.
       const onDisk = JSON.parse(
         fs.readFileSync(path.join(testUserData, 'experiment-flags.json'), 'utf-8')
       )
-      expect(onDisk).toEqual({ 'flag.x': 'variant_a', 'flag.y': false })
+      expect(onDisk).toEqual({ 'flag.x': 'variant_a', 'flag.y': false, 'flag.z': 'treatment' })
     })
 
-    it('first-boot users (no on-disk cache) stay in fallback for the session even after refresh resolves', async () => {
+    it('first-boot users (no on-disk cache) get their real variant for the session once the refresh resolves', async () => {
       mockFlags = { 'flag.x': 'treatment' }
 
       await experiments.initExperiments({
@@ -151,8 +153,9 @@ describe('experiments', () => {
         personProperties: {}
       })
 
-      // First-boot session stays empty even though the fetch wrote to disk.
-      expect(experiments.getFlag('flag.x')).toBeUndefined()
+      // Back-fill: a key absent at boot is filled for THIS session so a
+      // first-ever boot isn't stuck on control.
+      expect(experiments.getFlag('flag.x')).toBe('treatment')
 
       const onDisk = JSON.parse(
         fs.readFileSync(path.join(testUserData, 'experiment-flags.json'), 'utf-8')
@@ -190,6 +193,32 @@ describe('experiments', () => {
       await Promise.all([first, second])
       // Second init is a no-op; the session keeps the boot value.
       expect(experiments.getFlag('flag.a')).toBe('treatment')
+    })
+  })
+
+  describe('getFlagAsync', () => {
+    it('awaits the in-flight fetch so a first-boot query gets the real variant, not control', async () => {
+      // No on-disk cache + a slow fetch: sync getFlag would miss the value
+      // mid-fetch (control), but getFlagAsync awaits the settle.
+      mockFlags = { 'flag.x': 'treatment' }
+      mockFlagsDelayMs = 50
+      const refresh = experiments.initExperiments({
+        distinctId: 'test-distinct-id',
+        personProperties: {}
+      })
+
+      expect(experiments.getFlag('flag.x')).toBeUndefined() // race window
+      await expect(experiments.getFlagAsync('flag.x')).resolves.toBe('treatment')
+      await refresh
+    })
+
+    it('resolves immediately from the synchronous cache for a boot-cached flag', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'control' })
+      )
+      experiments.initExperiments({ distinctId: 'test-distinct-id', personProperties: {} })
+      await expect(experiments.getFlagAsync('flag.a')).resolves.toBe('control')
     })
   })
 
