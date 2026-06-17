@@ -26,9 +26,20 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
-/** Single allowed CORS origin. Never widen this list — the response reveals
- *  the app is installed, and we don't want arbitrary pages able to fingerprint
- *  Desktop users. */
+/** CORS allowlist. Production traffic only ever comes from cloud.comfy.org
+ *  (and the test domain we deploy to before promoting). Local dev origins
+ *  are included so ComfyUI_frontend developers running `pnpm dev:cloud`
+ *  against a packaged Desktop install can verify the discovery flow
+ *  end-to-end. Anything not in this set gets no `Access-Control-Allow-Origin`
+ *  header and the browser blocks the read. */
+export const BEACON_ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
+  'https://cloud.comfy.org',
+  'https://testcloud.comfy.org',
+  'http://localhost:5173',
+  'http://localhost:5174',
+])
+
+/** Back-compat: the production origin tests and other call sites have used. */
 export const BEACON_ALLOWED_ORIGIN = 'https://cloud.comfy.org'
 
 /** Three-port allowlist. Chosen in the 51000-52000 range, outside common app
@@ -59,7 +70,7 @@ export function handleBeaconRequest(
   version: string,
 ): void {
   const origin = req.headers['origin']
-  const isAllowedOrigin = typeof origin === 'string' && origin === BEACON_ALLOWED_ORIGIN
+  const isAllowedOrigin = typeof origin === 'string' && BEACON_ALLOWED_ORIGINS.has(origin)
 
   // Explicit `Content-Length: 0` on empty responses is required: without it
   // Node falls back to chunked / connection-close framing and Windows TCP
@@ -76,7 +87,7 @@ export function handleBeaconRequest(
   if (req.method === 'OPTIONS') {
     if (isAllowedOrigin && req.url === '/ping') {
       empty(204, {
-        'Access-Control-Allow-Origin': BEACON_ALLOWED_ORIGIN,
+        'Access-Control-Allow-Origin': origin as string,
         'Access-Control-Allow-Methods': 'GET',
         'Access-Control-Max-Age': '600',
         Vary: 'Origin',
@@ -100,7 +111,7 @@ export function handleBeaconRequest(
     Vary: 'Origin',
   }
   if (isAllowedOrigin) {
-    headers['Access-Control-Allow-Origin'] = BEACON_ALLOWED_ORIGIN
+    headers['Access-Control-Allow-Origin'] = origin as string
   }
   res.writeHead(200, headers)
   res.end(body)
