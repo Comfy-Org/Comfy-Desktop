@@ -22,32 +22,29 @@ export function isLocalComfyPythonLaunch(
   return sIdx !== -1 && sIdx + 1 < launchCmd.args.length
 }
 
+/**
+ * Resolve the frontend root from the selected Python env, preferring the
+ * Desktop2 assets and falling back to the packaged `static` frontend. Returns
+ * `null` when neither exists so callers can launch without pinning
+ * `--front-end-root` rather than treating it as fatal.
+ */
 export async function resolveDesktop2FrontendRoot(
   pythonPath: string,
   cwd: string
-): Promise<string> {
+): Promise<string | null> {
   const packageRoot = (
     await runPython(pythonPath, ['-s', '-c', RESOLVE_DESKTOP2_FRONTEND_PACKAGE_ROOT_SCRIPT], cwd)
   ).trim()
-  const frontendRoots = DESKTOP2_FRONTEND_ROOT_DIRS.map((dir) => path.join(packageRoot, dir))
-  const frontendRoot = frontendRoots.find((root) => fs.existsSync(root))
-  if (!frontendRoot) {
-    throw new Error(`Desktop2 frontend assets not found: ${frontendRoots.join(' or ')}`)
+  if (!packageRoot) {
+    return null
   }
-  return frontendRoot
+  const frontendRoots = DESKTOP2_FRONTEND_ROOT_DIRS.map((dir) => path.join(packageRoot, dir))
+  return frontendRoots.find((root) => fs.existsSync(root)) ?? null
 }
 
-export function setDesktop2FrontendRootArg(args: string[], frontendRoot: string): string[] {
-  const nextArgs: string[] = []
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!
-    if (arg === '--front-end-root') {
-      i++
-    } else if (!arg.startsWith('--front-end-root=')) {
-      nextArgs.push(arg)
-    }
-  }
-  return [...nextArgs, '--front-end-root', frontendRoot]
+/** Whether the user already supplied a `--front-end-root` we should respect. */
+export function hasFrontEndRootArg(args: string[]): boolean {
+  return args.some((arg) => arg === '--front-end-root' || arg.startsWith('--front-end-root='))
 }
 
 function runPython(pythonPath: string, args: string[], cwd: string): Promise<string> {

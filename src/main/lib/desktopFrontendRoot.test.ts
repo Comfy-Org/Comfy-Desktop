@@ -12,9 +12,9 @@ import os from 'os'
 import path from 'path'
 
 import {
+  hasFrontEndRootArg,
   isLocalComfyPythonLaunch,
-  resolveDesktop2FrontendRoot,
-  setDesktop2FrontendRootArg
+  resolveDesktop2FrontendRoot
 } from './desktopFrontendRoot'
 
 const mockedExecFile = vi.mocked(execFile)
@@ -53,14 +53,14 @@ describe('isLocalComfyPythonLaunch', () => {
   })
 })
 
-describe('setDesktop2FrontendRootArg', () => {
-  it('sets exactly one front-end-root arg', () => {
-    expect(
-      setDesktop2FrontendRootArg(
-        ['-s', 'main.py', '--front-end-root', '/old', '--front-end-root=/older', '--port', '8188'],
-        '/desktop2'
-      )
-    ).toEqual(['-s', 'main.py', '--port', '8188', '--front-end-root', '/desktop2'])
+describe('hasFrontEndRootArg', () => {
+  it('detects a user-supplied front-end-root', () => {
+    expect(hasFrontEndRootArg(['-s', 'main.py', '--front-end-root', '/custom'])).toBe(true)
+    expect(hasFrontEndRootArg(['-s', 'main.py', '--front-end-root=/custom'])).toBe(true)
+  })
+
+  it('returns false when no front-end-root is present', () => {
+    expect(hasFrontEndRootArg(['-s', 'main.py', '--port', '8188'])).toBe(false)
   })
 })
 
@@ -104,15 +104,11 @@ describe('resolveDesktop2FrontendRoot', () => {
     await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(frontendRoot)
   })
 
-  it('rejects when packaged frontend assets are missing', async () => {
-    const desktop2Root = path.join(tempDir, 'static-desktop2')
-    const staticRoot = path.join(tempDir, 'static')
+  it('returns null when packaged frontend assets are missing', async () => {
     mockExecFile((_cmd, _args, _opts, callback) => {
       callback(null, `${tempDir}\n`, '')
     })
 
-    await expect(resolveDesktop2FrontendRoot('/python', '/install')).rejects.toThrow(
-      `Desktop2 frontend assets not found: ${desktop2Root} or ${staticRoot}`
-    )
+    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBeNull()
   })
 })

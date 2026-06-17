@@ -37,9 +37,9 @@ import { appendLog } from '../../logsBroadcast'
 import { ensureManagerMirrorConfig } from '../../managerConfig'
 import type { WriteStream } from 'fs'
 import {
+  hasFrontEndRootArg,
   isLocalComfyPythonLaunch,
   resolveDesktop2FrontendRoot,
-  setDesktop2FrontendRootArg,
 } from '../../desktopFrontendRoot'
 
 // Feature flags injected on every spawned ComfyUI, gated by the running
@@ -240,12 +240,17 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     }
   }
 
-  if (isLocalComfyPythonLaunch(launchCmd)) {
+  // Pin the Desktop-managed frontend assets for local launches, unless the user
+  // supplied their own --front-end-root (respected) or the install doesn't ship
+  // the assets / resolution fails (launch without them rather than blocking).
+  if (isLocalComfyPythonLaunch(launchCmd) && !hasFrontEndRootArg(launchCmd.args)) {
     try {
       const frontendRoot = await resolveDesktop2FrontendRoot(launchCmd.cmd, launchCmd.cwd)
-      launchCmd.args = setDesktop2FrontendRootArg(launchCmd.args, frontendRoot)
+      if (frontendRoot) {
+        launchCmd.args = [...launchCmd.args, '--front-end-root', frontendRoot]
+      }
     } catch (err) {
-      return { ok: false, message: (err as Error).message }
+      console.warn('Failed to resolve Desktop2 frontend root:', err)
     }
   }
 
