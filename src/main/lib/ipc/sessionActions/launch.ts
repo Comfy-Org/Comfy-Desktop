@@ -21,6 +21,7 @@ import {
   _broadcastToRenderer,
 } from '../shared'
 import type { ChildProcess, LaunchCmd } from '../shared'
+import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
@@ -343,20 +344,24 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
 
   // Remote connection
   if (launchCmd.remote) {
-    sendProgress('launch', { percent: -1, status: i18n.t('launch.connecting', { url: launchCmd.url || '' }) })
+    // Display the host only — the full `launchCmd.url` carries UTM + a long
+    // desktop_device_id (see `withCloudDistributionUtm`) that mustn't leak
+    // into the user-facing status. `waitForUrl` below still gets the real URL.
+    const displayUrl = displayLaunchUrl(launchCmd.url || '')
+    sendProgress('launch', { percent: -1, status: i18n.t('launch.connecting', { url: displayUrl }) })
     try {
       await waitForUrl(launchCmd.url!, {
         timeoutMs: 15000,
         signal: abort.signal,
         onPoll: ({ elapsedMs }) => {
           const secs = Math.round(elapsedMs / 1000)
-          sendProgress('launch', { percent: -1, status: i18n.t('launch.connectingTime', { url: launchCmd.url || '', secs }) })
+          sendProgress('launch', { percent: -1, status: i18n.t('launch.connectingTime', { url: displayUrl, secs }) })
         },
       })
     } catch (_err) {
       _operationAborts.delete(installationId)
       if (abort.signal.aborted) return { ok: false, cancelled: true }
-      return { ok: false, message: i18n.t('errors.cannotConnect', { url: launchCmd.url || '' }) }
+      return { ok: false, message: i18n.t('errors.cannotConnect', { url: displayUrl }) }
     }
 
     _operationAborts.delete(installationId)
