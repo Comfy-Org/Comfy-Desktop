@@ -17,10 +17,20 @@
  * `null`. We never return a non-cloud URL.
  */
 
-/** The only origins a deep link is allowed to navigate to. */
-const CLOUD_ALLOWLIST = ['https://cloud.comfy.org'] as const
+/** Origins a deep link is allowed to navigate to. Production traffic is
+ *  `https://cloud.comfy.org`; the test domain and local dev origins are
+ *  included so the cloud-frontend banner can be verified end-to-end against
+ *  a packaged Desktop install. Must stay in sync with the beacon CORS
+ *  allowlist in `desktopBeacon.ts` — same threat model. */
+const CLOUD_ALLOWLIST = [
+  'https://cloud.comfy.org',
+  'https://testcloud.comfy.org',
+  'http://localhost:5173',
+  'http://localhost:5174'
+] as const
 
-/** Canonical cloud origin used to resolve `path=` links. */
+/** Canonical cloud origin used to resolve `path=` links. (`path=` only
+ *  applies to production cloud — dev frontends always pass full `url=`.) */
 const CLOUD_ORIGIN = CLOUD_ALLOWLIST[0]
 
 /** The single scheme we register and accept. */
