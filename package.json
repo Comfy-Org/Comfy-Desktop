@@ -39,7 +39,6 @@
     "build:linux": "pnpm run build && electron-builder --linux",
     "bootstrap": "node scripts/build-bootstrap-python.mjs",
     "bootstrap:fetch": "node scripts/fetch-bootstrap-python.mjs",
-    "bridge-types:gen": "pnpm exec tsc -p tsconfig.comfy-desktop-bridge-types.json",
     "font:fetch": "node scripts/fetch-font.mjs",
     "sandbox:gen": "node scripts/generate-sandbox.mjs",
     "datadog:sourcemaps:upload": "node ./scripts/upload-datadog-sourcemaps.mjs",
@@ -71,6 +70,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@comfyorg/comfyui-desktop-bridge-types": "0.1.2",
     "@datadog/datadog-ci": "^5.9.0",
     "@electron/rebuild": "^3.7.2",
     "@eslint/js": "^10.0.1",

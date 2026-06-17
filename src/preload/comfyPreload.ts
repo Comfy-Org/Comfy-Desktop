@@ -8,7 +8,7 @@ import type {
   LogsOutputMsg,
   LogsRestore,
   TerminalRestore
-} from '../types/comfyDesktopBridge'
+} from '@comfyorg/comfyui-desktop-bridge-types'
 
 /**
  * Interactive terminal bridge for the served ComfyUI frontend.
@@ -38,8 +38,7 @@ const Terminal: ComfyDesktop2TerminalBridge = {
    *  the inline injection doesn't need to know its own ID. */
   openPopout: (): Promise<void> => ipcRenderer.invoke('terminal-popout-open', null),
   onOutput: (callback: (data: string) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, payload: { data: string }) =>
-      callback(payload.data)
+    const handler = (_event: IpcRendererEvent, payload: { data: string }) => callback(payload.data)
     ipcRenderer.on('terminal-output', handler)
     return () => ipcRenderer.removeListener('terminal-output', handler)
   },
@@ -47,7 +46,7 @@ const Terminal: ComfyDesktop2TerminalBridge = {
     const handler = () => callback()
     ipcRenderer.on('terminal-exited', handler)
     return () => ipcRenderer.removeListener('terminal-exited', handler)
-  },
+  }
 }
 
 /**
@@ -69,11 +68,10 @@ const Logs: ComfyDesktop2LogsBridge = {
    *  so the inline injection doesn't need to know its own ID. */
   openPopout: (): Promise<void> => ipcRenderer.invoke('logs-popout-open', null),
   onOutput: (callback: (msg: LogsOutputMsg) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, payload: LogsOutputMsg) =>
-      callback(payload)
+    const handler = (_event: IpcRendererEvent, payload: LogsOutputMsg) => callback(payload)
     ipcRenderer.on('logs-output', handler)
     return () => ipcRenderer.removeListener('logs-output', handler)
-  },
+  }
 }
 
 const bridge = {
@@ -82,7 +80,11 @@ const bridge = {
     return ipcRenderer.invoke('desktop2-download-model', { url, filename, directory })
   },
   downloadAsset: (url: string, filename: string, authToken?: string): Promise<boolean> => {
-    return ipcRenderer.invoke('desktop2-download-asset', { url, filename, authToken: authToken || undefined })
+    return ipcRenderer.invoke('desktop2-download-asset', {
+      url,
+      filename,
+      authToken: authToken || undefined
+    })
   },
   pauseDownload: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('model-download-pause', { url })
@@ -93,9 +95,7 @@ const bridge = {
   cancelDownload: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('model-download-cancel', { url })
   },
-  onDownloadProgress: (
-    callback: (data: ComfyDownloadProgress) => void
-  ): (() => void) => {
+  onDownloadProgress: (callback: (data: ComfyDownloadProgress) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, data: unknown) =>
       callback(data as ComfyDownloadProgress)
     ipcRenderer.on('desktop2-download-progress', handler)
