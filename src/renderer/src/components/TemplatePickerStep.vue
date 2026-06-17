@@ -14,7 +14,6 @@ const props = defineProps<{
   options: FieldOption[]
   noneValue: string
   selectedValue: string | null
-  detectedVramBytes?: number
   diskSpace: DiskSpaceInfo | null
   diskSpaceLoading: boolean
 }>()
@@ -46,10 +45,6 @@ const MODALITY_GLYPH: Record<string, Component> = {
 function sizeBytesOf(option: FieldOption | null): number {
   const size = option?.data?.sizeBytes
   return typeof size === 'number' ? size : 0
-}
-function vramOf(option: FieldOption | null): number {
-  const vram = option?.data?.recommendedVramBytes
-  return typeof vram === 'number' ? vram : 0
 }
 function modalityKey(option: FieldOption): string {
   const modality = option.data?.modality
@@ -88,23 +83,8 @@ function sizeLabelOf(option: FieldOption): string {
   return bytes > 0 ? `~${formatBytesCoarse(bytes)}` : ''
 }
 function metaLabelOf(option: FieldOption): string {
-  const parts: string[] = [modalityLabel(option), sizeLabelOf(option)].filter(Boolean)
-  const vram = vramOf(option)
-  if (vram > 0) {
-    parts.push(t('standalone.templatePickerSpecVram', { size: formatBytesCoarse(vram) }))
-  }
-  return parts.join(' · ')
+  return [modalityLabel(option), sizeLabelOf(option)].filter(Boolean).join(' · ')
 }
-
-const shownVramWarning = computed<string | null>(() => {
-  const recommended = vramOf(selectedOption.value)
-  if (!recommended || props.detectedVramBytes === undefined) return null
-  if (props.detectedVramBytes >= recommended) return null
-  return t('standalone.templateVramWarning', {
-    recommended: formatBytesCoarse(recommended),
-    detected: formatBytesCoarse(props.detectedVramBytes)
-  })
-})
 
 const diskBlocked = computed(
   () =>
@@ -145,9 +125,9 @@ function onRowKeydown(e: KeyboardEvent, index: number): void {
   focusRow(nextIndex)
 }
 
-// Disk / VRAM alert messages; the host wizard renders them above the card (so
-// they're never clipped by the list scroll) and owns the blocked-Install shake.
-defineExpose({ shownDiskError, shownVramWarning })
+// Disk alert message; the host wizard renders it above the card (so it's
+// never clipped by the list scroll) and owns the blocked-Install shake.
+defineExpose({ shownDiskError })
 </script>
 
 <template>

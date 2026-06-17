@@ -38,9 +38,6 @@ export interface BundledTemplate {
    *  only for the consent label + disk pre-check; the actual download set is
    *  resolved from the workflow JSON at install time. */
   sizeBytes: number
-  /** Recommended VRAM (bytes), from the index's `vram`. The picker warns —
-   *  never blocks — when detected VRAM is below this. */
-  recommendedVramBytes?: number
   /** Whether the bundled preview `.webp` is animated (motion templates) or a
    *  still frame. Drives the card's motion affordance + the reduced-motion swap
    *  to the paired `<id>-still.webp`. */
@@ -54,22 +51,6 @@ export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
   'audio',
   '3d',
 ]
-
-/**
- * Decide whether to show the "may run slowly" VRAM warning for a template.
- * Warn ONLY when we have a real detected figure that's below the template's
- * recommendation — undefined detected VRAM (AMD/Intel/unknown) or a template
- * with no recommendation stays silent, so we never false-warn. Pure +
- * exported so the decision is unit-testable without a GPU.
- */
-export function shouldWarnVram(
-  detectedVramBytes: number | undefined,
-  recommendedVramBytes: number | undefined,
-): boolean {
-  if (!recommendedVramBytes) return false
-  if (detectedVramBytes === undefined) return false
-  return detectedVramBytes < recommendedVramBytes
-}
 
 /**
  * Decorate the ComfyUI URL so the frontend auto-opens `templateId` on first
@@ -99,13 +80,13 @@ export const NO_TEMPLATE_VALUE = 'none'
 const thumb = (id: string): string => `./images/templates/${id}.webp`
 
 /**
- * One showcase template per modality. Ids + title/description/size/vram are
+ * One showcase template per modality. Ids + title/description/size are
  * copied VERBATIM from the live `comfyui_workflow_templates` index (the same
  * data the ComfyUI gallery renders) — all four verified to resolve and carry a
- * real (non-API, downloadable) model set. `sizeBytes`/`recommendedVramBytes`
- * are the index's coarse `size`/`vram` (bytes); the precise download set is
- * still resolved from the workflow JSON at install time. To change a modality's
- * pick, swap the id + paste that entry's index metadata here.
+ * real (non-API, downloadable) model set. `sizeBytes` is the index's coarse
+ * `size` (bytes); the precise download set is still resolved from the workflow
+ * JSON at install time. To change a modality's pick, swap the id + paste that
+ * entry's index metadata here.
  */
 export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
   {
@@ -115,7 +96,6 @@ export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
     description: 'Efficient single-stream diffusion transformer.',
     thumbnailUrl: thumb('image_z_image_turbo'),
     sizeBytes: 20830591386,
-    recommendedVramBytes: 20830591386,
     previewKind: 'static',
   },
   {
@@ -125,7 +105,6 @@ export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
     description: 'Generate videos from text prompts using Wan 2.1.',
     thumbnailUrl: thumb('text_to_video_wan'),
     sizeBytes: 9824737690,
-    recommendedVramBytes: 9824737690,
     previewKind: 'animated',
   },
   {
@@ -135,7 +114,6 @@ export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
     description: 'Text-to-audio (music, SFX, instruments) with Stable Audio 3.',
     thumbnailUrl: thumb('audio_stable_audio_3_medium'),
     sizeBytes: 15676630630,
-    recommendedVramBytes: 15676630630,
     previewKind: 'static',
   },
   {
@@ -145,7 +123,6 @@ export const BUNDLED_TEMPLATES: readonly BundledTemplate[] = [
     description: 'Turn a single 2D image into a 3D Gaussian splat.',
     thumbnailUrl: thumb('3d_triposplat_image_to_gaussian_splat'),
     sizeBytes: 3972844749,
-    recommendedVramBytes: 3972844749,
     previewKind: 'animated',
   },
 ] as const

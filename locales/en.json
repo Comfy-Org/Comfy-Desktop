@@ -789,12 +789,10 @@
     "starterTemplateNoneDesc": "Start with a blank canvas",
     "templatePickerTitle": "Choose a starter workflow",
     "templatePickerLead": "Opens a ready-to-run workflow. Models download during setup.",
-    "templatePickerSpecVram": "VRAM ~{size}",
     "templateInstall": "Install",
     "templateSkipAndInstall": "Skip & Install",
     "templateSkipAndInstallAria": "Skip starter workflow and install ComfyUI",
     "templateDontShowAgain": "Don't show this template step again",
-    "templateVramWarning": "Recommends ~{recommended} VRAM; you have ~{detected}. May run slowly.",
     "modality": {
       "image": "Image",
       "video": "Video",

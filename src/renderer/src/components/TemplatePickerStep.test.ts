@@ -16,18 +16,17 @@ const IMAGE: FieldOption = {
   value: 'flux_schnell',
   label: 'Flux Schnell',
   description: 'Fast text-to-image.',
-  data: { modality: 'image', sizeBytes: 8 * GB, recommendedVramBytes: 12 * GB, thumbnailUrl: './x.webp' },
+  data: { modality: 'image', sizeBytes: 8 * GB, thumbnailUrl: './x.webp' },
 }
 const VIDEO: FieldOption = {
   value: 'wan_video',
   label: 'Wan Video',
   description: 'Text-to-video.',
-  data: { modality: 'video', sizeBytes: 16 * GB, recommendedVramBytes: 24 * GB },
+  data: { modality: 'video', sizeBytes: 16 * GB },
 }
 
 function mountPicker(props: Partial<{
   selectedValue: string | null
-  detectedVramBytes: number
   diskSpace: DiskSpaceInfo | null
   diskSpaceLoading: boolean
 }> = {}) {
@@ -89,17 +88,16 @@ describe('TemplatePickerStep', () => {
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ value: VIDEO.value })
   })
 
-  it('shows a meta line with modality, size and VRAM', () => {
+  it('shows a meta line with modality and size', () => {
     const meta = mountPicker().findAll('.brand-variant-row__meta')[0]!.text()
     expect(meta).toContain('Image')
-    expect(meta).toContain('VRAM')
+    expect(meta).toContain('GB')
   })
 
-  // The picker exposes the alert messages (shownDiskError / shownVramWarning);
-  // the host wizard renders them above the card and owns the blocked-Install shake.
+  // The picker exposes the alert message (shownDiskError); the host wizard
+  // renders it above the card and owns the blocked-Install shake.
   type PickerVm = {
     shownDiskError: string | null
-    shownVramWarning: string | null
   }
   const vmOf = (w: ReturnType<typeof mountPicker>) => w.vm as unknown as PickerVm
 
@@ -135,29 +133,6 @@ describe('TemplatePickerStep', () => {
         diskSpace: { free: 0, total: 500 * GB },
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
-    })
-  })
-
-  describe('VRAM warning', () => {
-    it('warns when detected VRAM is below the template recommendation', () => {
-      const wrapper = mountPicker({
-        selectedValue: VIDEO.value, // recommends 24GB
-        detectedVramBytes: 8 * GB,
-      })
-      expect(vmOf(wrapper).shownVramWarning).toBeTruthy()
-    })
-
-    it('stays silent when detected VRAM meets the recommendation', () => {
-      const wrapper = mountPicker({
-        selectedValue: VIDEO.value,
-        detectedVramBytes: 32 * GB,
-      })
-      expect(vmOf(wrapper).shownVramWarning).toBeNull()
-    })
-
-    it('stays silent when VRAM is undetected (never false-warns)', () => {
-      const wrapper = mountPicker({ selectedValue: VIDEO.value })
-      expect(vmOf(wrapper).shownVramWarning).toBeNull()
     })
   })
 

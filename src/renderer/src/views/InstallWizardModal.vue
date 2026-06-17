@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, HardDrive, CircleAlert, TriangleAlert } from 'lucide-vue-next'
+import { ChevronRight, HardDrive, CircleAlert } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 
 import type {
@@ -122,10 +122,7 @@ const pickerRef = ref<InstanceType<typeof TemplatePickerStep> | null>(null)
 /** Alert state surfaced by the picker, rendered above the card so it's always
  *  visible (never clipped by the card's scroll). */
 const templateDiskError = computed(() => pickerRef.value?.shownDiskError ?? null)
-const templateVramWarning = computed(() => pickerRef.value?.shownVramWarning ?? null)
-const hasTemplateAlerts = computed(
-  () => !!(templateDiskError.value || templateVramWarning.value)
-)
+const hasTemplateAlerts = computed(() => !!templateDiskError.value)
 
 /** Shake the disk-error alert when a blocked Install is clicked (mirrors the
  *  first-use consent gate). Auto-resets so it can replay on the next click. */
@@ -142,7 +139,6 @@ function nudgeTemplateAlert(): void {
 /** Which step of the takeover is showing: Configure, then the (optional,
  *  standalone-only) starter-template picker before install. */
 const step = ref<'configure' | 'template'>('configure')
-const detectedVramBytes = ref<number | undefined>(undefined)
 const dontShowTemplatePicker = ref(false)
 /** Whether to even offer the picker step: skippable for returning opted-out
  *  users. The "Don't show again" checkbox itself only appears once the user
@@ -402,13 +398,12 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   step.value = 'configure'
   dontShowTemplatePicker.value = false
   // Reset to defaults synchronously so a slow prior-open response can't leave
-  // stale gating/VRAM on this open; the guarded callbacks below then refill them.
+  // stale gating on this open; the guarded callbacks below then refill them.
   pickerEnabled.value = true
   hasLocalInstall.value = false
-  detectedVramBytes.value = undefined
 
-  // Resolve picker gating + VRAM in the background — needed only by the time the
-  // user reaches the (later) template step, so they never block the Configure
+  // Resolve picker gating in the background — needed only by the time the user
+  // reaches the (later) template step, so they never block the Configure
   // screen's first paint. Generation-guarded so a reopen discards stale results.
   void window.api
     .getSetting('skipTemplatePickerStep')
@@ -422,13 +417,6 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     .then((summary) => {
       if (gen !== loadGeneration) return
       hasLocalInstall.value = summary.localCount > 0
-    })
-    .catch(() => {})
-  void window.api
-    .detectGPU()
-    .then((gpu) => {
-      if (gen !== loadGeneration) return
-      detectedVramBytes.value = gpu?.vramBytes
     })
     .catch(() => {})
 
@@ -1109,10 +1097,6 @@ defineExpose({ open })
           <CircleAlert :size="16" aria-hidden="true" />
           <span>{{ templateDiskError }}</span>
         </div>
-        <div v-if="templateVramWarning" class="template-alert template-alert--warn" role="status">
-          <TriangleAlert :size="16" aria-hidden="true" />
-          <span>{{ templateVramWarning }}</span>
-        </div>
       </div>
       <div class="brand-card template-card">
         <div class="brand-card__body template-card__body">
@@ -1121,7 +1105,6 @@ defineExpose({ open })
             :options="templateOptions"
             :none-value="NO_TEMPLATE_VALUE"
             :selected-value="selections.bundledTemplate?.value ?? null"
-            :detected-vram-bytes="detectedVramBytes"
             :disk-space="diskSpace"
             :disk-space-loading="diskSpaceLoading"
             @select="selectTemplate"

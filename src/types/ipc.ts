@@ -513,12 +513,6 @@ export interface GPUInfo {
   id?: string
   label: string
   model?: string | null
-  /** Total VRAM in bytes when detectable for any vendor — NVIDIA via nvidia-smi,
-   *  Apple Silicon via unified memory, AMD/Intel/discrete via the
-   *  `systeminformation` probe; undefined only when no real figure is available.
-   *  The template picker warns only when this is present and below the template's
-   *  recommended VRAM — never on undefined. */
-  vramBytes?: number
 }
 
 export interface HardwareValidation {
