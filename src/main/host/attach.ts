@@ -11,12 +11,13 @@ import { refreshCloudUserTier } from '../lib/userTier'
 import { noteCloudEntered } from '../lib/cloudEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
-import { clearPendingTemplateOpen, installationEvents, type InstallationRecord } from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/bundledTemplates'
 import {
   abortTemplateDownload,
   stopTemplateTrayMirror,
 } from '../sources/standalone/templateDownloadTask'
+import { convertLevelToZoomPercent } from '../lib/zoom'
+import { clearPendingTemplateOpen, installationEvents, type InstallationRecord } from '../installations'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -26,6 +27,13 @@ import {
 import type { ComfyWindowEntry } from './registry'
 
 const APP_VERSION = getAppVersion()
+
+/** Entry point that triggered a zoom reset, tagged as `source` on the
+ *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
+ *  and `menu` (the title menu's "Reset Zoom") flow through the per-install
+ *  `comfyZoomResets` closure; `shortcut` (Ctrl/Cmd + 0) emits directly from
+ *  the key handler. */
+export type ZoomResetSource = 'titlebar' | 'menu' | 'shortcut'
 
 /** Lifecycle-state maps owned by `index.ts` that `attachInstall` and the
  *  related relaunch flow both touch. Late-bound via
@@ -41,10 +49,12 @@ export interface AttachFactories {
    *  the same reload path as F5/Ctrl+R without lifting the closure. */
   comfyReloads: Map<string, () => void>
   /** Per-install comfyView zoom reset (→ 100%). Registered on attach,
-   *  cleared on detach. Lets the title-bar zoom pill reset the live
-   *  comfyContents and emit the matching `comfy.desktop.zoom.reset` telemetry
-   *  without lifting the closure. */
-  comfyZoomResets: Map<string, () => void>
+   *  cleared on detach. Lets both the title-bar zoom pill and the title
+   *  menu's "Reset Zoom" entry reset the live comfyContents, push the
+   *  `comfy-titlebar:zoom-changed` update so the pill clears, and emit the
+   *  matching `comfy.desktop.zoom.reset` telemetry (`source` tags which
+   *  entry point) without lifting the closure. */
+  comfyZoomResets: Map<string, (source: ZoomResetSource) => void>
   /** Per-install relaunch state. Keys present in this map gate every
    *  attach-side reload path so a relaunch-in-progress install can't
    *  be auto-retried out from under the splash. */
@@ -235,7 +245,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (process.platform !== 'darwin') {
       try {
         comfyWindow.setTitleBarOverlay({ color: theme.bg, symbolColor: theme.text })
-      } catch {}
+      } catch { }
     }
   }
   const onIpcMessage = (
@@ -387,9 +397,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `})()`
 
   const onDomReady = (): void => {
-    comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
+    comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => { })
     const preamble = isLocal ? '' : 'window.__comfyDesktop2Remote = true;\n'
-    comfyContents.executeJavaScript(preamble + getModelDownloadContentScript()).catch(() => {})
+    comfyContents.executeJavaScript(preamble + getModelDownloadContentScript()).catch(() => { })
     // Always inject the Terminal bottom-panel tab on standalone installs.
     //
     // Originally gated on `!supports_terminal` to avoid duplicating the
@@ -402,13 +412,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // bails out before registering a second copy. See
     // `comfyTerminalContentScript.ts` for the dedupe guard.
     if (isLocal && installation.sourceId === 'standalone') {
-      comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
+      comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => { })
     }
     // Cloud-only patches (popup-blocked toast suppression + post-signin
     // flicker hide). Skipped for local installs — they don't load cloud
     // frontend, never see the toast or the redirect flash.
     if (!isLocal) {
-      comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
+      comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => { })
       // Refresh the cached subscription tier off the cloud view's
       // Firebase auth record + /customers/me. Used by the capacity
       // kill-switch to let paying users through `disabled`. Fire-and-
@@ -473,13 +483,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         // Only emit when this was a real reset (skip no-op presses at 1x)
         // so the event count tracks actual recovery actions, not key-spam.
         if (previousLevel !== 0) {
-          mainTelemetry.emit('comfy.desktop.zoom.reset', {
-            source: 'shortcut',
-            parent_entry_id: entry.windowKey,
-            installation_id: entry.installationId,
-            previous_zoom_level: previousLevel,
-            previous_zoom_percent: Math.round(Math.pow(1.2, previousLevel) * 100)
-          })
+          emitZoomReset('shortcut', previousLevel)
         }
         return
       }
@@ -497,6 +501,18 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onZoomChanged = (): void => pushZoom()
   comfyContents.on('zoom-changed', onZoomChanged)
 
+  // One emit site for `comfy.desktop.zoom.reset` so every entry point (zoom
+  // pill, title menu, Ctrl/Cmd + 0) shares the payload shape and a typed `source`.
+  const emitZoomReset = (source: ZoomResetSource, previousLevel: number): void => {
+    mainTelemetry.emit('comfy.desktop.zoom.reset', {
+      source,
+      parent_entry_id: entry.windowKey,
+      installation_id: entry.installationId,
+      previous_zoom_level: previousLevel,
+      previous_zoom_percent: convertLevelToZoomPercent(previousLevel)
+    })
+  }
+
   // Failure retry — backoff on did-fail-load that isn't aborted /
   // mid-relaunch. Per-install timer cancel registered into the
   // shared map so onModelFolderRelaunch can interrupt a pending
@@ -510,19 +526,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   }
   fx.comfyFailRetryTimerCancels.set(installationId, cancelFailRetry)
   fx.comfyReloads.set(installationId, reloadComfy)
-  fx.comfyZoomResets.set(installationId, () => {
+  fx.comfyZoomResets.set(installationId, (source) => {
     if (comfyContents.isDestroyed()) return
     const previousLevel = comfyContents.getZoomLevel()
     if (previousLevel === 0) return
     comfyContents.setZoomLevel(0)
     pushZoom()
-    mainTelemetry.emit('comfy.desktop.zoom.reset', {
-      source: 'titlebar',
-      parent_entry_id: entry.windowKey,
-      installation_id: entry.installationId,
-      previous_zoom_level: previousLevel,
-      previous_zoom_percent: Math.round(Math.pow(1.2, previousLevel) * 100)
-    })
+    emitZoomReset(source, previousLevel)
   })
   const onDidFailLoad = (
     _e: Electron.Event,
