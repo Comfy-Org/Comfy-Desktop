@@ -1,15 +1,12 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
-import path from 'path'
 
 import type { LaunchCommand } from '../types/sources'
 
-const DESKTOP2_FRONTEND_ROOT_DIRS = ['static-desktop2', 'static'] as const
-
-const RESOLVE_DESKTOP2_FRONTEND_PACKAGE_ROOT_SCRIPT = `
+const RESOLVE_DESKTOP2_FRONTEND_ROOT_SCRIPT = `
 from importlib import resources
 
-print(resources.files("comfyui_frontend_package"))
+print(resources.files("comfyui_frontend_package").joinpath("static-desktop2"))
 `.trim()
 
 export function isLocalComfyPythonLaunch(
@@ -23,23 +20,22 @@ export function isLocalComfyPythonLaunch(
 }
 
 /**
- * Resolve the frontend root from the selected Python env, preferring the
- * Desktop2 assets and falling back to the packaged `static` frontend. Returns
- * `null` when neither exists so callers can launch without pinning
+ * Resolve the Desktop2 frontend root from the selected Python env. Returns
+ * `null` when the install's `comfyui_frontend_package` doesn't ship the
+ * `static-desktop2` assets, so callers can launch without pinning
  * `--front-end-root` rather than treating it as fatal.
  */
 export async function resolveDesktop2FrontendRoot(
   pythonPath: string,
   cwd: string
 ): Promise<string | null> {
-  const packageRoot = (
-    await runPython(pythonPath, ['-s', '-c', RESOLVE_DESKTOP2_FRONTEND_PACKAGE_ROOT_SCRIPT], cwd)
+  const frontendRoot = (
+    await runPython(pythonPath, ['-s', '-c', RESOLVE_DESKTOP2_FRONTEND_ROOT_SCRIPT], cwd)
   ).trim()
-  if (!packageRoot) {
+  if (!frontendRoot || !fs.existsSync(frontendRoot)) {
     return null
   }
-  const frontendRoots = DESKTOP2_FRONTEND_ROOT_DIRS.map((dir) => path.join(packageRoot, dir))
-  return frontendRoots.find((root) => fs.existsSync(root)) ?? null
+  return frontendRoot
 }
 
 /** Whether the user already supplied a `--front-end-root` we should respect. */

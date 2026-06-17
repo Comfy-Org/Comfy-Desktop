@@ -76,37 +76,27 @@ describe('resolveDesktop2FrontendRoot', () => {
     vi.restoreAllMocks()
   })
 
-  it('prefers the Desktop2 frontend root when it exists', async () => {
-    const desktop2Root = path.join(tempDir, 'static-desktop2')
-    fs.mkdirSync(path.join(tempDir, 'static'))
-    fs.mkdirSync(desktop2Root)
+  it('resolves the Desktop2 frontend root from the selected Python env', async () => {
+    const frontendRoot = path.join(tempDir, 'static-desktop2')
+    fs.mkdirSync(frontendRoot)
     mockExecFile((_cmd, _args, _opts, callback) => {
-      callback(null, `${tempDir}\n`, '')
+      callback(null, `${frontendRoot}\n`, '')
     })
 
-    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(desktop2Root)
+    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(frontendRoot)
 
     expect(mockedExecFile).toHaveBeenCalledWith(
       '/python',
-      ['-s', '-c', expect.stringContaining('resources.files("comfyui_frontend_package")')],
+      ['-s', '-c', expect.stringContaining('comfyui_frontend_package')],
       expect.objectContaining({ cwd: '/install', windowsHide: true }),
       expect.any(Function)
     )
   })
 
-  it('uses the packaged static frontend when the Desktop2 root is absent', async () => {
-    const frontendRoot = path.join(tempDir, 'static')
-    fs.mkdirSync(frontendRoot)
+  it('returns null when the Desktop2 assets are missing', async () => {
+    const frontendRoot = path.join(tempDir, 'static-desktop2')
     mockExecFile((_cmd, _args, _opts, callback) => {
-      callback(null, `${tempDir}\n`, '')
-    })
-
-    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(frontendRoot)
-  })
-
-  it('returns null when packaged frontend assets are missing', async () => {
-    mockExecFile((_cmd, _args, _opts, callback) => {
-      callback(null, `${tempDir}\n`, '')
+      callback(null, `${frontendRoot}\n`, '')
     })
 
     await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBeNull()
