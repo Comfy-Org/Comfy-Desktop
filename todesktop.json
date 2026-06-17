@@ -1,7 +1,6 @@
 {
   "id": "241130tqe9q3y",
   "schemaVersion": 1,
-  "_comment_uploadSizeLimit": "Raised from the 20MB default: the bundled starter-template thumbnails (src/renderer/public/images/templates/*.webp, ~1.5MB, shipped in-repo for offline/CSP-safe first-run previews) push the packaged app source to ~22MB.",
   "uploadSizeLimit": 30,
   "appPath": ".",
   "appFiles": [
