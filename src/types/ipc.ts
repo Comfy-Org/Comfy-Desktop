@@ -425,6 +425,7 @@ export interface ProgressData {
   status?: string
   percent?: number
   steps?: ProgressStep[]
+  error?: boolean
 }
 
 export interface ProgressStep {
@@ -926,6 +927,8 @@ export interface ElectronApi {
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
+  /** Read-only snapshot of an install's durable log buffer (joined string). */
+  logsSnapshot(installationId: string): Promise<string>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -968,6 +971,9 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string): Promise<void>
+  /** Skip waiting on the starter-template model download — hands the still-
+   *  running task off to the title-bar downloads tray (no restart). */
+  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>

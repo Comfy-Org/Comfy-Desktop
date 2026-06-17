@@ -18,6 +18,7 @@ import * as updater from '../lib/updater'
 import * as i18n from '../lib/i18n'
 import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
+import { convertLevelToZoomPercent } from '../lib/zoom'
 import {
   openPath as openPathHelper,
   getAppVersion,
@@ -734,7 +735,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   ── separator ──
   //   Desktop Settings
   //   Send Beta Feedback
-  //   (Reset Zoom — when zoom level != 0)
+  //   (Reset Zoom — on install-backed hosts when zoom level != 0)
   //   ── separator ──
   //   Close Window
   //   Quit Desktop
@@ -756,7 +757,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //     the canonical dashboard escape (opens a fresh chooser window
   //     instead of detaching, so the running ComfyUI stays alive).
   const items: TitlePopupMenuItem[] = [
-    { id: 'new-window', label: 'New Window', labelKey: 'fileMenu.newWindow' },
+    { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
     { kind: 'separator' },
     { id: 'new-install', label: 'New Instance', labelKey: 'fileMenu.newInstall' },
     {
@@ -773,16 +774,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     },
     { id: 'feedback', label: 'Send Beta Feedback', labelKey: 'fileMenu.sendFeedback' }
   ]
-  // Reset Zoom — discoverable recovery path for users who zoom the
-  // comfyView too far to read. Contextual: only surfaces when the
-  // current view actually carries a non-zero zoom. Available on
-  // every host (the dashboard's dummy comfyView can be zoomed via
-  // Ctrl/Cmd+scroll, and the instance host's live comfyView even
-  // more so).
-  if (!entry.comfyView.webContents.isDestroyed()) {
+  // Reset Zoom — discoverable recovery path for users who zoom the live
+  // ComfyUI view too far to read. Dashboard hosts do not expose zoom controls.
+  if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
-      const percent = Math.round(Math.pow(1.2, level) * 100)
+      const percent = convertLevelToZoomPercent(level)
       items.push({ id: 'reset-zoom', label: `Reset Zoom (${percent}%)` })
     }
   }
@@ -1502,6 +1499,32 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   showTitlePopupNow(entry)
 }
 
+/**
+ * Open the downloads tray popup for an install's host window without a user
+ * click — used to surface a still-running starter-template download a few
+ * seconds after launch. No-op if the window is gone or ANY popup is already
+ * open/opening for this host — this is an unsolicited auto-open, so it must
+ * never replace whatever the user currently has open (instance picker,
+ * settings, etc.), not just a downloads tray. Anchored at the right edge,
+ * where the tray button sits; `clampPopupX` keeps it on-screen.
+ */
+export function openDownloadsTrayForInstall(installationId: string): void {
+  const entry = getEntryByInstallationId(installationId)
+  if (!entry || entry.window.isDestroyed()) return
+  const existing = titlePopupsByParent.get(entry.window.id)
+  if (existing && (existing.view.isOpen || existing.view.pendingShowTimer !== null)) {
+    return
+  }
+  openTitlePopup({
+    parent: entry.window,
+    parentEntryId: entry.windowKey,
+    kind: 'downloads',
+    anchor: { x: entry.window.getContentBounds().width, y: TITLEBAR_HEIGHT },
+    theme: entry.lastTheme,
+    titleBarSender: entry.titleBarView.webContents
+  })
+}
+
 export interface TitlePopupHostBindings {
   /** Open a fresh chooser host window. */
   openChooserHostWindow: (initialPanel?: ComfyPanelKey) => void
@@ -1519,6 +1542,11 @@ export interface TitlePopupHostBindings {
   setActivePanel: (windowKey: number, panel: ComfyPanelKey) => void
   /** Forward a Send Feedback request to the host's panel renderer. */
   triggerOpenFeedback: (entryId: number, source: 'titlebar' | 'menu') => void
+  /** Reset the host install's comfyView zoom to 100%. Routes through the
+   *  same per-install closure (`comfyZoomResets`) the title-bar zoom pill
+   *  uses, so the menu path also pushes `comfy-titlebar:zoom-changed` and
+   *  the pill clears — emitting `comfy.desktop.zoom.reset` with source 'menu'. */
+  resetComfyZoom: (installationId: string) => void
   /** Send an IPC to the host's panel webContents, deferring until
    *  `did-finish-load` if the bundle is still loading. */
   sendToPanelDeferred: (panelView: WebContentsView, channel: string, payload: unknown) => void
@@ -1847,7 +1875,7 @@ export function decideFlowMenuItemTarget(
     : { kind: 'open-chooser-host', panel: id }
 }
 
-function activateTitlePopupMenuItem(
+export function activateTitlePopupMenuItem(
   entry: TitlePopupEntry,
   id: string,
   bindings: TitlePopupHostBindings
@@ -1933,27 +1961,12 @@ function activateTitlePopupMenuItem(
     // two entry points in the telemetry payload.
     bindings.triggerOpenFeedback(entry.parentEntryId, 'menu')
   } else if (id === 'reset-zoom') {
-    // Pair to the Ctrl/Cmd + 0 shortcut wired in `onLaunch`. The menu
-    // entry is only built when zoom is non-zero (see `buildTitlePopupMenuItems`),
-    // so this always corresponds to a visible state change.
-    if (parentEntry && !parentEntry.comfyView.webContents.isDestroyed()) {
-      const previousLevel = parentEntry.comfyView.webContents.getZoomLevel()
-      parentEntry.comfyView.webContents.setZoomLevel(0)
-      // Mirrors the Ctrl/Cmd + 0 shortcut emit in `attachInstall`.
-      // Same event name + payload shape so dashboards can group on the
-      // event and pivot on `source` to compare discoverability paths.
-      // No previousLevel === 0 guard here: the menu item is only built
-      // when zoom is non-zero (see `buildTitlePopupMenuItems`), so any click
-      // is a real reset. The complementary `comfy.desktop.title_menu.item_clicked`
-      // emit at the top of this function still fires for menu-engagement
-      // rollups; this one is the action-specific signal.
-      mainTelemetry.emit('comfy.desktop.zoom.reset', {
-        source: 'menu',
-        parent_entry_id: entry.parentEntryId,
-        installation_id: parentEntry.installationId,
-        previous_zoom_level: previousLevel,
-        previous_zoom_percent: Math.round(Math.pow(1.2, previousLevel) * 100)
-      })
+    // Route through the shared reset so the title-bar pill picks up the
+    // `comfy-titlebar:zoom-changed` push (that event fires only for
+    // mouse-wheel zoom, never the programmatic `setZoomLevel`). `!== null`
+    // (not truthy) keeps this gate aligned with the builder at line 761.
+    if (parentEntry != null && parentEntry.installationId !== null) {
+      bindings.resetComfyZoom(parentEntry.installationId)
     }
   } else if (isFlowMenuItemId(id)) {
     if (parentEntry) {
