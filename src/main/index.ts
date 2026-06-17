@@ -10,6 +10,7 @@ import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
 import type { ExitCallbackInfo } from './lib/ipc'
+import { startDesktopBeacon, stopDesktopBeacon } from './lib/desktopBeacon'
 import { closeAllPopouts } from './lib/popoutWindows'
 import { disposeAllTerminals } from './lib/terminal'
 import * as updater from './lib/updater'
@@ -1392,6 +1393,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       app.setAsDefaultProtocolClient('comfy')
     }
 
+    // Localhost discovery beacon: lets cloud.comfy.org detect Desktop and
+    // hand off `?share=…` / canvas URLs without spamming the OS scheme
+    // prompt at users who don't have Desktop. Fire-and-forget — a failed
+    // bind silently disables discovery for the session rather than
+    // crashing the app.
+    void startDesktopBeacon(app.getVersion()).catch((err) => {
+      console.warn('[beacon] failed to start', err)
+    })
+
     // Windows/Linux cold start: a `comfy://` link the OS used to launch us
     // arrives in argv rather than via `open-url`. Buffer it now; it replays
     // once the app finishes coming up (below, after host factories wire up).
@@ -2275,6 +2285,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', () => {
+    // The beacon owns a `node:http` server bound to 127.0.0.1; close it
+    // unconditionally so its handle doesn't outlive the main process
+    // across an `app.relaunch`.
+    void stopDesktopBeacon()
     if (!isQuitInProgress()) {
       setQuitReason('user-quit')
       ipc.cancelAll()
