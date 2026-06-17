@@ -1,19 +1,21 @@
 import path from 'path'
 import { app } from 'electron'
 
-/** Resolve a bundled Python script's path. Packaged: `resourcesPath/lib/`;
- *  dev: two levels below `out/main/` where `lib/` lives. */
-export function getBundledScriptPath(scriptName: string): string {
+/** Root of the bundled `lib/` dir. Packaged: `resourcesPath/lib/`; dev: two
+ *  levels below `out/main/` where `lib/` lives. */
+function getBundledLibRoot(): string {
   return app.isPackaged
-    ? path.join(process.resourcesPath, 'lib', scriptName)
-    : path.join(__dirname, '..', '..', 'lib', scriptName)
+    ? path.join(process.resourcesPath, 'lib')
+    : path.join(__dirname, '..', '..', 'lib')
+}
+
+/** Resolve a bundled Python script's path under `lib/`. */
+export function getBundledScriptPath(scriptName: string): string {
+  return path.join(getBundledLibRoot(), scriptName)
 }
 
 /** Resolve a bundled template input asset's path (e.g. a `LoadImage` sample
- *  shipped under `lib/template-assets/`). Same `lib/` root + dev/packaged split
- *  as `getBundledScriptPath`. */
+ *  shipped under `lib/template-assets/`). */
 export function getBundledTemplateAssetPath(assetName: string): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'lib', 'template-assets', assetName)
-    : path.join(__dirname, '..', '..', 'lib', 'template-assets', assetName)
+  return path.join(getBundledLibRoot(), 'template-assets', assetName)
 }

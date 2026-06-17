@@ -25,8 +25,8 @@ import type { InstallationRecord } from '../../installations'
 
 const noopLog = (): void => {}
 
-/** The 3D pick is the one template that ships an input image. */
-const tripoSplat = BUNDLED_TEMPLATES.find((t) => t.modality === '3d')!
+/** The one template that ships an input image today. */
+const tripoSplat = BUNDLED_TEMPLATES.find((t) => t.id === '3d_triposplat_image_to_gaussian_splat')!
 const assetName = tripoSplat.inputAssets![0]!
 
 function inst(over: Partial<InstallationRecord> = {}): InstallationRecord {

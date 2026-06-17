@@ -61,15 +61,6 @@ export async function copyTemplateInputAssets(
       log(`[templates] Skipping unsafe input asset name "${name}".\n`)
       continue
     }
-    const destPath = path.join(destDir, name)
-    try {
-      await fs.promises.stat(destPath)
-      results.push({ filename: name, copied: false })
-      log(`[templates] Input image ${name} already present, skipping.\n`)
-      continue
-    } catch {
-      // not present — copy it in
-    }
     const srcPath = getBundledTemplateAssetPath(name)
     try {
       await fs.promises.access(srcPath)
@@ -77,12 +68,20 @@ export async function copyTemplateInputAssets(
       log(`[templates] Bundled input image ${name} not found; skipping.\n`)
       continue
     }
+    const destPath = path.join(destDir, name)
     try {
       await fs.promises.mkdir(destDir, { recursive: true })
-      await fs.promises.copyFile(srcPath, destPath)
+      // COPYFILE_EXCL makes "skip if already there" atomic — no stat-then-copy
+      // window for a racing install to slip through.
+      await fs.promises.copyFile(srcPath, destPath, fs.constants.COPYFILE_EXCL)
       results.push({ filename: name, copied: true })
       log(`[templates] Copied input image ${name} into ${destDir}.\n`)
     } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        results.push({ filename: name, copied: false })
+        log(`[templates] Input image ${name} already present, skipping.\n`)
+        continue
+      }
       log(`[templates] Could not place input image ${name}: ${(err as Error).message}\n`)
     }
   }
