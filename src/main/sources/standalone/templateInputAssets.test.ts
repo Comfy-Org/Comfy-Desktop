@@ -74,7 +74,7 @@ describe('copyTemplateInputAssets', () => {
   })
 
   it('is a no-op for templates with no input assets', async () => {
-    const imageTpl = BUNDLED_TEMPLATES.find((t) => t.modality === 'image')!
+    const imageTpl = BUNDLED_TEMPLATES.find((t) => t.id === 'image_z_image_turbo')!
     expect(imageTpl.inputAssets).toBeUndefined()
     const result = await copyTemplateInputAssets(inst(), imageTpl.id, noopLog)
     expect(result).toEqual([])
