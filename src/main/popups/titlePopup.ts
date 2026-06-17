@@ -739,7 +739,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //     the canonical dashboard escape (opens a fresh chooser window
   //     instead of detaching, so the running ComfyUI stays alive).
   const items: TitlePopupMenuItem[] = [
-    { id: 'new-window', label: 'New Window', labelKey: 'fileMenu.newWindow' },
+    { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
     { kind: 'separator' },
     { id: 'new-install', label: 'New Instance', labelKey: 'fileMenu.newInstall' },
     {

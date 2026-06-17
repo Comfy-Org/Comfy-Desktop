@@ -1142,7 +1142,7 @@
     "restartToApply": "重启以应用"
   },
   "fileMenu": {
-    "newWindow": "新建窗口",
+    "newWindow": "打开仪表板",
     "newInstall": "新建实例",
     "addExistingInstall": "添加现有实例",
     "loadSnapshot": "加载快照",
