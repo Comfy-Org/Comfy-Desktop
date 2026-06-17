@@ -7,10 +7,12 @@
  *
  * Architecture: every renderer flag query is cache-first via
  * `getFlag()`. The cache lives at `<configDir>/experiment-flags.json`
- * and is refreshed in the background after boot — the current process
- * uses what it loaded synchronously; the refreshed values land on disk
- * for the NEXT boot. This trade keeps boot fast (no network on the
- * critical path) at the cost of one-boot-of-lag for variant changes.
+ * and is refreshed in the background after boot. The current process
+ * keeps the variant it loaded synchronously for any already-cached key,
+ * but a settled fetch back-fills keys that were ABSENT at boot (so a
+ * fresh-boot session isn't stuck on control); the full result also lands
+ * on disk for the NEXT boot. This keeps boot fast (no network on the
+ * critical path) while still assigning new experiments on first run.
  *
  * The previous in-tree experiment-flag system was deliberately removed
  * (the old `feature-flags.ts` plus a sample-rate dial). This module
@@ -39,7 +41,7 @@ function cacheFilePath(): string {
 }
 
 let cached: Record<string, FeatureFlagValue> | null = null
-let initStarted = false
+let initPromise: Promise<void> | null = null
 const exposedThisSession = new Set<string>()
 
 function isFeatureFlagValue(v: unknown): v is FeatureFlagValue {
@@ -80,13 +82,29 @@ function writeCache(flags: Record<string, FeatureFlagValue>): void {
 }
 
 /**
+ * Merge a fresh fetch into the in-memory cache for the current session,
+ * filling ONLY keys that were absent at boot. Lets a fresh-boot session
+ * (empty disk cache) see its real variant instead of defaulting to control,
+ * while never flipping a key the process already committed to this boot —
+ * so a settled fetch can't change an experiment arm mid-session.
+ */
+function backfillSessionCache(flags: Record<string, FeatureFlagValue>): void {
+  if (!cached) cached = {}
+  for (const [key, value] of Object.entries(flags)) {
+    if (!(key in cached)) cached[key] = value
+  }
+}
+
+/**
  * Initialise the experiments module. Synchronously loads the on-disk
  * cache so `getFlag()` is usable immediately, then kicks off a background
- * fetch (does NOT await) to refresh the cache for the next boot.
+ * fetch (does NOT await) that refreshes the on-disk cache for the next boot
+ * and back-fills any boot-absent keys into the current session (see
+ * `backfillSessionCache`).
  *
- * Returns a promise that resolves when the background fetch settles, so
- * tests can deterministically observe the refresh. Production callers
- * can ignore the returned promise.
+ * The returned promise is cached so `getFlagAsync()` can await it — a
+ * renderer query landing before the fetch settles then sees the resolved
+ * value instead of falling back to control (mirrors `cloudCapacity`).
  *
  * Idempotent within a process.
  */
@@ -95,41 +113,30 @@ export function initExperiments(opts: {
   personProperties: Record<string, string>
   timeoutMs?: number
 }): Promise<void> {
-  // Idempotent within a process: repeated calls return without re-running
-  // the cache load or the background fetch. The `opts.distinctId` and
-  // `opts.personProperties` of subsequent calls are intentionally ignored
+  // Idempotent within a process: repeated calls return the same in-flight
+  // promise without re-running the cache load or fetch. The `opts.distinctId`
+  // and `opts.personProperties` of subsequent calls are intentionally ignored
   // — identity changes mid-session (e.g. after `bindUserId`) do not
   // re-evaluate experiments. Variant stability for an installation is a
   // property we want; rotating variants when a user logs in would
   // contaminate the experiment population.
-  if (initStarted) return Promise.resolve()
-  initStarted = true
+  if (initPromise) return initPromise
   cached = readCacheSync() ?? {}
-  return mainTelemetry
+  initPromise = mainTelemetry
     .loadFeatureFlagsImmediate(
       opts.distinctId,
       opts.personProperties,
       opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
     )
     .then((flags) => {
-      // Refresh ONLY the on-disk cache — do not overwrite the in-memory
-      // `cached` for the running session. Variant assignment for this
-      // process is locked to what loaded synchronously at boot, so a
-      // background fetch that settles mid-session can't flip a banner
-      // out from under the user or change which arm of an experiment
-      // a given action belongs to. New values land on disk and take
-      // effect on the NEXT boot.
-      //
-      // Empty result is also ignored on disk: ambiguous (timeout vs
-      // legitimately no flags configured), and overwriting with empty
-      // would roll every cached variant back to fallback on next boot.
-      if (Object.keys(flags).length > 0) {
-        writeCache(flags)
-      }
+      if (Object.keys(flags).length === 0) return
+      writeCache(flags)
+      backfillSessionCache(flags)
     })
     .catch(() => {
       /* fail closed: keep current cache on disk and in memory */
     })
+  return initPromise
 }
 
 /**
@@ -142,6 +149,23 @@ export function initExperiments(opts: {
  * synchronously-loaded cache values, which is intended).
  */
 export function getFlag(key: string): FeatureFlagValue | undefined {
+  return cached?.[key]
+}
+
+/**
+ * Awaitable flag accessor. Awaits the in-flight boot fetch (if any) before
+ * reading, so a query landing before the fetch settles sees the resolved
+ * value rather than falling back to control. Prefer this from IPC handlers;
+ * `getFlag()` stays for hot sync reads. Mirrors `getCloudCapacityStatusAsync`.
+ */
+export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
+  if (initPromise) {
+    try {
+      await initPromise
+    } catch {
+      /* keep whatever loaded from the on-disk cache */
+    }
+  }
   return cached?.[key]
 }
 
@@ -178,6 +202,6 @@ export function recordExposure(
 /** @internal — exposed for tests. */
 export function _resetForTest(): void {
   cached = null
-  initStarted = false
+  initPromise = null
   exposedThisSession.clear()
 }

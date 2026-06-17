@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
-import DownloadsModal from '../components/DownloadsModal.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
@@ -311,23 +310,11 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-// `'downloads-v2'` brings the panel forward in an overlay mode; the renderer
-// mounts `DownloadsModal` and dismiss routes back through `closeCurrentPanel`
-// so the body returns to comfy/lifecycle without leaving stale state.
-function closeDownloadsV2(): void {
-  window.api.closeCurrentPanel()
-}
-
-// Toggles transparency rules in the non-scoped <style> block so the
-// live ComfyUI canvas composites through while an overlay panel
-// (downloads-v2 / feedback) is mounted.
+/** Composite the live ComfyUI canvas through while the feedback overlay is mounted. */
 watch(
   activePanel,
   (next) => {
-    document.body.classList.toggle(
-      'panel-overlay-mode',
-      next === 'downloads-v2' || next === 'feedback'
-    )
+    document.body.classList.toggle('panel-overlay-mode', next === 'feedback')
   },
   { immediate: true }
 )
@@ -605,14 +592,6 @@ onUnmounted(() => {
         @chain-migrate="handleFirstUseChainMigrate"
       />
     </template>
-
-    <!-- Brand-redesigned "View All Downloads" surface. Mounts only
-         when main flips us into `'downloads-v2'` mode (from the title-
-         bar downloads popup's footer link). `v-if` mirrors the rest of
-         this file's overlay convention — keeps the store init + body
-         scroll lock out of every PanelApp mount that doesn't open the
-         modal. Dismiss routes back through `closeCurrentPanel()`. -->
-    <DownloadsModal v-if="activePanel === 'downloads-v2'" open @close="closeDownloadsV2" />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
 

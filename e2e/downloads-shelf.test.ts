@@ -315,6 +315,46 @@ test('the open popup repaints live when tray state changes @windows @macos @linu
 })
 
 // ---------------------------------------------------------------------------
+// "View All Downloads" — the tray footer link reopens the SAME popup view as
+// the large centred `downloads-full` kind. Regression guard for the preload
+// config-validator allowlist that silently dropped the new kind, leaving the
+// renderer stuck on the tray `downloads` view.
+// ---------------------------------------------------------------------------
+
+test('View All Downloads opens the full downloads popup with the seeded rows @windows @macos @linux', async () => {
+  await seedDownloads(ctx.app, {
+    active: [makeEntry({ url: 'u-dl', filename: 'dl.safetensors', status: 'downloading', progress: 0.5 })],
+    recent: [
+      makeEntry({ url: 'u-co', filename: 'co.safetensors', status: 'completed', progress: 1, savePath: '/tmp/co.safetensors' }),
+      makeEntry({ url: 'u-er', filename: 'er.safetensors', status: 'error', progress: 0, error: 'boom' }),
+    ],
+  })
+  await openFullDownloadsPopup()
+
+  // The reused view flips to the `downloads-full` kind: the tray markup is
+  // gone and the full `.dlm-panel` is rendered with every seeded row.
+  expect(await popup.count('.downloads')).toBe(0)
+  await expect.poll(() => popup.count('.dlm-row'), {
+    timeout: 5_000,
+    intervals: [100, 200, 400],
+  }).toBe(3)
+
+  // Filter chips appear once more than one status bucket is present
+  // (active + completed + error here), and the footer summarises counts.
+  expect(await popup.count('.dlm-filter-chip')).toBeGreaterThan(0)
+  expect(await popup.count('.dlm-footer')).toBe(1)
+})
+
+test('the full downloads popup shows the empty state when nothing is seeded @windows @macos @linux', async () => {
+  await openFullDownloadsPopup()
+
+  expect(await popup.count('.dlm-empty')).toBe(1)
+  expect(await popup.count('.dlm-row')).toBe(0)
+  // No footer summary bar when there are no downloads.
+  expect(await popup.count('.dlm-footer')).toBe(0)
+})
+
+// ---------------------------------------------------------------------------
 // Helpers — kept inline so the test file stays self-contained; promote
 // to `support/` if a second test file ends up needing the same logic.
 // (`isPopupVisible` and `closeTitlePopupIfOpen` already live in
@@ -341,6 +381,18 @@ async function waitForPopupVisible(app: ElectronApplication): Promise<void> {
     timeout: 5_000,
     intervals: [100, 200],
   }).toBe(true)
+}
+
+/** Open the tray and click its "View All" footer to flip the reused popup view
+ *  to the `downloads-full` kind. Waits for the footer link and stable bounds
+ *  first so the kind-switch isn't raced on the empty (fast-rendering) path. */
+async function openFullDownloadsPopup(): Promise<void> {
+  await openDownloadsTray(ctx.titleBar)
+  await waitForPopupVisible(ctx.app)
+  await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
+  await waitForStableBounds(ctx.app)
+  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  await popup.waitForSelector('.dlm-panel', { timeout: 5_000 })
 }
 
 /** Wait until the popup's bounds height stops changing for `settleMs`,

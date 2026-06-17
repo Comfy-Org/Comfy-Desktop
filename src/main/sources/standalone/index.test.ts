@@ -16,6 +16,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
 }))
 
 import { standalone, buildPinnedVariant } from './index'
+import { BUNDLED_TEMPLATES, NO_TEMPLATE_VALUE } from './bundledTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
 import { PLATFORM_PREFIX } from './envPaths'
@@ -116,6 +117,36 @@ describe('standalone.buildInstallation', () => {
     })
     expect(result.originalBuild).toBe(1)
     expect(result.originalTorchVersion).toBe('2.7.0')
+  })
+
+  // --- Starter-template gating (the "Skip & Install" vs "Install" contract) ---
+  describe('starter template', () => {
+    const base = {
+      release: makeRelease('stable', 'v0.18.2-env1'),
+      variant: makeVariant(VENDOR_ID),
+    }
+    const template = (value: string): FieldOption => ({ value, label: value })
+
+    it('"Skip & Install" (template = none) builds NO model download', () => {
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(NO_TEMPLATE_VALUE) })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.pendingTemplateOpen).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+
+    it('"Skip & Install" with no bundledTemplate selection at all builds no download', () => {
+      const result = standalone.buildInstallation(base)
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+
+    it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
+      const realId = BUNDLED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateId).toBe(realId)
+      expect(result.pendingTemplateOpen).toBe(realId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
   })
 })
 
@@ -410,16 +441,28 @@ describe('standalone.getFieldOptions variant version display', () => {
     expect(card.description).toContain('ComfyUI 0.20.1')
   })
 
-  it('variant card shows the bundled version when "Latest on GitHub" is selected', async () => {
+  it('variant card shows the upstream version as a nightly (not the bundled one) when "Latest on GitHub" is selected', async () => {
     const { vendorId } = setupVersionGap()
     mockedGetLatestStableTag.mockResolvedValue('v0.22.3')
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // Latest-on-GitHub leaves the install on whatever the bundle
-    // shipped with (master-ish HEAD); the card advertises that, not
-    // the stable tag the OTHER channel would land on.
+    // Picking 'latest' fast-forwards the install to master HEAD (a few commits
+    // past the latest stable tag), so the card advertises that as a nightly â€”
+    // not the much older ComfyUI baked into the bundle (issue #1068).
+    expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
+    expect(card.description).not.toContain('ComfyUI 0.20.1')
+  })
+
+  it('variant card falls back to the bundled version on "Latest on GitHub" when the upstream tag is unresolved', async () => {
+    const { vendorId } = setupVersionGap()
+    mockedGetLatestStableTag.mockResolvedValue(null)
+    const release = await getReleaseOption('latest')
+
+    const variants = await standalone.getFieldOptions!('variant', { release }, {})
+    const card = variants.find((o) => o.value === vendorId)!
     expect(card.description).toContain('ComfyUI 0.20.1')
+    expect(card.description).not.toContain('nightly')
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // shared.ts (via registry.ts) loads electron at import, so mock it first.
 vi.mock('electron', () => ({
@@ -16,7 +16,12 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
 }))
 
+// The menu-click handler emits PostHog Node telemetry on every activation;
+// stub it so the dispatch tests stay pure and don't bootstrap the SDK.
+vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
+
 import {
+  activateTitlePopupMenuItem,
   buildInstancePickerSnapshot,
   resolvePickerSelectedInstallId,
   buildTitlePopupMenuItems,
@@ -25,8 +30,13 @@ import {
   isFlowMenuItemId,
   type FlowMenuItemId,
   type InstancePickerInstall,
+  type TitlePopupHostBindings,
 } from './titlePopup'
-import { nextWindowKey, type ComfyWindowEntry } from '../host/registry'
+import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
+
+afterEach(() => {
+  comfyWindows.clear()
+})
 
 interface FakeComfyWebContents {
   destroyed: boolean
@@ -175,15 +185,9 @@ describe('buildTitlePopupMenuItems', () => {
     expect(ids).not.toContain('return-to-dashboard')
   })
 
-  it('exposes Reset Zoom on chooser host when comfy zoom is non-zero, with the percent in the label', () => {
-    const noZoom = buildTitlePopupMenuItems(makeEntry({ installationId: null, zoomLevel: 0 }))
-    expect(noZoom.find((i) => i.id === 'reset-zoom')).toBeUndefined()
-
-    // 1.2^2 ≈ 1.44 → 144 %
-    const zoomed = buildTitlePopupMenuItems(makeEntry({ installationId: null, zoomLevel: 2 }))
-    const resetZoom = zoomed.find((i) => i.id === 'reset-zoom')
-    expect(resetZoom).toBeDefined()
-    expect(resetZoom?.label).toBe('Reset Zoom (144%)')
+  it('omits Reset Zoom on chooser hosts even if the dummy comfy view has a zoom level', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null, zoomLevel: 2 }))
+    expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
 
   it('exposes Reset Zoom on install host when comfy zoom is non-zero', () => {
@@ -195,9 +199,9 @@ describe('buildTitlePopupMenuItems', () => {
     expect(resetZoom?.label).toBe('Reset Zoom (144%)')
   })
 
-  it('omits Reset Zoom from the chooser host menu when the comfy webContents has been destroyed', () => {
+  it('omits Reset Zoom from the install host menu when the comfy webContents has been destroyed', () => {
     const items = buildTitlePopupMenuItems(
-      makeEntry({ installationId: null, comfyDestroyed: true, zoomLevel: 2 }),
+      makeEntry({ installationId: 'inst-1', comfyDestroyed: true, zoomLevel: 2 }),
     )
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
@@ -228,6 +232,40 @@ describe('buildTitlePopupMenuItems', () => {
       )
       expect(locked.map((i) => i.id ?? null)).toEqual(normal.map((i) => i.id ?? null))
     }
+  })
+})
+
+describe('activateTitlePopupMenuItem', () => {
+  // Minimal popup entry: the reset-zoom branch reads `kind` + `parentEntryId`
+  // (the latter resolves the host from `comfyWindows`), and the shared
+  // `hideTitlePopup` tail reads `view`. An inert closed view makes the
+  // dismiss a no-op so the test stays focused on the dispatch.
+  function makePopupEntry(parentEntryId: number) {
+    return {
+      kind: 'menu',
+      parentEntryId,
+      view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() },
+    } as unknown as Parameters<typeof activateTitlePopupMenuItem>[0]
+  }
+
+  it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {
+    const host = makeEntry({ installationId: 'inst-1', zoomLevel: 3 })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { resetComfyZoom: vi.fn() } as unknown as TitlePopupHostBindings
+
+    activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
+
+    expect(bindings.resetComfyZoom).toHaveBeenCalledExactlyOnceWith('inst-1')
+  })
+
+  it('defensively ignores Reset Zoom on an install-less host', () => {
+    const host = makeEntry({ installationId: null })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { resetComfyZoom: vi.fn() } as unknown as TitlePopupHostBindings
+
+    activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
+
+    expect(bindings.resetComfyZoom).not.toHaveBeenCalled()
   })
 })
 
@@ -461,4 +499,3 @@ describe('buildInstancePickerSnapshot', () => {
     expect(snap.pickerSelectionEpoch).toBe(7)
   })
 })
-

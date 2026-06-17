@@ -425,6 +425,7 @@ export interface ProgressData {
   status?: string
   percent?: number
   steps?: ProgressStep[]
+  error?: boolean
 }
 
 export interface ProgressStep {
@@ -926,6 +927,8 @@ export interface ElectronApi {
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
+  /** Read-only snapshot of an install's durable log buffer (joined string). */
+  logsSnapshot(installationId: string): Promise<string>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -968,6 +971,9 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string): Promise<void>
+  /** Skip waiting on the starter-template model download — hands the still-
+   *  running task off to the title-bar downloads tray (no restart). */
+  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1516,6 +1522,24 @@ export const REQUIRES_STOPPED = new Set([
   'update-comfyui',
   'migrate-from'
 ])
+
+/** Title-popup kind tags — the discriminant for popup config/opts across main,
+ *  preload, and the popup renderer. Single source so the tag can't desync. */
+export const POPUP_KIND = {
+  menu: 'menu',
+  downloads: 'downloads',
+  downloadsFull: 'downloads-full',
+  instancePicker: 'instance-picker',
+  globalSettings: 'global-settings'
+} as const
+
+export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+/** Resolved popup theme passed in every popup config. */
+export interface PopupTheme {
+  bg: string
+  text: string
+}
 
 /** Picker popup's settings-passthrough IPC channels — main registers them,
  *  preload invokes them. Single source so a typo can't desync the two sides. */
