@@ -1,12 +1,15 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 
 import type { LaunchCommand } from '../types/sources'
 
-const RESOLVE_DESKTOP2_FRONTEND_ROOT_SCRIPT = `
+const DESKTOP2_FRONTEND_ROOT_DIRS = ['static-desktop2', 'static'] as const
+
+const RESOLVE_DESKTOP2_FRONTEND_PACKAGE_ROOT_SCRIPT = `
 from importlib import resources
 
-print(resources.files("comfyui_frontend_package").joinpath("static-desktop2"))
+print(resources.files("comfyui_frontend_package"))
 `.trim()
 
 export function isLocalComfyPythonLaunch(
@@ -23,11 +26,13 @@ export async function resolveDesktop2FrontendRoot(
   pythonPath: string,
   cwd: string
 ): Promise<string> {
-  const frontendRoot = (
-    await runPython(pythonPath, ['-s', '-c', RESOLVE_DESKTOP2_FRONTEND_ROOT_SCRIPT], cwd)
+  const packageRoot = (
+    await runPython(pythonPath, ['-s', '-c', RESOLVE_DESKTOP2_FRONTEND_PACKAGE_ROOT_SCRIPT], cwd)
   ).trim()
-  if (!fs.existsSync(frontendRoot)) {
-    throw new Error(`Desktop2 frontend assets not found: ${frontendRoot}`)
+  const frontendRoots = DESKTOP2_FRONTEND_ROOT_DIRS.map((dir) => path.join(packageRoot, dir))
+  const frontendRoot = frontendRoots.find((root) => fs.existsSync(root))
+  if (!frontendRoot) {
+    throw new Error(`Desktop2 frontend assets not found: ${frontendRoots.join(' or ')}`)
   }
   return frontendRoot
 }

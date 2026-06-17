@@ -76,31 +76,43 @@ describe('resolveDesktop2FrontendRoot', () => {
     vi.restoreAllMocks()
   })
 
-  it('resolves the Desktop2 frontend root from the selected Python env', async () => {
-    const frontendRoot = path.join(tempDir, 'static-desktop2')
-    fs.mkdirSync(frontendRoot)
+  it('prefers the Desktop2 frontend root when it exists', async () => {
+    const desktop2Root = path.join(tempDir, 'static-desktop2')
+    fs.mkdirSync(path.join(tempDir, 'static'))
+    fs.mkdirSync(desktop2Root)
     mockExecFile((_cmd, _args, _opts, callback) => {
-      callback(null, `${frontendRoot}\n`, '')
+      callback(null, `${tempDir}\n`, '')
     })
 
-    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(frontendRoot)
+    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(desktop2Root)
 
     expect(mockedExecFile).toHaveBeenCalledWith(
       '/python',
-      ['-s', '-c', expect.stringContaining('comfyui_frontend_package')],
+      ['-s', '-c', expect.stringContaining('resources.files("comfyui_frontend_package")')],
       expect.objectContaining({ cwd: '/install', windowsHide: true }),
       expect.any(Function)
     )
   })
 
-  it('rejects when the Desktop2 assets are missing', async () => {
-    const frontendRoot = path.join(tempDir, 'static-desktop2')
+  it('uses the packaged static frontend when the Desktop2 root is absent', async () => {
+    const frontendRoot = path.join(tempDir, 'static')
+    fs.mkdirSync(frontendRoot)
     mockExecFile((_cmd, _args, _opts, callback) => {
-      callback(null, `${frontendRoot}\n`, '')
+      callback(null, `${tempDir}\n`, '')
+    })
+
+    await expect(resolveDesktop2FrontendRoot('/python', '/install')).resolves.toBe(frontendRoot)
+  })
+
+  it('rejects when packaged frontend assets are missing', async () => {
+    const desktop2Root = path.join(tempDir, 'static-desktop2')
+    const staticRoot = path.join(tempDir, 'static')
+    mockExecFile((_cmd, _args, _opts, callback) => {
+      callback(null, `${tempDir}\n`, '')
     })
 
     await expect(resolveDesktop2FrontendRoot('/python', '/install')).rejects.toThrow(
-      `Desktop2 frontend assets not found: ${frontendRoot}`
+      `Desktop2 frontend assets not found: ${desktop2Root} or ${staticRoot}`
     )
   })
 })
