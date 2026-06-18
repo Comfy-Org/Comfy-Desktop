@@ -31,7 +31,9 @@ export function noteCanvasRendered(
     _renderedThisLaunch.add(installationId)
   }
   const startedAt = getSessionStartedAt(installationId)
-  const serverReadyToCanvasMs = startedAt !== null ? Date.now() - startedAt : null
+  // Clamp: Date.now() can move backward (clock skew), which would emit a
+  // negative, funnel-polluting duration.
+  const serverReadyToCanvasMs = startedAt !== null ? Math.max(0, Date.now() - startedAt) : null
   telemetry.emit('comfy.desktop.comfyui.canvas_rendered', {
     installation_id: installationId,
     server_ready_to_canvas_ms: serverReadyToCanvasMs,
