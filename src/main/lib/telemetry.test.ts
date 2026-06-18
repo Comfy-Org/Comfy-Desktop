@@ -290,6 +290,67 @@ describe('telemetry default event properties', () => {
   })
 })
 
+describe('telemetry.captureInstallCompleted', () => {
+  beforeEach(() => {
+    captured.length = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-xyz')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry._resetForTest()
+  })
+
+  it('fires comfy.desktop.install.completed exactly once with method + express + installation_id', () => {
+    telemetry.captureInstallCompleted({
+      installationId: 'install-xyz',
+      method: 'express',
+      express: true
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.event).toBe('comfy.desktop.install.completed')
+    expect(captured[0]!.properties).toMatchObject({
+      installation_id: 'install-xyz',
+      method: 'express',
+      express: true
+    })
+  })
+
+  it.each([
+    ['express', true],
+    ['manual', false],
+    ['adopt', false],
+    ['migrate', false]
+  ] as const)('carries method=%s / express=%s for each install path', (method, express) => {
+    telemetry.captureInstallCompleted({ installationId: 'i1', method, express })
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.properties).toMatchObject({ method, express })
+  })
+
+  it('does NOT fire on boot — boot_started is a distinct, separately-emitted event', () => {
+    // A boot is the per-launch event; install.completed is once-per-install.
+    // Emitting boot_started must never produce an install.completed.
+    telemetry.capture('comfy.desktop.comfyui.boot_started', { installation_id: 'install-xyz' })
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.boot_started'])
+    expect(captured.some((c) => c.event === 'comfy.desktop.install.completed')).toBe(false)
+  })
+
+  it('is consent-gated: no install.completed when consent is not granted', () => {
+    telemetry.setConsentState('denied')
+    captured.length = 0
+    telemetry.captureInstallCompleted({ installationId: 'i1', method: 'manual', express: false })
+    expect(captured).toHaveLength(0)
+  })
+})
+
 describe('telemetry.trackedStep', () => {
   beforeEach(async () => {
     captured.length = 0

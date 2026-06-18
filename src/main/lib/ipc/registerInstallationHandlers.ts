@@ -215,7 +215,7 @@ export function registerInstallationHandlers(): void {
     return { ok: true, entry }
   })
 
-  ipcMain.handle('install-instance', async (_event, installationId: string) => {
+  ipcMain.handle('install-instance', async (_event, installationId: string, express?: boolean) => {
     const inst = await installations.get(installationId)
     if (!inst) return { ok: false, message: 'Installation not found.' }
     const source = sourceMap[inst.sourceId]
@@ -396,6 +396,20 @@ export function registerInstallationHandlers(): void {
           from_version: formatComfyVersion(priorComfyVersion, 'short'),
           to_version: newComfyVersion ? formatComfyVersion(newComfyVersion, 'short') : null,
           result: 'success'
+        })
+      } else {
+        // Fresh standalone install finished (NOT a version update — an install
+        // on a record that already had a comfyVersion is a re-install/update,
+        // handled above). Fire the once-per-install funnel event at the moment
+        // the install is ready to boot. Distinct from comfyui.boot_started,
+        // which fires on every launch. `express` labels the one-click path;
+        // the manual Configure-wizard path passes no flag → 'manual'.
+        // Best-effort: capture() swallows its own errors, so this can never
+        // abort the install.
+        mainTelemetry.captureInstallCompleted({
+          installationId,
+          method: express ? 'express' : 'manual',
+          express: !!express
         })
       }
       return { ok: true }

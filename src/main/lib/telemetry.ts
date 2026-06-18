@@ -844,6 +844,40 @@ export function registerPersonPropertiesOnce(properties: Record<string, Telemetr
   capturePersonProperties(null, properties)
 }
 
+/**
+ * How a local install was created. `express` and `manual` are the two fresh-
+ * install wizard paths; `adopt` is an in-place Desktop-1 adoption; `migrate`
+ * is a snapshot-based standalone migration. Kept as a closed union so the
+ * funnel breakdown has a fixed set of buckets.
+ */
+export type InstallMethod = 'express' | 'manual' | 'adopt' | 'migrate'
+
+/**
+ * Emit the once-per-install `comfy.desktop.install.completed` event.
+ *
+ * Fired when a local install FINISHES (before/at first boot). Distinct from
+ * `comfy.desktop.comfyui.boot_started`, which fires on EVERY launch and so
+ * can't isolate the first install→boot transition. Centralised here (rather
+ * than inlined at each completion site: express/manual, adopt, migrate) so
+ * the event's property shape can't drift between the three call sites.
+ *
+ * `installation_id` is already an event-level default once `identify()` ran
+ * at boot; it's passed explicitly here too so the event is self-describing
+ * even in queries that don't rely on the default (and so the value is the
+ * specific install that completed, not just the device).
+ */
+export function captureInstallCompleted(opts: {
+  installationId: string
+  method: InstallMethod
+  express: boolean
+}): void {
+  capture('comfy.desktop.install.completed', {
+    installation_id: opts.installationId,
+    method: opts.method,
+    express: opts.express
+  })
+}
+
 export function captureException(error: unknown, properties: TelemetryContext = {}): void {
   if (!canEmit() || !distinctId) return
   // Exceptions are reliability data; suppress them outside `'granted'`.
