@@ -208,13 +208,16 @@ function canEmit(): boolean {
 }
 
 /**
- * Default properties merged into every `capture()` payload. Set once at
- * `initTelemetry()` time from `InitOptions`. Holds `app_version`,
+ * Default properties merged into every `capture()` payload. Seeded at
+ * `initTelemetry()` time from `InitOptions` with `app_version`,
  * `app_channel`, `app_env`, `platform`, `arch`, and `is_packaged` so
  * per-event filters / breakdowns work without a join against the person
  * profile (PostHog person properties are joined at query time and are
  * point-in-time as of write — releasing a new app version while the user
  * still has events from the old one would mis-attribute without this).
+ * `installation_id` is added by `identify()` once the device id is known
+ * at boot, so renderer events (routed in over IPC) and main events share a
+ * single join key instead of splitting across person_id / installation_id.
  *
  * Per-call properties take precedence on key collision.
  */
@@ -629,6 +632,14 @@ export function deferMigrationAlias(opts: {
 export function identify(id: string, properties: Record<string, TelemetryValue> = {}): void {
   distinctId = id
   installationDeviceId = id
+  // Stamp the anonymous device id as an event-level default so EVERY event
+  // (main-process captures AND renderer events routed in over IPC: template.*,
+  // first_use.*, fork) carries `installation_id`. This lets renderer and main
+  // events join natively on a single key instead of splitting across
+  // person_id / installation_id, which breaks the install→boot→run funnel.
+  // This is purely an event property — it does NOT identify the id (the
+  // anon-id invariant above is preserved; only `bindUserId` calls identify).
+  defaultEventProperties = { ...defaultEventProperties, installation_id: id }
   if (Object.keys(properties).length > 0) {
     pendingPersonSet = { ...(pendingPersonSet || {}), ...properties }
   }

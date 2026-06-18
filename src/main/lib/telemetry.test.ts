@@ -261,6 +261,33 @@ describe('telemetry default event properties', () => {
     telemetry.capture('any.event', { app_version: 'override-value' })
     expect(captured[0]!.properties).toMatchObject({ app_version: 'override-value' })
   })
+
+  it('stamps installation_id (the bound device id) on every captured event', () => {
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    // A main-process event and a renderer-routed event both go through
+    // capture(), so both must carry installation_id from the defaults.
+    telemetry.capture('comfy.desktop.execution.completed', { foo: 'bar' })
+    telemetry.capture('comfy.desktop.template.fork', { template_id: 't1' })
+
+    expect(captured).toHaveLength(2)
+    expect(captured[0]!.properties).toMatchObject({ installation_id: 'install-abc123' })
+    expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
+  })
+
+  it('does not pass installation_id to identify() (anon-id invariant holds)', () => {
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+
+    // identify() stamps installation_id as an event default but must NEVER
+    // call client.identify() with it — only login (bindUserId) identifies.
+    expect(identifies).toHaveLength(0)
+  })
 })
 
 describe('telemetry.trackedStep', () => {
