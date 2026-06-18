@@ -53,6 +53,14 @@ export interface RunningInstance {
   url?: string
   mode: string
   startedAt?: number
+  /** Boot duration (ms from launch start to server-ready). Present on the
+   *  `instance-started` broadcast; absent from `getRunningInstances()`. */
+  bootTimeMs?: number
+  /** Spawn-retry counts for this boot, folded onto `instance-started` so the
+   *  renderer's telemetry carries them without a separate `server_ready`
+   *  event. 0 on the remote / skip-port paths. */
+  portRetries?: number
+  rebootRetries?: number
 }
 
 // --- Source / New Install types ---

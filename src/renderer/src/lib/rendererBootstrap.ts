@@ -635,9 +635,15 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
     })
 
     window.api.onInstanceStarted((data) => {
-      const bootTimeMs = (data as unknown as Record<string, unknown>).bootTimeMs as
-        | number
-        | undefined
+      const raw = data as unknown as Record<string, unknown>
+      const bootTimeMs = raw.bootTimeMs as number | undefined
+      // Spawn-retry counts folded onto the broadcast by `_addSession` (main).
+      // Carried here instead of a separate `server_ready` event: a boot that
+      // needed N port/reboot respawns before serving is a quality signal on
+      // the SAME boot the timing describes. Default 0 for the remote /
+      // skip-port paths that don't spawn-retry.
+      const portRetries = typeof raw.portRetries === 'number' ? raw.portRetries : 0
+      const rebootRetries = typeof raw.rebootRetries === 'number' ? raw.rebootRetries : 0
       window.api
         .getInstallationDdContext(data.installationId)
         .then((ctx) => {
@@ -656,7 +662,9 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
               string,
               string | number | boolean | null | undefined
             >),
-            boot_time_ms: bootTimeMs ?? null
+            boot_time_ms: bootTimeMs ?? null,
+            port_retries: portRetries,
+            reboot_retries: rebootRetries
           }
           trackTelemetryAction(
             'comfy.desktop.session.instance_started',

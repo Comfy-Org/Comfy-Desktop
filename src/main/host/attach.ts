@@ -9,6 +9,7 @@ import { readableSymbolColor } from '../lib/theme'
 import * as mainTelemetry from '../lib/telemetry'
 import { refreshCloudUserTier } from '../lib/userTier'
 import { noteCloudEntered } from '../lib/cloudEntry'
+import { noteCanvasRendered } from '../lib/canvasEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
 import { convertLevelToZoomPercent } from '../lib/zoom'
@@ -427,6 +428,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       // Mark cloud entry for the acquisition funnel. Deduped per session
       // and carries `first_time` for the first-ever cloud entry.
       noteCloudEntered()
+    } else {
+      // Local counterpart to `noteCloudEntered`: the bottom of the
+      // install→canvas funnel. The page reaching dom-ready is the first
+      // moment the user can see the workflow canvas. Deduped per launch
+      // (reloads / re-attaches don't re-fire) and carries
+      // `server_ready_to_canvas_ms` for the provisioning-time funnel.
+      noteCanvasRendered(installationId)
     }
   }
   comfyContents.on('dom-ready', onDomReady)
@@ -544,6 +552,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (!isMainFrame || code === -3 || failRetryTimer) return
     const id = entry.installationId
     if (id === null) return
+    // Local install's main-frame load failed to reach the canvas. Record it
+    // as the failed leg of the install→canvas funnel (bypasses the
+    // first-render dedup — a failed load is a distinct signal). Cloud loads
+    // have their own paths and are excluded here.
+    if (isLocal) {
+      noteCanvasRendered(id, { loadFailed: true })
+    }
     if (fx.relaunchStates.has(id)) return
     failRetryTimer = setTimeout(() => {
       failRetryTimer = null
