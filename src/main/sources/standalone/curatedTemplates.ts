@@ -1,24 +1,7 @@
 /**
- * Curated starter-template manifest for the post-install picker.
- *
- * We hand-maintain only the *selection*: which template ids we surface per
- * modality, which is the per-modality recommended ("wow with the smallest
- * download") pick, and an inline `snapshot` of each one's display metadata. At
- * runtime `templateCatalog.ts` hydrates title/description/size/thumbnail from
- * the live `comfyui_workflow_templates` index (`INDEX_URL`); the snapshot is the
- * offline fallback for a first-ever user with a cold cache and no network.
- *
- * Each `id` is a real template id served by the `comfyui_workflow_templates`
- * package. The desktop app appends `?template=<id>` to the ComfyUI URL on first
- * launch and the frontend's deeplink loader (`useTemplateUrlLoader`) opens it —
- * no bundled workflow assets needed. Required MODELS are still resolved
- * dynamically at install time from the workflow JSON (see `templateModels.ts`);
- * `snapshot.sizeBytes` is only the index's coarse estimate for the consent label
- * and disk pre-check.
- *
- * To change a modality's offering: edit the ids below. Each id must resolve to
- * `/templates/<id>.json` carrying a whitelisted, downloadable `models[]`; paste
- * its index `title`/`description`/`size`/`mediaSubtype` into `snapshot`.
+ * Hand-maintained selection of starter-template ids per modality for the
+ * post-install picker. `templateCatalog.ts` hydrates display metadata from the
+ * live index at runtime; the inline `snapshot` is the offline fallback.
  */
 
 /** Output modality a template showcases — also the picker's tab grouping. */
@@ -54,8 +37,8 @@ export interface CuratedTemplate {
 export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
   'image',
   'video',
-  'audio',
   '3d',
+  'audio',
 ]
 
 const RAW_TEMPLATES_REPO =
@@ -105,11 +88,10 @@ export function buildTemplateDeeplink(comfyUrl: string, templateId: string): str
 export const NO_TEMPLATE_VALUE = 'none'
 
 /**
- * Curated offering, 4 per modality, biased toward the smallest download that
- * still produces an impressive first result. The `recommended` pick (slot 1) is
- * the lightest credible "wow" — what the wizard auto-selects; the 4th slot is
- * the heavier "flagship" pick. Snapshot metadata was captured from the live
- * index; it hydrates over the network at runtime.
+ * 4 per modality, lightest-first; slot 1 (`recommended`) is the auto-selected
+ * "wow", slot 4 the heavier flagship. To change an offering, edit the id and
+ * paste that template's index `title`/`description`/`size`/`mediaSubtype` into
+ * its `snapshot`.
  */
 export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
   // --- Image ---
@@ -203,6 +185,51 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     },
   },
 
+  // --- 3D ---
+  {
+    id: '3d_triposplat_image_to_gaussian_splat',
+    modality: '3d',
+    recommended: true,
+    snapshot: {
+      title: 'TripoSplat: Image to Gaussian Splat',
+      description:
+        'Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.',
+      sizeBytes: 3972844749,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: '3d_moge_perspective_to_mesh',
+    modality: '3d',
+    snapshot: {
+      title: 'MoGe: Perspective Geometry Estimation',
+      description:
+        'Upload an image to estimate its perspective geometry. Generate a 3D depth map and surface normals from the input.',
+      sizeBytes: 644245094,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: '3d_hunyuan3d_multiview_to_model_turbo',
+    modality: '3d',
+    snapshot: {
+      title: 'HY 3D 2.0 MV Turbo',
+      description: 'Generate 3D models from multiple views using Hunyuan3D 2.0 MV Turbo.',
+      sizeBytes: 4928474972,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: '3d_hunyuan3d-v2.1',
+    modality: '3d',
+    snapshot: {
+      title: 'HY 3D 2.1',
+      description: 'Generate 3D models from single images using Hunyuan3D 2.1.',
+      sizeBytes: 4928474972,
+      mediaSubtype: 'webp',
+    },
+  },
+
   // --- Audio ---
   {
     id: 'audio_stable_audio_3_medium',
@@ -246,51 +273,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
         'Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.',
       sizeBytes: 10737418240,
       mediaSubtype: 'mp3',
-    },
-  },
-
-  // --- 3D ---
-  {
-    id: '3d_triposplat_image_to_gaussian_splat',
-    modality: '3d',
-    recommended: true,
-    snapshot: {
-      title: 'TripoSplat: Image to Gaussian Splat',
-      description:
-        'Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.',
-      sizeBytes: 3972844749,
-      mediaSubtype: 'webp',
-    },
-  },
-  {
-    id: '3d_moge_perspective_to_mesh',
-    modality: '3d',
-    snapshot: {
-      title: 'MoGe: Perspective Geometry Estimation',
-      description:
-        'Upload an image to estimate its perspective geometry. Generate a 3D depth map and surface normals from the input.',
-      sizeBytes: 644245094,
-      mediaSubtype: 'webp',
-    },
-  },
-  {
-    id: '3d_hunyuan3d_multiview_to_model_turbo',
-    modality: '3d',
-    snapshot: {
-      title: 'HY 3D 2.0 MV Turbo',
-      description: 'Generate 3D models from multiple views using Hunyuan3D 2.0 MV Turbo.',
-      sizeBytes: 4928474972,
-      mediaSubtype: 'webp',
-    },
-  },
-  {
-    id: '3d_hunyuan3d-v2.1',
-    modality: '3d',
-    snapshot: {
-      title: 'HY 3D 2.1',
-      description: 'Generate 3D models from single images using Hunyuan3D 2.1.',
-      sizeBytes: 4928474972,
-      mediaSubtype: 'webp',
     },
   },
 ] as const

@@ -197,7 +197,7 @@ async function handleConfigureContinue(): Promise<void> {
     // recommended pick (the lightest "wow"), falling back to the first real one.
     if (selections.value.bundledTemplate?.value === NO_TEMPLATE_VALUE) {
       const lead =
-        templateOptions.value.find((o) => o.recommended) ??
+        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE && o.recommended) ??
         templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE)
       if (lead) selections.value.bundledTemplate = lead
     }

@@ -18,15 +18,16 @@ const IMG_A = opt('img_a', 'image', true)
 const IMG_B = opt('img_b', 'image')
 const VID = opt('vid', 'video', true)
 const AUD = opt('aud', 'audio')
+const THREED = opt('td', '3d')
 
 function setup(options: FieldOption[], selectedValue: string | null = null) {
   return useTemplateTabs(ref(options), 'none', ref(selectedValue), t)
 }
 
 describe('useTemplateTabs', () => {
-  it('builds one tab per populated modality, in modality order', () => {
-    const { tabs } = setup([NONE, VID, IMG_A, AUD])
-    expect(tabs.value.map((tab) => tab.modality)).toEqual(['image', 'video', 'audio'])
+  it('builds one tab per populated modality, in Image → Video → 3D → Audio order', () => {
+    const { tabs } = setup([NONE, AUD, THREED, VID, IMG_A])
+    expect(tabs.value.map((tab) => tab.modality)).toEqual(['image', 'video', '3d', 'audio'])
   })
 
   it('counts templates per modality', () => {
