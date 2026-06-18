@@ -571,6 +571,37 @@ button.looks-disabled {
   color: var(--neutral-400);
 }
 
+.brand-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 6px;
+  background: var(--brand-surface-bg);
+  color: var(--neutral-200);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+.brand-pill:hover {
+  border-color: var(--brand-surface-border-hover);
+  background: var(--brand-surface-bg-hover);
+}
+.brand-pill:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.brand-pill--selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--neutral-100);
+}
+
 /* Brand card — frosted-glass content container used by takeover screens
  * to host fields + a pinned-footer action bar. Mirrors the macOS sheet
  * pattern: body scrolls, footer stays. Consumers own the outer shell
