@@ -48,14 +48,26 @@ async function withInstallPhase<T>(
   phase: InstallPhaseName,
   fn: () => Promise<T>
 ): Promise<T> {
-  onPhase?.(phase, 'start')
+  // The phase tap is a pure side-channel; a throwing `onPhase` must never abort
+  // or mask the install, so every invocation is isolated.
+  const safeOnPhase = (
+    status: InstallPhaseStatus,
+    info?: { durationMs?: number; error?: unknown }
+  ): void => {
+    try {
+      onPhase?.(phase, status, info)
+    } catch {
+      // swallow: telemetry failures don't affect install control flow
+    }
+  }
+  safeOnPhase('start')
   const t0 = Date.now()
   try {
     const result = await fn()
-    onPhase?.(phase, 'end', { durationMs: Date.now() - t0 })
+    safeOnPhase('end', { durationMs: Date.now() - t0 })
     return result
   } catch (err) {
-    onPhase?.(phase, 'error', { durationMs: Date.now() - t0, error: err })
+    safeOnPhase('error', { durationMs: Date.now() - t0, error: err })
     throw err
   }
 }

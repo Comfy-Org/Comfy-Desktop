@@ -41,7 +41,7 @@ async function loadComposable(opts: {
   status: CloudCapacityStatus
   tier: CloudUserTier
 }): Promise<{
-  composable: Awaited<ReturnType<typeof importComposable>>
+  composable: ReturnType<Awaited<ReturnType<typeof importComposable>>>
   scope: ReturnType<typeof effectScope>
   api: MockApi
 }> {

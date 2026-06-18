@@ -45,19 +45,25 @@ function emitInstallPhase(
   status: InstallPhaseStatus,
   info: { durationMs?: number; error?: unknown } = {}
 ): void {
-  const props: Record<string, string | number | null> = {
-    installation_id: installation.id,
-    variant: (installation.variant as string | undefined) ?? null,
-    phase,
-    status
+  // Side-channel only: classification/emission must never derail an install
+  // phase (this is also the installer's onPhase tap).
+  try {
+    const props: Record<string, string | number | null> = {
+      installation_id: installation.id,
+      variant: (installation.variant as string | undefined) ?? null,
+      phase,
+      status
+    }
+    if (typeof info.durationMs === 'number') props.duration_ms = info.durationMs
+    if (status === 'error') {
+      props.error_bucket = mainTelemetry.bucketError(
+        info.error instanceof Error ? info.error.message : String(info.error ?? '')
+      )
+    }
+    mainTelemetry.emit('comfy.desktop.install.phase', props)
+  } catch (err) {
+    console.warn('Install phase telemetry emission failed:', err)
   }
-  if (typeof info.durationMs === 'number') props.duration_ms = info.durationMs
-  if (status === 'error') {
-    props.error_bucket = mainTelemetry.bucketError(
-      info.error instanceof Error ? info.error.message : String(info.error ?? '')
-    )
-  }
-  mainTelemetry.emit('comfy.desktop.install.phase', props)
 }
 
 /** Wrap a post-install phase with start/end/error boundaries. Re-throws so the
