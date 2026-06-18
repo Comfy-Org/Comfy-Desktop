@@ -885,6 +885,95 @@ describe('telemetry deferMigrationAlias', () => {
   })
 })
 
+describe('telemetry deferDownloadTokenAlias', () => {
+  beforeEach(() => {
+    captured.length = 0
+    aliases.length = 0
+    identifies.length = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry.setConsentState('granted')
+  })
+
+  it('does not attach the token to pre-consent allow-listed events', async () => {
+    telemetry.setConsentState('undecided')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'dtok_123456789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased
+    })
+
+    telemetry.capture('comfy.desktop.first_use.consent_decision', {
+      decision: 'accept',
+      telemetry_enabled: true
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.properties).not.toHaveProperty('download_token')
+    expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
+    expect(aliases).toHaveLength(0)
+    expect(onAliased).not.toHaveBeenCalled()
+
+    telemetry.setConsentState('granted')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(aliases).toContainEqual({ distinctId: 'install-id', alias: 'dtok_123456789' })
+    const attributed = captured.find(
+      (c) => c.event === 'comfy.desktop.identity.download_attributed'
+    )
+    expect(attributed?.properties).toMatchObject({
+      installation_id: 'install-id',
+      download_token: 'dtok_123456789',
+      download_token_source: 'windows_installer_filename'
+    })
+    const session = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(session?.properties).toMatchObject({
+      installation_id: 'install-id',
+      download_token: 'dtok_123456789',
+      download_token_source: 'windows_installer_filename'
+    })
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('queues the alias while denied and clears only after a later grant', async () => {
+    telemetry.setConsentState('denied')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'dtok_abcdef12',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased
+    })
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(aliases).toHaveLength(0)
+    expect(onAliased).not.toHaveBeenCalled()
+
+    telemetry.setConsentState('granted')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'dtok_abcdef12' }])
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('telemetry identity lifecycle (bindUserId / unbindUserId)', () => {
   beforeEach(() => {
     captured.length = 0

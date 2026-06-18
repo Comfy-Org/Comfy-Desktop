@@ -78,6 +78,7 @@ import { update as updateInstallation, resolveAutoLaunchInstall } from './instal
 import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
+import { clearPendingDownloadToken, readPendingDownloadToken } from './lib/downloadAttribution'
 import {
   clearPendingAlias,
   consumeFirstLaunch,
@@ -1403,6 +1404,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       arch: process.arch,
       id_class: getIdClass()
     })
+
+    const pendingDownloadToken = readPendingDownloadToken()
+    if (pendingDownloadToken) {
+      mainTelemetry.deferDownloadTokenAlias({
+        downloadToken: pendingDownloadToken.token,
+        installationId,
+        source: pendingDownloadToken.source,
+        onAliased: clearPendingDownloadToken
+      })
+    }
 
     if (legacyId) {
       // Queue the alias instead of awaiting it on the boot critical path.
