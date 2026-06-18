@@ -435,7 +435,7 @@ async function handleExpandedPrimaryAction(restartInPlace: boolean): Promise<voi
   const inst = selectedInstall.value
   if (!inst) return
   // Cloud capacity gate; matches the ChooserView path so the two can't diverge.
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry())) return
+  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry('picker'))) return
   if (restartInPlace) {
     // Confirm in-drawer for local restarts (cloud/remote have no local
     // process to kill); keeps the drawer open instead of reopening as a

@@ -117,6 +117,7 @@ import {
   setHostWindowFactories
 } from './host/createHostWindow'
 import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
+import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
@@ -505,6 +506,12 @@ function onLaunch({
   if (mode === 'console' || mode === 'external') {
     return
   }
+
+  // Re-arm the per-launch canvas-rendered dedup so this launch's first
+  // dom-ready re-fires `canvas_rendered` (the guard otherwise suppresses it
+  // after the first paint of a prior launch on the same id). Fires for every
+  // window path below (reused, claimed, fresh).
+  resetCanvasRendered(installationId)
 
   // Re-launch into an existing window: a previous launch left the comfy
   // window alive (stop / crash leaves the window open with the lifecycle
