@@ -447,7 +447,7 @@ const ippCapacityStatus = computed(() => cloudCapacity.effectiveStatus())
 const instanceActions = useInstanceActions({
   bridge,
   // Cloud capacity gate; matches the ChooserView path so the two can't diverge.
-  confirmCloudCapacity: () => cloudCapacity.confirmEntry(),
+  confirmCloudCapacity: () => cloudCapacity.confirmEntry('picker'),
   // Local restarts/switches confirm in-drawer (cloud/remote have no local
   // process to kill); keeps the drawer open instead of a system-modal over the
   // host. Non-local installs short-circuit to confirmed.

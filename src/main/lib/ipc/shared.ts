@@ -567,12 +567,30 @@ export function _releasePort(port: number): void {
 // whole IPC handler universe.
 export { _registerExtraBroadcastTarget, _unregisterExtraBroadcastTarget, _broadcastToRenderer } from './broadcast'
 
-export function _addSession(installationId: string, { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>, bootTimeMs?: number): void {
+export function _addSession(
+  installationId: string,
+  { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>,
+  bootTimeMs?: number,
+  /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
+   *  renderer's `instance_started` telemetry can carry them without a
+   *  separate `server_ready` event. Omitted for the remote / skip-port paths
+   *  (no spawn retry there). */
+  retries?: { portRetries: number; rebootRetries: number },
+): void {
   _runningSessions.set(installationId, { proc, port, url, mode, installationName, startedAt: Date.now() })
   // Clear the launching marker first so subscribers never double-count this id across the
   // transition.
   _launchingInstances.delete(installationId)
-  _broadcastToRenderer('instance-started', { installationId, port, url, mode, installationName, bootTimeMs })
+  _broadcastToRenderer('instance-started', {
+    installationId,
+    port,
+    url,
+    mode,
+    installationName,
+    bootTimeMs,
+    portRetries: retries?.portRetries ?? 0,
+    rebootRetries: retries?.rebootRetries ?? 0,
+  })
   sessionLifecycleEvents.emit('changed')
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations.markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
@@ -864,6 +882,14 @@ export function hasRunningSessions(): boolean {
 
 export function getSessionProcess(installationId: string): ChildProcess | null {
   return _runningSessions.get(installationId)?.proc ?? null
+}
+
+/** Epoch ms when the running session was registered (`_addSession`), i.e. the
+ *  server-ready moment. Used by the canvas-rendered telemetry to measure
+ *  server-ready → first canvas paint. `null` if no session is running for the
+ *  id (e.g. the page reloaded after a stop). */
+export function getSessionStartedAt(installationId: string): number | null {
+  return _runningSessions.get(installationId)?.startedAt ?? null
 }
 
 export function hasActiveOperations(): boolean {

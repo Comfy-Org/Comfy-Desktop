@@ -280,6 +280,15 @@ watch(displayId, () => {
   templateSkipped.value = false
 })
 
+// Auto-expand the logs panel when an operation finishes with an error so the full
+// substep output is visible immediately, instead of the user having to discover
+// the collapsed "View logs" toggle to find out why an update/restore/migrate failed.
+// `immediate` covers reopening an already-failed op; the logs accordion itself is
+// gated on `terminalOutput`, so expanding when there's nothing to show is harmless.
+watch(finishedErrorMessage, (msg) => {
+  if (msg) brandLogsExpanded.value = true
+}, { immediate: true })
+
 // Render only a trailing window; the store keeps the full buffer for telemetry. Rendering megabytes into one text node re-layouts the whole takeover.
 const MAX_LOG_TAIL_CHARS = 256 * 1024
 const displayedTerminalOutput = computed(() => {

@@ -395,5 +395,17 @@ export async function migrateToStandaloneFromSnapshot(
 
   await installations.update(entry.id, { status: 'installed' })
 
+  // Fire the once-per-install funnel event for the snapshot-based migrate-to-
+  // standalone path (portable/git → standalone, and Desktop-1 snapshot
+  // migrations). Fired once here at completion, the moment the new install is
+  // ready to boot. This flow does NOT go through the `install-instance` IPC
+  // handler, so there is no double-fire with the express/manual path. Best-
+  // effort: `capture()` swallows its own errors and never aborts the migration.
+  telemetry.captureInstallCompleted({
+    installationId: entry.id,
+    method: 'migrate',
+    express: false
+  })
+
   return { entry, destPath }
 }

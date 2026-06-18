@@ -1,7 +1,11 @@
 import { onMounted, readonly, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDialogs } from './useDialogs'
+import { emitTelemetryAction } from '../lib/telemetry'
 import type { CloudCapacityStatus, CloudUserTier } from '../types/ipc'
+
+// Where a Cloud entry attempt originated, for the capacity-gate funnel.
+type CloudEntrySource = 'picker' | 'first_use'
 
 // Boot-time cloud capacity-protection status for the Cloud entry points.
 // Loaded once per process (shared `loadPromise`), no mid-session refresh.
@@ -72,8 +76,9 @@ export function useCloudCapacity(): {
    *  Use this for visual state so the UI matches `confirmEntry`. */
   effectiveStatus: () => CloudCapacityStatus
   /** Gate Cloud entry. Awaits the boot fetch; `degraded` shows a confirm,
-   *  `disabled` returns false. Paid users see `disabled` as `degraded`. */
-  confirmEntry: () => Promise<boolean>
+   *  `disabled` returns false. Paid users see `disabled` as `degraded`.
+   *  Emits `cloud.entry_blocked` whenever the capacity flag is engaged. */
+  confirmEntry: (source: CloudEntrySource) => Promise<boolean>
   /** Resolves once the boot fetch settles; never rejects. */
   whenReady: () => Promise<void>
 } {
@@ -89,11 +94,30 @@ export function useCloudCapacity(): {
     return status.value === 'disabled' && userTier.value === 'paid' ? 'degraded' : status.value
   }
 
-  async function confirmEntry(): Promise<boolean> {
+  // One `cloud.entry_blocked` per gated entry. We report the RAW flag
+  // (`status`) plus `tier`, so a paid user relaxed past a `disabled`
+  // kill-switch reads as `status: 'disabled', tier: 'paid', decision:
+  // 'proceeded'`. `decision`: `no_op` = hard-blocked with no dialog,
+  // `declined` = backed out of the degraded warning, `proceeded` = entered
+  // through it. Skipped entirely on a `normal` flag (no gate engaged).
+  function emitGate(decision: 'no_op' | 'declined' | 'proceeded', source: CloudEntrySource): void {
+    if (status.value === 'normal') return
+    emitTelemetryAction('comfy.desktop.cloud.entry_blocked', {
+      status: status.value,
+      tier: userTier.value,
+      decision,
+      source,
+    })
+  }
+
+  async function confirmEntry(source: CloudEntrySource): Promise<boolean> {
     // Wait for the boot fetch so we never gate on a stale 'normal'.
     await ensureLoaded()
     const effective = computeEffective()
-    if (effective === 'disabled') return false
+    if (effective === 'disabled') {
+      emitGate('no_op', source)
+      return false
+    }
     if (effective !== 'degraded') return true
     const result = await dialogs.confirm({
       title: t('cloud.capacityDegraded'),
@@ -102,7 +126,9 @@ export function useCloudCapacity(): {
       cancelLabel: t('common.cancel'),
       tone: 'primary',
     })
-    return result === 'primary'
+    const proceeded = result === 'primary'
+    emitGate(proceeded ? 'proceeded' : 'declined', source)
+    return proceeded
   }
 
   return {

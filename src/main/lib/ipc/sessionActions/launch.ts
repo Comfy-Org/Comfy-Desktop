@@ -20,7 +20,7 @@ import {
   getComfyFeatureFlagRegistry,
   _broadcastToRenderer,
 } from '../shared'
-import type { ChildProcess, LaunchCmd } from '../shared'
+import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
@@ -41,18 +41,35 @@ import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
 import * as telemetry from '../../telemetry'
+import {
+  startBootPhases,
+  recordBootPhase,
+  clearBootPhases,
+  flushBootPhasesOnFailure,
+} from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
 import { ensureManagerMirrorConfig } from '../../managerConfig'
 import type { WriteStream } from 'fs'
 
-// Feature flags injected on every spawned ComfyUI, gated by the running
-// install's --list-feature-flags registry so we never inject unrecognized keys.
-const DESKTOP_FEATURE_FLAGS: Record<string, string> = {
-  show_signin_button: 'true',
-  // Advertises that an interactive terminal host is available, so the frontend
-  // may surface its bottom-panel terminal. The actual transport is the
-  // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
-  supports_terminal: 'true',
+// Feature flags injected on a spawned ComfyUI, gated by the running install's
+// --list-feature-flags registry so we never inject unrecognized keys.
+export function desktopFeatureFlags(
+  inst: InstallationRecord,
+  telemetryEnabled: boolean
+): Record<string, string> {
+  const flags: Record<string, string> = {
+    show_signin_button: 'true',
+    // Advertises that an interactive terminal host is available, so the frontend
+    // may surface its bottom-panel terminal. The actual transport is the
+    // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
+    supports_terminal: 'true',
+  }
+  // Telemetry is opt-in (default off) and only signaled for managed standalone
+  // installs — never for portable or user-managed git clones.
+  if (inst.sourceId === 'standalone' && telemetryEnabled) {
+    flags.enable_telemetry = 'true'
+  }
+  return flags
 }
 
 // A clean exit is code 0 with no signal; anything else (non-zero code or a
@@ -130,6 +147,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       phases: buildLaunchPhases(inst, { preLaunchPhases, templateModels: showTemplatePhase }),
       nodeCount: launchNodeCount,
       sendProgress,
+      // Buffer per-phase entry timings in memory. They are emitted as
+      // `boot_phase` events ONLY if the boot later fails/times out (paired
+      // with `boot_failed`); a healthy boot discards them — `boot_started`
+      // is already ~258k/14d and per-phase emits on every boot would be pure
+      // volume. See `bootPhaseBuffer`.
+      onPhaseEnter: (phase) => recordBootPhase(installationId, phase),
     })
     launchTracker.start()
     return launchTracker
@@ -240,7 +263,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
           const registry = await getComfyFeatureFlagRegistry(launchCmd.cmd, mainPyAbs, launchCmd.cwd, installationId, version)
-          for (const [key, value] of Object.entries(DESKTOP_FEATURE_FLAGS)) {
+          const flagEntries = Object.entries(
+            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
+          )
+          for (const [key, value] of flagEntries) {
             if (key in registry) {
               desktopFlagArgs.push('--feature-flag', `${key}=${value}`)
             }
@@ -702,6 +728,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
     })
+    // Begin (re)buffering per-phase timings for THIS attempt. On a port /
+    // reboot retry this resets so the buffer reflects the attempt that
+    // actually fails (or succeeds). The tracker's `onPhaseEnter` feeds it;
+    // it is flushed only on the terminal failure path below.
+    startBootPhases(installationId, (inst.variant as string | undefined) ?? null)
     const spawned = spawnComfy()
 
     let earlyExit: string | null = null
@@ -765,15 +796,44 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
-    if (launchResult.cancelled) return { ok: false, cancelled: true }
+    if (launchResult.cancelled) {
+      // User-initiated cancel is not a boot failure — discard the buffer so a
+      // later relaunch starts clean and we don't emit phantom boot_phase rows.
+      clearBootPhases(installationId)
+      return { ok: false, cancelled: true }
+    }
+    // Terminal boot failure (waitForPort timeout or early process exit, after
+    // any port/reboot retries were exhausted). Flush the buffered phase
+    // timings — they're the breakdown explaining where the boot stalled — then
+    // emit the paired boot_failed. `failed_phase` is the last phase the boot
+    // reached (null if it never entered one). The error is bucketed; the
+    // retry counters surface how many times we re-spawned before giving up.
+    const failedPhase = flushBootPhasesOnFailure(installationId)
+    telemetry.emit('comfy.desktop.comfyui.boot_failed', {
+      installation_id: installationId,
+      variant: (inst.variant as string | undefined) ?? null,
+      failed_phase: failedPhase,
+      error_bucket: telemetry.bucketError(launchResult.message),
+      retry_count: portRetries + rebootRetries,
+      port_retry_count: portRetries,
+      reboot_retry_count: rebootRetries,
+    })
     return { ok: false, message: launchResult.message }
   }
+  // Healthy boot — discard buffered phase timings (no boot_phase on success;
+  // healthy timing is covered by instance_started.boot_time_ms).
+  clearBootPhases(installationId)
   let { proc } = launchResult
 
   _pendingPorts.delete(launchCmd.port!)
   _operationAborts.delete(installationId)
   const mode = (inst.launchMode as string | undefined) || 'window'
-  _addSession(installationId, { proc, port: launchCmd.port!, mode, installationName: inst.name }, Date.now() - launchStartedAt)
+  _addSession(
+    installationId,
+    { proc, port: launchCmd.port!, mode, installationName: inst.name },
+    Date.now() - launchStartedAt,
+    { portRetries, rebootRetries },
+  )
   writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
 
   if (!sender.isDestroyed()) {
