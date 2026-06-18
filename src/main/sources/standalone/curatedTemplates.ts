@@ -58,10 +58,10 @@ export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
   '3d',
 ]
 
-/** Live `comfyui_workflow_templates` repo, raw content root. Shared with
- *  `templateModels.ts` so the base URL has a single source of truth. */
-export const RAW_TEMPLATES_BASE =
-  'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main/templates'
+const RAW_TEMPLATES_REPO =
+  'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
+export const RAW_TEMPLATES_BASE = `${RAW_TEMPLATES_REPO}/templates`
+export const TEMPLATE_INPUT_BASE = `${RAW_TEMPLATES_REPO}/input`
 
 /** The catalog index: every template grouped by category, with display metadata
  *  and the coarse `size` estimate. One fetch hydrates the whole picker. */

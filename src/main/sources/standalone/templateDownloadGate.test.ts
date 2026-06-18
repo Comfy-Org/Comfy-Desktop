@@ -10,6 +10,7 @@ const download = vi.fn()
 const getDiskSpace = vi.fn(async () => ({ free: 1e15, total: 1e15 }))
 
 vi.mock('./templateModels', () => ({ resolveTemplateModels: () => resolveTemplateModels() }))
+vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(async () => []) }))
 vi.mock('../../lib/download', () => ({ download: (...a: unknown[]) => download(...a) }))
 vi.mock('../../lib/disk', () => ({ getDiskSpace: () => getDiskSpace() }))
 vi.mock('../../lib/comfyDownloadManager', () => ({

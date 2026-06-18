@@ -55,7 +55,7 @@ const TEMPLATE_PACKAGE_DIRS = [
   'comfyui_workflow_templates_media_api',
 ]
 
-async function loadTemplateJson(
+export async function loadTemplateJson(
   installation: InstallationRecord,
   templateId: string,
 ): Promise<unknown | null> {
