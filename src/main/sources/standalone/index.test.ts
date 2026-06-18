@@ -16,6 +16,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
 }))
 
 import { standalone, buildPinnedVariant } from './index'
+import { BUNDLED_TEMPLATES, NO_TEMPLATE_VALUE } from './bundledTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
 import { PLATFORM_PREFIX } from './envPaths'
@@ -116,6 +117,36 @@ describe('standalone.buildInstallation', () => {
     })
     expect(result.originalBuild).toBe(1)
     expect(result.originalTorchVersion).toBe('2.7.0')
+  })
+
+  // --- Starter-template gating (the "Skip & Install" vs "Install" contract) ---
+  describe('starter template', () => {
+    const base = {
+      release: makeRelease('stable', 'v0.18.2-env1'),
+      variant: makeVariant(VENDOR_ID),
+    }
+    const template = (value: string): FieldOption => ({ value, label: value })
+
+    it('"Skip & Install" (template = none) builds NO model download', () => {
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(NO_TEMPLATE_VALUE) })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.pendingTemplateOpen).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+
+    it('"Skip & Install" with no bundledTemplate selection at all builds no download', () => {
+      const result = standalone.buildInstallation(base)
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+
+    it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
+      const realId = BUNDLED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateId).toBe(realId)
+      expect(result.pendingTemplateOpen).toBe(realId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
   })
 })
 
