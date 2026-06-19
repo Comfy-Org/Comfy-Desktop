@@ -45,6 +45,7 @@ vi.mock('./envPaths', () => ({
 
 vi.mock('../../lib/pip', () => ({
   installFilteredRequirements: vi.fn(async () => 0),
+  installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' })),
 }))
 
 // `installations.get` is the only entry point handleMigrateFrom uses here.

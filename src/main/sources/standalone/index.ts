@@ -12,6 +12,10 @@ import {
   getVenvDir, recommendVariant, writeComfyEnvironment,
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
+import { BUNDLED_TEMPLATES, NO_TEMPLATE_VALUE } from './bundledTemplates'
+
+/** Known starter-template ids — gates what `buildInstallation` will persist. */
+const VALID_BUNDLED_TEMPLATE_IDS = new Set(BUNDLED_TEMPLATES.map((tpl) => tpl.id))
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
@@ -57,15 +61,18 @@ interface VariantData {
 /**
  * Build a variant card FieldOption from a single R2 bundle release. Shared by
  * the install-wizard variant list (newest bundle per vendor) and the
- * snapshot-load flow (a specific historical bundle). `displayStableTag`, when
- * set, advertises the upstream stable version the post-install update lands on
- * instead of the bundle's checked-in ComfyUI version.
+ * snapshot-load flow (a specific historical bundle). `displayTag`, when set,
+ * advertises the upstream version the post-install update lands on instead of
+ * the bundle's checked-in ComfyUI version; pass `nightly: true` for the
+ * "Latest on GitHub" channel, where the install fast-forwards to master HEAD
+ * (a few commits past `displayTag`, the latest stable tag).
  */
 function buildVariantOption(
   vendorId: string,
   release: R2Variant,
-  displayStableTag: string | null,
-  gpu: string | undefined
+  displayTag: string | null,
+  gpu: string | undefined,
+  nightly = false
 ): FieldOption {
   const sizeMB = (release.size / 1048576).toFixed(0)
   const downloadFiles = [{
@@ -73,8 +80,10 @@ function buildVariantOption(
     filename: release.file,
     size: release.size,
   }]
-  const displayVersion = displayStableTag
-    ? displayStableTag.replace(/^v/, '')
+  // The description is a fixed-format, non-localized string ("ComfyUI X ·
+  // Python Y · Z MB"), so the nightly marker is a plain literal too.
+  const displayVersion = displayTag
+    ? `${displayTag.replace(/^v/, '')}${nightly ? ' (nightly)' : ''}`
     : release.comfyui_version
   return {
     value: vendorId,
@@ -127,6 +136,10 @@ export const standalone: SourcePlugin = {
       // wizard renders an empty/disabled select on 'latest' (zero options).
       { id: 'comfyVersion', label: t('standalone.comfyVersion'), type: 'select' as const },
       { id: 'variant', label: t('standalone.variant'), type: 'select' as const, renderAs: 'cards' as const },
+      // POC: optional starter template to auto-open on first launch. Rendered
+      // as cards after the variant; always returns options (incl. a "None"
+      // skip), so the wizard's field chain completes and Continue enables.
+      { id: 'bundledTemplate', label: t('standalone.starterTemplate'), type: 'select' as const, renderAs: 'cards' as const },
     ]
   },
 
@@ -176,9 +189,18 @@ export const standalone: SourcePlugin = {
     // a prior channel toggle is dropped here as a defence-in-depth.
     const pickedComfyTag = isStable
       ? (typeof selections.comfyVersion?.value === 'string' && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
-          ? selections.comfyVersion.value
-          : undefined)
+        ? selections.comfyVersion.value
+        : undefined)
       : undefined
+    // Starter template: the chosen template id, or undefined when the user left
+    // the (recommended) "None" option selected. Validated against the known set
+    // so a stale/forged selection can't persist an unknown id that later derails
+    // the open/download handling.
+    const tplValue = selections.bundledTemplate?.value
+    const bundledTemplateId =
+      tplValue && tplValue !== NO_TEMPLATE_VALUE && VALID_BUNDLED_TEMPLATE_IDS.has(tplValue)
+        ? tplValue
+        : undefined
     return {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
@@ -200,6 +222,13 @@ export const standalone: SourcePlugin = {
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
       ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
+      // POC starter template. `bundledTemplateId` is the durable record of the
+      // user's pick; `pendingTemplateOpen` is a one-shot flag the first launch
+      // consumes (appends `?template=` to the comfy URL, then clears) so the
+      // template only auto-opens once — not on every relaunch.
+      ...(bundledTemplateId
+        ? { bundledTemplateId, pendingTemplateOpen: bundledTemplateId, downloadTemplateModels: true }
+        : {}),
     }
   },
 
@@ -236,12 +265,12 @@ export const standalone: SourcePlugin = {
     )
     const adoptArgs = adoptedBaseDir
       ? [
-          '--base-directory', adoptedBaseDir,
-          '--user-directory', path.join(adoptedBaseDir, 'user'),
-          ...(userSetDatabaseUrl
-            ? []
-            : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`]),
-        ]
+        '--base-directory', adoptedBaseDir,
+        '--user-directory', path.join(adoptedBaseDir, 'user'),
+        ...(userSetDatabaseUrl
+          ? []
+          : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`]),
+      ]
       : []
     // Desktop-managed feature flags (e.g. show_signin_button) are injected in
     // handleLaunch after we discover the running ComfyUI's feature-flag registry,
@@ -302,7 +331,7 @@ export const standalone: SourcePlugin = {
         // `custom_nodes/` checked in). Remove the empty placeholder
         // first so the merge isn't ambiguous.
         if (fs.existsSync(dst)) {
-          try { await fs.promises.rm(dst, { recursive: true, force: true }) } catch {}
+          try { await fs.promises.rm(dst, { recursive: true, force: true }) } catch { }
         }
         sendProgress('copy', { percent: 0, status: `Copying legacy ${entry}…` })
         await copyDirWithProgress(src, dst, (copied, total, elapsedSecs, etaSecs) => {
@@ -350,7 +379,7 @@ export const standalone: SourcePlugin = {
               content = content.replaceAll(srcRewriteFrom, srcRewriteTo)
               await fs.promises.writeFile(filePath, content, 'utf-8')
             }
-          } catch {}
+          } catch { }
         }
       }
     }
@@ -389,33 +418,34 @@ export const standalone: SourcePlugin = {
       const options: FieldOption[] = []
 
       // Same two channel options the IPP Update tab uses (see
-      // `getChannelDefs()` in `./updateSections.ts`). 'stable' is
-      // recommended and triggers the post-install update-to-stable
-      // step. 'latest' (master HEAD) leaves the bundle's checked-in
-      // commit alone — the user can fast-forward from the IPP Update
-      // tab. Per-bundle-tag entries (v0.20.1-env1, etc.) were dropped
-      // at the same time; they exposed an implementation detail
-      // (the R2 bundle tag) instead of the channel users actually
-      // care about.
+      // `getChannelDefs()` in `./updateSections.ts`). Both trigger a
+      // post-install auto-update: 'stable' to the latest stable tag,
+      // 'latest' to master HEAD. Per-bundle-tag entries (v0.20.1-env1,
+      // etc.) were dropped at the same time; they exposed an
+      // implementation detail (the R2 bundle tag) instead of the channel
+      // users actually care about.
       if (tags.length > 0 && context?.includeLatestStable) {
         const latestStableTag = await getLatestStableTag()
         const newestBundle = tags[0]!
+        // `latestStableTag` is the upstream ComfyUI version the post-install
+        // auto-update resolves to. Thread it through so the variant cards show
+        // that (the latest stable tag for 'stable'; the same tag marked as a
+        // nightly for 'latest', which fast-forwards a few commits past it)
+        // rather than the older ComfyUI baked into the standalone bundle
+        // (issues #708, #1068).
+        const channelData = { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>
         options.push({
           value: 'stable',
           label: t('standalone.channelStable'),
           description: t('standalone.channelStableDesc'),
           recommended: true,
-          // `latestStableTag` is the upstream ComfyUI version the post-install
-          // "update to stable" step resolves to. Thread it through so the
-          // variant cards show that same version rather than the older
-          // ComfyUI baked into the standalone bundle (issue #708).
-          data: { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>,
+          data: channelData,
         })
         options.push({
           value: 'latest',
           label: t('standalone.channelLatest'),
           description: t('standalone.channelLatestDesc'),
-          data: { tag: newestBundle.tag, vendorReleases } as unknown as Record<string, unknown>,
+          data: channelData,
         })
       }
       return options
@@ -445,6 +475,7 @@ export const standalone: SourcePlugin = {
       if (!prefix) return []
 
       const isStable = selections.release?.value === 'stable'
+      const isLatest = selections.release?.value === 'latest'
       const gpu = context?.gpu as string | undefined
       // When the user picked a specific stable tag from the comfyVersion
       // dropdown, the variant card should advertise THAT version (the one
@@ -463,14 +494,42 @@ export const standalone: SourcePlugin = {
           if (!release) return null
           // Stable: advertise the upstream tag the user lands on after the
           // post-install auto-update (picked tag wins; otherwise channel
-          // head). Falls back to the bundled version when neither is
-          // resolvable (offline, etc.).
-          const displayStableTag = isStable
+          // head). Latest: advertise the latest stable tag as a nightly,
+          // since the install fast-forwards to master HEAD (a few commits
+          // past it). Both fall back to the bundled version when the tag is
+          // unresolvable (offline, etc.).
+          const displayTag = isStable
             ? pickedComfyTag ?? releaseData.latestStableTag ?? null
-            : null
-          return buildVariantOption(vendorId, release, displayStableTag, gpu)
+            : isLatest
+              ? releaseData.latestStableTag ?? null
+              : null
+          return buildVariantOption(vendorId, release, displayTag, gpu, isLatest)
         })
         .filter((item): item is FieldOption => item != null)
+    }
+
+    if (fieldId === 'bundledTemplate') {
+      // "None" is recommended → the wizard auto-selects it, keeping the step
+      // skippable while still completing the field chain.
+      return [
+        {
+          value: NO_TEMPLATE_VALUE,
+          label: t('standalone.starterTemplateNone'),
+          description: t('standalone.starterTemplateNoneDesc'),
+          recommended: true,
+        },
+        ...BUNDLED_TEMPLATES.map((tpl): FieldOption => ({
+          value: tpl.id,
+          label: tpl.title,
+          description: tpl.description,
+          data: {
+            modality: tpl.modality,
+            thumbnailUrl: tpl.thumbnailUrl,
+            sizeBytes: tpl.sizeBytes,
+            previewKind: tpl.previewKind,
+          },
+        })),
+      ]
     }
 
     return []

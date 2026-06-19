@@ -16,6 +16,7 @@ import type {
   ActionTools,
   LaunchCommand,
   StatusTag,
+  TerminalEnv,
 } from '../types/sources'
 
 export const desktop: SourcePlugin = {
@@ -75,6 +76,16 @@ export const desktop: SourcePlugin = {
       skipPortWait: true,
       skipSharedPaths: true,
     }
+  },
+
+  getTerminalEnv(installation: InstallationRecord): TerminalEnv {
+    // A legacy Desktop (v1) install keeps its venv at `<installPath>/.venv`
+    // (Legacy Desktop pip-installs its own uv there) and has no bundled
+    // `standalone-env/uv.exe`. Activate that venv so its own `pip` is on PATH;
+    // return a bare env (plain shell) when the venv is missing.
+    const venvDir = path.join(installation.installPath, '.venv')
+    if (!fs.existsSync(venvDir)) return {}
+    return { venvDir, promptName: '.venv' }
   },
 
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {

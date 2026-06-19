@@ -430,7 +430,7 @@ async function routePostStart(): Promise<void> {
     // pick to Local so a second Continue click just proceeds (the
     // Cloud card is already visually greyed). User sees: spinner
     // disappears, Local is now selected, hit Continue → moves on.
-    if (!(await cloudCapacity.confirmEntry())) {
+    if (!(await cloudCapacity.confirmEntry('first_use'))) {
       // Separate event from `fork_chosen` because the user picked cloud
       // but never actually entered it — counting them as a cloud
       // converter would inflate the dashboard. `disabled` means the
@@ -671,6 +671,29 @@ watch(
 
 onUnmounted(() => {
   clearTimeout(nudgeTimer)
+  // First-use abandonment: the takeover unmounted without any completion
+  // path having fired. EVERY routing exit (complete-cloud, chain-local,
+  // chain-migrate, complete-skip) calls `emitCompleted(...)` first, so
+  // `completedFired === false` at unmount means the user dropped out —
+  // closed the window, hit dev-tools refresh, or quit mid-flow. This is the
+  // chooser-drop signal: it pairs with `first_use.completed` to give the
+  // onboarding funnel its denominator (started) vs. numerator (finished).
+  // Post-consent so a `'denied'`/`'undecided'` first-ever abandon is still
+  // dropped by the normal consent gate (no pre-consent allow-list entry).
+  if (!completedFired) {
+    const msOnScreen = Date.now() - mountedAt
+    // `reason` is coarse and enum-only: whether the user had crossed the ToS
+    // gate before dropping. `consent_accepted` = they ticked ToS (and so were
+    // one Continue away); `pre_consent` = they bailed on the very first gate.
+    // We can't observe the OS-level "why" (close vs refresh vs quit) here, so
+    // we report the funnel-meaningful split instead of guessing the mechanism.
+    emitTelemetryAction('comfy.desktop.first_use.abandoned', {
+      step: step.value,
+      reason: acceptedTos.value ? 'consent_accepted' : 'pre_consent',
+      ms_on_screen: msOnScreen,
+      had_legacy: hasLegacyDesktop.value
+    })
+  }
   // Clear the host's `firstUseMode` whenever the takeover unmounts,
   // regardless of why (Cloud-branch
   // completion, Local-branch chain swap, file-menu Skip Onboarding,

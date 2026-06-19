@@ -1,7 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import {
   fs,
-  dialog,
-  BrowserWindow,
+  ipcMain,
   installations,
   i18n,
   performLocalMigration,
@@ -14,6 +14,7 @@ import {
 import type { InstallationRecord } from '../shared'
 import { adoptDesktopInstall, type AdoptPromptKind, type UserChoice } from '../../desktopAdopt'
 import type { ActionContext, ActionResult } from './types'
+import type { AdoptPromptAck, AdoptPromptResponse } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 
 interface PromptSpec {
@@ -26,7 +27,7 @@ interface PromptSpec {
   cancelId: number
 }
 
-// Build the native-modal spec for a prompt kind; each button maps to a UserChoice.
+// Build the in-app prompt spec for a prompt kind; each button maps to a UserChoice.
 function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
   const data = (ctx ?? {}) as Record<string, unknown>
   switch (kind) {
@@ -63,17 +64,13 @@ function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
         detail: typeof data['message'] === 'string' ? (data['message'] as string) : undefined,
         buttons: [
           {
-            label: i18n.t('desktop.adoptPromptSwitchToManaged'),
-            choice: { kind: 'source-missing', choice: 'switch-to-managed' }
-          },
-          {
             label: i18n.t('desktop.adoptPromptRetry'),
             choice: { kind: 'source-missing', choice: 'retry' }
           },
           { label: i18n.t('common.cancel'), choice: { kind: 'source-missing', choice: 'cancel' } }
         ],
-        defaultId: 1,
-        cancelId: 2
+        defaultId: 0,
+        cancelId: 1
       }
     case 'confirm-adopt':
       // Only shown if the orchestrator escalates a runtime decision.
@@ -94,25 +91,192 @@ function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
   }
 }
 
-// Resolve a UserChoice via a native modal anchored to the focused window.
-async function showAdoptPrompt(kind: AdoptPromptKind, ctx: unknown): Promise<UserChoice> {
-  const spec = buildAdoptPromptSpec(kind, ctx)
-  const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
-  const opts = {
-    type: spec.type,
-    title: spec.title,
-    message: spec.message,
-    detail: spec.detail,
-    buttons: spec.buttons.map((b) => b.label),
-    defaultId: spec.defaultId,
-    cancelId: spec.cancelId,
-    noLink: true
+// Pending adopt prompts awaiting a renderer response, keyed by promptId.
+interface PendingAdoptPrompt {
+  webContentsId: number
+  ack: () => void
+  resolve: (buttonIndex: number) => void
+  reject: (err: Error) => void
+}
+const pendingAdoptPrompts = new Map<string, PendingAdoptPrompt>()
+
+// How long to wait for the renderer to ACK delivery before giving up. This
+// only guards delivery (no window listening) — once ACKed, the user may take
+// as long as they like to answer.
+const ADOPT_PROMPT_ACK_TIMEOUT_MS = 5_000
+
+let adoptPromptHandlersRegistered = false
+function ensureAdoptPromptHandlers(): void {
+  if (adoptPromptHandlersRegistered) return
+  adoptPromptHandlersRegistered = true
+  ipcMain.on('adopt-prompt-ack', (event, payload: AdoptPromptAck) => {
+    const pending = pendingAdoptPrompts.get(payload?.promptId)
+    if (!pending || pending.webContentsId !== event.sender.id) return
+    pending.ack()
+  })
+  ipcMain.on('adopt-prompt-response', (event, payload: AdoptPromptResponse) => {
+    const pending = pendingAdoptPrompts.get(payload?.promptId)
+    if (!pending || pending.webContentsId !== event.sender.id) return
+    pending.resolve(payload.buttonIndex)
+  })
+}
+
+// A real renderer WebContents is an EventEmitter we can talk to. Synthetic
+// dispatch paths (e.g. the picker's background-op stub) pass an object with
+// only `send`/`isDestroyed`, which can't deliver an interactive prompt — and
+// calling EventEmitter methods on it would throw. Validate up front so those
+// callers fall back to cancel instead of crashing the main process.
+function isPromptCapableSender(sender: Electron.WebContents): boolean {
+  const maybe = sender as Partial<Electron.WebContents>
+  return (
+    typeof maybe.id === 'number' &&
+    typeof maybe.isDestroyed === 'function' &&
+    typeof maybe.send === 'function' &&
+    typeof maybe.once === 'function' &&
+    !maybe.isDestroyed()
+  )
+}
+
+// Best-effort listener removal that can never throw — a destroyed or stale
+// wrapper may have lost its EventEmitter methods, and prompt cleanup must not
+// surface an uncaught exception on the main-process event loop.
+function removeDestroyedListenerSafe(
+  sender: Electron.WebContents,
+  listener: () => void
+): void {
+  type ListenerRemover = (event: string, listener: (...args: unknown[]) => void) => void
+  const maybe = sender as unknown as {
+    removeListener?: ListenerRemover
+    off?: ListenerRemover
   }
-  const result = parent
-    ? await dialog.showMessageBox(parent, opts)
-    : await dialog.showMessageBox(opts)
-  const idx = Math.max(0, Math.min(result.response, spec.buttons.length - 1))
-  return spec.buttons[idx]!.choice
+  const remove =
+    typeof maybe.removeListener === 'function'
+      ? maybe.removeListener
+      : typeof maybe.off === 'function'
+        ? maybe.off
+        : null
+  if (!remove) return
+  try {
+    remove.call(sender, 'destroyed', listener)
+  } catch {
+    // ignore
+  }
+}
+
+// Ask the originating renderer to surface an in-app prompt and resolve to the
+// chosen button index. Rejects (so the caller can fall back to cancel) if the
+// window never ACKs, is destroyed, can't deliver prompts, or the operation
+// aborts mid-prompt.
+function requestAdoptPromptButton(
+  sender: Electron.WebContents,
+  signal: AbortSignal,
+  spec: PromptSpec
+): Promise<number> {
+  ensureAdoptPromptHandlers()
+  const promptId = randomUUID()
+  return new Promise<number>((resolve, reject) => {
+    let settled = false
+    let ackTimer: ReturnType<typeof setTimeout> | null = null
+    let destroyedListenerRegistered = false
+    const cleanup = (): void => {
+      pendingAdoptPrompts.delete(promptId)
+      signal.removeEventListener('abort', onAbort)
+      if (destroyedListenerRegistered) removeDestroyedListenerSafe(sender, onDestroyed)
+      if (ackTimer) {
+        clearTimeout(ackTimer)
+        ackTimer = null
+      }
+    }
+    const settle = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      cleanup()
+      fn()
+    }
+    const onAbort = (): void => settle(() => reject(new Error('adopt-prompt-aborted')))
+    const onDestroyed = (): void =>
+      settle(() => reject(new Error('adopt-prompt-window-destroyed')))
+
+    if (signal.aborted) {
+      reject(new Error('adopt-prompt-aborted'))
+      return
+    }
+    // Synthetic / destroyed senders can't deliver a prompt — bail before
+    // arming any timer or registering listeners on a non-EventEmitter.
+    if (!isPromptCapableSender(sender)) {
+      reject(new Error('adopt-prompt-unavailable'))
+      return
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      sender.once('destroyed', onDestroyed)
+      destroyedListenerRegistered = true
+    } catch (err) {
+      settle(() => reject(err instanceof Error ? err : new Error(String(err))))
+      return
+    }
+
+    ackTimer = setTimeout(
+      () => settle(() => reject(new Error('adopt-prompt-unavailable'))),
+      ADOPT_PROMPT_ACK_TIMEOUT_MS
+    )
+
+    pendingAdoptPrompts.set(promptId, {
+      webContentsId: sender.id,
+      ack: () => {
+        if (ackTimer) {
+          clearTimeout(ackTimer)
+          ackTimer = null
+        }
+      },
+      resolve: (buttonIndex) => settle(() => resolve(buttonIndex)),
+      reject: (err) => settle(() => reject(err))
+    })
+
+    try {
+      sender.send('adopt-prompt', {
+        promptId,
+        type: spec.type,
+        title: spec.title,
+        message: spec.message,
+        detail: spec.detail,
+        detailLabel: spec.detail ? i18n.t('desktop.adoptPromptDetail') : undefined,
+        buttons: spec.buttons.map((b) => b.label),
+        defaultId: spec.defaultId,
+        cancelId: spec.cancelId
+      })
+    } catch (err) {
+      // Sender went away between the capability check and send. Settle now
+      // so the pending entry, listeners, and timer are cleaned up immediately.
+      settle(() => reject(err instanceof Error ? err : new Error(String(err))))
+    }
+  })
+}
+
+// Resolve a UserChoice via an in-app dialog in the originating renderer.
+// On any delivery failure we fall back to the prompt's cancel choice so
+// adoption fails cleanly instead of blocking forever.
+async function showAdoptPrompt(
+  sender: Electron.WebContents,
+  signal: AbortSignal,
+  kind: AdoptPromptKind,
+  ctx: unknown
+): Promise<UserChoice> {
+  const spec = buildAdoptPromptSpec(kind, ctx)
+  let idx = spec.cancelId
+  try {
+    if (!sender.isDestroyed()) {
+      idx = await requestAdoptPromptButton(sender, signal, spec)
+    }
+  } catch {
+    idx = spec.cancelId
+  }
+  // A malformed index (NaN / out of range / non-integer from a buggy renderer)
+  // falls back to cancel rather than throwing.
+  const safe = Number.isInteger(idx) ? idx : spec.cancelId
+  const clamped = Math.max(0, Math.min(safe, spec.buttons.length - 1))
+  return (spec.buttons[clamped] ?? spec.buttons[spec.cancelId] ?? spec.buttons[0]!).choice
 }
 
 export async function handleMigrateToStandalone({
@@ -148,7 +312,7 @@ export async function handleMigrateToStandalone({
             sendProgress,
             sendOutput,
             signal: abort.signal,
-            promptUser: showAdoptPrompt
+            promptUser: (kind, ctx) => showAdoptPrompt(sender, abort.signal, kind, ctx)
           }
         })
       })
@@ -167,10 +331,11 @@ export async function handleMigrateToStandalone({
       }
       if (abort.signal.aborted) return { ok: true, navigate: 'detail' }
       const message = (err as Error).message
-      // Synthetic error meaning "user picked Switch to managed env" — route to
-      // the new-install flow instead of a failure dialog.
-      if (message === 'source-missing-switch-to-managed') {
-        return { ok: true, navigate: 'new-install' }
+      // Adoption couldn't obtain the ComfyUI source (no staged copy and the
+      // git clone failed). Fail clearly with a message that points the user
+      // at doing a fresh install, rather than the old fake-success no-op.
+      if (message.startsWith('source-missing')) {
+        return { ok: false, message: i18n.t('desktop.adoptSourceMissingFailed') }
       }
       return { ok: false, message }
     }

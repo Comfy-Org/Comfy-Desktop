@@ -1,6 +1,7 @@
 {
   "id": "241130tqe9q3y",
   "schemaVersion": 1,
+  "uploadSizeLimit": 30,
   "appPath": ".",
   "appFiles": [
     "**",

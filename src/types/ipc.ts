@@ -53,6 +53,14 @@ export interface RunningInstance {
   url?: string
   mode: string
   startedAt?: number
+  /** Boot duration (ms from launch start to server-ready). Present on the
+   *  `instance-started` broadcast; absent from `getRunningInstances()`. */
+  bootTimeMs?: number
+  /** Spawn-retry counts for this boot, folded onto `instance-started` so the
+   *  renderer's telemetry carries them without a separate `server_ready`
+   *  event. 0 on the remote / skip-port paths. */
+  portRetries?: number
+  rebootRetries?: number
 }
 
 // --- Source / New Install types ---
@@ -425,6 +433,7 @@ export interface ProgressData {
   status?: string
   percent?: number
   steps?: ProgressStep[]
+  error?: boolean
 }
 
 export interface ProgressStep {
@@ -434,6 +443,35 @@ export interface ProgressStep {
    *  renderer paces the bar from these (the producer is the single source of
    *  truth); when absent it falls back to a curated weight table. */
   weight?: number
+}
+
+/**
+ * A mid-operation prompt the main process needs the user to answer (e.g.
+ * during Legacy Desktop adoption). Surfaced as an in-app dialog above the
+ * ProgressModal — never a native OS message box. Labels arrive pre-translated
+ * from main; the renderer must not re-translate them. The renderer ACKs
+ * delivery, then replies with the chosen `buttonIndex`.
+ */
+export interface AdoptPromptRequest {
+  promptId: string
+  type: 'info' | 'warning' | 'error' | 'question'
+  title: string
+  message: string
+  detail?: string
+  /** Pre-translated heading for the `detail` block. */
+  detailLabel?: string
+  buttons: string[]
+  defaultId: number
+  cancelId: number
+}
+
+export interface AdoptPromptAck {
+  promptId: string
+}
+
+export interface AdoptPromptResponse {
+  promptId: string
+  buttonIndex: number
 }
 
 // --- Event data types ---
@@ -897,6 +935,8 @@ export interface ElectronApi {
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
+  /** Read-only snapshot of an install's durable log buffer (joined string). */
+  logsSnapshot(installationId: string): Promise<string>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -938,7 +978,13 @@ export interface ElectronApi {
   reorderInstallations(orderedIds: string[]): Promise<void>
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
-  installInstance(installationId: string): Promise<void>
+  /** `express` flags the one-click express-install path (vs the manual
+   *  Configure wizard). Used only to label the `install.completed`
+   *  telemetry event's `method`; defaults to false. */
+  installInstance(installationId: string, express?: boolean): Promise<void>
+  /** Skip waiting on the starter-template model download — hands the still-
+   *  running task off to the title-bar downloads tray (no restart). */
+  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1253,6 +1299,13 @@ export interface ElectronApi {
    *  non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
 
+  // Adopt prompts: in-app replacement for native message boxes shown
+  // mid-operation (e.g. Legacy Desktop adoption). The renderer subscribes,
+  // ACKs delivery, and replies with the chosen button index.
+  onAdoptPrompt(callback: (request: AdoptPromptRequest) => void): Unsubscribe
+  ackAdoptPrompt(payload: AdoptPromptAck): void
+  respondAdoptPrompt(payload: AdoptPromptResponse): void
+
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
@@ -1480,6 +1533,24 @@ export const REQUIRES_STOPPED = new Set([
   'update-comfyui',
   'migrate-from'
 ])
+
+/** Title-popup kind tags — the discriminant for popup config/opts across main,
+ *  preload, and the popup renderer. Single source so the tag can't desync. */
+export const POPUP_KIND = {
+  menu: 'menu',
+  downloads: 'downloads',
+  downloadsFull: 'downloads-full',
+  instancePicker: 'instance-picker',
+  globalSettings: 'global-settings'
+} as const
+
+export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+/** Resolved popup theme passed in every popup config. */
+export interface PopupTheme {
+  bg: string
+  text: string
+}
 
 /** Picker popup's settings-passthrough IPC channels — main registers them,
  *  preload invokes them. Single source so a typo can't desync the two sides. */

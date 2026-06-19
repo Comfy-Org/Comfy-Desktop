@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
-import { configDir, cacheDir, homeDir, setInstallDirResolver } from './lib/paths'
+import { configDir, homeDir, defaultDataRoot, defaultDownloadCacheDir, builtinDefaultInstallDir, setInstallDirResolver } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
 
@@ -51,6 +51,10 @@ export interface KnownSettings {
   /** Directory the user last chose in the general "Save image/file" dialog.
    *  Used to seed the dialog's defaultPath so it matches browser behavior. */
   lastSaveDialogDir?: string
+  /** When true, the dedicated starter-template picker step is skipped during
+   *  install (the user ticked "Don't show this again"). Only ever set once the
+   *  user already has ≥1 local install. Default false — show the step. */
+  skipTemplatePickerStep?: boolean
   /** Version of a Desktop update whose installer finished downloading in a
    *  previous session and is staged on disk. Gates the bounded startup
    *  install check so boots without a staged update aren't delayed. Cleared
@@ -92,7 +96,7 @@ type SettingsDefaults = Pick<KnownSettings, DefaultedSettingKey>
 
 const dataPath = path.join(configDir(), "settings.json")
 
-const SHARED_ROOT = path.join(homeDir(), "ComfyUI-Shared")
+const SHARED_ROOT = path.join(defaultDataRoot(), "ComfyUI-Shared")
 
 const SETTINGS_SCHEMA = {
   cacheDir: { nullable: false },
@@ -117,6 +121,7 @@ const SETTINGS_SCHEMA = {
   oemManagedModelDirs: { nullable: false },
   oemWorkflowImportVersion: { nullable: false },
   lastSaveDialogDir: { nullable: true },
+  skipTemplatePickerStep: { nullable: false },
   pendingDownloadedUpdateVersion: { nullable: true },
   lastStartupUpdateAttemptVersion: { nullable: true },
   installUpdatesOnStartup: { nullable: false },
@@ -139,14 +144,14 @@ function isNullableKnownSettingKey(key: KnownSettingKey): key is NullableKnownSe
 }
 
 export const defaults: SettingsDefaults = {
-  cacheDir: path.join(cacheDir(), "download-cache"),
+  cacheDir: defaultDownloadCacheDir(),
   maxCachedDownloads: 1,
   // Docking-to-tray is disabled (createTray() is currently a no-op).
   onAppClose: "quit",
   modelsDirs: [path.join(SHARED_ROOT, "models")],
   inputDir: path.join(SHARED_ROOT, "input"),
   outputDir: path.join(SHARED_ROOT, "output"),
-  installDir: path.join(homeDir(), "ComfyUI-Installs"),
+  installDir: builtinDefaultInstallDir(),
 }
 
 const systemDefault = defaults.modelsDirs[0]!
@@ -154,6 +159,25 @@ const shouldSanitizeCopiedUserDefaults = process.platform === 'win32'
 
 function resolveIfNonEmpty(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? path.resolve(value) : null
+}
+
+/** Whether a configured path lives on a currently-accessible volume. We check
+ *  the path *root* (e.g. `D:\`), not the leaf, so a custom location that simply
+ *  hasn't been created yet stays configured — installs/cache are created on
+ *  demand. Returns false only when the drive/volume itself is gone (reinstall on
+ *  a different drive, a removed disk), so callers can fall back to a usable
+ *  default instead of pointing at a dead path. On POSIX the root is always `/`,
+ *  so this is effectively a no-op there. */
+function isOnAccessibleVolume(value: unknown): boolean {
+  const resolved = resolveIfNonEmpty(value)
+  if (!resolved) return false
+  const root = path.parse(resolved).root
+  if (!root) return false
+  try {
+    return fs.existsSync(root)
+  } catch {
+    return false
+  }
 }
 
 function getRelativeDefaultFromHome(currentDefault: string): string | null {
@@ -362,7 +386,7 @@ function load(): Settings {
       for (const folder of MODEL_FOLDER_TYPES) {
         fs.mkdirSync(path.join(systemDefault, folder), { recursive: true })
       }
-    } catch {}
+    } catch { }
   }
 
   // inputDir/outputDir must always point at a folder that exists. If the
@@ -382,7 +406,19 @@ function load(): Settings {
     }
     try {
       fs.mkdirSync(defaults[key], { recursive: true })
-    } catch {}
+    } catch { }
+  }
+
+  // installDir/cacheDir are created on demand, so (unlike input/output) a custom
+  // location may legitimately not exist yet — only fall back when the whole
+  // volume is gone (e.g. reinstall on a different drive, a removed disk) so the
+  // app never strands installs/cache on a dead path.
+  for (const key of ["installDir", "cacheDir"] as const) {
+    if (isOnAccessibleVolume(result[key])) continue
+    if (result[key] !== defaults[key]) {
+      result[key] = defaults[key]
+      changed = true
+    }
   }
   if (changed) save(result)
   return result

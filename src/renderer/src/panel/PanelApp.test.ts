@@ -113,14 +113,6 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../components/DownloadsModal.vue', () => ({
-  default: {
-    name: 'DownloadsModal',
-    props: ['open'],
-    emits: ['close'],
-    template: '<div data-testid="downloads-modal" />'
-  }
-}))
 vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   default: {
     name: 'MigrateConfirmTakeover',
@@ -289,6 +281,9 @@ function installMockApi(initial?: {
     onComfyOutput: vi.fn(() => () => {}),
     onComfyExited: vi.fn(() => () => {}),
     onInstanceCrashed: vi.fn(() => () => {}),
+    onAdoptPrompt: vi.fn(() => () => {}),
+    ackAdoptPrompt: vi.fn(),
+    respondAdoptPrompt: vi.fn(),
     onErrorDetail: vi.fn(() => () => {}),
     getSetting: vi.fn(async (key: string) => state.settings[key]),
     setSetting: vi.fn(async (key: string, value: unknown) => {

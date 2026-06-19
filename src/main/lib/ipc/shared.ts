@@ -2,7 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { EventEmitter } from 'events'
-import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme } from 'electron'
+import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { execFile, spawn, execFileSync } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import sources from '../../sources/index'
@@ -350,6 +350,68 @@ export async function copyBrowserPartition(sourceId: string, destId: string, sou
   }
 }
 
+/** Delete the on-disk browser partition for a deleted install. Unique-partition
+ *  installs each own a `persist:${id}` bucket under userData/Partitions/<id>
+ *  (created lazily by Electron, deep-copied on install-copy); nothing else ever
+ *  reuses it, so it must be removed when the install is deleted or it leaks
+ *  forever. Never touches `persist:shared` (Partitions/shared), the bucket all
+ *  shared-partition installs collectively own. Best-effort: clears the session
+ *  first to release file handles (Windows locks LevelDB/IndexedDB while open). */
+export async function deleteBrowserPartition(id: string, browserPartition?: string): Promise<void> {
+  // Guard the shared bucket explicitly (ids are generated, so this never matches
+  // a real install, but it makes the invariant impossible to violate).
+  if (id === 'shared') return
+  const partitionDir = path.join(app.getPath('userData'), 'Partitions', id)
+  // The browserPartition setting is user-editable, so an install created as
+  // 'unique' (which already created Partitions/<id>) may now read as 'shared'.
+  // Clean up whenever the per-install dir exists, not just when the current
+  // setting is 'unique', or a toggled install's partition leaks forever.
+  if (browserPartition !== 'unique' && !fs.existsSync(partitionDir)) return
+  // Best-effort, fully bounded: this runs after the install record is already
+  // removed, so it must never hang the delete operation or hold its lock.
+  // clearStorageData has no hard completion guarantee, so race it against a
+  // timeout; rm fails fast (force) with a few transient-lock retries.
+  try {
+    const cleared = session.fromPartition(`persist:${id}`).clearStorageData()
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
+    await Promise.race([cleared, timeout])
+  } catch (err) {
+    console.warn('Failed to clear browser partition storage:', (err as Error).message)
+  }
+  try {
+    await fs.promises.rm(partitionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  } catch (err) {
+    console.warn('Failed to delete browser partition:', (err as Error).message)
+  }
+}
+
+/** Reclaim leftover per-install browser partitions at startup. Each unique
+ *  install owns `Partitions/<id>`; deleting an install whose session is still
+ *  alive can't remove that dir on Windows (the live session holds file locks),
+ *  so the inline cleanup in deleteBrowserPartition can leak it. At startup no
+ *  install session exists yet, so removing any `Partitions/inst-*` whose id is
+ *  not a current install reliably reclaims those (and crash leftovers). Only
+ *  touches install-id-shaped dirs; never `shared` (the collective bucket) or any
+ *  other session dir. */
+export function sweepOrphanPartitions(knownIds: ReadonlySet<string>): void {
+  const partitionsDir = path.join(app.getPath('userData'), 'Partitions')
+  let names: string[]
+  try {
+    names = fs.readdirSync(partitionsDir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!name.startsWith('inst-')) continue // only per-install partitions
+    if (knownIds.has(name)) continue
+    try {
+      fs.rmSync(path.join(partitionsDir, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    } catch (err) {
+      console.warn('Failed to sweep orphan browser partition:', name, (err as Error).message)
+    }
+  }
+}
+
 export async function performCopy(
   inst: InstallationRecord,
   name: string,
@@ -505,12 +567,30 @@ export function _releasePort(port: number): void {
 // whole IPC handler universe.
 export { _registerExtraBroadcastTarget, _unregisterExtraBroadcastTarget, _broadcastToRenderer } from './broadcast'
 
-export function _addSession(installationId: string, { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>, bootTimeMs?: number): void {
+export function _addSession(
+  installationId: string,
+  { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>,
+  bootTimeMs?: number,
+  /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
+   *  renderer's `instance_started` telemetry can carry them without a
+   *  separate `server_ready` event. Omitted for the remote / skip-port paths
+   *  (no spawn retry there). */
+  retries?: { portRetries: number; rebootRetries: number },
+): void {
   _runningSessions.set(installationId, { proc, port, url, mode, installationName, startedAt: Date.now() })
   // Clear the launching marker first so subscribers never double-count this id across the
   // transition.
   _launchingInstances.delete(installationId)
-  _broadcastToRenderer('instance-started', { installationId, port, url, mode, installationName, bootTimeMs })
+  _broadcastToRenderer('instance-started', {
+    installationId,
+    port,
+    url,
+    mode,
+    installationName,
+    bootTimeMs,
+    portRetries: retries?.portRetries ?? 0,
+    rebootRetries: retries?.rebootRetries ?? 0,
+  })
   sessionLifecycleEvents.emit('changed')
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations.markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
@@ -802,6 +882,14 @@ export function hasRunningSessions(): boolean {
 
 export function getSessionProcess(installationId: string): ChildProcess | null {
   return _runningSessions.get(installationId)?.proc ?? null
+}
+
+/** Epoch ms when the running session was registered (`_addSession`), i.e. the
+ *  server-ready moment. Used by the canvas-rendered telemetry to measure
+ *  server-ready → first canvas paint. `null` if no session is running for the
+ *  id (e.g. the page reloaded after a stop). */
+export function getSessionStartedAt(installationId: string): number | null {
+  return _runningSessions.get(installationId)?.startedAt ?? null
 }
 
 export function hasActiveOperations(): boolean {

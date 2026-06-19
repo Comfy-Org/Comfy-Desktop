@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle, ArrowDownToLine, ArrowRightLeft, MoreVertical } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useTruncation } from '../../composables/useTruncation'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
+import Tooltip from '../../components/ui/Tooltip.vue'
 import { TID } from '../../../../shared/testIds'
 import type { Installation } from '../../types/ipc'
 
@@ -11,9 +13,7 @@ interface Props {
   installation: Installation
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
-  /** Pre-formatted last-launched label. Prop stays wired while the
-   *  launched pill is soft-disabled in the template. */
-  // eslint-disable-next-line vue/no-unused-properties
+  /** Pre-formatted recency label — "Launched 3h ago" / "Not launched yet". */
   lastLaunchedLabel: string
 }
 
@@ -40,29 +40,23 @@ const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
 const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-running': isRunning.value && !isStopping.value,
   'chooser-tile-stopping': isStopping.value,
-  'chooser-tile-errored': hasError.value,
+  'chooser-tile-errored': hasError.value
 }))
 
 /* Lifecycle → top-right status pill (dot + label). Stopping wins over
  * launching wins over running; an idle tile gets no pill. An errored
  * tile shows the clickable error badge instead (see template). */
 const statusPill = computed<{ label: string; dotClass: string } | null>(() => {
-  if (isStopping.value) return { label: 'chooser.statusStopping', dotClass: 'chooser-tile-status--stopping' }
-  if (isLaunching.value) return { label: 'chooser.statusLaunching', dotClass: 'chooser-tile-status--launching' }
-  if (isRunning.value) return { label: 'chooser.statusRunning', dotClass: 'chooser-tile-status--running' }
+  if (isStopping.value)
+    return { label: 'chooser.statusStopping', dotClass: 'chooser-tile-status--stopping' }
+  if (isLaunching.value)
+    return { label: 'chooser.statusLaunching', dotClass: 'chooser-tile-status--launching' }
+  if (isRunning.value)
+    return { label: 'chooser.statusRunning', dotClass: 'chooser-tile-status--running' }
   return null
 })
 
 const hasUpdate = computed(() => inst.value.statusTag?.style === 'update')
-/** "Update v0.25.0" when the backend tags the target version, else the bare
- *  "Update" — the action stays self-describing without hiding the current
- *  version pill beside it. */
-const updatePillLabel = computed(() => {
-  const version = inst.value.statusTag?.version
-  return version
-    ? t('chooser.updatePillVersion', { version })
-    : t('chooser.updatePill')
-})
 // The backend tags every migratable install (Legacy Desktop, portable, git)
 // with a `migrate` status tag — mirror `hasUpdate` rather than special-casing
 // a single source.
@@ -70,14 +64,54 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
-/* Desktop's listPreview is the bare installPath (useless in a pill), so
- * fall back to sourceLabel. Gated on `sourceId` because `sourceCategory`
- * reports `local` for desktop in production. */
-const sourcePillLabel = computed(() =>
-  inst.value.sourceId === 'desktop'
-    ? inst.value.sourceLabel
-    : inst.value.listPreview || inst.value.sourceLabel,
+/** Desktop's listPreview is the bare installPath (useless as a label), so fall
+ *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
+const sourceLabel = computed(() => {
+  const raw =
+    inst.value.sourceId === 'desktop'
+      ? inst.value.sourceLabel
+      : inst.value.listPreview || inst.value.sourceLabel
+  return raw ? raw.replace(/^https?:\/\//, '') : raw
+})
+
+const metaLine = computed(() =>
+  [sourceLabel.value, inst.value.version].filter(Boolean).join(' · ')
 )
+
+const nameEl = ref<HTMLElement | null>(null)
+const metaEl = ref<HTMLElement | null>(null)
+const { isTruncated: nameTruncated, check: checkNameTruncation } = useTruncation(nameEl)
+const { isTruncated: metaTruncated, check: checkMetaTruncation } = useTruncation(metaEl)
+
+/** The single update/migrate affordance, or null when the install has neither.
+ *  The Update tooltip surfaces the target version the bare pill hides. */
+const actionPill = computed(() => {
+  if (hasUpdate.value)
+    return {
+      action: 'update' as const,
+      icon: ArrowDownToLine,
+      label: t('chooser.updatePill'),
+      tooltip: inst.value.statusTag?.label || t('chooser.updatePill'),
+      pillClass: 'chooser-tile-pill-update'
+    }
+  if (hasMigratePrompt.value)
+    return {
+      action: 'migrate' as const,
+      icon: ArrowRightLeft,
+      label: t('chooser.migratePill'),
+      tooltip: t('dashboard.migrateBannerTitle'),
+      pillClass: 'chooser-tile-pill-migrate'
+    }
+  return null
+})
+
+/** Precise fallback for the relative recency label; empty when never booted. */
+const absoluteLaunchedTime = computed(() => {
+  const ts = inst.value.lastLaunchedAt
+  return typeof ts === 'number'
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(ts)
+    : ''
+})
 
 function handleClick(): void {
   if (isStopping.value) return
@@ -96,7 +130,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
   <div
     role="button"
     tabindex="0"
-    class="chooser-tile"
+    class="chooser-tile chooser-tile--install"
     :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
@@ -105,15 +139,12 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @keydown.space.prevent="handleClick"
     @contextmenu.prevent="emit('open-card-menu', $event, inst)"
   >
-    <div
-      class="chooser-tile-icon"
-      :title="t(typeMeta.labelKey)"
-    >
-      <component :is="typeMeta.icon" :size="28" />
-    </div>
-    <!-- Top-right cluster: lifecycle indicator + kebab. The status pill is
-         non-interactive (clicks fall through to the body); the error badge
-         is a click target that opens the error details. -->
+    <!-- Type icon only; source/channel lives in the meta line below. -->
+    <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
+      <component :is="typeMeta.icon" :size="22" />
+    </span>
+
+    <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
     <div class="chooser-tile-actions">
       <button
         v-if="hasError"
@@ -146,69 +177,57 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         <MoreVertical :size="16" />
       </button>
     </div>
-    <div class="chooser-tile-name">
-      {{ inst.name }}
-    </div>
-    <div class="chooser-tile-meta">
-      <!-- Single no-wrap pill row: source pill + an optional action /
-           version pill. The source pill is the shrink target. -->
-      <span
-        class="chooser-tile-pill"
-        :title="sourcePillLabel"
+
+    <!-- Stacked tiers (name → meta → recency); each truncates on its own row. -->
+    <div class="chooser-tile-body">
+      <Tooltip
+        class="chooser-tile-name-tip"
+        :text="inst.name"
+        :disabled="!nameTruncated"
+        @mouseenter="checkNameTruncation"
+        @focusin="checkNameTruncation"
       >
-        {{ sourcePillLabel }}
-      </span>
-      <!-- Current version: always shown as quiet metadata, independent of any
-           available action so an update never hides it. Secondary shrink
-           target after the source pill. -->
-      <span
-        v-if="inst.version"
-        class="chooser-tile-pill chooser-tile-pill-version"
-        :title="inst.version"
+        <span ref="nameEl" class="chooser-tile-name">{{ inst.name }}</span>
+      </Tooltip>
+      <Tooltip
+        v-if="metaLine"
+        class="chooser-tile-meta-tip"
+        :text="metaLine"
+        :disabled="!metaTruncated"
+        @mouseenter="checkMetaTruncation"
+        @focusin="checkMetaTruncation"
       >
-        {{ inst.version }}
-      </span>
-      <!-- Action pill (update / migrate): right-aligned and width-holding so
-           it reads as the affordance, separate from the metadata cluster. The
-           update label carries the target version when known. -->
-      <span
-        v-if="hasUpdate"
-        class="chooser-tile-pill chooser-tile-pill-update chooser-tile-pill-action"
-        :class="{ 'chooser-tile-pill-disabled': isStoppedActionGated }"
-        role="button"
-        tabindex="0"
-        :aria-disabled="isStoppedActionGated || undefined"
-        :title="inst.statusTag?.label"
-        @click.stop="triggerInstallAction('update')"
-        @keydown.enter.stop="triggerInstallAction('update')"
-        @keydown.space.prevent.stop="triggerInstallAction('update')"
-      >
-        <ArrowDownToLine :size="11" />
-        {{ updatePillLabel }}
-      </span>
-      <span
-        v-else-if="hasMigratePrompt"
-        class="chooser-tile-pill chooser-tile-pill-migrate chooser-tile-pill-action"
-        :class="{ 'chooser-tile-pill-disabled': isStoppedActionGated }"
-        role="button"
-        tabindex="0"
-        :aria-disabled="isStoppedActionGated || undefined"
-        :title="t('dashboard.migrateBannerTitle')"
-        @click.stop="triggerInstallAction('migrate')"
-        @keydown.enter.stop="triggerInstallAction('migrate')"
-        @keydown.space.prevent.stop="triggerInstallAction('migrate')"
-      >
-        <ArrowRightLeft :size="11" />
-        {{ t('chooser.migratePill') }}
-      </span>
-      <!-- Launched pill disabled per redesign; kept for later restore.
-      <span
-        class="chooser-tile-pill chooser-tile-pill-launched"
-        :title="lastLaunchedLabel"
-      >
-        {{ lastLaunchedLabel }}
-      </span>
-      -->
+        <span ref="metaEl" class="chooser-tile-meta-line">
+          <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
+          <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
+          <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
+        </span>
+      </Tooltip>
+      <div class="chooser-tile-footer">
+        <Tooltip
+          class="chooser-tile-recency"
+          :text="absoluteLaunchedTime"
+          :disabled="!absoluteLaunchedTime"
+        >
+          <span class="chooser-tile-recency-text">{{ lastLaunchedLabel }}</span>
+        </Tooltip>
+        <!-- Action pill (update / migrate); pinned right, never truncates. -->
+        <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
+          <span
+            class="chooser-tile-pill"
+            :class="[actionPill.pillClass, { 'chooser-tile-pill-disabled': isStoppedActionGated }]"
+            role="button"
+            tabindex="0"
+            :aria-disabled="isStoppedActionGated || undefined"
+            @click.stop="triggerInstallAction(actionPill.action)"
+            @keydown.enter.stop="triggerInstallAction(actionPill.action)"
+            @keydown.space.prevent.stop="triggerInstallAction(actionPill.action)"
+          >
+            <component :is="actionPill.icon" :size="11" />
+            {{ actionPill.label }}
+          </span>
+        </Tooltip>
+      </div>
     </div>
   </div>
 </template>

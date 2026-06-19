@@ -9,7 +9,7 @@ import type {
   LogsOutputMsg,
   LogsRestore,
   TerminalRestore
-} from '../types/comfyDesktopBridge'
+} from '@comfyorg/comfyui-desktop-bridge-types'
 
 /**
  * Interactive terminal bridge for the served ComfyUI frontend.
@@ -77,13 +77,7 @@ const Logs: ComfyDesktop2LogsBridge = {
 
 const Telemetry: ComfyDesktop2TelemetryBridge = {
   capture: (event, properties): void => {
-    // Telemetry must never break the caller. `ipcRenderer.send` throws
-    // synchronously on non-structured-cloneable values (functions, DOM
-    // nodes, symbols, circular refs); since this surface is exposed to
-    // the hosted ComfyUI frontend, a stray bad payload would otherwise
-    // propagate into unrelated frontend code. Mirrors the same
-    // try/catch contract as `window.api.captureTelemetry` in
-    // `src/preload/api.ts`.
+    // Telemetry payload errors must never break hosted frontend code.
     try {
       ipcRenderer.send('telemetry:capture', { event, properties })
     } catch {

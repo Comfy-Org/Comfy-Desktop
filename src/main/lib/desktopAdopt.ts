@@ -62,7 +62,7 @@ export type AdoptPromptKind = 'tcc' | 'venv-broken' | 'source-missing' | 'confir
 export type UserChoice =
   | { kind: 'tcc'; choice: 'continue' | 'denied' }
   | { kind: 'venv-broken'; choice: 'use-anyway' | 'cancel' }
-  | { kind: 'source-missing'; choice: 'switch-to-managed' | 'retry' | 'cancel' }
+  | { kind: 'source-missing'; choice: 'retry' | 'cancel' }
   | { kind: 'confirm-adopt'; choice: 'yes' | 'no' }
 
 export interface AdoptTools {
@@ -1139,13 +1139,13 @@ async function runAdoption(
       message: sourceResult.message,
       attempts: sourceAttempts
     })
-    if (choice.kind !== 'source-missing') break
-    if (choice.choice === 'cancel') {
+    // Only an explicit retry loops. Anything else (cancel, or an
+    // unexpected choice) is a hard failure: adoption cannot continue
+    // without the ComfyUI source. Throw a clear error the dispatcher
+    // surfaces to the user — with a suggestion to do a fresh install —
+    // rather than silently leaving `sourceMode` null.
+    if (!(choice.kind === 'source-missing' && choice.choice === 'retry')) {
       throw new Error(`source-missing: ${sourceResult.message}`)
-    }
-    if (choice.choice === 'switch-to-managed') {
-      // Caller (dispatcher) maps this to the fresh-standalone flow.
-      throw new Error('source-missing-switch-to-managed')
     }
     // 'retry' loops.
   }
@@ -1343,6 +1343,17 @@ async function runAdoption(
     requirements_pygit2_exit: reqReport.pygit2ExitCode,
     gpu: detectedGpu,
     selected_device: selectedDevice
+  })
+
+  // Fire the once-per-install funnel event for the in-place Desktop-1 adoption
+  // path. Only reached on a fresh adoption — the idempotent re-run in
+  // `adoptDesktopInstall` returns the existing record before `runAdoption`, so
+  // this never re-fires for an already-adopted install. Best-effort:
+  // `capture()` swallows its own errors and never aborts adoption.
+  telemetry.captureInstallCompleted({
+    installationId: record.id,
+    method: 'adopt',
+    express: false
   })
 
   sendProgress('done', { percent: 100 })

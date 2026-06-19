@@ -9,7 +9,7 @@
  */
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronApi, ResolvedTheme } from '../types/ipc'
+import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -31,6 +31,10 @@ export function buildElectronApi(): ElectronApi {
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
+    /** Read-only snapshot of an install's durable log buffer, as one joined
+     *  string. Seeds a chained launch op's terminal with install-leg lines. */
+    logsSnapshot: (installationId: string): Promise<string> =>
+      ipcRenderer.invoke('logs-snapshot', installationId),
     validateInstallPath: (targetPath) => ipcRenderer.invoke('validate-install-path', targetPath),
     getInstallationSize: (installationId) =>
       ipcRenderer.invoke('get-installation-size', installationId),
@@ -51,7 +55,10 @@ export function buildElectronApi(): ElectronApi {
     reorderInstallations: (orderedIds) => ipcRenderer.invoke('reorder-installations', orderedIds),
     probeInstallation: (dirPath) => ipcRenderer.invoke('probe-installation', dirPath),
     trackInstallation: (data) => ipcRenderer.invoke('track-installation', data),
-    installInstance: (installationId) => ipcRenderer.invoke('install-instance', installationId),
+    installInstance: (installationId, express) =>
+      ipcRenderer.invoke('install-instance', installationId, express),
+    skipTemplateDownload: (installationId) =>
+      ipcRenderer.invoke('skip-template-download', installationId),
     updateInstallation: (installationId, data) =>
       ipcRenderer.invoke('update-installation', installationId, data),
 
@@ -210,6 +217,16 @@ export function buildElectronApi(): ElectronApi {
     installUpdate: () => ipcRenderer.invoke('install-update'),
     getUpdateCapabilities: () => ipcRenderer.invoke('get-update-capabilities'),
     getAppUpdateState: () => ipcRenderer.invoke('get-app-update-state'),
+
+    // Adopt prompts (in-app modal bridge; replaces native message boxes)
+    onAdoptPrompt: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as AdoptPromptRequest)
+      ipcRenderer.on('adopt-prompt', handler)
+      return () => ipcRenderer.removeListener('adopt-prompt', handler)
+    },
+    ackAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-ack', payload),
+    respondAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-response', payload),
 
     // Event listeners (return unsubscribe functions)
     onInstallProgress: (callback) => {

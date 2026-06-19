@@ -396,7 +396,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       await opts.handleShowProgress({
         installationId: result.entry.id,
         title: `Installing — ${name}`,
-        apiCall: () => window.api.installInstance(result.entry!.id),
+        apiCall: () => window.api.installInstance(result.entry!.id, true),
         autoLaunchOnFinish: true,
         opKind: 'install'
       })

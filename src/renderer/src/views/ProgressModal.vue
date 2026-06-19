@@ -36,7 +36,7 @@ const emit = defineEmits<{
   'success-choice': [actionId: string, installationId: string]
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const modal = useModal()
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
@@ -52,6 +52,33 @@ const currentOp = computed(() => {
 })
 
 const displayId = computed(() => currentId.value ?? props.installationId)
+
+// "Skip model download": shown only while the trailing `template-models` phase
+// is the active row (every earlier install+launch step is therefore done) and
+// the download is still in progress. Clicking hands the resume-capable task off
+// to the title-bar downloads tray and lets the user into ComfyUI immediately.
+const templateSkipped = ref(false)
+const canSkipTemplateDownload = computed<boolean>(() => {
+  if (templateSkipped.value) return false
+  const op = currentOp.value
+  if (!op || op.finished || op.activePhase !== 'template-models') return false
+  // Only when it's genuinely still working — a finished/errored phase has
+  // nothing to skip (the error substatus is the surface there).
+  return !op.phaseErrors?.['template-models'] && globalProgress.value.percent < 100
+})
+
+async function handleSkipTemplateDownload(): Promise<void> {
+  const id = displayId.value
+  if (!id) return
+  emitTelemetryAction('comfy.desktop.template.download.skipped', { flow: 'launch' })
+  try {
+    await window.api.skipTemplateDownload(id)
+    // Mark consumed only on success, so a failed hand-off leaves the button live.
+    templateSkipped.value = true
+  } catch {
+    // Best-effort hand-off; the download keeps running regardless.
+  }
+}
 
 // A finished, successful INSTALL leg of a chain is NOT the end — the launch
 // leg is about to take over. During this brief handoff we suppress the
@@ -97,6 +124,17 @@ const activeStepLabel = computed<string | null>(() => {
   return op.steps.find((s) => s.phase === op.activePhase)?.label?.trim() || null
 })
 
+function meaningfulStepLabel(phase: string, fallback?: string | null): string | null {
+  const label = fallback?.trim()
+  if (!label) return null
+  return label.toLowerCase() === phase.toLowerCase() ? null : label
+}
+
+function localizedPhaseLabel(phase: string): string | null {
+  const key = `progress.phaseLabel.${phase}`
+  return te(key) ? t(key) : null
+}
+
 // Live sub-status for the active phase. Main may push either a literal
 // (e.g. node count "3 / 7 · Manager") or an i18n key (`launch.activity.*`,
 // translated here so the tracker stays locale-agnostic). Keys that don't
@@ -113,14 +151,16 @@ const activePhaseStatus = computed<string | null>(() => {
   return raw
 })
 
-// User-facing caption per phase. Stepped ops resolve in order: curated `progress.phaseLabel.<phase>` → registered step label → real status detail → raw phase id (last resort). Flat ops pass through `flatStatus`.
+// User-facing caption per phase. Meaningful registered labels win for dynamic
+// phases; generic labels fall through to curated locale labels.
 const friendlyCaption = computed<string>(() => {
   const op = currentOp.value
   if (!op) return t('progress.starting')
   if (op.steps && op.activePhase) {
-    const key = `progress.phaseLabel.${op.activePhase}`
-    const friendly = t(key)
-    if (friendly !== key) return friendly
+    const meaningful = meaningfulStepLabel(op.activePhase, activeStepLabel.value)
+    if (meaningful) return meaningful
+    const friendly = localizedPhaseLabel(op.activePhase)
+    if (friendly) return friendly
     if (activeStepLabel.value) return activeStepLabel.value
     const raw = activePhaseStatus.value
     if (raw && raw !== op.activePhase) return raw
@@ -161,12 +201,9 @@ const formattedSubStatus = computed<string | null>(() => {
 // spinner conveys "working". Honest by construction.
 const displayedPercent = computed<number>(() => globalProgress.value.percent)
 
-// Resolve a step's display label: curated `progress.phaseLabel.<phase>` first
-// (matches `friendlyCaption`), then the registered step label, never the slug.
+// Resolve a step's display label without leaking dynamic phase slugs.
 function stepLabel(phase: string, fallback?: string): string {
-  const key = `progress.phaseLabel.${phase}`
-  const friendly = t(key)
-  return friendly !== key ? friendly : fallback?.trim() || phase
+  return meaningfulStepLabel(phase, fallback) ?? localizedPhaseLabel(phase) ?? fallback?.trim() ?? phase
 }
 
 // Two-level step rows for the swappable progress view, rendered as ONE
@@ -184,7 +221,8 @@ const progressSteps = computed<ProgressStepVM[]>(() => {
     label: stepLabel(step.phase, step.label),
     status: 'done' as const,
     detail: null,
-    subPercent: null
+    subPercent: null,
+    isError: false
   }))
 
   // Launch leg's steps haven't arrived yet (IPC in flight) but the prior leg
@@ -199,7 +237,8 @@ const progressSteps = computed<ProgressStepVM[]>(() => {
         label: stepLabel('launchStart'),
         status: 'active' as const,
         detail: null,
-        subPercent: null
+        subPercent: null,
+        isError: false
       }
     ]
   }
@@ -223,7 +262,8 @@ const progressSteps = computed<ProgressStepVM[]>(() => {
       status,
       detail: status === 'active' ? formattedSubStatus.value : null,
       subPercent:
-        status === 'active' && !globalProgress.value.indeterminate ? op.activePercent : null
+        status === 'active' && !globalProgress.value.indeterminate ? op.activePercent : null,
+      isError: status === 'active' && op.phaseErrors?.[step.phase] === true
     }
   })
 
@@ -243,11 +283,21 @@ function toggleBrandLogs(): void {
   brandLogsExpanded.value = !brandLogsExpanded.value
 }
 
-// Each op starts with the logs accordion closed.
+// Each op starts with the logs accordion closed and a fresh skip state.
 watch(displayId, () => {
   brandLogsExpanded.value = false
   brandIsAtBottom.value = true
+  templateSkipped.value = false
 })
+
+// Auto-expand the logs panel when an operation finishes with an error so the full
+// substep output is visible immediately, instead of the user having to discover
+// the collapsed "View logs" toggle to find out why an update/restore/migrate failed.
+// `immediate` covers reopening an already-failed op; the logs accordion itself is
+// gated on `terminalOutput`, so expanding when there's nothing to show is harmless.
+watch(finishedErrorMessage, (msg) => {
+  if (msg) brandLogsExpanded.value = true
+}, { immediate: true })
 
 // Render only a trailing window; the store keeps the full buffer for telemetry. Rendering megabytes into one text node re-layouts the whole takeover.
 const MAX_LOG_TAIL_CHARS = 256 * 1024
@@ -724,6 +774,14 @@ defineExpose({ startOperation, showOperation })
             </template>
           </div>
           <button
+            v-if="canSkipTemplateDownload"
+            type="button"
+            class="brand-ghost brand-progress__footer-btn brand-progress__footer-skip"
+            @click="handleSkipTemplateDownload"
+          >
+            {{ $t('standalone.skipTemplateDownloadOpen') }}
+          </button>
+          <button
             v-if="currentOp.terminalOutput"
             type="button"
             class="brand-ghost brand-progress__footer-btn brand-progress__logs-toggle"
@@ -804,6 +862,13 @@ defineExpose({ startOperation, showOperation })
   align-items: center;
   text-align: center;
   overflow: visible;
+  /* Vertical rhythm between the plate and the finished-state rows
+     (success actions, error message, error CTAs). In-flight the stack has a
+     single child so this is inert; the error-row's negative margin-top
+     fine-tunes its distance from the banner. Intentionally tighter than
+     BrandFinishedSurface's stack gap: this stack also hosts the in-flight
+     stepper, so the finished rows need less breathing room here. */
+  gap: clamp(0.75rem, 1.8vh, 1.125rem);
 }
 /* Scrim plate: dark radial sits above the glyph, below text — extended
    downward during in-flight ops so the stepper stays readable. */
@@ -1147,6 +1212,10 @@ defineExpose({ startOperation, showOperation })
   display: inline-flex;
   align-items: center;
   gap: 10px;
+}
+/* Centered in the footer bar regardless of the left/right buttons' widths. */
+.brand-progress__footer-skip {
+  margin-inline: auto;
 }
 .brand-progress__footer-btn {
   min-width: auto;

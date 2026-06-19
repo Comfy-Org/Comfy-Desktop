@@ -7,7 +7,8 @@ import type { ComfyVersion } from '../../lib/version'
 import { resolveLocalVersion } from '../../lib/version-resolve'
 import { readGitHead, rollbackComfySource } from '../../lib/git'
 import { writeOpMarker, completeOpMarker } from '../../lib/opMarker'
-import { installFilteredRequirements } from '../../lib/pip'
+import { installFilteredRequirementsDetailed } from '../../lib/pip'
+import { withOutputTail } from '../../lib/logged-process'
 import { copyDirWithProgress } from '../../lib/copy'
 import { listCustomNodes, findComfyUIDir, backupDir, mergeDirFlat } from '../../lib/migrate'
 import { t } from '../../lib/i18n'
@@ -132,9 +133,17 @@ export async function handleAction(
       const tail = rolledBack
         ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
         : 'Package changes were reverted where possible, but ComfyUI source rollback failed.'
+      // Surface which packages failed (the full pip output streams to the logs panel)
+      // so the error explains WHY instead of a bare "restore failed". Cap the list so
+      // a large restore can't produce a wall-of-text dialog.
+      const shownErrors = pipResult.errors.slice(0, 20)
+      const omittedErrors = pipResult.errors.length - shownErrors.length
+      const pkgDetail = !signal?.aborted && shownErrors.length > 0
+        ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
+        : ''
       // Leave the op marker so recoverInterruptedComfyOp retries on next launch
       // if the in-process rollback failed; a successful rollback makes it a no-op.
-      return { ok: false, message: `${headline}\n\n${tail}` }
+      return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
     }
 
     // Source + packages are consistent — the restore succeeded. Stamp the marker
@@ -636,9 +645,9 @@ async function handleMigrateFrom(
           })
 
           try {
-            const procResult = await installFilteredRequirements(nodReqPath, uvPath, activePython, installation.installPath, `.migrate-reqs-${node.name}.txt`, sendOutput, undefined, { pypiMirror: migrateMirror, useChineseMirrors: settings.get('useChineseMirrors') === true })
-            if (procResult !== 0) {
-              sendOutput(`\n⚠ ${node.name}: dependency install exited with code ${procResult}\n`)
+            const procResult = await installFilteredRequirementsDetailed(nodReqPath, uvPath, activePython, installation.installPath, `.migrate-reqs-${node.name}.txt`, sendOutput, undefined, { pypiMirror: migrateMirror, useChineseMirrors: settings.get('useChineseMirrors') === true })
+            if (procResult.code !== 0) {
+              sendOutput(`\n${withOutputTail(`⚠ ${node.name}: dependency install exited with code ${procResult.code}`, procResult.output)}\n`)
             }
           } catch (err) {
             sendOutput(`⚠ ${node.name}: ${(err as Error).message}\n`)
@@ -663,9 +672,9 @@ async function handleMigrateFrom(
 
       if (fs.existsSync(uvPath) && activePython) {
         sendOutput('\nInstalling manager requirements…\n')
-        const procResult = await installFilteredRequirements(mgrReqPath, uvPath, activePython, installation.installPath, '.migrate-mgr-reqs.txt', sendOutput, undefined, settings.getMirrorConfig())
-        if (procResult !== 0) {
-          sendOutput(`\n⚠ manager requirements install exited with code ${procResult}\n`)
+        const procResult = await installFilteredRequirementsDetailed(mgrReqPath, uvPath, activePython, installation.installPath, '.migrate-mgr-reqs.txt', sendOutput, undefined, settings.getMirrorConfig())
+        if (procResult.code !== 0) {
+          sendOutput(`\n${withOutputTail(`⚠ manager requirements install exited with code ${procResult.code}`, procResult.output)}\n`)
         }
       }
     }

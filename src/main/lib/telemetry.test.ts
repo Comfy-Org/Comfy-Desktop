@@ -186,15 +186,14 @@ describe('telemetry.bucketError', () => {
     expect(telemetry.bucketError('validation_failed for node 5')).toBe('validation')
   })
   it('classifies migration source-missing failures', () => {
-    // Observed at launch: gitcode mirror clones that stall mid-stream
+    // Observed at launch: gitcode mirror clones that stall mid-stream,
     // and Desktop 1 trees that lost their ComfyUI source path so the
-    // adopter tries to "switch to managed" and finds nothing to copy.
+    // adopter has neither a staged copy nor a working clone to source.
     expect(
       telemetry.bucketError(
         'source-missing: Downloading ComfyUI source from https://gitcode.com/gh_mirrors/co/ComfyUI.git'
       )
     ).toBe('source_missing')
-    expect(telemetry.bucketError('source-missing-switch-to-managed')).toBe('source_missing')
     expect(telemetry.bucketError('source_missing')).toBe('source_missing')
   })
   it('keeps "other" for messages with no known signal', () => {
@@ -261,6 +260,94 @@ describe('telemetry default event properties', () => {
 
     telemetry.capture('any.event', { app_version: 'override-value' })
     expect(captured[0]!.properties).toMatchObject({ app_version: 'override-value' })
+  })
+
+  it('stamps installation_id (the bound device id) on every captured event', () => {
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    // A main-process event and a renderer-routed event both go through
+    // capture(), so both must carry installation_id from the defaults.
+    telemetry.capture('comfy.desktop.execution.completed', { foo: 'bar' })
+    telemetry.capture('comfy.desktop.template.fork', { template_id: 't1' })
+
+    expect(captured).toHaveLength(2)
+    expect(captured[0]!.properties).toMatchObject({ installation_id: 'install-abc123' })
+    expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
+  })
+
+  it('does not pass installation_id to identify() (anon-id invariant holds)', () => {
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+
+    // identify() stamps installation_id as an event default but must NEVER
+    // call client.identify() with it — only login (bindUserId) identifies.
+    expect(identifies).toHaveLength(0)
+  })
+})
+
+describe('telemetry.captureInstallCompleted', () => {
+  beforeEach(() => {
+    captured.length = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-xyz')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry._resetForTest()
+  })
+
+  it('fires comfy.desktop.install.completed exactly once with method + express + installation_id', () => {
+    telemetry.captureInstallCompleted({
+      installationId: 'install-xyz',
+      method: 'express',
+      express: true
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.event).toBe('comfy.desktop.install.completed')
+    expect(captured[0]!.properties).toMatchObject({
+      installation_id: 'install-xyz',
+      method: 'express',
+      express: true
+    })
+  })
+
+  it.each([
+    ['express', true],
+    ['manual', false],
+    ['adopt', false],
+    ['migrate', false]
+  ] as const)('carries method=%s / express=%s for each install path', (method, express) => {
+    telemetry.captureInstallCompleted({ installationId: 'i1', method, express })
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.properties).toMatchObject({ method, express })
+  })
+
+  it('does NOT fire on boot — boot_started is a distinct, separately-emitted event', () => {
+    // A boot is the per-launch event; install.completed is once-per-install.
+    // Emitting boot_started must never produce an install.completed.
+    telemetry.capture('comfy.desktop.comfyui.boot_started', { installation_id: 'install-xyz' })
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.boot_started'])
+    expect(captured.some((c) => c.event === 'comfy.desktop.install.completed')).toBe(false)
+  })
+
+  it('is consent-gated: no install.completed when consent is not granted', () => {
+    telemetry.setConsentState('denied')
+    captured.length = 0
+    telemetry.captureInstallCompleted({ installationId: 'i1', method: 'manual', express: false })
+    expect(captured).toHaveLength(0)
   })
 })
 
@@ -345,11 +432,14 @@ describe('telemetry SDK-level privacy safety nets', () => {
     delete process.env['POSTHOG_ENABLED']
   })
 
-  it('strips $ip from every emit so PostHog can never store it', () => {
+  it('does not strip $ip: PostHog needs it to derive country (GeoIP enabled)', () => {
+    // The raw IP and sub-country geo are dropped by a PostHog ingestion
+    // transformation, not at the SDK; the SDK must send the IP so the
+    // server can resolve $geoip_country_code. So no forced `$ip: ''`.
     captured.length = 0
     telemetry.capture('comfy.desktop.session.started', { foo: 'bar' })
     expect(captured).toHaveLength(1)
-    expect(captured[0]!.properties?.['$ip']).toBe('')
+    expect(captured[0]!.properties).not.toHaveProperty('$ip')
   })
 
   it('scrubs string properties as a last-resort safety net for emit sites that forget', () => {
@@ -530,24 +620,28 @@ describe('telemetry.registerPersonProperties pre-consent merge', () => {
     telemetry.setConsentState('granted')
   })
 
-  it('merges multiple pre-consent property writes into one identify on grant (latest-wins per key)', () => {
+  it('merges multiple pre-consent property writes into one capture-$set on grant (latest-wins per key)', () => {
     telemetry.setConsentState('undecided')
     telemetry.identify('id', { app_version: '1.0.0' })
     identifies.length = 0
+    captured.length = 0
 
     telemetry.registerPersonProperties({ gpu_tier: 'low', locale: 'en' })
     telemetry.registerPersonProperties({ gpu_tier: 'mid', theme: 'dark' })
     // Nothing should have shipped yet.
-    expect(identifies).toHaveLength(0)
+    expect(captured).toHaveLength(0)
 
     telemetry.setConsentState('granted')
 
-    // Exactly one identify call carrying the merged $set, with the
+    // CRITICAL: anonymous person-prop writes must NOT go through identify()
+    // (which would burn the anon id and break the login alias merge).
+    expect(identifies.some((i) => i.distinctId === 'id')).toBe(false)
+
+    // Exactly one capture-$set carrying the merged $set, with the
     // second gpu_tier value winning over the first.
-    const merged = identifies.find(
-      (i) => i.properties?.$set && 'gpu_tier' in (i.properties.$set as Record<string, unknown>)
-    )
-    expect(merged?.properties?.$set).toMatchObject({
+    const merged = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(merged?.distinctId).toBe('id')
+    expect((merged?.properties as { $set?: Record<string, unknown> })?.$set).toMatchObject({
       app_version: '1.0.0',
       gpu_tier: 'mid',
       locale: 'en',
@@ -575,45 +669,52 @@ describe('telemetry.registerPersonPropertiesOnce ($set_once)', () => {
   it('ships the property under $set_once (not $set) when consent is already granted', () => {
     telemetry.setConsentState('granted')
     telemetry.identify('id')
-    identifies.length = 0
+    captured.length = 0
 
     telemetry.registerPersonPropertiesOnce({ first_generation_at: '2026-06-12T00:00:00.000Z' })
 
-    expect(identifies).toHaveLength(1)
-    expect(identifies[0]?.properties?.$set_once).toMatchObject({
+    // Person props ship as a $set_once on a `comfy.desktop.person.set`
+    // capture, NEVER an identify() on the anon id (would burn the stitch).
+    expect(identifies).toHaveLength(0)
+    const sets = captured.filter((c) => c.event === 'comfy.desktop.person.set')
+    expect(sets).toHaveLength(1)
+    expect(sets[0]?.properties?.$set_once).toMatchObject({
       first_generation_at: '2026-06-12T00:00:00.000Z'
     })
-    expect(identifies[0]?.properties?.$set).toBeUndefined()
+    expect(sets[0]?.properties?.$set).toBeUndefined()
   })
 
   it('defers the $set_once write until consent flips to granted', () => {
     telemetry.setConsentState('undecided')
     telemetry.identify('id')
-    identifies.length = 0
+    captured.length = 0
 
     telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
     // Nothing ships pre-consent.
-    expect(identifies).toHaveLength(0)
+    expect(captured.filter((c) => c.event === 'comfy.desktop.person.set')).toHaveLength(0)
 
     telemetry.setConsentState('granted')
 
-    const once = identifies.find((i) => i.properties?.$set_once)
+    const once = captured.find((c) => c.event === 'comfy.desktop.person.set' && c.properties?.$set_once)
     expect(once?.properties?.$set_once).toMatchObject({ first_generation_at: 'first' })
+    expect(identifies).toHaveLength(0)
   })
 
   it('carries $set and $set_once in the same identify when both are queued pre-consent', () => {
     telemetry.setConsentState('undecided')
     telemetry.identify('id')
-    identifies.length = 0
+    captured.length = 0
 
     telemetry.registerPersonProperties({ gpu_tier: 'mid' })
     telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
 
     telemetry.setConsentState('granted')
 
-    const call = identifies.find((i) => i.properties?.$set_once)
+    // Both queued writes flush together on one person.set capture.
+    const call = captured.find((c) => c.event === 'comfy.desktop.person.set' && c.properties?.$set_once)
     expect(call?.properties?.$set).toMatchObject({ gpu_tier: 'mid' })
     expect(call?.properties?.$set_once).toMatchObject({ first_generation_at: 'first' })
+    expect(identifies).toHaveLength(0)
   })
 })
 
@@ -841,10 +942,17 @@ describe('telemetry identity lifecycle (bindUserId / unbindUserId)', () => {
 
     // No new alias call on logout (we're not merging anything).
     expect(aliases).toHaveLength(0)
-    // is_authenticated flipped to false on the anonymous identity.
-    const last = identifies.at(-1)!
-    expect(last.distinctId).toBe('installation-id-fake')
-    expect(last.properties?.$set).toEqual({ is_authenticated: false })
+    // CRITICAL: logout must NOT call identify() on the anonymous id. Doing
+    // so would re-burn the installation_id as an identified person and
+    // break the NEXT login's alias merge (the 0/13,528-stitched bug).
+    expect(identifies.some((i) => i.distinctId === 'installation-id-fake')).toBe(false)
+    // is_authenticated flipped to false on the anonymous identity via a
+    // capture-$set instead.
+    const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSet?.distinctId).toBe('installation-id-fake')
+    expect((personSet?.properties as { $set?: Record<string, unknown> })?.$set).toEqual({
+      is_authenticated: false
+    })
 
     // Subsequent events ride under the installation id again.
     telemetry.capture('any.event', { foo: 1 })

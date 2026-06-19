@@ -38,6 +38,12 @@ import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
 import { appendLog } from '../logsBroadcast'
+import {
+  startTemplateDownload,
+  abortTemplateDownload,
+  requestSkipTemplateDownload,
+} from '../../sources/standalone/templateDownloadTask'
+import { BUNDLED_TEMPLATES } from '../../sources/standalone/bundledTemplates'
 import { recordIpcInvocation } from '../e2eOverrides'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
@@ -209,7 +215,7 @@ export function registerInstallationHandlers(): void {
     return { ok: true, entry }
   })
 
-  ipcMain.handle('install-instance', async (_event, installationId: string) => {
+  ipcMain.handle('install-instance', async (_event, installationId: string, express?: boolean) => {
     const inst = await installations.get(installationId)
     if (!inst) return { ok: false, message: 'Installation not found.' }
     const source = sourceMap[inst.sourceId]
@@ -252,6 +258,25 @@ export function registerInstallationHandlers(): void {
       }
       const abort = new AbortController()
       _operationAborts.set(installationId, abort)
+
+      // Kick off the starter-template model download in the BACKGROUND the
+      // moment install begins, so the (multi-GB, slow) bytes overlap env
+      // setup/extract/update instead of blocking. It's surfaced later as a
+      // launch-span stepper phase; logs stream into the durable ring buffer
+      // (appendLog) so the launch span's "View logs" can replay them.
+      // Fire-and-forget; torn down via abortTemplateDownload on cancel/close.
+      if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
+        const sendTemplateOutput = (text: string): void => {
+          try {
+            if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
+          } catch {}
+          appendLog(installationId, text)
+        }
+        const sizeBytes =
+          BUNDLED_TEMPLATES.find((tpl) => tpl.id === inst.bundledTemplateId)?.sizeBytes ?? 0
+        startTemplateDownload(inst, sizeBytes, { sendOutput: sendTemplateOutput })
+      }
+
       const cache = createCache(
         settings.get('cacheDir') as string,
         settings.get('maxCachedDownloads') as number
@@ -288,6 +313,9 @@ export function registerInstallationHandlers(): void {
         sendProgress('done', { percent: 100, status: 'Complete' })
       } catch (err) {
         _operationAborts.delete(installationId)
+        // Install failed or was cancelled — tear down the background template
+        // download too (the models would have nowhere to land).
+        abortTemplateDownload(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
             mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
@@ -369,6 +397,20 @@ export function registerInstallationHandlers(): void {
           to_version: newComfyVersion ? formatComfyVersion(newComfyVersion, 'short') : null,
           result: 'success'
         })
+      } else {
+        // Fresh standalone install finished (NOT a version update — an install
+        // on a record that already had a comfyVersion is a re-install/update,
+        // handled above). Fire the once-per-install funnel event at the moment
+        // the install is ready to boot. Distinct from comfyui.boot_started,
+        // which fires on every launch. `express` labels the one-click path;
+        // the manual Configure-wizard path passes no flag → 'manual'.
+        // Best-effort: capture() swallows its own errors, so this can never
+        // abort the install.
+        mainTelemetry.captureInstallCompleted({
+          installationId,
+          method: express ? 'express' : 'manual',
+          express: !!express
+        })
       }
       return { ok: true }
     }
@@ -384,6 +426,15 @@ export function registerInstallationHandlers(): void {
     const source = sourceMap[inst.sourceId]
     if (!source) return []
     return source.getListActions ? source.getListActions(inst) : []
+  })
+
+  // User skipped waiting on the template-model download: release the launch gate
+  // (open ComfyUI now) and hand the still-running, resume-capable task off to the
+  // title-bar downloads tray. No restart.
+  ipcMain.handle('skip-template-download', (_event, installationId: string) => {
+    if (typeof installationId === 'string' && installationId) {
+      requestSkipTemplateDownload(installationId)
+    }
   })
 
   // Detail — validate editable fields dynamically from source schema
