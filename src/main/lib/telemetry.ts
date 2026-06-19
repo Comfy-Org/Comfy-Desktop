@@ -117,6 +117,12 @@ import { scrubAll } from '../../shared/piiScrub'
 export type TelemetryValue = boolean | number | string | null | undefined
 export type TelemetryContext = Record<string, TelemetryValue | TelemetryValue[]>
 
+export interface SurveyIdentity {
+  anon_id: string
+  distinct_id?: string
+  comfy_id?: string
+}
+
 /**
  * Long-lived renderer WebContents that receive main-emitted telemetry events
  * for fan-out to renderer-side Datadog RUM. Registered exactly once per host
@@ -706,6 +712,20 @@ export function unbindUserId(): void {
   distinctId = installationDeviceId
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
+  }
+}
+
+export function getSurveyIdentity(): SurveyIdentity | null {
+  if (consentState !== 'granted') return null
+  if (!installationDeviceId) return null
+
+  const activeDistinctId = distinctId ?? installationDeviceId
+  return {
+    anon_id: installationDeviceId,
+    distinct_id: activeDistinctId,
+    ...(activeDistinctId !== installationDeviceId
+      ? { comfy_id: activeDistinctId }
+      : {})
   }
 }
 

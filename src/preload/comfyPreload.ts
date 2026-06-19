@@ -10,6 +10,7 @@ import type {
   LogsRestore,
   TerminalRestore
 } from '@comfyorg/comfyui-desktop-bridge-types'
+import type { ComfyDesktop2SurveysBridge } from '../types/comfyDesktopBridge'
 
 /**
  * Interactive terminal bridge for the served ComfyUI frontend.
@@ -86,6 +87,14 @@ const Telemetry: ComfyDesktop2TelemetryBridge = {
   }
 }
 
+const Surveys: ComfyDesktop2SurveysBridge = {
+  getIdentity: () => ipcRenderer.invoke('surveys:get-identity')
+}
+
+type ComfyDesktop2RuntimeBridge = ComfyDesktop2Bridge & {
+  Surveys: ComfyDesktop2SurveysBridge
+}
+
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
   downloadModel: (url: string, filename: string, directory: string): Promise<boolean> => {
@@ -118,7 +127,8 @@ const bridge = {
   },
   Terminal,
   Logs,
-  Telemetry
-} satisfies ComfyDesktop2Bridge
+  Telemetry,
+  Surveys
+} satisfies ComfyDesktop2RuntimeBridge
 
 contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

@@ -429,6 +429,7 @@ export function buildElectronApi(): ElectronApi {
       }
     },
     telemetryGetExperimentFlag: (key) => ipcRenderer.invoke('telemetry:getExperimentFlag', key),
+    getSurveyIdentity: () => ipcRenderer.invoke('surveys:get-identity'),
     telemetryRecordExposure: (payload) => {
       try {
         ipcRenderer.send('telemetry:recordExposure', payload)

@@ -5,7 +5,7 @@ import { buildSupportUrl } from '../lib/supportUrl'
 interface UseSendFeedbackApi {
   /** True while the in-app feedback modal is mounted. */
   feedbackOpen: Ref<boolean>
-  /** Typeform URL with `ver` + `platform` query params resolved at open time. */
+  /** Typeform URL with build, platform, and consent-gated identity tags resolved at open time. */
   feedbackUrl: Ref<string>
   /** Imperative dismiss for the modal's `@close` handler. */
   closeFeedback: () => void
@@ -30,10 +30,20 @@ export function useSendFeedback(): UseSendFeedbackApi {
   const feedbackUrl = ref('')
   let unsubOpenFeedback: (() => void) | null = null
 
+  async function resolveSurveyIdentity() {
+    try {
+      return await window.api.getSurveyIdentity()
+    } catch {
+      return null
+    }
+  }
+
   function handleOpenFeedback(source: 'titlebar' | 'menu'): void {
     emitTelemetryAction('comfy.desktop.feedback.opened', { source })
-    feedbackUrl.value = buildSupportUrl(appVersion.value || undefined)
-    feedbackOpen.value = true
+    void resolveSurveyIdentity().then((identity) => {
+      feedbackUrl.value = buildSupportUrl(appVersion.value || undefined, identity)
+      feedbackOpen.value = true
+    })
   }
 
   function closeFeedback(): void {

@@ -56,6 +56,16 @@ export interface ComfyDesktop2TelemetryBridge {
   capture(event: string, properties?: ComfyDesktop2TelemetryProperties): void
 }
 
+export interface ComfyDesktop2SurveyIdentity {
+  anon_id: string
+  distinct_id?: string
+  comfy_id?: string
+}
+
+export interface ComfyDesktop2SurveysBridge {
+  getIdentity(): Promise<ComfyDesktop2SurveyIdentity | null>
+}
+
 export interface ComfyDesktop2Bridge {
   isRemote(): boolean
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
@@ -68,6 +78,7 @@ export interface ComfyDesktop2Bridge {
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge
+  Surveys?: ComfyDesktop2SurveysBridge
 }
 
 export type ComfyDesktop2BridgeImplementation = {

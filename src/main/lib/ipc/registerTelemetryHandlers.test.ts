@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
   captureException: vi.fn(),
   getFlag: vi.fn(),
+  getSurveyIdentity: vi.fn(),
   handle: vi.fn(),
   on: vi.fn(),
   recordExposure: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../telemetry', () => ({
   bindUserId: mocks.bindUserId,
   capture: mocks.capture,
   captureException: mocks.captureException,
+  getSurveyIdentity: mocks.getSurveyIdentity,
   registerPersonProperties: mocks.registerPersonProperties
 }))
 
@@ -33,11 +35,18 @@ vi.mock('../experiments', () => ({
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 
 type IpcListener = (_event: unknown, payload: unknown) => void
+type IpcHandler = (_event: unknown, ...args: unknown[]) => unknown
 
 function listener(channel: string): IpcListener {
   const call = mocks.on.mock.calls.find(([name]) => name === channel)
   expect(call).toBeDefined()
   return call![1] as IpcListener
+}
+
+function handler(channel: string): IpcHandler {
+  const call = mocks.handle.mock.calls.find(([name]) => name === channel)
+  expect(call).toBeDefined()
+  return call![1] as IpcHandler
 }
 
 describe('registerTelemetryHandlers', () => {
@@ -82,5 +91,19 @@ describe('registerTelemetryHandlers', () => {
     expect(sent.long).toBe('x'.repeat(2048))
     expect(sent.key_125).toBe(125)
     expect(sent.key_126).toBeUndefined()
+  })
+
+  it('exposes the consent-gated survey identity over IPC', () => {
+    mocks.getSurveyIdentity.mockReturnValue({
+      anon_id: 'install-1',
+      distinct_id: 'user-1',
+      comfy_id: 'user-1'
+    })
+
+    expect(handler('surveys:get-identity')(null)).toEqual({
+      anon_id: 'install-1',
+      distinct_id: 'user-1',
+      comfy_id: 'user-1'
+    })
   })
 })
