@@ -84,12 +84,7 @@ function getFactories(): AttachFactories {
 export interface AttachInstallOpts {
   installation: InstallationRecord
   comfyUrl: string
-  /**
-   * `true` for locally-launched installs (no `url` arg); `false` for
-   * remote / cloud installs. Drives the `__comfyDesktop2Remote` flag
-   * the content script reads at top-of-page so remote-only behaviours
-   * (e.g. cloud-storage prompts) gate correctly.
-   */
+  /** `true` for locally-launched installs; `false` for remote/cloud installs. */
   isLocal: boolean
 }
 

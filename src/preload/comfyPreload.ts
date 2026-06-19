@@ -1,25 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-
-export interface ComfyDownloadProgress {
-  url: string
-  filename: string
-  directory?: string
-  progress: number
-  receivedBytes?: number
-  totalBytes?: number
-  speedBytesPerSec?: number
-  etaSeconds?: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-  isImage?: boolean
-}
-
-export interface TerminalRestore {
-  buffer: string[]
-  size: { cols: number; rows: number }
-  exited: boolean
-}
+import type {
+  ComfyDesktop2Bridge,
+  ComfyDesktop2LogsBridge,
+  ComfyDesktop2TerminalBridge,
+  ComfyDownloadProgress,
+  LogsOutputMsg,
+  LogsRestore,
+  TerminalRestore
+} from '@comfyorg/comfyui-desktop-bridge-types'
 
 /**
  * Interactive terminal bridge for the served ComfyUI frontend.
@@ -30,7 +19,7 @@ export interface TerminalRestore {
  * explicitly because its webContents isn't registered as a comfyView.
  * Per-install shared shell — multiple subscribers see the same output.
  */
-const Terminal = {
+const Terminal: ComfyDesktop2TerminalBridge = {
   /** Spawn the shell if needed, register this view as a subscriber, and
    *  return the current scrollback/size/exited state. */
   subscribe: (installationId?: string): Promise<TerminalRestore> =>
@@ -49,8 +38,7 @@ const Terminal = {
    *  the inline injection doesn't need to know its own ID. */
   openPopout: (): Promise<void> => ipcRenderer.invoke('terminal-popout-open', null),
   onOutput: (callback: (data: string) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, payload: { data: string }) =>
-      callback(payload.data)
+    const handler = (_event: IpcRendererEvent, payload: { data: string }) => callback(payload.data)
     ipcRenderer.on('terminal-output', handler)
     return () => ipcRenderer.removeListener('terminal-output', handler)
   },
@@ -58,17 +46,7 @@ const Terminal = {
     const handler = () => callback()
     ipcRenderer.on('terminal-exited', handler)
     return () => ipcRenderer.removeListener('terminal-exited', handler)
-  },
-}
-
-export interface LogsRestore {
-  installationId: string
-  buffer: string[]
-}
-
-export interface LogsOutputMsg {
-  installationId: string
-  text: string
+  }
 }
 
 /**
@@ -77,7 +55,7 @@ export interface LogsOutputMsg {
  * pop-out logs window and (eventually) any other surface that wants the
  * raw stdout/stderr stream without owning the launcher.
  */
-const Logs = {
+const Logs: ComfyDesktop2LogsBridge = {
   /** Register as a subscriber and return the current ring-buffer
    *  contents for an immediate paint. Subsequent chunks arrive on
    *  the `onOutput` channel. */
@@ -90,19 +68,23 @@ const Logs = {
    *  so the inline injection doesn't need to know its own ID. */
   openPopout: (): Promise<void> => ipcRenderer.invoke('logs-popout-open', null),
   onOutput: (callback: (msg: LogsOutputMsg) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, payload: LogsOutputMsg) =>
-      callback(payload)
+    const handler = (_event: IpcRendererEvent, payload: LogsOutputMsg) => callback(payload)
     ipcRenderer.on('logs-output', handler)
     return () => ipcRenderer.removeListener('logs-output', handler)
-  },
+  }
 }
 
-contextBridge.exposeInMainWorld('__comfyDesktop2', {
+const bridge = {
+  isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
   downloadModel: (url: string, filename: string, directory: string): Promise<boolean> => {
     return ipcRenderer.invoke('desktop2-download-model', { url, filename, directory })
   },
   downloadAsset: (url: string, filename: string, authToken?: string): Promise<boolean> => {
-    return ipcRenderer.invoke('desktop2-download-asset', { url, filename, authToken: authToken || undefined })
+    return ipcRenderer.invoke('desktop2-download-asset', {
+      url,
+      filename,
+      authToken: authToken || undefined
+    })
   },
   pauseDownload: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('model-download-pause', { url })
@@ -113,9 +95,7 @@ contextBridge.exposeInMainWorld('__comfyDesktop2', {
   cancelDownload: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('model-download-cancel', { url })
   },
-  onDownloadProgress: (
-    callback: (data: ComfyDownloadProgress) => void
-  ): (() => void) => {
+  onDownloadProgress: (callback: (data: ComfyDownloadProgress) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, data: unknown) =>
       callback(data as ComfyDownloadProgress)
     ipcRenderer.on('desktop2-download-progress', handler)
@@ -125,5 +105,7 @@ contextBridge.exposeInMainWorld('__comfyDesktop2', {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
   Terminal,
-  Logs,
-})
+  Logs
+} satisfies ComfyDesktop2Bridge
+
+contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

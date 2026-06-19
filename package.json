@@ -70,6 +70,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@comfyorg/comfyui-desktop-bridge-types": "0.1.2",
     "@datadog/datadog-ci": "^5.9.0",
     "@electron/rebuild": "^3.7.2",
     "@eslint/js": "^10.0.1",

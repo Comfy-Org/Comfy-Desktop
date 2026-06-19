@@ -30,9 +30,10 @@ describe('getModelDownloadContentScript', () => {
     expect(script).toContain('MutationObserver')
   })
 
-  it('guards model download interception behind __comfyDesktop2Remote check', () => {
-    expect(script).toContain('__comfyDesktop2Remote')
-    expect(script).toContain('if (!window.__comfyDesktop2Remote)')
+  it('guards model download interception behind the bridge remote check', () => {
+    expect(script).toContain('window.__comfyDesktop2.isRemote()')
+    expect(script).toContain('if (!isRemote)')
+    expect(script).not.toContain('__comfyDesktop2Remote')
   })
 
   it('routes captured downloads through window.__comfyDesktop2.downloadModel', () => {
@@ -135,6 +136,7 @@ describe('missing-model error group interception (behavioral)', () => {
   it('routes a localized missing-model download with the raw directory', async () => {
     const downloadModel = vi.fn().mockResolvedValue(true)
     ;(window as unknown as Record<string, unknown>).__comfyDesktop2 = {
+      isRemote: () => false,
       downloadModel
     }
 

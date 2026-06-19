@@ -4,10 +4,7 @@ import unusedImports from 'eslint-plugin-unused-imports'
 import pluginVue from 'eslint-plugin-vue'
 import { defineConfig } from 'eslint/config'
 import globals from 'globals'
-import {
-  configs as tseslintConfigs,
-  parser as tseslintParser
-} from 'typescript-eslint'
+import { configs as tseslintConfigs, parser as tseslintParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
 const extraFileExtensions = ['.vue']
@@ -65,10 +62,7 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-import-type-side-effects': 'error',
-      '@typescript-eslint/no-empty-object-type': [
-        'error',
-        { allowInterfaces: 'always' }
-      ],
+      '@typescript-eslint/no-empty-object-type': ['error', { allowInterfaces: 'always' }],
       'unused-imports/no-unused-imports': 'error',
       'vue/no-v-html': 'off',
       'vue/multi-word-component-names': 'off',
