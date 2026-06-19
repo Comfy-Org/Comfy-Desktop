@@ -1,6 +1,50 @@
+import { request } from 'node:http'
+
 import { describe, expect, it } from 'vitest'
 
-import { BRIDGE_PORT, startBridgeServer } from './server'
+import { BRIDGE_PORT, startBridgeServer, startCloudLoginCallbackServer } from './server'
+
+function requestRaw(
+  url: URL,
+  opts: {
+    method: string
+    origin?: string
+    body?: string
+    headers?: Record<string, string>
+  }
+): Promise<{
+  status: number
+  headers: Record<string, string | string[] | undefined>
+  body: string
+}> {
+  return new Promise((resolve, reject) => {
+    const req = request(
+      url,
+      {
+        method: opts.method,
+        headers: {
+          ...(opts.origin ? { Origin: opts.origin } : {}),
+          ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+          ...opts.headers
+        }
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('end', () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf8')
+          })
+        )
+      }
+    )
+    req.on('error', reject)
+    if (opts.body) req.write(opts.body)
+    req.end()
+  })
+}
 
 describe('startBridgeServer', () => {
   it('serves a 204 for /favicon.ico', async () => {
@@ -32,7 +76,7 @@ describe('startBridgeServer', () => {
     try {
       const res = await fetch(
         `${handle.url}?error=access_denied&error_description=user+cancelled`,
-        { redirect: 'manual' },
+        { redirect: 'manual' }
       )
       expect(res.status).toBe(200)
       const body = await res.text()
@@ -84,5 +128,69 @@ describe('startBridgeServer', () => {
     // Assert the constant, not a live bind — the contract with the Google
     // OAuth client's redirect-URI allowlist is the constant itself.
     expect(BRIDGE_PORT).toBe(9876)
+  })
+
+  it('accepts a Cloud login callback with matching state', async () => {
+    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+    try {
+      const res = await requestRaw(new URL('callback', handle.url), {
+        method: 'POST',
+        origin: 'https://cloud.comfy.org',
+        body: JSON.stringify({
+          state: 'state-123',
+          apiKey: 'api-key',
+          user: { uid: 'user-123' }
+        })
+      })
+      expect(res.status).toBe(204)
+      expect(res.headers['access-control-allow-origin']).toBe('https://cloud.comfy.org')
+      await expect(handle.signInPromise).resolves.toEqual({
+        apiKey: 'api-key',
+        user: { uid: 'user-123' }
+      })
+    } finally {
+      handle.close()
+    }
+  })
+
+  it('rejects a Cloud login callback with mismatched state', async () => {
+    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+    const rejected = expect(handle.signInPromise).rejects.toThrow(/state mismatch/)
+    try {
+      const res = await fetch(new URL('callback', handle.url), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://cloud.comfy.org'
+        },
+        body: JSON.stringify({
+          state: 'wrong',
+          apiKey: 'api-key',
+          user: { uid: 'user-123' }
+        })
+      })
+      expect(res.status).toBe(403)
+      await rejected
+    } finally {
+      handle.close()
+    }
+  })
+
+  it('preflights Cloud login callbacks from allowed origins', async () => {
+    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+    try {
+      const res = await requestRaw(new URL('callback', handle.url), {
+        method: 'OPTIONS',
+        origin: 'https://cloud.comfy.org',
+        headers: {
+          'Access-Control-Request-Method': 'POST'
+        }
+      })
+      expect(res.status).toBe(204)
+      expect(res.headers['access-control-allow-origin']).toBe('https://cloud.comfy.org')
+      expect(res.headers['access-control-allow-methods']).toContain('POST')
+    } finally {
+      handle.close()
+    }
   })
 })

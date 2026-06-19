@@ -4,11 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { renderDoneHtml, renderErrorHtml, renderPopupBridgeHtml } from './bridgeHtml'
 import { getFirebaseConfig, type FirebaseEnv } from './config'
 import type { SupportedProvider } from './intercept'
-import {
-  buildPersistedUser,
-  createOauthAuthUri,
-  signInWithIdpExchange,
-} from './oauth'
+import { buildPersistedUser, createOauthAuthUri, signInWithIdpExchange } from './oauth'
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -66,6 +62,40 @@ export interface StartBridgeOpts {
   timeoutMs?: number
   /** Override the loopback port. Defaults to `BRIDGE_PORT` (9876). Tests pass `0` to get a kernel-assigned port. */
   port?: number
+}
+
+export interface StartCloudLoginCallbackServerOpts {
+  state: string
+  /** Default 5 minutes — long enough for password managers, 2FA, account-picker UI. */
+  timeoutMs?: number
+  /** Override the loopback port. Defaults to `BRIDGE_PORT` (9876). Tests pass `0` to get a kernel-assigned port. */
+  port?: number
+}
+
+function isAllowedCloudOrigin(origin: string | undefined): boolean {
+  if (!origin) return true
+  try {
+    const url = new URL(origin)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+    if (url.hostname === 'cloud.comfy.org') return true
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+function setCorsHeaders(req: IncomingMessage, res: ServerResponse): boolean {
+  const origin = req.headers.origin
+  if (!isAllowedCloudOrigin(origin)) return false
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Max-Age', '600')
+  return true
 }
 
 /**
@@ -218,7 +248,7 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
           firebaseConfig.apiKey,
           providerId,
           requestUri,
-          sessionId,
+          sessionId
         )
         const persistedUser = buildPersistedUser(firebaseConfig, idpResponse, providerId)
         res.statusCode = 200
@@ -247,6 +277,157 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       res.setHeader('Cache-Control', 'no-store')
       res.end(renderPopupBridgeHtml(firebaseConfig, providerId))
+    }
+
+    server.on('error', (err: Error) => {
+      finishWithError(err)
+      rejectHandle(err)
+      close()
+    })
+
+    server.listen(port, '127.0.0.1', () => {
+      const addr = server!.address() as AddressInfo
+      const url = `http://localhost:${addr.port}/`
+      resolveHandle({ url, signInPromise, close })
+    })
+  })
+}
+
+/**
+ * Start a localhost receiver for the real Cloud login page. Unlike
+ * `startBridgeServer`, this does not host Firebase UI on localhost. Desktop
+ * opens cloud.comfy.org in the system browser so PostHog can identify the
+ * browser's first-party comfy.org cookie, then Cloud POSTs the Firebase user
+ * back to this callback.
+ */
+export function startCloudLoginCallbackServer(
+  opts: StartCloudLoginCallbackServerOpts
+): Promise<BridgeHandle> {
+  const { state, timeoutMs = 5 * 60_000, port = BRIDGE_PORT } = opts
+
+  return new Promise((resolveHandle, rejectHandle) => {
+    let resolved = false
+    let signInResolve!: (r: SignInResult) => void
+    let signInReject!: (err: Error) => void
+    const signInPromise = new Promise<SignInResult>((res, rej) => {
+      signInResolve = res
+      signInReject = rej
+    })
+
+    let server: Server | null = null
+
+    const close = (): void => {
+      if (server) {
+        try {
+          server.closeAllConnections?.()
+          server.close()
+        } catch {
+          // best-effort shutdown
+        }
+        server = null
+      }
+      clearTimeout(timeoutHandle)
+    }
+
+    const finishWithError = (err: Error): void => {
+      if (!resolved) {
+        resolved = true
+        signInReject(err)
+      }
+    }
+
+    const finishWithSuccess = (result: SignInResult): void => {
+      if (!resolved) {
+        resolved = true
+        signInResolve(result)
+      }
+    }
+
+    const timeoutHandle = setTimeout(() => {
+      finishWithError(new Error('Cloud login bridge timed out waiting for sign-in'))
+      close()
+    }, timeoutMs)
+
+    server = createServer((req, res) => {
+      res.setHeader('Connection', 'close')
+      void handleRequest(req, res).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!res.headersSent) {
+          res.statusCode = 500
+          setCorsHeaders(req, res)
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+          res.end(msg)
+        }
+        finishWithError(err instanceof Error ? err : new Error(msg))
+      })
+    })
+
+    async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+      const remoteHost = req.socket.remoteAddress ?? ''
+      const isLoopback =
+        remoteHost === '127.0.0.1' || remoteHost === '::1' || remoteHost === '::ffff:127.0.0.1'
+      if (!isLoopback) {
+        res.statusCode = 403
+        res.end()
+        return
+      }
+
+      const url = req.url ?? '/'
+      const queryStart = url.indexOf('?')
+      const path = queryStart >= 0 ? url.slice(0, queryStart) : url
+
+      if (req.method === 'GET' && path === '/favicon.ico') {
+        res.statusCode = 204
+        res.end()
+        return
+      }
+
+      if (path !== '/callback') {
+        res.statusCode = 404
+        res.end()
+        return
+      }
+
+      if (!setCorsHeaders(req, res)) {
+        res.statusCode = 403
+        res.end()
+        return
+      }
+
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204
+        res.end()
+        return
+      }
+
+      if (req.method !== 'POST') {
+        res.statusCode = 405
+        res.end()
+        return
+      }
+
+      const body = (await readJsonBody(req)) as {
+        state?: unknown
+        user?: unknown
+        apiKey?: unknown
+      }
+      if (body.state !== state) {
+        res.statusCode = 403
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.end('Invalid state')
+        finishWithError(new Error('Cloud login callback state mismatch'))
+        return
+      }
+      if (!body.user || typeof body.user !== 'object' || typeof body.apiKey !== 'string') {
+        res.statusCode = 400
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.end('Missing user payload')
+        return
+      }
+
+      res.statusCode = 204
+      res.end()
+      finishWithSuccess({ user: body.user as Record<string, unknown>, apiKey: body.apiKey })
     }
 
     server.on('error', (err: Error) => {

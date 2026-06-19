@@ -1,12 +1,12 @@
 /**
  * Sign-in "copy login link" card.
  *
- * When `handleFirebasePopup` opens the loopback login URL in the user's
- * DEFAULT browser, that browser may not be where they're signed into
- * Google/GitHub. We inject a small floating card into the embedded Cloud
- * view (the surface the user is looking at) offering "Copy link" / "Open
- * again" so they can finish sign-in in a browser of their choice — the
- * same affordance Notion / Claude / Zoom provide.
+ * When `handleFirebasePopup` opens the Cloud login URL in the user's DEFAULT
+ * browser, that browser may not be where they're signed into Google/GitHub. We
+ * inject a small floating card into the embedded Cloud view (the surface the
+ * user is looking at) offering "Copy link" / "Open again" so they can finish
+ * sign-in in a browser of their choice — the same affordance Notion / Claude /
+ * Zoom provide.
  *
  * Injected with `insertCSS` + `executeJavaScript`, like
  * `injectMacPasskeyWarning`. The URL is string-baked via `JSON.stringify`
@@ -81,7 +81,7 @@ export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLab
     copy: JSON.stringify(labels.copy),
     copied: JSON.stringify(labels.copied),
     openAgain: JSON.stringify(labels.openAgain),
-    dismiss: JSON.stringify(labels.dismiss),
+    dismiss: JSON.stringify(labels.dismiss)
   }
   return `(function(){try{
     var URL=${u}, ID=${id};
