@@ -49,7 +49,13 @@ const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
 const PYTORCH_LINE = /^pytorch version:\s*(.+)$/i
 const XFORMERS_LINE = /^xformers version:\s*(.+)$/i
 const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
-const MODEL_TYPE_LINE = /^model_type\s+(\S+)/
+// ComfyUI's `model_type.name` is always an uppercase enum (EPS, FLUX, FLOW,
+// V_PREDICTION, STABLE_CASCADE, ...). Restrict to that shape and require it to
+// be the whole token: custom nodes write to the same stdout, so a loose `\S+`
+// could turn an arbitrary string (a path, a filename) into a high-cardinality
+// event value AND a dynamic `used_model_<x>_at` person-property key (keys are
+// not scrubbed). The length cap bounds a pathological match.
+const MODEL_TYPE_LINE = /^model_type\s+([A-Z][A-Z0-9_]{0,63})\s*$/
 const WEIGHT_DTYPE_LINE = /^model weight dtype\s+([^,]+),/
 
 /**
@@ -117,6 +123,7 @@ export function createHardwareTap(opts: {
   release?: string | null
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
+  beginBoot: () => void
   flushSummary: () => void
 } {
   const baseContext = {
@@ -260,10 +267,35 @@ export function createHardwareTap(opts: {
       pending = lines.pop() ?? ''
       for (const line of lines) handleLine(line)
     },
+    /**
+     * Reset per-boot accelerator accumulation. A single launch can restart
+     * ComfyUI several times (port/reboot retries, model-folder relaunch,
+     * Manager restarts), each reusing this tap. Without this, only the first
+     * boot would emit `accelerator_detected` and stale fields would suppress
+     * later boots. Model-usage counts intentionally persist across reboots —
+     * they aggregate per launch, not per boot.
+     */
+    beginBoot(): void {
+      acceleratorEmitted = false
+      vramMb = null
+      ramMb = null
+      pytorchVersion = null
+      xformersVersion = null
+      cudaDeviceSet = null
+      pendingDtype = null
+      // Drop any incomplete line from the previous (now-dead) process stream.
+      pending = ''
+    },
     flushSummary(): void {
       if (flushTimer) {
         clearInterval(flushTimer)
         flushTimer = null
+      }
+      // Process a complete-but-unterminated final line so trailing model
+      // loads aren't dropped when the process exits without a newline.
+      if (pending.trim()) {
+        handleLine(pending)
+        pending = ''
       }
       emitModelUsage()
     }

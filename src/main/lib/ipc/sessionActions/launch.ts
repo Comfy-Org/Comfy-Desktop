@@ -555,6 +555,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     })
     const tracker = await armLaunchTracker()
 
+    hwTap.beginBoot()
     const proc = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
     const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, hwTap, tracker)
 
@@ -713,6 +714,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const tracker = await armLaunchTracker()
 
   function spawnComfy(): { proc: ChildProcess; getStderr: () => string } {
+    // Reset per-boot accelerator state so each (re)spawn re-emits
+    // accelerator_detected; model-usage counts persist across the launch.
+    hwTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
     return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
   }
@@ -816,6 +820,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
+    // Flush the hardware tap on terminal failure/cancel too: the exit handler
+    // covers a process that exits, but a waitForPort timeout can return here
+    // with the proc still alive, leaving the model-usage flush interval armed.
+    // flushSummary is idempotent, so a later exit re-flush is harmless.
+    hwTap.flushSummary()
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.

@@ -50,6 +50,13 @@ describe('isVirtualGpu', () => {
     expect(isVirtualGpu('spacedesk Graphics Adapter')).toBe(true)
   })
 
+  it('flags hypervisor / software-render adapters', () => {
+    expect(isVirtualGpu('Microsoft Hyper-V Video')).toBe(true)
+    expect(isVirtualGpu('Red Hat VirtIO GPU')).toBe(true)
+    expect(isVirtualGpu('llvmpipe (LLVM 15.0.7, 256 bits)')).toBe(true)
+    expect(isVirtualGpu('Microsoft Basic Display Adapter')).toBe(true)
+  })
+
   it('does not flag real GPUs', () => {
     expect(isVirtualGpu('NVIDIA GeForce RTX 4090')).toBe(false)
     expect(isVirtualGpu('AMD Radeon RX 7900 XTX')).toBe(false)
@@ -116,6 +123,16 @@ describe('parseAmdSmiDriverVersion', () => {
   it('tolerates uppercase VERSION key and object (non-array) shape', () => {
     const out = JSON.stringify({ driver: { NAME: 'amdgpu', VERSION: '6.8.5' } })
     expect(parseAmdSmiDriverVersion(out)).toBe('6.8.5')
+  })
+
+  it('tolerates an uppercase DRIVER section key', () => {
+    const out = JSON.stringify([{ DRIVER: { NAME: 'amdgpu', VERSION: '6.9.0-rc5+' } }])
+    expect(parseAmdSmiDriverVersion(out)).toBe('6.9.0-rc5+')
+  })
+
+  it('parses a flat driver_version / DRIVER_VERSION key', () => {
+    expect(parseAmdSmiDriverVersion(JSON.stringify([{ driver_version: '6.8.5' }]))).toBe('6.8.5')
+    expect(parseAmdSmiDriverVersion(JSON.stringify({ DRIVER_VERSION: '5.7.1' }))).toBe('5.7.1')
   })
 
   it('returns undefined for malformed or empty output', () => {

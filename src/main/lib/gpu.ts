@@ -235,13 +235,19 @@ export interface SystemGpuEntry {
  */
 const VIRTUAL_GPU_PATTERNS: RegExp[] = [
   /microsoft basic render/i,
+  /microsoft basic display/i,
   /microsoft remote display/i,
   /remote desktop/i,
   /\brdp\b/i,
   /parsec/i,
   /vmware/i,
   /virtualbox/i,
+  /hyper-?v/i,
+  /virtio/i,
   /\bqxl\b/i,
+  /bochs/i,
+  /llvmpipe/i,
+  /softpipe/i,
   /citrix/i,
   /indirect display/i,
   /spacedesk/i,
@@ -305,16 +311,28 @@ export function selectPrimaryGpu(
  * non-empty version, or undefined.
  */
 export function parseAmdSmiDriverVersion(stdout: string): string | undefined {
+  /** Case-insensitively read the first object value whose key matches `re`. */
+  const findValue = (obj: Record<string, unknown>, re: RegExp): unknown => {
+    for (const [key, value] of Object.entries(obj)) {
+      if (re.test(key)) return value
+    }
+    return undefined
+  }
   try {
     const parsed: unknown = JSON.parse(stdout)
     const entries: unknown[] = Array.isArray(parsed) ? parsed : [parsed]
     for (const entry of entries) {
       if (!entry || typeof entry !== 'object') continue
-      const driver = (entry as Record<string, unknown>)['driver']
-      if (!driver || typeof driver !== 'object') continue
-      const rec = driver as Record<string, unknown>
-      const version = rec['version'] ?? rec['VERSION']
-      if (typeof version === 'string' && version.trim()) return version.trim()
+      const rec = entry as Record<string, unknown>
+      // Preferred shape: { driver: { name, version } } (key casing varies).
+      const driver = findValue(rec, /^driver$/i)
+      if (driver && typeof driver === 'object') {
+        const version = findValue(driver as Record<string, unknown>, /version/i)
+        if (typeof version === 'string' && version.trim()) return version.trim()
+      }
+      // Flat fallback: { driver_version / DRIVER_VERSION: "..." }.
+      const flat = findValue(rec, /driver.?version/i)
+      if (typeof flat === 'string' && flat.trim()) return flat.trim()
     }
   } catch {
     // not JSON / unexpected shape

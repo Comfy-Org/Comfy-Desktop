@@ -84,7 +84,15 @@ describe('parseVramLine / parseModelType / parseWeightDtype', () => {
   it('parses model_type architecture name', () => {
     expect(parseModelType('model_type FLUX')).toBe('FLUX')
     expect(parseModelType('model_type EPS')).toBe('EPS')
+    expect(parseModelType('model_type V_PREDICTION')).toBe('V_PREDICTION')
     expect(parseModelType('something else')).toBeNull()
+  })
+
+  it('rejects non-enum model_type tokens (paths, filenames, lowercase)', () => {
+    expect(parseModelType('model_type C:\\Users\\me\\secret.safetensors')).toBeNull()
+    expect(parseModelType('model_type my-private-model.safetensors')).toBeNull()
+    expect(parseModelType('model_type flux')).toBeNull()
+    expect(parseModelType('model_type FLUX extra trailing words')).toBeNull()
   })
 
   it('parses weight dtype', () => {
@@ -204,6 +212,48 @@ describe('createHardwareTap', () => {
     expect(personPropsOnce).toHaveLength(2)
     expect(Object.keys(personPropsOnce[0]!)[0]).toBe('used_model_flux_at')
     expect(Object.keys(personPropsOnce[1]!)[0]).toBe('used_model_eps_at')
+  })
+
+  it('re-emits accelerator_detected after beginBoot (ComfyUI restart in one launch)', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    expect(
+      captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    ).toHaveLength(1)
+
+    // Simulate a restart: a stale Device line is ignored until beginBoot resets.
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    expect(
+      captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    ).toHaveLength(1)
+
+    tap.beginBoot()
+    tap.ingest('Total VRAM 16384 MB, total RAM 32768 MB\n', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4080 : native\n', 'stdout')
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(2)
+    expect(accel[1]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4080', vram_mb: 16384 })
+  })
+
+  it('preserves model-usage counts across beginBoot (aggregate per launch)', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('model_type FLUX\n', 'stdout')
+    tap.beginBoot()
+    tap.ingest('model_type FLUX\n', 'stdout')
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(1)
+    expect(usage[0]!.ctx).toMatchObject({ model_type: 'FLUX', count: 2 })
+  })
+
+  it('flushes a trailing unterminated model_type line on session end', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('model_type FLUX', 'stdout') // no newline
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(1)
+    expect(usage[0]!.ctx).toMatchObject({ model_type: 'FLUX', count: 1 })
   })
 
   it('handles lines split across chunk boundaries', () => {
