@@ -196,6 +196,7 @@ function buildCloudDesktopLoginUrl(
   return loginUrl.href
 }
 
+// Per-login nonce echoed by Cloud so Desktop only accepts the callback it initiated.
 function createDesktopLoginState(): string {
   return randomBytes(24).toString('base64url')
 }
