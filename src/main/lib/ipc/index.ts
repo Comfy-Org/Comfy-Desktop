@@ -15,7 +15,8 @@ import {
   _broadcastToRenderer,
   migrateDefaults,
   checkInstallationUpdates,
-  isEffectivelyEmptyInstallDir,
+  installDirStateAsync,
+  refreshInstallDirStates,
   sweepOrphanPartitions,
   UPDATE_CHECK_INTERVAL
 } from './shared'
@@ -97,7 +98,10 @@ export function register(callbacks: RegisterCallbacks = {}): void {
 
   migrateDefaults()
 
-  // Sweep empty/broken local installations on startup.
+  // Sweep leftover empty local install dirs (aborted installs) on startup.
+  // Only reclaim dirs that exist but are effectively empty — never a missing
+  // or unreadable dir, which would silently forget a tracked instance whose
+  // drive is merely offline/renamed (issue #1155).
   void (async () => {
     try {
       const all = await installations.list()
@@ -106,7 +110,9 @@ export function register(callbacks: RegisterCallbacks = {}): void {
         const source = sourceMap[inst.sourceId]
         if (!source || source.skipInstall) continue
         if (!inst.installPath) continue
-        if (!isEffectivelyEmptyInstallDir(inst.installPath)) continue
+        // Async probe so a dead network/removable path can't block startup; a
+        // probe that times out reports 'inaccessible' and is therefore kept.
+        if ((await installDirStateAsync(inst.installPath)) !== 'empty') continue
         try {
           fs.rmSync(inst.installPath, { recursive: true, force: true })
         } catch {}
@@ -223,6 +229,11 @@ export function register(callbacks: RegisterCallbacks = {}): void {
   // Check installation updates on startup and periodically
   setTimeout(() => checkInstallationUpdates(), 3_000)
   setInterval(() => checkInstallationUpdates(), UPDATE_CHECK_INTERVAL)
+
+  // Probe local install dir availability on startup and periodically so the
+  // "directory not found" indicator tracks drives going offline/online.
+  void refreshInstallDirStates()
+  setInterval(() => refreshInstallDirStates(), UPDATE_CHECK_INTERVAL)
 
   // Register all handler groups
   registerAppHandlers()

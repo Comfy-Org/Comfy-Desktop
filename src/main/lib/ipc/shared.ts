@@ -284,15 +284,115 @@ export async function syncOemSeedBestEffort(): Promise<void> {
   }
 }
 
-export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
-  if (!dirPath) return true
+/**
+ * Classify an install directory without conflating "gone" with "empty":
+ *  - `missing`      — the path does not exist (ENOENT), e.g. renamed folder or
+ *                     an unplugged removable / disconnected network drive.
+ *  - `inaccessible` — the path exists but can't be read (permissions, I/O).
+ *  - `empty`        — readable but holds only ignorable bookkeeping files; this
+ *                     is the leftover of an aborted install, safe to reclaim.
+ *  - `populated`    — readable with real content.
+ *
+ * The distinction matters because a `missing`/`inaccessible` dir must never be
+ * treated as a discardable empty install (issue #1155): doing so silently
+ * forgets a tracked instance — and all its custom settings — when its drive is
+ * temporarily offline.
+ */
+export type InstallDirState = 'missing' | 'inaccessible' | 'empty' | 'populated'
+
+export function installDirState(dirPath: string): InstallDirState {
+  if (!dirPath) return 'missing'
   try {
     const entries = fs.readdirSync(dirPath)
-    return entries.every((name) => IGNORE_FILES.has(name))
+    return entries.every((name) => IGNORE_FILES.has(name)) ? 'empty' : 'populated'
   } catch (e) {
-    if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return true
-    return false
+    if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
+    return 'inaccessible'
   }
+}
+
+export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
+  const state = installDirState(dirPath)
+  return state === 'missing' || state === 'empty'
+}
+
+/** Single source of the "folder can't be used right now" rule, shared by the
+ *  renderer indicator and the launch guard so they can't diverge. `missing`
+ *  and `inaccessible` render identically, so they're bucketed together. */
+export function isInstallDirUnavailable(state: InstallDirState | undefined): boolean {
+  return state === 'missing' || state === 'inaccessible'
+}
+
+/** Async `installDirState` that can't hang the caller on a dead network drive:
+ *  a probe that doesn't settle within the timeout is reported `inaccessible`. */
+const _DIR_STATE_PROBE_TIMEOUT_MS = 4000
+export async function installDirStateAsync(dirPath: string): Promise<InstallDirState> {
+  if (!dirPath) return 'missing'
+  const probe = (async (): Promise<InstallDirState> => {
+    try {
+      const entries = await fs.promises.readdir(dirPath)
+      return entries.every((name) => IGNORE_FILES.has(name)) ? 'empty' : 'populated'
+    } catch (e) {
+      if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
+      return 'inaccessible'
+    }
+  })()
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<InstallDirState>((resolve) => {
+    timer = setTimeout(() => resolve('inaccessible'), _DIR_STATE_PROBE_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([probe, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Cached availability of each local install's directory, keyed by install id.
+ *  Populated asynchronously by `refreshInstallDirStates()` so the synchronous
+ *  renderer enrichment can surface an "offline" indicator without ever doing a
+ *  (potentially blocking) filesystem read on the UI path. Only local sources
+ *  (`skipInstall !== true`) with an `installPath` are tracked. */
+const _installDirStateCache = new Map<string, InstallDirState>()
+
+export function getCachedInstallDirState(id: string): InstallDirState | undefined {
+  return _installDirStateCache.get(id)
+}
+
+let _refreshInstallDirStatesInFlight: Promise<void> | null = null
+/** Single-flight refresh of `_installDirStateCache` for all local installs;
+ *  broadcasts `installations-changed` only when an availability flips so the
+ *  dashboard re-pulls and the offline indicator appears/clears on its own. */
+export function refreshInstallDirStates(): Promise<void> {
+  if (_refreshInstallDirStatesInFlight) return _refreshInstallDirStatesInFlight
+  _refreshInstallDirStatesInFlight = (async (): Promise<void> => {
+    let changed = false
+    try {
+      const all = await installations.list()
+      const tracked = new Set<string>()
+      for (const inst of all) {
+        const source = sourceMap[inst.sourceId]
+        if (!source || source.skipInstall) continue
+        if (typeof inst.installPath !== 'string' || !inst.installPath) continue
+        tracked.add(inst.id)
+        const prev = _installDirStateCache.get(inst.id)
+        const next = await installDirStateAsync(inst.installPath)
+        _installDirStateCache.set(inst.id, next)
+        // Only the rendered availability bucket matters; a missing↔inaccessible
+        // flip shows the same pill, so it must not trigger a refresh loop.
+        if (isInstallDirUnavailable(prev) !== isInstallDirUnavailable(next)) changed = true
+      }
+      // Drop cache entries for installs that are gone/no longer local. Their
+      // pill left with them, so this needs no broadcast of its own.
+      for (const id of [..._installDirStateCache.keys()]) {
+        if (!tracked.has(id)) _installDirStateCache.delete(id)
+      }
+    } catch {}
+    if (changed) _broadcastToRenderer('installations-changed', {})
+  })().finally(() => {
+    _refreshInstallDirStatesInFlight = null
+  })
+  return _refreshInstallDirStatesInFlight
 }
 
 export function openPath(targetPath: string): Promise<string> {

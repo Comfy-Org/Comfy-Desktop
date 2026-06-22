@@ -11,7 +11,7 @@ import {
   _reservePort, _releasePort,
   _addSession, _removeSession,
   _markLaunching, _clearLaunchingFailed,
-  isEffectivelyEmptyInstallDir,
+  installDirState, isInstallDirUnavailable,
   captureSnapshotIfChanged, getSnapshotCount,
   syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
   createSessionPath, buildLaunchEnv, checkRebootMarker,
@@ -108,8 +108,14 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   clearCrash(installationId)
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
-  if (!source.skipInstall && isEffectivelyEmptyInstallDir(inst.installPath)) {
-    return { ok: false, message: i18n.t('errors.installDirEmpty') }
+  if (!source.skipInstall) {
+    const dirState = installDirState(inst.installPath)
+    if (isInstallDirUnavailable(dirState)) {
+      return { ok: false, message: i18n.t('errors.installDirNotFound') }
+    }
+    if (dirState === 'empty') {
+      return { ok: false, message: i18n.t('errors.installDirEmpty') }
+    }
   }
 
   const sender = event.sender
