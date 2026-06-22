@@ -108,9 +108,15 @@ function isAutoInstallEnabled(): boolean {
  * the autoUpdate preference so a pending `'ready'` state immediately
  * starts reading as auto-on / auto-off (drives the title-bar pill copy
  * and the click-modal flow without having to wait for the next
- * update-check broadcast). No-op when there's no cached state.
+ * update-check broadcast). Also re-syncs install-on-quit to the new
+ * preference so an off toggle never auto-installs an already-staged update on
+ * the next quit; that sync runs even with no cached state, while the
+ * re-broadcast is a no-op without one.
  */
 export function notifyAutoUpdateChanged(): void {
+  // The quit handler re-reads autoInstallOnAppQuit at quit time, so flipping it
+  // here disarms install-on-quit for an update downloaded while the toggle was on.
+  syncInstallOnQuitToPreference()
   if (_appUpdateState.kind === null) return
   const refreshed = isAutoInstallEnabled()
   if (_appUpdateState.autoUpdate === refreshed) return
@@ -189,6 +195,22 @@ function isInstallerUIEnabled(): boolean {
 export function suppressInstallOnQuit(): void {
   try {
     electronAutoUpdater.autoInstallOnAppQuit = false
+  } catch {}
+}
+
+/**
+ * Map electron-updater's install-on-quit to the user's auto-install preference
+ * (`autoInstallUpdates`). ON keeps the default — a staged update applies on the
+ * next quit. OFF disables it, so a downloaded update waits for an explicit
+ * install from the 'ready' pill instead of applying on restart. No-op while the
+ * Windows startup-install path owns the flag (it keeps install-on-quit off and
+ * applies the update at the next launch, gated on the same preference in
+ * `evaluateStartupInstall`).
+ */
+function syncInstallOnQuitToPreference(): void {
+  if (isStartupInstallEnabled()) return
+  try {
+    electronAutoUpdater.autoInstallOnAppQuit = isAutoInstallEnabled()
   } catch {}
 }
 
@@ -584,7 +606,14 @@ type StartupInstallDecision =
   | { attempt: true; version: string }
   | {
       attempt: false
-      reason: 'disabled' | 'e2e' | 'system_managed' | 'session_ending' | 'no_pending' | 'loop_breaker'
+      reason:
+        | 'disabled'
+        | 'auto_install_off'
+        | 'e2e'
+        | 'system_managed'
+        | 'session_ending'
+        | 'no_pending'
+        | 'loop_breaker'
     }
 
 /**
@@ -600,6 +629,9 @@ type StartupInstallDecision =
  */
 function evaluateStartupInstall(): StartupInstallDecision {
   if (!isStartupInstallEnabled()) return { attempt: false, reason: 'disabled' }
+  // Auto-install OFF: leave the staged update in place for an explicit install
+  // from the 'ready' pill rather than applying it automatically at launch.
+  if (!isAutoInstallEnabled()) return { attempt: false, reason: 'auto_install_off' }
   if (process.env['E2E'] === '1') return { attempt: false, reason: 'e2e' }
   if (isSystemPackageInstall()) return { attempt: false, reason: 'system_managed' }
   if (isSessionEnding()) return { attempt: false, reason: 'session_ending' }
@@ -743,12 +775,16 @@ export function register(): void {
   // corruption loop). `electronAutoUpdater` is the same singleton the ToDesktop
   // runtime drives, so this affects the real updater.
   //
-  // Opted out (non-Windows, or `installUpdatesOnStartup` set to false): keep
-  // install-on-quit armed. A normal quit still installs a staged update; the
-  // `session-end` guard (`suppressInstallOnQuit`) flips `autoInstallOnAppQuit`
-  // off only when the OS is shutting down.
+  // Opted out (non-Windows, or `installUpdatesOnStartup` set to false): gate
+  // install-on-quit on the auto-install preference. With auto-install ON a
+  // normal quit still installs a staged update (the `session-end` guard,
+  // `suppressInstallOnQuit`, flips `autoInstallOnAppQuit` off only during OS
+  // shutdown); with it OFF the staged update waits for an explicit install from
+  // the 'ready' pill.
   if (isStartupInstallEnabled()) {
     suppressInstallOnQuit()
+  } else {
+    syncInstallOnQuitToPreference()
   }
 
   ipcMain.handle('check-for-update', async () => {

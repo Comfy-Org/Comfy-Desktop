@@ -380,9 +380,50 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['installUpdatesOnStartup'] = false
     const updater = await import('./updater')
     updater.register()
-    // Opted out: electron-updater's install-on-quit stays armed; it's only
-    // suppressed when the OS session ends (see suppressInstallOnQuit).
+    // Opted out with auto-install on (the default): install-on-quit stays armed;
+    // it's only suppressed when the OS session ends (see suppressInstallOnQuit).
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+  })
+
+  it('register() disables install-on-quit when auto-install is off (opted out of startup install)', async () => {
+    settingsStore['installUpdatesOnStartup'] = false
+    settingsStore['autoInstallUpdates'] = false
+    const updater = await import('./updater')
+    updater.register()
+    // Auto-install OFF: a staged update must not apply on quit; the user installs
+    // explicitly from the 'ready' pill.
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('toggling auto-install off after register() disarms install-on-quit', async () => {
+    settingsStore['installUpdatesOnStartup'] = false
+    const updater = await import('./updater')
+    updater.register()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+    // User flips the toggle off; the settings handler calls notifyAutoUpdateChanged().
+    // The quit handler re-reads the flag, so this disarms an update downloaded
+    // while the toggle was on (the stale-download case).
+    settingsStore['autoInstallUpdates'] = false
+    updater.notifyAutoUpdateChanged()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+    // Back on re-arms it.
+    settingsStore['autoInstallUpdates'] = true
+    updater.notifyAutoUpdateChanged()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+  })
+
+  it('startup install is skipped when auto-install is off (staged update waits)', async () => {
+    // Windows default: startup-install is on, but auto-install off must leave the
+    // staged update for an explicit install rather than applying it at launch.
+    settingsStore['installUpdatesOnStartup'] = true
+    settingsStore['autoInstallUpdates'] = false
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    readyVersion = '1.0.1'
+    const updater = await import('./updater')
+    updater.register()
+    expect(updater.hasPendingStartupUpdate()).toBe(false)
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
 
   it('startup install is inert on non-Windows even when the flag is on', async () => {
