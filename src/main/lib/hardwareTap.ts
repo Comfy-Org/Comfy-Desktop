@@ -262,10 +262,17 @@ export function createHardwareTap(opts: {
 
   return {
     ingest(chunk: string, _source: 'stdout' | 'stderr'): void {
-      pending += chunk
-      const lines = pending.split(/\r?\n/)
-      pending = lines.pop() ?? ''
-      for (const line of lines) handleLine(line)
+      // Hard guarantee: this runs inside the launch stdout/stderr handler,
+      // right before the boot-progress tracker. A throw here must never break
+      // log streaming or boot detection. Telemetry must never break the app.
+      try {
+        pending += chunk
+        const lines = pending.split(/\r?\n/)
+        pending = lines.pop() ?? ''
+        for (const line of lines) handleLine(line)
+      } catch {
+        // ignore – telemetry side effect, not user-visible
+      }
     },
     /**
      * Reset per-boot accelerator accumulation. A single launch can restart
@@ -287,17 +294,21 @@ export function createHardwareTap(opts: {
       pending = ''
     },
     flushSummary(): void {
-      if (flushTimer) {
-        clearInterval(flushTimer)
-        flushTimer = null
+      try {
+        if (flushTimer) {
+          clearInterval(flushTimer)
+          flushTimer = null
+        }
+        // Process a complete-but-unterminated final line so trailing model
+        // loads aren't dropped when the process exits without a newline.
+        if (pending.trim()) {
+          handleLine(pending)
+          pending = ''
+        }
+        emitModelUsage()
+      } catch {
+        // ignore – telemetry side effect, not user-visible
       }
-      // Process a complete-but-unterminated final line so trailing model
-      // loads aren't dropped when the process exits without a newline.
-      if (pending.trim()) {
-        handleLine(pending)
-        pending = ''
-      }
-      emitModelUsage()
     }
   }
 }
