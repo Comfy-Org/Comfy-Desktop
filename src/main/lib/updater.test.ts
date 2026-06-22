@@ -586,3 +586,185 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
   })
 })
+
+/**
+ * Issue #1161 — the updater must only ever act on a version that is STRICTLY
+ * newer than the running build. The engine can re-surface the current (or an
+ * older, or an equal-build-restringed) version; acting on it drives the
+ * download -> "Updating..." splash -> install -> relaunch loop that never
+ * converges on an already-latest machine. RC releases of a higher version must
+ * still install (we ship IP-whitelisted RCs to test update code).
+ */
+describe('version guard: reject non-newer offers (issue #1161)', () => {
+  let emitMock: ReturnType<typeof vi.fn>
+  let listeners: Record<string, Array<(...args: unknown[]) => void>>
+  let settingsStore: Record<string, unknown>
+  let fakeUpdater: { on: ReturnType<typeof vi.fn>; checkForUpdates: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.resetModules()
+    listeners = {}
+    settingsStore = {}
+    emitMock = vi.fn()
+    mockAppVersion = '1.0.24'
+    fakeUpdater = {
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] = listeners[event] || []
+        listeners[event].push(cb)
+      }) as ReturnType<typeof vi.fn>,
+      checkForUpdates: vi.fn(async () => ({ updateInfo: null }))
+    }
+    vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
+    vi.doMock('./telemetry', () => ({ emit: emitMock, bucketError: (s: string) => s }))
+    vi.doMock('../settings', () => ({
+      get: vi.fn((key: string) =>
+        key === 'autoInstallUpdates' ? true : settingsStore[key]
+      ),
+      set: vi.fn((key: string, value: unknown) => {
+        if (value === undefined) delete settingsStore[key]
+        else settingsStore[key] = value
+      })
+    }))
+  })
+
+  function fire(eventName: string, payload: unknown): void {
+    for (const cb of listeners[eventName] || []) cb(payload)
+  }
+
+  const ignoredEmits = (): unknown[][] =>
+    emitMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.ignored_not_newer')
+
+  it('update-downloaded for the SAME version does not stage a pending update', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.24' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+    expect(ignoredEmits()).toHaveLength(1)
+    expect(ignoredEmits()[0]?.[1]).toMatchObject({
+      version: '1.0.24',
+      current: '1.0.24',
+      stage: 'downloaded'
+    })
+  })
+
+  it('update-downloaded for an OLDER version does not stage a pending update', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.22' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded for an equal build with different metadata is ignored', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.24+build.7' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded for a genuinely NEWER version stages it', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.25' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.25')
+    expect(updater.getCurrentUpdateState()).toMatchObject({ kind: 'ready', version: '1.0.25' })
+    expect(ignoredEmits()).toHaveLength(0)
+  })
+
+  it('update-downloaded for an RC of a HIGHER version stages it (RC support)', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.25-rc.1' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.25-rc.1')
+    expect(updater.getCurrentUpdateState()).toMatchObject({ kind: 'ready', version: '1.0.25-rc.1' })
+  })
+
+  it('update-downloaded for an RC of the CURRENT version is ignored (rc < release)', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.24-rc.1' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-available for a non-newer version is ignored (no available pill/emit)', async () => {
+    settingsStore['autoInstallUpdates'] = false // surface the 'available' pill path
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-available', { version: '1.0.24' })
+
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+    expect(
+      emitMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.available')
+    ).toHaveLength(0)
+    expect(ignoredEmits()).toHaveLength(1)
+  })
+
+  it('runCheck reports a non-newer surfaced version as unavailable', async () => {
+    fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.0.24' } }))
+    const updater = await import('./updater')
+    updater.register()
+
+    const result = await updater.runCheck('manual-check')
+
+    expect(result).toEqual({ available: false })
+    expect(
+      emitMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.checked')
+    ).toHaveLength(0)
+  })
+
+  it('runCheck reports a newer surfaced version as available', async () => {
+    fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.0.25' } }))
+    const updater = await import('./updater')
+    updater.register()
+
+    const result = await updater.runCheck('manual-check')
+
+    expect(result).toEqual({ available: true, version: '1.0.25' })
+  })
+
+  it('the ignored_not_newer diagnostic is deduped across entry points per version', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-available', { version: '1.0.24' })
+    fire('update-downloaded', { version: '1.0.24' })
+    fire('update-available', { version: '1.0.24' })
+
+    expect(ignoredEmits()).toHaveLength(1)
+  })
+
+  it('hasPendingStartupUpdate ignores a stale non-newer pending marker', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.20'
+    const updater = await import('./updater')
+    updater.register()
+
+    expect(updater.hasPendingStartupUpdate()).toBe(false)
+  })
+
+  it('applyPendingUpdateOnStartup clears a stale non-newer pending marker', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.20'
+    settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.20'
+    const updater = await import('./updater')
+    updater.register()
+
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
+  })
+})
