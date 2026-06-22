@@ -335,6 +335,24 @@ describe('telemetry.captureInstallCompleted', () => {
     expect(captured[0]!.properties).toMatchObject({ method, express })
   })
 
+  it('boot_completed is a distinct success event carrying the boot_id join key', () => {
+    // boot_started -> boot_completed is the per-attempt boot-success funnel.
+    // Both must carry the same boot_id (the per-launch correlation id) and
+    // installation_id (the cross-event join key from defaults) so the rate is
+    // count(boot_completed.boot_id) / count(distinct boot_started.boot_id).
+    telemetry.capture('comfy.desktop.comfyui.boot_completed', {
+      installation_id: 'install-xyz',
+      boot_id: 'boot-1',
+      boot_time_ms: 1234
+    })
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.boot_completed'])
+    expect(captured[0]!.properties).toMatchObject({
+      installation_id: 'install-xyz',
+      boot_id: 'boot-1',
+      boot_time_ms: 1234
+    })
+  })
+
   it('does NOT fire on boot — boot_started is a distinct, separately-emitted event', () => {
     // A boot is the per-launch event; install.completed is once-per-install.
     // Emitting boot_started must never produce an install.completed.
