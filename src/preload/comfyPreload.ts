@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   ComfyDesktop2Bridge,
   ComfyDesktop2LogsBridge,
+  ComfyDesktop2TelemetryBridge,
   ComfyDesktop2TerminalBridge,
   ComfyDownloadProgress,
   LogsOutputMsg,
@@ -74,6 +75,17 @@ const Logs: ComfyDesktop2LogsBridge = {
   }
 }
 
+const Telemetry: ComfyDesktop2TelemetryBridge = {
+  capture: (event, properties): void => {
+    // Telemetry payload errors must never break hosted frontend code.
+    try {
+      ipcRenderer.send('telemetry:capture', { event, properties })
+    } catch {
+      // ignore: telemetry must never break the renderer
+    }
+  }
+}
+
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
   downloadModel: (url: string, filename: string, directory: string): Promise<boolean> => {
@@ -105,7 +117,8 @@ const bridge = {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
   Terminal,
-  Logs
+  Logs,
+  Telemetry
 } satisfies ComfyDesktop2Bridge
 
 contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

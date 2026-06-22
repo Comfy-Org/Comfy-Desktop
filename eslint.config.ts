@@ -20,7 +20,14 @@ const commonParserOptions = {
 
 export default defineConfig([
   {
-    ignores: ['out/*', 'dist/*', 'node_modules/*', '.claude/**', '.worktrees/**']
+    ignores: [
+      'out/*',
+      'dist/*',
+      'node_modules/*',
+      '.claude/**',
+      '.worktrees/**',
+      'packages/comfyui-desktop-bridge-types/*.d.ts'
+    ]
   },
   {
     files: ['./**/*.{ts,mts}'],

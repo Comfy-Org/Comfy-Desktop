@@ -17,7 +17,7 @@ import { TID } from '../../../../shared/testIds'
 
 const messages = {
   en: {
-    common: { back: 'Back', cancel: 'Cancel' },
+    common: { back: 'Back', cancel: 'Cancel', copyError: 'Copy error details', loading: 'Loading...' },
     comfyUISettings: {
       title: 'Settings',
       tabConfig: 'Startup Args',
@@ -30,6 +30,10 @@ const messages = {
       more: 'More',
     },
     tooltips: {
+      tabUpdate: 'Update settings',
+      tabConfig: 'Startup argument settings',
+      tabStorage: 'Storage settings',
+      tabStatus: 'Instance status',
       snapshots:
         'A saved point-in-time state of an installation (versions + custom nodes) you can restore later.',
       console:
