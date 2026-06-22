@@ -426,11 +426,17 @@ async function initializeProviders(): Promise<void> {
       // - os_arch
       // The previous system_info event only forwarded the basic fields.
       // We now forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
-      // / `gpu_count` / `gpu_driver_version` for cohort filtering.
-      const primaryGpu = info.gpus[0] ?? null
-      const gpuVramMb = primaryGpu?.vram_mb ?? null
+      // / `gpu_count` / `gpu_driver_version` for cohort filtering. Main has
+      // already selected the real compute GPU (`gpu_model` / `gpu_vram_mb` /
+      // per-vendor driver), so we use those instead of re-picking `gpus[0]`,
+      // which can be a virtual display adapter.
+      const gpuVramMb = info.gpu_vram_mb
       const gpuVramGb = gpuVramMb != null ? Math.round(gpuVramMb / 1024) : null
-      const gpuDriverVersion = info.nvidia_driver_version ?? primaryGpu?.driver_version ?? null
+      const gpuDriverVersion =
+        info.nvidia_driver_version ??
+        info.amd_driver_version ??
+        info.intel_driver_version ??
+        null
       const gpuTier = deriveGpuTier({ vendor: info.gpu_vendor, vramGb: gpuVramGb })
       const enriched: Record<string, string | number | boolean | null | undefined> = {
         ...(info as unknown as Record<string, string | number | boolean | null | undefined>),

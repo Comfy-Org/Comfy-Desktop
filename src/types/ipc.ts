@@ -590,9 +590,13 @@ export interface SystemInfo {
   gpu_vendor: string | null
   gpu_label: string | null
   gpu_model: string | null
+  /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
+  gpu_vram_mb: number | null
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
+  amd_driver_version: string | null
+  intel_driver_version: string | null
   platform: string
   arch: string
   os_version: string

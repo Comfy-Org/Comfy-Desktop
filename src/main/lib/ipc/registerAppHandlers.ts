@@ -16,6 +16,8 @@ import {
   detectGPU,
   validateHardware,
   checkNvidiaDriver,
+  checkAmdDriver,
+  selectPrimaryGpu,
   sourceMap,
   getAppVersion,
   openPath,
@@ -197,6 +199,7 @@ export function registerAppHandlers(): void {
     }
     const gpu = await gpuPromise
     const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null
+    const amdDriverVersion = gpu?.id === 'amd' ? await checkAmdDriver() : undefined
     const cpus = os.cpus()
     const allInstalls = await installations.list()
 
@@ -237,19 +240,33 @@ export function registerAppHandlers(): void {
     }
 
     // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
-    // Apple Silicon) — its `model` field is hardcoded null. The
-    // systeminformation `controllers[]` data already collected for
-    // `allGpus` carries the actual chipset name, so fall back to it.
+    // Apple Silicon) — its `model` field is hardcoded null. Pick the real
+    // compute GPU from the systeminformation `controllers[]` instead of
+    // blindly trusting `controllers[0]`, which on Windows is frequently a
+    // virtual display adapter (the bug this avoids). The full `allGpus`
+    // array is still returned unfiltered for retroactive analysis.
     // Empty strings from the lib normalise to null so cohort filters on
     // "is set" work consistently.
-    const primaryGpuModel = (allGpus[0]?.model || null) ?? gpu?.model ?? null
+    const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
+    const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
+    const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
+    // AMD: prefer the ROCm-reported version (compute-relevant); on Windows
+    // there is no rocm-smi, so fall back to the controller's WMI driver.
+    const amdDriver =
+      gpu?.id === 'amd' ? (amdDriverVersion ?? primaryGpu?.driver_version ?? null) : null
+    // Intel has no dedicated CLI; the controller driver (WMI on Windows,
+    // si on Linux) is the best available signal.
+    const intelDriver = gpu?.id === 'intel' ? (primaryGpu?.driver_version ?? null) : null
     return {
       gpu_vendor: gpu?.id ?? null,
       gpu_label: gpu?.label ?? null,
       gpu_model: primaryGpuModel,
+      gpu_vram_mb: primaryGpuVramMb,
       gpus: allGpus,
       nvidia_driver_version: nvidiaCheck?.driverVersion ?? null,
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,
+      amd_driver_version: amdDriver,
+      intel_driver_version: intelDriver,
       platform: process.platform,
       arch: process.arch,
       os_version: os.release(),

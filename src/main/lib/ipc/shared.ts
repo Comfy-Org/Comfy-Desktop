@@ -29,7 +29,7 @@ import {
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
 } from '../process'
-import { detectGPU, validateHardware, checkNvidiaDriver } from '../gpu'
+import { detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu } from '../gpu'
 import { detectDesktopInstall, stageDesktopSnapshot } from '../desktopDetect'
 import { performLocalMigration, stageLocalSnapshot } from '../localMigration'
 import { getDiskSpace, getDirectorySize, validateInstallPath } from '../disk'
@@ -69,7 +69,7 @@ export {
   findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
-  detectGPU, validateHardware, checkNvidiaDriver,
+  detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu,
   detectDesktopInstall, stageDesktopSnapshot,
   performLocalMigration, stageLocalSnapshot,
   getDiskSpace, getDirectorySize, validateInstallPath,
