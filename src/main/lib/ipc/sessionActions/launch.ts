@@ -28,6 +28,7 @@ import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createExecutionTap } from '../../executionTap'
+import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
 import { buildLaunchPhases } from '../../launchPhases'
 import {
@@ -362,6 +363,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     logStream: WriteStream,
     sendOutput: (text: string) => void,
     execTap: ReturnType<typeof createExecutionTap>,
+    hwTap: ReturnType<typeof createHardwareTap>,
     tracker: LaunchProgressTracker
   ): { getStderr: () => string } {
     let stderrBuf = ''
@@ -370,6 +372,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stdout')
+      hwTap.ingest(text, 'stdout')
       tracker.ingest(stripAnsi(text))
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -379,6 +382,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stderr')
+      hwTap.ingest(text, 'stderr')
       tracker.ingest(stripAnsi(text))
     })
     return { getStderr: () => stderrBuf }
@@ -544,10 +548,15 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       variant: (inst.variant as string | undefined) ?? null,
       release: (inst.release as string | undefined) ?? null,
     })
+    const hwTap = createHardwareTap({
+      installationId,
+      variant: (inst.variant as string | undefined) ?? null,
+      release: (inst.release as string | undefined) ?? null,
+    })
     const tracker = await armLaunchTracker()
 
     const proc = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-    const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, tracker)
+    const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, hwTap, tracker)
 
     _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
@@ -561,6 +570,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // (`scrubTelemetryContext` in renderer bootstrap), not here.
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
+      hwTap.flushSummary()
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -691,6 +701,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     variant: (inst.variant as string | undefined) ?? null,
     release: (inst.release as string | undefined) ?? null,
   })
+  const hwTap = createHardwareTap({
+    installationId,
+    variant: (inst.variant as string | undefined) ?? null,
+    release: (inst.release as string | undefined) ?? null,
+  })
 
   // Arm the log-driven tracker once, here (a pre-launch repair may already have
   // armed it). Pre-armed so the synchronous relaunch loop can reuse the single
@@ -699,7 +714,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
 
   function spawnComfy(): { proc: ChildProcess; getStderr: () => string } {
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-    return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, tracker) }
+    return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
   }
 
   const PORT_RETRY_MAX = 3
@@ -1002,6 +1017,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
+      hwTap.flushSummary()
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
