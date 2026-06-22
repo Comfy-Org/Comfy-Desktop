@@ -618,7 +618,7 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
     vi.doMock('./telemetry', () => ({ emit: emitMock, bucketError: (s: string) => s }))
     vi.doMock('../settings', () => ({
       get: vi.fn((key: string) =>
-        key === 'autoInstallUpdates' ? true : settingsStore[key]
+        key === 'autoInstallUpdates' ? (settingsStore[key] ?? true) : settingsStore[key]
       ),
       set: vi.fn((key: string, value: unknown) => {
         if (value === undefined) delete settingsStore[key]
@@ -668,6 +668,36 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
 
     expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
     expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded tolerates a leading "v" on a newer version and stages it', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: 'v1.0.25' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('v1.0.25')
+    expect(updater.getCurrentUpdateState()).toMatchObject({ kind: 'ready', version: 'v1.0.25' })
+  })
+
+  it('update-downloaded ignores a leading "v" on the current version', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: 'v1.0.24' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded stages a newer version carrying build metadata', async () => {
+    const updater = await import('./updater')
+    updater.register()
+
+    fire('update-downloaded', { version: '1.0.25+build.7' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.25+build.7')
+    expect(updater.getCurrentUpdateState().kind).toBe('ready')
   })
 
   it('update-downloaded for a genuinely NEWER version stages it', async () => {
