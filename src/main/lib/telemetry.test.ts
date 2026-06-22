@@ -278,6 +278,35 @@ describe('telemetry default event properties', () => {
     expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
   })
 
+  it('keeps installation_id = the machine id and redirects a per-install id to install_id', () => {
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('machine-sha-abc')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    // Renderer/onboarding event: no explicit installation_id -> machine id, no install_id.
+    telemetry.capture('comfy.desktop.first_use.fork_chosen', { choice: 'local' })
+    // Main event: passes its per-install record id under installation_id -> redirected.
+    telemetry.capture('comfy.desktop.comfyui.boot_started', { installation_id: 'inst-123' })
+    // Explicit machine id (== default) is left as-is, no install_id introduced.
+    telemetry.capture('comfy.desktop.test.echo', { installation_id: 'machine-sha-abc' })
+
+    const fork = captured.find((c) => c.event === 'comfy.desktop.first_use.fork_chosen')!
+    expect(fork.properties).toMatchObject({ installation_id: 'machine-sha-abc' })
+    expect(fork.properties!.install_id).toBeUndefined()
+
+    const boot = captured.find((c) => c.event === 'comfy.desktop.comfyui.boot_started')!
+    // installation_id stays the machine id (joinable); the per-install id moves to install_id.
+    expect(boot.properties).toMatchObject({
+      installation_id: 'machine-sha-abc',
+      install_id: 'inst-123'
+    })
+
+    const echo = captured.find((c) => c.event === 'comfy.desktop.test.echo')!
+    expect(echo.properties).toMatchObject({ installation_id: 'machine-sha-abc' })
+    expect(echo.properties!.install_id).toBeUndefined()
+  })
+
   it('does not pass installation_id to identify() (anon-id invariant holds)', () => {
     identifies.length = 0
     telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })

@@ -44,7 +44,13 @@
  *     merge one identified id into another, so the login alias below silently
  *     no-ops (prod: 0/13,528 stitched). Anonymous person-prop writes go
  *     through capture-`$set` instead, which updates the person without
- *     identifying the id.
+ *     identifying the id. INVARIANT: `installation_id` is ALWAYS the machine
+ *     id on every event — `capture()` enforces this and redirects any per-call
+ *     `installation_id` to `install_id` so the field never means two things.
+ *   - `install_id` = the per-install record id (`inst-<ts>`, `installations.ts`).
+ *     A machine can hold several installs; this is an operational key. It rides
+ *     telemetry only as the secondary `install_id` (never `installation_id`),
+ *     for the minority of analyses that need per-install granularity.
  *   - `download_token` (TODO): web → desktop acquisition bridge.
  *   - `user_id`: set on login via `bindUserId`. The ONLY `client.identify()`
  *     call. Aliases `installation_id` → `user_id` (now merges, since the anon
@@ -769,6 +775,20 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
   if (!_checkRateLimit(event)) return
   _eventsCapturedThisProcess++
   try {
+    // `installation_id` is the MACHINE key (SHA-256 device hash, set as a
+    // default at identify()). Many call sites pass a per-INSTALL record id
+    // (`inst-<ts>`, from installations.json) under installation_id, which would
+    // override the machine default and split the field's meaning (machine on
+    // renderer events, install-record on main) so they can't join. Enforce the
+    // invariant here, in one place: installation_id is ALWAYS the machine id; a
+    // per-call value is redirected to `install_id`, preserved for the few
+    // analyses that need per-install granularity (e.g. multi-install machines).
+    let perCall = properties
+    const callInstallId = properties.installation_id
+    if (callInstallId != null && callInstallId !== defaultEventProperties.installation_id) {
+      const { installation_id: _movedToInstallId, ...rest } = properties
+      perCall = { ...rest, install_id: callInstallId }
+    }
     // Per-call properties override defaults on key collision — callers
     // that explicitly pass `app_version` (e.g. session-start payload,
     // legacy event re-emitters) win.
@@ -776,7 +796,7 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
     // to derive country (`disableGeoip: false` at init). The raw IP and all
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
-    const merged = { ...defaultEventProperties, ...properties }
+    const merged = { ...defaultEventProperties, ...perCall }
     client!.capture({
       distinctId,
       event,
