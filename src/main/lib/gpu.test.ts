@@ -109,6 +109,26 @@ describe('selectPrimaryGpu', () => {
     const gpus = [gpu('Microsoft', 'Microsoft Basic Render Driver', null)]
     expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('Microsoft Basic Render Driver')
   })
+
+  it('matches the detected vendor via the model name when vendor is empty', () => {
+    const gpus = [
+      gpu('Microsoft', 'Microsoft Basic Render Driver', null),
+      gpu('', 'Intel UHD Graphics 770', 2048),
+      gpu('', 'NVIDIA GeForce RTX 4090', 24576)
+    ]
+    // Without model matching, the empty-vendor NVIDIA card would be skipped and
+    // the higher-VRAM card picked by tie-break regardless of vendor.
+    expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('NVIDIA GeForce RTX 4090')
+    expect(selectPrimaryGpu(gpus, 'intel')?.model).toBe('Intel UHD Graphics 770')
+  })
+
+  it('matches AMD via Radeon-branded model with empty vendor', () => {
+    const gpus = [
+      gpu('', 'NVIDIA GeForce RTX 4090', 24576),
+      gpu('', 'Radeon RX 7900 XTX', 24576)
+    ]
+    expect(selectPrimaryGpu(gpus, 'amd')?.model).toBe('Radeon RX 7900 XTX')
+  })
 })
 
 describe('parseAmdSmiDriverVersion', () => {

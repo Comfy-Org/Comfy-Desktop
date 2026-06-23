@@ -258,18 +258,31 @@ export function createHardwareTap(opts: {
     }
   }
 
-  let pending = ''
+  // Separate per-stream buffers: stdout and stderr arrive as independent
+  // chunk streams, so a single shared buffer could splice unrelated partial
+  // lines together. Each buffer is capped so a long burst without a newline
+  // can't grow unbounded.
+  const MAX_PENDING_CHARS = 16_384
+  const pendingBySource: Record<'stdout' | 'stderr', string> = {
+    stdout: '',
+    stderr: ''
+  }
+
+  function appendChunk(source: 'stdout' | 'stderr', chunk: string): string[] {
+    let pending = pendingBySource[source] + chunk
+    if (pending.length > MAX_PENDING_CHARS) pending = pending.slice(-MAX_PENDING_CHARS)
+    const lines = pending.split(/\r?\n/)
+    pendingBySource[source] = lines.pop() ?? ''
+    return lines
+  }
 
   return {
-    ingest(chunk: string, _source: 'stdout' | 'stderr'): void {
+    ingest(chunk: string, source: 'stdout' | 'stderr'): void {
       // Hard guarantee: this runs inside the launch stdout/stderr handler,
       // right before the boot-progress tracker. A throw here must never break
       // log streaming or boot detection. Telemetry must never break the app.
       try {
-        pending += chunk
-        const lines = pending.split(/\r?\n/)
-        pending = lines.pop() ?? ''
-        for (const line of lines) handleLine(line)
+        for (const line of appendChunk(source, chunk)) handleLine(line)
       } catch {
         // ignore – telemetry side effect, not user-visible
       }
@@ -290,8 +303,9 @@ export function createHardwareTap(opts: {
       xformersVersion = null
       cudaDeviceSet = null
       pendingDtype = null
-      // Drop any incomplete line from the previous (now-dead) process stream.
-      pending = ''
+      // Drop any incomplete lines from the previous (now-dead) process streams.
+      pendingBySource.stdout = ''
+      pendingBySource.stderr = ''
     },
     flushSummary(): void {
       try {
@@ -299,11 +313,12 @@ export function createHardwareTap(opts: {
           clearInterval(flushTimer)
           flushTimer = null
         }
-        // Process a complete-but-unterminated final line so trailing model
+        // Process complete-but-unterminated final lines so trailing model
         // loads aren't dropped when the process exits without a newline.
-        if (pending.trim()) {
-          handleLine(pending)
-          pending = ''
+        for (const source of ['stdout', 'stderr'] as const) {
+          const pending = pendingBySource[source]
+          if (pending.trim()) handleLine(pending)
+          pendingBySource[source] = ''
         }
         emitModelUsage()
       } catch {

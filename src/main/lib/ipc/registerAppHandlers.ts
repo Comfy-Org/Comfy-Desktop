@@ -18,6 +18,7 @@ import {
   checkNvidiaDriver,
   checkAmdDriver,
   selectPrimaryGpu,
+  vendorMatches,
   sourceMap,
   getAppVersion,
   openPath,
@@ -242,21 +243,28 @@ export function registerAppHandlers(): void {
     // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
     // Apple Silicon) — its `model` field is hardcoded null. Pick the real
     // compute GPU from the systeminformation `controllers[]` instead of
-    // blindly trusting `controllers[0]`, which on Windows is frequently a
-    // virtual display adapter (the bug this avoids). The full `allGpus`
-    // array is still returned unfiltered for retroactive analysis.
-    // Empty strings from the lib normalise to null so cohort filters on
-    // "is set" work consistently.
+    // blindly trusting `controllers[0]`: virtual display adapters are not
+    // promoted. The full `allGpus` array is still returned unfiltered for
+    // retroactive analysis. Empty strings from the lib normalise to null so
+    // cohort filters on "is set" work consistently.
     const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
     const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
     const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
+    // Only trust the primary controller's driver string when it actually
+    // matches the detected compute vendor; selectPrimaryGpu may fall back to a
+    // non-matching controller, which would otherwise mislabel the driver.
+    const primaryGpuMatchesAmd = vendorMatches('amd', primaryGpu?.vendor, primaryGpu?.model)
+    const primaryGpuMatchesIntel = vendorMatches('intel', primaryGpu?.vendor, primaryGpu?.model)
     // AMD: prefer the ROCm-reported version (compute-relevant); on Windows
     // there is no rocm-smi, so fall back to the controller's WMI driver.
     const amdDriver =
-      gpu?.id === 'amd' ? (amdDriverVersion ?? primaryGpu?.driver_version ?? null) : null
+      gpu?.id === 'amd'
+        ? (amdDriverVersion ?? (primaryGpuMatchesAmd ? primaryGpu?.driver_version : null) ?? null)
+        : null
     // Intel has no dedicated CLI; the controller driver (WMI on Windows,
     // si on Linux) is the best available signal.
-    const intelDriver = gpu?.id === 'intel' ? (primaryGpu?.driver_version ?? null) : null
+    const intelDriver =
+      gpu?.id === 'intel' && primaryGpuMatchesIntel ? (primaryGpu?.driver_version ?? null) : null
     return {
       gpu_vendor: gpu?.id ?? null,
       gpu_label: gpu?.label ?? null,

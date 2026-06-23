@@ -424,8 +424,7 @@ async function initializeProviders(): Promise<void> {
       // - nvidia_driver_version / nvidia_driver_supported
       // - cpu_manufacturer / cpu_physical_cores / cpu_speed_ghz
       // - os_arch
-      // The previous system_info event only forwarded the basic fields.
-      // We now forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
+      // Forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
       // / `gpu_count` / `gpu_driver_version` for cohort filtering. Main has
       // already selected the real compute GPU (`gpu_model` / `gpu_vram_mb` /
       // per-vendor driver), so we use those instead of re-picking `gpus[0]`,

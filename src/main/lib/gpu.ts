@@ -229,8 +229,8 @@ export interface SystemGpuEntry {
  * Display adapters that are not real compute GPUs: virtual monitors,
  * remote-display drivers, hypervisor framebuffers. On Windows
  * `Win32_VideoController` enumerates these alongside the real GPU and the
- * ordering is not guaranteed, so `controllers[0]` is frequently one of these
- * (the "virtual display" capture this fix exists to avoid). Matched
+ * ordering is not guaranteed, so `controllers[0]` is frequently one of these.
+ * Virtual display adapters are excluded from primary selection. Matched
  * case-insensitively against the controller model name.
  */
 const VIRTUAL_GPU_PATTERNS: RegExp[] = [
@@ -261,14 +261,23 @@ export function isVirtualGpu(model: string | null | undefined): boolean {
   return VIRTUAL_GPU_PATTERNS.some((re) => re.test(model))
 }
 
-/** Map a detected `GpuId` to a matcher against systeminformation's free-form vendor string. */
-function vendorMatches(id: GpuId, vendorString: string): boolean {
-  const v = vendorString.toLowerCase()
+/**
+ * Map a detected `GpuId` to a matcher against systeminformation's free-form
+ * vendor/model strings. Both are checked because some controllers report an
+ * empty vendor but carry the brand in the model name (e.g. `NVIDIA GeForce …`).
+ */
+export function vendorMatches(id: GpuId, ...parts: (string | null | undefined)[]): boolean {
+  const v = parts.filter(Boolean).join(' ').toLowerCase()
   switch (id) {
     case 'nvidia':
       return v.includes('nvidia')
     case 'amd':
-      return v.includes('amd') || v.includes('advanced micro') || v.includes('ati')
+      return (
+        v.includes('amd') ||
+        v.includes('advanced micro') ||
+        v.includes('ati') ||
+        v.includes('radeon')
+      )
     case 'intel':
       return v.includes('intel')
     case 'mps':
@@ -297,7 +306,7 @@ export function selectPrimaryGpu(
   const byVramDesc = (a: SystemGpuEntry, b: SystemGpuEntry): number =>
     (b.vram_mb ?? 0) - (a.vram_mb ?? 0)
   if (detectedVendor) {
-    const matching = pool.filter((g) => g.vendor && vendorMatches(detectedVendor, g.vendor))
+    const matching = pool.filter((g) => vendorMatches(detectedVendor, g.vendor, g.model))
     if (matching.length > 0) return [...matching].sort(byVramDesc)[0]!
   }
   return [...pool].sort(byVramDesc)[0]!

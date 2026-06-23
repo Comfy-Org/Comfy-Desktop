@@ -264,4 +264,31 @@ describe('createHardwareTap', () => {
     expect(accel).toHaveLength(1)
     expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090' })
   })
+
+  it('keeps stdout and stderr partial lines from splicing together', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    // Interleaved partial lines from two streams must not be concatenated into
+    // a bogus combined line; each stream's buffer completes independently.
+    tap.ingest('model_type ', 'stdout')
+    tap.ingest('some unrelated stderr noise\n', 'stderr')
+    tap.ingest('FLUX\n', 'stdout')
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(1)
+    expect(usage[0]!.ctx).toMatchObject({ model_type: 'FLUX', count: 1 })
+  })
+
+  it('flushes trailing unterminated lines from both stdout and stderr', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('model_type FLUX', 'stdout') // no newline
+    tap.ingest('model_type EPS', 'stderr') // no newline
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toContainEqual(
+      expect.objectContaining({ ctx: expect.objectContaining({ model_type: 'FLUX', count: 1 }) })
+    )
+    expect(usage).toContainEqual(
+      expect.objectContaining({ ctx: expect.objectContaining({ model_type: 'EPS', count: 1 }) })
+    )
+  })
 })

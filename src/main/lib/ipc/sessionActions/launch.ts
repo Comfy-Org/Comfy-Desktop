@@ -928,6 +928,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       } catch (err) {
         logStream.end()
         await killProcessTree(proc)
+        // This relaunch path returns before the normal exit handler is
+        // attached; flush so pending model-usage deltas aren't dropped and the
+        // hardware-tap interval doesn't stay armed. flushSummary is idempotent.
+        execTap.flushSummary()
+        hwTap.flushSummary()
         _removeSession(installationId)
         _clearLaunchingFailed(installationId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
