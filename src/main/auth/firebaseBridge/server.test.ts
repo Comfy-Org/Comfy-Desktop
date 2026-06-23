@@ -2,7 +2,12 @@ import { request } from 'node:http'
 
 import { describe, expect, it } from 'vitest'
 
-import { BRIDGE_PORT, startBridgeServer, startCloudLoginCallbackServer } from './server'
+import {
+  BRIDGE_PORT,
+  type BridgeHandle,
+  startBridgeServer,
+  startCloudLoginCallbackServer
+} from './server'
 
 function requestRaw(
   url: URL,
@@ -44,6 +49,12 @@ function requestRaw(
     if (opts.body) req.write(opts.body)
     req.end()
   })
+}
+
+async function closeExpectingRejection(handle: BridgeHandle): Promise<void> {
+  const rejected = expect(handle.signInPromise).rejects.toThrow(/cancelled before completion/)
+  handle.close()
+  await rejected
 }
 
 describe('startBridgeServer', () => {
@@ -153,24 +164,35 @@ describe('startBridgeServer', () => {
     }
   })
 
-  it('rejects a Cloud login callback with mismatched state', async () => {
+  it('ignores a stale Cloud login callback with mismatched state', async () => {
     const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    const rejected = expect(handle.signInPromise).rejects.toThrow(/state mismatch/)
     try {
-      const res = await fetch(new URL('callback', handle.url), {
+      const staleRes = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Origin: 'https://cloud.comfy.org'
-        },
+        origin: 'https://cloud.comfy.org',
         body: JSON.stringify({
           state: 'wrong',
           apiKey: 'api-key',
           user: { uid: 'user-123' }
         })
       })
-      expect(res.status).toBe(403)
-      await rejected
+      expect(staleRes.status).toBe(403)
+      expect(staleRes.body).toBe('Invalid state')
+
+      const validRes = await requestRaw(new URL('callback', handle.url), {
+        method: 'POST',
+        origin: 'https://cloud.comfy.org',
+        body: JSON.stringify({
+          state: 'state-123',
+          apiKey: 'api-key',
+          user: { uid: 'user-123' }
+        })
+      })
+      expect(validRes.status).toBe(204)
+      await expect(handle.signInPromise).resolves.toEqual({
+        apiKey: 'api-key',
+        user: { uid: 'user-123' }
+      })
     } finally {
       handle.close()
     }
@@ -183,14 +205,59 @@ describe('startBridgeServer', () => {
         method: 'OPTIONS',
         origin: 'https://cloud.comfy.org',
         headers: {
-          'Access-Control-Request-Method': 'POST'
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Private-Network': 'true'
         }
       })
       expect(res.status).toBe(204)
       expect(res.headers['access-control-allow-origin']).toBe('https://cloud.comfy.org')
       expect(res.headers['access-control-allow-methods']).toContain('POST')
+      expect(res.headers['access-control-allow-private-network']).toBe('true')
     } finally {
-      handle.close()
+      await closeExpectingRejection(handle)
     }
+  })
+
+  it('rejects Cloud login POSTs from disallowed origins', async () => {
+    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+    try {
+      const res = await requestRaw(new URL('callback', handle.url), {
+        method: 'POST',
+        origin: 'https://untrusted.example.com',
+        body: JSON.stringify({
+          state: 'state-123',
+          apiKey: 'api-key',
+          user: { uid: 'user-123' }
+        })
+      })
+      expect(res.status).toBe(403)
+      expect(res.headers['access-control-allow-origin']).toBeUndefined()
+    } finally {
+      await closeExpectingRejection(handle)
+    }
+  })
+
+  it('rejects Cloud login preflights from disallowed origins', async () => {
+    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+    try {
+      const res = await requestRaw(new URL('callback', handle.url), {
+        method: 'OPTIONS',
+        origin: 'https://untrusted.example.com',
+        headers: {
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Private-Network': 'true'
+        }
+      })
+      expect(res.status).toBe(403)
+      expect(res.headers['access-control-allow-origin']).toBeUndefined()
+      expect(res.headers['access-control-allow-private-network']).toBeUndefined()
+    } finally {
+      await closeExpectingRejection(handle)
+    }
+  })
+
+  it('rejects pending Cloud login sign-ins when closed', async () => {
+    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+    await closeExpectingRejection(handle)
   })
 })

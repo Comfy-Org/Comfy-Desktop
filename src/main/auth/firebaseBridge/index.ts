@@ -10,6 +10,7 @@ import {
 } from './copyLinkBanner'
 import { buildIndexedDbInjectScript } from './inject'
 import { extractProviderId, type SupportedProvider } from './intercept'
+import { cloudLoginOriginForUrl } from './origins'
 import { startCloudLoginCallbackServer, type BridgeHandle } from './server'
 import * as i18n from '../../lib/i18n'
 import * as mainTelemetry from '../../lib/telemetry'
@@ -174,15 +175,7 @@ function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void 
 const POST_SIGNIN_HOLD_MS = 3000
 
 function getCloudLoginOrigin(comfyContents: WebContents): string {
-  try {
-    const currentUrl = new URL(comfyContents.getURL())
-    if (currentUrl.protocol === 'https:' || currentUrl.protocol === 'http:') {
-      return currentUrl.origin
-    }
-  } catch {
-    // Fall through to production Cloud.
-  }
-  return 'https://cloud.comfy.org'
+  return cloudLoginOriginForUrl(comfyContents.getURL())
 }
 
 function buildCloudDesktopLoginUrl(

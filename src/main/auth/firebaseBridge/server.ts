@@ -5,6 +5,7 @@ import { renderDoneHtml, renderErrorHtml, renderPopupBridgeHtml } from './bridge
 import { getFirebaseConfig, type FirebaseEnv } from './config'
 import type { SupportedProvider } from './intercept'
 import { buildPersistedUser, createOauthAuthUri, signInWithIdpExchange } from './oauth'
+import { isAllowedCloudCallbackOrigin } from './origins'
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -72,22 +73,9 @@ export interface StartCloudLoginCallbackServerOpts {
   port?: number
 }
 
-function isAllowedCloudOrigin(origin: string | undefined): boolean {
-  if (!origin) return true
-  try {
-    const url = new URL(origin)
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
-    if (url.hostname === 'cloud.comfy.org') return true
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true
-    return false
-  } catch {
-    return false
-  }
-}
-
 function setCorsHeaders(req: IncomingMessage, res: ServerResponse): boolean {
   const origin = req.headers.origin
-  if (!isAllowedCloudOrigin(origin)) return false
+  if (!isAllowedCloudCallbackOrigin(origin)) return false
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Vary', 'Origin')
@@ -95,6 +83,13 @@ function setCorsHeaders(req: IncomingMessage, res: ServerResponse): boolean {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   res.setHeader('Access-Control-Max-Age', '600')
+  const privateNetworkRequest = req.headers['access-control-request-private-network']
+  const requestedPrivateNetwork =
+    privateNetworkRequest === 'true' ||
+    (Array.isArray(privateNetworkRequest) && privateNetworkRequest.includes('true'))
+  if (req.method === 'OPTIONS' && requestedPrivateNetwork) {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  }
   return true
 }
 
@@ -316,7 +311,8 @@ export function startCloudLoginCallbackServer(
 
     let server: Server | null = null
 
-    const close = (): void => {
+    const close = (reason = new Error('Cloud login bridge cancelled before completion')): void => {
+      finishWithError(reason)
       if (server) {
         try {
           server.closeAllConnections?.()
@@ -415,7 +411,6 @@ export function startCloudLoginCallbackServer(
         res.statusCode = 403
         res.setHeader('Content-Type', 'text/plain; charset=utf-8')
         res.end('Invalid state')
-        finishWithError(new Error('Cloud login callback state mismatch'))
         return
       }
       if (!body.user || typeof body.user !== 'object' || typeof body.apiKey !== 'string') {
