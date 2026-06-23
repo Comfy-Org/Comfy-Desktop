@@ -599,8 +599,8 @@ const primaryActionIcon = computed<Component>(() =>
   hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
 )
 
-/** The More-menu "Stop" action, surfaced on the caret when the primary is
- *  Restart so stopping is one click from the CTA. */
+/** The selected install's "Stop" action (absent for cloud — no local process to
+ *  stop). Surfaced on the caret to put stopping one click from the CTA. */
 const stopAction = computed<ActionDef | undefined>(() =>
   pinBottomActions.value.find((a) => a.id === 'stop')
 )
@@ -608,6 +608,11 @@ const stopAction = computed<ActionDef | undefined>(() =>
  *  alternatives sharing a label can't collide. */
 const NAV_ITEM_PREFIX = 'nav:'
 const caretActions = computed<MenuAction[]>(() => {
+  // A running target (verb `focus`) can't open a second window — its only
+  // useful caret action is Stop (remote has one; cloud doesn't → empty caret).
+  if (primaryDecision.value.verb === 'focus') {
+    return stopAction.value ? [{ ...stopAction.value, icon: actionIcon('stop') }] : []
+  }
   const navItems: MenuAction[] = primaryDecision.value.secondary.map((alt, i) => ({
     id: `${NAV_ITEM_PREFIX}${i}`,
     label: resolveNavLabel(alt.primaryLabel),

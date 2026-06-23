@@ -131,7 +131,7 @@ vi.mock('../../views/comfyUISettings/ArgsBuilderPage.vue', () => ({
 }))
 vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
   default: {
-    props: ['open'],
+    props: ['open', 'actions'],
     template: '<div v-if="open" data-testid="more-menu">menu</div>',
   },
 }))
@@ -568,6 +568,74 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
+    })
+  })
+
+  // A running-elsewhere target (verb `focus`) can't open a second window, so the
+  // caret offers Stop (remote, which has a stop action) or nothing (cloud, which
+  // doesn't) — never "Open in new window".
+  describe('caret for a running-elsewhere target', () => {
+    function markRunning(installId: string): void {
+      useSessionStore().runningInstances.set(installId, {
+        installationId: installId,
+        installationName: 'X',
+        mode: '',
+      })
+    }
+    // The caret split-button (and its MoreMenu) render only when caretActions is
+    // non-empty. Read the caret menu's `actions` prop; the caret carries `stop`
+    // or `nav:*` ids, distinguishing it from the pinBottom More menu.
+    function caretActions(wrapper: VueWrapper): { id: string }[] | undefined {
+      if (!wrapper.find('.settings-v2-cta-caret').exists()) return undefined
+      const menu = wrapper
+        .findAllComponents({ name: 'MoreMenu' })
+        .map((m) => m.props('actions') as { id: string }[] | undefined)
+        .find((acts) => acts?.some((a) => a.id === 'stop' || a.id.startsWith('nav:')))
+      return menu
+    }
+
+    it('remote running elsewhere → caret offers Stop, not "Open in new window"', async () => {
+      // Remote install gets a `stop` action (only cloud is excluded).
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }]
+      markRunning('inst-1')
+      const w = await mountContent({
+        currentView: 'instance',
+        currentCategory: 'local',
+        activeInstallationId: 'other',
+        installation: { ...SAMPLE_INSTALL, sourceCategory: 'remote' },
+      })
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      const actions = caretActions(w)
+      expect(actions?.map((a) => a.id)).toEqual(['stop'])
+    })
+
+    it('cloud running elsewhere → no caret (cloud has no stop action)', async () => {
+      // Cloud is excluded from the synthetic Stop action, so no caret at all.
+      useComfyUISettingsState.pinBottomActions.value = []
+      markRunning('inst-1')
+      const w = await mountContent({
+        currentView: 'instance',
+        currentCategory: 'local',
+        activeInstallationId: 'other',
+        installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' },
+      })
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
+    })
+
+    it('stopped cloud target (dashboard host) → caret still offers "Open in new window"', async () => {
+      // Not running → a new window IS openable, so the nav caret stays. The
+      // dashboard→cloud(stopped) cell is the one that carries the new-window
+      // secondary (instance→cloud(stopped) is primary open-new, no caret).
+      useComfyUISettingsState.pinBottomActions.value = []
+      const w = await mountContent({
+        currentView: 'dashboard',
+        currentCategory: null,
+        activeInstallationId: null,
+        installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' },
+      })
+      const actions = caretActions(w)
+      expect(actions?.some((a) => a.id.startsWith('nav:'))).toBe(true)
     })
   })
 
