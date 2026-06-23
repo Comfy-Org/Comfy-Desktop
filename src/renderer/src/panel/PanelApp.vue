@@ -37,6 +37,7 @@ import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
+import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import type { Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -156,6 +157,26 @@ const {
   dismissTakeoverDirect,
   switchPanel
 } = overlays
+
+// Warm picker thumbnails during idle so the install wizard shows images, not
+// loaders; defers while an instance/overlay is active so it never competes.
+const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
+  isBusy: () => sessionStore.runningTabCount > 0 || currentOverlay.value !== null
+})
+
+async function warmTemplateThumbnails(): Promise<void> {
+  try {
+    const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
+    prefetchThumbnails(
+      options.map((o) => {
+        const url = o.data?.thumbnailUrl
+        return typeof url === 'string' ? url : null
+      })
+    )
+  } catch {
+    // Best-effort warm-up; the picker still loads thumbnails on demand.
+  }
+}
 
 // E2E surface: tests drive UI-level flows (e.g. inject a finished
 // failed op to render ProgressModal's error state) by calling into
@@ -487,6 +508,8 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
+    // Fire-and-forget after the panel is interactive; self-defers when busy.
+    void warmTemplateThumbnails()
   }
 })
 
