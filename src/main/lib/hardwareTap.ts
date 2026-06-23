@@ -269,10 +269,12 @@ export function createHardwareTap(opts: {
   }
 
   function appendChunk(source: 'stdout' | 'stderr', chunk: string): string[] {
-    let pending = pendingBySource[source] + chunk
-    if (pending.length > MAX_PENDING_CHARS) pending = pending.slice(-MAX_PENDING_CHARS)
-    const lines = pending.split(/\r?\n/)
-    pendingBySource[source] = lines.pop() ?? ''
+    // Split first so a large chunk's complete lines (e.g. `Device:` /
+    // `model_type`) are never lost; cap only the unterminated tail we carry
+    // over, which is the sole unbounded-growth risk.
+    const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
+    const tail = lines.pop() ?? ''
+    pendingBySource[source] = tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
     return lines
   }
 

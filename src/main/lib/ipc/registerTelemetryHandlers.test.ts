@@ -90,23 +90,27 @@ describe('registerTelemetryHandlers', () => {
     expect(JSON.parse(sent.gpus_json as string)).toEqual(gpus)
   })
 
-  it('gives `_json` keys a larger ceiling than other strings', () => {
+  it('gives allow-listed JSON keys a larger ceiling, clamps everything else', () => {
     // A serialized structured payload (e.g. `installs_json`) legitimately
-    // exceeds the 2048 scalar clamp; `_json`-suffixed keys get a larger ceiling
-    // so they survive intact, while other strings stay tightly clamped.
+    // exceeds the 2048 scalar clamp; allow-listed JSON keys get a larger
+    // ceiling so they survive intact. Any other field — including one that just
+    // mimics the `_json` suffix — stays tightly clamped, so a renderer can't
+    // bypass the PII/runaway-size limit by renaming a field.
     const big = JSON.stringify(Array.from({ length: 500 }, (_, i) => ({ id: i, name: `n${i}` })))
     expect(big.length).toBeGreaterThan(2048)
     listener('telemetry:capture')(null, {
       event: 'comfy.desktop.session.installs_inventory',
       properties: {
-        installs_json: big,
+        installs_json: big, // allow-listed
+        sneaky_json: 'q'.repeat(3000), // mimics the suffix but not allow-listed
         plain_long: 'z'.repeat(3000)
       }
     })
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.installs_json).toBe(big) // survives untouched
-    expect(sent.plain_long).toBe('z'.repeat(2048)) // still clamped
+    expect(sent.sneaky_json).toBe('q'.repeat(2048)) // clamped — not allow-listed
+    expect(sent.plain_long).toBe('z'.repeat(2048)) // clamped
   })
 
   it('keeps person properties scalar-only while applying the same caps', () => {

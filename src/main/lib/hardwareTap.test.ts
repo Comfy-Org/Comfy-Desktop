@@ -157,6 +157,24 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('detects a complete Device line even in an oversized chunk', () => {
+    // A single large stdout chunk: complete metadata + Device lines, then a
+    // huge unterminated tail. The buffer cap must only trim the tail, never
+    // drop the complete lines that precede it.
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    const hugeTail = 'x'.repeat(64 * 1024) // > MAX_PENDING_CHARS, no newline
+    tap.ingest(
+      'Total VRAM 24576 MB, total RAM 65461 MB\n' +
+        'Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n' +
+        hugeTail,
+      'stdout'
+    )
+
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090', vram_mb: 24576 })
+  })
+
   it('promotes the compute GPU to comfyui_* person properties', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
