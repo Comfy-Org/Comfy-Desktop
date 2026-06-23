@@ -67,6 +67,29 @@ describe('registerTelemetryHandlers', () => {
     expect(paths[127]).toBe(127)
   })
 
+  it('drops arrays of objects but preserves a JSON-stringified payload', () => {
+    // Contract relied on by the `system_info` / `installs_inventory` telemetry:
+    // a native array of objects cannot survive the bridge, so callers serialize
+    // it to a JSON string instead.
+    const gpus = [
+      { vendor: 'NVIDIA', model: 'RTX 4090', vram_mb: 24576 },
+      { vendor: '', model: 'Microsoft Basic Render Driver', vram_mb: null }
+    ]
+    listener('telemetry:capture')(null, {
+      event: 'comfy.desktop.session.system_info',
+      properties: {
+        gpu_count: gpus.length,
+        gpus, // native array of objects — expected to be dropped
+        gpus_json: JSON.stringify(gpus) // string — expected to survive
+      }
+    })
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.gpu_count).toBe(2)
+    expect(sent.gpus).toBeUndefined()
+    expect(JSON.parse(sent.gpus_json as string)).toEqual(gpus)
+  })
+
   it('keeps person properties scalar-only while applying the same caps', () => {
     const properties: Record<string, unknown> = {
       array: [1, 2, 3],
