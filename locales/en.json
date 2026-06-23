@@ -1080,6 +1080,7 @@
     "alreadyRunning": "ComfyUI is already running. Stop it before launching again.",
     "installDirEmpty": "Instance folder is empty. Delete this instance and reinstall.",
     "installDirNotFound": "Instance folder not found. Reconnect the drive or restore the folder, then try again.",
+    "installDirNotFoundTag": "Folder Not Found",
     "installNotReady": "This instance is not ready to launch. It may still be installing or may have failed.",
     "installFailed": "Install Failed",
     "deleteInterrupted": "Delete Interrupted",

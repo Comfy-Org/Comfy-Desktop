@@ -367,6 +367,25 @@ describe('ChooserView', () => {
     expect(tile.find('.chooser-tile-pill-migrate').exists()).toBe(true)
   })
 
+  it('shows a static red danger pill (and red tile outline) for a backend danger statusTag', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'nf',
+        name: 'Gone',
+        statusTag: { style: 'danger', label: 'Folder Not Found' },
+      }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Gone'))!
+    expect(tile.classes()).toContain('chooser-tile-errored')
+    const tag = tile.find('.chooser-tile-actions .chooser-tile-danger-tag')
+    expect(tag.exists()).toBe(true)
+    expect(tag.text()).toContain('Folder Not Found')
+    // It's informational, not the clickable crash error badge.
+    expect(tile.find('.chooser-tile-error-badge').exists()).toBe(false)
+  })
+
   it('does not emit pick when the kebab button is clicked — only the menu opens', async () => {
     // The kebab's click handler stop-propagates so the tile click doesn't fire.
     installMockApi([

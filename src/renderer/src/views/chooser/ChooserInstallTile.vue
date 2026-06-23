@@ -37,10 +37,17 @@ const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
 const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
 const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
 
+/* Backend-flagged problem states (failed install, interrupted delete, missing
+ * install folder) carry a `danger` statusTag. Surface it as a static red pill —
+ * distinct from a live crash (`hasError`), which owns the clickable error badge. */
+const dangerTag = computed(() =>
+  inst.value.statusTag?.style === 'danger' ? inst.value.statusTag : null
+)
+
 const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-running': isRunning.value && !isStopping.value,
   'chooser-tile-stopping': isStopping.value,
-  'chooser-tile-errored': hasError.value
+  'chooser-tile-errored': hasError.value || dangerTag.value != null
 }))
 
 /* Lifecycle → top-right status pill (dot + label). Stopping wins over
@@ -164,6 +171,14 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       >
         <span class="chooser-tile-status-dot" aria-hidden="true" />
         {{ t(statusPill.label) }}
+      </span>
+      <span
+        v-else-if="dangerTag"
+        class="chooser-tile-pill chooser-tile-danger-tag"
+        :title="dangerTag.label"
+      >
+        <AlertCircle :size="13" />
+        {{ dangerTag.label }}
       </span>
       <button
         type="button"

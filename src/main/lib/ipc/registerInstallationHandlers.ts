@@ -107,7 +107,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
         : inst.status === 'failed'
           ? { label: i18n.t('errors.installFailed'), style: 'danger' }
           : dirNotFound
-            ? { label: i18n.t('errors.installDirNotFound'), style: 'danger' }
+            ? { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger' }
             : source.getStatusTag
               ? source.getStatusTag(inst)
               : undefined

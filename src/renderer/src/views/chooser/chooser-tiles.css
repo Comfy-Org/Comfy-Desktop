@@ -360,6 +360,18 @@
   outline-offset: 2px;
 }
 
+/* Danger status tag — red, static (click-through) pill for backend-flagged
+ * problem states (failed install / interrupted delete / missing folder). Same
+ * red treatment as the crash error badge, but informational, not clickable. */
+.chooser-tile-danger-tag {
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--accent-danger, #d92d20);
+  background: var(--accent-danger-soft, rgba(217, 45, 32, 0.12));
+  border: 1px solid var(--accent-danger, #d92d20);
+  pointer-events: none;
+}
+
 /* Top-right cluster — lifecycle indicator (status pill / error badge) +
  * kebab (⋮) action button. */
 .chooser-tile-actions {

@@ -1080,6 +1080,7 @@
     "alreadyRunning": "ComfyUI 已在运行。请先停止再重新启动。",
     "installDirEmpty": "实例文件夹为空。请删除此实例并重新安装。",
     "installDirNotFound": "未找到实例文件夹。请重新连接驱动器或恢复文件夹后再试。",
+    "installDirNotFoundTag": "未找到文件夹",
     "installNotReady": "此实例尚未准备好启动。它可能仍在安装，或安装已失败。",
     "installFailed": "安装失败",
     "deleteInterrupted": "删除中断",
