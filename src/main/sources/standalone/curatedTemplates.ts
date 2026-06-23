@@ -96,24 +96,24 @@ export const NO_TEMPLATE_VALUE = 'none'
 export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
   // --- Image ---
   {
-    id: 'sdxlturbo_example',
+    id: 'image_z_image_turbo',
     modality: 'image',
     recommended: true,
     snapshot: {
-      title: 'SDXL Turbo',
-      description: 'Generate images in a single step using SDXL Turbo.',
-      sizeBytes: 6936372183,
+      title: 'Z-Image-Turbo Text to Image',
+      description:
+        'An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.',
+      sizeBytes: 20830591386,
       mediaSubtype: 'webp',
     },
   },
   {
-    id: 'image_anima_base_v1',
+    id: 'sdxlturbo_example',
     modality: 'image',
     snapshot: {
-      title: 'Anima Base v1: Text to Image',
-      description:
-        'Input a text prompt describing an anime or artistic illustration. Generate a non-photorealistic image focused on anime concepts, characters, or styles.',
-      sizeBytes: 5583457485,
+      title: 'SDXL Turbo',
+      description: 'Generate images in a single step using SDXL Turbo.',
+      sizeBytes: 6936372183,
       mediaSubtype: 'webp',
     },
   },
@@ -129,13 +129,13 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     },
   },
   {
-    id: 'image_z_image_turbo',
+    id: 'image_flux2_klein_image_edit_4b_distilled',
     modality: 'image',
     snapshot: {
-      title: 'Z-Image-Turbo Text to Image',
+      title: 'Flux.2 [Klein] 4B Distilled: Image Edit',
       description:
-        'An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.',
-      sizeBytes: 20830591386,
+        'The fastest variant in the Klein family. Built for interactive applications and real-time image editing.',
+      sizeBytes: 12455405158,
       mediaSubtype: 'webp',
     },
   },
@@ -174,13 +174,13 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     },
   },
   {
-    id: 'video_causal_forcing_i2v',
+    id: 'video_kandinsky5_i2v',
     modality: 'video',
     snapshot: {
-      title: 'Causal Forcing: Image to Video',
+      title: 'Kandinsky 5.0 Video Lite Image to Video',
       description:
-        'Input a text prompt and select a model checkpoint. Generate a high-quality video using Causal Forcing or Causal Forcing++ with 1 to 4 inference steps.',
-      sizeBytes: 12670153523,
+        'A lightweight 2B model that generates videos from English and Russian prompts with high visual quality.',
+      sizeBytes: 14710262989,
       mediaSubtype: 'webp',
     },
   },
@@ -254,17 +254,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     },
   },
   {
-    id: 'audio_ace_step_1_t2a_song',
-    modality: 'audio',
-    snapshot: {
-      title: 'ACE Step v1 Text to Song',
-      description:
-        'Generate songs with vocals from text prompts using ACE-Step v1, supporting multilingual and style customization.',
-      sizeBytes: 7698728878,
-      mediaSubtype: 'mp3',
-    },
-  },
-  {
     id: 'audio_ace_step_1_5_checkpoint',
     modality: 'audio',
     snapshot: {
@@ -273,6 +262,17 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
         'Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.',
       sizeBytes: 10737418240,
       mediaSubtype: 'mp3',
+    },
+  },
+  {
+    id: 'audio_ace_step1_5_xl_turbo',
+    modality: 'audio',
+    snapshot: {
+      title: 'ACE-Step 1.5XL Turbo: Text to Music',
+      description:
+        'Generate high-quality music from text prompts using the distilled 4B ACE-Step model. Produces commercial-ready audio in just 8 inference steps without CFG.',
+      sizeBytes: 19864223744,
+      mediaSubtype: 'webp',
     },
   },
 ] as const

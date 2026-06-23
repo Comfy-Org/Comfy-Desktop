@@ -16,8 +16,8 @@ import {
   INDEX_URL,
   TEMPLATE_MODALITY_ORDER,
   thumbnailUrlFor,
-  type CuratedTemplate,
   type TemplateModality,
+  type TemplateSnapshot,
 } from './curatedTemplates'
 
 /** A curated template merged with its (optional) live index metadata, ready to
@@ -27,6 +27,12 @@ export interface HydratedTemplate {
   modality: TemplateModality
   recommended: boolean
   title: string
+  /** Short model name for the card (e.g. "Z-Image-Turbo") — the title minus its
+   *  task suffix. */
+  name: string
+  /** Task descriptor for the card subtitle (e.g. "Text to Image", "Image Edit"),
+   *  or '' when none. */
+  task: string
   description: string
   /** Coarse total download estimate (bytes); 0 when unknown. */
   sizeBytes: number
@@ -35,7 +41,6 @@ export interface HydratedTemplate {
   /** Index `title` (e.g. "Image", "Video") of the category the template lives
    *  in upstream — carried for telemetry/sub-grouping, not the tab grouping. */
   category: string
-  previewKind: 'animated' | 'static'
 }
 
 /** The fields we read off a live index template entry. Everything is optional —
@@ -46,18 +51,28 @@ interface IndexEntry {
   description?: unknown
   size?: unknown
   mediaSubtype?: unknown
-  thumbnail?: unknown
+  tags?: unknown
 }
 
 /** A live index category: `{ title, type, templates: [...] }`. */
 interface IndexCategory {
   title?: unknown
+  type?: unknown
   templates?: unknown
 }
 
 interface IndexLocation {
   entry: IndexEntry
   category: string
+  /** The category's `type`, when it's one of our modalities — used to pick a
+   *  same-category substitute for a curated id that's vanished upstream. */
+  modality: TemplateModality | null
+}
+
+function modalityFromType(type: unknown): TemplateModality | null {
+  return typeof type === 'string' && (TEMPLATE_MODALITY_ORDER as readonly string[]).includes(type)
+    ? (type as TemplateModality)
+    : null
 }
 
 /**
@@ -73,50 +88,87 @@ function indexById(index: unknown): Map<string, IndexLocation> {
     if (!rawCategory || typeof rawCategory !== 'object') continue
     const category = rawCategory as IndexCategory
     const categoryTitle = typeof category.title === 'string' ? category.title : ''
+    const modality = modalityFromType(category.type)
     if (!Array.isArray(category.templates)) continue
     for (const rawEntry of category.templates) {
       if (!rawEntry || typeof rawEntry !== 'object') continue
       const entry = rawEntry as IndexEntry
       if (typeof entry.name !== 'string' || byId.has(entry.name)) continue
-      byId.set(entry.name, { entry, category: categoryTitle })
+      byId.set(entry.name, { entry, category: categoryTitle, modality })
     }
   }
   return byId
 }
 
-/** Animated when the live entry's thumbnail is a video file; otherwise still. */
-function previewKindOf(entry: IndexEntry | undefined): 'animated' | 'static' {
-  const thumbs = entry?.thumbnail
-  if (Array.isArray(thumbs) && thumbs.some((t) => typeof t === 'string' && t.endsWith('.mp4'))) {
-    return 'animated'
-  }
-  return 'static'
+/** Bare modality labels that aren't a task — dropped when picking the task tag. */
+const MODALITY_TAGS = new Set(['image', 'video', 'audio', '3d'])
+
+/** Subtitle shown when a template's `tags` carry no specific task, so a card is
+ *  never left with a blank descriptor (e.g. Wan Fun Camera, tags: ['Video']). */
+const DEFAULT_TASK: Record<TemplateModality, string> = {
+  image: 'Text to Image',
+  video: 'Text to Video',
+  audio: 'Text to Audio',
+  '3d': 'Image to 3D',
 }
 
-/** Merge one curated template with its live index location (when present),
- *  preferring live metadata and falling back to the offline snapshot. */
-function hydrateOne(curated: CuratedTemplate, location: IndexLocation | undefined): HydratedTemplate {
-  const entry = location?.entry
-  const { snapshot } = curated
+/** The template's task (e.g. "Text to Image", "Image Edit") from its `tags`,
+ *  skipping the bare modality label; falls back to the modality default. */
+function taskOf(tags: unknown, modality: TemplateModality): string {
+  if (Array.isArray(tags)) {
+    for (const tag of tags) {
+      if (typeof tag === 'string' && !MODALITY_TAGS.has(tag.toLowerCase())) return tag
+    }
+  }
+  return DEFAULT_TASK[modality]
+}
 
-  const title = typeof entry?.title === 'string' ? entry.title : snapshot.title
+/** Short card name: the title up to its `:` separator, then with a trailing task
+ *  phrase stripped ("Z-Image-Turbo Text to Image" → "Z-Image-Turbo"). Falls back
+ *  to the whole title when nothing is strippable. */
+function nameOf(title: string, task: string): string {
+  const beforeColon = title.split(':')[0]!.trim()
+  if (task && beforeColon.toLowerCase().endsWith(task.toLowerCase())) {
+    const stripped = beforeColon.slice(0, beforeColon.length - task.length).trim()
+    if (stripped) return stripped
+  }
+  return beforeColon || title
+}
+
+/** Build a card from a template `id` + its live index location (when present),
+ *  preferring live metadata and falling back to the offline `snapshot` (which a
+ *  substituted, non-curated id won't have). */
+function hydrateOne(
+  id: string,
+  modality: TemplateModality,
+  recommended: boolean,
+  location: IndexLocation | undefined,
+  snapshot?: TemplateSnapshot,
+): HydratedTemplate {
+  const entry = location?.entry
+
+  const title =
+    typeof entry?.title === 'string' ? entry.title : (snapshot?.title ?? id)
   const description =
-    typeof entry?.description === 'string' ? entry.description : snapshot.description
+    typeof entry?.description === 'string' ? entry.description : (snapshot?.description ?? '')
   const sizeBytes =
-    typeof entry?.size === 'number' && entry.size > 0 ? entry.size : snapshot.sizeBytes
+    typeof entry?.size === 'number' && entry.size > 0 ? entry.size : (snapshot?.sizeBytes ?? 0)
   const mediaSubtype =
-    typeof entry?.mediaSubtype === 'string' ? entry.mediaSubtype : snapshot.mediaSubtype
+    typeof entry?.mediaSubtype === 'string' ? entry.mediaSubtype : (snapshot?.mediaSubtype ?? 'webp')
+
+  const task = taskOf(entry?.tags, modality)
 
   return {
-    id: curated.id,
-    modality: curated.modality,
-    recommended: curated.recommended === true,
+    id,
+    modality,
+    recommended,
     title,
+    name: nameOf(title, task),
+    task,
     description,
     sizeBytes,
-    thumbnailUrl: thumbnailUrlFor(curated.id, mediaSubtype),
+    thumbnailUrl: thumbnailUrlFor(id, mediaSubtype),
     category: location?.category ?? '',
-    previewKind: previewKindOf(entry),
   }
 }
 
@@ -144,13 +196,55 @@ export async function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
   } catch {
     byId = new Map()
   }
+  // Only substitute when we actually have a live index to substitute FROM —
+  // an empty map means offline, where the curated snapshot is the right fallback.
+  const online = byId.size > 0
 
-  const seen = new Set<string>()
+  const used = new Set<string>()
   const catalog: HydratedTemplate[] = []
   for (const curated of CURATED_TEMPLATES) {
-    if (!curated?.id || seen.has(curated.id) || !curated.snapshot) continue
-    seen.add(curated.id)
-    catalog.push(hydrateOne(curated, byId.get(curated.id)))
+    if (!curated?.id || used.has(curated.id) || !curated.snapshot) continue
+
+    const location = byId.get(curated.id)
+    if (location || !online) {
+      used.add(curated.id)
+      catalog.push(
+        hydrateOne(curated.id, curated.modality, curated.recommended === true, location, curated.snapshot)
+      )
+      continue
+    }
+
+    // Curated id has vanished upstream: show the first live template of the same
+    // modality we haven't already used, so the slot still offers a real,
+    // installable pick rather than a stale snapshot card.
+    const sub = firstUnusedOfModality(byId, curated.modality, used)
+    if (sub) {
+      used.add(sub.entry.name)
+      catalog.push(hydrateOne(sub.entry.name, curated.modality, curated.recommended === true, sub))
+    } else {
+      used.add(curated.id)
+      catalog.push(
+        hydrateOne(curated.id, curated.modality, curated.recommended === true, undefined, curated.snapshot)
+      )
+    }
   }
   return catalog.sort(byModalityOrder)
+}
+
+/** First unused, locally-installable index template of `modality` — skips
+ *  API/cloud entries (`api_*`) and size-less ones, since a substitute fills a
+ *  local download slot the disk-space gate sizes off `sizeBytes`. */
+function firstUnusedOfModality(
+  byId: Map<string, IndexLocation>,
+  modality: TemplateModality,
+  used: Set<string>,
+): IndexLocation | null {
+  for (const location of byId.values()) {
+    const { entry } = location
+    if (location.modality !== modality || used.has(entry.name)) continue
+    if (entry.name.startsWith('api_')) continue
+    if (typeof entry.size !== 'number' || entry.size <= 0) continue
+    return location
+  }
+  return null
 }

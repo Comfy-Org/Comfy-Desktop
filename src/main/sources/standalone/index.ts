@@ -539,9 +539,10 @@ export const standalone: SourcePlugin = {
           data: {
             modality: tpl.modality,
             category: tpl.category,
+            name: tpl.name,
+            task: tpl.task,
             thumbnailUrl: tpl.thumbnailUrl,
             sizeBytes: tpl.sizeBytes,
-            previewKind: tpl.previewKind,
           },
         })),
       ]
