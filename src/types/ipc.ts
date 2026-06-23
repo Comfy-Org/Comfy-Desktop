@@ -488,6 +488,17 @@ export interface TerminalRestore {
   exited: boolean
 }
 
+/** Recognised native-crash flavour decoded from a Windows NTSTATUS exit code.
+ *  `unknown` covers a decoded fault code we have no specific guidance for.
+ *  Shared across the IPC boundary so producer (main decode) and consumer
+ *  (renderer crash copy) can't drift on the string values. */
+export type CrashKind =
+  | 'access-violation'
+  | 'illegal-instruction'
+  | 'stack-buffer-overrun'
+  | 'heap-corruption'
+  | 'unknown'
+
 export interface ComfyExitedData {
   installationId: string
   installationName: string
@@ -500,6 +511,19 @@ export interface ComfyExitedData {
    *  signal" from "crashed with non-zero exit". */
   signal?: string
   lastStderr?: string
+  /** Hex form of `exitCode` when it decodes to a Windows native-crash
+   *  (NTSTATUS) code, e.g. `'0xC0000005'`. Absent for plain application
+   *  exits. Lets the UI show the meaningful hex alongside the raw decimal. */
+  exitCodeHex?: string
+  /** Recognised native-crash flavour for `exitCode` (e.g. `'access-violation'`),
+   *  used to pick human-readable, actionable crash copy. Absent when the exit
+   *  code isn't a decodable native fault. */
+  crashKind?: CrashKind
+  /** On a Windows access-violation crash, the Visual C++ runtime DLLs found
+   *  missing from `System32` (e.g. `['vcruntime140_1.dll']`). Non-empty means
+   *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
+   *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
+  vcRuntimeMissing?: string[]
   /**
    * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
    * Set by `recordCrash()` so a renderer that hydrates the crash *after*

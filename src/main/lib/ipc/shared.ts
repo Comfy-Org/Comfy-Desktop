@@ -98,7 +98,7 @@ export const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 export const UPDATE_CHECK_INTERVAL = 10 * 60 * 1000
 export const IGNORE_FILES = new Set([MARKER_FILE, '.DS_Store', 'Thumbs.db', 'desktop.ini'])
 export const ALL_UPDATE_CHANNELS = ['stable', 'latest']
-export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
+export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', 'PYTHONFAULTHANDLER', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -677,6 +677,12 @@ export function buildLaunchEnv(inst: InstallationRecord, sessionPath?: string): 
     ...process.env,
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
+    // Install CPython's fatal-fault handler so a native crash (segfault /
+    // access violation in a C-extension) dumps the Python traceback — i.e. the
+    // import that died — to stderr instead of vanishing behind a bare
+    // `0xC0000005` exit code. We capture that stderr into the crash buffer.
+    // Cost is one-time handler install; zero overhead on the normal path.
+    PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2

@@ -26,6 +26,8 @@ import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
+import { decodeExitCode } from '../../exitCodeInfo'
+import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createExecutionTap } from '../../executionTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -41,6 +43,7 @@ import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
+import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import {
   startBootPhases,
@@ -80,6 +83,66 @@ export function desktopFeatureFlags(
 // signal) is a crash, since the user didn't go through our Stop path.
 export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null): boolean {
   return code !== 0 || signal !== null
+}
+
+/**
+ * Diagnose a crash exit code into the extra fields the UI needs to show a
+ * human-readable message. Returns `{}` for a plain application exit (the
+ * generic "exited with code N" copy still applies). For a Windows native
+ * fault it adds the decoded hex + kind, and for an access violation it also
+ * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
+ * actually missing.
+ */
+async function diagnoseCrash(
+  code: number | null,
+): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
+  const decoded = decodeExitCode(code)
+  if (!decoded) return {}
+  const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
+    exitCodeHex: decoded.hex,
+    crashKind: decoded.kind,
+  }
+  if (decoded.kind === 'access-violation') {
+    // Never let an audit failure reject this helper: it runs inside an async
+    // EventEmitter listener, so a throw would become an unhandledRejection and
+    // skip recordCrash/broadcast. Keep the decoded hex/kind regardless.
+    try {
+      const missing = await auditVcRuntime()
+      if (missing.length > 0) out.vcRuntimeMissing = missing
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
+    }
+  }
+  return out
+}
+
+/**
+ * Render an exit code for a plain-text launch-failure message. A normal exit
+ * stays as its number; a decoded Windows native fault gets `decimal / hex` plus
+ * a short access-violation explanation and, when the VC++ runtime DLLs are
+ * actually missing, a repair hint. English-only to match the surrounding
+ * non-localized launch-failure strings.
+ */
+async function describeExitCode(code: number | null): Promise<string> {
+  if (code == null) return 'unknown'
+  const decoded = decodeExitCode(code)
+  if (!decoded) return String(code)
+  let out = `${decoded.code} / ${decoded.hex}`
+  if (decoded.kind === 'access-violation') {
+    out += ' (memory access violation — usually a faulty or missing native library)'
+    // Swallow audit failures: this feeds earlyExitPromise's rejection, so a
+    // throw here would leave the launch race hanging until the boot timeout.
+    try {
+      if ((await auditVcRuntime()).length > 0) {
+        out +=
+          '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+          'installing the latest redistributable may fix this'
+      }
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
+    }
+  }
+  return out
 }
 
 async function openLogStream(installPath: string): Promise<WriteStream> {
@@ -574,7 +637,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const mode = (inst.launchMode as string | undefined) || 'window'
     _addSession(installationId, { proc, port: 0, mode, installationName: inst.name }, Date.now() - launchStartedAt)
 
-    proc.on('exit', (code, signal) => {
+    proc.on('exit', async (code, signal) => {
       logStream.end()
       const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
@@ -582,6 +645,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // (`scrubTelemetryContext` in renderer bootstrap), not here.
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
+      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
+      // relaunch can't slip in and clearCrash() during the audit and have this
+      // handler then resurrect the stale crash via recordCrash().
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -590,6 +657,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
+        ...crashDiagnosis,
       }
       if (crashed) {
         recordCrash(exitedPayload)
@@ -768,10 +836,15 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         earlyExit = err.message
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
-      spawned.proc.on('exit', (code) => {
+      spawned.proc.on('exit', async (code, signal) => {
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          earlyExit = `Process exited with code ${code}${detail}`
+          // A startup crash (e.g. a C-extension segfault during import) is the
+          // most common access-violation case; decode the cryptic NTSTATUS code
+          // and add the VC++ hint inline so the launch-failure modal is useful.
+          // A signal-kill (code null) reports the signal name instead.
+          const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
+          earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
         }
       })
@@ -942,7 +1015,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   let currentGetStderr = launchResult.getStderr
 
   function attachExitHandler(p: ChildProcess): void {
-    p.on('exit', (code, signal) => {
+    p.on('exit', async (code, signal) => {
       if (rebootModelCheckAbort) {
         rebootModelCheckAbort.abort()
         rebootModelCheckAbort = null
@@ -1023,6 +1096,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
+      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
+      // relaunch can't slip in and clearCrash() during the audit and have this
+      // handler then resurrect the stale crash via recordCrash().
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -1031,6 +1108,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
+        ...crashDiagnosis,
       }
       if (crashed) {
         recordCrash(exitedPayload)
