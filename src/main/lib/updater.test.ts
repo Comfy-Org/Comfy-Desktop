@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as UpdaterModule from './updater'
 
 let mockPlatform = 'linux'
 let mockAppImage: string | undefined
@@ -47,6 +48,13 @@ vi.mock('./quit-state', () => ({
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 
+/** Import the (freshly-mocked) updater module and register its IPC + listeners. */
+async function bootUpdater(): Promise<typeof UpdaterModule> {
+  const mod = await import('./updater')
+  mod.register()
+  return mod
+}
+
 describe('isSystemPackageInstall (via get-update-capabilities)', () => {
   let registeredHandlers: Record<string, (...args: unknown[]) => unknown>
 
@@ -84,8 +92,7 @@ describe('isSystemPackageInstall (via get-update-capabilities)', () => {
     }
 
     vi.resetModules()
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
     const handler = registeredHandlers['get-update-capabilities']!
     return handler() as { canAutoUpdate: boolean; systemManaged: boolean }
   }
@@ -182,8 +189,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
   }
 
   it('emits comfy.desktop.app_update.available at most once per version (auto-on)', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
 
     fire('update-available', { version: '9.9.9' })
     fire('update-available', { version: '9.9.9' })
@@ -197,8 +203,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
   })
 
   it('emits download_started at most once per version (auto-on)', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
 
     fire('update-available', { version: '9.9.9' })
     fire('update-downloaded', { version: '9.9.9' })
@@ -212,8 +217,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
   })
 
   it('emits download_complete at most once per version even if updater re-fires', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
 
     fire('update-downloaded', { version: '9.9.9' })
     fire('update-downloaded', { version: '9.9.9' })
@@ -226,8 +230,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
   })
 
   it('does NOT call checkForUpdates from inside update-available (no recursion)', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
 
     fire('update-available', { version: '9.9.9' })
     fire('update-available', { version: '9.9.9' })
@@ -242,8 +245,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
   })
 
   it('new version after old can fire again (dedup is per-version, not absolute)', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
 
     fire('update-available', { version: '9.9.9' })
     fire('update-available', { version: '9.9.10' })
@@ -262,8 +264,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
 
   it('checked event suppressed for auto-* triggers (no signal, only noise)', async () => {
     fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '9.9.9' } }))
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
 
     await updater.runCheck('auto-check')
 
@@ -275,8 +276,7 @@ describe('app-update telemetry dedup (volume regression)', () => {
 
   it('checked event fires for manual-check trigger when an update is available', async () => {
     fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '9.9.9' } }))
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
 
     await updater.runCheck('manual-check')
 
@@ -369,8 +369,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     emitMock.mock.calls.filter((c) => c[0] === event)
 
   it('register() disables install-on-quit by default on Windows when startup install is enabled', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
     // Startup install is the default on Windows, so install-on-quit is disabled
     // entirely and the staged update applies at the next launch.
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
@@ -378,8 +377,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
 
   it('register() keeps install-on-quit when startup install is explicitly opted out', async () => {
     settingsStore['installUpdatesOnStartup'] = false
-    const updater = await import('./updater')
-    updater.register()
+    await bootUpdater()
     // Opted out: electron-updater's install-on-quit stays armed; it's only
     // suppressed when the OS session ends (see suppressInstallOnQuit).
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
@@ -392,8 +390,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['installUpdatesOnStartup'] = true
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
     readyVersion = '1.0.1'
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     // register() must NOT disable install-on-quit on macOS.
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
     expect(updater.hasPendingStartupUpdate()).toBe(false)
@@ -403,8 +400,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
 
   it('suppressInstallOnQuit() disables install-on-quit for the session-end guard', async () => {
     settingsStore['installUpdatesOnStartup'] = false
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
     updater.suppressInstallOnQuit()
     expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
@@ -414,8 +410,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['installUpdatesOnStartup'] = false
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
     readyVersion = '1.0.1'
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     expect(updater.hasPendingStartupUpdate()).toBe(false)
     expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
@@ -423,23 +418,20 @@ describe('startup update install + session-end guard (issue #1065)', () => {
 
   it('installUpdate() is a no-op while the OS session is ending', async () => {
     sessionEnding = true
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
 
   it('installUpdate() shows the NSIS installer UI by default on Windows', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: false })
   })
 
   it('installUpdate() installs silently when showInstallerUI is opted out', async () => {
     settingsStore['showInstallerUI'] = false
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
   })
@@ -447,8 +439,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
   it('installUpdate() ignores showInstallerUI off Windows (isSilent stays true)', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     settingsStore['showInstallerUI'] = true
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
   })
@@ -474,8 +465,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
   it('applyPendingUpdateOnStartup() installs a staged update and records the attempt', async () => {
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
     readyVersion = '1.0.1'
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
 
     const installing = await updater.applyPendingUpdateOnStartup()
 
@@ -509,8 +499,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
   })
 
   it('applyPendingUpdateOnStartup() does nothing when no update is staged', async () => {
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
@@ -538,8 +527,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
     settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.1'
     readyVersion = '1.0.1'
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
@@ -548,8 +536,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
     settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.1'
     readyVersion = '1.0.1'
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     await updater.applyPendingUpdateOnStartup()
     const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
     expect(skipped).toHaveLength(1)
@@ -579,9 +566,205 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.0'
     settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.0'
     mockAppVersion = '1.0.0' // install succeeded; we now run it
-    const updater = await import('./updater')
-    updater.register()
+    const updater = await bootUpdater()
     await updater.applyPendingUpdateOnStartup()
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
+  })
+})
+
+/**
+ * Issue #1161 — the updater must only ever act on a version that is STRICTLY
+ * newer than the running build. The engine can re-surface the current (or an
+ * older, or an equal-build-restringed) version; acting on it drives the
+ * download -> "Updating..." splash -> install -> relaunch loop that never
+ * converges on an already-latest machine. RC releases of a higher version must
+ * still install (we ship IP-whitelisted RCs to test update code).
+ */
+describe('version guard: reject non-newer offers (issue #1161)', () => {
+  let emitMock: ReturnType<typeof vi.fn>
+  let listeners: Record<string, Array<(...args: unknown[]) => void>>
+  let settingsStore: Record<string, unknown>
+  let fakeUpdater: { on: ReturnType<typeof vi.fn>; checkForUpdates: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.resetModules()
+    listeners = {}
+    settingsStore = {}
+    emitMock = vi.fn()
+    mockAppVersion = '1.0.24'
+    fakeUpdater = {
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] = listeners[event] || []
+        listeners[event].push(cb)
+      }) as ReturnType<typeof vi.fn>,
+      checkForUpdates: vi.fn(async () => ({ updateInfo: null }))
+    }
+    vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
+    vi.doMock('./telemetry', () => ({ emit: emitMock, bucketError: (s: string) => s }))
+    vi.doMock('../settings', () => ({
+      get: vi.fn((key: string) =>
+        key === 'autoInstallUpdates' ? (settingsStore[key] ?? true) : settingsStore[key]
+      ),
+      set: vi.fn((key: string, value: unknown) => {
+        if (value === undefined) delete settingsStore[key]
+        else settingsStore[key] = value
+      })
+    }))
+  })
+
+  function fire(eventName: string, payload: unknown): void {
+    for (const cb of listeners[eventName] || []) cb(payload)
+  }
+
+  const ignoredEmits = (): unknown[][] =>
+    emitMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.ignored_not_newer')
+
+  it('update-downloaded for the SAME version does not stage a pending update', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.24' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+    expect(ignoredEmits()).toHaveLength(1)
+    expect(ignoredEmits()[0]?.[1]).toMatchObject({
+      version: '1.0.24',
+      current: '1.0.24',
+      stage: 'downloaded'
+    })
+  })
+
+  it('update-downloaded for an OLDER version does not stage a pending update', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.22' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded for an equal build with different metadata is ignored', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.24+build.7' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded tolerates a leading "v" on a newer version and stages it', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: 'v1.0.25' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('v1.0.25')
+    expect(updater.getCurrentUpdateState()).toMatchObject({ kind: 'ready', version: 'v1.0.25' })
+  })
+
+  it('update-downloaded ignores a leading "v" on the current version', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: 'v1.0.24' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-downloaded stages a newer version carrying build metadata', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.25+build.7' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.25+build.7')
+    expect(updater.getCurrentUpdateState().kind).toBe('ready')
+  })
+
+  it('update-downloaded for a genuinely NEWER version stages it', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.25' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.25')
+    expect(updater.getCurrentUpdateState()).toMatchObject({ kind: 'ready', version: '1.0.25' })
+    expect(ignoredEmits()).toHaveLength(0)
+  })
+
+  it('update-downloaded for an RC of a HIGHER version stages it (RC support)', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.25-rc.1' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.25-rc.1')
+    expect(updater.getCurrentUpdateState()).toMatchObject({ kind: 'ready', version: '1.0.25-rc.1' })
+  })
+
+  it('update-downloaded for an RC of the CURRENT version is ignored (rc < release)', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '1.0.24-rc.1' })
+
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+  })
+
+  it('update-available for a non-newer version is ignored (no available pill/emit)', async () => {
+    settingsStore['autoInstallUpdates'] = false // surface the 'available' pill path
+    const updater = await bootUpdater()
+
+    fire('update-available', { version: '1.0.24' })
+
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+    expect(
+      emitMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.available')
+    ).toHaveLength(0)
+    expect(ignoredEmits()).toHaveLength(1)
+  })
+
+  it('runCheck reports a non-newer surfaced version as unavailable', async () => {
+    fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.0.24' } }))
+    const updater = await bootUpdater()
+
+    const result = await updater.runCheck('manual-check')
+
+    expect(result).toEqual({ available: false })
+    expect(
+      emitMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.checked')
+    ).toHaveLength(0)
+  })
+
+  it('runCheck reports a newer surfaced version as available', async () => {
+    fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.0.25' } }))
+    const updater = await bootUpdater()
+
+    const result = await updater.runCheck('manual-check')
+
+    expect(result).toEqual({ available: true, version: '1.0.25' })
+  })
+
+  it('the ignored_not_newer diagnostic is deduped across entry points per version', async () => {
+    await bootUpdater()
+
+    fire('update-available', { version: '1.0.24' })
+    fire('update-downloaded', { version: '1.0.24' })
+    fire('update-available', { version: '1.0.24' })
+
+    expect(ignoredEmits()).toHaveLength(1)
+  })
+
+  it('hasPendingStartupUpdate ignores a stale non-newer pending marker', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.20'
+    const updater = await bootUpdater()
+
+    expect(updater.hasPendingStartupUpdate()).toBe(false)
+  })
+
+  it('applyPendingUpdateOnStartup clears a stale non-newer pending marker', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.20'
+    settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.20'
+    const updater = await bootUpdater()
+
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
     expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
   })
