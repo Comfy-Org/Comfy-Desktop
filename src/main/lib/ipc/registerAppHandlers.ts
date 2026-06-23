@@ -310,11 +310,12 @@ export function registerAppHandlers(): void {
   // most-recently-launched first. Powers `comfy.desktop.session.installs_inventory`
   // so dashboards can see the user's full install footprint without
   // having to wait for them to launch each one. The inventory ships to PostHog
-  // (only) as a serialized `installs_json` string; capped to 512 KB total to
-  // stay comfortably under PostHog's 1 MB per-event hard limit after super-
-  // properties and JSON-escaping overhead.
+  // (only) as a serialized `installs_json` string; capped to 384 KB total to
+  // leave conservative headroom under PostHog's 1 MB per-event hard limit after
+  // re-escaping inside the outer event JSON, super-properties, and any non-ASCII
+  // expansion (the cap counts UTF-16 code units, the limit is UTF-8 bytes).
   ipcMain.handle('get-installs-inventory', async () => {
-    const MAX_TOTAL_BYTES = 512 * 1024
+    const MAX_TOTAL_BYTES = 384 * 1024
     const MAX_PER_INSTALL_BYTES = 64 * 1024
     const all = await installations.list()
     // `installing` entries are mid-install transient — exclude them
