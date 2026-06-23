@@ -104,14 +104,18 @@ function isAutoInstallEnabled(): boolean {
 }
 
 /**
- * Re-broadcast the cached `_appUpdateState` with a refreshed
- * `autoUpdate` flag. Settings handler calls this when the user toggles
- * the autoUpdate preference so a pending `'ready'` state immediately
- * starts reading as auto-on / auto-off (drives the title-bar pill copy
- * and the click-modal flow without having to wait for the next
- * update-check broadcast). No-op when there's no cached state.
+ * Settings handler calls this when the user toggles the auto-install
+ * preference. Two effects:
+ *   1. Re-applies the install-on-quit policy (Issue #1104) so flipping the
+ *      setting arms/disarms install-on-quit immediately, without a restart.
+ *      This runs regardless of whether an update is cached.
+ *   2. Re-broadcasts the cached `_appUpdateState` with a refreshed `autoUpdate`
+ *      flag so a pending `'ready'` state immediately reads as auto-on / auto-off
+ *      (drives the title-bar pill copy and the click-modal flow without waiting
+ *      for the next update-check broadcast). No-op when there's no cached state.
  */
 export function notifyAutoUpdateChanged(): void {
+  syncInstallOnQuitPolicy()
   if (_appUpdateState.kind === null) return
   const refreshed = isAutoInstallEnabled()
   if (_appUpdateState.autoUpdate === refreshed) return
@@ -178,18 +182,48 @@ function isInstallerUIEnabled(): boolean {
   return isWindowsOptOutGate('showInstallerUI')
 }
 
+/** Set once the OS session-end guard suppresses install-on-quit; never cleared
+ *  for the life of the process. Latches the suppression so a later settings
+ *  toggle (which re-runs `syncInstallOnQuitPolicy`) can't re-arm install-on-quit
+ *  mid-shutdown and reintroduce the mid-write corruption the guard prevents. */
+let _installOnQuitSuppressedForSession = false
+
 /**
  * Disable electron-updater's install-on-quit. Called when the OS signals the
  * session is ending (Windows shutdown / restart / logoff) so the quit handler
  * electron-updater registers after a download won't spawn the installer while
  * the OS tears everything down — that mid-write kill is the corruption mode
  * behind the "reinstall on every shutdown" loop. The quit handler re-reads this
- * flag at quit time, so flipping it here is enough. Safe to call in any mode (a
- * no-op when the startup-install path already disabled it at register time).
+ * flag at quit time, so flipping it here is enough. Latches for the session so
+ * `syncInstallOnQuitPolicy` can't undo it. Safe to call in any mode.
  */
 export function suppressInstallOnQuit(): void {
+  _installOnQuitSuppressedForSession = true
   try {
     electronAutoUpdater.autoInstallOnAppQuit = false
+  } catch {}
+}
+
+/**
+ * Reconcile electron-updater's install-on-quit flag with current settings.
+ * Install-on-quit is disabled when any of:
+ *   - the OS session-end guard already suppressed it for this session
+ *     (`suppressInstallOnQuit` — never re-arm mid-shutdown), or
+ *   - the startup-install path owns the install (Windows default — the staged
+ *     update applies on the next launch, not on quit), or
+ *   - the user disabled auto-install (Issue #1104 — a staged update must wait
+ *     for an explicit "Desktop Update Ready" pill click rather than installing
+ *     on the next quit/close).
+ * It stays enabled only when none hold (non-Windows with auto-install on),
+ * where a normal quit still applies a staged update. Re-applied on the
+ * `autoInstallUpdates` toggle so flipping the setting takes effect without a
+ * restart. The download itself is unaffected — updates still download in the
+ * background; only the install is gated.
+ */
+export function syncInstallOnQuitPolicy(): void {
+  try {
+    electronAutoUpdater.autoInstallOnAppQuit =
+      !_installOnQuitSuppressedForSession && !isStartupInstallEnabled() && isAutoInstallEnabled()
   } catch {}
 }
 
@@ -626,7 +660,14 @@ type StartupInstallDecision =
   | { attempt: true; version: string }
   | {
       attempt: false
-      reason: 'disabled' | 'e2e' | 'system_managed' | 'session_ending' | 'no_pending' | 'loop_breaker'
+      reason:
+        | 'disabled'
+        | 'auto_install_disabled'
+        | 'e2e'
+        | 'system_managed'
+        | 'session_ending'
+        | 'no_pending'
+        | 'loop_breaker'
     }
 
 /**
@@ -634,14 +675,18 @@ type StartupInstallDecision =
  * synchronous (reads only persisted markers + environment).
  *
  * Returns a skip for: the startup-install gate being off (non-Windows, or the
- * `installUpdatesOnStartup` opt-out — installs still happen on quit), E2E runs,
- * system-package-managed installs (apt/dnf own
+ * `installUpdatesOnStartup` opt-out — installs still happen on quit), auto-install
+ * being disabled (Issue #1104 — staged update waits for an explicit pill click),
+ * E2E runs, system-package-managed installs (apt/dnf own
  * the update), an OS session that's already ending, no staged download (or one
  * that's already the running version), and the loop-breaker case (we already
  * auto-attempted this exact version and are still on the old one).
  */
 function evaluateStartupInstall(): StartupInstallDecision {
   if (!isStartupInstallEnabled()) return { attempt: false, reason: 'disabled' }
+  // Issue #1104 — with auto-install off, a staged update must wait for an
+  // explicit pill click; never apply it automatically at startup.
+  if (!isAutoInstallEnabled()) return { attempt: false, reason: 'auto_install_disabled' }
   if (process.env['E2E'] === '1') return { attempt: false, reason: 'e2e' }
   if (isSystemPackageInstall()) return { attempt: false, reason: 'system_managed' }
   if (isSessionEnding()) return { attempt: false, reason: 'session_ending' }
@@ -784,20 +829,16 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
 export function register(): void {
   bindUpdaterEvents()
 
-  // Startup install (the Windows default): disable electron-updater's
-  // install-on-quit entirely up front — the staged update applies on the next
-  // launch (`applyPendingUpdateOnStartup`) instead of on quit, which is what a
-  // Windows shutdown can kill mid-write (the "reinstall on every shutdown"
-  // corruption loop). `electronAutoUpdater` is the same singleton the ToDesktop
-  // runtime drives, so this affects the real updater.
-  //
-  // Opted out (non-Windows, or `installUpdatesOnStartup` set to false): keep
-  // install-on-quit armed. A normal quit still installs a staged update; the
-  // `session-end` guard (`suppressInstallOnQuit`) flips `autoInstallOnAppQuit`
-  // off only when the OS is shutting down.
-  if (isStartupInstallEnabled()) {
-    suppressInstallOnQuit()
-  }
+  // Reconcile install-on-quit with current settings (see
+  // `syncInstallOnQuitPolicy`). Disabled when the startup-install path owns the
+  // install (the Windows default — the staged update applies on the next launch
+  // instead of on quit, avoiding the Windows-shutdown mid-write corruption
+  // loop) or when auto-install is off (Issue #1104 — wait for an explicit pill
+  // click). Otherwise (non-Windows with auto-install on) install-on-quit stays
+  // armed; the `session-end` guard (`suppressInstallOnQuit`) still flips it off
+  // only while the OS is shutting down. `electronAutoUpdater` is the same
+  // singleton the ToDesktop runtime drives, so this affects the real updater.
+  syncInstallOnQuitPolicy()
 
   ipcMain.handle('check-for-update', async () => {
     try {
