@@ -488,6 +488,17 @@ export interface TerminalRestore {
   exited: boolean
 }
 
+/** Recognised native-crash flavour decoded from a Windows NTSTATUS exit code.
+ *  `unknown` covers a decoded fault code we have no specific guidance for.
+ *  Shared across the IPC boundary so producer (main decode) and consumer
+ *  (renderer crash copy) can't drift on the string values. */
+export type CrashKind =
+  | 'access-violation'
+  | 'illegal-instruction'
+  | 'stack-buffer-overrun'
+  | 'heap-corruption'
+  | 'unknown'
+
 export interface ComfyExitedData {
   installationId: string
   installationName: string
@@ -507,7 +518,7 @@ export interface ComfyExitedData {
   /** Recognised native-crash flavour for `exitCode` (e.g. `'access-violation'`),
    *  used to pick human-readable, actionable crash copy. Absent when the exit
    *  code isn't a decodable native fault. */
-  crashKind?: string
+  crashKind?: CrashKind
   /** On a Windows access-violation crash, the Visual C++ runtime DLLs found
    *  missing from `System32` (e.g. `['vcruntime140_1.dll']`). Non-empty means
    *  the crash is very likely a broken/outdated VC++ runtime, so the UI can

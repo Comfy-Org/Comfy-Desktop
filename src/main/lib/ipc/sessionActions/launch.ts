@@ -815,13 +815,15 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         earlyExit = err.message
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
-      spawned.proc.on('exit', async (code) => {
+      spawned.proc.on('exit', async (code, signal) => {
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
           // A startup crash (e.g. a C-extension segfault during import) is the
           // most common access-violation case; decode the cryptic NTSTATUS code
           // and add the VC++ hint inline so the launch-failure modal is useful.
-          earlyExit = `Process exited with code ${await describeExitCode(code)}${detail}`
+          // A signal-kill (code null) reports the signal name instead.
+          const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
+          earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
         }
       })

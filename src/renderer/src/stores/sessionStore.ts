@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { reactive, computed, ref } from 'vue'
-import type { RunningInstance, ComfyOutputData, ComfyExitedData } from '../types/ipc'
+import type { RunningInstance, ComfyOutputData, ComfyExitedData, CrashKind } from '../types/ipc'
 
 interface SessionBuffer {
   output: string
@@ -30,7 +30,7 @@ interface ErrorInstance {
   exitCodeHex?: string
   /** Recognised native-crash flavour (e.g. `'access-violation'`) used to pick
    *  more specific, actionable crash copy. */
-  crashKind?: string
+  crashKind?: CrashKind
   /** VC++ runtime DLLs found missing on a Windows access-violation crash;
    *  non-empty drives the "repair the redistributable" hint. */
   vcRuntimeMissing?: string[]

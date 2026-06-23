@@ -14,14 +14,7 @@
  * in `vcRuntimeAudit.ts`.
  */
 
-/** A recognised native-crash flavour. `unknown` covers any other NTSTATUS
- *  failure code we decode the hex for but have no specific guidance on. */
-export type CrashKind =
-  | 'access-violation'
-  | 'illegal-instruction'
-  | 'stack-buffer-overrun'
-  | 'heap-corruption'
-  | 'unknown'
+import type { CrashKind } from '../../types/ipc'
 
 /** Known NTSTATUS failure codes mapped to a crash flavour. Values are the
  *  unsigned 32-bit codes Node surfaces (same as `0xC000....`). */
