@@ -28,6 +28,12 @@ const messages = {
         'The ComfyUI process was terminated by {signal}. You can restart it below.',
       crashedDescWithCodeAndSignal:
         'The ComfyUI process was terminated by {signal} (exit code {code}). You can restart it below.',
+      crashedDescWithCodeHex:
+        'The ComfyUI process exited (exit code {code} / {hex}). You can restart it below.',
+      crashedDescAccessViolation:
+        'ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.',
+      crashedDescVcRuntimeHint:
+        'Some Microsoft Visual C++ Redistributable runtime files appear to be missing; repairing or installing the latest redistributable may fix this.',
       crashedDescLogsHint: 'See the logs for details.',
       restart: 'Restart ComfyUI',
       stoppedTitle: 'ComfyUI is stopped',
@@ -192,6 +198,37 @@ describe('ComfyLifecycleView', () => {
     expect(button.text()).toContain('Restart ComfyUI')
   })
 
+  it('decodes an access-violation crash into human-readable copy with hex', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 3221225477,
+      exitCodeHex: '0xC0000005',
+      crashKind: 'access-violation',
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('0xC0000005')
+    // No VC++ hint unless DLLs were actually found missing.
+    expect(wrapper.text()).not.toContain('Visual C++ Redistributable')
+  })
+
+  it('appends the VC++ repair hint when runtime DLLs are missing', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 3221225477,
+      exitCodeHex: '0xC0000005',
+      crashKind: 'access-violation',
+      vcRuntimeMissing: ['vcruntime140_1.dll'],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('Visual C++ Redistributable')
+  })
+
   it('renders the POSIX signal in the crashed message when signal alone is present', async () => {
     const wrapper = mountView()
     const sessionStore = useSessionStore()
@@ -318,6 +355,28 @@ describe('ComfyLifecycleView', () => {
     const stored = sessionStore.errorInstances.get('inst-1')
     expect(stored?.lastStderr).toBe('Killed by signal 9')
     expect(stored?.exitCode).toBe(9)
+  })
+
+  it('preserves the decoded access-violation detail when hydrating from getLastCrashError', async () => {
+    const api = installMockApi({
+      getLastCrashError: vi.fn().mockResolvedValue({
+        installationId: 'inst-1',
+        installationName: 'My Local Install',
+        crashed: true,
+        exitCode: 3221225477,
+        exitCodeHex: '0xC0000005',
+        crashKind: 'access-violation',
+        vcRuntimeMissing: ['vcruntime140_1.dll'],
+      }),
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    // A panel recreated after the live event must still get the rich copy + hint
+    // rather than regressing to the bare decimal code.
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('0xC0000005')
+    expect(wrapper.text()).toContain('Visual C++ Redistributable')
   })
 
   it('does not overwrite an existing live error when getLastCrashError later resolves', async () => {

@@ -72,6 +72,9 @@ export interface StatusTag {
   /** Raw version the tag refers to, so surfaces like the title-bar update pill can
    *  show "Update v1.2.3" without re-parsing the localised `label`. */
   version?: string
+  /** Full human-readable explanation behind a short `danger` label, shown when
+   *  the user clicks the dashboard pill (the `label` is the terse pill text). */
+  detail?: string
 }
 
 export interface InstallStep {

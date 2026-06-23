@@ -98,7 +98,7 @@ export const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 export const UPDATE_CHECK_INTERVAL = 10 * 60 * 1000
 export const IGNORE_FILES = new Set([MARKER_FILE, '.DS_Store', 'Thumbs.db', 'desktop.ini'])
 export const ALL_UPDATE_CHANNELS = ['stable', 'latest']
-export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
+export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', 'PYTHONFAULTHANDLER', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -284,15 +284,158 @@ export async function syncOemSeedBestEffort(): Promise<void> {
   }
 }
 
-export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
-  if (!dirPath) return true
+/**
+ * Classify an install directory, keeping "gone" distinct from "empty":
+ *  - `missing`      — the path does not exist (ENOENT), e.g. renamed folder or
+ *                     an unplugged removable / disconnected network drive.
+ *  - `no-permission`— the path exists but access is denied (EACCES/EPERM); a
+ *                     real, persistent problem distinct from "not found".
+ *  - `inaccessible` — the path exists but can't be read for a transient reason
+ *                     (I/O error, or a probe that timed out on a slow drive).
+ *  - `empty`        — readable but holds only ignorable bookkeeping files; the
+ *                     leftover of an aborted install, safe to reclaim.
+ *  - `populated`    — readable with real content.
+ *
+ * Only an `empty` dir may be discarded as an aborted install; a `missing`/
+ * `no-permission`/`inaccessible` dir must be kept so a temporarily-offline drive
+ * doesn't lose the tracked instance and its settings (issue #1155).
+ */
+export type InstallDirState = 'missing' | 'no-permission' | 'inaccessible' | 'empty' | 'populated'
+
+/** Shared by the sync and async classifiers so they can't drift. */
+function classifyReadableEntries(entries: string[]): 'empty' | 'populated' {
+  return entries.every((name) => IGNORE_FILES.has(name)) ? 'empty' : 'populated'
+}
+
+/** Map a readdir failure to a dir state. ENOENT means the folder is genuinely
+ *  gone (renamed / unplugged); EACCES/EPERM means it exists but we're denied
+ *  access (a real, persistent problem distinct from "not found"); anything else
+ *  (EIO, EBUSY, a hung network mount surfaced as a timeout, …) is a transient
+ *  `inaccessible` that may clear on its own, so callers must not treat it as
+ *  fatal. Shared by the sync and async classifiers so they can't drift. */
+function classifyDirError(e: unknown): 'missing' | 'no-permission' | 'inaccessible' {
+  const code = (e as NodeJS.ErrnoException | null)?.code
+  if (code === 'ENOENT') return 'missing'
+  if (code === 'EACCES' || code === 'EPERM') return 'no-permission'
+  return 'inaccessible'
+}
+
+export function installDirState(dirPath: string): InstallDirState {
+  if (!dirPath) return 'missing'
   try {
-    const entries = fs.readdirSync(dirPath)
-    return entries.every((name) => IGNORE_FILES.has(name))
+    return classifyReadableEntries(fs.readdirSync(dirPath))
   } catch (e) {
-    if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return true
-    return false
+    return classifyDirError(e)
   }
+}
+
+export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
+  const state = installDirState(dirPath)
+  return state === 'missing' || state === 'empty'
+}
+
+/** Single source of the "folder is flagged unavailable in the dashboard" rule
+ *  for the renderer's danger pill. Buckets `missing`, `no-permission`, and
+ *  `inaccessible` together; the pill's label/detail still distinguish them.
+ *  NOT the launch-block rule — launch only blocks on the persistent states
+ *  (`missing`/`no-permission`), letting the transient `inaccessible` through. */
+export function isInstallDirUnavailable(state: InstallDirState | undefined): boolean {
+  return state === 'missing' || state === 'inaccessible' || state === 'no-permission'
+}
+
+/** The danger pill the dashboard renders for a dir state. `missing` and the
+ *  transient `inaccessible` share the "not found" pill; `no-permission` gets its
+ *  own. The change-detection in `refreshInstallDirStates()` compares THIS (not
+ *  the unavailable boolean) so a `missing`↔`no-permission` flip — same boolean,
+ *  different pill — still re-broadcasts and updates the label. */
+export type InstallDirDashboardKind = 'available' | 'not-found' | 'no-permission'
+export function installDirDashboardKind(state: InstallDirState | undefined): InstallDirDashboardKind {
+  if (state === 'no-permission') return 'no-permission'
+  if (state === 'missing' || state === 'inaccessible') return 'not-found'
+  return 'available'
+}
+
+/** Async `installDirState` that can't hang the caller on a dead network drive:
+ *  a probe that doesn't settle within the timeout is reported `inaccessible`.
+ *  Generous (8s) because a healthy-but-slow network/removable drive can be slow
+ *  to wake, and a false `inaccessible` timeout is exactly what we want to avoid;
+ *  the only cost is launch waiting this long before proceeding on a truly-dead
+ *  path (which then falls through, never blocks). */
+const _DIR_STATE_PROBE_TIMEOUT_MS = 8000
+export async function installDirStateAsync(dirPath: string): Promise<InstallDirState> {
+  if (!dirPath) return 'missing'
+  const probe = (async (): Promise<InstallDirState> => {
+    try {
+      return classifyReadableEntries(await fs.promises.readdir(dirPath))
+    } catch (e) {
+      return classifyDirError(e)
+    }
+  })()
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<InstallDirState>((resolve) => {
+    timer = setTimeout(() => resolve('inaccessible'), _DIR_STATE_PROBE_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([probe, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Cached availability of each local install's directory, keyed by install id.
+ *  Populated asynchronously by `refreshInstallDirStates()` so the synchronous
+ *  renderer enrichment can surface an "offline" indicator without ever doing a
+ *  (potentially blocking) filesystem read on the UI path. Only local sources
+ *  (`skipInstall !== true`) with an `installPath` are tracked. */
+const _installDirStateCache = new Map<string, InstallDirState>()
+
+export function getCachedInstallDirState(id: string): InstallDirState | undefined {
+  return _installDirStateCache.get(id)
+}
+
+let _refreshInstallDirStatesInFlight: Promise<void> | null = null
+/** Single-flight refresh of `_installDirStateCache` for all local installs;
+ *  broadcasts `installations-changed` only when an install's rendered pill kind
+ *  changes so the dashboard re-pulls and the indicator appears/clears/relabels
+ *  on its own. */
+export function refreshInstallDirStates(): Promise<void> {
+  if (_refreshInstallDirStatesInFlight) return _refreshInstallDirStatesInFlight
+  _refreshInstallDirStatesInFlight = (async (): Promise<void> => {
+    let changed = false
+    try {
+      const all = await installations.list()
+      const local = all.filter((inst) => {
+        const source = sourceMap[inst.sourceId]
+        return source && !source.skipInstall && typeof inst.installPath === 'string' && inst.installPath
+      })
+      // Probe in parallel so a few offline paths don't serialize their timeouts
+      // (worst-case refresh stays ~one timeout, not one per install).
+      const probed = await Promise.all(
+        local.map(async (inst) => ({ id: inst.id, state: await installDirStateAsync(inst.installPath) }))
+      )
+      const tracked = new Set<string>()
+      for (const { id, state } of probed) {
+        tracked.add(id)
+        const prev = _installDirStateCache.get(id)
+        _installDirStateCache.set(id, state)
+        // Compare the rendered pill, not the unavailable boolean: a
+        // missing↔inaccessible flip is the same pill (no broadcast → no refresh
+        // loop), but missing↔no-permission flips the label and must broadcast.
+        if (installDirDashboardKind(prev) !== installDirDashboardKind(state)) changed = true
+      }
+      // Drop cache entries for installs that are gone/no longer local. Their
+      // pill left with them, so this needs no broadcast of its own.
+      for (const id of [..._installDirStateCache.keys()]) {
+        if (!tracked.has(id)) _installDirStateCache.delete(id)
+      }
+    } catch (err) {
+      console.warn('refreshInstallDirStates failed:', err)
+    }
+    if (changed) _broadcastToRenderer('installations-changed', {})
+  })().finally(() => {
+    _refreshInstallDirStatesInFlight = null
+  })
+  return _refreshInstallDirStatesInFlight
 }
 
 export function openPath(targetPath: string): Promise<string> {
@@ -534,6 +677,12 @@ export function buildLaunchEnv(inst: InstallationRecord, sessionPath?: string): 
     ...process.env,
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
+    // Install CPython's fatal-fault handler so a native crash (segfault /
+    // access violation in a C-extension) dumps the Python traceback — i.e. the
+    // import that died — to stderr instead of vanishing behind a bare
+    // `0xC0000005` exit code. We capture that stderr into the crash buffer.
+    // Cost is one-time handler install; zero overhead on the normal path.
+    PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
