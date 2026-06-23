@@ -31,7 +31,6 @@ import {
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
-import { useInstallCta } from '../../composables/useInstallCta'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
 import { useCloudCapacity } from '../../composables/useCloudCapacity'
 import { decideNavigation, type NavDecision } from '../../../../shared/navigation/navDecision'
@@ -153,9 +152,14 @@ watch(
 )
 
 const installation = toRef(props, 'installation')
-const installCta = useInstallCta(installation, {
-  activeInstallationId: toRef(props, 'activeInstallationId')
+// One nav-state read-model drives both the footer CTA and the caret; `installCta`
+// is its shared run-state derivation, reused here rather than built twice.
+const navState = useInstanceNavState(installation, {
+  currentView: () => props.currentView,
+  currentCategory: () => props.currentCategory,
+  activeInstallationId: () => props.activeInstallationId
 })
+const installCta = navState.cta
 const {
   sections,
   loading,
@@ -538,19 +542,12 @@ const isCloudCapacityBlocked = computed(
     installation.value?.sourceCategory === 'cloud' && cloudCapacity.effectiveStatus() === 'disabled'
 )
 
-// State-aware navigation: the footer CTA verb/label and the caret items both
-// come from one `decideNavigation` call, so they can't drift.
-const navState = useInstanceNavState(installation, {
-  currentView: () => props.currentView,
-  currentCategory: () => props.currentCategory,
-  activeInstallationId: () => props.activeInstallationId
-})
+// The footer CTA verb/label and the caret items both come from one
+// `decideNavigation` call (via the shared `navState` above), so they can't drift.
 const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
 
-/** Resolve a decision label key to display text. The decision table folds
- *  remote into cloud, so the cloud-specific "Open Cloud" key is re-pointed to
- *  "Open Remote" for an actual remote install (the only place the raw category
- *  is known). */
+/** Resolve a decision label key, re-pointing "Open Cloud" → "Open Remote" for a
+ *  remote install (the table folds remote into cloud; raw category is known here). */
 function resolveNavLabel(key: string): string {
   if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
     return t('instancePicker.openRemote', 'Open Remote')
@@ -602,19 +599,17 @@ const primaryActionIcon = computed<Component>(() =>
   hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
 )
 
-/**
- * Caret items = the decision's navigation alternatives, plus the existing
- * synthetic "Stop" action (reused from the More menu — present only for a local
- * running install) when the primary is "Restart", so stopping is one click from
- * the CTA without a separate Stop button. Nav items emit `open-new-window`; the
- * reused lifecycle action routes through `runAction` (see `handleCaretPick`).
- */
+/** The More-menu "Stop" action, surfaced on the caret when the primary is
+ *  Restart so stopping is one click from the CTA. */
 const stopAction = computed<ActionDef | undefined>(() =>
   pinBottomActions.value.find((a) => a.id === 'stop')
 )
+/** Nav caret items are keyed by `secondary[]` index, not label, so two
+ *  alternatives sharing a label can't collide. */
+const NAV_ITEM_PREFIX = 'nav:'
 const caretActions = computed<MenuAction[]>(() => {
-  const navItems: MenuAction[] = primaryDecision.value.secondary.map((alt) => ({
-    id: alt.primaryLabel,
+  const navItems: MenuAction[] = primaryDecision.value.secondary.map((alt, i) => ({
+    id: `${NAV_ITEM_PREFIX}${i}`,
     label: resolveNavLabel(alt.primaryLabel),
     icon: navIconFor(alt.primaryLabel)
   }))
@@ -684,12 +679,13 @@ function closeCaretMenu(): void {
 }
 function handleCaretPick(action: ActionDef): void {
   if (!installation.value) return
-  // Nav alternatives carry a NavDecision label id → emit to the picker; a reused
-  // lifecycle action (e.g. Stop) routes through the same `runAction` the More
-  // menu uses.
-  const picked = primaryDecision.value.secondary.find((alt) => alt.primaryLabel === action.id)
-  if (picked) {
-    emit('open-new-window', picked)
+  // Nav alternatives carry a `nav:<index>` id → emit the matching decision; a
+  // reused lifecycle action (e.g. Stop) keeps its own id and routes through the
+  // same `runAction` the More menu uses.
+  if (action.id.startsWith(NAV_ITEM_PREFIX)) {
+    const index = Number(action.id.slice(NAV_ITEM_PREFIX.length))
+    const picked = primaryDecision.value.secondary[index]
+    if (picked) emit('open-new-window', picked)
     return
   }
   void runAction(action)

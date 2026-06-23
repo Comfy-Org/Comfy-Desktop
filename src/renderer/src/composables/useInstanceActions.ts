@@ -2,17 +2,11 @@ import type { NavDecision } from '../../../shared/navigation/navDecision'
 import type { Installation } from '../types/ipc'
 
 /**
- * Single funnel for executing a navigation `NavDecision` against the host
- * bridge. The decision (what to do) is computed by `decideNavigation`; this
- * routes the chosen verb onto the existing preload bridge primitives, applying
- * the renderer-side gates (cloud capacity, local kill-confirm) that main would
- * otherwise re-prompt for.
- *
- * Keeping verb→bridge routing here means the picker view no longer hand-codes
- * `pickInstall` vs `restartInstall` vs `openInstallNewWindow` — it asks for a
- * decision and dispatches it.
+ * Single funnel that routes a `NavDecision`'s verb onto the host bridge,
+ * applying the renderer-side gates (cloud capacity, local kill-confirm) that
+ * main would otherwise re-prompt for.
  */
-/** Outcome of the in-drawer "switch a running local instance" prompt. */
+/** Outcome of the in-drawer switch prompt. */
 export type SwitchChoice = 'switch' | 'new-window' | 'cancel'
 
 export interface InstanceActionsBridge {
@@ -37,9 +31,8 @@ export interface InstanceActionsDeps {
   confirmLocalKill: (inst: Installation) => Promise<boolean>
   /** Cloud capacity gate; returns false to abort a cloud action. */
   confirmCloudCapacity: (inst: Installation) => Promise<boolean>
-  /** In-drawer 3-way prompt shown when switching INTO a window that runs a local
-   *  instance: stop & switch / open the target in a new window / cancel. Returns
-   *  `'switch'` straight away for non-local hosts (nothing to stop). */
+  /** In-drawer 3-way prompt when the current host is a local install: stop &
+   *  switch / open in new window / cancel. Resolves `'switch'` for non-local. */
   confirmSwitch: (inst: Installation) => Promise<SwitchChoice>
 }
 
@@ -59,23 +52,18 @@ export function useInstanceActions(deps: InstanceActionsDeps): InstanceActions {
     if (!bridge) return
 
     try {
-      // Cloud capacity gate first — applies to any cloud action that lands a
-      // session (matches the ChooserView path so the two can't diverge).
+      // Cloud capacity gate first, matching the ChooserView path.
       if (target.sourceCategory === 'cloud' && !(await deps.confirmCloudCapacity(target))) return
 
       switch (decision.verb) {
         case 'restart': {
-          // Local restarts confirm in-drawer; `confirmed: true` tells main to
-          // skip its own modal. Non-local installs resolve true (no process).
+          // `confirmed: true` tells main to skip its own modal (non-local resolves true).
           if (!(await deps.confirmLocalKill(target))) return
           bridge.restartInstall(target.id, { confirmed: true })
           return
         }
         case 'switch': {
-          // Confirm in-drawer (popup stays open) rather than letting main pop a
-          // system modal after the popup is already dismissed — matches Restart's
-          // feel. The 3-way result: stop & switch / open the target in a new
-          // window / cancel. `confirmed: true` then tells main to skip its modal.
+          // In-drawer 3-way (stop & switch / new window / cancel) before main acts.
           const choice = await deps.confirmSwitch(target)
           if (choice === 'cancel') return
           if (choice === 'new-window') {
@@ -90,8 +78,7 @@ export function useInstanceActions(deps: InstanceActionsDeps): InstanceActions {
           return
         }
         case 'focus': {
-          // Same bridge call as a pick — main short-circuits to `window.focus()`
-          // when the install is already up. No confirm: nothing is killed.
+          // Same bridge call as a pick; main short-circuits to focus when already up.
           bridge.pickInstall(target.id)
           return
         }

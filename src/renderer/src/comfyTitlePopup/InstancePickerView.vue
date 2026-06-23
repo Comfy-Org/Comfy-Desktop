@@ -470,13 +470,13 @@ const instanceActions = useInstanceActions({
     })
     return result === 'primary'
   },
-  // In-drawer 3-way prompt (popup stays open) when the CURRENT host runs a local
-  // instance that the swap would stop. Other hosts have nothing to stop → switch
-  // straight away.
+  // In-drawer 3-way prompt (popup stays open) when the CURRENT host is a local
+  // install — swapping would stop its process. Cloud/remote hosts have no local
+  // process to stop → switch straight away.
   confirmSwitch: async (inst) => {
-    const hostIsLocalRunning =
+    const hostIsLocalInstall =
       props.snapshot.currentView === 'instance' && props.snapshot.currentCategory === 'local'
-    if (!hostIsLocalRunning) return 'switch'
+    if (!hostIsLocalInstall) return 'switch'
     const result = await dialogs.confirm({
       title: t('instancePicker.switchConfirmTitle'),
       message: t('instancePicker.switchConfirmMessage', { name: inst.name }),
