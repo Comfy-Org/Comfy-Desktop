@@ -103,8 +103,15 @@ async function diagnoseCrash(
     crashKind: decoded.kind,
   }
   if (decoded.kind === 'access-violation') {
-    const missing = await auditVcRuntime()
-    if (missing.length > 0) out.vcRuntimeMissing = missing
+    // Never let an audit failure reject this helper: it runs inside an async
+    // EventEmitter listener, so a throw would become an unhandledRejection and
+    // skip recordCrash/broadcast. Keep the decoded hex/kind regardless.
+    try {
+      const missing = await auditVcRuntime()
+      if (missing.length > 0) out.vcRuntimeMissing = missing
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
+    }
   }
   return out
 }
@@ -123,10 +130,16 @@ async function describeExitCode(code: number | null): Promise<string> {
   let out = `${decoded.code} / ${decoded.hex}`
   if (decoded.kind === 'access-violation') {
     out += ' (memory access violation — usually a faulty or missing native library)'
-    if ((await auditVcRuntime()).length > 0) {
-      out +=
-        '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
-        'installing the latest redistributable may fix this'
+    // Swallow audit failures: this feeds earlyExitPromise's rejection, so a
+    // throw here would leave the launch race hanging until the boot timeout.
+    try {
+      if ((await auditVcRuntime()).length > 0) {
+        out +=
+          '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+          'installing the latest redistributable may fix this'
+      }
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
     }
   }
   return out
@@ -611,6 +624,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // (`scrubTelemetryContext` in renderer bootstrap), not here.
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
+      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
+      // relaunch can't slip in and clearCrash() during the audit and have this
+      // handler then resurrect the stale crash via recordCrash().
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -619,7 +636,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
-        ...(crashed ? await diagnoseCrash(code) : {}),
+        ...crashDiagnosis,
       }
       if (crashed) {
         recordCrash(exitedPayload)
@@ -1056,6 +1073,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
+      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
+      // relaunch can't slip in and clearCrash() during the audit and have this
+      // handler then resurrect the stale crash via recordCrash().
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -1064,7 +1085,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
-        ...(crashed ? await diagnoseCrash(code) : {}),
+        ...crashDiagnosis,
       }
       if (crashed) {
         recordCrash(exitedPayload)
