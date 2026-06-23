@@ -1,4 +1,5 @@
 import { app, ipcMain } from 'electron'
+import semver from 'semver'
 import todesktop from '@todesktop/runtime'
 import { autoUpdater as electronAutoUpdater } from 'electron-updater'
 import * as settings from '../settings'
@@ -208,6 +209,38 @@ function versionFromPayload(payload: unknown): string | null {
   return null
 }
 
+/**
+ * True only when `offered` has strictly-higher semver precedence than
+ * `current`. Build metadata is ignored, prerelease ordering is preserved (so a
+ * higher-version RC like `1.0.25-rc.1` is newer than `1.0.24` but `1.0.24-rc.1`
+ * is not), and a malformed version on either side is treated as not newer. This
+ * is the guard that stops the updater from "updating" to a non-newer version
+ * and looping (#1161).
+ */
+function isStrictlyNewerVersion(offered: string | null | undefined, current: string): boolean {
+  if (!offered) return false
+  const o = semver.valid(offered)
+  const c = semver.valid(current)
+  if (!o || !c) return false
+  return semver.gt(o, c)
+}
+
+/**
+ * True (and emits a once-per-version diagnostic) when `version` is not strictly
+ * newer than the running build, i.e. the caller should ignore the offer.
+ */
+function shouldIgnoreNonNewerVersion(version: string, stage: string): boolean {
+  if (isStrictlyNewerVersion(version, app.getVersion())) return false
+  if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.ignored_not_newer', version)) {
+    emitTelemetry('comfy.desktop.app_update.ignored_not_newer', {
+      version,
+      current: app.getVersion(),
+      stage
+    })
+  }
+  return true
+}
+
 function updaterErrorMessage(args: unknown[]): string {
   for (const arg of args) {
     if (arg instanceof Error && arg.message) return arg.message
@@ -231,6 +264,8 @@ function bindUpdaterEvents(): void {
   updater.on('update-available', (info: unknown) => {
     const version = versionFromPayload(info)
     if (!version) return
+    // Ignore a non-newer offer so it can't drive a download / pill / install.
+    if (shouldIgnoreNonNewerVersion(version, 'available')) return
     const autoInstall = isAutoInstallEnabled()
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.available', version)) {
       emitTelemetry('comfy.desktop.app_update.available', {
@@ -264,6 +299,9 @@ function bindUpdaterEvents(): void {
   updater.on('update-downloaded', (event: unknown) => {
     const version = versionFromPayload(event)
     if (!version) return
+    // A non-newer download must not persist `pendingDownloadedUpdateVersion`
+    // (which drives the startup-install splash) nor flip state to `'ready'`.
+    if (shouldIgnoreNonNewerVersion(version, 'downloaded')) return
     _autoDownloadTriggeredFor = null
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_complete', version)) {
       emitTelemetry('comfy.desktop.app_update.download_complete', { version })
@@ -406,6 +444,10 @@ async function checkForUpdate(
     disableUpdateReadyAction: true
   })
   const version = versionFromPayload(result)
+  // A non-newer surfaced version is not an available update.
+  if (version && shouldIgnoreNonNewerVersion(version, 'check')) {
+    return { available: false }
+  }
   if (
     version &&
     USER_INITIATED_CHECK_TRIGGERS.has(source) &&
@@ -604,7 +646,11 @@ function evaluateStartupInstall(): StartupInstallDecision {
   if (isSystemPackageInstall()) return { attempt: false, reason: 'system_managed' }
   if (isSessionEnding()) return { attempt: false, reason: 'session_ending' }
   const pending = settings.get('pendingDownloadedUpdateVersion')
-  if (!pending || pending === app.getVersion()) return { attempt: false, reason: 'no_pending' }
+  // Only install a staged version that is strictly newer than what's running,
+  // so the running build or a stale marker can't re-trigger the install loop.
+  if (!pending || !isStrictlyNewerVersion(pending, app.getVersion())) {
+    return { attempt: false, reason: 'no_pending' }
+  }
   const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
   if (lastAttempt === pending) return { attempt: false, reason: 'loop_breaker' }
   return { attempt: true, version: pending }
@@ -665,13 +711,15 @@ function waitForReadyState(timeoutMs: number): Promise<void> {
  * flash by before the app quits.
  */
 export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promise<boolean> {
-  // Clear stale markers once the attempted/staged version is actually running
-  // (the install succeeded on a previous boot).
+  // Clear markers that no longer point at a strictly-newer target, while
+  // preserving genuinely-newer attempts so the loop-breaker below stays armed.
   const running = app.getVersion()
-  if (settings.get('lastStartupUpdateAttemptVersion') === running) {
+  const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
+  if (lastAttempt && !isStrictlyNewerVersion(lastAttempt, running)) {
     settings.set('lastStartupUpdateAttemptVersion', undefined)
   }
-  if (settings.get('pendingDownloadedUpdateVersion') === running) {
+  const pendingVersion = settings.get('pendingDownloadedUpdateVersion')
+  if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
     settings.set('pendingDownloadedUpdateVersion', undefined)
   }
 
