@@ -86,8 +86,9 @@ describe('isEffectivelyEmptyInstallDir', () => {
 })
 
 describe('isInstallDirUnavailable', () => {
-  it('buckets missing and inaccessible as unavailable, others as available', () => {
+  it('buckets missing, no-permission and inaccessible as unavailable, others as available', () => {
     expect(isInstallDirUnavailable('missing')).toBe(true)
+    expect(isInstallDirUnavailable('no-permission')).toBe(true)
     expect(isInstallDirUnavailable('inaccessible')).toBe(true)
     expect(isInstallDirUnavailable('empty')).toBe(false)
     expect(isInstallDirUnavailable('populated')).toBe(false)
@@ -109,8 +110,20 @@ describe('installDirStateAsync', () => {
     await expect(installDirStateAsync(path.join(tmpRoot, 'gone'))).resolves.toBe('missing')
   })
 
-  it("classifies a non-ENOENT readdir error (e.g. EACCES) as 'inaccessible'", async () => {
+  it("classifies a permission-denied readdir error (EACCES) as 'no-permission'", async () => {
     const err = Object.assign(new Error('denied'), { code: 'EACCES' })
+    vi.spyOn(fs.promises, 'readdir').mockRejectedValueOnce(err as never)
+    await expect(installDirStateAsync('/whatever')).resolves.toBe('no-permission')
+  })
+
+  it("classifies a Windows permission-denied readdir error (EPERM) as 'no-permission'", async () => {
+    const err = Object.assign(new Error('denied'), { code: 'EPERM' })
+    vi.spyOn(fs.promises, 'readdir').mockRejectedValueOnce(err as never)
+    await expect(installDirStateAsync('/whatever')).resolves.toBe('no-permission')
+  })
+
+  it("classifies a transient readdir error (e.g. EIO) as 'inaccessible'", async () => {
+    const err = Object.assign(new Error('io error'), { code: 'EIO' })
     vi.spyOn(fs.promises, 'readdir').mockRejectedValueOnce(err as never)
     await expect(installDirStateAsync('/whatever')).resolves.toBe('inaccessible')
   })

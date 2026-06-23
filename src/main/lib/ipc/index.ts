@@ -111,8 +111,8 @@ export function register(callbacks: RegisterCallbacks = {}): void {
         return source && !source.skipInstall && inst.installPath
       })
       // Probe in parallel so a few offline paths don't serialize their timeouts.
-      // Only an existing-but-empty dir (aborted install) is reclaimed; a missing
-      // or timed-out ('inaccessible') dir is kept (issue #1155).
+      // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
+      // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
       const states = await Promise.all(
         sweepable.map(async (inst) => ({ inst, state: await installDirStateAsync(inst.installPath) }))
       )

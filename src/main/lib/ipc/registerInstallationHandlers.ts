@@ -99,21 +99,26 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
     // unplugged removable drive, offline network share, or renamed folder) is
     // flagged "directory not found" rather than forgotten — restoring the
     // folder clears it on the next refresh (issue #1155).
-    const dirNotFound =
-      !source.skipInstall && isInstallDirUnavailable(getCachedInstallDirState(inst.id))
+    const dirState = source.skipInstall ? undefined : getCachedInstallDirState(inst.id)
+    const dirUnavailable = isInstallDirUnavailable(dirState)
     // `detail` backs the dashboard's clickable danger pill — the full,
-    // human-readable explanation behind the short pill label. The folder-not-
-    // found case appends the path so the user can see which location is gone.
-    const dirNotFoundDetail = inst.installPath
-      ? `${i18n.t('errors.installDirNotFound')}\n\n${inst.installPath}`
-      : i18n.t('errors.installDirNotFound')
+    // human-readable explanation behind the short pill label. Both cases append
+    // the path so the user can see which location is affected. A folder we're
+    // denied access to gets a distinct "access denied" pill so the user can tell
+    // a permission problem from a folder that's actually gone.
+    const withInstallPath = (msg: string): string =>
+      inst.installPath ? `${msg}\n\n${inst.installPath}` : msg
+    const dirUnavailableTag =
+      dirState === 'no-permission'
+        ? { label: i18n.t('errors.installDirNoPermissionTag'), style: 'danger', detail: withInstallPath(i18n.t('errors.installDirNoPermission')) }
+        : { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger', detail: withInstallPath(i18n.t('errors.installDirNotFound')) }
     const statusTag =
       inst.status === 'partial-delete'
         ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger', detail: i18n.t('errors.deleteInterruptedDetail') }
         : inst.status === 'failed'
           ? { label: i18n.t('errors.installFailed'), style: 'danger', detail: i18n.t('errors.installFailedDetail') }
-          : dirNotFound
-            ? { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger', detail: dirNotFoundDetail }
+          : dirUnavailable
+            ? dirUnavailableTag
             : source.getStatusTag
               ? source.getStatusTag(inst)
               : undefined

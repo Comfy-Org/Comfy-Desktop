@@ -1081,6 +1081,8 @@
     "installDirEmpty": "Instance folder is empty. Delete this instance and reinstall.",
     "installDirNotFound": "Instance folder not found. Reconnect the drive or restore the folder, then try again.",
     "installDirNotFoundTag": "Folder Not Found",
+    "installDirNoPermission": "Can't access the instance folder. Check that you have permission to read it (or that the drive is online), then try again.",
+    "installDirNoPermissionTag": "Folder Access Denied",
     "installNotReady": "This instance is not ready to launch. It may still be installing or may have failed.",
     "installFailed": "Install Failed",
     "installFailedDetail": "This instance's installation did not finish. Delete it and reinstall.",

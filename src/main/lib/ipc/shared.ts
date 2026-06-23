@@ -288,20 +288,36 @@ export async function syncOemSeedBestEffort(): Promise<void> {
  * Classify an install directory, keeping "gone" distinct from "empty":
  *  - `missing`      — the path does not exist (ENOENT), e.g. renamed folder or
  *                     an unplugged removable / disconnected network drive.
- *  - `inaccessible` — the path exists but can't be read (permissions, I/O).
+ *  - `no-permission`— the path exists but access is denied (EACCES/EPERM); a
+ *                     real, persistent problem distinct from "not found".
+ *  - `inaccessible` — the path exists but can't be read for a transient reason
+ *                     (I/O error, or a probe that timed out on a slow drive).
  *  - `empty`        — readable but holds only ignorable bookkeeping files; the
  *                     leftover of an aborted install, safe to reclaim.
  *  - `populated`    — readable with real content.
  *
  * Only an `empty` dir may be discarded as an aborted install; a `missing`/
- * `inaccessible` dir must be kept so a temporarily-offline drive doesn't lose
- * the tracked instance and its settings (issue #1155).
+ * `no-permission`/`inaccessible` dir must be kept so a temporarily-offline drive
+ * doesn't lose the tracked instance and its settings (issue #1155).
  */
-export type InstallDirState = 'missing' | 'inaccessible' | 'empty' | 'populated'
+export type InstallDirState = 'missing' | 'no-permission' | 'inaccessible' | 'empty' | 'populated'
 
 /** Shared by the sync and async classifiers so they can't drift. */
 function classifyReadableEntries(entries: string[]): 'empty' | 'populated' {
   return entries.every((name) => IGNORE_FILES.has(name)) ? 'empty' : 'populated'
+}
+
+/** Map a readdir failure to a dir state. ENOENT means the folder is genuinely
+ *  gone (renamed / unplugged); EACCES/EPERM means it exists but we're denied
+ *  access (a real, persistent problem distinct from "not found"); anything else
+ *  (EIO, EBUSY, a hung network mount surfaced as a timeout, …) is a transient
+ *  `inaccessible` that may clear on its own, so callers must not treat it as
+ *  fatal. Shared by the sync and async classifiers so they can't drift. */
+function classifyDirError(e: unknown): 'missing' | 'no-permission' | 'inaccessible' {
+  const code = (e as NodeJS.ErrnoException | null)?.code
+  if (code === 'ENOENT') return 'missing'
+  if (code === 'EACCES' || code === 'EPERM') return 'no-permission'
+  return 'inaccessible'
 }
 
 export function installDirState(dirPath: string): InstallDirState {
@@ -309,8 +325,7 @@ export function installDirState(dirPath: string): InstallDirState {
   try {
     return classifyReadableEntries(fs.readdirSync(dirPath))
   } catch (e) {
-    if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
-    return 'inaccessible'
+    return classifyDirError(e)
   }
 }
 
@@ -319,11 +334,13 @@ export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
   return state === 'missing' || state === 'empty'
 }
 
-/** Single source of the "folder can't be used right now" rule, shared by the
- *  renderer indicator and the launch guard so they can't diverge. `missing`
- *  and `inaccessible` render identically, so they're bucketed together. */
+/** Single source of the "folder is flagged unavailable in the dashboard" rule
+ *  for the renderer's danger pill. Buckets `missing`, `no-permission`, and
+ *  `inaccessible` together; the pill's label/detail still distinguish them.
+ *  NOT the launch-block rule — launch only blocks on the persistent states
+ *  (`missing`/`no-permission`), letting the transient `inaccessible` through. */
 export function isInstallDirUnavailable(state: InstallDirState | undefined): boolean {
-  return state === 'missing' || state === 'inaccessible'
+  return state === 'missing' || state === 'inaccessible' || state === 'no-permission'
 }
 
 /** Async `installDirState` that can't hang the caller on a dead network drive:
@@ -335,8 +352,7 @@ export async function installDirStateAsync(dirPath: string): Promise<InstallDirS
     try {
       return classifyReadableEntries(await fs.promises.readdir(dirPath))
     } catch (e) {
-      if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
-      return 'inaccessible'
+      return classifyDirError(e)
     }
   })()
   let timer: NodeJS.Timeout | undefined

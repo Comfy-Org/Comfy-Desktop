@@ -1081,6 +1081,8 @@
     "installDirEmpty": "实例文件夹为空。请删除此实例并重新安装。",
     "installDirNotFound": "未找到实例文件夹。请重新连接驱动器或恢复文件夹后再试。",
     "installDirNotFoundTag": "未找到文件夹",
+    "installDirNoPermission": "无法访问实例文件夹。请检查您是否有读取权限（或驱动器是否在线），然后重试。",
+    "installDirNoPermissionTag": "文件夹访问被拒绝",
     "installNotReady": "此实例尚未准备好启动。它可能仍在安装，或安装已失败。",
     "installFailed": "安装失败",
     "installFailedDetail": "此实例的安装未完成。请删除后重新安装。",
