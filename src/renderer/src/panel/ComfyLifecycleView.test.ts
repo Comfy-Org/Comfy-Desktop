@@ -28,6 +28,12 @@ const messages = {
         'The ComfyUI process was terminated by {signal}. You can restart it below.',
       crashedDescWithCodeAndSignal:
         'The ComfyUI process was terminated by {signal} (exit code {code}). You can restart it below.',
+      crashedDescWithCodeHex:
+        'The ComfyUI process exited (exit code {code} / {hex}). You can restart it below.',
+      crashedDescAccessViolation:
+        'ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.',
+      crashedDescVcRuntimeHint:
+        'The Microsoft Visual C++ Redistributable appears to be missing or outdated; installing the latest version will likely fix this.',
       crashedDescLogsHint: 'See the logs for details.',
       restart: 'Restart ComfyUI',
       stoppedTitle: 'ComfyUI is stopped',
@@ -190,6 +196,37 @@ describe('ComfyLifecycleView', () => {
     const button = wrapper.find('button.brand-primary')
     expect(button.exists()).toBe(true)
     expect(button.text()).toContain('Restart ComfyUI')
+  })
+
+  it('decodes an access-violation crash into human-readable copy with hex', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 3221225477,
+      exitCodeHex: '0xC0000005',
+      crashKind: 'access-violation',
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('0xC0000005')
+    // No VC++ hint unless DLLs were actually found missing.
+    expect(wrapper.text()).not.toContain('Visual C++ Redistributable')
+  })
+
+  it('appends the VC++ repair hint when runtime DLLs are missing', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 3221225477,
+      exitCodeHex: '0xC0000005',
+      crashKind: 'access-violation',
+      vcRuntimeMissing: ['vcruntime140_1.dll'],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('Visual C++ Redistributable')
   })
 
   it('renders the POSIX signal in the crashed message when signal alone is present', async () => {

@@ -26,6 +26,8 @@ import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
+import { decodeExitCode } from '../../exitCodeInfo'
+import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createExecutionTap } from '../../executionTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -41,6 +43,7 @@ import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
+import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import {
   startBootPhases,
@@ -80,6 +83,30 @@ export function desktopFeatureFlags(
 // signal) is a crash, since the user didn't go through our Stop path.
 export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null): boolean {
   return code !== 0 || signal !== null
+}
+
+/**
+ * Diagnose a crash exit code into the extra fields the UI needs to show a
+ * human-readable message. Returns `{}` for a plain application exit (the
+ * generic "exited with code N" copy still applies). For a Windows native
+ * fault it adds the decoded hex + kind, and for an access violation it also
+ * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
+ * actually missing.
+ */
+function diagnoseCrash(
+  code: number | null,
+): Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> {
+  const decoded = decodeExitCode(code)
+  if (!decoded) return {}
+  const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
+    exitCodeHex: decoded.hex,
+    crashKind: decoded.kind,
+  }
+  if (decoded.kind === 'access-violation') {
+    const missing = auditVcRuntime()
+    if (missing.length > 0) out.vcRuntimeMissing = missing
+  }
+  return out
 }
 
 async function openLogStream(installPath: string): Promise<WriteStream> {
@@ -569,6 +596,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
+        ...(crashed ? diagnoseCrash(code) : {}),
       }
       if (crashed) {
         recordCrash(exitedPayload)
@@ -1010,6 +1038,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
+        ...(crashed ? diagnoseCrash(code) : {}),
       }
       if (crashed) {
         recordCrash(exitedPayload)
