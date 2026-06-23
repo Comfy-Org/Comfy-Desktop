@@ -416,6 +416,85 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
 
+  // Issue #1104 — auto-install off: the update still downloads, but it must
+  // never install without an explicit pill click (no startup install, no
+  // install-on-quit).
+  it('register() disables install-on-quit when auto-install is off (opted out of startup install)', async () => {
+    settingsStore['installUpdatesOnStartup'] = false
+    settingsStore['autoInstallUpdates'] = false
+    const updater = await import('./updater')
+    updater.register()
+    // Without the #1104 gate this would stay armed (the opt-out path) and a
+    // staged update would install on the next quit.
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('startup install is inert when auto-install is off, even with a staged update on Windows', async () => {
+    settingsStore['autoInstallUpdates'] = false
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    readyVersion = '1.0.1'
+    const updater = await import('./updater')
+    updater.register()
+    expect(updater.hasPendingStartupUpdate()).toBe(false)
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    // Intentional user choice, not an anomaly — no canary telemetry.
+    expect(findEmitCalls('comfy.desktop.app_update.startup_install_skipped')).toHaveLength(0)
+  })
+
+  it('installUpdate() (pill-confirm path) still installs when auto-install is off', async () => {
+    settingsStore['autoInstallUpdates'] = false
+    const updater = await import('./updater')
+    updater.register()
+    updater.installUpdate()
+    // The manual path is the whole point of auto-install off — it must work.
+    expect(fakeUpdater.restartAndInstall).toHaveBeenCalled()
+  })
+
+  it('toggling auto-install re-arms / disarms install-on-quit without a restart', async () => {
+    // Opt out of startup install so install-on-quit is the live gate.
+    settingsStore['installUpdatesOnStartup'] = false
+    const updater = await import('./updater')
+    updater.register()
+    // Auto-install defaults on → install-on-quit armed.
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+
+    settingsStore['autoInstallUpdates'] = false
+    updater.notifyAutoUpdateChanged()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+
+    settingsStore['autoInstallUpdates'] = true
+    updater.notifyAutoUpdateChanged()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+  })
+
+  it('notifyAutoUpdateChanged() never re-arms install-on-quit after session-end suppression', async () => {
+    // Opt out of startup install so install-on-quit would otherwise be armed.
+    settingsStore['installUpdatesOnStartup'] = false
+    const updater = await import('./updater')
+    updater.register()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+
+    // OS session ends → guard suppresses install-on-quit for the session.
+    updater.suppressInstallOnQuit()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+
+    // Mid-shutdown setting flips must never re-arm install-on-quit.
+    settingsStore['autoInstallUpdates'] = false
+    updater.notifyAutoUpdateChanged()
+    settingsStore['autoInstallUpdates'] = true
+    updater.notifyAutoUpdateChanged()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('register() disables install-on-quit on macOS when auto-install is off', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    settingsStore['autoInstallUpdates'] = false
+    const updater = await import('./updater')
+    updater.register()
+    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+  })
+
   it('installUpdate() is a no-op while the OS session is ending', async () => {
     sessionEnding = true
     const updater = await bootUpdater()
