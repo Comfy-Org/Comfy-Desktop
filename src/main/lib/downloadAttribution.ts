@@ -11,7 +11,7 @@ export interface PendingDownloadToken {
   source: DownloadTokenSource
 }
 
-const DOWNLOAD_TOKEN_PATTERN = /^[A-Za-z0-9_-]{8,128}$/
+const DOWNLOAD_TOKEN_PATTERN = /^[0-9A-Za-z]{12}$/
 
 export function normalizeDownloadToken(raw: string | null | undefined): string | null {
   const token = raw?.trim()

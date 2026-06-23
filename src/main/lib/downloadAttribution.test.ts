@@ -25,22 +25,24 @@ describe('downloadAttribution', () => {
     fs.rmSync(testUserData, { recursive: true, force: true })
   })
 
-  it('accepts opaque base64url-style tokens and trims whitespace', () => {
-    expect(normalizeDownloadToken('  abcDEF123_-xyz  ')).toBe('abcDEF123_-xyz')
+  it('accepts router-issued base62 tokens and trims whitespace', () => {
+    expect(normalizeDownloadToken('  AbC123xYz789  ')).toBe('AbC123xYz789')
   })
 
-  it('rejects short, oversized, or unsafe token values', () => {
-    expect(normalizeDownloadToken('abc123')).toBeNull()
-    expect(normalizeDownloadToken('a'.repeat(129))).toBeNull()
+  it('rejects wrong-length or non-base62 token values', () => {
+    expect(normalizeDownloadToken('AbC123xYz78')).toBeNull()
+    expect(normalizeDownloadToken('AbC123xYz7890')).toBeNull()
+    expect(normalizeDownloadToken('AbC123xYz78_')).toBeNull()
+    expect(normalizeDownloadToken('AbC123xYz78-')).toBeNull()
     expect(normalizeDownloadToken('posthog-id@example.com')).toBeNull()
     expect(normalizeDownloadToken('abc12345/path')).toBeNull()
   })
 
   it('reads a valid pending Windows installer token from configDir', () => {
-    fs.writeFileSync(pendingDownloadTokenPath(), 'dtok_123456789\n', 'utf-8')
+    fs.writeFileSync(pendingDownloadTokenPath(), 'AbC123xYz789\n', 'utf-8')
 
     expect(readPendingDownloadToken()).toEqual({
-      token: 'dtok_123456789',
+      token: 'AbC123xYz789',
       source: 'windows_installer_filename'
     })
   })
@@ -53,7 +55,7 @@ describe('downloadAttribution', () => {
   })
 
   it('clears the pending token file idempotently', () => {
-    fs.writeFileSync(pendingDownloadTokenPath(), 'dtok_123456789\n', 'utf-8')
+    fs.writeFileSync(pendingDownloadTokenPath(), 'AbC123xYz789\n', 'utf-8')
 
     clearPendingDownloadToken()
     clearPendingDownloadToken()

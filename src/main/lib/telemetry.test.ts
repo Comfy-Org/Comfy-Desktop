@@ -910,7 +910,7 @@ describe('telemetry deferDownloadTokenAlias', () => {
 
     const onAliased = vi.fn()
     telemetry.deferDownloadTokenAlias({
-      downloadToken: 'dtok_123456789',
+      downloadToken: 'AbC123xYz789',
       installationId: 'install-id',
       source: 'windows_installer_filename',
       onAliased
@@ -930,19 +930,19 @@ describe('telemetry deferDownloadTokenAlias', () => {
     telemetry.setConsentState('granted')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(aliases).toContainEqual({ distinctId: 'install-id', alias: 'dtok_123456789' })
+    expect(aliases).toContainEqual({ distinctId: 'install-id', alias: 'AbC123xYz789' })
     const attributed = captured.find(
       (c) => c.event === 'comfy.desktop.identity.download_attributed'
     )
     expect(attributed?.properties).toMatchObject({
       installation_id: 'install-id',
-      download_token: 'dtok_123456789',
+      download_token: 'AbC123xYz789',
       download_token_source: 'windows_installer_filename'
     })
     const session = captured.find((c) => c.event === 'comfy.desktop.session.started')
     expect(session?.properties).toMatchObject({
       installation_id: 'install-id',
-      download_token: 'dtok_123456789',
+      download_token: 'AbC123xYz789',
       download_token_source: 'windows_installer_filename'
     })
     expect(onAliased).toHaveBeenCalledTimes(1)
@@ -956,7 +956,7 @@ describe('telemetry deferDownloadTokenAlias', () => {
 
     const onAliased = vi.fn()
     telemetry.deferDownloadTokenAlias({
-      downloadToken: 'dtok_abcdef12',
+      downloadToken: 'ZyX987wVu654',
       installationId: 'install-id',
       source: 'windows_installer_filename',
       onAliased
@@ -969,7 +969,7 @@ describe('telemetry deferDownloadTokenAlias', () => {
     telemetry.setConsentState('granted')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'dtok_abcdef12' }])
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'ZyX987wVu654' }])
     expect(onAliased).toHaveBeenCalledTimes(1)
   })
 })

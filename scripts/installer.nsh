@@ -250,16 +250,18 @@ ${StrStr}
   Push $R1
   Push $R2
   Push $R3
+  Push $R4
 
   ; Windows MVP for GTM-104: the website/download proxy can serve the same
   ; signed installer binary with a tokenized Content-Disposition filename, e.g.
-  ; Comfy-Desktop-dt_abc123.exe. Persist only the opaque token substring; the
-  ; app validates the exact token shape before sending anything to telemetry.
+  ; Comfy-Desktop-dt_AbC123xYz789.exe. Persist only the 12-char opaque token;
+  ; the app validates the exact token shape before sending anything to telemetry.
   ${GetBaseName} "$EXEPATH" $R0
   ${StrStr} $R1 "$R0" "dt_"
   ${If} $R1 != ""
-    StrCpy $R1 "$R1" "" 3
-    ${If} $R1 != ""
+    StrCpy $R1 "$R1" 12 3
+    StrLen $R4 "$R1"
+    ${If} $R4 == 12
       ; Matches Electron's packaged userData path documented in README:
       ; %APPDATA%\Comfy Desktop.
       SetShellVarContext current
@@ -277,6 +279,7 @@ ${StrStr}
     ${EndIf}
   ${EndIf}
 
+  Pop $R4
   Pop $R3
   Pop $R2
   Pop $R1
