@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
   'view-error': [installation: Installation]
+  'view-danger': [installation: Installation]
 }>()
 
 const { t } = useI18n()
@@ -172,14 +173,17 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         <span class="chooser-tile-status-dot" aria-hidden="true" />
         {{ t(statusPill.label) }}
       </span>
-      <span
+      <button
         v-else-if="dangerTag"
-        class="chooser-tile-pill chooser-tile-danger-tag"
-        :title="dangerTag.label"
+        type="button"
+        class="chooser-tile-danger-tag"
+        :title="t('chooser.viewErrorTooltip')"
+        @click.stop="emit('view-danger', inst)"
+        @keydown.enter.stop="emit('view-danger', inst)"
       >
         <AlertCircle :size="13" />
         {{ dangerTag.label }}
-      </span>
+      </button>
       <button
         type="button"
         class="chooser-tile-kebab"

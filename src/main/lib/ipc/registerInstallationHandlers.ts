@@ -101,13 +101,19 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
     // folder clears it on the next refresh (issue #1155).
     const dirNotFound =
       !source.skipInstall && isInstallDirUnavailable(getCachedInstallDirState(inst.id))
+    // `detail` backs the dashboard's clickable danger pill — the full,
+    // human-readable explanation behind the short pill label. The folder-not-
+    // found case appends the path so the user can see which location is gone.
+    const dirNotFoundDetail = inst.installPath
+      ? `${i18n.t('errors.installDirNotFound')}\n\n${inst.installPath}`
+      : i18n.t('errors.installDirNotFound')
     const statusTag =
       inst.status === 'partial-delete'
-        ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger' }
+        ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger', detail: i18n.t('errors.deleteInterruptedDetail') }
         : inst.status === 'failed'
-          ? { label: i18n.t('errors.installFailed'), style: 'danger' }
+          ? { label: i18n.t('errors.installFailed'), style: 'danger', detail: i18n.t('errors.installFailedDetail') }
           : dirNotFound
-            ? { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger' }
+            ? { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger', detail: dirNotFoundDetail }
             : source.getStatusTag
               ? source.getStatusTag(inst)
               : undefined
