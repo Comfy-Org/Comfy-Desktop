@@ -76,13 +76,21 @@ describe('TemplatePickerStep', () => {
     expect(rows[0]!.text()).toContain('Wan Video')
   })
 
-  it('tags the recommended template (by flag, not position)', () => {
-    const wrapper = mountPicker()
+  it('shows the recommended badge on the recommended card when it is not selected', () => {
+    // Select the non-recommended alt so the recommended card shows its badge
+    // (the check replaces it when the recommended card is itself selected).
+    const wrapper = mountPicker({ selectedValue: IMAGE_ALT.value })
     const tags = wrapper.findAll('.tps__recommended')
     expect(tags).toHaveLength(1)
-    // The recommended image is first; the heavier alt is not tagged.
     expect(wrapper.findAll('button[role="radio"]')[0]!.text()).toContain('Recommended')
     expect(wrapper.findAll('button[role="radio"]')[1]!.text()).not.toContain('Recommended')
+  })
+
+  it('hides the recommended badge on the selected card (check takes its place)', () => {
+    // Default selection is the recommended card → only the check shows, no badge.
+    const wrapper = mountPicker()
+    expect(wrapper.findAll('.tps__recommended')).toHaveLength(0)
+    expect(wrapper.findAll('.tps__check')).toHaveLength(1)
   })
 
   it('marks the selected row via aria-checked', () => {
@@ -115,10 +123,22 @@ describe('TemplatePickerStep', () => {
     }
   })
 
-  it('overlays the title and a size chip on each card', () => {
+  it('shows the model name, task subtitle, and size on each card', () => {
+    const named: FieldOption = {
+      value: 'zit',
+      label: 'Z-Image-Turbo Text to Image',
+      data: { modality: 'image', sizeBytes: 19 * GB, name: 'Z-Image-Turbo', task: 'Text to Image' },
+    }
+    const card = mountPicker({ options: [NONE, named], selectedValue: named.value })
+      .findAll('button[role="radio"]')[0]!
+    expect(card.find('.tps__card-title').text()).toBe('Z-Image-Turbo')
+    expect(card.find('.tps__card-task').text()).toBe('Text to Image')
+    expect(card.find('.tps__card-size').text()).toContain('GB')
+  })
+
+  it('falls back to the full label when no short name is provided', () => {
     const card = mountPicker().findAll('button[role="radio"]')[0]!
     expect(card.find('.tps__card-title').text()).toBe('SDXL Turbo')
-    expect(card.find('.tps__card-size').text()).toContain('GB')
   })
 
   // A single populated modality needs no tab strip.
@@ -190,5 +210,13 @@ describe('TemplatePickerStep', () => {
   it('renders the preview src for a template thumbnail', () => {
     const media = mountPicker({ selectedValue: IMAGE_REC.value }).findAll('.tps__card-media')[0]!
     expect(media.find('img').attributes('src')).toBe('./x.webp')
+  })
+
+  it('fades the thumbnail in only once it has loaded', async () => {
+    const wrapper = mountPicker({ selectedValue: IMAGE_REC.value })
+    const img = wrapper.findAll('.tps__card-media')[0]!.find('img')
+    expect(img.classes()).not.toContain('tps__card-img--ready')
+    await img.trigger('load')
+    expect(img.classes()).toContain('tps__card-img--ready')
   })
 })

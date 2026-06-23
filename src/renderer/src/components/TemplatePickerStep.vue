@@ -7,13 +7,12 @@ import { formatBytesCoarse } from '../lib/formatting'
 import { templateDiskRequiredBytes, isTemplateDiskBlocked } from '../lib/installHelpers'
 import { useTemplateTabs } from '../composables/useTemplateTabs'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
+import TruncatedText from './TruncatedText.vue'
 
 /**
  * Starter-template picker — modality tabs (Image / Video / 3D / Audio) over a
- * gallery of image-forward cards: the thumbnail fills the card, the title +
- * size sit on a bottom scrim, the description is the card's hover title. The
- * disk alert is surfaced to (and rendered by) the host wizard; footer actions
- * live there too.
+ * gallery of image cards, each with a name/task/size info bar below the preview.
+ * The disk alert is surfaced to (and rendered by) the host wizard.
  */
 const props = defineProps<{
   options: FieldOption[]
@@ -43,35 +42,37 @@ const selectedOption = computed(
 )
 
 const thumbFailed = reactive<Record<string, boolean>>({})
+/** Per-card load state, so a card fades its image in (and shows the branded
+ *  placeholder meanwhile) instead of flashing a blank box. */
+const thumbLoaded = reactive<Record<string, boolean>>({})
 
 function sizeBytesOf(option: FieldOption | null): number {
   const size = option?.data?.sizeBytes
   return typeof size === 'number' ? size : 0
 }
+/** Card preview URL, or null for non-image previews (audio → branded tile). */
 function thumbnailOf(option: FieldOption): string | null {
   const url = option.data?.thumbnailUrl
   return typeof url === 'string' && url ? url : null
 }
-function isAnimated(option: FieldOption): boolean {
-  return option.data?.previewKind === 'animated'
-}
-
-const reduceMotion = ref(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false)
-
-/** Preview URL for a row: the paired `<id>-still.webp` frame when the template
- *  is animated AND the user prefers reduced motion, otherwise the bundled
- *  `<id>.webp` (which itself animates for motion templates). */
-function previewSrcOf(option: FieldOption): string | null {
-  const url = thumbnailOf(option)
-  if (!url) return null
-  if (isAnimated(option) && reduceMotion.value) {
-    return url.replace(/\.webp$/, '-still.webp')
-  }
-  return url
-}
 function sizeLabelOf(option: FieldOption): string {
   const bytes = sizeBytesOf(option)
   return bytes > 0 ? `~${formatBytesCoarse(bytes)}` : ''
+}
+/** Short model name (falls back to the full label). */
+function nameOf(option: FieldOption): string {
+  const name = option.data?.name
+  return typeof name === 'string' && name ? name : option.label
+}
+/** Task descriptor subtitle (e.g. "Text to Image"), or '' when none. */
+function taskOf(option: FieldOption): string {
+  const task = option.data?.task
+  return typeof task === 'string' ? task : ''
+}
+/** True while a real thumbnail is still in flight — drives the loader pulse.
+ *  A template with no image preview (audio) shows a static branded tile. */
+function isThumbLoading(option: FieldOption): boolean {
+  return !!thumbnailOf(option) && !thumbLoaded[option.value] && !thumbFailed[option.value]
 }
 
 const diskBlocked = computed(
@@ -159,31 +160,35 @@ defineExpose({ shownDiskError })
         @keydown="onRowKeydown($event, index)"
       >
         <span class="tps__card-media" aria-hidden="true">
+          <span
+            class="tps__card-fallback"
+            :class="{ 'tps__card-fallback--loading': isThumbLoading(opt) }"
+          >
+            <ComfyCLogo :size="44" />
+          </span>
           <img
-            v-if="previewSrcOf(opt) && !thumbFailed[opt.value]"
-            :src="previewSrcOf(opt)!"
+            v-if="thumbnailOf(opt) && !thumbFailed[opt.value]"
+            :src="thumbnailOf(opt)!"
             :alt="opt.label"
             draggable="false"
+            :class="['tps__card-img', { 'tps__card-img--ready': thumbLoaded[opt.value] }]"
+            @load="thumbLoaded[opt.value] = true"
             @error="thumbFailed[opt.value] = true"
           />
-          <span v-else class="tps__card-fallback">
-            <ComfyCLogo :size="44" />
+
+          <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
+            <Check :size="13" :stroke-width="3" />
+          </span>
+          <span v-else-if="opt.recommended" class="tps__recommended">
+            {{ t('newInstall.recommended') }}
           </span>
         </span>
 
-        <span v-if="opt.recommended" class="tps__badge tps__recommended">
-          {{ t('newInstall.recommended') }}
-        </span>
-        <span
-          v-if="selectedValue === opt.value"
-          class="tps__badge tps__card-check"
-          aria-hidden="true"
-        >
-          <Check :size="14" :stroke-width="2.5" />
-        </span>
-
         <span class="tps__card-footer">
-          <span class="tps__card-title">{{ opt.label }}</span>
+          <span class="tps__card-text">
+            <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
+            <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
+          </span>
           <span v-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
         </span>
       </button>
@@ -218,9 +223,8 @@ defineExpose({ shownDiskError })
 }
 
 .tps__card {
-  position: relative;
-  display: block;
-  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--brand-surface-border);
   border-radius: 12px;
   background: var(--chooser-surface-bg);
@@ -228,12 +232,14 @@ defineExpose({ shownDiskError })
   overflow: hidden;
   cursor: pointer;
   isolation: isolate;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 .tps__card:hover {
   border-color: var(--brand-surface-border-hover);
 }
-.tps__card:hover .tps__card-media img {
+.tps__card:hover .tps__card-img--ready {
   opacity: 0.88;
 }
 .tps__card:focus-visible {
@@ -248,26 +254,29 @@ defineExpose({ shownDiskError })
 }
 
 .tps__card-media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  color: var(--neutral-500);
+}
+.tps__card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.tps__card-img--ready {
+  opacity: 1;
+}
+
+.tps__card-fallback {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--neutral-500);
-}
-.tps__card-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: opacity 140ms ease;
-}
-
-.tps__card-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
   color: var(--neutral-300);
   background:
     radial-gradient(
@@ -277,87 +286,97 @@ defineExpose({ shownDiskError })
     ),
     var(--chooser-surface-bg);
 }
+.tps__card-fallback--loading {
+  animation: tps-pulse 1.6s ease-in-out infinite;
+}
 
-.tps__card::after {
-  content: '';
-  position: absolute;
-  inset: 35% 0 0;
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    color-mix(in oklab, var(--neutral-950) 55%, transparent) 55%,
-    color-mix(in oklab, var(--neutral-950) 92%, transparent) 100%
-  );
-  pointer-events: none;
+@keyframes tps-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 
 .tps__card-footer {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 12px 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--brand-surface-border);
+  background: var(--brand-surface-bg);
   text-align: left;
 }
+.tps__card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .tps__card-title {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  min-width: 0;
   font-size: var(--takeover-fs-body);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--neutral-100);
-  text-shadow: 0 1px 8px color-mix(in oklab, var(--neutral-950) 75%, transparent);
+}
+.tps__card-task {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--takeover-fs-caption);
+  color: var(--neutral-400);
 }
 .tps__card-size {
+  flex: 0 0 auto;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: var(--neutral-100);
-  text-shadow: 0 1px 8px color-mix(in oklab, var(--neutral-950) 75%, transparent);
+  color: var(--neutral-300);
 }
 
-.tps__badge {
+.tps__check {
   position: absolute;
   top: 10px;
+  right: 10px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: var(--neutral-950);
+  background: var(--neutral-50);
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
 .tps__recommended {
+  position: absolute;
+  bottom: 10px;
   right: 10px;
-  padding: 3px 8px;
+  z-index: 1;
+  padding: 4px 9px;
   border-radius: 999px;
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--neutral-100);
-  background: color-mix(in oklab, var(--neutral-950) 60%, transparent);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 28%, transparent);
-  backdrop-filter: blur(8px);
-}
-
-.tps__card-check {
-  left: 10px;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  color: var(--neutral-950);
-  background: var(--neutral-100);
-  box-shadow: 0 1px 6px color-mix(in oklab, var(--neutral-950) 50%, transparent);
+  background: var(--neutral-900);
+  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tps__card-media img {
+  .tps__card-img {
     transition: none;
+  }
+  .tps__card-fallback--loading {
+    animation: none;
   }
 }
 </style>
