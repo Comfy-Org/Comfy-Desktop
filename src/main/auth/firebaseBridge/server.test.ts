@@ -52,34 +52,43 @@ async function closeExpectingRejection(handle: BridgeHandle): Promise<void> {
   await rejected
 }
 
+function closeBridge(handle: BridgeHandle): void {
+  handle.close()
+}
+
+async function withCloudLoginCallbackServer(
+  run: (handle: BridgeHandle) => Promise<void>,
+  closeHandle: (handle: BridgeHandle) => Promise<void> | void = closeExpectingRejection
+): Promise<void> {
+  const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
+  try {
+    await run(handle)
+  } finally {
+    await closeHandle(handle)
+  }
+}
+
 describe('startCloudLoginCallbackServer', () => {
   it('exports the fixed port (9876) allowlisted by Cloud callbacks', () => {
     expect(BRIDGE_PORT).toBe(9876)
   })
 
   it('serves a 204 for /favicon.ico', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await fetch(`${handle.url}favicon.ico`)
       expect(res.status).toBe(204)
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('serves a 404 for unknown paths', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await fetch(`${handle.url}does-not-exist`)
       expect(res.status).toBe(404)
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('accepts a Cloud login callback with matching state', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://cloud.comfy.org',
@@ -95,14 +104,11 @@ describe('startCloudLoginCallbackServer', () => {
         apiKey: 'api-key',
         user: { uid: 'user-123' }
       })
-    } finally {
-      handle.close()
-    }
+    }, closeBridge)
   })
 
   it('ignores a stale Cloud login callback with mismatched state', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const staleRes = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://cloud.comfy.org',
@@ -129,14 +135,11 @@ describe('startCloudLoginCallbackServer', () => {
         apiKey: 'api-key',
         user: { uid: 'user-123' }
       })
-    } finally {
-      handle.close()
-    }
+    }, closeBridge)
   })
 
   it('preflights Cloud login callbacks from allowed origins', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'OPTIONS',
         origin: 'https://cloud.comfy.org',
@@ -149,14 +152,11 @@ describe('startCloudLoginCallbackServer', () => {
       expect(res.headers['access-control-allow-origin']).toBe('https://cloud.comfy.org')
       expect(res.headers['access-control-allow-methods']).toContain('POST')
       expect(res.headers['access-control-allow-private-network']).toBe('true')
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('rejects Cloud login POSTs from disallowed origins', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://untrusted.example.com',
@@ -168,14 +168,11 @@ describe('startCloudLoginCallbackServer', () => {
       })
       expect(res.status).toBe(403)
       expect(res.headers['access-control-allow-origin']).toBeUndefined()
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('rejects Cloud login preflights from disallowed origins', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'OPTIONS',
         origin: 'https://untrusted.example.com',
@@ -187,27 +184,21 @@ describe('startCloudLoginCallbackServer', () => {
       expect(res.status).toBe(403)
       expect(res.headers['access-control-allow-origin']).toBeUndefined()
       expect(res.headers['access-control-allow-private-network']).toBeUndefined()
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('rejects non-POST callback methods', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'PUT',
         origin: 'https://cloud.comfy.org'
       })
       expect(res.status).toBe(405)
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('rejects matching-state callbacks without a user payload', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://cloud.comfy.org',
@@ -218,33 +209,28 @@ describe('startCloudLoginCallbackServer', () => {
       })
       expect(res.status).toBe(400)
       expect(res.body).toBe('Missing user payload')
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('rejects matching-state callbacks without a string apiKey', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://cloud.comfy.org',
         body: JSON.stringify({
           state: 'state-123',
+          apiKey: 123,
           user: { uid: 'user-123' }
         })
       })
       expect(res.status).toBe(400)
       expect(res.body).toBe('Missing user payload')
-    } finally {
-      await closeExpectingRejection(handle)
-    }
+    })
   })
 
   it('returns 413 for oversized callback bodies', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    const rejected = expect(handle.signInPromise).rejects.toThrow(/Body too large/)
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
+      const rejected = expect(handle.signInPromise).rejects.toThrow(/Body too large/)
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://cloud.comfy.org',
@@ -257,15 +243,12 @@ describe('startCloudLoginCallbackServer', () => {
       expect(res.status).toBe(413)
       expect(res.body).toBe('Payload too large')
       await rejected
-    } finally {
-      handle.close()
-    }
+    }, closeBridge)
   })
 
   it('returns a generic 500 body for malformed callback JSON', async () => {
-    const handle = await startCloudLoginCallbackServer({ state: 'state-123', port: 0 })
-    const rejected = expect(handle.signInPromise).rejects.toThrow()
-    try {
+    await withCloudLoginCallbackServer(async (handle) => {
+      const rejected = expect(handle.signInPromise).rejects.toThrow()
       const res = await requestRaw(new URL('callback', handle.url), {
         method: 'POST',
         origin: 'https://cloud.comfy.org',
@@ -274,9 +257,7 @@ describe('startCloudLoginCallbackServer', () => {
       expect(res.status).toBe(500)
       expect(res.body).toBe('Login callback failed')
       await rejected
-    } finally {
-      handle.close()
-    }
+    }, closeBridge)
   })
 
   it('rejects pending Cloud login sign-ins when closed', async () => {

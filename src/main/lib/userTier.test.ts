@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 
+const USER_TIER_TEST_DIR = path.join(os.tmpdir(), 'launcher-test-usertier')
+
 vi.mock('electron', () => ({
-  app: { getPath: () => path.join(os.tmpdir(), 'launcher-test-usertier') }
+  app: { getPath: () => USER_TIER_TEST_DIR }
 }))
 
 const telemetry = await import('./telemetry')
@@ -21,7 +24,9 @@ function stubContents(result: unknown): { wc: Electron.WebContents } {
 describe('userTier tier_changed telemetry', () => {
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await fs.rm(USER_TIER_TEST_DIR, { recursive: true, force: true })
+    await fs.mkdir(USER_TIER_TEST_DIR, { recursive: true })
     _resetForTest()
     captured = []
     vi.spyOn(telemetry, 'capture').mockImplementation((event, ctx) => {
@@ -29,8 +34,9 @@ describe('userTier tier_changed telemetry', () => {
     })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks()
+    await fs.rm(USER_TIER_TEST_DIR, { recursive: true, force: true })
   })
 
   const tierChanges = (): Array<{ event: string; ctx: Record<string, unknown> }> =>
