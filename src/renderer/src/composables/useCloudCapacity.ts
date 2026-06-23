@@ -1,4 +1,4 @@
-import { onMounted, readonly, ref } from 'vue'
+import { getCurrentInstance, onMounted, readonly, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDialogs } from './useDialogs'
 import { emitTelemetryAction } from '../lib/telemetry'
@@ -85,9 +85,13 @@ export function useCloudCapacity(): {
   const dialogs = useDialogs()
   const { t } = useI18n()
 
-  onMounted(() => {
+  if (getCurrentInstance()) {
+    onMounted(() => {
+      void ensureLoaded()
+    })
+  } else {
     void ensureLoaded()
-  })
+  }
 
   // Shared by confirmEntry + effectiveStatus so visual state matches the gate.
   function computeEffective(): CloudCapacityStatus {

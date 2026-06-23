@@ -28,7 +28,7 @@ export interface PopupInstancePickerInstall {
   sourceLabel: string
   sourceCategory: string
   version?: string
-  statusTag?: { style: string; label: string }
+  statusTag?: { style: string; label: string; detail?: string }
   lastLaunchedAt?: number
   installPath?: string
   status?: string

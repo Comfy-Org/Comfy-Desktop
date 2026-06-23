@@ -81,8 +81,17 @@ const crashedMessage = computed<string | null>(() => {
   // and only have "something exited".
   const code = errorInfo.value?.exitCode
   const signal = errorInfo.value?.signal
+  const hex = errorInfo.value?.exitCodeHex
   let base: string
-  if (signal && code != null) {
+  if (errorInfo.value?.crashKind === 'access-violation' && code != null) {
+    // 0xC0000005 etc. is a native crash in a C-extension, not a clean exit.
+    // Decode it so the user sees "native crash" rather than a raw number, and
+    // show the hex (the only googleable form of the code).
+    base = t('comfyLifecycle.crashedDescAccessViolation', { code, hex: hex ?? code })
+  } else if (hex && code != null) {
+    // Some other decoded Windows native fault: at least surface the hex.
+    base = t('comfyLifecycle.crashedDescWithCodeHex', { code, hex })
+  } else if (signal && code != null) {
     base = t('comfyLifecycle.crashedDescWithCodeAndSignal', { code, signal })
   } else if (signal) {
     base = t('comfyLifecycle.crashedDescWithSignal', { signal })
@@ -90,6 +99,11 @@ const crashedMessage = computed<string | null>(() => {
     base = t('comfyLifecycle.crashedDescWithCode', { code })
   } else {
     base = t('comfyLifecycle.crashedDesc')
+  }
+  // When the access violation lines up with missing VC++ runtime DLLs, the
+  // crash is very likely a broken redistributable: point the user at the fix.
+  if ((errorInfo.value?.vcRuntimeMissing?.length ?? 0) > 0) {
+    base = `${base} ${t('comfyLifecycle.crashedDescVcRuntimeHint')}`
   }
   // Append the logs hint only when we actually have stderr to show — the
   // hint would otherwise point at a logs accordion that isn't rendered.
@@ -163,6 +177,12 @@ async function hydrateLastCrashError(installationId: string): Promise<void> {
       exitCode: data.exitCode,
       signal: data.signal,
       lastStderr: data.lastStderr,
+      // Carry the decoded native-crash detail so a panel recreated AFTER the
+      // live event still renders the human-readable message + VC++ hint instead
+      // of regressing to the bare decimal code.
+      exitCodeHex: data.exitCodeHex,
+      crashKind: data.crashKind,
+      vcRuntimeMissing: data.vcRuntimeMissing,
       // Carry the main-side crash timestamp so
       // `comfy.desktop.instance.relaunched_after_crash` can compute a real
       // `crash_to_relaunch_seconds` even when this view hydrated AFTER

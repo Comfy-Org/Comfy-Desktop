@@ -36,7 +36,7 @@ const emit = defineEmits<{
   'success-choice': [actionId: string, installationId: string]
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const modal = useModal()
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
@@ -124,6 +124,17 @@ const activeStepLabel = computed<string | null>(() => {
   return op.steps.find((s) => s.phase === op.activePhase)?.label?.trim() || null
 })
 
+function meaningfulStepLabel(phase: string, fallback?: string | null): string | null {
+  const label = fallback?.trim()
+  if (!label) return null
+  return label.toLowerCase() === phase.toLowerCase() ? null : label
+}
+
+function localizedPhaseLabel(phase: string): string | null {
+  const key = `progress.phaseLabel.${phase}`
+  return te(key) ? t(key) : null
+}
+
 // Live sub-status for the active phase. Main may push either a literal
 // (e.g. node count "3 / 7 · Manager") or an i18n key (`launch.activity.*`,
 // translated here so the tracker stays locale-agnostic). Keys that don't
@@ -140,14 +151,16 @@ const activePhaseStatus = computed<string | null>(() => {
   return raw
 })
 
-// User-facing caption per phase. Stepped ops resolve in order: curated `progress.phaseLabel.<phase>` → registered step label → real status detail → raw phase id (last resort). Flat ops pass through `flatStatus`.
+// User-facing caption per phase. Meaningful registered labels win for dynamic
+// phases; generic labels fall through to curated locale labels.
 const friendlyCaption = computed<string>(() => {
   const op = currentOp.value
   if (!op) return t('progress.starting')
   if (op.steps && op.activePhase) {
-    const key = `progress.phaseLabel.${op.activePhase}`
-    const friendly = t(key)
-    if (friendly !== key) return friendly
+    const meaningful = meaningfulStepLabel(op.activePhase, activeStepLabel.value)
+    if (meaningful) return meaningful
+    const friendly = localizedPhaseLabel(op.activePhase)
+    if (friendly) return friendly
     if (activeStepLabel.value) return activeStepLabel.value
     const raw = activePhaseStatus.value
     if (raw && raw !== op.activePhase) return raw
@@ -188,12 +201,9 @@ const formattedSubStatus = computed<string | null>(() => {
 // spinner conveys "working". Honest by construction.
 const displayedPercent = computed<number>(() => globalProgress.value.percent)
 
-// Resolve a step's display label: curated `progress.phaseLabel.<phase>` first
-// (matches `friendlyCaption`), then the registered step label, never the slug.
+// Resolve a step's display label without leaking dynamic phase slugs.
 function stepLabel(phase: string, fallback?: string): string {
-  const key = `progress.phaseLabel.${phase}`
-  const friendly = t(key)
-  return friendly !== key ? friendly : fallback?.trim() || phase
+  return meaningfulStepLabel(phase, fallback) ?? localizedPhaseLabel(phase) ?? fallback?.trim() ?? phase
 }
 
 // Two-level step rows for the swappable progress view, rendered as ONE

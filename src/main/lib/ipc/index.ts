@@ -1,5 +1,6 @@
 import {
   fs,
+  app,
   installations,
   settings,
   sourceMap,
@@ -15,7 +16,8 @@ import {
   _broadcastToRenderer,
   migrateDefaults,
   checkInstallationUpdates,
-  isEffectivelyEmptyInstallDir,
+  installDirStateAsync,
+  refreshInstallDirStates,
   sweepOrphanPartitions,
   UPDATE_CHECK_INTERVAL
 } from './shared'
@@ -97,16 +99,26 @@ export function register(callbacks: RegisterCallbacks = {}): void {
 
   migrateDefaults()
 
-  // Sweep empty/broken local installations on startup.
+  // Sweep leftover empty local install dirs (aborted installs) on startup.
+  // Only reclaim dirs that exist but are effectively empty — never a missing
+  // or unreadable dir, which would silently forget a tracked instance whose
+  // drive is merely offline/renamed (issue #1155).
   void (async () => {
     try {
       const all = await installations.list()
-      let swept = false
-      for (const inst of all) {
+      const sweepable = all.filter((inst) => {
         const source = sourceMap[inst.sourceId]
-        if (!source || source.skipInstall) continue
-        if (!inst.installPath) continue
-        if (!isEffectivelyEmptyInstallDir(inst.installPath)) continue
+        return source && !source.skipInstall && inst.installPath
+      })
+      // Probe in parallel so a few offline paths don't serialize their timeouts.
+      // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
+      // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
+      const states = await Promise.all(
+        sweepable.map(async (inst) => ({ inst, state: await installDirStateAsync(inst.installPath) }))
+      )
+      let swept = false
+      for (const { inst, state } of states) {
+        if (state !== 'empty') continue
         try {
           fs.rmSync(inst.installPath, { recursive: true, force: true })
         } catch {}
@@ -223,6 +235,17 @@ export function register(callbacks: RegisterCallbacks = {}): void {
   // Check installation updates on startup and periodically
   setTimeout(() => checkInstallationUpdates(), 3_000)
   setInterval(() => checkInstallationUpdates(), UPDATE_CHECK_INTERVAL)
+
+  // Probe local install dir availability on startup, periodically, and whenever
+  // a window regains focus — the last one clears a stale "directory not found"
+  // pill promptly after the user reconnects a drive / restores a folder without
+  // waiting for the periodic pass. Single-flight + change-only broadcast keep
+  // the frequent focus events cheap.
+  void refreshInstallDirStates()
+  setInterval(() => refreshInstallDirStates(), UPDATE_CHECK_INTERVAL)
+  app.on('browser-window-focus', () => {
+    void refreshInstallDirStates()
+  })
 
   // Register all handler groups
   registerAppHandlers()

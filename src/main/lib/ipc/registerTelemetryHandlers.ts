@@ -34,19 +34,89 @@ function isTelemetryValue(v: unknown): v is mainTelemetry.TelemetryValue {
   )
 }
 
-// Per-key filter to the TelemetryValue contract; renderer payloads cross a
-// trust boundary, so non-primitives (incl. arrays) are dropped per-key.
-function asProps(value: unknown): Record<string, mainTelemetry.TelemetryValue> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const out: Record<string, mainTelemetry.TelemetryValue> = {}
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof key !== 'string') continue
-    if (isTelemetryValue(raw)) {
-      out[key] = raw
-    }
-    // Drop anything else (objects, arrays, functions, symbols, etc.) silently.
+const MAX_TELEMETRY_KEYS = 128
+const MAX_TELEMETRY_ARRAY_ITEMS = 128
+const MAX_TELEMETRY_STRING_LENGTH = 2048
+// Explicit allow-list of event-property keys that carry a single
+// pre-serialized JSON string legitimately exceeding the scalar clamp. The
+// renderer size-guards them via `serializeForTelemetry` (omits + flags
+// `*_truncated` when over budget) and they are PII-safe summaries, so they get
+// a larger ceiling. Gated by an allow-list rather than a `_json` suffix so a
+// renderer can't bypass the tight clamp by renaming an arbitrary field.
+const MAX_TELEMETRY_JSON_STRING_LENGTH = 768 * 1024
+const LARGE_JSON_TELEMETRY_KEYS: ReadonlySet<string> = new Set([
+  'installs_json',
+  'gpus_json',
+  'installations_json',
+  'latest_snapshot_json',
+  'snapshot_diffs_json'
+])
+
+function clampTelemetryValue(
+  v: mainTelemetry.TelemetryValue,
+  limit: number = MAX_TELEMETRY_STRING_LENGTH
+): mainTelemetry.TelemetryValue {
+  return typeof v === 'string' ? v.slice(0, limit) : v
+}
+
+function asTelemetryValueArray(v: unknown): mainTelemetry.TelemetryValue[] | null {
+  if (!Array.isArray(v)) return null
+  const out: mainTelemetry.TelemetryValue[] = []
+  for (let i = 0; i < v.length && i < MAX_TELEMETRY_ARRAY_ITEMS; i++) {
+    const raw = v[i]
+    if (!isTelemetryValue(raw)) return null
+    out.push(clampTelemetryValue(raw))
   }
   return out
+}
+
+// `allowLargeJsonStrings` is only for event properties: the larger `_json`
+// ceiling must not apply to person properties, where PostHog caps the whole
+// record at 512 KB total.
+function asTelemetryObject(
+  value: unknown,
+  allowArrays: true,
+  allowLargeJsonStrings: boolean
+): mainTelemetry.TelemetryContext
+function asTelemetryObject(
+  value: unknown,
+  allowArrays: false,
+  allowLargeJsonStrings: boolean
+): Record<string, mainTelemetry.TelemetryValue>
+function asTelemetryObject(
+  value: unknown,
+  allowArrays: boolean,
+  allowLargeJsonStrings: boolean
+): mainTelemetry.TelemetryContext {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const source = value as Record<string, unknown>
+  const out: mainTelemetry.TelemetryContext = {}
+  let count = 0
+  for (const key in source) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue
+    if (count++ >= MAX_TELEMETRY_KEYS) break
+    const raw = source[key]
+    if (isTelemetryValue(raw)) {
+      const limit =
+        allowLargeJsonStrings && LARGE_JSON_TELEMETRY_KEYS.has(key)
+          ? MAX_TELEMETRY_JSON_STRING_LENGTH
+          : MAX_TELEMETRY_STRING_LENGTH
+      out[key] = clampTelemetryValue(raw, limit)
+    } else if (allowArrays) {
+      const array = asTelemetryValueArray(raw)
+      if (array) out[key] = array
+    }
+  }
+  return out
+}
+
+// Per-key filter to the TelemetryContext contract.
+function asProps(value: unknown): mainTelemetry.TelemetryContext {
+  return asTelemetryObject(value, true, true)
+}
+
+function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryValue> {
+  return asTelemetryObject(value, false, false)
 }
 
 export function registerTelemetryHandlers(): void {
@@ -65,7 +135,7 @@ export function registerTelemetryHandlers(): void {
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {
-    const props = asProps(properties)
+    const props = asPersonProps(properties)
     if (Object.keys(props).length === 0) return
     mainTelemetry.registerPersonProperties(props)
   })
@@ -76,7 +146,7 @@ export function registerTelemetryHandlers(): void {
     if (!payload || typeof payload !== 'object') return
     const userId = asString((payload as Record<string, unknown>).userId)
     if (!userId) return
-    const properties = asProps((payload as Record<string, unknown>).properties)
+    const properties = asPersonProps((payload as Record<string, unknown>).properties)
     mainTelemetry.bindUserId(userId, properties)
   })
 

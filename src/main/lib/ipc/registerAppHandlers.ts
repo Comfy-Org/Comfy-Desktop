@@ -16,6 +16,9 @@ import {
   detectGPU,
   validateHardware,
   checkNvidiaDriver,
+  checkAmdDriver,
+  selectPrimaryGpu,
+  vendorMatches,
   sourceMap,
   getAppVersion,
   openPath,
@@ -197,6 +200,7 @@ export function registerAppHandlers(): void {
     }
     const gpu = await gpuPromise
     const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null
+    const amdDriverVersion = gpu?.id === 'amd' ? await checkAmdDriver() : undefined
     const cpus = os.cpus()
     const allInstalls = await installations.list()
 
@@ -237,19 +241,40 @@ export function registerAppHandlers(): void {
     }
 
     // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
-    // Apple Silicon) — its `model` field is hardcoded null. The
-    // systeminformation `controllers[]` data already collected for
-    // `allGpus` carries the actual chipset name, so fall back to it.
-    // Empty strings from the lib normalise to null so cohort filters on
-    // "is set" work consistently.
-    const primaryGpuModel = (allGpus[0]?.model || null) ?? gpu?.model ?? null
+    // Apple Silicon) — its `model` field is hardcoded null. Pick the real
+    // compute GPU from the systeminformation `controllers[]` instead of
+    // blindly trusting `controllers[0]`: virtual display adapters are not
+    // promoted. The full `allGpus` array is still returned unfiltered for
+    // retroactive analysis. Empty strings from the lib normalise to null so
+    // cohort filters on "is set" work consistently.
+    const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
+    const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
+    const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
+    // Only trust the primary controller's driver string when it actually
+    // matches the detected compute vendor; selectPrimaryGpu may fall back to a
+    // non-matching controller, which would otherwise mislabel the driver.
+    const primaryGpuMatchesAmd = vendorMatches('amd', primaryGpu?.vendor, primaryGpu?.model)
+    const primaryGpuMatchesIntel = vendorMatches('intel', primaryGpu?.vendor, primaryGpu?.model)
+    // AMD: prefer the ROCm-reported version (compute-relevant); on Windows
+    // there is no rocm-smi, so fall back to the controller's WMI driver.
+    const amdDriver =
+      gpu?.id === 'amd'
+        ? (amdDriverVersion ?? (primaryGpuMatchesAmd ? primaryGpu?.driver_version : null) ?? null)
+        : null
+    // Intel has no dedicated CLI; the controller driver (WMI on Windows,
+    // si on Linux) is the best available signal.
+    const intelDriver =
+      gpu?.id === 'intel' && primaryGpuMatchesIntel ? (primaryGpu?.driver_version ?? null) : null
     return {
       gpu_vendor: gpu?.id ?? null,
       gpu_label: gpu?.label ?? null,
       gpu_model: primaryGpuModel,
+      gpu_vram_mb: primaryGpuVramMb,
       gpus: allGpus,
       nvidia_driver_version: nvidiaCheck?.driverVersion ?? null,
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,
+      amd_driver_version: amdDriver,
+      intel_driver_version: intelDriver,
       platform: process.platform,
       arch: process.arch,
       os_version: os.release(),
@@ -284,13 +309,14 @@ export function registerAppHandlers(): void {
   // Per-session boot census of every persisted installation, sorted
   // most-recently-launched first. Powers `comfy.desktop.session.installs_inventory`
   // so dashboards can see the user's full install footprint without
-  // having to wait for them to launch each one. Capped to 200 KB total
-  // (Datadog RUM hard-caps action context at ~256 KB; 200 KB matches the
-  // existing single-install `get-installation-dd-context` budget so the
-  // event reliably ships).
+  // having to wait for them to launch each one. The inventory ships to PostHog
+  // (only) as a serialized `installs_json` string; capped to 384 KB total to
+  // leave conservative headroom under PostHog's 1 MB per-event hard limit after
+  // re-escaping inside the outer event JSON, super-properties, and any non-ASCII
+  // expansion (the cap counts UTF-16 code units, the limit is UTF-8 bytes).
   ipcMain.handle('get-installs-inventory', async () => {
-    const MAX_TOTAL_BYTES = 200 * 1024
-    const MAX_PER_INSTALL_BYTES = 50 * 1024
+    const MAX_TOTAL_BYTES = 384 * 1024
+    const MAX_PER_INSTALL_BYTES = 64 * 1024
     const all = await installations.list()
     // `installing` entries are mid-install transient — exclude them
     // (they'll show up on the next boot once they settle).
@@ -328,11 +354,8 @@ export function registerAppHandlers(): void {
               createdAt: latest.createdAt,
               trigger: latest.trigger,
               // User-typed snapshot labels can carry PII / paths /
-              // model names — the inventory event bypasses the
-              // renderer-side `scrubAll` pass (it goes via `addAction`
-              // directly to RUM with arrays of objects), so we
-              // collapse the label to a presence boolean instead of
-              // shipping the raw string.
+              // model names, so we collapse the label to a presence
+              // boolean instead of shipping the raw string.
               has_label: !!latest.label,
               comfyui: {
                 ref: latest.comfyui.ref,

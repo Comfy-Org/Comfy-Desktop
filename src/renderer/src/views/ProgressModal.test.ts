@@ -36,7 +36,13 @@ const messages = {
       returnToDashboard: 'Return to Dashboard',
       reboot: 'Reboot',
       phaseLabel: {
+        cleanup: 'Tidying up dependencies...',
         download: 'Downloading ComfyUI…',
+        gpu: 'Initializing GPU...',
+        launchStart: 'Starting ComfyUI...',
+        securityScan: 'Running security scan...',
+        source: 'Staging ComfyUI source code...',
+        startingServer: 'Starting server...',
         torchRepair: 'Restoring GPU PyTorch…',
       },
     },

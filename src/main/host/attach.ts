@@ -84,12 +84,7 @@ function getFactories(): AttachFactories {
 export interface AttachInstallOpts {
   installation: InstallationRecord
   comfyUrl: string
-  /**
-   * `true` for locally-launched installs (no `url` arg); `false` for
-   * remote / cloud installs. Drives the `__comfyDesktop2Remote` flag
-   * the content script reads at top-of-page so remote-only behaviours
-   * (e.g. cloud-storage prompts) gate correctly.
-   */
+  /** `true` for locally-launched installs; `false` for remote/cloud installs. */
   isLocal: boolean
 }
 
@@ -399,8 +394,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
-    const preamble = isLocal ? '' : 'window.__comfyDesktop2Remote = true;\n'
-    comfyContents.executeJavaScript(preamble + getModelDownloadContentScript()).catch(() => {})
+    comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
     // Always inject the Terminal bottom-panel tab on standalone installs.
     //
     // Originally gated on `!supports_terminal` to avoid duplicating the

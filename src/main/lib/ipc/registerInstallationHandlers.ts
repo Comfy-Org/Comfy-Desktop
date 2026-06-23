@@ -15,6 +15,9 @@ import {
   allocateUniqueDir,
   syncOemSeedBestEffort,
   isEffectivelyEmptyInstallDir,
+  getCachedInstallDirState,
+  refreshInstallDirStates,
+  isInstallDirUnavailable,
   download,
   createCache,
   extract,
@@ -92,14 +95,33 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
     const source = sourceMap[inst.sourceId]
     if (!source) return inst as unknown as Record<string, unknown>
     const listPreview = source.getListPreview ? source.getListPreview(inst) : undefined
+    // A local install whose folder is currently unavailable (e.g. an unplugged
+    // removable drive, offline network share, renamed folder, or one we're
+    // denied access to) is flagged with a danger pill rather than forgotten —
+    // restoring access clears it on the next refresh (issue #1155).
+    const dirState = source.skipInstall ? undefined : getCachedInstallDirState(inst.id)
+    const dirUnavailable = isInstallDirUnavailable(dirState)
+    // `detail` backs the dashboard's clickable danger pill — the full,
+    // human-readable explanation behind the short pill label. Both cases append
+    // the path so the user can see which location is affected. A folder we're
+    // denied access to gets a distinct "access denied" pill so the user can tell
+    // a permission problem from a folder that's actually gone.
+    const withInstallPath = (msg: string): string =>
+      inst.installPath ? `${msg}\n\n${inst.installPath}` : msg
+    const dirUnavailableTag =
+      dirState === 'no-permission'
+        ? { label: i18n.t('errors.installDirNoPermissionTag'), style: 'danger', detail: withInstallPath(i18n.t('errors.installDirNoPermission')) }
+        : { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger', detail: withInstallPath(i18n.t('errors.installDirNotFound')) }
     const statusTag =
       inst.status === 'partial-delete'
-        ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger' }
+        ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger', detail: i18n.t('errors.deleteInterruptedDetail') }
         : inst.status === 'failed'
-          ? { label: i18n.t('errors.installFailed'), style: 'danger' }
-          : source.getStatusTag
-            ? source.getStatusTag(inst)
-            : undefined
+          ? { label: i18n.t('errors.installFailed'), style: 'danger', detail: i18n.t('errors.installFailedDetail') }
+          : dirUnavailable
+            ? dirUnavailableTag
+            : source.getStatusTag
+              ? source.getStatusTag(inst)
+              : undefined
     const cv = inst.comfyVersion as ComfyVersion | undefined
     const rawVersion = cv ? formatComfyVersion(cv, 'short') : (inst.version as string | undefined)
     const version = rawVersion === inst.sourceId ? undefined : rawVersion
@@ -134,6 +156,11 @@ export function registerInstallationHandlers(): void {
     // gated inside the helper by a 1h floor so dashboard refreshes
     // don't spam GitHub.
     _kickReleaseCachePrewarm(visible)
+
+    // Re-probe local install dir availability so the "directory not found"
+    // indicator appears/clears as drives go offline/online. Single-flight +
+    // broadcasts only on change, so a dashboard refresh can't loop.
+    void refreshInstallDirStates()
 
     return enriched
   })
