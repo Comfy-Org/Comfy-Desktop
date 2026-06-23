@@ -309,13 +309,13 @@ export function registerAppHandlers(): void {
   // Per-session boot census of every persisted installation, sorted
   // most-recently-launched first. Powers `comfy.desktop.session.installs_inventory`
   // so dashboards can see the user's full install footprint without
-  // having to wait for them to launch each one. Capped to 200 KB total
-  // (Datadog RUM hard-caps action context at ~256 KB; 200 KB matches the
-  // existing single-install `get-installation-dd-context` budget so the
-  // event reliably ships).
+  // having to wait for them to launch each one. The inventory ships to PostHog
+  // (only) as a serialized `installs_json` string; capped to 512 KB total to
+  // stay comfortably under PostHog's 1 MB per-event hard limit after super-
+  // properties and JSON-escaping overhead.
   ipcMain.handle('get-installs-inventory', async () => {
-    const MAX_TOTAL_BYTES = 200 * 1024
-    const MAX_PER_INSTALL_BYTES = 50 * 1024
+    const MAX_TOTAL_BYTES = 512 * 1024
+    const MAX_PER_INSTALL_BYTES = 64 * 1024
     const all = await installations.list()
     // `installing` entries are mid-install transient — exclude them
     // (they'll show up on the next boot once they settle).

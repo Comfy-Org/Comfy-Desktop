@@ -37,9 +37,20 @@ function isTelemetryValue(v: unknown): v is mainTelemetry.TelemetryValue {
 const MAX_TELEMETRY_KEYS = 128
 const MAX_TELEMETRY_ARRAY_ITEMS = 128
 const MAX_TELEMETRY_STRING_LENGTH = 2048
+// Pre-serialized structured payloads use a `_json` key suffix and carry a
+// single JSON string that legitimately exceeds the scalar clamp (e.g.
+// `installs_json`, `gpus_json`, `snapshot_diffs_json`). The renderer already
+// size-guards them via `serializeForTelemetry` (omits + flags `*_truncated`
+// when over budget), and the budget is kept well under PostHog's 1 MB
+// per-event hard limit, so we allow these keys a larger ceiling. Every other
+// string field keeps the tight 2048 clamp as a PII / runaway-size safety net.
+const MAX_TELEMETRY_JSON_STRING_LENGTH = 768 * 1024
 
-function clampTelemetryValue(v: mainTelemetry.TelemetryValue): mainTelemetry.TelemetryValue {
-  return typeof v === 'string' ? v.slice(0, MAX_TELEMETRY_STRING_LENGTH) : v
+function clampTelemetryValue(
+  v: mainTelemetry.TelemetryValue,
+  limit: number = MAX_TELEMETRY_STRING_LENGTH
+): mainTelemetry.TelemetryValue {
+  return typeof v === 'string' ? v.slice(0, limit) : v
 }
 
 function asTelemetryValueArray(v: unknown): mainTelemetry.TelemetryValue[] | null {
@@ -68,7 +79,10 @@ function asTelemetryObject(value: unknown, allowArrays: boolean): mainTelemetry.
     if (count++ >= MAX_TELEMETRY_KEYS) break
     const raw = source[key]
     if (isTelemetryValue(raw)) {
-      out[key] = clampTelemetryValue(raw)
+      const limit = key.endsWith('_json')
+        ? MAX_TELEMETRY_JSON_STRING_LENGTH
+        : MAX_TELEMETRY_STRING_LENGTH
+      out[key] = clampTelemetryValue(raw, limit)
     } else if (allowArrays) {
       const array = asTelemetryValueArray(raw)
       if (array) out[key] = array

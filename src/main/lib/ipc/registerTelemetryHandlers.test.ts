@@ -90,6 +90,25 @@ describe('registerTelemetryHandlers', () => {
     expect(JSON.parse(sent.gpus_json as string)).toEqual(gpus)
   })
 
+  it('gives `_json` keys a larger ceiling than other strings', () => {
+    // A serialized structured payload (e.g. `installs_json`) legitimately
+    // exceeds the 2048 scalar clamp; `_json`-suffixed keys get a larger ceiling
+    // so they survive intact, while other strings stay tightly clamped.
+    const big = JSON.stringify(Array.from({ length: 500 }, (_, i) => ({ id: i, name: `n${i}` })))
+    expect(big.length).toBeGreaterThan(2048)
+    listener('telemetry:capture')(null, {
+      event: 'comfy.desktop.session.installs_inventory',
+      properties: {
+        installs_json: big,
+        plain_long: 'z'.repeat(3000)
+      }
+    })
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.installs_json).toBe(big) // survives untouched
+    expect(sent.plain_long).toBe('z'.repeat(2048)) // still clamped
+  })
+
   it('keeps person properties scalar-only while applying the same caps', () => {
     const properties: Record<string, unknown> = {
       array: [1, 2, 3],

@@ -194,11 +194,13 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
   return mutated ?? context
 }
 
-// The telemetry IPC bridge clamps every string property to 2048 chars
-// (`MAX_TELEMETRY_STRING_LENGTH` in `registerTelemetryHandlers`). A longer JSON
-// blob would be sliced mid-string into invalid JSON, so we omit it and flag the
-// drop with `*_truncated` instead of shipping a value that can't be parsed.
-const MAX_TELEMETRY_JSON_LENGTH = 2048
+// The telemetry IPC bridge gives `_json`-suffixed keys a larger ceiling
+// (`MAX_TELEMETRY_JSON_STRING_LENGTH` in `registerTelemetryHandlers`) so
+// pre-serialized structured payloads survive intact. We mirror that ceiling
+// here: anything larger is omitted and flagged via `*_truncated` rather than
+// shipped as a value the bridge would slice mid-string into invalid JSON.
+// Kept under PostHog's 1 MB per-event hard limit.
+const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
 
 function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
   const json = JSON.stringify(value)
@@ -398,28 +400,20 @@ async function initializeProviders(): Promise<void> {
       .getInstallsInventory()
       .then((inventory) => {
         if (!inventory) return
-        // Honor the pre-consent gate even on the bypass path.
+        // Honor the pre-consent gate.
         if (!isTelemetryEmitAllowed('comfy.desktop.session.installs_inventory')) return
-        // Datadog RUM accepts nested objects natively, so send the full shape.
-        if (isDatadogInitialized) {
-          try {
-            datadogRum.addAction(
-              'comfy.desktop.session.installs_inventory',
-              inventory as unknown as Record<string, unknown>
-            )
-          } catch {}
-        }
-        // The telemetry IPC bridge drops arrays of objects AND clamps strings
-        // to 2048 chars, so neither the native `installs[]` array nor a
-        // JSON-stringified copy (the inventory is ~200 KB by design) can reach
-        // PostHog intact. Send only the scalar counts here. Shipping the full
-        // per-install detail needs a main-owned structured capture path
-        // (tracked as a follow-up) — it can't go through this bridge.
+        // The per-install detail is an array of objects: serialize it to a
+        // `_json` string so it survives the IPC bridge (which gives `_json`
+        // keys a larger ceiling). The inventory is byte-capped main-side to
+        // stay under that ceiling and PostHog's 1 MB per-event limit.
+        const installsJson = serializeForTelemetry(inventory.installs)
         try {
           window.api.captureTelemetry('comfy.desktop.session.installs_inventory', {
             total_install_count: inventory.total_install_count,
             included_install_count: inventory.included_install_count,
-            truncated: inventory.truncated
+            truncated: inventory.truncated,
+            installs_json: installsJson.json,
+            installs_json_truncated: installsJson.truncated
           })
         } catch {
           // ignore
@@ -732,19 +726,10 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             instanceStartedProps
           )
           if (snapshot_diffs.length > 0) {
-            // Datadog RUM accepts the nested `snapshot_diffs` array natively.
-            if (isDatadogInitialized) {
-              try {
-                datadogRum.addAction('comfy.desktop.session.snapshot_history', {
-                  installation_id: ctx.installation_id,
-                  snapshot_diffs
-                })
-              } catch {}
-            }
             // Raw `SnapshotDiffEntry` carries user-typed `label`s and custom-node
-            // `dirName`s, and the IPC bridge drops arrays of objects anyway. Send
-            // PostHog a PII-safe compact summary (counts + `has_label`), JSON
-            // string with the bridge's 2048-char limit guarded.
+            // `dirName`s, so we send a PII-safe compact summary (counts +
+            // `has_label`) serialized to a `_json` string. Product/census event:
+            // PostHog only, per the Datadog "failures-only" policy.
             const snapshotDiffsSummary = snapshot_diffs.map((d) => ({
               createdAt: d.createdAt,
               trigger: d.trigger,
