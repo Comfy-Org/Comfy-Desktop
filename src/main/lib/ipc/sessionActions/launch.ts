@@ -11,7 +11,7 @@ import {
   _reservePort, _releasePort,
   _addSession, _removeSession,
   _markLaunching, _clearLaunchingFailed,
-  installDirStateAsync, isInstallDirUnavailable,
+  installDirStateAsync,
   captureSnapshotIfChanged, getSnapshotCount,
   syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
   createSessionPath, buildLaunchEnv, checkRebootMarker,
@@ -112,7 +112,13 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // Async (timeout-guarded) so launching an install on a dead network/
     // removable path can't block the main process on a sync readdir.
     const dirState = await installDirStateAsync(inst.installPath)
-    if (isInstallDirUnavailable(dirState)) {
+    // Block only when the folder is confirmed gone or empty. `inaccessible`
+    // is a non-ENOENT readdir error OR a slow-drive probe timeout, which can be
+    // a false positive on a healthy-but-slow network/removable drive — so let
+    // launch proceed. If the path really is unusable, the downstream env/exe
+    // checks (getLaunchCommand, the executable existsSync, spawn errors) surface
+    // a readable modal error rather than hanging or crashing.
+    if (dirState === 'missing') {
       return { ok: false, message: i18n.t('errors.installDirNotFound') }
     }
     if (dirState === 'empty') {
