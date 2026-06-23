@@ -1,29 +1,19 @@
 /**
- * State-driven instance/window navigation — the single source of truth for the
- * #926 behavior matrix. Pure (no Vue, no Electron, no I/O), so it runs
- * identically in the renderer (which drives the CTA label + caret items) and in
- * main (which re-asserts it before executing a verb). Same input ⇒ same output,
- * which is what makes it snapshot-testable and impossible to drift between
- * processes.
- *
- * The decision space is the finite product `ViewKind × TargetKind × TargetRun`,
- * modelled as a total transition table keyed by a canonical tuple encoding
- * (`CellKey`): a lookup is O(1) and a missing cell falls through to an explicit
- * no-op. The table is *data*; the matrix is reviewed by reading it. To change a
- * behavior, edit the cell and its snapshot test — nothing else.
- *
- * `remote` is folded into `cloud` before this function is called (see `navClass`
- * in ../viewKind); there are no `remote` cells.
+ * Pure, total decision table for the #926 navigation matrix — single source of
+ * truth, run identically in renderer and main. Keyed by `ViewKind × TargetKind ×
+ * TargetRun`; a missing cell falls through to `NO_OP`. `remote` is folded into
+ * `cloud` upstream (see `navClass`), so there are no `remote` cells.
  */
-import type { NavClass, ViewKind } from '../viewKind'
+import type { ViewKind } from '../viewKind'
 
 /** What the user clicked toward. `'new-instance'` is the "+ New Instance" row;
  *  everything else is an install/dashboard target. */
 export type TargetKind = 'dashboard' | 'instance' | 'cloud' | 'new-instance'
 
 /** Runtime state of the target relative to the current host. `'self'` = the
- *  target IS the current host's own install. */
-export type TargetRun = 'stopped' | 'running-here' | 'running-elsewhere' | 'self'
+ *  target IS the current host's own running install. (No `running-here`: that
+ *  collapses into `self`, since "running in this window" ⟺ "is the host install".) */
+export type TargetRun = 'stopped' | 'running-elsewhere' | 'self'
 
 /** Which affordance the user used: the primary CTA, or a caret/dropdown item. */
 export type Intent = 'primary' | 'new-window'
@@ -58,28 +48,18 @@ export interface NavDecision {
   readonly verb: Verb
   /** i18n key for the primary CTA label (resolved by the renderer). */
   readonly primaryLabel: NavLabelKey
-  /** Caret/dropdown alternatives for this exact cell. Each is a fully-formed
-   *  decision (its own intent already applied), so the dropdown renders them
-   *  directly. Empty when the cell has no alternative. */
+  /** Caret/dropdown alternatives — fully-formed decisions the dropdown renders
+   *  directly. Empty when the cell has none. */
   readonly secondary: readonly NavDecision[]
-  /** Telemetry event to emit when this decision executes, if any. */
-  readonly telemetry: 'instance.switched' | 'instance.opened_new_window' | null
-  /** Reserved (currently unset by every cell). Allows a SECOND window for an
-   *  install that already owns one, bypassing `openInstallInNewWindow`'s
-   *  focus-existing guard. Kept wired end-to-end for a future "second cloud/
-   *  remote window"; cloud-self currently resolves to Restart instead (a true
-   *  second view of one session isn't supported). */
+  /** Reserved: spawn a second window for an install that already owns one,
+   *  bypassing the focus-existing guard. Unset by every cell today. */
   readonly allowDuplicate?: true
 }
 
 export interface NavInput {
   /** Current host view-kind — `remote` already folded into `cloud`. */
   currentView: ViewKind
-  /** Navigation class of the current host (`null` on a dashboard host). */
-  currentClass: NavClass | null
   target: TargetKind
-  /** Navigation class of the target — `remote` already folded into `cloud`. */
-  targetClass: NavClass
   targetRun: TargetRun
   intent: Intent
 }
@@ -96,16 +76,14 @@ const NO_OP: NavDecision = Object.freeze({
   verb: 'no-op',
   primaryLabel: NAV_LABEL.start,
   secondary: [],
-  telemetry: null,
 })
 
-/** Build a decision with sane defaults (no secondary / telemetry). Frozen — incl.
- *  the `secondary` array — so a consumer can't mutate a shared `TABLE` singleton
- *  and poison later calls. */
+/** Build a decision with sane defaults (no secondary). Frozen — incl. the
+ *  `secondary` array — so a consumer can't mutate a shared `TABLE` singleton and
+ *  poison later calls. */
 const dec = (
   over: Partial<NavDecision> & Pick<NavDecision, 'window' | 'verb' | 'primaryLabel'>,
 ): NavDecision => Object.freeze({
-  telemetry: null,
   ...over,
   secondary: Object.freeze(over.secondary ?? []),
 })
@@ -115,7 +93,6 @@ const OPEN_NEW_WINDOW_SECONDARY: NavDecision = dec({
   window: 'new',
   verb: 'open-new',
   primaryLabel: NAV_LABEL.openInNewWindow,
-  telemetry: 'instance.opened_new_window',
 })
 
 /**
@@ -124,7 +101,7 @@ const OPEN_NEW_WINDOW_SECONDARY: NavDecision = dec({
  * row also covers remote (folded upstream).
  */
 const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
-  // Dashboard → X
+  // Dashboard → X. `dashboard`/`new-instance` targets are unreachable (a picker row is always an install); kept to encode the full matrix.
   [cellKey('dashboard', 'dashboard', 'self'), NO_OP],
   [
     cellKey('dashboard', 'instance', 'stopped'),
@@ -153,15 +130,15 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
     }),
   ],
   [
+    // Documentation-only (see header above): `new-instance` is not a picker row.
     cellKey('dashboard', 'new-instance', 'stopped'),
     dec({ window: 'same', verb: 'install-wizard', primaryLabel: NAV_LABEL.newInstall }),
   ],
 
   // Instance A → X
   [
+    // Dashboard opens in a NEW window so the instance keeps running.
     cellKey('instance', 'dashboard', 'self'),
-    // Already-current behavior: dashboard opens in a NEW window so A keeps
-    // running (the `handleOpenDashboard` → activate('new-window') workaround).
     dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openDashboard }),
   ],
   [
@@ -169,18 +146,13 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
     dec({ window: 'same', verb: 'restart', primaryLabel: NAV_LABEL.restart }),
   ],
   [
+    // Primary swaps B in place; caret keeps A running in a new window. Confirm is the 3-way modal in `pickInstallFromPicker`.
     cellKey('instance', 'instance', 'stopped'),
-    /**
-     * Primary "Switch" swaps B into this window; the caret offers "Open in new
-     * window" so the user can keep A running. Main's `pickInstallFromPicker`
-     * owns the confirm — a 3-way modal (Switch / Open in new window / Cancel).
-     */
     dec({
       window: 'same',
       verb: 'switch',
       primaryLabel: NAV_LABEL.switch,
       secondary: [OPEN_NEW_WINDOW_SECONDARY],
-      telemetry: 'instance.switched',
     }),
   ],
   [
@@ -188,15 +160,9 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
     dec({ window: 'same', verb: 'focus', primaryLabel: NAV_LABEL.switch }),
   ],
   [
+    // Cloud opens in a new window so the local instance keeps running.
     cellKey('instance', 'cloud', 'stopped'),
-    // Matrix: cloud always opens in a NEW window — it's lightweight and the
-    // local instance A keeps running. No swap.
-    dec({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openCloud,
-      telemetry: 'instance.opened_new_window',
-    }),
+    dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openCloud }),
   ],
   [
     cellKey('instance', 'cloud', 'running-elsewhere'),
@@ -210,36 +176,22 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
 
   // Cloud → X
   [
+    // Documentation-only: the Open Dashboard chip routes through `activate('new-window')`, not this cell. Tracked deviation from the matrix's same-window spec.
     cellKey('cloud', 'dashboard', 'self'),
-    /**
-     * Documentation-only cell: the "Open Dashboard" chip is not table-driven —
-     * it routes through the shared `activate('new-window')` path, so it opens a
-     * new window for all hosts. The CTO matrix specifies same-window here; this
-     * is a tracked deviation until the chip consults the table.
-     */
     dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openDashboard }),
   ],
   [
+    // New window so the cloud session keeps running.
     cellKey('cloud', 'instance', 'stopped'),
-    // Matrix: start the instance in a NEW window so the cloud session keeps
-    // running. Labelled "Open in new window" (it spawns a window, not a swap).
-    dec({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow,
-      telemetry: 'instance.opened_new_window',
-    }),
+    dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openInNewWindow }),
   ],
   [
     cellKey('cloud', 'instance', 'running-elsewhere'),
     dec({ window: 'same', verb: 'focus', primaryLabel: NAV_LABEL.switch }),
   ],
   [
+    // A second view of one cloud/remote session isn't supported (single-window auth), so restart in place rather than no-op.
     cellKey('cloud', 'cloud', 'self'),
-    // The current cloud/remote session itself. Matrix row 16 wanted a SECOND
-    // window, but a second view of one cloud/remote session isn't supported
-    // (single-window auth/session; the fresh-host relaunch dead-ends on the
-    // chooser). Restart in place instead — a real, working action.
     dec({ window: 'same', verb: 'restart', primaryLabel: NAV_LABEL.restart }),
   ],
   [
@@ -248,30 +200,19 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
     dec({ window: 'same', verb: 'focus', primaryLabel: NAV_LABEL.switch }),
   ],
   [
-    // A stopped cloud target from a cloud/remote host → open it in a new window;
-    // the current cloud/remote session keeps running (mirrors cloud → instance).
+    // New window so the current cloud/remote session keeps running.
     cellKey('cloud', 'cloud', 'stopped'),
-    dec({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow,
-      telemetry: 'instance.opened_new_window',
-    }),
+    dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openInNewWindow }),
   ],
   [
+    // Documentation-only (see header above): `new-instance` is not a picker row.
     cellKey('cloud', 'new-instance', 'stopped'),
     dec({ window: 'new', verb: 'install-wizard', primaryLabel: NAV_LABEL.newInstall }),
   ],
 ])
 
-/**
- * Resolve a single navigation decision for a (current host, target, intent)
- * tuple. O(1): one `Map.get` plus an intent branch.
- *
- * For `intent === 'new-window'`, returns the matching `secondary` alternative if
- * the cell offers one; otherwise falls back to the primary decision (the caret
- * isn't shown when `secondary` is empty, so this fallback is defensive).
- */
+/** Resolve a decision for a (host, target, intent) tuple. `'new-window'` intent
+ *  returns the cell's new-window `secondary`, falling back to the primary. */
 export function decideNavigation(input: NavInput): NavDecision {
   const primary = TABLE.get(cellKey(input.currentView, input.target, input.targetRun)) ?? NO_OP
 
