@@ -582,9 +582,17 @@ let pendingDownloadTokenEventProperties: {
  */
 let installationDeviceId: string | null = null
 
-function withDownloadTokenEventProperties(properties: TelemetryContext): TelemetryContext {
+function takeDownloadTokenEventProperties(properties: TelemetryContext): TelemetryContext {
   if (!pendingDownloadTokenEventProperties) return properties
-  return { ...properties, ...pendingDownloadTokenEventProperties }
+  const tokenProperties = pendingDownloadTokenEventProperties
+  pendingDownloadTokenEventProperties = null
+  return { ...properties, ...tokenProperties }
+}
+
+function applyDownloadTokenToPendingFirstLaunch(): void {
+  if (!pendingFirstLaunch || !pendingDownloadTokenEventProperties) return
+  pendingFirstLaunch = { ...pendingFirstLaunch, ...pendingDownloadTokenEventProperties }
+  pendingDownloadTokenEventProperties = null
 }
 
 function tryFlushDeferred(): void {
@@ -645,7 +653,7 @@ function tryFlushDeferred(): void {
     pendingSessionStart = null
   }
   if (pendingFirstLaunch) {
-    capture('comfy.desktop.app.first_launch', withDownloadTokenEventProperties(pendingFirstLaunch))
+    capture('comfy.desktop.app.first_launch', pendingFirstLaunch)
     pendingFirstLaunch = null
   }
 }
@@ -688,6 +696,7 @@ export function deferDownloadTokenAlias(opts: {
     download_token: opts.downloadToken,
     download_token_source: opts.source
   }
+  applyDownloadTokenToPendingFirstLaunch()
   tryFlushDeferred()
 }
 
@@ -863,7 +872,7 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
  * in, or the rare migrator), it captures immediately.
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
-  const eventProperties = withDownloadTokenEventProperties(properties)
+  const eventProperties = takeDownloadTokenEventProperties(properties)
   if (!canEmit() || !distinctId) {
     pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
     return

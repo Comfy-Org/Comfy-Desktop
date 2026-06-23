@@ -78,7 +78,11 @@ import { update as updateInstallation, resolveAutoLaunchInstall } from './instal
 import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
-import { clearPendingDownloadToken, readPendingDownloadToken } from './lib/downloadAttribution'
+import {
+  clearPendingDownloadToken,
+  markDownloadTokenAttributed,
+  readPendingDownloadToken
+} from './lib/downloadAttribution'
 import {
   clearPendingAlias,
   consumeFirstLaunch,
@@ -1405,14 +1409,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       id_class: getIdClass()
     })
 
+    const isFirstLaunch = consumeFirstLaunch()
     const pendingDownloadToken = readPendingDownloadToken()
-    if (pendingDownloadToken) {
+    if (pendingDownloadToken && isFirstLaunch) {
       mainTelemetry.deferDownloadTokenAlias({
         downloadToken: pendingDownloadToken.token,
         installationId,
         source: pendingDownloadToken.source,
-        onAliased: clearPendingDownloadToken
+        onAliased: () => {
+          clearPendingDownloadToken()
+          markDownloadTokenAttributed()
+        }
       })
+    } else if (pendingDownloadToken) {
+      clearPendingDownloadToken()
     }
 
     if (legacyId) {
@@ -1475,7 +1485,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // dropped on the consent gate while the once-ever guard stays burned,
     // losing the event forever. The deferred path ships it on the first
     // `undecided → granted` transition and never on a decline.
-    if (consumeFirstLaunch()) {
+    if (isFirstLaunch) {
       mainTelemetry.captureFirstLaunch({
         id_class: getIdClass(),
         locale

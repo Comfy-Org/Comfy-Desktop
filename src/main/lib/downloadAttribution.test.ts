@@ -11,6 +11,7 @@ vi.mock('./paths', () => ({
 
 import {
   clearPendingDownloadToken,
+  markDownloadTokenAttributed,
   normalizeDownloadToken,
   pendingDownloadTokenPath,
   readPendingDownloadToken
@@ -52,6 +53,15 @@ describe('downloadAttribution', () => {
 
     fs.writeFileSync(pendingDownloadTokenPath(), 'not safe@example.com', 'utf-8')
     expect(readPendingDownloadToken()).toBeNull()
+    expect(fs.existsSync(pendingDownloadTokenPath())).toBe(false)
+  })
+
+  it('clears a pending token that was already attributed', () => {
+    fs.writeFileSync(pendingDownloadTokenPath(), 'AbC123xYz789\n', 'utf-8')
+    markDownloadTokenAttributed()
+
+    expect(readPendingDownloadToken()).toBeNull()
+    expect(fs.existsSync(pendingDownloadTokenPath())).toBe(false)
   })
 
   it('clears the pending token file idempotently', () => {

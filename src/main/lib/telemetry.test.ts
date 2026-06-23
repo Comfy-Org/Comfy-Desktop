@@ -106,6 +106,11 @@ vi.mock('posthog-node', () => ({
 
 const telemetry = await import('./telemetry')
 
+async function flushTelemetryAliasTasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 afterEach(() => {
   aliasImmediateFailure = null
 })
@@ -799,7 +804,7 @@ describe('telemetry deferMigrationAlias', () => {
     })
 
     // Async microtask + the aliasImmediate await chain.
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toContainEqual({ distinctId: 'new-id', alias: 'legacy-uuid-abc' })
     const migrated = captured.find((c) => c.event === 'comfy.desktop.identity.migrated')
@@ -830,13 +835,13 @@ describe('telemetry deferMigrationAlias', () => {
     })
 
     // Nothing should have shipped while undecided.
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     expect(aliases).toHaveLength(0)
     expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
     expect(onAliased).not.toHaveBeenCalled()
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toContainEqual({ distinctId: 'new-id', alias: 'legacy-uuid-abc' })
     expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeDefined()
@@ -857,12 +862,12 @@ describe('telemetry deferMigrationAlias', () => {
       onAliased
     })
 
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     expect(aliases).toHaveLength(0)
     expect(onAliased).not.toHaveBeenCalled()
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toHaveLength(1)
     expect(onAliased).toHaveBeenCalledTimes(1)
@@ -881,10 +886,10 @@ describe('telemetry deferMigrationAlias', () => {
     })
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     telemetry.setConsentState('denied')
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toHaveLength(1)
     expect(onAliased).toHaveBeenCalledTimes(1)
@@ -905,7 +910,7 @@ describe('telemetry deferMigrationAlias', () => {
       onAliased
     })
 
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toEqual([{ distinctId: 'new-id', alias: 'legacy-uuid-abc' }])
     expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
@@ -959,7 +964,7 @@ describe('telemetry deferDownloadTokenAlias', () => {
     expect(onAliased).not.toHaveBeenCalled()
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toContainEqual({ distinctId: 'install-id', alias: 'AbC123xYz789' })
     const attributed = captured.find(
@@ -998,7 +1003,7 @@ describe('telemetry deferDownloadTokenAlias', () => {
       source: 'windows_installer_filename',
       onAliased: vi.fn()
     })
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     captured.length = 0
 
     telemetry.capture('comfy.desktop.execution.started', {
@@ -1012,6 +1017,60 @@ describe('telemetry deferDownloadTokenAlias', () => {
     })
     expect(captured[0]?.properties).not.toHaveProperty('download_token')
     expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
+  })
+
+  it('attaches the token to only one first-launch event in a process', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn()
+    })
+
+    telemetry.captureFirstLaunch({ sequence: 'first' })
+    telemetry.captureFirstLaunch({ sequence: 'second' })
+    await flushTelemetryAliasTasks()
+
+    const firstLaunches = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunches).toHaveLength(2)
+    expect(firstLaunches[0]?.properties).toMatchObject({
+      sequence: 'first',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
+    expect(firstLaunches[1]?.properties).toMatchObject({ sequence: 'second' })
+    expect(firstLaunches[1]?.properties).not.toHaveProperty('download_token')
+    expect(firstLaunches[1]?.properties).not.toHaveProperty('download_token_source')
+  })
+
+  it('attaches the token to an already queued first-launch event', async () => {
+    telemetry.setConsentState('undecided')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn()
+    })
+
+    telemetry.setConsentState('granted')
+    await flushTelemetryAliasTasks()
+
+    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunch?.properties).toMatchObject({
+      id_class: 'machine_derived',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
   })
 
   it('queues the alias while denied and clears only after a later grant', async () => {
@@ -1028,12 +1087,12 @@ describe('telemetry deferDownloadTokenAlias', () => {
       onAliased
     })
 
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     expect(aliases).toHaveLength(0)
     expect(onAliased).not.toHaveBeenCalled()
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'ZyX987wVu654' }])
     expect(onAliased).toHaveBeenCalledTimes(1)
