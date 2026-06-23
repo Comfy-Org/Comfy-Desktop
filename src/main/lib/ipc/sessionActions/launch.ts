@@ -21,6 +21,7 @@ import {
   _broadcastToRenderer,
 } from '../shared'
 import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
+import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
@@ -49,6 +50,9 @@ import {
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
 import { ensureManagerMirrorConfig } from '../../managerConfig'
+import { recoverInterruptedComfyOp } from '../../opMarker'
+import { migrateEnvLayout } from '../../../sources/standalone/install'
+import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { WriteStream } from 'fs'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -169,7 +173,6 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // failure path, not just dropped into the main-process log.
     const recoveryLog: string[] = []
     try {
-      const { recoverInterruptedComfyOp } = await import('../../opMarker')
       const recovered = await recoverInterruptedComfyOp(
         inst.installPath,
         (text) => {
@@ -193,8 +196,6 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       const base = `ComfyUI recovery failed: ${(err as Error).message}`
       return { ok: false, message: detail ? `${base}\n\n${detail}` : base }
     }
-    const { migrateEnvLayout } = await import('../../../sources/standalone/install')
-    const { writeComfyEnvironment } = await import('../../../sources/standalone/envPaths')
     const updateFn = async (data: Record<string, unknown>): Promise<unknown> => installations.update(installationId, data)
     try {
       const migrated = await migrateEnvLayout(inst.installPath, updateFn)
@@ -705,6 +706,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const REBOOT_RETRY_MAX = 5
   let portRetries = 0
   let rebootRetries = 0
+  // One id per logical boot, reused across port/reboot retries (tryLaunch
+  // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
+  const bootId = randomUUID()
 
   const tryLaunch = async (): Promise<{ ok: true; proc: ChildProcess; getStderr: () => string } | { ok: false; message: string; cancelled?: boolean }> => {
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!].map((a, ci, ca) => {
@@ -724,6 +728,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // retries (port_retry / reboot_retry counters) directly.
     telemetry.capture('comfy.desktop.comfyui.boot_started', {
       installation_id: installationId,
+      boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
@@ -811,6 +816,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const failedPhase = flushBootPhasesOnFailure(installationId)
     telemetry.emit('comfy.desktop.comfyui.boot_failed', {
       installation_id: installationId,
+      boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
       failed_phase: failedPhase,
       error_bucket: telemetry.bucketError(launchResult.message),
@@ -828,12 +834,24 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   _pendingPorts.delete(launchCmd.port!)
   _operationAborts.delete(installationId)
   const mode = (inst.launchMode as string | undefined) || 'window'
+  const bootTimeMs = Date.now() - launchStartedAt
   _addSession(
     installationId,
     { proc, port: launchCmd.port!, mode, installationName: inst.name },
-    Date.now() - launchStartedAt,
+    bootTimeMs,
     { portRetries, rebootRetries },
   )
+  // Paired success terminal for boot_started: server up + session registered.
+  // Same boot_id as this launch's boot_started(s), so the boot-success rate is
+  // count(boot_completed.boot_id) / count(distinct boot_started.boot_id).
+  telemetry.capture('comfy.desktop.comfyui.boot_completed', {
+    installation_id: installationId,
+    boot_id: bootId,
+    variant: (inst.variant as string | undefined) ?? null,
+    boot_time_ms: bootTimeMs,
+    port_retry_count: portRetries,
+    reboot_retry_count: rebootRetries
+  })
   writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
 
   if (!sender.isDestroyed()) {
