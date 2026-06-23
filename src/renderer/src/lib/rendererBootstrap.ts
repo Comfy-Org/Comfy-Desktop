@@ -683,10 +683,24 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
         .getInstallationDdContext(data.installationId)
         .then((ctx) => {
           if (!ctx) return
-          // `latest_snapshot` is excluded: it's a nested object (dropped by the
-          // telemetry IPC bridge anyway) and carries a raw user-typed `label`
-          // plus custom-node `dirName`s, so it must not be forwarded as-is.
-          const { snapshot_diffs, latest_snapshot: _latestSnapshot, ...metadata } = ctx
+          const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
+          // `latest_snapshot` is a nested object (dropped by the telemetry IPC
+          // bridge) and its raw form carries a user-typed `label` plus
+          // custom-node `dirName`s. Forward a PII-safe compact summary instead:
+          // counts + a `has_label` flag, never the raw label / node paths.
+          const latestSnapshotSummary = latest_snapshot
+            ? {
+                createdAt: latest_snapshot.createdAt,
+                trigger: latest_snapshot.trigger,
+                has_label: latest_snapshot.label != null,
+                comfyui: latest_snapshot.comfyui,
+                custom_nodes_count: latest_snapshot.customNodes.length,
+                pip_packages_count: Object.keys(latest_snapshot.pipPackages).length,
+                python_version: latest_snapshot.pythonVersion ?? null,
+                update_channel: latest_snapshot.updateChannel ?? null
+              }
+            : null
+          const latestSnapshotJson = serializeForTelemetry(latestSnapshotSummary)
           // Fires on EVERY ComfyUI instance boot (fresh install, restart, port
           // realloc) — not on new-install completion. Despite its previous name
           // (`session.installation_started`) it tracks per-instance boots, so
@@ -702,7 +716,9 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             >),
             boot_time_ms: bootTimeMs ?? null,
             port_retries: portRetries,
-            reboot_retries: rebootRetries
+            reboot_retries: rebootRetries,
+            latest_snapshot_json: latestSnapshotJson.json,
+            latest_snapshot_json_truncated: latestSnapshotJson.truncated
           }
           trackTelemetryAction(
             'comfy.desktop.session.instance_started',
@@ -725,15 +741,30 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
                 })
               } catch {}
             }
-            // NOTE: `snapshot_diffs` is NOT forwarded to PostHog. The telemetry
-            // IPC bridge drops arrays of objects, and `SnapshotDiffEntry` carries
-            // raw user-typed `label` strings and custom-node `dirName`s that the
-            // renderer-side scrub does not cover — serializing it to JSON would
-            // ship that PII. A PII-safe compact summary (counts + `has_label`,
-            // like `installs_inventory`) is needed before this can go to PostHog.
+            // Raw `SnapshotDiffEntry` carries user-typed `label`s and custom-node
+            // `dirName`s, and the IPC bridge drops arrays of objects anyway. Send
+            // PostHog a PII-safe compact summary (counts + `has_label`), JSON
+            // string with the bridge's 2048-char limit guarded.
+            const snapshotDiffsSummary = snapshot_diffs.map((d) => ({
+              createdAt: d.createdAt,
+              trigger: d.trigger,
+              has_label: d.label != null,
+              nodes_added: d.nodesAdded.length,
+              nodes_removed: d.nodesRemoved.length,
+              nodes_changed: d.nodesChanged.length,
+              pips_added: d.pipsAdded.length,
+              pips_removed: d.pipsRemoved.length,
+              pips_changed: d.pipsChanged.length,
+              comfyui_changed: d.comfyuiChanged,
+              update_channel_changed: d.updateChannelChanged
+            }))
+            const snapshotDiffsJson = serializeForTelemetry(snapshotDiffsSummary)
             try {
               window.api.captureTelemetry('comfy.desktop.session.snapshot_history', {
-                installation_id: ctx.installation_id
+                installation_id: ctx.installation_id,
+                snapshot_count: snapshot_diffs.length,
+                snapshot_diffs_json: snapshotDiffsJson.json,
+                snapshot_diffs_json_truncated: snapshotDiffsJson.truncated
               })
             } catch {
               // ignore
