@@ -95,10 +95,10 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
     const source = sourceMap[inst.sourceId]
     if (!source) return inst as unknown as Record<string, unknown>
     const listPreview = source.getListPreview ? source.getListPreview(inst) : undefined
-    // A local install whose folder is currently missing/unreadable (e.g. an
-    // unplugged removable drive, offline network share, or renamed folder) is
-    // flagged "directory not found" rather than forgotten — restoring the
-    // folder clears it on the next refresh (issue #1155).
+    // A local install whose folder is currently unavailable (e.g. an unplugged
+    // removable drive, offline network share, renamed folder, or one we're
+    // denied access to) is flagged with a danger pill rather than forgotten —
+    // restoring access clears it on the next refresh (issue #1155).
     const dirState = source.skipInstall ? undefined : getCachedInstallDirState(inst.id)
     const dirUnavailable = isInstallDirUnavailable(dirState)
     // `detail` backs the dashboard's clickable danger pill — the full,

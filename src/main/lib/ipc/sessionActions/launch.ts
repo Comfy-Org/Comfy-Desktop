@@ -117,9 +117,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // `no-permission` (folder exists but access is denied). `inaccessible` is a
     // transient readdir error (EIO/EBUSY) or a slow-drive probe timeout, which
     // can be a false positive on a healthy-but-slow network/removable drive —
-    // so let launch proceed. If the path really is unusable, the downstream
-    // env/exe checks (getLaunchCommand, the executable existsSync, spawn errors)
-    // surface a readable modal error rather than hanging or crashing.
+    // so let launch proceed: the common case is a drive that woke up by now and
+    // launches fine. If the path is genuinely unusable the downstream env/exe
+    // checks (getLaunchCommand, the executable existsSync, spawn errors) return
+    // a readable modal error. (A truly-wedged mount can still stall those sync
+    // checks; we accept that over blocking healthy slow drives.)
     if (dirState === 'missing') {
       return { ok: false, message: i18n.t('errors.installDirNotFound') }
     }

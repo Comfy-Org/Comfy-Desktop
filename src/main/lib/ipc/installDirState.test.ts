@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 }))
 
 import {
+  installDirDashboardKind,
   installDirState,
   installDirStateAsync,
   isEffectivelyEmptyInstallDir,
@@ -93,6 +94,24 @@ describe('isInstallDirUnavailable', () => {
     expect(isInstallDirUnavailable('empty')).toBe(false)
     expect(isInstallDirUnavailable('populated')).toBe(false)
     expect(isInstallDirUnavailable(undefined)).toBe(false)
+  })
+})
+
+describe('installDirDashboardKind', () => {
+  // The refresh broadcast keys off this, so a label-changing transition with the
+  // same unavailable boolean (missing↔no-permission) MUST map to distinct kinds.
+  it('gives no-permission its own pill, separate from the shared not-found pill', () => {
+    expect(installDirDashboardKind('no-permission')).toBe('no-permission')
+    expect(installDirDashboardKind('missing')).toBe('not-found')
+    expect(installDirDashboardKind('inaccessible')).toBe('not-found')
+    expect(installDirDashboardKind('empty')).toBe('available')
+    expect(installDirDashboardKind('populated')).toBe('available')
+    expect(installDirDashboardKind(undefined)).toBe('available')
+  })
+
+  it('distinguishes missing↔no-permission even though both are "unavailable"', () => {
+    expect(isInstallDirUnavailable('missing')).toBe(isInstallDirUnavailable('no-permission'))
+    expect(installDirDashboardKind('missing')).not.toBe(installDirDashboardKind('no-permission'))
   })
 })
 

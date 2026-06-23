@@ -343,9 +343,25 @@ export function isInstallDirUnavailable(state: InstallDirState | undefined): boo
   return state === 'missing' || state === 'inaccessible' || state === 'no-permission'
 }
 
+/** The danger pill the dashboard renders for a dir state. `missing` and the
+ *  transient `inaccessible` share the "not found" pill; `no-permission` gets its
+ *  own. The change-detection in `refreshInstallDirStates()` compares THIS (not
+ *  the unavailable boolean) so a `missing`↔`no-permission` flip — same boolean,
+ *  different pill — still re-broadcasts and updates the label. */
+export type InstallDirDashboardKind = 'available' | 'not-found' | 'no-permission'
+export function installDirDashboardKind(state: InstallDirState | undefined): InstallDirDashboardKind {
+  if (state === 'no-permission') return 'no-permission'
+  if (state === 'missing' || state === 'inaccessible') return 'not-found'
+  return 'available'
+}
+
 /** Async `installDirState` that can't hang the caller on a dead network drive:
- *  a probe that doesn't settle within the timeout is reported `inaccessible`. */
-const _DIR_STATE_PROBE_TIMEOUT_MS = 4000
+ *  a probe that doesn't settle within the timeout is reported `inaccessible`.
+ *  Generous (8s) because a healthy-but-slow network/removable drive can be slow
+ *  to wake, and a false `inaccessible` timeout is exactly what we want to avoid;
+ *  the only cost is launch waiting this long before proceeding on a truly-dead
+ *  path (which then falls through, never blocks). */
+const _DIR_STATE_PROBE_TIMEOUT_MS = 8000
 export async function installDirStateAsync(dirPath: string): Promise<InstallDirState> {
   if (!dirPath) return 'missing'
   const probe = (async (): Promise<InstallDirState> => {
@@ -379,8 +395,9 @@ export function getCachedInstallDirState(id: string): InstallDirState | undefine
 
 let _refreshInstallDirStatesInFlight: Promise<void> | null = null
 /** Single-flight refresh of `_installDirStateCache` for all local installs;
- *  broadcasts `installations-changed` only when an availability flips so the
- *  dashboard re-pulls and the offline indicator appears/clears on its own. */
+ *  broadcasts `installations-changed` only when an install's rendered pill kind
+ *  changes so the dashboard re-pulls and the indicator appears/clears/relabels
+ *  on its own. */
 export function refreshInstallDirStates(): Promise<void> {
   if (_refreshInstallDirStatesInFlight) return _refreshInstallDirStatesInFlight
   _refreshInstallDirStatesInFlight = (async (): Promise<void> => {
@@ -401,9 +418,10 @@ export function refreshInstallDirStates(): Promise<void> {
         tracked.add(id)
         const prev = _installDirStateCache.get(id)
         _installDirStateCache.set(id, state)
-        // Only the rendered availability bucket matters; a missing↔inaccessible
-        // flip shows the same pill, so it must not trigger a refresh loop.
-        if (isInstallDirUnavailable(prev) !== isInstallDirUnavailable(state)) changed = true
+        // Compare the rendered pill, not the unavailable boolean: a
+        // missing↔inaccessible flip is the same pill (no broadcast → no refresh
+        // loop), but missing↔no-permission flips the label and must broadcast.
+        if (installDirDashboardKind(prev) !== installDirDashboardKind(state)) changed = true
       }
       // Drop cache entries for installs that are gone/no longer local. Their
       // pill left with them, so this needs no broadcast of its own.
