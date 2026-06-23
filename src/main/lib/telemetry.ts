@@ -47,9 +47,9 @@
  *     identifying the id.
  *   - `download_token`: web → desktop acquisition bridge. The Windows
  *     installer persists an opaque token from its filename; after consent,
- *     Desktop aliases that token into `installation_id` and stamps it onto
- *     acquisition events/defaults so the website download click can join to
- *     first launch/open.
+ *     Desktop aliases that token into `installation_id` and includes it only
+ *     on explicit acquisition/attribution events so regular product events do
+ *     not carry an extra join token.
  *   - `user_id`: set on login via `bindUserId`. The ONLY `client.identify()`
  *     call. Aliases `installation_id` → `user_id` (now merges, since the anon
  *     id was never identified). Logout (`unbindUserId`) restores the anon
@@ -171,6 +171,7 @@ export function _resetForTest(): void {
   pendingPersonSetOnce = null
   pendingMigrationAlias = null
   pendingDownloadTokenAlias = null
+  pendingDownloadTokenEventProperties = null
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
@@ -563,6 +564,10 @@ let pendingDownloadTokenAlias: {
   source: string
   onAliased: () => void
 } | null = null
+let pendingDownloadTokenEventProperties: {
+  download_token: string
+  download_token_source: string
+} | null = null
 
 /**
  * The anonymous device identity bound at boot (typically `installation_id =
@@ -572,25 +577,19 @@ let pendingDownloadTokenAlias: {
  *
  * On logout we explicitly do NOT call `posthog.reset()` (which would
  * generate a fresh anonymous id and clobber the deterministic
- * `installation_id` plus the acquisition `download_token`). Instead, we
- * switch `distinctId` back to this remembered baseline.
+ * `installation_id`). Instead, we switch `distinctId` back to this remembered
+ * baseline.
  */
 let installationDeviceId: string | null = null
 
-function applyDownloadTokenDefaults(download: { downloadToken: string; source: string }): void {
-  defaultEventProperties = {
-    ...defaultEventProperties,
-    download_token: download.downloadToken,
-    download_token_source: download.source
-  }
+function withDownloadTokenEventProperties(properties: TelemetryContext): TelemetryContext {
+  if (!pendingDownloadTokenEventProperties) return properties
+  return { ...properties, ...pendingDownloadTokenEventProperties }
 }
 
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
   if (consentState !== 'granted') return
-  if (pendingDownloadTokenAlias) {
-    applyDownloadTokenDefaults(pendingDownloadTokenAlias)
-  }
   if (pendingPersonSet || pendingPersonSetOnce) {
     capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
     pendingPersonSet = null
@@ -630,6 +629,7 @@ function tryFlushDeferred(): void {
       if (!aliased) return
       capture('comfy.desktop.identity.download_attributed', {
         installation_id: d.installationId,
+        download_token: d.downloadToken,
         download_token_source: d.source
       })
       try {
@@ -645,7 +645,7 @@ function tryFlushDeferred(): void {
     pendingSessionStart = null
   }
   if (pendingFirstLaunch) {
-    capture('comfy.desktop.app.first_launch', pendingFirstLaunch)
+    capture('comfy.desktop.app.first_launch', withDownloadTokenEventProperties(pendingFirstLaunch))
     pendingFirstLaunch = null
   }
 }
@@ -673,10 +673,8 @@ export function deferMigrationAlias(opts: {
 }
 
 /**
- * Queue the Windows download-token bridge to fire after consent. This does not
- * set default event properties until `tryFlushDeferred()` confirms consent is
- * granted, so the pre-consent allow-listed consent-decision event never carries
- * the acquisition token.
+ * Queue the Windows download-token bridge to fire after consent. The token is
+ * kept off global defaults; only explicit acquisition/attribution events get it.
  */
 export function deferDownloadTokenAlias(opts: {
   downloadToken: string
@@ -686,8 +684,7 @@ export function deferDownloadTokenAlias(opts: {
 }): void {
   if (!opts.downloadToken) return
   pendingDownloadTokenAlias = opts
-  pendingPersonSetOnce = {
-    ...(pendingPersonSetOnce || {}),
+  pendingDownloadTokenEventProperties = {
     download_token: opts.downloadToken,
     download_token_source: opts.source
   }
@@ -760,10 +757,9 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  * Switch back to the anonymous `installation_id` after a logout.
  *
  * **Not** `posthog.reset()`: that would generate a brand-new anonymous
- * device id and clobber the deterministic `installation_id` plus the
- * acquisition `download_token`. Instead, we restore `distinct_id` to
- * the remembered baseline so subsequent events ride under the device
- * identity (not the prior user).
+ * device id and clobber the deterministic `installation_id`. Instead, we
+ * restore `distinct_id` to the remembered baseline so subsequent events ride
+ * under the device identity (not the prior user).
  *
  * Flips `is_authenticated` back to `false` via a capture-`$set` (not
  * `identify()`, which would re-burn the anon id for the next login).
@@ -867,15 +863,16 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
  * in, or the rare migrator), it captures immediately.
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
+  const eventProperties = withDownloadTokenEventProperties(properties)
   if (!canEmit() || !distinctId) {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
+    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
     return
   }
   if (consentState !== 'granted') {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
+    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
     return
   }
-  capture('comfy.desktop.app.first_launch', properties)
+  capture('comfy.desktop.app.first_launch', eventProperties)
 }
 
 /**

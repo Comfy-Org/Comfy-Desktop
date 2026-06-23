@@ -54,6 +54,7 @@ interface AliasCall {
   alias: string
 }
 const aliases: AliasCall[] = []
+let aliasImmediateFailure: Error | null = null
 
 interface IdentifyCall {
   distinctId: string
@@ -88,6 +89,7 @@ vi.mock('posthog-node', () => ({
     }
     aliasImmediate(call: AliasCall): Promise<void> {
       aliases.push(call)
+      if (aliasImmediateFailure) return Promise.reject(aliasImmediateFailure)
       return Promise.resolve()
     }
     flush(): Promise<void> {
@@ -103,6 +105,10 @@ vi.mock('posthog-node', () => ({
 }))
 
 const telemetry = await import('./telemetry')
+
+afterEach(() => {
+  aliasImmediateFailure = null
+})
 
 describe('telemetry.bucketError', () => {
   it('classifies cancellation messages', () => {
@@ -883,6 +889,30 @@ describe('telemetry deferMigrationAlias', () => {
     expect(aliases).toHaveLength(1)
     expect(onAliased).toHaveBeenCalledTimes(1)
   })
+
+  it('does not clean up persisted retry state when aliasImmediate fails', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('new-id')
+    aliases.length = 0
+    captured.length = 0
+    aliasImmediateFailure = new Error('alias failed')
+
+    const onAliased = vi.fn()
+    telemetry.deferMigrationAlias({
+      legacyId: 'legacy-uuid-abc',
+      installationId: 'new-id',
+      idClass: 'machine_derived',
+      onAliased
+    })
+
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(aliases).toEqual([{ distinctId: 'new-id', alias: 'legacy-uuid-abc' }])
+    expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
+    // onAliased clears the on-disk pending-alias file; skipping it preserves
+    // retry state for the next boot.
+    expect(onAliased).not.toHaveBeenCalled()
+  })
 })
 
 describe('telemetry deferDownloadTokenAlias', () => {
@@ -915,6 +945,7 @@ describe('telemetry deferDownloadTokenAlias', () => {
       source: 'windows_installer_filename',
       onAliased
     })
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
 
     telemetry.capture('comfy.desktop.first_use.consent_decision', {
       decision: 'accept',
@@ -939,13 +970,48 @@ describe('telemetry deferDownloadTokenAlias', () => {
       download_token: 'AbC123xYz789',
       download_token_source: 'windows_installer_filename'
     })
-    const session = captured.find((c) => c.event === 'comfy.desktop.session.started')
-    expect(session?.properties).toMatchObject({
+    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunch?.properties).toMatchObject({
       installation_id: 'install-id',
       download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
+      download_token_source: 'windows_installer_filename',
+      id_class: 'machine_derived'
     })
+    const session = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(session?.properties).toMatchObject({
+      installation_id: 'install-id'
+    })
+    expect(session?.properties).not.toHaveProperty('download_token')
+    expect(session?.properties).not.toHaveProperty('download_token_source')
     expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not attach the token to unrelated later events', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn()
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    captured.length = 0
+
+    telemetry.capture('comfy.desktop.execution.started', {
+      mode: 'test'
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.properties).toMatchObject({
+      installation_id: 'install-id',
+      mode: 'test'
+    })
+    expect(captured[0]?.properties).not.toHaveProperty('download_token')
+    expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
   })
 
   it('queues the alias while denied and clears only after a later grant', async () => {
