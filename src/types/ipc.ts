@@ -699,7 +699,7 @@ export interface InstallationDdContext {
 /** Compact per-install summary for the per-session boot census
  *  emitted as `comfy.desktop.session.installs_inventory`. Strictly metadata
  *  + counts + diff summaries (no per-node / per-package contents) so
- *  the inventory can pack many installs into the same RUM payload. */
+ *  the inventory can pack many installs into a single PostHog event. */
 export interface InstallInventoryEntry {
   installation_id: string
   source_id: string
@@ -1262,8 +1262,8 @@ export interface ElectronApi {
   /** Per-session boot census of every persisted install (metadata +
    *  snapshot diff counts). Powers the `comfy.desktop.session.installs_inventory`
    *  telemetry event so dashboards see the user's full install footprint
-   *  without waiting for them to launch each one. Capped to ~200 KB
-   *  total to stay under Datadog RUM's per-action context limit. */
+   *  without waiting for them to launch each one. Byte-capped main-side to
+   *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
 

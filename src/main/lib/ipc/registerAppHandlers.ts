@@ -353,11 +353,8 @@ export function registerAppHandlers(): void {
               createdAt: latest.createdAt,
               trigger: latest.trigger,
               // User-typed snapshot labels can carry PII / paths /
-              // model names — the inventory event bypasses the
-              // renderer-side `scrubAll` pass (it goes via `addAction`
-              // directly to RUM with arrays of objects), so we
-              // collapse the label to a presence boolean instead of
-              // shipping the raw string.
+              // model names, so we collapse the label to a presence
+              // boolean instead of shipping the raw string.
               has_label: !!latest.label,
               comfyui: {
                 ref: latest.comfyui.ref,

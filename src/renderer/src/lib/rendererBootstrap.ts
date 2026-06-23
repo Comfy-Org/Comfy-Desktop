@@ -394,7 +394,7 @@ async function initializeProviders(): Promise<void> {
   // always-on `'title-bar'` renderer. Without this gate the inventory
   // would fire N times per session — once per host window's title-bar
   // bootstrap. Payload is metadata + diff counts only (no per-node /
-  // per-package contents) and is capped to ~200 KB main-side.
+  // per-package contents) and is byte-capped main-side.
   if (rendererRole === 'panel') {
     window.api
       .getInstallsInventory()

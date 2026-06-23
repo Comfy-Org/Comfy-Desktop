@@ -112,7 +112,10 @@ describe('registerTelemetryHandlers', () => {
   it('keeps person properties scalar-only while applying the same caps', () => {
     const properties: Record<string, unknown> = {
       array: [1, 2, 3],
-      long: 'x'.repeat(3000)
+      long: 'x'.repeat(3000),
+      // The larger `_json` ceiling is event-only: person records are capped at
+      // 512 KB total by PostHog, so `_json` person props stay clamped to 2048.
+      blob_json: 'j'.repeat(3000)
     }
     for (let i = 0; i < 200; i++) properties[`key_${i}`] = i
 
@@ -122,7 +125,8 @@ describe('registerTelemetryHandlers', () => {
     expect(Object.keys(sent)).toHaveLength(127)
     expect(sent.array).toBeUndefined()
     expect(sent.long).toBe('x'.repeat(2048))
-    expect(sent.key_125).toBe(125)
-    expect(sent.key_126).toBeUndefined()
+    expect(sent.blob_json).toBe('j'.repeat(2048))
+    expect(sent.key_124).toBe(124)
+    expect(sent.key_125).toBeUndefined()
   })
 })

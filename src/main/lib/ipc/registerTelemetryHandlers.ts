@@ -64,12 +64,24 @@ function asTelemetryValueArray(v: unknown): mainTelemetry.TelemetryValue[] | nul
   return out
 }
 
-function asTelemetryObject(value: unknown, allowArrays: true): mainTelemetry.TelemetryContext
+// `allowLargeJsonStrings` is only for event properties: the larger `_json`
+// ceiling must not apply to person properties, where PostHog caps the whole
+// record at 512 KB total.
 function asTelemetryObject(
   value: unknown,
-  allowArrays: false
+  allowArrays: true,
+  allowLargeJsonStrings: boolean
+): mainTelemetry.TelemetryContext
+function asTelemetryObject(
+  value: unknown,
+  allowArrays: false,
+  allowLargeJsonStrings: boolean
 ): Record<string, mainTelemetry.TelemetryValue>
-function asTelemetryObject(value: unknown, allowArrays: boolean): mainTelemetry.TelemetryContext {
+function asTelemetryObject(
+  value: unknown,
+  allowArrays: boolean,
+  allowLargeJsonStrings: boolean
+): mainTelemetry.TelemetryContext {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const source = value as Record<string, unknown>
   const out: mainTelemetry.TelemetryContext = {}
@@ -79,9 +91,10 @@ function asTelemetryObject(value: unknown, allowArrays: boolean): mainTelemetry.
     if (count++ >= MAX_TELEMETRY_KEYS) break
     const raw = source[key]
     if (isTelemetryValue(raw)) {
-      const limit = key.endsWith('_json')
-        ? MAX_TELEMETRY_JSON_STRING_LENGTH
-        : MAX_TELEMETRY_STRING_LENGTH
+      const limit =
+        allowLargeJsonStrings && key.endsWith('_json')
+          ? MAX_TELEMETRY_JSON_STRING_LENGTH
+          : MAX_TELEMETRY_STRING_LENGTH
       out[key] = clampTelemetryValue(raw, limit)
     } else if (allowArrays) {
       const array = asTelemetryValueArray(raw)
@@ -93,11 +106,11 @@ function asTelemetryObject(value: unknown, allowArrays: boolean): mainTelemetry.
 
 // Per-key filter to the TelemetryContext contract.
 function asProps(value: unknown): mainTelemetry.TelemetryContext {
-  return asTelemetryObject(value, true)
+  return asTelemetryObject(value, true, true)
 }
 
 function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryValue> {
-  return asTelemetryObject(value, false)
+  return asTelemetryObject(value, false, false)
 }
 
 export function registerTelemetryHandlers(): void {
