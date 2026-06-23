@@ -1078,7 +1078,7 @@
     "noLaunchSupport": "This source does not support launching yet.",
     "noEnvFound": "Cannot launch: no Python environment found. Create one first.",
     "alreadyRunning": "ComfyUI is already running. Stop it before launching again.",
-    "installDirEmpty": "Instance folder is missing or empty. Delete this instance and reinstall.",
+    "installDirEmpty": "Instance folder is empty. Delete this instance and reinstall.",
     "installDirNotFound": "Instance folder not found. Reconnect the drive or restore the folder, then try again.",
     "installNotReady": "This instance is not ready to launch. It may still be installing or may have failed.",
     "installFailed": "Install Failed",

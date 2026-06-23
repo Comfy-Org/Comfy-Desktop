@@ -1078,7 +1078,7 @@
     "noLaunchSupport": "此来源尚不支持启动。",
     "noEnvFound": "无法启动：未找到 Python 环境。请先创建一个。",
     "alreadyRunning": "ComfyUI 已在运行。请先停止再重新启动。",
-    "installDirEmpty": "实例文件夹缺失或为空。请删除此实例并重新安装。",
+    "installDirEmpty": "实例文件夹为空。请删除此实例并重新安装。",
     "installDirNotFound": "未找到实例文件夹。请重新连接驱动器或恢复文件夹后再试。",
     "installNotReady": "此实例尚未准备好启动。它可能仍在安装，或安装已失败。",
     "installFailed": "安装失败",

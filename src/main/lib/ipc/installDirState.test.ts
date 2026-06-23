@@ -120,7 +120,7 @@ describe('installDirStateAsync', () => {
     // A readdir that hangs forever — simulates an offline UNC/network path.
     vi.spyOn(fs.promises, 'readdir').mockReturnValue(new Promise(() => {}) as never)
     const p = installDirStateAsync('//dead/share')
-    await vi.advanceTimersByTimeAsync(5000)
+    await vi.runOnlyPendingTimersAsync()
     await expect(p).resolves.toBe('inaccessible')
   })
 })
