@@ -21,32 +21,32 @@ caret offers **Stop** for a running remote and **nothing** for a running cloud.
 shows only when the target is **not running** (a running one can't open a second
 window); once running the caret offers **Stop** (remote) or nothing (cloud).
 
-| Current view | Target | State | Primary CTA | Caret ▾ |
-|---|---|---|---|---|
-| Dashboard | Dashboard | — | no-op | – |
-| Dashboard | Instance | stopped | Start (same window) | – |
-| Dashboard | Instance | running elsewhere | Switch (focus) | – |
-| Dashboard | Cloud | stopped | Open Cloud (same window) | Open in new window |
-| Dashboard | Cloud | running elsewhere | Switch (focus) | – |
-| Dashboard | Remote | stopped | Open Remote (same window) | Open in new window |
-| Dashboard | Remote | running elsewhere | Switch (focus) | Stop |
-| Dashboard | + New Instance | — | New Install (wizard) | – |
-| Instance | Dashboard | — | Open Dashboard (new window; instance keeps running) | – |
-| Instance | self | running here | Restart | Stop |
-| Instance | Instance B | stopped | Switch (swap in place) | Open in new window → 3-way confirm¹ |
-| Instance | Instance B | running elsewhere | Switch (focus) | – |
-| Instance | Cloud | stopped | Open Cloud (new window; instance keeps running) | – |
-| Instance | Cloud | running elsewhere | Switch (focus) | – |
-| Instance | Remote | stopped | Open Remote (new window; instance keeps running) | – |
-| Instance | Remote | running elsewhere | Switch (focus) | Stop |
-| Cloud | Dashboard | — | Open Dashboard (new window²) | – |
-| Cloud | Instance | stopped | Open in new window (cloud keeps running) | – |
-| Cloud | Instance | running elsewhere | Switch (focus) | – |
-| Cloud | self | running here | Restart³ | – |
-| Cloud | Cloud/Remote | stopped | Open in new window | – |
-| Cloud | Cloud | running elsewhere | Switch (focus) | – |
-| Cloud | Remote | running elsewhere | Switch (focus) | Stop |
-| Cloud | + New Instance | — | New Install (wizard, new window) | – |
+| # | Current view | Target | State | Primary CTA | Caret ▾ |
+|---|---|---|---|---|---|
+| 1 | Dashboard | Dashboard | — | no-op | – |
+| 2 | Dashboard | Instance | stopped | Start (same window) | – |
+| 3 | Dashboard | Instance | running elsewhere | Switch (focus) | – |
+| 4 | Dashboard | Cloud | stopped | Open Cloud (same window) | Open in new window |
+| 5 | Dashboard | Cloud | running elsewhere | Switch (focus) | – |
+| 6 | Dashboard | Remote | stopped | Open Remote (same window) | Open in new window |
+| 7 | Dashboard | Remote | running elsewhere | Switch (focus) | Stop |
+| 8 | Dashboard | + New Instance | — | New Install (wizard) | – |
+| 9 | Instance | Dashboard | — | Open Dashboard (new window; instance keeps running) | – |
+| 10 | Instance | self | running here | Restart | Stop |
+| 11 | Instance | Instance B | stopped | Switch (swap in place) | Open in new window → 3-way confirm¹ |
+| 12 | Instance | Instance B | running elsewhere | Switch (focus) | – |
+| 13 | Instance | Cloud | stopped | Open Cloud (new window; instance keeps running) | – |
+| 14 | Instance | Cloud | running elsewhere | Switch (focus) | – |
+| 15 | Instance | Remote | stopped | Open Remote (new window; instance keeps running) | – |
+| 16 | Instance | Remote | running elsewhere | Switch (focus) | Stop |
+| 17 | Cloud | Dashboard | — | Open Dashboard (new window²) | – |
+| 18 | Cloud | Instance | stopped | Open in new window (cloud keeps running) | – |
+| 19 | Cloud | Instance | running elsewhere | Switch (focus) | – |
+| 20 | Cloud | self | running here | Restart³ | – |
+| 21 | Cloud | Cloud/Remote | stopped | Open in new window | – |
+| 22 | Cloud | Cloud | running elsewhere | Switch (focus) | – |
+| 23 | Cloud | Remote | running elsewhere | Switch (focus) | Stop |
+| 24 | Cloud | + New Instance | — | New Install (wizard, new window) | – |
 
 ¹ Fires only when the host is a local install (the swap would stop its process):
 an in-drawer dialog — *Switch* (stop A, swap B in) / *Open in new window* (keep A)
