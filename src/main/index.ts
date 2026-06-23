@@ -1507,10 +1507,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
      * session). Fails closed — a window-construction throw is logged, never
      * propagated to the IPC listener.
      */
-    const openInstallInNewWindow = (
+    const openInstallInNewWindow = async (
       installationId: string,
       opts?: { allowDuplicate?: boolean }
-    ): void => {
+    ): Promise<void> => {
       const existing = getEntryByInstallationId(installationId)
       const willFocusExisting = !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
       recordIpcInvocation('open-install-new-window', {
@@ -1524,6 +1524,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         return
       }
       try {
+        // An open window already proves the install exists; only the spawn path
+        // needs the check. Guards against a stale renderer id leaving a stray
+        // empty chooser window (mirrors `openStartupSurface`'s raced-delete
+        // fallback).
+        const inst = await getInstallation(installationId)
+        if (!inst) {
+          console.error('openInstallInNewWindow: unknown installation, not spawning', { installationId })
+          return
+        }
         const target = findEntryByHostWindow(openChooserHostWindow())
         if (!target) {
           console.error('openInstallInNewWindow: spawned chooser host not in registry', { installationId })
@@ -1582,11 +1591,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           } catch {
             // Name lookup is cosmetic — fall through with the id as the label.
           }
-          // Three-way choice (issue #926, matrix row 9): the current local
-          // instance is running, so offer to keep it alive in a separate window
-          // instead of only "stop it and switch". `secondary` routes to
-          // `openInstallInNewWindow` (parent untouched); `confirm` falls through
-          // to the in-place swap below.
+          // Three-way choice (issue #926, matrix row 9): the current host is a
+          // local install, so the swap would stop its process — offer to keep it
+          // in a separate window instead of only "stop it and switch".
+          // `secondary` routes to `openInstallInNewWindow` (parent untouched);
+          // `confirm` falls through to the in-place swap below.
           const choice = await openSystemModalChoiceAsync({
             parent: parentEntry.window,
             spec: {
