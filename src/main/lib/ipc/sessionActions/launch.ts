@@ -109,6 +109,29 @@ function diagnoseCrash(
   return out
 }
 
+/**
+ * Render an exit code for a plain-text launch-failure message. A normal exit
+ * stays as its number; a decoded Windows native fault gets `decimal / hex` plus
+ * a short access-violation explanation and, when the VC++ runtime DLLs are
+ * actually missing, a repair hint. English-only to match the surrounding
+ * non-localized launch-failure strings.
+ */
+function describeExitCode(code: number | null): string {
+  if (code == null) return 'unknown'
+  const decoded = decodeExitCode(code)
+  if (!decoded) return String(code)
+  let out = `${decoded.code} / ${decoded.hex}`
+  if (decoded.kind === 'access-violation') {
+    out += ' (memory access violation — usually a faulty or missing native library)'
+    if (auditVcRuntime().length > 0) {
+      out +=
+        '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+        'installing the latest redistributable may fix this'
+    }
+  }
+  return out
+}
+
 async function openLogStream(installPath: string): Promise<WriteStream> {
   const logDir = getLogDir(installPath)
   fs.mkdirSync(logDir, { recursive: true })
@@ -778,7 +801,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       spawned.proc.on('exit', (code) => {
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          earlyExit = `Process exited with code ${code}${detail}`
+          // A startup crash (e.g. a C-extension segfault during import) is the
+          // most common access-violation case; decode the cryptic NTSTATUS code
+          // and add the VC++ hint inline so the launch-failure modal is useful.
+          earlyExit = `Process exited with code ${describeExitCode(code)}${detail}`
           reject(new Error(earlyExit))
         }
       })

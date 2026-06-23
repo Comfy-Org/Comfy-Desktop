@@ -33,17 +33,33 @@ const NTSTATUS_KINDS: ReadonlyMap<number, CrashKind> = new Map([
 ])
 
 export interface DecodedExitCode {
+  /** Normalised unsigned 32-bit form of the code (e.g. `3221225477`). Always
+   *  matches `hex`, even when the input arrived as a signed int32. */
+  code: number
   /** Hex form of the code, e.g. `'0xC0000005'`. */
   hex: string
   /** Recognised crash flavour, or `'unknown'` for an unmapped NTSTATUS code. */
   kind: CrashKind
 }
 
-/** True for the standard NTSTATUS error band (`0xC0000000`–`0xC0FFFFFF`),
- *  where the documented `STATUS_*` crash codes live (access violation, illegal
- *  instruction, stack/heap corruption, …). Deliberately excludes the
- *  `0xFFFFFFFF` TerminateProcess sentinel so a force-kill isn't mislabelled as
- *  a native fault. */
+/**
+ * Normalise an exit code to its unsigned 32-bit value, or `null` if it isn't a
+ * valid 32-bit integer. Windows native faults can reach us either unsigned
+ * (`3221225477`, the usual `ChildProcess` path) or as a signed int32
+ * (`-1073741819`) depending on the wrapper, so fold both to the same value.
+ */
+function toUint32(code: number): number | null {
+  if (!Number.isInteger(code)) return null
+  if (code < 0) return code < -0x80000000 ? null : code >>> 0
+  return code <= 0xffffffff ? code : null
+}
+
+/** True for the conservative NTSTATUS failure band (`0xC0000000`–`0xC0FFFFFF`),
+ *  where the common process crash / loader statuses live (access violation,
+ *  illegal instruction, stack/heap corruption, DLL-not-found, …). Deliberately
+ *  excludes the `0xFFFFFFFF` TerminateProcess sentinel so a force-kill isn't
+ *  mislabelled as a native fault. Not every possible NTSTATUS error lives in
+ *  this band, but the relevant native-crash ones do. */
 function isNtstatusFailure(code: number): boolean {
   return code >= 0xc0000000 && code <= 0xc0ffffff
 }
@@ -55,7 +71,9 @@ function isNtstatusFailure(code: number): boolean {
  * POSIX signal carries no extra meaning here.
  */
 export function decodeExitCode(code: number | null | undefined): DecodedExitCode | null {
-  if (code == null || !Number.isInteger(code) || !isNtstatusFailure(code)) return null
-  const hex = '0x' + code.toString(16).toUpperCase().padStart(8, '0')
-  return { hex, kind: NTSTATUS_KINDS.get(code) ?? 'unknown' }
+  if (code == null) return null
+  const unsigned = toUint32(code)
+  if (unsigned == null || !isNtstatusFailure(unsigned)) return null
+  const hex = '0x' + unsigned.toString(16).toUpperCase().padStart(8, '0')
+  return { code: unsigned, hex, kind: NTSTATUS_KINDS.get(unsigned) ?? 'unknown' }
 }

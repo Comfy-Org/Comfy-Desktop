@@ -98,7 +98,7 @@ export const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 export const UPDATE_CHECK_INTERVAL = 10 * 60 * 1000
 export const IGNORE_FILES = new Set([MARKER_FILE, '.DS_Store', 'Thumbs.db', 'desktop.ini'])
 export const ALL_UPDATE_CHANNELS = ['stable', 'latest']
-export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
+export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', 'PYTHONFAULTHANDLER', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {

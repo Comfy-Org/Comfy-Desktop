@@ -177,6 +177,12 @@ async function hydrateLastCrashError(installationId: string): Promise<void> {
       exitCode: data.exitCode,
       signal: data.signal,
       lastStderr: data.lastStderr,
+      // Carry the decoded native-crash detail so a panel recreated AFTER the
+      // live event still renders the human-readable message + VC++ hint instead
+      // of regressing to the bare decimal code.
+      exitCodeHex: data.exitCodeHex,
+      crashKind: data.crashKind,
+      vcRuntimeMissing: data.vcRuntimeMissing,
       // Carry the main-side crash timestamp so
       // `comfy.desktop.instance.relaunched_after_crash` can compute a real
       // `crash_to_relaunch_seconds` even when this view hydrated AFTER
