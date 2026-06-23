@@ -20,6 +20,7 @@ export function cloudLoginOriginForUrl(currentUrl: string): string {
   } catch {
     // Fall through to production Cloud.
   }
+  // Desktop supports local Cloud development and production Cloud here.
   return CLOUD_LOGIN_ORIGIN
 }
 

@@ -104,8 +104,8 @@ export interface HandleFirebasePopupOpts {
  */
 /**
  * Singleton handle for the in-flight bridge. We bind to a fixed loopback
- * port (so the Google OAuth client's exact-match `redirect_uri`
- * allowlist works), which means only ONE bridge can run at a time. If
+ * port so Cloud can validate the callback target before posting credentials,
+ * which means only ONE bridge can run at a time. If
  * the user clicks Sign in while a previous attempt is still parked on
  * an open browser tab, we close the stale bridge (freeing the port)
  * before spinning up the new one.
