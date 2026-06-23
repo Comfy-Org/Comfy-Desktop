@@ -161,6 +161,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-error', inst)"
         @keydown.enter.stop="emit('view-error', inst)"
+        @keydown.space.stop
       >
         <AlertCircle :size="14" />
         {{ t('chooser.statusError') }}
@@ -180,6 +181,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-danger', inst)"
         @keydown.enter.stop="emit('view-danger', inst)"
+        @keydown.space.stop
       >
         <AlertCircle :size="13" />
         {{ dangerTag.label }}
@@ -192,6 +194,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         :data-testid="TID.dashboardTileKebab(inst.id)"
         @click.stop="emit('open-kebab-menu', $event, inst)"
         @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
+        @keydown.enter.stop
+        @keydown.space.stop
       >
         <MoreVertical :size="16" />
       </button>

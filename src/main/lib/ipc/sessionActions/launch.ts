@@ -11,7 +11,7 @@ import {
   _reservePort, _releasePort,
   _addSession, _removeSession,
   _markLaunching, _clearLaunchingFailed,
-  installDirState, isInstallDirUnavailable,
+  installDirStateAsync, isInstallDirUnavailable,
   captureSnapshotIfChanged, getSnapshotCount,
   syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
   createSessionPath, buildLaunchEnv, checkRebootMarker,
@@ -109,7 +109,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   if (!source.skipInstall) {
-    const dirState = installDirState(inst.installPath)
+    // Async (timeout-guarded) so launching an install on a dead network/
+    // removable path can't block the main process on a sync readdir.
+    const dirState = await installDirStateAsync(inst.installPath)
     if (isInstallDirUnavailable(dirState)) {
       return { ok: false, message: i18n.t('errors.installDirNotFound') }
     }
