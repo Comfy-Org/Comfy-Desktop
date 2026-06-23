@@ -32,6 +32,7 @@ export function getModelDownloadContentScript(): string {
   'use strict';
   if (window.__comfyDesktop2Injected || typeof window.__comfyDesktop2 === 'undefined') return;
   window.__comfyDesktop2Injected = true;
+  var isRemote = window.__comfyDesktop2.isRemote();
 
   var modelCache = {};
   var modelNameCache = {};
@@ -250,7 +251,7 @@ export function getModelDownloadContentScript(): string {
   }
 
   // Only observe missing models UI and intercept downloads for local sessions
-  if (!window.__comfyDesktop2Remote) {
+  if (!isRemote) {
     if (document.body) {
       startObserver();
     } else {
@@ -261,7 +262,7 @@ export function getModelDownloadContentScript(): string {
   // ---- Override document.createElement to intercept <a>.click() ----
   // For remote/cloud sessions model downloads should not be captured (no local models dir).
   var origCreate = document.createElement.bind(document);
-  if (!window.__comfyDesktop2Remote) {
+  if (!isRemote) {
     document.createElement = function(tag, options) {
       var el = origCreate(tag, options);
       if (typeof tag === 'string' && tag.toLowerCase() === 'a' &&
@@ -291,7 +292,7 @@ export function getModelDownloadContentScript(): string {
   // Intercept WebSocket messages to detect completed workflow outputs.
   // The auth token (if any) is passed to the main process which resolves
   // authenticated redirects server-side, avoiding renderer memory issues.
-  if (window.__comfyDesktop2Remote && window.__comfyDesktop2 && window.__comfyDesktop2.downloadAsset) {
+  if (isRemote && window.__comfyDesktop2 && window.__comfyDesktop2.downloadAsset) {
 
     function _buildViewUrl(baseUrl, item) {
       var params = 'filename=' + encodeURIComponent(item.filename);

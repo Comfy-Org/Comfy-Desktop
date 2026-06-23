@@ -45,6 +45,9 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
     devDependencies:
+      '@comfyorg/comfyui-desktop-bridge-types':
+        specifier: 0.1.2
+        version: 0.1.2
       '@datadog/datadog-ci':
         specifier: ^5.9.0
         version: 5.9.0(@types/node@22.19.12)
@@ -232,6 +235,9 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
+
+  '@comfyorg/comfyui-desktop-bridge-types@0.1.2':
+    resolution: {integrity: sha512-yU2xerunYGDM+IF8MCrEAQGE2C/9mX8Dec7xAwsMmHUriY1GBhZJO9hjjLmHnSh4O4qTpzfO5AJgo2d0jzdDNA==}
 
   '@datadog/browser-core@6.28.1':
     resolution: {integrity: sha512-h5y6aEyMTBZ091Y1mVLe2ta2YHiBa1qEEHliIp7+lb7rMZ1uWzYUzAu83bmTfvgI/yEZdHcVeTjxMucAncwK3g==}
@@ -3849,6 +3855,8 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
+
+  '@comfyorg/comfyui-desktop-bridge-types@0.1.2': {}
 
   '@datadog/browser-core@6.28.1': {}
 
