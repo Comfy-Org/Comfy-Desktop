@@ -1411,18 +1411,17 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     const isFirstLaunch = consumeFirstLaunch()
     const pendingDownloadToken = readPendingDownloadToken()
-    if (pendingDownloadToken && isFirstLaunch) {
+    if (pendingDownloadToken) {
       mainTelemetry.deferDownloadTokenAlias({
         downloadToken: pendingDownloadToken.token,
         installationId,
         source: pendingDownloadToken.source,
+        attachToFirstLaunch: isFirstLaunch,
         onAliased: () => {
           clearPendingDownloadToken()
           markDownloadTokenAttributed()
         }
       })
-    } else if (pendingDownloadToken) {
-      clearPendingDownloadToken()
     }
 
     if (legacyId) {

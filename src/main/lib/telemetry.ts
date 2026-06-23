@@ -688,15 +688,20 @@ export function deferDownloadTokenAlias(opts: {
   downloadToken: string
   installationId: string
   source: string
+  attachToFirstLaunch?: boolean
   onAliased: () => void
 }): void {
   if (!opts.downloadToken) return
   pendingDownloadTokenAlias = opts
-  pendingDownloadTokenEventProperties = {
-    download_token: opts.downloadToken,
-    download_token_source: opts.source
+  if (opts.attachToFirstLaunch !== false) {
+    pendingDownloadTokenEventProperties = {
+      download_token: opts.downloadToken,
+      download_token_source: opts.source
+    }
+    applyDownloadTokenToPendingFirstLaunch()
+  } else {
+    pendingDownloadTokenEventProperties = null
   }
-  applyDownloadTokenToPendingFirstLaunch()
   tryFlushDeferred()
 }
 
@@ -993,10 +998,6 @@ async function aliasImmediateInternal(distinctId: string, alias: string): Promis
   } catch {
     return false
   }
-}
-
-export async function aliasImmediate(distinctId: string, alias: string): Promise<void> {
-  await aliasImmediateInternal(distinctId, alias)
 }
 
 /**

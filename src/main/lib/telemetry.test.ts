@@ -594,25 +594,6 @@ describe('telemetry consent state (3-state)', () => {
     expect(captured).toHaveLength(0)
   })
 
-  it('aliasImmediate is suppressed outside granted', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('any')
-    aliases.length = 0
-    await telemetry.aliasImmediate('new', 'legacy')
-    expect(aliases).toHaveLength(0)
-
-    telemetry.setConsentState('denied')
-    aliases.length = 0
-    await telemetry.aliasImmediate('new', 'legacy')
-    expect(aliases).toHaveLength(0)
-
-    // Sanity: granted DOES alias.
-    telemetry.setConsentState('granted')
-    aliases.length = 0
-    await telemetry.aliasImmediate('new', 'legacy')
-    expect(aliases).toHaveLength(1)
-  })
-
   it('captureException is suppressed outside granted', () => {
     telemetry.setConsentState('denied')
     telemetry.identify('any')
@@ -1101,6 +1082,63 @@ describe('telemetry deferDownloadTokenAlias', () => {
       download_token: 'AbC123xYz789',
       download_token_source: 'windows_installer_filename'
     })
+  })
+
+  it('retries attribution without attaching the token to first-launch after the first boot', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      attachToFirstLaunch: false,
+      onAliased
+    })
+    telemetry.captureFirstLaunch({ sequence: 'not-first-boot' })
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'AbC123xYz789' }])
+    const attributed = captured.find(
+      (c) => c.event === 'comfy.desktop.identity.download_attributed'
+    )
+    expect(attributed?.properties).toMatchObject({
+      installation_id: 'install-id',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
+    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunch?.properties).toMatchObject({ sequence: 'not-first-boot' })
+    expect(firstLaunch?.properties).not.toHaveProperty('download_token')
+    expect(firstLaunch?.properties).not.toHaveProperty('download_token_source')
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not clean up persisted download-token retry state when aliasImmediate fails', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+    aliasImmediateFailure = new Error('alias failed')
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      attachToFirstLaunch: false,
+      onAliased
+    })
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'AbC123xYz789' }])
+    expect(
+      captured.find((c) => c.event === 'comfy.desktop.identity.download_attributed')
+    ).toBeUndefined()
+    expect(onAliased).not.toHaveBeenCalled()
   })
 
   it('queues the alias while denied and clears only after a later grant', async () => {

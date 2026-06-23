@@ -46,6 +46,7 @@ describe('downloadAttribution', () => {
       token: 'AbC123xYz789',
       source: 'windows_installer_filename'
     })
+    expect(fs.existsSync(pendingDownloadTokenPath())).toBe(true)
   })
 
   it('returns null for missing or invalid pending token files', () => {
