@@ -117,7 +117,9 @@ const DEFAULT_TASK: Record<TemplateModality, string> = {
 function taskOf(tags: unknown, modality: TemplateModality): string {
   if (Array.isArray(tags)) {
     for (const tag of tags) {
-      if (typeof tag === 'string' && !MODALITY_TAGS.has(tag.toLowerCase())) return tag
+      if (typeof tag !== 'string') continue
+      const trimmed = tag.trim()
+      if (trimmed && !MODALITY_TAGS.has(trimmed.toLowerCase())) return trimmed
     }
   }
   return DEFAULT_TASK[modality]

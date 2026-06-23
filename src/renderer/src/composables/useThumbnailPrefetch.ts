@@ -21,6 +21,11 @@ interface IdleWindow {
   cancelIdleCallback?: (handle: IdleHandle) => void
 }
 
+/** Delay (ms) for the `setTimeout` fallback when `requestIdleCallback` is absent.
+ *  A few frames — enough to yield to interactive work without forcing the full
+ *  idle deadline (which is a max, not a delay). */
+const FALLBACK_DELAY_MS = 50
+
 /** Schedule on the idle queue, falling back to a low-priority timeout. Returns a
  *  canceller so callers don't branch on which path ran. */
 function scheduleIdle(fn: () => void, timeoutMs: number): () => void {
@@ -29,7 +34,7 @@ function scheduleIdle(fn: () => void, timeoutMs: number): () => void {
     const handle = w.requestIdleCallback(fn, { timeout: timeoutMs })
     return () => w.cancelIdleCallback?.(handle)
   }
-  const id = window.setTimeout(fn, 0)
+  const id = window.setTimeout(fn, FALLBACK_DELAY_MS)
   return () => window.clearTimeout(id)
 }
 

@@ -164,4 +164,19 @@ describe('useThumbnailPrefetch', () => {
     flushIdle()
     expect(images).toHaveLength(1)
   })
+
+  it('falls back to setTimeout when requestIdleCallback is unavailable', () => {
+    vi.stubGlobal('requestIdleCallback', undefined)
+    vi.stubGlobal('cancelIdleCallback', undefined)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { result } = run(() => useThumbnailPrefetch({ concurrency: 5 }))
+      result.prefetch(['a', 'b'])
+      expect(images).toHaveLength(0) // deferred, not run synchronously
+      vi.advanceTimersByTime(50)
+      expect(images.map((i) => i.src).sort()).toEqual(['a', 'b'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -81,6 +81,13 @@ describe('loadTemplateCatalog', () => {
     expect(card.task).toBe('Text to Image')
   })
 
+  it('ignores blank/whitespace tags and uses the modality default', async () => {
+    const first = CURATED_TEMPLATES[0]! // image modality
+    mockedFetchJSON.mockResolvedValue(indexFor({ [first.id]: { title: 'X', tags: ['', '  ', 'Image'] } }))
+    const card = (await loadTemplateCatalog()).find((c) => c.id === first.id)!
+    expect(card.task).toBe('Text to Image')
+  })
+
   it('falls back to the snapshot when the index omits a curated id', async () => {
     const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue([])
