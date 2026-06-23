@@ -6,6 +6,59 @@ import { killProcTree } from './process'
 /** Regex matching PyTorch-family packages that must never be overwritten by pip. */
 export const PYTORCH_RE = /^(torch|torchvision|torchaudio|torchsde)(\s*[<>=!~;[#]|$)/i
 
+/** Cap on captured pip output (characters) so a verbose install can't grow an unbounded string in memory. */
+const MAX_CAPTURED_OUTPUT_CHARS = 256 * 1024
+
+export interface UvPipResult {
+  code: number
+  /** Combined stdout+stderr in arrival order, capped to the last ~256K characters. */
+  output: string
+}
+
+/** Run a uv pip command, streaming output and capturing a bounded tail. Returns the exit code and captured output. */
+export function runUvPipDetailed(
+  uvPath: string,
+  args: string[],
+  cwd: string,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal
+): Promise<UvPipResult> {
+  if (signal?.aborted) return Promise.resolve({ code: 1, output: '' })
+  return new Promise<UvPipResult>((resolve) => {
+    const proc = spawn(uvPath, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+    })
+
+    let captured = ''
+    const record = (text: string): void => {
+      captured += text
+      if (captured.length > MAX_CAPTURED_OUTPUT_CHARS) captured = captured.slice(-MAX_CAPTURED_OUTPUT_CHARS)
+      sendOutput(text)
+    }
+
+    const onAbort = (): void => {
+      killProcTree(proc)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
+
+    proc.stdout.on('data', (chunk: Buffer) => record(chunk.toString('utf-8')))
+    proc.stderr.on('data', (chunk: Buffer) => record(chunk.toString('utf-8')))
+    proc.on('error', (err) => {
+      signal?.removeEventListener('abort', onAbort)
+      record(`Error: ${err.message}\n`)
+      resolve({ code: 1, output: captured })
+    })
+    proc.on('close', (code) => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve({ code: code ?? 1, output: captured })
+    })
+  })
+}
+
 /** Run a uv pip command and stream output. Returns the exit code. */
 export function runUvPip(
   uvPath: string,
@@ -14,33 +67,7 @@ export function runUvPip(
   sendOutput: (text: string) => void,
   signal?: AbortSignal
 ): Promise<number> {
-  if (signal?.aborted) return Promise.resolve(1)
-  return new Promise<number>((resolve) => {
-    const proc = spawn(uvPath, args, {
-      cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      detached: process.platform !== 'win32',
-    })
-
-    const onAbort = (): void => {
-      killProcTree(proc)
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
-    if (signal?.aborted) onAbort()
-
-    proc.stdout.on('data', (chunk: Buffer) => sendOutput(chunk.toString('utf-8')))
-    proc.stderr.on('data', (chunk: Buffer) => sendOutput(chunk.toString('utf-8')))
-    proc.on('error', (err) => {
-      signal?.removeEventListener('abort', onAbort)
-      sendOutput(`Error: ${err.message}\n`)
-      resolve(1)
-    })
-    proc.on('close', (code) => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve(code ?? 1)
-    })
-  })
+  return runUvPipDetailed(uvPath, args, cwd, sendOutput, signal).then((r) => r.code)
 }
 
 export interface PipMirrorConfig {
@@ -48,7 +75,31 @@ export interface PipMirrorConfig {
   useChineseMirrors?: boolean
 }
 
-/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. */
+/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. Returns the exit code and captured output. */
+export async function installFilteredRequirementsDetailed(
+  reqPath: string,
+  uvPath: string,
+  pythonPath: string,
+  installPath: string,
+  tempName: string,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal,
+  mirrors?: PipMirrorConfig,
+): Promise<UvPipResult> {
+  const content = await fs.promises.readFile(reqPath, 'utf-8')
+  const filtered = content.split('\n').filter((l) => !PYTORCH_RE.test(l.trim())).join('\n')
+  const filteredPath = path.join(installPath, tempName)
+  await fs.promises.writeFile(filteredPath, filtered, 'utf-8')
+
+  try {
+    const indexArgs = getPipIndexArgs(mirrors?.pypiMirror, mirrors?.useChineseMirrors)
+    return await runUvPipDetailed(uvPath, ['pip', 'install', '-r', filteredPath, '--python', pythonPath, ...indexArgs], installPath, sendOutput, signal)
+  } finally {
+    try { await fs.promises.unlink(filteredPath) } catch {}
+  }
+}
+
+/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. Returns the exit code. */
 export async function installFilteredRequirements(
   reqPath: string,
   uvPath: string,
@@ -59,17 +110,8 @@ export async function installFilteredRequirements(
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
 ): Promise<number> {
-  const content = await fs.promises.readFile(reqPath, 'utf-8')
-  const filtered = content.split('\n').filter((l) => !PYTORCH_RE.test(l.trim())).join('\n')
-  const filteredPath = path.join(installPath, tempName)
-  await fs.promises.writeFile(filteredPath, filtered, 'utf-8')
-
-  try {
-    const indexArgs = getPipIndexArgs(mirrors?.pypiMirror, mirrors?.useChineseMirrors)
-    return await runUvPip(uvPath, ['pip', 'install', '-r', filteredPath, '--python', pythonPath, ...indexArgs], installPath, sendOutput, signal)
-  } finally {
-    try { await fs.promises.unlink(filteredPath) } catch {}
-  }
+  const result = await installFilteredRequirementsDetailed(reqPath, uvPath, pythonPath, installPath, tempName, sendOutput, signal, mirrors)
+  return result.code
 }
 
 /** The canonical PyPI index — always used as the primary `--index-url`. */

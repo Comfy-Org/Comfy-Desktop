@@ -128,6 +128,7 @@ vi.mock('../installations', () => {
 
 vi.mock('./telemetry', () => ({
   capture: vi.fn(),
+  captureInstallCompleted: vi.fn(),
   bucketError: vi.fn(() => 'other'),
   trackedStep: vi.fn(async (_step: string, _ctx: unknown, fn: () => Promise<unknown>) => fn())
 }))
@@ -896,6 +897,13 @@ describe('adoptDesktopInstall', () => {
           carried_keys: expect.arrayContaining(['telemetryEnabled', 'firstUseCompleted'])
         })
       )
+      // Once-per-install funnel event fired exactly once with method 'adopt'.
+      expect(telemetry.captureInstallCompleted).toHaveBeenCalledTimes(1)
+      expect(telemetry.captureInstallCompleted).toHaveBeenCalledWith({
+        installationId: record.id,
+        method: 'adopt',
+        express: false
+      })
       // Telemetry consent carried from legacy SendStatistics
       expect(settingsMock.__store['telemetryEnabled']).toBe(false)
       // First-use takeover skipped for adopted users.
@@ -1367,6 +1375,10 @@ describe('adoptDesktopInstall', () => {
       const reconcileCall = installFilteredRequirementsMock.mock.calls[0]!
       expect(reconcileCall[0]).toBe(path.join(first.installPath, 'ComfyUI', 'requirements.txt'))
       expect(reconcileCall[1]).toBe(uvPath)
+      // install.completed fires once for the first adoption only — the
+      // idempotent re-run returns the existing record before runAdoption,
+      // so it must NOT re-fire the once-per-install funnel event.
+      expect(telemetry.captureInstallCompleted).toHaveBeenCalledTimes(1)
     } finally {
       legacy.cleanup()
     }

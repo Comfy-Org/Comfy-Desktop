@@ -4,7 +4,8 @@ import { spawn } from 'child_process'
 import { killProcTree } from '../../lib/process'
 import { resolveLocalVersion, clearVersionCache, type LatestTagOverride } from '../../lib/version-resolve'
 import { readGitHead, rollbackComfySource, fetchTags, findLatestVersionTag, revParseRef } from '../../lib/git'
-import { PYTORCH_RE, installFilteredRequirements, getPipIndexArgs } from '../../lib/pip'
+import { PYTORCH_RE, installFilteredRequirementsDetailed, runUvPipDetailed, getPipIndexArgs } from '../../lib/pip'
+import { withOutputTail } from '../../lib/logged-process'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { t } from '../../lib/i18n'
@@ -303,12 +304,12 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
 
           if (!signal?.aborted) {
             sendProgress('deps', { percent: -1, status: t('standalone.updateDepsInstalling') })
-            const pipResult = await spawnCommand(
+            const pipResult = await runUvPipDetailed(
               uvPath, ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
-              installPath, sendOutput, sendOutput, signal
+              installPath, sendOutput ?? (() => {}), signal
             )
             if (pipResult.code !== 0) {
-              depFailure = `requirements install exited with code ${pipResult.code}`
+              depFailure = withOutputTail(`requirements install exited with code ${pipResult.code}`, pipResult.output)
             }
           }
         } catch (err) {
@@ -320,12 +321,12 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
         sendProgress('update', { percent: -1, status: 'Installing updated dependencies' })
         const logFn = sendOutput ?? console.log
         try {
-          const installResult = await installFilteredRequirements(
+          const installResult = await installFilteredRequirementsDetailed(
             reqPath, uvPath, activeEnvPython, installPath,
             '.post-install-reqs.txt', logFn, signal, settings.getMirrorConfig()
           )
-          if (installResult !== 0) {
-            depFailure = `requirements install exited with code ${installResult}`
+          if (installResult.code !== 0) {
+            depFailure = withOutputTail(`requirements install exited with code ${installResult.code}`, installResult.output)
           }
         } catch (err) {
           depFailure = `requirements install failed: ${(err as Error).message}`
@@ -353,13 +354,13 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       }
       const logFn = sendOutput ?? console.log
       try {
-        const mgrResult = await installFilteredRequirements(
+        const mgrResult = await installFilteredRequirementsDetailed(
           mgrReqPath, uvPath, activeEnvPython, installPath,
           dryRunConflictCheck ? '.manager-reqs-filtered.txt' : '.post-install-mgr-reqs.txt',
           logFn, signal, settings.getMirrorConfig()
         )
-        if (mgrResult !== 0) {
-          depFailure = `manager requirements install exited with code ${mgrResult}`
+        if (mgrResult.code !== 0) {
+          depFailure = withOutputTail(`manager requirements install exited with code ${mgrResult.code}`, mgrResult.output)
         }
       } catch (err) {
         depFailure = `manager requirements install failed: ${(err as Error).message}`

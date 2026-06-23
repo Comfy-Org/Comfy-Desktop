@@ -39,6 +39,17 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // Install pipeline failures — monitors the install funnel's bottom step.
   'comfy.desktop.install.standalone.error',
   'comfy.desktop.install.post_install.error',
+  // Per-phase install boundary. Only the `status='error'` rows are the
+  // alerting signal (a phase threw); the `start`/`end` rows are PostHog-only
+  // funnel timing. `forwardToRenderer` mirrors the whole name, so a Datadog
+  // monitor filters on `status:error` to page on a phase failure (e.g.
+  // torch_deps_sync hard-failing for a population after a release).
+  'comfy.desktop.install.phase',
+  // ComfyUI server boot failed — waitForPort timeout / early process exit /
+  // renderer did-fail-load / render-process-gone. Paired with the buffered
+  // boot_phase timings so a monitor can alert on boot-failure rate per
+  // release / variant and the phase breakdown explains where it stalled.
+  'comfy.desktop.comfyui.boot_failed',
   // Migration pipeline failures (Desktop-1 -> standalone).
   'comfy.desktop.migrate.flow.error',
   'comfy.desktop.migrate.user_files.error',

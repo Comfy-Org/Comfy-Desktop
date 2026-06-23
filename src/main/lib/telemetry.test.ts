@@ -261,6 +261,112 @@ describe('telemetry default event properties', () => {
     telemetry.capture('any.event', { app_version: 'override-value' })
     expect(captured[0]!.properties).toMatchObject({ app_version: 'override-value' })
   })
+
+  it('stamps installation_id (the bound device id) on every captured event', () => {
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    // A main-process event and a renderer-routed event both go through
+    // capture(), so both must carry installation_id from the defaults.
+    telemetry.capture('comfy.desktop.execution.completed', { foo: 'bar' })
+    telemetry.capture('comfy.desktop.template.fork', { template_id: 't1' })
+
+    expect(captured).toHaveLength(2)
+    expect(captured[0]!.properties).toMatchObject({ installation_id: 'install-abc123' })
+    expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
+  })
+
+  it('does not pass installation_id to identify() (anon-id invariant holds)', () => {
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+
+    // identify() stamps installation_id as an event default but must NEVER
+    // call client.identify() with it — only login (bindUserId) identifies.
+    expect(identifies).toHaveLength(0)
+  })
+})
+
+describe('telemetry.captureInstallCompleted', () => {
+  beforeEach(() => {
+    captured.length = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('install-xyz')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry._resetForTest()
+  })
+
+  it('fires comfy.desktop.install.completed exactly once with method + express + installation_id', () => {
+    telemetry.captureInstallCompleted({
+      installationId: 'install-xyz',
+      method: 'express',
+      express: true
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.event).toBe('comfy.desktop.install.completed')
+    expect(captured[0]!.properties).toMatchObject({
+      installation_id: 'install-xyz',
+      method: 'express',
+      express: true
+    })
+  })
+
+  it.each([
+    ['express', true],
+    ['manual', false],
+    ['adopt', false],
+    ['migrate', false]
+  ] as const)('carries method=%s / express=%s for each install path', (method, express) => {
+    telemetry.captureInstallCompleted({ installationId: 'i1', method, express })
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.properties).toMatchObject({ method, express })
+  })
+
+  it('boot_completed is a distinct success event carrying the boot_id join key', () => {
+    // boot_started -> boot_completed is the per-attempt boot-success funnel.
+    // Both must carry the same boot_id (the per-launch correlation id) and
+    // installation_id (the cross-event join key from defaults) so the rate is
+    // count(boot_completed.boot_id) / count(distinct boot_started.boot_id).
+    telemetry.capture('comfy.desktop.comfyui.boot_completed', {
+      installation_id: 'install-xyz',
+      boot_id: 'boot-1',
+      boot_time_ms: 1234
+    })
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.boot_completed'])
+    expect(captured[0]!.properties).toMatchObject({
+      installation_id: 'install-xyz',
+      boot_id: 'boot-1',
+      boot_time_ms: 1234
+    })
+  })
+
+  it('does NOT fire on boot — boot_started is a distinct, separately-emitted event', () => {
+    // A boot is the per-launch event; install.completed is once-per-install.
+    // Emitting boot_started must never produce an install.completed.
+    telemetry.capture('comfy.desktop.comfyui.boot_started', { installation_id: 'install-xyz' })
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.boot_started'])
+    expect(captured.some((c) => c.event === 'comfy.desktop.install.completed')).toBe(false)
+  })
+
+  it('is consent-gated: no install.completed when consent is not granted', () => {
+    telemetry.setConsentState('denied')
+    captured.length = 0
+    telemetry.captureInstallCompleted({ installationId: 'i1', method: 'manual', express: false })
+    expect(captured).toHaveLength(0)
+  })
 })
 
 describe('telemetry.trackedStep', () => {
@@ -366,6 +472,18 @@ describe('telemetry SDK-level privacy safety nets', () => {
     const msg = captured[0]!.properties?.error_message as string
     expect(msg).toContain('[REDACTED]')
     expect(msg).not.toContain('64911')
+  })
+
+  it('scrubs string array entries as a last-resort safety net', () => {
+    captured.length = 0
+    telemetry.capture('comfy.desktop.execution.error', {
+      model_paths: ['C:\\Users\\64911\\Documents\\model.safetensors', 'LoadImage']
+    })
+    expect(captured).toHaveLength(1)
+    const paths = captured[0]!.properties?.model_paths as string[]
+    expect(paths[0]).toContain('[REDACTED]')
+    expect(paths[0]).not.toContain('64911')
+    expect(paths[1]).toBe('LoadImage')
   })
 
   it('leaves non-string property types untouched', () => {

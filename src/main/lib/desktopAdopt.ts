@@ -1345,6 +1345,17 @@ async function runAdoption(
     selected_device: selectedDevice
   })
 
+  // Fire the once-per-install funnel event for the in-place Desktop-1 adoption
+  // path. Only reached on a fresh adoption — the idempotent re-run in
+  // `adoptDesktopInstall` returns the existing record before `runAdoption`, so
+  // this never re-fires for an already-adopted install. Best-effort:
+  // `capture()` swallows its own errors and never aborts adoption.
+  telemetry.captureInstallCompleted({
+    installationId: record.id,
+    method: 'adopt',
+    express: false
+  })
+
   sendProgress('done', { percent: 100 })
   return record
 }

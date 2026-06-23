@@ -1,4 +1,4 @@
-import { app, Menu, ipcMain, net } from 'electron'
+import { app, Menu, ipcMain, net, dialog } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
@@ -16,7 +16,7 @@ import * as updater from './lib/updater'
 import * as settings from './settings'
 import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
-import { migrateXdgPaths } from './lib/paths'
+import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import {
   flushLastSessionSync,
@@ -29,6 +29,7 @@ import { openSystemModal, openSystemModalAsync, registerSystemModalIpc } from '.
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
+  openDownloadsTrayForInstall,
   type InstancePickerInstall
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
@@ -46,6 +47,8 @@ import {
   downloadEvents,
   getDownloadsTrayState
 } from './lib/comfyDownloadManager'
+import { hasActiveTemplateDownloads, getTemplateDownloadState } from './sources/standalone/templateDownloadTask'
+import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
 import {
@@ -113,7 +116,8 @@ import {
   rebuildComfyViewIfNeeded,
   setHostWindowFactories
 } from './host/createHostWindow'
-import { attachInstall, setAttachFactories } from './host/attach'
+import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
+import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
@@ -344,8 +348,9 @@ const comfyFailRetryTimerCancels = new Map<string, () => void>()
  *  `attachInstall`; reached by the title-bar refresh button's IPC handler. */
 const comfyReloads = new Map<string, () => void>()
 /** comfyView zoom reset (→ 100%) per installation. Registered by
- *  `attachInstall`; reached by the title-bar zoom pill's IPC handler. */
-const comfyZoomResets = new Map<string, () => void>()
+ *  `attachInstall`; reached by the title-bar zoom pill's IPC handler and
+ *  the title menu's "Reset Zoom" entry (`source` distinguishes them). */
+const comfyZoomResets = new Map<string, (source: ZoomResetSource) => void>()
 /** Counter for generating unique relaunch tokens. */
 let relaunchTokenCounter = 0
 /** Per-install token guarding the async splash-then-reveal in the `onLaunch`
@@ -502,6 +507,12 @@ function onLaunch({
     return
   }
 
+  // Re-arm the per-launch canvas-rendered dedup so this launch's first
+  // dom-ready re-fires `canvas_rendered` (the guard otherwise suppresses it
+  // after the first paint of a prior launch on the same id). Fires for every
+  // window path below (reused, claimed, fresh).
+  resetCanvasRendered(installationId)
+
   // Re-launch into an existing window: a previous launch left the comfy
   // window alive (stop / crash leaves the window open with the lifecycle
   // body). Reuse the existing views; just point the comfyView at the new URL
@@ -586,6 +597,7 @@ function onLaunch({
         // Session registry handles state cleanup
       })
     }
+    scheduleTemplateTrayAutoOpen(installationId)
     return
   }
 
@@ -620,6 +632,7 @@ function onLaunch({
             // Session registry handles state cleanup
           })
         }
+        scheduleTemplateTrayAutoOpen(installationId)
         return
       }
       // Attach failed (telemetry-only — every current call site
@@ -691,6 +704,28 @@ function onLaunch({
       // Session registry handles state cleanup
     })
   }
+
+  scheduleTemplateTrayAutoOpen(installationId)
+}
+
+const TEMPLATE_TRAY_AUTO_OPEN_MS = 2500
+
+/**
+ * First launch after picking a starter template: if its models are still
+ * downloading as ComfyUI appears, surface the downloads tray a couple seconds in
+ * so the user notices it. Called on every `onLaunch` reveal path (reuse / chooser
+ * in-place attach / fresh window). Re-checks the download state at fire time (it
+ * may finish in the delay) and the window at open time (it may close).
+ */
+function scheduleTemplateTrayAutoOpen(installationId: string): void {
+  const state = getTemplateDownloadState(installationId)
+  if (!state || isTemplateDownloadTerminal(state.status)) return
+  setTimeout(() => {
+    const cur = getTemplateDownloadState(installationId)
+    if (cur && !isTemplateDownloadTerminal(cur.status)) {
+      openDownloadsTrayForInstall(installationId)
+    }
+  }, TEMPLATE_TRAY_AUTO_OPEN_MS)
 }
 
 ipcMain.handle('quit-app', () => quitApp())
@@ -857,7 +892,7 @@ ipcMain.on('comfy-window:reset-zoom', (event) => {
   if (entry.window.isDestroyed()) return
   const id = entry.installationId
   if (id === null) return
-  comfyZoomResets.get(id)?.()
+  comfyZoomResets.get(id)?.('titlebar')
   focusActiveBody(entry)
 })
 
@@ -1302,6 +1337,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerPanelViewIpc()
 
     migrateXdgPaths()
+    persistWinDataRootChoice()
     registerProcessErrorHandlers()
 
     // Strip Electron's default menu before any BrowserWindow opens so
@@ -1568,6 +1604,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseHostWindow,
       setActivePanel,
       triggerOpenFeedback,
+      resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>
         entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry)),
@@ -2134,7 +2171,25 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }
   })
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    // Template models are still downloading in the background: quitting drops
+    // them (no resume). Warn once and let the user back out. Synchronous dialog
+    // fits before-quit's sync teardown; only gate a real user quit (not an
+    // in-progress relaunch/update quit) and skip once already confirmed.
+    if (!isQuitInProgress() && hasActiveTemplateDownloads()) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'warning',
+        buttons: [i18n.t('templateQuit.quit'), i18n.t('templateQuit.cancel')],
+        defaultId: 1,
+        cancelId: 1,
+        title: i18n.t('templateQuit.title'),
+        message: i18n.t('templateQuit.message'),
+      })
+      if (choice === 1) {
+        event.preventDefault()
+        return
+      }
+    }
     if (!isQuitInProgress()) {
       setQuitReason('user-quit')
       ipc.cancelAll()
