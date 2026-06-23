@@ -18,24 +18,32 @@
  *
  * Returns the names of the missing DLLs (empty when all present, or on any
  * non-Windows platform where the check doesn't apply).
+ *
+ * The probe is async (`fs.promises.access`) so it never blocks the Electron
+ * main-process event loop, even though it only runs after a crash and only
+ * touches local System32 paths.
  */
 import fs from 'fs'
 import path from 'path'
 
 /** DLLs a current ComfyUI Python environment needs at import time. */
-const REQUIRED_VC_DLLS = ['vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll'] as const
+const REQUIRED_VC_DLLS: string[] = ['vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll']
 
-export function auditVcRuntime(): string[] {
+export async function auditVcRuntime(): Promise<string[]> {
   if (process.platform !== 'win32') return []
   const system32 = path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'System32')
-  const missing: string[] = []
-  for (const dll of REQUIRED_VC_DLLS) {
-    try {
-      if (!fs.existsSync(path.join(system32, dll))) missing.push(dll)
-    } catch {
-      // Treat an unreadable System32 as inconclusive rather than missing — we
-      // don't want to falsely blame the runtime when we simply can't look.
-    }
-  }
-  return missing
+  const results = await Promise.all(
+    REQUIRED_VC_DLLS.map(async (dll) => {
+      try {
+        await fs.promises.access(path.join(system32, dll), fs.constants.F_OK)
+        return null
+      } catch (err) {
+        // Only a genuine "not found" counts as missing; any other error
+        // (permissions, etc.) is inconclusive, so we don't falsely blame the
+        // runtime when we simply couldn't look.
+        return (err as NodeJS.ErrnoException).code === 'ENOENT' ? dll : null
+      }
+    }),
+  )
+  return results.filter((dll): dll is string => dll !== null)
 }

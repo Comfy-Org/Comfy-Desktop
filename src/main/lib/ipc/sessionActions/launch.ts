@@ -93,9 +93,9 @@ export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null
  * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
  * actually missing.
  */
-function diagnoseCrash(
+async function diagnoseCrash(
   code: number | null,
-): Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> {
+): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
   const decoded = decodeExitCode(code)
   if (!decoded) return {}
   const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
@@ -103,7 +103,7 @@ function diagnoseCrash(
     crashKind: decoded.kind,
   }
   if (decoded.kind === 'access-violation') {
-    const missing = auditVcRuntime()
+    const missing = await auditVcRuntime()
     if (missing.length > 0) out.vcRuntimeMissing = missing
   }
   return out
@@ -116,14 +116,14 @@ function diagnoseCrash(
  * actually missing, a repair hint. English-only to match the surrounding
  * non-localized launch-failure strings.
  */
-function describeExitCode(code: number | null): string {
+async function describeExitCode(code: number | null): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
   if (!decoded) return String(code)
   let out = `${decoded.code} / ${decoded.hex}`
   if (decoded.kind === 'access-violation') {
     out += ' (memory access violation — usually a faulty or missing native library)'
-    if (auditVcRuntime().length > 0) {
+    if ((await auditVcRuntime()).length > 0) {
       out +=
         '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
         'installing the latest redistributable may fix this'
@@ -603,7 +603,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const mode = (inst.launchMode as string | undefined) || 'window'
     _addSession(installationId, { proc, port: 0, mode, installationName: inst.name }, Date.now() - launchStartedAt)
 
-    proc.on('exit', (code, signal) => {
+    proc.on('exit', async (code, signal) => {
       logStream.end()
       const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
@@ -619,7 +619,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
-        ...(crashed ? diagnoseCrash(code) : {}),
+        ...(crashed ? await diagnoseCrash(code) : {}),
       }
       if (crashed) {
         recordCrash(exitedPayload)
@@ -798,13 +798,13 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         earlyExit = err.message
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
-      spawned.proc.on('exit', (code) => {
+      spawned.proc.on('exit', async (code) => {
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
           // A startup crash (e.g. a C-extension segfault during import) is the
           // most common access-violation case; decode the cryptic NTSTATUS code
           // and add the VC++ hint inline so the launch-failure modal is useful.
-          earlyExit = `Process exited with code ${describeExitCode(code)}${detail}`
+          earlyExit = `Process exited with code ${await describeExitCode(code)}${detail}`
           reject(new Error(earlyExit))
         }
       })
@@ -975,7 +975,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   let currentGetStderr = launchResult.getStderr
 
   function attachExitHandler(p: ChildProcess): void {
-    p.on('exit', (code, signal) => {
+    p.on('exit', async (code, signal) => {
       if (rebootModelCheckAbort) {
         rebootModelCheckAbort.abort()
         rebootModelCheckAbort = null
@@ -1064,7 +1064,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
-        ...(crashed ? diagnoseCrash(code) : {}),
+        ...(crashed ? await diagnoseCrash(code) : {}),
       }
       if (crashed) {
         recordCrash(exitedPayload)
