@@ -13,9 +13,11 @@
  *   - `comfy.desktop.comfyui.accelerator_detected` — emitted ONCE per boot,
  *     after the consecutive run of `Device:` lines ends (ComfyUI logs the
  *     selected device first, then one line per other GPU). Top-level fields
- *     describe the selected device (the authoritative compute GPU); `devices`
- *     carries every detected GPU and `device_count` their number. Also carries
- *     VRAM/RAM and torch/xformers versions accumulated from earlier lines.
+ *     describe the selected device (the authoritative compute GPU); every
+ *     detected GPU is reported via `device_count` plus the index-aligned
+ *     parallel arrays `device_types` / `device_indices` / `gpu_models` /
+ *     `device_backends`. Also carries VRAM/RAM and torch/xformers versions
+ *     accumulated from earlier lines.
  *   - `comfy.desktop.comfyui.model_usage` — model loads happen many times per
  *     session, so per-load events would blow past the telemetry rate limiter
  *     and corrupt the very counts we want. Instead we count loads per
@@ -253,8 +255,9 @@ export function createHardwareTap(opts: {
   /**
    * Emit the single per-boot `accelerator_detected` event for the collected run
    * of `Device:` lines. The first device is the one ComfyUI selected (the
-   * authoritative compute GPU); `devices` carries every detected GPU. No-op
-   * until at least one device is seen, and only once per boot.
+   * authoritative compute GPU); the index-aligned parallel arrays carry every
+   * detected GPU. No-op until at least one device is seen, and only once per
+   * boot.
    */
   function emitAccelerator(): void {
     if (acceleratorEmitted || devices.length === 0) return
