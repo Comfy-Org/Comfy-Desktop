@@ -17,6 +17,7 @@ const {
   parseVramLine,
   parseRequestedModelLoad,
   parseDynamicVramPrepare,
+  parseModelDeepclone,
   parseModelLoad
 } = await import('./hardwareTap')
 const telemetry = await import('./telemetry')
@@ -110,6 +111,22 @@ describe('parseVramLine / parseRequestedModelLoad', () => {
     expect(parseDynamicVramPrepare('Model prepared for something else')).toBeNull()
   })
 
+  it('parses a multi-GPU deepclone line into class + target device', () => {
+    expect(parseModelDeepclone('Creating deepclone of Lumina2 for cuda:1.')).toEqual({
+      modelClass: 'Lumina2',
+      targetDevice: 'cuda:1'
+    })
+    expect(
+      parseModelDeepclone('Reusing loaded multigpu deepclone of Lumina2 for cuda:1')
+    ).toEqual({ modelClass: 'Lumina2', targetDevice: 'cuda:1' })
+    expect(parseModelDeepclone('Creating deepclone of ZImageTEModel_ for xpu:2')).toEqual({
+      modelClass: 'ZImageTEModel_',
+      targetDevice: 'xpu:2'
+    })
+    expect(parseModelDeepclone('Requested to load Lumina2')).toBeNull()
+    expect(parseModelDeepclone('Creating deepclone of some file.safetensors for cuda:1')).toBeNull()
+  })
+
   it('classifies a model-load line by trigger', () => {
     expect(parseModelLoad('Requested to load Lumina2')).toEqual({
       modelClass: 'Lumina2',
@@ -118,6 +135,11 @@ describe('parseVramLine / parseRequestedModelLoad', () => {
     expect(
       parseModelLoad('Model AutoencodingEngine prepared for dynamic VRAM loading. 159MB Staged.')
     ).toEqual({ modelClass: 'AutoencodingEngine', trigger: 'dynamic_prepare' })
+    expect(parseModelLoad('Creating deepclone of Lumina2 for cuda:1.')).toEqual({
+      modelClass: 'Lumina2',
+      trigger: 'deepclone',
+      targetDevice: 'cuda:1'
+    })
     expect(parseModelLoad('unrelated noise')).toBeNull()
   })
 })
@@ -333,8 +355,26 @@ describe('createHardwareTap', () => {
     expect(usage[0]!.ctx).toMatchObject({
       model_class: 'Lumina2',
       load_trigger: 'requested',
-      count: 1
+      count: 1,
+      target_device: null
     })
+  })
+
+  it('emits multi-GPU deepclones with their target device, counted per device', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    // Desktop's bundled build prefixes lines with a level tag.
+    tap.ingest('[INFO] Creating deepclone of Lumina2 for cuda:1.\n', 'stdout')
+    tap.ingest('[INFO] Reusing loaded multigpu deepclone of Lumina2 for cuda:1\n', 'stdout')
+    tap.ingest('[INFO] Creating deepclone of Lumina2 for cuda:2.\n', 'stdout')
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(2)
+    expect(
+      usage.find((u) => u.ctx['target_device'] === 'cuda:1')!.ctx
+    ).toMatchObject({ model_class: 'Lumina2', load_trigger: 'deepclone', count: 2 })
+    expect(
+      usage.find((u) => u.ctx['target_device'] === 'cuda:2')!.ctx
+    ).toMatchObject({ model_class: 'Lumina2', load_trigger: 'deepclone', count: 1 })
   })
 
   it('counts dynamic-VRAM prepares separately from cold loads of the same class', () => {
