@@ -678,23 +678,37 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
         .then((ctx) => {
           if (!ctx) return
           const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
-          // `latest_snapshot` is a nested object (dropped by the telemetry IPC
-          // bridge) and its raw form carries a user-typed `label` plus
-          // custom-node `dirName`s. Forward a PII-safe compact summary instead:
-          // counts + a `has_label` flag, never the raw label / node paths.
-          const latestSnapshotSummary = latest_snapshot
+          // Forward the FULL latest snapshot so an installation's exact state
+          // (every custom node + pip package, with versions) is queryable, and
+          // earlier states can be reconstructed by walking `snapshot_diffs`
+          // back from it. The only genuine PII is the user-typed `label` (kept
+          // as a boolean `has_label`); package/node names and versions are
+          // public identifiers. Any home-dir path in an editable/local pip
+          // install (e.g. `pkg @ file:///C:/Users/<name>/...`) is redacted by
+          // `scrubAll` in the main-process `scrubProperties` safety net before
+          // the event ships.
+          const latestSnapshotFull = latest_snapshot
             ? {
                 createdAt: latest_snapshot.createdAt,
                 trigger: latest_snapshot.trigger,
                 has_label: latest_snapshot.label != null,
                 comfyui: latest_snapshot.comfyui,
+                customNodes: latest_snapshot.customNodes.map((n) => ({
+                  id: n.id,
+                  type: n.type,
+                  dirName: n.dirName,
+                  enabled: n.enabled,
+                  version: n.version ?? null,
+                  commit: n.commit ?? null
+                })),
+                pipPackages: latest_snapshot.pipPackages,
                 custom_nodes_count: latest_snapshot.customNodes.length,
                 pip_packages_count: Object.keys(latest_snapshot.pipPackages).length,
                 python_version: latest_snapshot.pythonVersion ?? null,
                 update_channel: latest_snapshot.updateChannel ?? null
               }
             : null
-          const latestSnapshotJson = serializeForTelemetry(latestSnapshotSummary)
+          const latestSnapshotJson = serializeForTelemetry(latestSnapshotFull)
           // Fires on EVERY ComfyUI instance boot (fresh install, restart, port
           // realloc) — not on new-install completion. Despite its previous name
           // (`session.installation_started`) it tracks per-instance boots, so
@@ -726,24 +740,44 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             instanceStartedProps
           )
           if (snapshot_diffs.length > 0) {
-            // Raw `SnapshotDiffEntry` carries user-typed `label`s and custom-node
-            // `dirName`s, so we send a PII-safe compact summary (counts +
-            // `has_label`) serialized to a `_json` string. Product/census event:
-            // PostHog only, per the Datadog "failures-only" policy.
-            const snapshotDiffsSummary = snapshot_diffs.map((d) => ({
+            // Forward the FULL per-transition diffs (which nodes/packages were
+            // added/removed/changed, with versions) so the entire snapshot
+            // history can be reconstructed by applying these deltas backward
+            // from `latest_snapshot`. Drop only the user-typed `label` (kept as
+            // `has_label`); names/versions are public identifiers, and any
+            // home-dir path in a pip spec is redacted by `scrubAll` in the
+            // main-process `scrubProperties` safety net. PostHog only, per the
+            // Datadog "failures-only" policy.
+            const snapshotDiffsFull = snapshot_diffs.map((d) => ({
               createdAt: d.createdAt,
               trigger: d.trigger,
               has_label: d.label != null,
-              nodes_added: d.nodesAdded.length,
-              nodes_removed: d.nodesRemoved.length,
-              nodes_changed: d.nodesChanged.length,
-              pips_added: d.pipsAdded.length,
-              pips_removed: d.pipsRemoved.length,
-              pips_changed: d.pipsChanged.length,
-              comfyui_changed: d.comfyuiChanged,
-              update_channel_changed: d.updateChannelChanged
+              nodesAdded: d.nodesAdded.map((n) => ({
+                id: n.id,
+                type: n.type,
+                dirName: n.dirName,
+                enabled: n.enabled,
+                version: n.version ?? null,
+                commit: n.commit ?? null
+              })),
+              nodesRemoved: d.nodesRemoved.map((n) => ({
+                id: n.id,
+                type: n.type,
+                dirName: n.dirName,
+                enabled: n.enabled,
+                version: n.version ?? null,
+                commit: n.commit ?? null
+              })),
+              nodesChanged: d.nodesChanged,
+              pipsAdded: d.pipsAdded,
+              pipsRemoved: d.pipsRemoved,
+              pipsChanged: d.pipsChanged,
+              comfyuiChanged: d.comfyuiChanged,
+              comfyui: d.comfyui ?? null,
+              updateChannelChanged: d.updateChannelChanged,
+              updateChannel: d.updateChannel ?? null
             }))
-            const snapshotDiffsJson = serializeForTelemetry(snapshotDiffsSummary)
+            const snapshotDiffsJson = serializeForTelemetry(snapshotDiffsFull)
             try {
               window.api.captureTelemetry('comfy.desktop.session.snapshot_history', {
                 installation_id: ctx.installation_id,
