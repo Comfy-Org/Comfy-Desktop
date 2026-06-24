@@ -16,16 +16,23 @@
  *     VRAM/RAM, and torch/xformers versions accumulated from earlier lines.
  *   - `comfy.desktop.comfyui.model_usage` — model loads happen many times per
  *     session, so per-load events would blow past the telemetry rate limiter
- *     and corrupt the very counts we want. Instead we count loads per model
- *     class in memory and flush DELTAS (periodically + on session end), at
- *     most one event per distinct class per flush. Summing `count` gives total
- *     loads; counting distinct `installation_id` gives reach. A per-person
- *     `$set_once` marker (`used_model_<class>_at`) answers "has this user ever
- *     loaded class X" with a single person-property filter. The class is the
- *     loaded module's Python class name (`x.model.__class__.__name__`) — the
- *     real architecture (e.g. `Lumina2`, `Flux`), the text encoder
- *     (`ZImageTEModel_`), and the VAE (`AutoencodingEngine`) — NOT the sampling
- *     `model_type` enum, which doesn't identify the architecture.
+ *     and corrupt the very counts we want. Instead we count loads per
+ *     (model class, trigger) in memory and flush DELTAS (periodically + on
+ *     session end), at most one event per distinct (class, trigger) per flush.
+ *     Summing `count` gives total loads; counting distinct `installation_id`
+ *     gives reach (no person-property marker needed — reach is derivable from
+ *     the events). `model_class` is the loaded module's Python class name
+ *     (`x.model.__class__.__name__`) — the real architecture (e.g. `Lumina2`,
+ *     `Flux`), text encoder (`ZImageTEModel_`), or VAE (`AutoencodingEngine`) —
+ *     NOT the sampling `model_type` enum, which can't identify an architecture.
+ *     `load_trigger` distinguishes the two log signals:
+ *       - `requested` — "Requested to load X": a cold load (model not resident).
+ *         Misses runs that reuse an already-loaded model.
+ *       - `dynamic_prepare` — "Model X prepared for dynamic VRAM loading":
+ *         emitted per prepare when dynamic VRAM (aimdo) is enabled, so it tracks
+ *         models that stay staged across runs. Absent when dynamic VRAM is off.
+ *     Neither line is a perfect per-run-per-model signal on its own — see the
+ *     PR discussion — but together they cover cold loads and dynamic reuse.
  *
  * Log strings parsed (current ComfyUI main branch):
  *   - "Device: cuda:0 NVIDIA GeForce RTX 4090 : native"   (model_management.py)
@@ -33,6 +40,7 @@
  *   - "pytorch version: 2.10.0+cu130" / "xformers version: 0.0.x"
  *   - "Set cuda device to: 0"                              (main.py)
  *   - "Requested to load Lumina2"                          (model_management.py)
+ *   - "Model Lumina2 prepared for dynamic VRAM loading. …" (dynamic VRAM / aimdo)
  *
  * NOTE: the architecture is the loaded class name on the `Requested to load`
  * line, NOT the `model_type <ENUM>` sampling tag — `model_type` is the same
@@ -57,15 +65,21 @@ const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
 const PYTORCH_LINE = /^pytorch version:\s*(.+)$/i
 const XFORMERS_LINE = /^xformers version:\s*(.+)$/i
 const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
-// ComfyUI logs `Requested to load <ClassName>` once per GPU load, where the
+// ComfyUI logs `Requested to load <ClassName>` once per cold GPU load, where the
 // name is the loaded module's Python class (`x.model.__class__.__name__`) — the
 // real architecture (`Lumina2`, `Flux`), text encoder (`ZImageTEModel_`), or
 // VAE (`AutoencodingEngine`). Match a whole Python identifier only: custom
 // nodes write to the same stdout, so a loose `.+` could turn an arbitrary
-// string into a high-cardinality event value AND a dynamic `used_model_<x>_at`
-// person-property key (keys are not scrubbed). The length cap bounds a
+// string into a high-cardinality event value. The length cap bounds a
 // pathological match.
 const REQUESTED_LOAD_LINE = /^Requested to load\s+([A-Za-z_][A-Za-z0-9_]{0,63})\s*$/
+// With dynamic VRAM (aimdo) enabled, ComfyUI logs `Model <ClassName> prepared
+// for dynamic VRAM loading. <N>MB Staged. …` per prepare — the same class name
+// as `Requested to load`, but emitted for models that stay staged across runs
+// (so it captures reuse that the cold-load line misses). Same identifier-only
+// constraint and length cap as above.
+const DYNAMIC_PREPARE_LINE =
+  /^Model\s+([A-Za-z_][A-Za-z0-9_]{0,63})\s+prepared for dynamic VRAM loading\b/
 
 /**
  * Parse a ComfyUI `Device:` line into its components. Handles the cuda
@@ -111,9 +125,32 @@ function parseTail(line: string, re: RegExp): string | null {
   return m && m[1] ? m[1].trim() : null
 }
 
+/** How a model load was observed in the logs. */
+export type ModelLoadTrigger = 'requested' | 'dynamic_prepare'
+
 /** Parse "Requested to load Lumina2" → "Lumina2". */
 export function parseRequestedModelLoad(line: string): string | null {
   return parseTail(line, REQUESTED_LOAD_LINE)
+}
+
+/** Parse "Model Lumina2 prepared for dynamic VRAM loading. …" → "Lumina2". */
+export function parseDynamicVramPrepare(line: string): string | null {
+  return parseTail(line, DYNAMIC_PREPARE_LINE)
+}
+
+/**
+ * Match either model-load log line, returning the loaded class and which
+ * signal produced it, or null. `Requested to load` is a cold load;
+ * `Model X prepared for dynamic VRAM loading` is a dynamic-VRAM (aimdo) prepare.
+ */
+export function parseModelLoad(
+  line: string
+): { modelClass: string; trigger: ModelLoadTrigger } | null {
+  const requested = parseRequestedModelLoad(line)
+  if (requested) return { modelClass: requested, trigger: 'requested' }
+  const prepared = parseDynamicVramPrepare(line)
+  if (prepared) return { modelClass: prepared, trigger: 'dynamic_prepare' }
+  return null
 }
 
 /** Flush model-usage deltas at most this often while a session keeps loading models. */
@@ -145,19 +182,32 @@ export function createHardwareTap(opts: {
   let xformersVersion: string | null = null
   let cudaDeviceSet: number | null = null
 
-  // Per-class load counts since the last flush (deltas).
+  // Per-(class, trigger) load counts since the last flush (deltas). The map key
+  // is `<trigger>\t<class>`; `\t` can't appear in either (trigger is a literal,
+  // class is a Python identifier), so it's a safe composite key.
   const pendingCounts = new Map<string, number>()
-  const markedArchitectures = new Set<string>()
 
   let flushTimer: ReturnType<typeof setInterval> | null = null
 
+  function recordLoad(modelClass: string, trigger: ModelLoadTrigger): void {
+    const key = `${trigger}\t${modelClass}`
+    // Cap distinct (class, trigger) pairs so a malformed log can't grow the map.
+    if (!pendingCounts.has(key) && pendingCounts.size >= MAX_TRACKED_ARCHITECTURES) return
+    pendingCounts.set(key, (pendingCounts.get(key) ?? 0) + 1)
+    ensureFlushTimer()
+  }
+
   function emitModelUsage(): void {
     if (pendingCounts.size === 0) return
-    for (const [modelClass, count] of pendingCounts) {
+    for (const [key, count] of pendingCounts) {
       if (count <= 0) continue
+      const sep = key.indexOf('\t')
+      const trigger = key.slice(0, sep)
+      const modelClass = key.slice(sep + 1)
       telemetry.emit('comfy.desktop.comfyui.model_usage', {
         ...baseContext,
         model_class: modelClass,
+        load_trigger: trigger,
         count
       })
     }
@@ -232,20 +282,9 @@ export function createHardwareTap(opts: {
       }
     }
 
-    const modelClass = parseRequestedModelLoad(trimmed)
-    if (modelClass) {
-      if (pendingCounts.has(modelClass) || pendingCounts.size < MAX_TRACKED_ARCHITECTURES) {
-        pendingCounts.set(modelClass, (pendingCounts.get(modelClass) ?? 0) + 1)
-        ensureFlushTimer()
-        // Per-person "ever loaded class X" marker. `$set_once` is idempotent
-        // server-side; the per-tap Set avoids re-emitting person.set events.
-        if (!markedArchitectures.has(modelClass)) {
-          markedArchitectures.add(modelClass)
-          telemetry.registerPersonPropertiesOnce({
-            [`used_model_${modelClass.toLowerCase()}_at`]: new Date().toISOString()
-          })
-        }
-      }
+    const load = parseModelLoad(trimmed)
+    if (load) {
+      recordLoad(load.modelClass, load.trigger)
       return
     }
   }

@@ -15,7 +15,9 @@ const {
   createHardwareTap,
   parseDeviceLine,
   parseVramLine,
-  parseRequestedModelLoad
+  parseRequestedModelLoad,
+  parseDynamicVramPrepare,
+  parseModelLoad
 } = await import('./hardwareTap')
 const telemetry = await import('./telemetry')
 
@@ -94,25 +96,44 @@ describe('parseVramLine / parseRequestedModelLoad', () => {
     expect(parseRequestedModelLoad('Requested to load my-private-model.safetensors')).toBeNull()
     expect(parseRequestedModelLoad('Requested to load Lumina2 and free memory')).toBeNull()
   })
+
+  it('parses the dynamic-VRAM prepare class name', () => {
+    expect(
+      parseDynamicVramPrepare(
+        'Model Lumina2 prepared for dynamic VRAM loading. 11738MB Staged. 0 patches attached.'
+      )
+    ).toBe('Lumina2')
+    expect(
+      parseDynamicVramPrepare('Model ZImageTEModel_ prepared for dynamic VRAM loading. 7671MB Staged.')
+    ).toBe('ZImageTEModel_')
+    expect(parseDynamicVramPrepare('Requested to load Lumina2')).toBeNull()
+    expect(parseDynamicVramPrepare('Model prepared for something else')).toBeNull()
+  })
+
+  it('classifies a model-load line by trigger', () => {
+    expect(parseModelLoad('Requested to load Lumina2')).toEqual({
+      modelClass: 'Lumina2',
+      trigger: 'requested'
+    })
+    expect(
+      parseModelLoad('Model AutoencodingEngine prepared for dynamic VRAM loading. 159MB Staged.')
+    ).toEqual({ modelClass: 'AutoencodingEngine', trigger: 'dynamic_prepare' })
+    expect(parseModelLoad('unrelated noise')).toBeNull()
+  })
 })
 
 describe('createHardwareTap', () => {
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>
   let personProps: Array<Record<string, unknown>>
-  let personPropsOnce: Array<Record<string, unknown>>
 
   beforeEach(() => {
     captured = []
     personProps = []
-    personPropsOnce = []
     vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: ctx as Record<string, unknown> })
     })
     vi.spyOn(telemetry, 'registerPersonProperties').mockImplementation((p) => {
       personProps.push(p as Record<string, unknown>)
-    })
-    vi.spyOn(telemetry, 'registerPersonPropertiesOnce').mockImplementation((p) => {
-      personPropsOnce.push(p as Record<string, unknown>)
     })
   })
 
@@ -247,16 +268,39 @@ describe('createHardwareTap', () => {
     expect(usage.map((u) => u.ctx['count'])).toEqual([1, 2])
   })
 
-  it('writes a per-person $set_once marker the first time each class is seen', () => {
+  it('tags each model_usage event with its load_trigger', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(1)
+    expect(usage[0]!.ctx).toMatchObject({
+      model_class: 'Lumina2',
+      load_trigger: 'requested',
+      count: 1
+    })
+  })
+
+  it('counts dynamic-VRAM prepares separately from cold loads of the same class', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
     tap.ingest(
-      'Requested to load Lumina2\nRequested to load Lumina2\nRequested to load ZImageTEModel_\n',
+      'Model Lumina2 prepared for dynamic VRAM loading. 11738MB Staged. 0 patches attached.\n',
       'stdout'
     )
-    // One marker per distinct class, not per load.
-    expect(personPropsOnce).toHaveLength(2)
-    expect(Object.keys(personPropsOnce[0]!)[0]).toBe('used_model_lumina2_at')
-    expect(Object.keys(personPropsOnce[1]!)[0]).toBe('used_model_zimagetemodel__at')
+    tap.ingest(
+      'Model Lumina2 prepared for dynamic VRAM loading. 11738MB Staged. 0 patches attached.\n',
+      'stdout'
+    )
+    tap.flushSummary()
+    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(2)
+    expect(
+      usage.find((u) => u.ctx['load_trigger'] === 'requested')!.ctx
+    ).toMatchObject({ model_class: 'Lumina2', count: 1 })
+    expect(
+      usage.find((u) => u.ctx['load_trigger'] === 'dynamic_prepare')!.ctx
+    ).toMatchObject({ model_class: 'Lumina2', count: 2 })
   })
 
   it('re-emits accelerator_detected after beginBoot (ComfyUI restart in one launch)', () => {
