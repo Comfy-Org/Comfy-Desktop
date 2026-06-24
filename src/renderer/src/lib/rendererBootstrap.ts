@@ -715,8 +715,6 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
                   commit: n.commit ?? null
                 })),
                 pipPackages: scrubPipSpecs(latest_snapshot.pipPackages),
-                custom_nodes_count: latest_snapshot.customNodes.length,
-                pip_packages_count: Object.keys(latest_snapshot.pipPackages).length,
                 python_version: latest_snapshot.pythonVersion ?? null,
                 update_channel: latest_snapshot.updateChannel ?? null
               }
