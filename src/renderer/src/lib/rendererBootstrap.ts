@@ -214,6 +214,38 @@ function scrubPipSpecs(pipPackages: Record<string, string>): Record<string, stri
   return scrubbed
 }
 
+interface SnapshotNodeFields {
+  id: string
+  type: string
+  dirName: string
+  enabled: boolean
+  version?: string
+  commit?: string
+}
+
+// Single source of truth for the snapshot custom-node shape sent to telemetry,
+// shared by the latest-snapshot and per-diff node arrays so they can't drift.
+// `id`/`dirName` are folder/project names (never absolute paths today) but are
+// run through `scrubAll` as emit-site defense-in-depth; `version`/`commit` are
+// git refs.
+function serializeSnapshotNode(n: SnapshotNodeFields): {
+  id: string
+  type: string
+  dirName: string
+  enabled: boolean
+  version: string | null
+  commit: string | null
+} {
+  return {
+    id: scrubAll(n.id),
+    type: n.type,
+    dirName: scrubAll(n.dirName),
+    enabled: n.enabled,
+    version: n.version ?? null,
+    commit: n.commit ?? null
+  }
+}
+
 function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
   const json = JSON.stringify(value)
   if (json.length > MAX_TELEMETRY_JSON_LENGTH) return { json: null, truncated: true }
@@ -706,14 +738,7 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
                 trigger: latest_snapshot.trigger,
                 has_label: latest_snapshot.label != null,
                 comfyui: latest_snapshot.comfyui,
-                customNodes: latest_snapshot.customNodes.map((n) => ({
-                  id: n.id,
-                  type: n.type,
-                  dirName: n.dirName,
-                  enabled: n.enabled,
-                  version: n.version ?? null,
-                  commit: n.commit ?? null
-                })),
+                customNodes: latest_snapshot.customNodes.map(serializeSnapshotNode),
                 pipPackages: scrubPipSpecs(latest_snapshot.pipPackages),
                 python_version: latest_snapshot.pythonVersion ?? null,
                 update_channel: latest_snapshot.updateChannel ?? null
@@ -770,23 +795,13 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
               createdAt: d.createdAt,
               trigger: d.trigger,
               has_label: d.label != null,
-              nodesAdded: d.nodesAdded.map((n) => ({
-                id: n.id,
-                type: n.type,
-                dirName: n.dirName,
-                enabled: n.enabled,
-                version: n.version ?? null,
-                commit: n.commit ?? null
+              nodesAdded: d.nodesAdded.map(serializeSnapshotNode),
+              nodesRemoved: d.nodesRemoved.map(serializeSnapshotNode),
+              nodesChanged: d.nodesChanged.map((n) => ({
+                id: scrubAll(n.id),
+                from: n.from,
+                to: n.to
               })),
-              nodesRemoved: d.nodesRemoved.map((n) => ({
-                id: n.id,
-                type: n.type,
-                dirName: n.dirName,
-                enabled: n.enabled,
-                version: n.version ?? null,
-                commit: n.commit ?? null
-              })),
-              nodesChanged: d.nodesChanged,
               pipsAdded: d.pipsAdded.map((p) => ({ name: p.name, version: scrubAll(p.version) })),
               pipsRemoved: d.pipsRemoved.map((p) => ({
                 name: p.name,
