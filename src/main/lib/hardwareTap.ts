@@ -155,8 +155,13 @@ export function parseModelLoad(
 
 /** Flush model-usage deltas at most this often while a session keeps loading models. */
 const MODEL_USAGE_FLUSH_INTERVAL_MS = 5 * 60_000
-/** Hard cap on distinct architectures tracked, so a malformed log can't grow the map. */
-const MAX_TRACKED_ARCHITECTURES = 64
+/**
+ * Hard cap on distinct (class, trigger) keys tracked, so a malformed log can't
+ * grow the map. Kept at/under the telemetry per-event-name rate limit (60/min)
+ * because a flush emits every pending key synchronously into one window — a
+ * larger cap would let a single full flush self-throttle and drop its tail.
+ */
+const MAX_TRACKED_ARCHITECTURES = 60
 
 export function createHardwareTap(opts: {
   installationId: string
