@@ -15,8 +15,7 @@ const {
   createHardwareTap,
   parseDeviceLine,
   parseVramLine,
-  parseModelType,
-  parseWeightDtype
+  parseRequestedModelLoad
 } = await import('./hardwareTap')
 const telemetry = await import('./telemetry')
 
@@ -72,7 +71,7 @@ describe('parseDeviceLine', () => {
   })
 })
 
-describe('parseVramLine / parseModelType / parseWeightDtype', () => {
+describe('parseVramLine / parseRequestedModelLoad', () => {
   it('parses VRAM/RAM amounts', () => {
     expect(parseVramLine('Total VRAM 24576 MB, total RAM 65461 MB')).toEqual({
       vramMb: 24576,
@@ -81,28 +80,19 @@ describe('parseVramLine / parseModelType / parseWeightDtype', () => {
     expect(parseVramLine('nope')).toBeNull()
   })
 
-  it('parses model_type architecture name', () => {
-    expect(parseModelType('model_type FLUX')).toBe('FLUX')
-    expect(parseModelType('model_type EPS')).toBe('EPS')
-    expect(parseModelType('model_type V_PREDICTION')).toBe('V_PREDICTION')
-    expect(parseModelType('something else')).toBeNull()
+  it('parses the loaded model class name', () => {
+    expect(parseRequestedModelLoad('Requested to load Lumina2')).toBe('Lumina2')
+    expect(parseRequestedModelLoad('Requested to load ZImageTEModel_')).toBe('ZImageTEModel_')
+    expect(parseRequestedModelLoad('Requested to load AutoencodingEngine')).toBe(
+      'AutoencodingEngine'
+    )
+    expect(parseRequestedModelLoad('something else')).toBeNull()
   })
 
-  it('rejects non-enum model_type tokens (paths, filenames, lowercase)', () => {
-    expect(parseModelType('model_type C:\\Users\\me\\secret.safetensors')).toBeNull()
-    expect(parseModelType('model_type my-private-model.safetensors')).toBeNull()
-    expect(parseModelType('model_type flux')).toBeNull()
-    expect(parseModelType('model_type FLUX extra trailing words')).toBeNull()
-  })
-
-  it('parses weight dtype', () => {
-    expect(parseWeightDtype('model weight dtype torch.float16, manual cast: None')).toBe(
-      'torch.float16'
-    )
-    expect(parseWeightDtype('model weight dtype torch.bfloat16, manual cast: torch.float32')).toBe(
-      'torch.bfloat16'
-    )
-    expect(parseWeightDtype('no dtype here')).toBeNull()
+  it('rejects non-identifier load tokens (paths, filenames, trailing words)', () => {
+    expect(parseRequestedModelLoad('Requested to load C:\\Users\\me\\secret.safetensors')).toBeNull()
+    expect(parseRequestedModelLoad('Requested to load my-private-model.safetensors')).toBeNull()
+    expect(parseRequestedModelLoad('Requested to load Lumina2 and free memory')).toBeNull()
   })
 })
 
@@ -168,8 +158,7 @@ describe('createHardwareTap', () => {
       '\u001b[32m[INFO]\u001b[0m Device: cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync\n',
       'stdout'
     )
-    tap.ingest('\u001b[32m[INFO]\u001b[0m model weight dtype torch.bfloat16, manual cast: None\n', 'stdout')
-    tap.ingest('\u001b[32m[INFO]\u001b[0m model_type FLOW\n', 'stdout')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m Requested to load Lumina2\n', 'stdout')
 
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
@@ -186,9 +175,8 @@ describe('createHardwareTap', () => {
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(1)
     expect(usage[0]!.ctx).toMatchObject({
-      model_type: 'FLOW',
-      count: 1,
-      dtype: 'torch.bfloat16'
+      model_class: 'Lumina2',
+      count: 1
     })
   })
 
@@ -230,41 +218,45 @@ describe('createHardwareTap', () => {
     expect(accel[0]!.ctx).toMatchObject({ device_type: 'cpu', gpu_model: null })
   })
 
-  it('aggregates model loads into per-arch deltas flushed on session end', () => {
+  it('aggregates model loads into per-class deltas flushed on session end', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('model weight dtype torch.float16, manual cast: None\nmodel_type FLUX\n', 'stdout')
-    tap.ingest('model_type FLUX\n', 'stdout')
-    tap.ingest('model weight dtype torch.float16, manual cast: None\nmodel_type EPS\n', 'stdout')
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
+    tap.ingest('Requested to load AutoencodingEngine\n', 'stdout')
     // Nothing emitted until flush.
     expect(captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')).toHaveLength(0)
 
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(2)
-    expect(usage.find((u) => u.ctx['model_type'] === 'FLUX')!.ctx).toMatchObject({
-      count: 2,
-      dtype: 'torch.float16'
+    expect(usage.find((u) => u.ctx['model_class'] === 'Lumina2')!.ctx).toMatchObject({
+      count: 2
     })
-    expect(usage.find((u) => u.ctx['model_type'] === 'EPS')!.ctx).toMatchObject({ count: 1 })
+    expect(usage.find((u) => u.ctx['model_class'] === 'AutoencodingEngine')!.ctx).toMatchObject({
+      count: 1
+    })
   })
 
   it('flushes deltas: a second flush only reports loads since the first', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('model_type FLUX\n', 'stdout')
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
     tap.flushSummary()
-    tap.ingest('model_type FLUX\nmodel_type FLUX\n', 'stdout')
+    tap.ingest('Requested to load Lumina2\nRequested to load Lumina2\n', 'stdout')
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage.map((u) => u.ctx['count'])).toEqual([1, 2])
   })
 
-  it('writes a per-person $set_once marker the first time each arch is seen', () => {
+  it('writes a per-person $set_once marker the first time each class is seen', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('model_type FLUX\nmodel_type FLUX\nmodel_type EPS\n', 'stdout')
-    // One marker per distinct arch, not per load.
+    tap.ingest(
+      'Requested to load Lumina2\nRequested to load Lumina2\nRequested to load ZImageTEModel_\n',
+      'stdout'
+    )
+    // One marker per distinct class, not per load.
     expect(personPropsOnce).toHaveLength(2)
-    expect(Object.keys(personPropsOnce[0]!)[0]).toBe('used_model_flux_at')
-    expect(Object.keys(personPropsOnce[1]!)[0]).toBe('used_model_eps_at')
+    expect(Object.keys(personPropsOnce[0]!)[0]).toBe('used_model_lumina2_at')
+    expect(Object.keys(personPropsOnce[1]!)[0]).toBe('used_model_zimagetemodel__at')
   })
 
   it('re-emits accelerator_detected after beginBoot (ComfyUI restart in one launch)', () => {
@@ -291,22 +283,22 @@ describe('createHardwareTap', () => {
 
   it('preserves model-usage counts across beginBoot (aggregate per launch)', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('model_type FLUX\n', 'stdout')
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
     tap.beginBoot()
-    tap.ingest('model_type FLUX\n', 'stdout')
+    tap.ingest('Requested to load Lumina2\n', 'stdout')
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({ model_type: 'FLUX', count: 2 })
+    expect(usage[0]!.ctx).toMatchObject({ model_class: 'Lumina2', count: 2 })
   })
 
-  it('flushes a trailing unterminated model_type line on session end', () => {
+  it('flushes a trailing unterminated load line on session end', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('model_type FLUX', 'stdout') // no newline
+    tap.ingest('Requested to load Lumina2', 'stdout') // no newline
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({ model_type: 'FLUX', count: 1 })
+    expect(usage[0]!.ctx).toMatchObject({ model_class: 'Lumina2', count: 1 })
   })
 
   it('handles lines split across chunk boundaries', () => {
@@ -322,26 +314,26 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     // Interleaved partial lines from two streams must not be concatenated into
     // a bogus combined line; each stream's buffer completes independently.
-    tap.ingest('model_type ', 'stdout')
+    tap.ingest('Requested to load ', 'stdout')
     tap.ingest('some unrelated stderr noise\n', 'stderr')
-    tap.ingest('FLUX\n', 'stdout')
+    tap.ingest('Lumina2\n', 'stdout')
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({ model_type: 'FLUX', count: 1 })
+    expect(usage[0]!.ctx).toMatchObject({ model_class: 'Lumina2', count: 1 })
   })
 
   it('flushes trailing unterminated lines from both stdout and stderr', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('model_type FLUX', 'stdout') // no newline
-    tap.ingest('model_type EPS', 'stderr') // no newline
+    tap.ingest('Requested to load Lumina2', 'stdout') // no newline
+    tap.ingest('Requested to load Flux', 'stderr') // no newline
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toContainEqual(
-      expect.objectContaining({ ctx: expect.objectContaining({ model_type: 'FLUX', count: 1 }) })
+      expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Lumina2', count: 1 }) })
     )
     expect(usage).toContainEqual(
-      expect.objectContaining({ ctx: expect.objectContaining({ model_type: 'EPS', count: 1 }) })
+      expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Flux', count: 1 }) })
     )
   })
 })

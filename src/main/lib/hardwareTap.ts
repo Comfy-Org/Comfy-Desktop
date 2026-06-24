@@ -16,23 +16,27 @@
  *     VRAM/RAM, and torch/xformers versions accumulated from earlier lines.
  *   - `comfy.desktop.comfyui.model_usage` — model loads happen many times per
  *     session, so per-load events would blow past the telemetry rate limiter
- *     and corrupt the very counts we want. Instead we count loads per
- *     architecture in memory and flush DELTAS (periodically + on session end),
- *     at most one event per distinct architecture per flush. Summing `count`
- *     gives total loads; counting distinct `installation_id` gives reach. A
- *     per-person `$set_once` marker (`used_model_<arch>_at`) answers "has this
- *     user ever used arch X" with a single person-property filter.
+ *     and corrupt the very counts we want. Instead we count loads per model
+ *     class in memory and flush DELTAS (periodically + on session end), at
+ *     most one event per distinct class per flush. Summing `count` gives total
+ *     loads; counting distinct `installation_id` gives reach. A per-person
+ *     `$set_once` marker (`used_model_<class>_at`) answers "has this user ever
+ *     loaded class X" with a single person-property filter. The class is the
+ *     loaded module's Python class name (`x.model.__class__.__name__`) — the
+ *     real architecture (e.g. `Lumina2`, `Flux`), the text encoder
+ *     (`ZImageTEModel_`), and the VAE (`AutoencodingEngine`) — NOT the sampling
+ *     `model_type` enum, which doesn't identify the architecture.
  *
  * Log strings parsed (current ComfyUI main branch):
  *   - "Device: cuda:0 NVIDIA GeForce RTX 4090 : native"   (model_management.py)
  *   - "Total VRAM 24576 MB, total RAM 65461 MB"
  *   - "pytorch version: 2.10.0+cu130" / "xformers version: 0.0.x"
  *   - "Set cuda device to: 0"                              (main.py)
- *   - "model_type FLUX"                                    (model_base.py)
- *   - "model weight dtype torch.float16, manual cast: None"
+ *   - "Requested to load Lumina2"                          (model_management.py)
  *
- * NOTE: there is no literal "loading SDXL model" string in ComfyUI; the
- * architecture surfaces as `model_type <NAME>` (EPS / FLUX / FLOW / ...).
+ * NOTE: the architecture is the loaded class name on the `Requested to load`
+ * line, NOT the `model_type <ENUM>` sampling tag — `model_type` is the same
+ * `EPS` / `FLOW` for many distinct architectures and so can't identify one.
  *
  * NOTE: ComfyUI Desktop's bundled build prefixes every log line with a level
  * tag (`[INFO] Device: ...`), unlike the bare `%(message)s` format. `handleLine`
@@ -53,14 +57,15 @@ const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
 const PYTORCH_LINE = /^pytorch version:\s*(.+)$/i
 const XFORMERS_LINE = /^xformers version:\s*(.+)$/i
 const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
-// ComfyUI's `model_type.name` is always an uppercase enum (EPS, FLUX, FLOW,
-// V_PREDICTION, STABLE_CASCADE, ...). Restrict to that shape and require it to
-// be the whole token: custom nodes write to the same stdout, so a loose `\S+`
-// could turn an arbitrary string (a path, a filename) into a high-cardinality
-// event value AND a dynamic `used_model_<x>_at` person-property key (keys are
-// not scrubbed). The length cap bounds a pathological match.
-const MODEL_TYPE_LINE = /^model_type\s+([A-Z][A-Z0-9_]{0,63})\s*$/
-const WEIGHT_DTYPE_LINE = /^model weight dtype\s+([^,]+),/
+// ComfyUI logs `Requested to load <ClassName>` once per GPU load, where the
+// name is the loaded module's Python class (`x.model.__class__.__name__`) — the
+// real architecture (`Lumina2`, `Flux`), text encoder (`ZImageTEModel_`), or
+// VAE (`AutoencodingEngine`). Match a whole Python identifier only: custom
+// nodes write to the same stdout, so a loose `.+` could turn an arbitrary
+// string into a high-cardinality event value AND a dynamic `used_model_<x>_at`
+// person-property key (keys are not scrubbed). The length cap bounds a
+// pathological match.
+const REQUESTED_LOAD_LINE = /^Requested to load\s+([A-Za-z_][A-Za-z0-9_]{0,63})\s*$/
 
 /**
  * Parse a ComfyUI `Device:` line into its components. Handles the cuda
@@ -106,14 +111,9 @@ function parseTail(line: string, re: RegExp): string | null {
   return m && m[1] ? m[1].trim() : null
 }
 
-/** Parse "model_type FLUX" → "FLUX". */
-export function parseModelType(line: string): string | null {
-  return parseTail(line, MODEL_TYPE_LINE)
-}
-
-/** Parse "model weight dtype torch.float16, manual cast: None" → "torch.float16". */
-export function parseWeightDtype(line: string): string | null {
-  return parseTail(line, WEIGHT_DTYPE_LINE)
+/** Parse "Requested to load Lumina2" → "Lumina2". */
+export function parseRequestedModelLoad(line: string): string | null {
+  return parseTail(line, REQUESTED_LOAD_LINE)
 }
 
 /** Flush model-usage deltas at most this often while a session keeps loading models. */
@@ -145,24 +145,20 @@ export function createHardwareTap(opts: {
   let xformersVersion: string | null = null
   let cudaDeviceSet: number | null = null
 
-  // Per-architecture load counts since the last flush (deltas). `dtype` keeps
-  // the most recent weight dtype seen for that arch as a representative.
+  // Per-class load counts since the last flush (deltas).
   const pendingCounts = new Map<string, number>()
-  const lastDtype = new Map<string, string>()
   const markedArchitectures = new Set<string>()
-  let pendingDtype: string | null = null
 
   let flushTimer: ReturnType<typeof setInterval> | null = null
 
   function emitModelUsage(): void {
     if (pendingCounts.size === 0) return
-    for (const [modelType, count] of pendingCounts) {
+    for (const [modelClass, count] of pendingCounts) {
       if (count <= 0) continue
       telemetry.emit('comfy.desktop.comfyui.model_usage', {
         ...baseContext,
-        model_type: modelType,
-        count,
-        dtype: lastDtype.get(modelType) ?? null
+        model_class: modelClass,
+        count
       })
     }
     pendingCounts.clear()
@@ -236,30 +232,20 @@ export function createHardwareTap(opts: {
       }
     }
 
-    // Weight dtype is logged just before the model_type line; hold it so the
-    // model_usage event can record a representative dtype per architecture.
-    const dtype = parseWeightDtype(trimmed)
-    if (dtype) {
-      pendingDtype = dtype
-      return
-    }
-
-    const modelType = parseModelType(trimmed)
-    if (modelType) {
-      if (pendingCounts.has(modelType) || pendingCounts.size < MAX_TRACKED_ARCHITECTURES) {
-        pendingCounts.set(modelType, (pendingCounts.get(modelType) ?? 0) + 1)
-        if (pendingDtype) lastDtype.set(modelType, pendingDtype)
+    const modelClass = parseRequestedModelLoad(trimmed)
+    if (modelClass) {
+      if (pendingCounts.has(modelClass) || pendingCounts.size < MAX_TRACKED_ARCHITECTURES) {
+        pendingCounts.set(modelClass, (pendingCounts.get(modelClass) ?? 0) + 1)
         ensureFlushTimer()
-        // Per-person "ever used arch X" marker. `$set_once` is idempotent
+        // Per-person "ever loaded class X" marker. `$set_once` is idempotent
         // server-side; the per-tap Set avoids re-emitting person.set events.
-        if (!markedArchitectures.has(modelType)) {
-          markedArchitectures.add(modelType)
+        if (!markedArchitectures.has(modelClass)) {
+          markedArchitectures.add(modelClass)
           telemetry.registerPersonPropertiesOnce({
-            [`used_model_${modelType.toLowerCase()}_at`]: new Date().toISOString()
+            [`used_model_${modelClass.toLowerCase()}_at`]: new Date().toISOString()
           })
         }
       }
-      pendingDtype = null
       return
     }
   }
@@ -276,8 +262,8 @@ export function createHardwareTap(opts: {
 
   function appendChunk(source: 'stdout' | 'stderr', chunk: string): string[] {
     // Split first so a large chunk's complete lines (e.g. `Device:` /
-    // `model_type`) are never lost; cap only the unterminated tail we carry
-    // over, which is the sole unbounded-growth risk.
+    // `Requested to load`) are never lost; cap only the unterminated tail we
+    // carry over, which is the sole unbounded-growth risk.
     const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
     const tail = lines.pop() ?? ''
     pendingBySource[source] = tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
@@ -310,7 +296,6 @@ export function createHardwareTap(opts: {
       pytorchVersion = null
       xformersVersion = null
       cudaDeviceSet = null
-      pendingDtype = null
       // Drop any incomplete lines from the previous (now-dead) process streams.
       pendingBySource.stdout = ''
       pendingBySource.stderr = ''
