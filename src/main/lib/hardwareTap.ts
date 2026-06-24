@@ -11,9 +11,11 @@
  *
  * Two signals, two shapes:
  *   - `comfy.desktop.comfyui.accelerator_detected` — emitted ONCE per boot,
- *     on the first `Device:` line (the current/selected device; ComfyUI
- *     prints additional devices afterwards). Carries the compute GPU model,
- *     VRAM/RAM, and torch/xformers versions accumulated from earlier lines.
+ *     after the consecutive run of `Device:` lines ends (ComfyUI logs the
+ *     selected device first, then one line per other GPU). Top-level fields
+ *     describe the selected device (the authoritative compute GPU); `devices`
+ *     carries every detected GPU and `device_count` their number. Also carries
+ *     VRAM/RAM and torch/xformers versions accumulated from earlier lines.
  *   - `comfy.desktop.comfyui.model_usage` — model loads happen many times per
  *     session, so per-load events would blow past the telemetry rate limiter
  *     and corrupt the very counts we want. Instead we count loads per
@@ -39,6 +41,8 @@
  *   - "Total VRAM 24576 MB, total RAM 65461 MB"
  *   - "pytorch version: 2.10.0+cu130" / "xformers version: 0.0.x"
  *   - "Set cuda device to: 0"                              (main.py)
+ *   - "Using directml with device: AMD Radeon RX 6800"     (model_management.py)
+ *   - "Device: cuda:0 …" / "xpu:0 …" / "npu:0 …" / "mlu:0 …" / "cpu" / "mps"
  *   - "Requested to load Lumina2"                          (model_management.py)
  *   - "Model Lumina2 prepared for dynamic VRAM loading. …" (dynamic VRAM / aimdo)
  *
@@ -65,6 +69,10 @@ const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
 const PYTORCH_LINE = /^pytorch version:\s*(.+)$/i
 const XFORMERS_LINE = /^xformers version:\s*(.+)$/i
 const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
+// DirectML (AMD/Intel on Windows without ROCm) logs the GPU name here, on a
+// separate line that precedes a nameless `Device: privateuseone` line — so it's
+// the only way to recover the model for those vendors.
+const DIRECTML_LINE = /^Using directml with device:\s*(.+)$/i
 // ComfyUI logs `Requested to load <ClassName>` once per cold GPU load, where the
 // name is the loaded module's Python class (`x.model.__class__.__name__`) — the
 // real architecture (`Lumina2`, `Flux`), text encoder (`ZImageTEModel_`), or
@@ -162,6 +170,8 @@ const MODEL_USAGE_FLUSH_INTERVAL_MS = 5 * 60_000
  * larger cap would let a single full flush self-throttle and drop its tail.
  */
 const MAX_TRACKED_ARCHITECTURES = 60
+/** Cap on devices reported in one accelerator event, so a malformed log can't grow the array. */
+const MAX_DEVICES = 16
 
 export function createHardwareTap(opts: {
   installationId: string
@@ -178,14 +188,19 @@ export function createHardwareTap(opts: {
     release: opts.release ?? null
   }
 
-  // Accelerator accumulation — fields trickle in over several lines; we emit
-  // once, on the first Device line (which arrives after VRAM / versions).
+  // Accelerator accumulation — fields trickle in over several lines. ComfyUI
+  // logs the selected device first, then one `Device:` line per other GPU. We
+  // collect the consecutive run and emit ONE event (per boot) when the run ends
+  // — i.e. on the first non-`Device:` line, or at session end — so the event
+  // carries every GPU, not just the selected one.
   let acceleratorEmitted = false
   let vramMb: number | null = null
   let ramMb: number | null = null
   let pytorchVersion: string | null = null
   let xformersVersion: string | null = null
   let cudaDeviceSet: number | null = null
+  let directmlDeviceName: string | null = null
+  const devices: AcceleratorInfo[] = []
 
   // Per-(class, trigger) load counts since the last flush (deltas). The map key
   // is `<trigger>\t<class>`; `\t` can't appear in either (trigger is a literal,
@@ -235,6 +250,59 @@ export function createHardwareTap(opts: {
     flushTimer.unref?.()
   }
 
+  /**
+   * Emit the single per-boot `accelerator_detected` event for the collected run
+   * of `Device:` lines. The first device is the one ComfyUI selected (the
+   * authoritative compute GPU); `devices` carries every detected GPU. No-op
+   * until at least one device is seen, and only once per boot.
+   */
+  function emitAccelerator(): void {
+    if (acceleratorEmitted || devices.length === 0) return
+    acceleratorEmitted = true
+    const primary = devices[0]!
+    const vramGb = vramMb != null ? Math.round(vramMb / 1024) : null
+    // DirectML logs a nameless `Device: privateuseone`; recover the model from
+    // the earlier `Using directml with device:` line (never for cpu/mps).
+    const primaryName =
+      primary.deviceName ??
+      (primary.deviceType !== 'cpu' && primary.deviceType !== 'mps' ? directmlDeviceName : null)
+    // The telemetry layer only accepts scalars + scalar arrays (and only scrubs
+    // PII from those), so report all devices as parallel arrays aligned by index
+    // rather than an array of objects.
+    const gpuModels = devices.map((d, i) => (i === 0 ? primaryName : d.deviceName))
+    telemetry.emit('comfy.desktop.comfyui.accelerator_detected', {
+      ...baseContext,
+      device_type: primary.deviceType,
+      device_index: primary.deviceIndex,
+      gpu_model: primaryName,
+      backend: primary.backend,
+      device_count: devices.length,
+      device_types: devices.map((d) => d.deviceType),
+      device_indices: devices.map((d) => d.deviceIndex),
+      gpu_models: gpuModels,
+      device_backends: devices.map((d) => d.backend),
+      vram_mb: vramMb,
+      vram_gb: vramGb,
+      ram_mb: ramMb,
+      pytorch_version: pytorchVersion,
+      xformers_version: xformersVersion,
+      cuda_device_set: cudaDeviceSet
+    })
+    // The compute device ComfyUI selected is more authoritative than the
+    // OS-enumerated GPU in `system_info` (which can be a virtual display).
+    // Promote it under dedicated `comfyui_*` person props so cohort queries can
+    // coalesce(comfyui_gpu_model, gpu_model) without losing either signal. Only
+    // for real accelerators — `cpu` is not a GPU.
+    if (primaryName && primary.deviceType !== 'cpu') {
+      telemetry.registerPersonProperties({
+        comfyui_gpu_model: primaryName,
+        comfyui_gpu_vram_gb: vramGb,
+        comfyui_device_type: primary.deviceType,
+        comfyui_gpu_count: devices.length
+      })
+    }
+  }
+
   function handleLine(line: string): void {
     // Strip a leading `[LEVEL] ` tag (ComfyUI Desktop's bundled build) so the
     // anchored parsers below match both the prefixed and bare log formats.
@@ -263,37 +331,20 @@ export function createHardwareTap(opts: {
         cudaDeviceSet = Number(cudaDevice)
         return
       }
-      const device = parseDeviceLine(trimmed)
-      if (device) {
-        acceleratorEmitted = true
-        const vramGb = vramMb != null ? Math.round(vramMb / 1024) : null
-        telemetry.emit('comfy.desktop.comfyui.accelerator_detected', {
-          ...baseContext,
-          device_type: device.deviceType,
-          device_index: device.deviceIndex,
-          gpu_model: device.deviceName,
-          backend: device.backend,
-          vram_mb: vramMb,
-          vram_gb: vramGb,
-          ram_mb: ramMb,
-          pytorch_version: pytorchVersion,
-          xformers_version: xformersVersion,
-          cuda_device_set: cudaDeviceSet
-        })
-        // The compute device ComfyUI selected is more authoritative than the
-        // OS-enumerated GPU in `system_info` (which can be a virtual display).
-        // Promote it under dedicated `comfyui_*` person props so cohort
-        // queries can coalesce(comfyui_gpu_model, gpu_model) without losing
-        // either signal. Only for real accelerators — `cpu` is not a GPU.
-        if (device.deviceName && device.deviceType !== 'cpu') {
-          telemetry.registerPersonProperties({
-            comfyui_gpu_model: device.deviceName,
-            comfyui_gpu_vram_gb: vramGb,
-            comfyui_device_type: device.deviceType
-          })
-        }
+      const directml = parseTail(trimmed, DIRECTML_LINE)
+      if (directml) {
+        directmlDeviceName = directml
         return
       }
+      const device = parseDeviceLine(trimmed)
+      if (device) {
+        // Collect the consecutive run; the event is emitted when the run ends.
+        if (devices.length < MAX_DEVICES) devices.push(device)
+        return
+      }
+      // First non-`Device:` line after a run of them: the run is complete, so
+      // emit, then fall through (this line may itself be a model-load line).
+      if (devices.length > 0) emitAccelerator()
     }
 
     const load = parseModelLoad(trimmed)
@@ -349,6 +400,8 @@ export function createHardwareTap(opts: {
       pytorchVersion = null
       xformersVersion = null
       cudaDeviceSet = null
+      directmlDeviceName = null
+      devices.length = 0
       // Drop any incomplete lines from the previous (now-dead) process streams.
       pendingBySource.stdout = ''
       pendingBySource.stderr = ''
@@ -366,6 +419,9 @@ export function createHardwareTap(opts: {
           if (pending.trim()) handleLine(pending)
           pendingBySource[source] = ''
         }
+        // Emit the accelerator event if the process exited right after its
+        // `Device:` lines with no following line to close the run.
+        emitAccelerator()
         emitModelUsage()
       } catch {
         // ignore – telemetry side effect, not user-visible

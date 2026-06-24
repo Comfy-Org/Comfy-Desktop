@@ -141,15 +141,17 @@ describe('createHardwareTap', () => {
     vi.restoreAllMocks()
   })
 
-  it('emits accelerator_detected once on the first Device line, merging earlier lines', () => {
+  it('emits a single accelerator_detected for the whole Device run, merging earlier lines', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Set cuda device to: 0\n', 'stdout')
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
     tap.ingest('pytorch version: 2.10.0+cu130\n', 'stdout')
     tap.ingest('xformers version: 0.0.31\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
-    // A second Device line (other GPU) must NOT re-emit.
-    tap.ingest('Device: cuda:1 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    // A second Device line (other GPU) is part of the SAME event, not a new one.
+    tap.ingest('Device: cuda:1 NVIDIA GeForce RTX 5090 : native\n', 'stdout')
+    // A non-Device line closes the run and triggers the single emit.
+    tap.ingest('Using xformers attention\n', 'stdout')
 
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
@@ -159,6 +161,7 @@ describe('createHardwareTap', () => {
       device_index: 0,
       gpu_model: 'NVIDIA GeForce RTX 4090',
       backend: 'native',
+      device_count: 2,
       vram_mb: 24576,
       vram_gb: 24,
       ram_mb: 65461,
@@ -166,6 +169,14 @@ describe('createHardwareTap', () => {
       xformers_version: '0.0.31',
       cuda_device_set: 0
     })
+    // All devices reported as parallel arrays aligned by index.
+    expect(accel[0]!.ctx['device_types']).toEqual(['cuda', 'cuda'])
+    expect(accel[0]!.ctx['device_indices']).toEqual([0, 1])
+    expect(accel[0]!.ctx['gpu_models']).toEqual([
+      'NVIDIA GeForce RTX 4090',
+      'NVIDIA GeForce RTX 5090'
+    ])
+    expect(accel[0]!.ctx['device_backends']).toEqual(['native', 'native'])
   })
 
   it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
@@ -210,6 +221,7 @@ describe('createHardwareTap', () => {
     tap.ingest(
       'Total VRAM 24576 MB, total RAM 65461 MB\n' +
         'Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n' +
+        'startup continues\n' +
         hugeTail,
       'stdout'
     )
@@ -223,20 +235,64 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.flushSummary()
     expect(personProps).toContainEqual({
       comfyui_gpu_model: 'NVIDIA GeForce RTX 4090',
       comfyui_gpu_vram_gb: 24,
-      comfyui_device_type: 'cuda'
+      comfyui_device_type: 'cuda',
+      comfyui_gpu_count: 1
     })
   })
 
   it('does not promote a cpu device to gpu person properties', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Device: cpu\n', 'stdout')
+    tap.flushSummary()
     expect(personProps).toHaveLength(0)
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
     expect(accel[0]!.ctx).toMatchObject({ device_type: 'cpu', gpu_model: null })
+  })
+
+  it('recovers the DirectML GPU name from the separate "Using directml" line', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Using directml with device: AMD Radeon RX 6800\n', 'stdout')
+    tap.ingest('Total VRAM 16384 MB, total RAM 32768 MB\n', 'stdout')
+    tap.ingest('Device: privateuseone\n', 'stdout')
+    tap.flushSummary()
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx).toMatchObject({
+      device_type: 'privateuseone',
+      gpu_model: 'AMD Radeon RX 6800'
+    })
+    expect(personProps).toContainEqual({
+      comfyui_gpu_model: 'AMD Radeon RX 6800',
+      comfyui_gpu_vram_gb: 16,
+      comfyui_device_type: 'privateuseone',
+      comfyui_gpu_count: 1
+    })
+  })
+
+  it('emits non-cuda accelerators (Intel xpu) without requiring a cuda device', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Total VRAM 16384 MB, total RAM 32768 MB\n', 'stdout')
+    tap.ingest('Device: xpu:0 Intel(R) Arc(TM) A770 Graphics\n', 'stdout')
+    tap.flushSummary()
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx).toMatchObject({
+      device_type: 'xpu',
+      device_index: 0,
+      gpu_model: 'Intel(R) Arc(TM) A770 Graphics',
+      device_count: 1
+    })
+    expect(personProps).toContainEqual({
+      comfyui_gpu_model: 'Intel(R) Arc(TM) A770 Graphics',
+      comfyui_gpu_vram_gb: 16,
+      comfyui_device_type: 'xpu',
+      comfyui_gpu_count: 1
+    })
   })
 
   it('aggregates model loads into per-class deltas flushed on session end', () => {
@@ -325,12 +381,14 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('startup continues\n', 'stdout') // closes the run -> emit
     expect(
       captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     ).toHaveLength(1)
 
-    // Simulate a restart: a stale Device line is ignored until beginBoot resets.
+    // A stale Device line after the run already emitted must NOT re-emit.
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('more logs\n', 'stdout')
     expect(
       captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     ).toHaveLength(1)
@@ -338,6 +396,7 @@ describe('createHardwareTap', () => {
     tap.beginBoot()
     tap.ingest('Total VRAM 16384 MB, total RAM 32768 MB\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4080 : native\n', 'stdout')
+    tap.flushSummary() // closes the second boot's run
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(2)
     expect(accel[1]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4080', vram_mb: 16384 })
@@ -367,6 +426,7 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Device: cuda:0 NVIDIA GeForce ', 'stdout')
     tap.ingest('RTX 4090 : native\n', 'stdout')
+    tap.flushSummary() // closes the run -> emit
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
     expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090' })
