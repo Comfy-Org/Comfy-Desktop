@@ -33,6 +33,10 @@
  *
  * NOTE: there is no literal "loading SDXL model" string in ComfyUI; the
  * architecture surfaces as `model_type <NAME>` (EPS / FLUX / FLOW / ...).
+ *
+ * NOTE: ComfyUI Desktop's bundled build prefixes every log line with a level
+ * tag (`[INFO] Device: ...`), unlike the bare `%(message)s` format. `handleLine`
+ * strips a leading `[LEVEL] ` tag before matching so both formats parse.
  */
 import * as telemetry from './telemetry'
 import { stripAnsi } from './stderrTail'
@@ -172,7 +176,13 @@ export function createHardwareTap(opts: {
   }
 
   function handleLine(line: string): void {
-    const trimmed = stripAnsi(line).trim()
+    // ComfyUI Desktop's bundled build logs with a `[LEVEL] ` prefix (e.g.
+    // `[INFO] Device: ...`), unlike the bare `%(message)s` format the parsers
+    // below are anchored against. Strip an optional leading level tag so a
+    // prefixed line still matches.
+    const trimmed = stripAnsi(line)
+      .trim()
+      .replace(/^\[[A-Z]+\]\s+/, '')
     if (trimmed.length === 0) return
 
     if (!acceleratorEmitted) {
