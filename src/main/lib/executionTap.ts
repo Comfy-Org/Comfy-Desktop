@@ -25,6 +25,7 @@
  */
 import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
+import { stripLogLevelPrefix } from './stderrTail'
 import { scrubAll } from '../../shared/piiScrub'
 
 /**
@@ -177,7 +178,11 @@ export function createExecutionTap(opts: {
   }
 
   function handleNewLine(line: string, source: 'stdout' | 'stderr'): void {
-    const trimmed = line.trim()
+    // `got prompt` / `Prompt executed in …` / `Failed to validate …` are
+    // logging-formatted, so on ComfyUI Desktop they arrive with a `[LEVEL] `
+    // tag the anchored patterns below don't expect. Strip it. Raw tracebacks
+    // have no tag, so TRACEBACK_START detection is unaffected.
+    const trimmed = stripLogLevelPrefix(line.trim())
 
     if (trimmed.length === 0) return
 

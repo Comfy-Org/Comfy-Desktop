@@ -39,7 +39,7 @@
  * strips a leading `[LEVEL] ` tag before matching so both formats parse.
  */
 import * as telemetry from './telemetry'
-import { stripAnsi } from './stderrTail'
+import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 export interface AcceleratorInfo {
   deviceType: string
@@ -176,13 +176,9 @@ export function createHardwareTap(opts: {
   }
 
   function handleLine(line: string): void {
-    // ComfyUI Desktop's bundled build logs with a `[LEVEL] ` prefix (e.g.
-    // `[INFO] Device: ...`), unlike the bare `%(message)s` format the parsers
-    // below are anchored against. Strip an optional leading level tag so a
-    // prefixed line still matches.
-    const trimmed = stripAnsi(line)
-      .trim()
-      .replace(/^\[[A-Z]+\]\s+/, '')
+    // Strip a leading `[LEVEL] ` tag (ComfyUI Desktop's bundled build) so the
+    // anchored parsers below match both the prefixed and bare log formats.
+    const trimmed = stripLogLevelPrefix(stripAnsi(line).trim())
     if (trimmed.length === 0) return
 
     if (!acceleratorEmitted) {

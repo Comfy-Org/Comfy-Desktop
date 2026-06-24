@@ -55,6 +55,23 @@ describe('executionTap', () => {
     expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '42' })
   })
 
+  it('parses ComfyUI Desktop log lines carrying a [LEVEL] prefix', () => {
+    // ComfyUI Desktop's bundled build logs as `[INFO] got prompt` /
+    // `[INFO] Prompt executed in …` / `[ERROR] Failed to validate …`, not the
+    // bare strings the anchored patterns expect.
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('[INFO] got prompt\n', 'stdout')
+    tap.ingest('[INFO] Prompt executed in 7.78 seconds\n', 'stdout')
+    tap.ingest('[ERROR] Failed to validate prompt for output 9:\n', 'stdout')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.execution.started')
+    expect(started).toBeDefined()
+    const completed = captured.find((c) => c.event === 'comfy.desktop.execution.completed')
+    expect(completed!.ctx).toMatchObject({ duration_seconds: 7.78, completed_count: 1 })
+    const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
+    expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '9' })
+  })
+
   it('captures Python tracebacks from stderr and emits a single error', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // Trailing line after the blank-line boundary so the parser sees the
