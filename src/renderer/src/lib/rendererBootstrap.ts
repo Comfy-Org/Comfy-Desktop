@@ -736,10 +736,13 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             boot_time_ms: bootTimeMs ?? null,
             port_retries: portRetries,
             reboot_retries: rebootRetries,
-            // Top-level so it stays queryable in PostHog's UI and survives even
-            // when `latest_snapshot_json` is dropped by the size cap (heavy-node
+            // Top-level so they stay queryable in PostHog's UI and survive even
+            // when `latest_snapshot_json` is dropped by the size cap (heavy
             // installs are exactly the ones most likely to truncate).
             custom_nodes_count: latest_snapshot?.customNodes.length ?? null,
+            pip_packages_count: latest_snapshot
+              ? Object.keys(latest_snapshot.pipPackages).length
+              : null,
             latest_snapshot_json: latestSnapshotJson.json,
             latest_snapshot_json_truncated: latestSnapshotJson.truncated
           }
