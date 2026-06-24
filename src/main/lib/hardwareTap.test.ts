@@ -303,6 +303,24 @@ describe('createHardwareTap', () => {
     ).toMatchObject({ model_class: 'Lumina2', count: 2 })
   })
 
+  it('caps distinct model classes across the tap lifetime, not per flush', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    // MAX_TRACKED_ARCHITECTURES (64) distinct classes across two flush windows,
+    // then one more. The cap must persist across the clear() that flushSummary
+    // performs, so the 65th distinct class is rejected.
+    for (let i = 0; i < 32; i++) tap.ingest(`Requested to load Model${i}\n`, 'stdout')
+    tap.flushSummary()
+    for (let i = 32; i < 64; i++) tap.ingest(`Requested to load Model${i}\n`, 'stdout')
+    tap.ingest('Requested to load OverflowModel\n', 'stdout')
+    tap.flushSummary()
+
+    const classes = captured
+      .filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+      .map((c) => c.ctx['model_class'])
+    expect(classes).toHaveLength(64)
+    expect(classes).not.toContain('OverflowModel')
+  })
+
   it('re-emits accelerator_detected after beginBoot (ComfyUI restart in one launch)', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
@@ -373,6 +391,7 @@ describe('createHardwareTap', () => {
     tap.ingest('Requested to load Flux', 'stderr') // no newline
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
+    expect(usage).toHaveLength(2)
     expect(usage).toContainEqual(
       expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Lumina2', count: 1 }) })
     )

@@ -186,13 +186,22 @@ export function createHardwareTap(opts: {
   // is `<trigger>\t<class>`; `\t` can't appear in either (trigger is a literal,
   // class is a Python identifier), so it's a safe composite key.
   const pendingCounts = new Map<string, number>()
+  // Every (class, trigger) key ever recorded by this tap. Persists across
+  // flushes (which clear `pendingCounts`) so the cardinality cap below bounds
+  // distinct `model_class` values over the tap's whole lifetime, not just the
+  // current flush window — a malformed log can't grow the event-value space.
+  const seenKeys = new Set<string>()
 
   let flushTimer: ReturnType<typeof setInterval> | null = null
 
   function recordLoad(modelClass: string, trigger: ModelLoadTrigger): void {
     const key = `${trigger}\t${modelClass}`
-    // Cap distinct (class, trigger) pairs so a malformed log can't grow the map.
-    if (!pendingCounts.has(key) && pendingCounts.size >= MAX_TRACKED_ARCHITECTURES) return
+    // Reject brand-new (class, trigger) pairs once the cap is hit; keep counting
+    // ones already seen so existing series stay accurate.
+    if (!seenKeys.has(key)) {
+      if (seenKeys.size >= MAX_TRACKED_ARCHITECTURES) return
+      seenKeys.add(key)
+    }
     pendingCounts.set(key, (pendingCounts.get(key) ?? 0) + 1)
     ensureFlushTimer()
   }
