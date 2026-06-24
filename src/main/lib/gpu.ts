@@ -217,6 +217,208 @@ async function checkNvidiaDriver(): Promise<NvidiaDriverCheck | null> {
   }
 }
 
+/** GPU controller entry as collected from `systeminformation`'s `controllers[]`. */
+export interface SystemGpuEntry {
+  vendor: string
+  model: string
+  vram_mb: number | null
+  driver_version: string | null
+}
+
+/**
+ * Display adapters that are not real compute GPUs: virtual monitors,
+ * remote-display drivers, hypervisor framebuffers. On Windows
+ * `Win32_VideoController` enumerates these alongside the real GPU and the
+ * ordering is not guaranteed, so `controllers[0]` is frequently one of these.
+ * Virtual display adapters are excluded from primary selection. Matched
+ * case-insensitively against the controller model name.
+ */
+const VIRTUAL_GPU_PATTERNS: RegExp[] = [
+  /microsoft basic render/i,
+  /microsoft basic display/i,
+  /microsoft remote display/i,
+  /remote desktop/i,
+  /\brdp\b/i,
+  /parsec/i,
+  /vmware/i,
+  /virtualbox/i,
+  /hyper-?v/i,
+  /virtio/i,
+  /\bqxl\b/i,
+  /bochs/i,
+  /llvmpipe/i,
+  /softpipe/i,
+  /citrix/i,
+  /indirect display/i,
+  /spacedesk/i,
+  /virtual monitor/i,
+  /\bidd\b/i
+]
+
+/** True if the controller model looks like a virtual / remote display adapter. */
+export function isVirtualGpu(model: string | null | undefined): boolean {
+  if (!model) return false
+  return VIRTUAL_GPU_PATTERNS.some((re) => re.test(model))
+}
+
+/**
+ * Map a detected `GpuId` to a matcher against systeminformation's free-form
+ * vendor/model strings. Both are checked because some controllers report an
+ * empty vendor but carry the brand in the model name (e.g. `NVIDIA GeForce …`).
+ */
+export function vendorMatches(id: GpuId, ...parts: (string | null | undefined)[]): boolean {
+  const v = parts.filter(Boolean).join(' ').toLowerCase()
+  switch (id) {
+    case 'nvidia':
+      return v.includes('nvidia')
+    case 'amd':
+      return (
+        v.includes('amd') ||
+        v.includes('advanced micro') ||
+        v.includes('ati') ||
+        v.includes('radeon')
+      )
+    case 'intel':
+      return v.includes('intel')
+    case 'mps':
+      return v.includes('apple')
+  }
+}
+
+/**
+ * Choose the real compute GPU from the systeminformation controller list.
+ *
+ * `controllers[0]` is unreliable: on Windows the list includes virtual
+ * display adapters in no guaranteed order. We instead drop virtual adapters,
+ * prefer the controller whose vendor matches the PCI-derived `detectGPU()`
+ * result, and break ties on VRAM. Falls back to the highest-VRAM non-virtual
+ * controller, then to the first entry, so we always return something when any
+ * controller exists. The caller keeps the full unfiltered array for
+ * retroactive analysis; this only picks the promoted "primary".
+ */
+export function selectPrimaryGpu(
+  gpus: SystemGpuEntry[],
+  detectedVendor: GpuId | null
+): SystemGpuEntry | null {
+  if (gpus.length === 0) return null
+  const real = gpus.filter((g) => !isVirtualGpu(g.model))
+  const pool = real.length > 0 ? real : gpus
+  const byVramDesc = (a: SystemGpuEntry, b: SystemGpuEntry): number =>
+    (b.vram_mb ?? 0) - (a.vram_mb ?? 0)
+  if (detectedVendor) {
+    const matching = pool.filter((g) => vendorMatches(detectedVendor, g.vendor, g.model))
+    if (matching.length > 0) return [...matching].sort(byVramDesc)[0]!
+  }
+  return [...pool].sort(byVramDesc)[0]!
+}
+
+/**
+ * Parse the AMDGPU/ROCm driver version from `amd-smi static --driver --json`.
+ *
+ * Output is an array of per-GPU objects, each with a `driver` field carrying
+ * `{ name, version }` (key casing varies across releases). Returns the first
+ * non-empty version, or undefined.
+ */
+export function parseAmdSmiDriverVersion(stdout: string): string | undefined {
+  /** Case-insensitively read the first object value whose key matches `re`. */
+  const findValue = (obj: Record<string, unknown>, re: RegExp): unknown => {
+    for (const [key, value] of Object.entries(obj)) {
+      if (re.test(key)) return value
+    }
+    return undefined
+  }
+  try {
+    const parsed: unknown = JSON.parse(stdout)
+    const entries: unknown[] = Array.isArray(parsed) ? parsed : [parsed]
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue
+      const rec = entry as Record<string, unknown>
+      // Preferred shape: { driver: { name, version } } (key casing varies).
+      const driver = findValue(rec, /^driver$/i)
+      if (driver && typeof driver === 'object') {
+        const version = findValue(driver as Record<string, unknown>, /version/i)
+        if (typeof version === 'string' && version.trim()) return version.trim()
+      }
+      // Flat fallback: { driver_version / DRIVER_VERSION: "..." }.
+      const flat = findValue(rec, /driver.?version/i)
+      if (typeof flat === 'string' && flat.trim()) return flat.trim()
+    }
+  } catch {
+    // not JSON / unexpected shape
+  }
+  return undefined
+}
+
+/**
+ * Parse the kernel-module/ROCm version from `rocm-smi --showdriverversion --json`.
+ *
+ * Output is keyed by scope, e.g. `{ "system": { "Driver version": "6.8.5" } }`
+ * (older builds key per-card). Returns the first `Driver version` value found.
+ */
+export function parseRocmSmiDriverVersion(stdout: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(stdout)
+    if (!parsed || typeof parsed !== 'object') return undefined
+    for (const scope of Object.values(parsed as Record<string, unknown>)) {
+      if (!scope || typeof scope !== 'object') continue
+      for (const [key, value] of Object.entries(scope as Record<string, unknown>)) {
+        if (/driver version/i.test(key) && typeof value === 'string' && value.trim()) {
+          return value.trim()
+        }
+      }
+    }
+  } catch {
+    // not JSON / unexpected shape
+  }
+  return undefined
+}
+
+/** Run a candidate command, resolving its stdout or undefined on any failure. */
+function tryExecFile(file: string, args: string[]): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout: 5000, windowsHide: true }, (err: Error | null, stdout: string) => {
+      resolve(err ? undefined : stdout)
+    })
+  })
+}
+
+/**
+ * AMD GPU driver/runtime version on Linux via ROCm tooling.
+ *
+ * Tries `amd-smi` (current tool) then `rocm-smi` (legacy). Both exist only
+ * when ROCm is installed and may live under `/opt/rocm/bin` rather than on
+ * PATH, so each is probed at its bare name and the rocm path. Returns the
+ * AMDGPU module / ROCm version, or undefined. Windows AMD driver comes from
+ * the systeminformation controller `driver_version` instead (no rocm-smi
+ * there).
+ */
+async function getAmdDriverVersionLinux(): Promise<string | undefined> {
+  if (process.platform !== 'linux') return undefined
+  const amdSmi = ['amd-smi', '/opt/rocm/bin/amd-smi']
+  for (const bin of amdSmi) {
+    const out = await tryExecFile(bin, ['static', '--driver', '--json'])
+    const version = out && parseAmdSmiDriverVersion(out)
+    if (version) return version
+  }
+  const rocmSmi = ['rocm-smi', '/opt/rocm/bin/rocm-smi']
+  for (const bin of rocmSmi) {
+    const out = await tryExecFile(bin, ['--showdriverversion', '--json'])
+    const version = out && parseRocmSmiDriverVersion(out)
+    if (version) return version
+  }
+  return undefined
+}
+
+/**
+ * Resolve the AMD driver version. Prefers the Linux ROCm tooling (which
+ * reports the compute-relevant AMDGPU/ROCm version); on Windows there is no
+ * such tool, so callers fall back to the selected controller's
+ * `driver_version`. Returns undefined when nothing is detected.
+ */
+async function checkAmdDriver(): Promise<string | undefined> {
+  return getAmdDriverVersionLinux()
+}
+
 /** Validate hardware for standalone install. Rejects Intel Macs (MPS needs Apple Silicon). */
 async function validateHardware(): Promise<HardwareValidation> {
   if (process.platform === "darwin") {
@@ -231,4 +433,4 @@ async function validateHardware(): Promise<HardwareValidation> {
   return { supported: true }
 }
 
-export { detectGPU, checkNvidiaDriver, validateHardware }
+export { detectGPU, checkNvidiaDriver, checkAmdDriver, validateHardware }

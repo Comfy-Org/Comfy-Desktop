@@ -210,6 +210,15 @@ function viewError(inst: Installation): void {
   void modal.alert({ title: t('chooser.errorTitle'), message })
 }
 
+/** Surface a backend-flagged danger state (failed install, interrupted delete,
+ *  missing install folder) from its dashboard pill. The label is the short
+ *  pill text; `detail` carries the full explanation built in the main process. */
+function viewDanger(inst: Installation): void {
+  const tag = inst.statusTag
+  if (!tag || tag.style !== 'danger') return
+  void modal.alert({ title: tag.label, message: tag.detail || tag.label })
+}
+
 // Capacity-protection switch (PostHog flag `desktop-cloud-capacity`).
 // When `disabled`, the tile is greyed out and the click is a no-op so
 // users can't enter cloud during an outage. When `degraded`, the tile
@@ -274,6 +283,7 @@ function handleNewInstallClick(): void {
           @open-kebab-menu="openKebabMenu"
           @trigger-action="(action, installation) => triggerAction(action, installation)"
           @view-error="viewError"
+          @view-danger="viewDanger"
         />
       </TransitionGroup>
 

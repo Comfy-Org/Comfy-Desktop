@@ -29,7 +29,7 @@ export interface Installation {
   sourceLabel: string
   sourceCategory: string
   version?: string
-  statusTag?: { style: string; label: string; version?: string }
+  statusTag?: { style: string; label: string; version?: string; detail?: string }
   seen?: boolean
   listPreview?: string
   launchMode?: string
@@ -488,6 +488,17 @@ export interface TerminalRestore {
   exited: boolean
 }
 
+/** Recognised native-crash flavour decoded from a Windows NTSTATUS exit code.
+ *  `unknown` covers a decoded fault code we have no specific guidance for.
+ *  Shared across the IPC boundary so producer (main decode) and consumer
+ *  (renderer crash copy) can't drift on the string values. */
+export type CrashKind =
+  | 'access-violation'
+  | 'illegal-instruction'
+  | 'stack-buffer-overrun'
+  | 'heap-corruption'
+  | 'unknown'
+
 export interface ComfyExitedData {
   installationId: string
   installationName: string
@@ -500,6 +511,19 @@ export interface ComfyExitedData {
    *  signal" from "crashed with non-zero exit". */
   signal?: string
   lastStderr?: string
+  /** Hex form of `exitCode` when it decodes to a Windows native-crash
+   *  (NTSTATUS) code, e.g. `'0xC0000005'`. Absent for plain application
+   *  exits. Lets the UI show the meaningful hex alongside the raw decimal. */
+  exitCodeHex?: string
+  /** Recognised native-crash flavour for `exitCode` (e.g. `'access-violation'`),
+   *  used to pick human-readable, actionable crash copy. Absent when the exit
+   *  code isn't a decodable native fault. */
+  crashKind?: CrashKind
+  /** On a Windows access-violation crash, the Visual C++ runtime DLLs found
+   *  missing from `System32` (e.g. `['vcruntime140_1.dll']`). Non-empty means
+   *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
+   *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
+  vcRuntimeMissing?: string[]
   /**
    * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
    * Set by `recordCrash()` so a renderer that hydrates the crash *after*
@@ -590,9 +614,13 @@ export interface SystemInfo {
   gpu_vendor: string | null
   gpu_label: string | null
   gpu_model: string | null
+  /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
+  gpu_vram_mb: number | null
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
+  amd_driver_version: string | null
+  intel_driver_version: string | null
   platform: string
   arch: string
   os_version: string
@@ -695,7 +723,7 @@ export interface InstallationDdContext {
 /** Compact per-install summary for the per-session boot census
  *  emitted as `comfy.desktop.session.installs_inventory`. Strictly metadata
  *  + counts + diff summaries (no per-node / per-package contents) so
- *  the inventory can pack many installs into the same RUM payload. */
+ *  the inventory can pack many installs into a single PostHog event. */
 export interface InstallInventoryEntry {
   installation_id: string
   source_id: string
@@ -1258,8 +1286,8 @@ export interface ElectronApi {
   /** Per-session boot census of every persisted install (metadata +
    *  snapshot diff counts). Powers the `comfy.desktop.session.installs_inventory`
    *  telemetry event so dashboards see the user's full install footprint
-   *  without waiting for them to launch each one. Capped to ~200 KB
-   *  total to stay under Datadog RUM's per-action context limit. */
+   *  without waiting for them to launch each one. Byte-capped main-side to
+   *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
 

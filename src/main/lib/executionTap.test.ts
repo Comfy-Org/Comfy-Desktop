@@ -55,6 +55,23 @@ describe('executionTap', () => {
     expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '42' })
   })
 
+  it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
+    // ComfyUI's ColoredFormatter emits `\x1b[32m[INFO]\x1b[0m got prompt` etc.,
+    // not the bare strings the anchored patterns expect — ANSI must be stripped
+    // before the level tag for the funnel events to fire.
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('\u001b[32m[INFO]\u001b[0m got prompt\n', 'stdout')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m Prompt executed in 7.78 seconds\n', 'stdout')
+    tap.ingest('\u001b[1m\u001b[31m[ERROR]\u001b[0m Failed to validate prompt for output 9:\n', 'stdout')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.execution.started')
+    expect(started).toBeDefined()
+    const completed = captured.find((c) => c.event === 'comfy.desktop.execution.completed')
+    expect(completed!.ctx).toMatchObject({ duration_seconds: 7.78, completed_count: 1 })
+    const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
+    expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '9' })
+  })
+
   it('captures Python tracebacks from stderr and emits a single error', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // Trailing line after the blank-line boundary so the parser sees the

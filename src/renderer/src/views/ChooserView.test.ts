@@ -367,6 +367,38 @@ describe('ChooserView', () => {
     expect(tile.find('.chooser-tile-pill-migrate').exists()).toBe(true)
   })
 
+  it('shows a clickable red danger pill (and red tile outline) that opens its detail without launching', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'nf',
+        name: 'Gone',
+        statusTag: {
+          style: 'danger',
+          label: 'Folder Not Found',
+          detail: 'Instance folder not found.\n\nC:/comfy/gone',
+        },
+      }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Gone'))!
+    expect(tile.classes()).toContain('chooser-tile-errored')
+    const tag = tile.find('.chooser-tile-actions .chooser-tile-danger-tag')
+    expect(tag.exists()).toBe(true)
+    expect(tag.text()).toContain('Folder Not Found')
+    // It's its own pill, not the crash error badge.
+    expect(tile.find('.chooser-tile-error-badge').exists()).toBe(false)
+
+    await tag.trigger('click')
+    await flushPromises()
+    // Clicking shows the full detail; it must NOT launch.
+    expect(mockModal.alert).toHaveBeenCalledWith({
+      title: 'Folder Not Found',
+      message: 'Instance folder not found.\n\nC:/comfy/gone',
+    })
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
   it('does not emit pick when the kebab button is clicked — only the menu opens', async () => {
     // The kebab's click handler stop-propagates so the tile click doesn't fire.
     installMockApi([
