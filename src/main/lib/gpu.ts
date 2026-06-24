@@ -85,6 +85,56 @@ function queryWmiVendorIds(): Promise<GpuId | null> {
   })
 }
 
+/**
+ * Parse `Win32_VideoController` Name/DriverVersion JSON into a name->version
+ * map (keys lowercased). `ConvertTo-Json` emits a bare object for a single
+ * controller and an array for several, so both shapes are handled.
+ */
+export function parseWmiDriverVersions(stdout: string): Map<string, string> {
+  const map = new Map<string, string>()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(stdout)
+  } catch {
+    return map
+  }
+  const list: unknown[] = Array.isArray(parsed) ? parsed : [parsed]
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue
+    const rec = entry as Record<string, unknown>
+    const name = rec.Name
+    const version = rec.DriverVersion
+    if (typeof name === "string" && typeof version === "string" && version.trim()) {
+      map.set(name.toLowerCase(), version.trim())
+    }
+  }
+  return map
+}
+
+/**
+ * Map adapter name -> driver version from `Win32_VideoController`.
+ *
+ * `systeminformation` only fills `driverVersion` for NVIDIA on Windows (it
+ * enriches from nvidia-smi) and leaves AMD/Intel blank, even though WMI
+ * carries `DriverVersion` for every adapter. We read it directly so AMD/Intel
+ * driver telemetry is populated. Returns an empty map off-Windows or on error.
+ */
+export function getWindowsGpuDriverVersions(): Promise<Map<string, string>> {
+  if (process.platform !== "win32") return Promise.resolve(new Map())
+  return new Promise((resolve) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command",
+        '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Compress'],
+      { timeout: 10000, windowsHide: true },
+      (err: Error | null, stdout: string) => {
+        if (err) return resolve(new Map())
+        resolve(parseWmiDriverVersions(stdout))
+      },
+    )
+  })
+}
+
 function hasNvidiaSmi(): Promise<boolean> {
   return new Promise((resolve) => {
     execFile("nvidia-smi", { timeout: 5000, windowsHide: true }, (err: Error | null) => {

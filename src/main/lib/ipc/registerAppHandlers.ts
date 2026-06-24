@@ -19,6 +19,7 @@ import {
   checkAmdDriver,
   selectPrimaryGpu,
   vendorMatches,
+  getWindowsGpuDriverVersions,
   sourceMap,
   getAppVersion,
   openPath,
@@ -238,6 +239,15 @@ export function registerAppHandlers(): void {
         vram_mb: ctrl.vram ?? null,
         driver_version: ctrl.driverVersion?.trim() || null
       }))
+      // systeminformation only fills `driverVersion` for NVIDIA on Windows
+      // (via nvidia-smi), leaving AMD/Intel blank even though WMI carries it.
+      // Backfill the missing versions from Win32_VideoController by name.
+      const wmiDrivers = await getWindowsGpuDriverVersions()
+      if (wmiDrivers.size > 0) {
+        allGpus = allGpus.map((g) =>
+          g.driver_version ? g : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
+        )
+      }
     }
 
     // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
