@@ -202,6 +202,18 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
 // Kept under PostHog's 1 MB per-event hard limit.
 const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
 
+// Scrub every pip spec value (an editable/local install can embed a home-dir
+// path like `pkg @ file:///C:/Users/<name>/...`) while leaving package names
+// untouched. Runs at the emit site so the scrub is intentional and the
+// main-process safety net never has to redact a path mid-JSON-string.
+function scrubPipSpecs(pipPackages: Record<string, string>): Record<string, string> {
+  const scrubbed: Record<string, string> = {}
+  for (const [name, spec] of Object.entries(pipPackages)) {
+    scrubbed[name] = scrubAll(spec)
+  }
+  return scrubbed
+}
+
 function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
   const json = JSON.stringify(value)
   if (json.length > MAX_TELEMETRY_JSON_LENGTH) return { json: null, truncated: true }
@@ -683,10 +695,11 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
           // earlier states can be reconstructed by walking `snapshot_diffs`
           // back from it. The only genuine PII is the user-typed `label` (kept
           // as a boolean `has_label`); package/node names and versions are
-          // public identifiers. Any home-dir path in an editable/local pip
-          // install (e.g. `pkg @ file:///C:/Users/<name>/...`) is redacted by
-          // `scrubAll` in the main-process `scrubProperties` safety net before
-          // the event ships.
+          // public identifiers. Editable/local pip specs can embed a home-dir
+          // path (e.g. `pkg @ file:///C:/Users/<name>/...`), so each spec value
+          // is run through `scrubAll` here at the emit site (the main-process
+          // `scrubProperties` net only sees the serialized JSON string, where a
+          // backslash Windows path would be JSON-escaped past its regexes).
           const latestSnapshotFull = latest_snapshot
             ? {
                 createdAt: latest_snapshot.createdAt,
@@ -701,7 +714,7 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
                   version: n.version ?? null,
                   commit: n.commit ?? null
                 })),
-                pipPackages: latest_snapshot.pipPackages,
+                pipPackages: scrubPipSpecs(latest_snapshot.pipPackages),
                 custom_nodes_count: latest_snapshot.customNodes.length,
                 pip_packages_count: Object.keys(latest_snapshot.pipPackages).length,
                 python_version: latest_snapshot.pythonVersion ?? null,
@@ -744,10 +757,10 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             // added/removed/changed, with versions) so the entire snapshot
             // history can be reconstructed by applying these deltas backward
             // from `latest_snapshot`. Drop only the user-typed `label` (kept as
-            // `has_label`); names/versions are public identifiers, and any
-            // home-dir path in a pip spec is redacted by `scrubAll` in the
-            // main-process `scrubProperties` safety net. PostHog only, per the
-            // Datadog "failures-only" policy.
+            // `has_label`); names/versions are public identifiers, and each pip
+            // spec value is run through `scrubAll` here at the emit site so a
+            // home-dir path in an editable/local install never ships. PostHog
+            // only, per the Datadog "failures-only" policy.
             const snapshotDiffsFull = snapshot_diffs.map((d) => ({
               createdAt: d.createdAt,
               trigger: d.trigger,
@@ -769,9 +782,16 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
                 commit: n.commit ?? null
               })),
               nodesChanged: d.nodesChanged,
-              pipsAdded: d.pipsAdded,
-              pipsRemoved: d.pipsRemoved,
-              pipsChanged: d.pipsChanged,
+              pipsAdded: d.pipsAdded.map((p) => ({ name: p.name, version: scrubAll(p.version) })),
+              pipsRemoved: d.pipsRemoved.map((p) => ({
+                name: p.name,
+                version: scrubAll(p.version)
+              })),
+              pipsChanged: d.pipsChanged.map((p) => ({
+                name: p.name,
+                from: scrubAll(p.from),
+                to: scrubAll(p.to)
+              })),
               comfyuiChanged: d.comfyuiChanged,
               comfyui: d.comfyui ?? null,
               updateChannelChanged: d.updateChannelChanged,
