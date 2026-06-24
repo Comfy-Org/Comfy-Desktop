@@ -32,6 +32,9 @@ importers:
       posthog-node:
         specifier: ^5.30.7
         version: 5.30.7(rxjs@7.8.2)
+      semver:
+        specifier: ^7.7.4
+        version: 7.7.4
       smol-toml:
         specifier: ^1.6.1
         version: 1.6.1
@@ -69,6 +72,9 @@ importers:
       '@types/node':
         specifier: ^22.19.1
         version: 22.19.12
+      '@types/semver':
+        specifier: ^7.7.1
+        version: 7.7.1
       '@vitejs/plugin-vue':
         specifier: ^6.0.2
         version: 6.0.4(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vue@3.5.29(typescript@5.9.3))
@@ -1181,6 +1187,9 @@ packages:
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
+
+  '@types/semver@7.7.1':
+    resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
 
   '@types/uuid@9.0.8':
     resolution: {integrity: sha512-jg+97EGIcY9AGHJJRaaPVgetKDsrTgbRjQ5Msgjh/DQKEFl0DtyRr/VCOyD1T2R1MNeWPK/u7JoGhlDZnKBAfA==}
@@ -4722,6 +4731,8 @@ snapshots:
   '@types/responselike@1.0.3':
     dependencies:
       '@types/node': 22.19.12
+
+  '@types/semver@7.7.1': {}
 
   '@types/uuid@9.0.8': {}
 

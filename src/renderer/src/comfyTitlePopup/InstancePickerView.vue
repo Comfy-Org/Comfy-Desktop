@@ -33,7 +33,7 @@ interface PickerInstall {
   lastLaunchedAt?: number
   installPath?: string
   status?: string
-  statusTag?: { style: string; label: string }
+  statusTag?: { style: string; label: string; detail?: string }
 }
 
 interface PickerStorageDir {

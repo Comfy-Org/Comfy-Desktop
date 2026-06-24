@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
   'view-error': [installation: Installation]
+  'view-danger': [installation: Installation]
 }>()
 
 const { t } = useI18n()
@@ -37,10 +38,17 @@ const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
 const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
 const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
 
+/* Backend-flagged problem states (failed install, interrupted delete, missing
+ * install folder) carry a `danger` statusTag. Surface it as a static red pill —
+ * distinct from a live crash (`hasError`), which owns the clickable error badge. */
+const dangerTag = computed(() =>
+  inst.value.statusTag?.style === 'danger' ? inst.value.statusTag : null
+)
+
 const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-running': isRunning.value && !isStopping.value,
   'chooser-tile-stopping': isStopping.value,
-  'chooser-tile-errored': hasError.value
+  'chooser-tile-errored': hasError.value || dangerTag.value != null
 }))
 
 /* Lifecycle → top-right status pill (dot + label). Stopping wins over
@@ -153,6 +161,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-error', inst)"
         @keydown.enter.stop="emit('view-error', inst)"
+        @keydown.space.stop
       >
         <AlertCircle :size="14" />
         {{ t('chooser.statusError') }}
@@ -166,6 +175,18 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         {{ t(statusPill.label) }}
       </span>
       <button
+        v-else-if="dangerTag"
+        type="button"
+        class="chooser-tile-danger-tag"
+        :title="t('chooser.viewErrorTooltip')"
+        @click.stop="emit('view-danger', inst)"
+        @keydown.enter.stop="emit('view-danger', inst)"
+        @keydown.space.stop
+      >
+        <AlertCircle :size="13" />
+        {{ dangerTag.label }}
+      </button>
+      <button
         type="button"
         class="chooser-tile-kebab"
         :title="t('chooser.moreActions')"
@@ -173,6 +194,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         :data-testid="TID.dashboardTileKebab(inst.id)"
         @click.stop="emit('open-kebab-menu', $event, inst)"
         @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
+        @keydown.enter.stop
+        @keydown.space.stop
       >
         <MoreVertical :size="16" />
       </button>

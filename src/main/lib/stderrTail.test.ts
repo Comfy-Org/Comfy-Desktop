@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { lastNLines, stripAnsi } from './stderrTail'
+import { lastNLines, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 describe('stripAnsi', () => {
   it('removes color codes', () => {
@@ -12,6 +12,29 @@ describe('stripAnsi', () => {
 
   it('leaves plain text unchanged', () => {
     expect(stripAnsi('no codes here')).toBe('no codes here')
+  })
+})
+
+describe('stripLogLevelPrefix', () => {
+  it('strips a leading [LEVEL] tag (ComfyUI Desktop format)', () => {
+    expect(stripLogLevelPrefix('[INFO] Device: cuda:0')).toBe('Device: cuda:0')
+    expect(stripLogLevelPrefix('[ERROR] Failed to validate prompt for output 9:')).toBe(
+      'Failed to validate prompt for output 9:'
+    )
+  })
+
+  it('leaves bare lines unchanged (ComfyUI source format)', () => {
+    expect(stripLogLevelPrefix('got prompt')).toBe('got prompt')
+  })
+
+  it('does not touch a raw Python traceback line', () => {
+    expect(stripLogLevelPrefix('Traceback (most recent call last):')).toBe(
+      'Traceback (most recent call last):'
+    )
+  })
+
+  it('only strips a leading tag, not a bracket mid-line', () => {
+    expect(stripLogLevelPrefix('model_type [INFO]')).toBe('model_type [INFO]')
   })
 })
 

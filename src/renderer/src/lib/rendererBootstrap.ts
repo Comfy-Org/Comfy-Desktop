@@ -194,6 +194,20 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
   return mutated ?? context
 }
 
+// The telemetry IPC bridge gives `_json`-suffixed keys a larger ceiling
+// (`MAX_TELEMETRY_JSON_STRING_LENGTH` in `registerTelemetryHandlers`) so
+// pre-serialized structured payloads survive intact. We mirror that ceiling
+// here: anything larger is omitted and flagged via `*_truncated` rather than
+// shipped as a value the bridge would slice mid-string into invalid JSON.
+// Kept under PostHog's 1 MB per-event hard limit.
+const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
+
+function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
+  const json = JSON.stringify(value)
+  if (json.length > MAX_TELEMETRY_JSON_LENGTH) return { json: null, truncated: true }
+  return { json, truncated: false }
+}
+
 function trackTelemetryAction(
   actionName: string,
   context: TelemetryContext,
@@ -380,29 +394,27 @@ async function initializeProviders(): Promise<void> {
   // always-on `'title-bar'` renderer. Without this gate the inventory
   // would fire N times per session — once per host window's title-bar
   // bootstrap. Payload is metadata + diff counts only (no per-node /
-  // per-package contents) and is capped to ~200 KB main-side; arrays
-  // of objects bypass the typed bridge the same way `snapshot_history`
-  // does below.
+  // per-package contents) and is byte-capped main-side.
   if (rendererRole === 'panel') {
     window.api
       .getInstallsInventory()
       .then((inventory) => {
         if (!inventory) return
-        // Honor the pre-consent gate even on the bypass path.
+        // Honor the pre-consent gate.
         if (!isTelemetryEmitAllowed('comfy.desktop.session.installs_inventory')) return
-        if (isDatadogInitialized) {
-          try {
-            datadogRum.addAction(
-              'comfy.desktop.session.installs_inventory',
-              inventory as unknown as Record<string, unknown>
-            )
-          } catch {}
-        }
+        // The per-install detail is an array of objects: serialize it to a
+        // `_json` string so it survives the IPC bridge (which gives `_json`
+        // keys a larger ceiling). The inventory is byte-capped main-side to
+        // stay under that ceiling and PostHog's 1 MB per-event limit.
+        const installsJson = serializeForTelemetry(inventory.installs)
         try {
-          window.api.captureTelemetry(
-            'comfy.desktop.session.installs_inventory',
-            inventory as unknown as Record<string, unknown>
-          )
+          window.api.captureTelemetry('comfy.desktop.session.installs_inventory', {
+            total_install_count: inventory.total_install_count,
+            included_install_count: inventory.included_install_count,
+            truncated: inventory.truncated,
+            installs_json: installsJson.json,
+            installs_json_truncated: installsJson.truncated
+          })
         } catch {
           // ignore
         }
@@ -424,21 +436,38 @@ async function initializeProviders(): Promise<void> {
       // - nvidia_driver_version / nvidia_driver_supported
       // - cpu_manufacturer / cpu_physical_cores / cpu_speed_ghz
       // - os_arch
-      // The previous system_info event only forwarded the basic fields.
-      // We now forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
-      // / `gpu_count` / `gpu_driver_version` for cohort filtering.
-      const primaryGpu = info.gpus[0] ?? null
-      const gpuVramMb = primaryGpu?.vram_mb ?? null
+      // Forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
+      // / `gpu_count` / `gpu_driver_version` for cohort filtering. Main has
+      // already selected the real compute GPU (`gpu_model` / `gpu_vram_mb` /
+      // per-vendor driver), so we use those instead of re-picking `gpus[0]`,
+      // which can be a virtual display adapter.
+      const gpuVramMb = info.gpu_vram_mb
       const gpuVramGb = gpuVramMb != null ? Math.round(gpuVramMb / 1024) : null
-      const gpuDriverVersion = info.nvidia_driver_version ?? primaryGpu?.driver_version ?? null
+      const gpuDriverVersion =
+        info.nvidia_driver_version ??
+        info.amd_driver_version ??
+        info.intel_driver_version ??
+        null
       const gpuTier = deriveGpuTier({ vendor: info.gpu_vendor, vramGb: gpuVramGb })
+      // `gpus` / `installations` are arrays of objects. The telemetry IPC
+      // bridge only accepts scalars and arrays of scalars, so a native array
+      // of objects is silently dropped before it reaches PostHog. Serialize
+      // each to a JSON string (queryable via `JSONExtractArrayRaw`) and don't
+      // forward the native arrays, which would just be discarded.
+      const { gpus, installations, ...infoRest } = info
+      const gpusJson = serializeForTelemetry(gpus)
+      const installationsJson = serializeForTelemetry(installations)
       const enriched: Record<string, string | number | boolean | null | undefined> = {
-        ...(info as unknown as Record<string, string | number | boolean | null | undefined>),
+        ...(infoRest as unknown as Record<string, string | number | boolean | null | undefined>),
         gpu_vram_mb: gpuVramMb,
         gpu_vram_gb: gpuVramGb,
-        gpu_count: info.gpus.length,
+        gpu_count: gpus.length,
         gpu_driver_version: gpuDriverVersion,
-        gpu_tier: gpuTier
+        gpu_tier: gpuTier,
+        gpus_json: gpusJson.json,
+        gpus_json_truncated: gpusJson.truncated,
+        installations_json: installationsJson.json,
+        installations_json_truncated: installationsJson.truncated
       }
       if (rendererRole === 'panel') {
         trackTelemetryAction('comfy.desktop.session.system_info', enriched)
@@ -648,7 +677,24 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
         .getInstallationDdContext(data.installationId)
         .then((ctx) => {
           if (!ctx) return
-          const { snapshot_diffs, ...metadata } = ctx
+          const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
+          // `latest_snapshot` is a nested object (dropped by the telemetry IPC
+          // bridge) and its raw form carries a user-typed `label` plus
+          // custom-node `dirName`s. Forward a PII-safe compact summary instead:
+          // counts + a `has_label` flag, never the raw label / node paths.
+          const latestSnapshotSummary = latest_snapshot
+            ? {
+                createdAt: latest_snapshot.createdAt,
+                trigger: latest_snapshot.trigger,
+                has_label: latest_snapshot.label != null,
+                comfyui: latest_snapshot.comfyui,
+                custom_nodes_count: latest_snapshot.customNodes.length,
+                pip_packages_count: Object.keys(latest_snapshot.pipPackages).length,
+                python_version: latest_snapshot.pythonVersion ?? null,
+                update_channel: latest_snapshot.updateChannel ?? null
+              }
+            : null
+          const latestSnapshotJson = serializeForTelemetry(latestSnapshotSummary)
           // Fires on EVERY ComfyUI instance boot (fresh install, restart, port
           // realloc) — not on new-install completion. Despite its previous name
           // (`session.installation_started`) it tracks per-instance boots, so
@@ -664,7 +710,9 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             >),
             boot_time_ms: bootTimeMs ?? null,
             port_retries: portRetries,
-            reboot_retries: rebootRetries
+            reboot_retries: rebootRetries,
+            latest_snapshot_json: latestSnapshotJson.json,
+            latest_snapshot_json_truncated: latestSnapshotJson.truncated
           }
           trackTelemetryAction(
             'comfy.desktop.session.instance_started',
@@ -678,21 +726,31 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
             instanceStartedProps
           )
           if (snapshot_diffs.length > 0) {
-            // snapshot_diffs is an array of objects, which Datadog/PostHog handle
-            // natively; bypass the typed bridge via a fresh call.
-            if (isDatadogInitialized) {
-              try {
-                datadogRum.addAction('comfy.desktop.session.snapshot_history', {
-                  installation_id: ctx.installation_id,
-                  snapshot_diffs
-                })
-              } catch {}
-            }
+            // Raw `SnapshotDiffEntry` carries user-typed `label`s and custom-node
+            // `dirName`s, so we send a PII-safe compact summary (counts +
+            // `has_label`) serialized to a `_json` string. Product/census event:
+            // PostHog only, per the Datadog "failures-only" policy.
+            const snapshotDiffsSummary = snapshot_diffs.map((d) => ({
+              createdAt: d.createdAt,
+              trigger: d.trigger,
+              has_label: d.label != null,
+              nodes_added: d.nodesAdded.length,
+              nodes_removed: d.nodesRemoved.length,
+              nodes_changed: d.nodesChanged.length,
+              pips_added: d.pipsAdded.length,
+              pips_removed: d.pipsRemoved.length,
+              pips_changed: d.pipsChanged.length,
+              comfyui_changed: d.comfyuiChanged,
+              update_channel_changed: d.updateChannelChanged
+            }))
+            const snapshotDiffsJson = serializeForTelemetry(snapshotDiffsSummary)
             try {
               window.api.captureTelemetry('comfy.desktop.session.snapshot_history', {
                 installation_id: ctx.installation_id,
-                snapshot_diffs
-              } as unknown as Record<string, unknown>)
+                snapshot_count: snapshot_diffs.length,
+                snapshot_diffs_json: snapshotDiffsJson.json,
+                snapshot_diffs_json_truncated: snapshotDiffsJson.truncated
+              })
             } catch {
               // ignore
             }

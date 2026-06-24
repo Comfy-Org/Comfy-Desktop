@@ -11,7 +11,7 @@ import {
   _reservePort, _releasePort,
   _addSession, _removeSession,
   _markLaunching, _clearLaunchingFailed,
-  isEffectivelyEmptyInstallDir,
+  installDirStateAsync,
   captureSnapshotIfChanged, getSnapshotCount,
   syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
   createSessionPath, buildLaunchEnv, checkRebootMarker,
@@ -26,8 +26,11 @@ import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
+import { decodeExitCode } from '../../exitCodeInfo'
+import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createExecutionTap } from '../../executionTap'
+import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
 import { buildLaunchPhases } from '../../launchPhases'
 import {
@@ -41,6 +44,7 @@ import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
+import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import {
   startBootPhases,
@@ -82,6 +86,66 @@ export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null
   return code !== 0 || signal !== null
 }
 
+/**
+ * Diagnose a crash exit code into the extra fields the UI needs to show a
+ * human-readable message. Returns `{}` for a plain application exit (the
+ * generic "exited with code N" copy still applies). For a Windows native
+ * fault it adds the decoded hex + kind, and for an access violation it also
+ * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
+ * actually missing.
+ */
+async function diagnoseCrash(
+  code: number | null,
+): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
+  const decoded = decodeExitCode(code)
+  if (!decoded) return {}
+  const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
+    exitCodeHex: decoded.hex,
+    crashKind: decoded.kind,
+  }
+  if (decoded.kind === 'access-violation') {
+    // Never let an audit failure reject this helper: it runs inside an async
+    // EventEmitter listener, so a throw would become an unhandledRejection and
+    // skip recordCrash/broadcast. Keep the decoded hex/kind regardless.
+    try {
+      const missing = await auditVcRuntime()
+      if (missing.length > 0) out.vcRuntimeMissing = missing
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
+    }
+  }
+  return out
+}
+
+/**
+ * Render an exit code for a plain-text launch-failure message. A normal exit
+ * stays as its number; a decoded Windows native fault gets `decimal / hex` plus
+ * a short access-violation explanation and, when the VC++ runtime DLLs are
+ * actually missing, a repair hint. English-only to match the surrounding
+ * non-localized launch-failure strings.
+ */
+async function describeExitCode(code: number | null): Promise<string> {
+  if (code == null) return 'unknown'
+  const decoded = decodeExitCode(code)
+  if (!decoded) return String(code)
+  let out = `${decoded.code} / ${decoded.hex}`
+  if (decoded.kind === 'access-violation') {
+    out += ' (memory access violation — usually a faulty or missing native library)'
+    // Swallow audit failures: this feeds earlyExitPromise's rejection, so a
+    // throw here would leave the launch race hanging until the boot timeout.
+    try {
+      if ((await auditVcRuntime()).length > 0) {
+        out +=
+          '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+          'installing the latest redistributable may fix this'
+      }
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
+    }
+  }
+  return out
+}
+
 async function openLogStream(installPath: string): Promise<WriteStream> {
   const logDir = getLogDir(installPath)
   fs.mkdirSync(logDir, { recursive: true })
@@ -108,8 +172,29 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   clearCrash(installationId)
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
-  if (!source.skipInstall && isEffectivelyEmptyInstallDir(inst.installPath)) {
-    return { ok: false, message: i18n.t('errors.installDirEmpty') }
+  if (!source.skipInstall) {
+    // Async (timeout-guarded) so launching an install on a dead network/
+    // removable path can't block the main process on a sync readdir.
+    const dirState = await installDirStateAsync(inst.installPath)
+    // Block on the persistent, accurately-identified failures with a message
+    // that names the actual problem: `missing` (folder gone/renamed) and
+    // `no-permission` (folder exists but access is denied). `inaccessible` is a
+    // transient readdir error (EIO/EBUSY) or a slow-drive probe timeout, which
+    // can be a false positive on a healthy-but-slow network/removable drive —
+    // so let launch proceed: the common case is a drive that woke up by now and
+    // launches fine. If the path is genuinely unusable the downstream env/exe
+    // checks (getLaunchCommand, the executable existsSync, spawn errors) return
+    // a readable modal error. (A truly-wedged mount can still stall those sync
+    // checks; we accept that over blocking healthy slow drives.)
+    if (dirState === 'missing') {
+      return { ok: false, message: i18n.t('errors.installDirNotFound') }
+    }
+    if (dirState === 'no-permission') {
+      return { ok: false, message: i18n.t('errors.installDirNoPermission') }
+    }
+    if (dirState === 'empty') {
+      return { ok: false, message: i18n.t('errors.installDirEmpty') }
+    }
   }
 
   const sender = event.sender
@@ -362,6 +447,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     logStream: WriteStream,
     sendOutput: (text: string) => void,
     execTap: ReturnType<typeof createExecutionTap>,
+    hwTap: ReturnType<typeof createHardwareTap>,
     tracker: LaunchProgressTracker
   ): { getStderr: () => string } {
     let stderrBuf = ''
@@ -370,6 +456,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stdout')
+      hwTap.ingest(text, 'stdout')
       tracker.ingest(stripAnsi(text))
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -379,6 +466,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stderr')
+      hwTap.ingest(text, 'stderr')
       tracker.ingest(stripAnsi(text))
     })
     return { getStderr: () => stderrBuf }
@@ -544,16 +632,22 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       variant: (inst.variant as string | undefined) ?? null,
       release: (inst.release as string | undefined) ?? null,
     })
+    const hwTap = createHardwareTap({
+      installationId,
+      variant: (inst.variant as string | undefined) ?? null,
+      release: (inst.release as string | undefined) ?? null,
+    })
     const tracker = await armLaunchTracker()
 
+    hwTap.beginBoot()
     const proc = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-    const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, tracker)
+    const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, hwTap, tracker)
 
     _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
     _addSession(installationId, { proc, port: 0, mode, installationName: inst.name }, Date.now() - launchStartedAt)
 
-    proc.on('exit', (code, signal) => {
+    proc.on('exit', async (code, signal) => {
       logStream.end()
       const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
@@ -561,6 +655,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // (`scrubTelemetryContext` in renderer bootstrap), not here.
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
+      hwTap.flushSummary()
+      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
+      // relaunch can't slip in and clearCrash() during the audit and have this
+      // handler then resurrect the stale crash via recordCrash().
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -569,6 +668,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
+        ...crashDiagnosis,
       }
       if (crashed) {
         recordCrash(exitedPayload)
@@ -691,6 +791,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     variant: (inst.variant as string | undefined) ?? null,
     release: (inst.release as string | undefined) ?? null,
   })
+  const hwTap = createHardwareTap({
+    installationId,
+    variant: (inst.variant as string | undefined) ?? null,
+    release: (inst.release as string | undefined) ?? null,
+  })
 
   // Arm the log-driven tracker once, here (a pre-launch repair may already have
   // armed it). Pre-armed so the synchronous relaunch loop can reuse the single
@@ -698,8 +803,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const tracker = await armLaunchTracker()
 
   function spawnComfy(): { proc: ChildProcess; getStderr: () => string } {
+    // Reset per-boot accelerator state so each (re)spawn re-emits
+    // accelerator_detected; model-usage counts persist across the launch.
+    hwTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-    return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, tracker) }
+    return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
   }
 
   const PORT_RETRY_MAX = 3
@@ -747,10 +855,15 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         earlyExit = err.message
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
-      spawned.proc.on('exit', (code) => {
+      spawned.proc.on('exit', async (code, signal) => {
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          earlyExit = `Process exited with code ${code}${detail}`
+          // A startup crash (e.g. a C-extension segfault during import) is the
+          // most common access-violation case; decode the cryptic NTSTATUS code
+          // and add the VC++ hint inline so the launch-failure modal is useful.
+          // A signal-kill (code null) reports the signal name instead.
+          const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
+          earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
         }
       })
@@ -801,6 +914,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
+    // Flush the hardware tap on terminal failure/cancel too: the exit handler
+    // covers a process that exits, but a waitForPort timeout can return here
+    // with the proc still alive, leaving the model-usage flush interval armed.
+    // flushSummary is idempotent, so a later exit re-flush is harmless.
+    hwTap.flushSummary()
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.
@@ -904,6 +1022,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       } catch (err) {
         logStream.end()
         await killProcessTree(proc)
+        // This relaunch path returns before the normal exit handler is
+        // attached; flush so pending model-usage deltas aren't dropped and the
+        // hardware-tap interval doesn't stay armed. flushSummary is idempotent.
+        execTap.flushSummary()
+        hwTap.flushSummary()
         _removeSession(installationId)
         _clearLaunchingFailed(installationId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
@@ -921,7 +1044,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   let currentGetStderr = launchResult.getStderr
 
   function attachExitHandler(p: ChildProcess): void {
-    p.on('exit', (code, signal) => {
+    p.on('exit', async (code, signal) => {
       if (rebootModelCheckAbort) {
         rebootModelCheckAbort.abort()
         rebootModelCheckAbort = null
@@ -1002,6 +1125,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
+      hwTap.flushSummary()
+      // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
+      // relaunch can't slip in and clearCrash() during the audit and have this
+      // handler then resurrect the stale crash via recordCrash().
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -1010,6 +1138,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
+        ...crashDiagnosis,
       }
       if (crashed) {
         recordCrash(exitedPayload)

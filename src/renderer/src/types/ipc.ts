@@ -39,6 +39,7 @@ export type {
   AdoptPromptResponse,
   ComfyOutputData,
   ComfyExitedData,
+  CrashKind,
   GPUInfo,
   HardwareValidation,
   NvidiaDriverCheck,
