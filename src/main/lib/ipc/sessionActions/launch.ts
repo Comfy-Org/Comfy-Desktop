@@ -670,12 +670,20 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         lastStderr,
         ...crashDiagnosis,
       }
+      // Emit from main (not the panel renderer) so the event survives the
+      // Desktop 2 panel teardown around exit. `telemetry.emit` captures to
+      // PostHog and mirrors to Datadog (crash-rate monitor). `last_stderr` is
+      // redacted by `scrubProperties`.
+      telemetry.emit('comfy.desktop.comfyui.exited', {
+        installation_id: installationId,
+        crashed,
+        exit_code: code ?? null,
+        last_stderr: lastStderr ?? null,
+      })
       if (crashed) {
         recordCrash(exitedPayload)
         // Broadcast to every renderer (not just `sender`) so any already-open
-        // dashboard shows the red error tile live. `comfy-exited` stays
-        // sender-only because its panel-side handler fires per-window
-        // telemetry that must not multiply across windows.
+        // dashboard shows the red error tile live.
         _broadcastToRenderer('instance-crashed', exitedPayload)
       }
       if (!sender.isDestroyed()) {
@@ -1140,12 +1148,20 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         lastStderr,
         ...crashDiagnosis,
       }
+      // Emit from main (not the panel renderer) so the event survives the
+      // Desktop 2 panel teardown around exit. `telemetry.emit` captures to
+      // PostHog and mirrors to Datadog (crash-rate monitor). `last_stderr` is
+      // redacted by `scrubProperties`.
+      telemetry.emit('comfy.desktop.comfyui.exited', {
+        installation_id: installationId,
+        crashed,
+        exit_code: code ?? null,
+        last_stderr: lastStderr ?? null,
+      })
       if (crashed) {
         recordCrash(exitedPayload)
         // Broadcast to every renderer (not just `sender`) so any already-open
-        // dashboard shows the red error tile live. `comfy-exited` stays
-        // sender-only because its panel-side handler fires per-window
-        // telemetry that must not multiply across windows.
+        // dashboard shows the red error tile live.
         _broadcastToRenderer('instance-crashed', exitedPayload)
       }
       if (!sender.isDestroyed()) {

@@ -134,9 +134,21 @@ export interface RestartCallbackInfo {
   process?: ChildProcess
 }
 
+/** Fired from `_addSession` on every ComfyUI instance boot, carrying the same
+ *  timing/retry signal folded onto the `instance-started` broadcast. Drives the
+ *  main-process `session.instance_started` / `snapshot_history` telemetry that
+ *  used to live in the (now-unreliable) panel renderer. */
+export interface InstanceStartedCallbackInfo {
+  installationId: string
+  bootTimeMs?: number
+  portRetries: number
+  rebootRetries: number
+}
+
 export type LaunchCallback = (info: LaunchCallbackInfo) => void
 export type StopCallback = (info: StopCallbackInfo) => void
 export type ExitCallback = (info: ExitCallbackInfo) => void
+export type InstanceStartedCallback = (info: InstanceStartedCallbackInfo) => void
 export type RestartCallback = (info: RestartCallbackInfo) => void
 export type ModelFolderRelaunchCallback = (info: { installationId: string }) => void | Promise<void>
 export type LocaleCallback = () => void
@@ -146,6 +158,7 @@ export interface RegisterCallbacks {
   onLaunch?: LaunchCallback
   onStop?: StopCallback
   onComfyExited?: ExitCallback
+  onInstanceStarted?: InstanceStartedCallback
   onComfyRestarted?: RestartCallback
   onModelFolderRelaunch?: ModelFolderRelaunchCallback
   onLocaleChanged?: LocaleCallback
@@ -161,6 +174,7 @@ export const sourceMap: Record<string, SourcePlugin> = Object.fromEntries(source
 export let _onLaunch: LaunchCallback | null = null
 export let _onStop: StopCallback | null = null
 export let _onComfyExited: ExitCallback | null = null
+export let _onInstanceStarted: InstanceStartedCallback | null = null
 export let _onComfyRestarted: RestartCallback | null = null
 export let _onModelFolderRelaunch: ModelFolderRelaunchCallback | null = null
 export let _onLocaleChanged: LocaleCallback | null = null
@@ -262,6 +276,7 @@ export function setCallbacks(callbacks: RegisterCallbacks): void {
   _onLaunch = callbacks.onLaunch ?? null
   _onStop = callbacks.onStop ?? null
   _onComfyExited = callbacks.onComfyExited ?? null
+  _onInstanceStarted = callbacks.onInstanceStarted ?? null
   _onComfyRestarted = callbacks.onComfyRestarted ?? null
   _onModelFolderRelaunch = callbacks.onModelFolderRelaunch ?? null
   _onLocaleChanged = callbacks.onLocaleChanged ?? null
@@ -741,6 +756,18 @@ export function _addSession(
     rebootRetries: retries?.rebootRetries ?? 0,
   })
   sessionLifecycleEvents.emit('changed')
+  // Per-instance-boot telemetry (instance_started / snapshot_history). Emitted
+  // from main — not the panel renderer — because Desktop 2's unified window
+  // tears the panel down around server-ready, so the old renderer callback
+  // frequently never fired. Fire-and-forget; never blocks the launch.
+  if (_onInstanceStarted) {
+    _onInstanceStarted({
+      installationId,
+      bootTimeMs,
+      portRetries: retries?.portRetries ?? 0,
+      rebootRetries: retries?.rebootRetries ?? 0,
+    })
+  }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations.markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
@@ -767,6 +794,122 @@ export function _getPublicSessions(): Record<string, unknown>[] {
     installationName: s.installationName,
     startedAt: s.startedAt,
   }))
+}
+
+/**
+ * Build the installation snapshot/disk context consumed by both the
+ * `get-installation-dd-context` IPC handler and the main-process
+ * `instance_started` / `snapshot_history` telemetry emitters. Returns the full
+ * latest snapshot plus reconstructable per-transition diffs (capped to
+ * `MAX_CONTEXT_BYTES` so a deep history can't blow the event size); callers do
+ * their own PII scrubbing of the snapshot fields at the emit site. Returns
+ * `null` when the install is missing or has no install path.
+ */
+export async function buildInstallationDdContext(installationId: string) {
+  const MAX_CONTEXT_BYTES = 200 * 1024
+  const inst = await installations.get(installationId)
+  if (!inst || !inst.installPath) return null
+
+  const entries = await listSnapshots(inst.installPath)
+  const latest = entries.length > 0 ? entries[0]!.snapshot : null
+
+  const copiedFrom = inst.copiedFrom as string | undefined
+  const copyReason = inst.copyReason as string | undefined
+
+  let diskFreeGb: number | null = null
+  let diskTotalGb: number | null = null
+  try {
+    const disk = await getDiskSpace(inst.installPath)
+    diskFreeGb = Math.round(disk.free / 1073741824)
+    diskTotalGb = Math.round(disk.total / 1073741824)
+  } catch {}
+
+  const result = {
+    installation_id: inst.id,
+    variant: (inst.variant as string) || '',
+    source_id: (inst.sourceId as string) || '',
+    update_channel: (inst.updateChannel as string) || 'stable',
+    comfyui_version: (inst.comfyuiVersion as string) || '',
+    ...(copiedFrom ? { copied_from: copiedFrom } : {}),
+    ...(copyReason ? { copy_reason: copyReason } : {}),
+    snapshot_count: entries.length,
+    disk_free_gb: diskFreeGb,
+    disk_total_gb: diskTotalGb,
+    latest_snapshot: latest
+      ? {
+          createdAt: latest.createdAt,
+          trigger: latest.trigger,
+          label: latest.label,
+          comfyui: {
+            ref: latest.comfyui.ref,
+            commit: latest.comfyui.commit,
+            releaseTag: latest.comfyui.releaseTag,
+            variant: latest.comfyui.variant
+          },
+          customNodes: latest.customNodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            dirName: n.dirName,
+            enabled: n.enabled,
+            version: n.version,
+            commit: n.commit
+          })),
+          pipPackages: latest.pipPackages,
+          pythonVersion: latest.pythonVersion,
+          updateChannel: latest.updateChannel
+        }
+      : null,
+    snapshot_diffs: [] as Array<Record<string, unknown>>
+  }
+
+  let runningSize = JSON.stringify(result).length
+  for (let i = 0; i < entries.length - 1; i++) {
+    const newer = entries[i]!.snapshot
+    const older = entries[i + 1]!.snapshot
+    const diff = diffSnapshots(older, newer)
+    const entry: Record<string, unknown> = {
+      createdAt: newer.createdAt,
+      trigger: newer.trigger,
+      label: newer.label,
+      nodesAdded: diff.nodesAdded.map((n) => ({
+        id: n.id,
+        type: n.type,
+        dirName: n.dirName,
+        enabled: n.enabled,
+        version: n.version,
+        commit: n.commit
+      })),
+      nodesRemoved: diff.nodesRemoved.map((n) => ({
+        id: n.id,
+        type: n.type,
+        dirName: n.dirName,
+        enabled: n.enabled,
+        version: n.version,
+        commit: n.commit
+      })),
+      nodesChanged: diff.nodesChanged.map((n) => ({ id: n.id, from: n.from, to: n.to })),
+      pipsAdded: diff.pipsAdded,
+      pipsRemoved: diff.pipsRemoved,
+      pipsChanged: diff.pipsChanged,
+      comfyuiChanged: diff.comfyuiChanged,
+      updateChannelChanged: diff.updateChannelChanged
+    }
+    if (diff.comfyui) {
+      entry.comfyui = {
+        from: { ref: diff.comfyui.from.ref, commit: diff.comfyui.from.commit },
+        to: { ref: diff.comfyui.to.ref, commit: diff.comfyui.to.commit }
+      }
+    }
+    if (diff.updateChannel) {
+      entry.updateChannel = diff.updateChannel
+    }
+    const entrySize = JSON.stringify(entry).length + 1
+    if (runningSize + entrySize > MAX_CONTEXT_BYTES) break
+    result.snapshot_diffs.push(entry)
+    runningSize += entrySize
+  }
+
+  return result
 }
 
 export async function _fetchAndResolveLatestTags(

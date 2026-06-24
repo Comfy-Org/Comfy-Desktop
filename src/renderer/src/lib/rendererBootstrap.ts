@@ -202,50 +202,6 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
 // Kept under PostHog's 1 MB per-event hard limit.
 const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
 
-// Scrub every pip spec value (an editable/local install can embed a home-dir
-// path like `pkg @ file:///C:/Users/<name>/...`) while leaving package names
-// untouched. Runs at the emit site so the scrub is intentional and the
-// main-process safety net never has to redact a path mid-JSON-string.
-function scrubPipSpecs(pipPackages: Record<string, string>): Record<string, string> {
-  const scrubbed: Record<string, string> = {}
-  for (const [name, spec] of Object.entries(pipPackages)) {
-    scrubbed[name] = scrubAll(spec)
-  }
-  return scrubbed
-}
-
-interface SnapshotNodeFields {
-  id: string
-  type: string
-  dirName: string
-  enabled: boolean
-  version?: string
-  commit?: string
-}
-
-// Single source of truth for the snapshot custom-node shape sent to telemetry,
-// shared by the latest-snapshot and per-diff node arrays so they can't drift.
-// `id`/`dirName` are folder/project names (never absolute paths today) but are
-// run through `scrubAll` as emit-site defense-in-depth; `version`/`commit` are
-// git refs.
-function serializeSnapshotNode(n: SnapshotNodeFields): {
-  id: string
-  type: string
-  dirName: string
-  enabled: boolean
-  version: string | null
-  commit: string | null
-} {
-  return {
-    id: scrubAll(n.id),
-    type: n.type,
-    dirName: scrubAll(n.dirName),
-    enabled: n.enabled,
-    version: n.version ?? null,
-    commit: n.commit ?? null
-  }
-}
-
 function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
   const json = JSON.stringify(value)
   if (json.length > MAX_TELEMETRY_JSON_LENGTH) return { json: null, truncated: true }
@@ -684,153 +640,23 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
     })
   }
 
-  // `comfy-exited` / `comfy-boot-log` / `instance-started` are install-
-  // lifecycle events whose renderer-side handlers convert them into
-  // telemetry Actions. These are owned by the panel renderer (which drives
-  // the install/lifecycle UI) — gating them to `'panel'` prevents the
-  // title-bar bootstrap from double-firing the broadcast `instance-started`
-  // event on Datadog/PostHog when both renderers are mounted.
+  // `comfy-boot-log` is an install-lifecycle event whose renderer-side handler
+  // converts it into a telemetry Action. Owned by the panel renderer (which
+  // drives the install/lifecycle UI); gating it to `'panel'` prevents the
+  // title-bar bootstrap from double-firing when both renderers are mounted.
+  //
+  // `comfy.desktop.comfyui.exited` and `session.instance_started` /
+  // `installation_started` / `snapshot_history` used to be emitted here too, but
+  // Desktop 2's unified window tears the panel down around exit/server-ready, so
+  // those renderer callbacks frequently never ran and the events vanished from
+  // PostHog. They now emit from the main process (`launch.ts` exit handlers and
+  // the `onInstanceStarted` callback) where they fire reliably.
   if (rendererRole === 'panel') {
-    window.api.onComfyExited((data) => {
-      trackTelemetryAction('comfy.desktop.comfyui.exited', {
-        installation_id: data.installationId,
-        crashed: data.crashed ?? false,
-        exit_code: data.exitCode ?? null,
-        last_stderr: data.lastStderr ?? null
-      })
-    })
-
     window.api.onComfyBootLog((data) => {
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {
         installation_id: data.installationId,
         boot_stderr: data.bootStderr
       })
-    })
-
-    window.api.onInstanceStarted((data) => {
-      const raw = data as unknown as Record<string, unknown>
-      const bootTimeMs = raw.bootTimeMs as number | undefined
-      // Spawn-retry counts folded onto the broadcast by `_addSession` (main).
-      // Carried here instead of a separate `server_ready` event: a boot that
-      // needed N port/reboot respawns before serving is a quality signal on
-      // the SAME boot the timing describes. Default 0 for the remote /
-      // skip-port paths that don't spawn-retry.
-      const portRetries = typeof raw.portRetries === 'number' ? raw.portRetries : 0
-      const rebootRetries = typeof raw.rebootRetries === 'number' ? raw.rebootRetries : 0
-      window.api
-        .getInstallationDdContext(data.installationId)
-        .then((ctx) => {
-          if (!ctx) return
-          const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
-          // Forward the FULL latest snapshot so an installation's exact state
-          // (every custom node + pip package, with versions) is queryable, and
-          // earlier states can be reconstructed by walking `snapshot_diffs`
-          // back from it. The only genuine PII is the user-typed `label` (kept
-          // as a boolean `has_label`); package/node names and versions are
-          // public identifiers. Editable/local pip specs can embed a home-dir
-          // path (e.g. `pkg @ file:///C:/Users/<name>/...`), so each spec value
-          // is run through `scrubAll` here at the emit site (the main-process
-          // `scrubProperties` net only sees the serialized JSON string, where a
-          // backslash Windows path would be JSON-escaped past its regexes).
-          const latestSnapshotFull = latest_snapshot
-            ? {
-                createdAt: latest_snapshot.createdAt,
-                trigger: latest_snapshot.trigger,
-                has_label: latest_snapshot.label != null,
-                comfyui: latest_snapshot.comfyui,
-                customNodes: latest_snapshot.customNodes.map(serializeSnapshotNode),
-                pipPackages: scrubPipSpecs(latest_snapshot.pipPackages),
-                python_version: latest_snapshot.pythonVersion ?? null,
-                update_channel: latest_snapshot.updateChannel ?? null
-              }
-            : null
-          const latestSnapshotJson = serializeForTelemetry(latestSnapshotFull)
-          // Fires on EVERY ComfyUI instance boot (fresh install, restart, port
-          // realloc) — not on new-install completion. Despite its previous name
-          // (`session.installation_started`) it tracks per-instance boots, so
-          // dashboards built off the old name were over-counting new installs by
-          // ~2.3x (median fires/user/week, 656 max). Use `install.flow.opened`
-          // or `op.result` with `op_kind='install'` for actual install activity.
-          // The old name is also emitted below for one release cycle so existing
-          // PostHog dashboards stay alive while migration happens.
-          const instanceStartedProps = {
-            ...(metadata as unknown as Record<
-              string,
-              string | number | boolean | null | undefined
-            >),
-            boot_time_ms: bootTimeMs ?? null,
-            port_retries: portRetries,
-            reboot_retries: rebootRetries,
-            // Top-level so they stay queryable in PostHog's UI and survive even
-            // when `latest_snapshot_json` is dropped by the size cap (heavy
-            // installs are exactly the ones most likely to truncate).
-            custom_nodes_count: latest_snapshot?.customNodes.length ?? null,
-            pip_packages_count: latest_snapshot
-              ? Object.keys(latest_snapshot.pipPackages).length
-              : null,
-            latest_snapshot_json: latestSnapshotJson.json,
-            latest_snapshot_json_truncated: latestSnapshotJson.truncated
-          }
-          trackTelemetryAction(
-            'comfy.desktop.session.instance_started',
-            instanceStartedProps
-          )
-          // DEPRECATED 2026-06-12: misleadingly named — remove after 2026-07-01
-          // once any consumers have migrated to `session.instance_started`.
-          // Tracked in issue #1054.
-          trackTelemetryAction(
-            'comfy.desktop.session.installation_started',
-            instanceStartedProps
-          )
-          if (snapshot_diffs.length > 0) {
-            // Forward the FULL per-transition diffs (which nodes/packages were
-            // added/removed/changed, with versions) so the entire snapshot
-            // history can be reconstructed by applying these deltas backward
-            // from `latest_snapshot`. Drop only the user-typed `label` (kept as
-            // `has_label`); names/versions are public identifiers, and each pip
-            // spec value is run through `scrubAll` here at the emit site so a
-            // home-dir path in an editable/local install never ships. PostHog
-            // only, per the Datadog "failures-only" policy.
-            const snapshotDiffsFull = snapshot_diffs.map((d) => ({
-              createdAt: d.createdAt,
-              trigger: d.trigger,
-              has_label: d.label != null,
-              nodesAdded: d.nodesAdded.map(serializeSnapshotNode),
-              nodesRemoved: d.nodesRemoved.map(serializeSnapshotNode),
-              nodesChanged: d.nodesChanged.map((n) => ({
-                id: scrubAll(n.id),
-                from: n.from,
-                to: n.to
-              })),
-              pipsAdded: d.pipsAdded.map((p) => ({ name: p.name, version: scrubAll(p.version) })),
-              pipsRemoved: d.pipsRemoved.map((p) => ({
-                name: p.name,
-                version: scrubAll(p.version)
-              })),
-              pipsChanged: d.pipsChanged.map((p) => ({
-                name: p.name,
-                from: scrubAll(p.from),
-                to: scrubAll(p.to)
-              })),
-              comfyuiChanged: d.comfyuiChanged,
-              comfyui: d.comfyui ?? null,
-              updateChannelChanged: d.updateChannelChanged,
-              updateChannel: d.updateChannel ?? null
-            }))
-            const snapshotDiffsJson = serializeForTelemetry(snapshotDiffsFull)
-            try {
-              window.api.captureTelemetry('comfy.desktop.session.snapshot_history', {
-                installation_id: ctx.installation_id,
-                snapshot_count: snapshot_diffs.length,
-                snapshot_diffs_json: snapshotDiffsJson.json,
-                snapshot_diffs_json_truncated: snapshotDiffsJson.truncated
-              })
-            } catch {
-              // ignore
-            }
-          }
-        })
-        .catch(() => {})
     })
   }
 }
