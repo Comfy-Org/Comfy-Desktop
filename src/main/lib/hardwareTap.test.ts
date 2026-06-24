@@ -157,16 +157,19 @@ describe('createHardwareTap', () => {
     })
   })
 
-  it('parses ComfyUI Desktop log lines carrying a [LEVEL] prefix', () => {
-    // ComfyUI Desktop's bundled build logs as `[INFO] <message>`, not the bare
-    // `%(message)s` the parsers are anchored against. The tap must strip the
-    // level tag so the accelerator + model-usage signals still fire.
+  it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
+    // ComfyUI's ColoredFormatter emits `\x1b[32m[INFO]\x1b[0m <message>`, not
+    // the bare `%(message)s` the parsers are anchored against. The tap must
+    // strip ANSI then the level tag for accelerator + model-usage to fire.
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('[INFO] Total VRAM 32607 MB, total RAM 97430 MB\n', 'stdout')
-    tap.ingest('[INFO] pytorch version: 2.10.0+cu130\n', 'stdout')
-    tap.ingest('[INFO] Device: cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync\n', 'stdout')
-    tap.ingest('[INFO] model weight dtype torch.bfloat16, manual cast: None\n', 'stdout')
-    tap.ingest('[INFO] model_type FLOW\n', 'stdout')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m Total VRAM 32607 MB, total RAM 97430 MB\n', 'stdout')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m pytorch version: 2.10.0+cu130\n', 'stdout')
+    tap.ingest(
+      '\u001b[32m[INFO]\u001b[0m Device: cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync\n',
+      'stdout'
+    )
+    tap.ingest('\u001b[32m[INFO]\u001b[0m model weight dtype torch.bfloat16, manual cast: None\n', 'stdout')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m model_type FLOW\n', 'stdout')
 
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
