@@ -87,6 +87,22 @@ export function buildTemplateDeeplink(comfyUrl: string, templateId: string): str
 /** Sentinel "skip" option value — keeps the wizard step optional. */
 export const NO_TEMPLATE_VALUE = 'none'
 
+/** A template id is a single path-safe segment: the frontend deeplink validator
+ *  pattern (`^[a-zA-Z0-9_.-]+$`). No `/` or `\`, so it can't escape the templates
+ *  dir when joined into a filesystem path or interpolated into a fetch URL. */
+const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
+
+/**
+ * Whether `value` is a persistable starter-template id. Accepts any
+ * format-valid id (curated *or* a live-index substitute), not just the static
+ * curated set, so a substituted card still installs; rejects the "skip"
+ * sentinel and anything that could escape a path/URL. A bogus-but-valid id
+ * degrades gracefully downstream (the template JSON just 404s).
+ */
+export function isPersistableTemplateId(value: unknown): value is string {
+  return typeof value === 'string' && value !== NO_TEMPLATE_VALUE && TEMPLATE_ID_PATTERN.test(value)
+}
+
 /**
  * 4 per modality, lightest-first; slot 1 (`recommended`) is the auto-selected
  * "wow", slot 4 the heavier flagship. To change an offering, edit the id and

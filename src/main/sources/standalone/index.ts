@@ -12,11 +12,9 @@ import {
   getVenvDir, recommendVariant, writeComfyEnvironment,
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
-import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE } from './curatedTemplates'
+import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog } from './templateCatalog'
 
-/** Known starter-template ids — gates what `buildInstallation` will persist. */
-const VALID_BUNDLED_TEMPLATE_IDS = new Set(CURATED_TEMPLATES.map((tpl) => tpl.id))
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
@@ -194,14 +192,11 @@ export const standalone: SourcePlugin = {
         : undefined)
       : undefined
     // Starter template: the chosen template id, or undefined when the user left
-    // the (recommended) "None" option selected. Validated against the known set
-    // so a stale/forged selection can't persist an unknown id that later derails
-    // the open/download handling.
+    // the "None" option selected. Format-validated (not matched against the
+    // static curated set) so a live-index substitute still installs, while a
+    // stale/forged selection that could escape a path/URL is still rejected.
     const tplValue = selections.bundledTemplate?.value
-    const bundledTemplateId =
-      tplValue && tplValue !== NO_TEMPLATE_VALUE && VALID_BUNDLED_TEMPLATE_IDS.has(tplValue)
-        ? tplValue
-        : undefined
+    const bundledTemplateId = isPersistableTemplateId(tplValue) ? tplValue : undefined
     // Freeze the hydrated size the user consented to, so the install-time
     // download estimate matches the wizard label without re-hydrating the index.
     const bundledTemplateSizeBytes =

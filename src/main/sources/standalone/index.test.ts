@@ -164,6 +164,29 @@ describe('standalone.buildInstallation', () => {
       const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
       expect(result.bundledTemplateSizeBytes).toBe(0)
     })
+
+    it('persists a live-index substitute id not in the curated set (substitution survives the gate)', () => {
+      // When a curated id vanishes upstream the picker offers a same-modality
+      // substitute whose id isn't in CURATED_TEMPLATES; picking it must still install.
+      const substituteId = 'some_live_image_model'
+      expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(substituteId, 5),
+      })
+      expect(result.bundledTemplateId).toBe(substituteId)
+      expect(result.pendingTemplateOpen).toBe(substituteId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
+
+    it('rejects a forged id that could escape a path/URL', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template('../../etc/passwd'),
+      })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
   })
 })
 

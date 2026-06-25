@@ -2,10 +2,41 @@ import { describe, it, expect } from 'vitest'
 import {
   buildTemplateDeeplink,
   thumbnailUrlFor,
+  isPersistableTemplateId,
   CURATED_TEMPLATES,
+  NO_TEMPLATE_VALUE,
   TEMPLATE_MODALITY_ORDER,
   RAW_TEMPLATES_BASE,
 } from './curatedTemplates'
+
+describe('isPersistableTemplateId', () => {
+  it('accepts every curated id', () => {
+    for (const t of CURATED_TEMPLATES) {
+      expect(isPersistableTemplateId(t.id), t.id).toBe(true)
+    }
+  })
+
+  it('accepts a live-index substitute id (dotted/hyphenated) not in the curated set', () => {
+    expect(isPersistableTemplateId('some_live_image_model')).toBe(true)
+    expect(isPersistableTemplateId('image_flux2_klein-v1.2')).toBe(true)
+  })
+
+  it('rejects the skip sentinel, empty, and non-strings', () => {
+    expect(isPersistableTemplateId(NO_TEMPLATE_VALUE)).toBe(false)
+    expect(isPersistableTemplateId('')).toBe(false)
+    expect(isPersistableTemplateId(undefined)).toBe(false)
+    expect(isPersistableTemplateId(null)).toBe(false)
+    expect(isPersistableTemplateId(123)).toBe(false)
+  })
+
+  it('rejects ids with path separators or other unsafe characters', () => {
+    expect(isPersistableTemplateId('../../etc/passwd')).toBe(false)
+    expect(isPersistableTemplateId('a/b')).toBe(false)
+    expect(isPersistableTemplateId('a\\b')).toBe(false)
+    expect(isPersistableTemplateId('foo bar')).toBe(false)
+    expect(isPersistableTemplateId('foo?x=1')).toBe(false)
+  })
+})
 
 describe('buildTemplateDeeplink', () => {
   it('appends ?template=<id>&source=default and round-trips the id', () => {
