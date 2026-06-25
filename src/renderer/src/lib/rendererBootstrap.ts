@@ -640,17 +640,11 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
     })
   }
 
-  // `comfy-boot-log` is an install-lifecycle event whose renderer-side handler
-  // converts it into a telemetry Action. Owned by the panel renderer (which
-  // drives the install/lifecycle UI); gating it to `'panel'` prevents the
-  // title-bar bootstrap from double-firing when both renderers are mounted.
-  //
-  // `comfy.desktop.comfyui.exited` and `session.instance_started` /
-  // `installation_started` / `snapshot_history` used to be emitted here too, but
-  // Desktop 2's unified window tears the panel down around exit/server-ready, so
-  // those renderer callbacks frequently never ran and the events vanished from
-  // PostHog. They now emit from the main process (`launch.ts` exit handlers and
-  // the `onInstanceStarted` callback) where they fire reliably.
+  // `comfy-boot-log` → telemetry Action, gated to `'panel'` so it fires once
+  // (not per host-window title-bar). It's safe here because it runs while the
+  // panel is still alive. `exited` / `instance_started` / `installation_started`
+  // / `snapshot_history` used to live here too but now emit from main, since
+  // Desktop 2 tears the panel down before those callbacks could fire.
   if (rendererRole === 'panel') {
     window.api.onComfyBootLog((data) => {
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {

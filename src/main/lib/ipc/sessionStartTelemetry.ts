@@ -1,23 +1,16 @@
 /**
- * Main-process emitters for the per-instance session-start telemetry:
- * `session.instance_started`, the deprecated `session.installation_started`
- * shadow, and `session.snapshot_history`.
- *
- * These used to fire from the panel renderer's `onInstanceStarted` handler, but
- * Desktop 2's unified window destroys/swaps the dashboard panel around
- * server-ready, so the renderer callback frequently never ran and the events
- * silently vanished from rc.3 onward. Emitting from main — on the same
- * `_addSession` that drives the `instance-started` broadcast — makes them fire
- * reliably regardless of renderer lifecycle, with the exact same event names
- * and property shapes so existing dashboards/SQL keep working.
+ * Main-process emitters for the per-instance session-start telemetry
+ * (`session.instance_started`, the deprecated `installation_started` shadow,
+ * `session.snapshot_history`). Emitted from main rather than the panel renderer
+ * because Desktop 2 tears the panel down around server-ready, so the old
+ * renderer callbacks frequently never ran. Same event names/shapes as before.
  */
 import * as telemetry from '../telemetry'
 import { buildInstallationDdContext } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
 
-// Mirror the IPC bridge's large-`_json` ceiling so a structured payload either
-// ships intact or is omitted with a `*_truncated` flag — never sliced mid-string
-// into invalid JSON. Kept under PostHog's 1 MB per-event hard limit.
+// Mirror the bridge's large-`_json` ceiling: ship intact or omit + flag
+// `*_truncated`, never slice mid-string. Under PostHog's 1 MB event limit.
 const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
 
 function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
@@ -26,10 +19,8 @@ function serializeForTelemetry(value: unknown): { json: string | null; truncated
   return { json, truncated: false }
 }
 
-// Scrub every pip spec value (an editable/local install can embed a home-dir
-// path like `pkg @ file:///C:/Users/<name>/...`) while leaving package names
-// untouched. Runs at the emit site so the scrub is intentional and the
-// serialized-JSON safety net never has to redact a path mid-string.
+// Scrub pip spec values (editable/local installs can embed a home-dir path)
+// while leaving package names untouched.
 function scrubPipSpecs(pipPackages: Record<string, string>): Record<string, string> {
   const scrubbed: Record<string, string> = {}
   for (const [name, spec] of Object.entries(pipPackages)) {
@@ -47,10 +38,8 @@ interface SnapshotNodeFields {
   commit?: string
 }
 
-// Single source of truth for the snapshot custom-node shape sent to telemetry,
-// shared by the latest-snapshot and per-diff node arrays so they can't drift.
-// `id`/`dirName` are folder/project names (never absolute paths today) but are
-// run through `scrubAll` as defense-in-depth; `version`/`commit` are git refs.
+// Shared custom-node shape for the latest-snapshot and per-diff node arrays so
+// they can't drift. `id`/`dirName` go through `scrubAll` as defense-in-depth.
 function serializeSnapshotNode(n: SnapshotNodeFields): {
   id: string
   type: string
@@ -108,13 +97,9 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
 
     const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
 
-    // Forward the FULL latest snapshot so an installation's exact state (every
-    // custom node + pip package, with versions) is queryable, and earlier
-    // states can be reconstructed by walking `snapshot_diffs` back from it. The
-    // only genuine PII is the user-typed `label` (kept as a boolean
-    // `has_label`); package/node names and versions are public identifiers.
-    // Editable/local pip specs can embed a home-dir path, so each spec value is
-    // run through `scrubAll` here at the emit site.
+    // Full latest snapshot (every node + pip package) so exact state is
+    // queryable and earlier states reconstruct via `snapshot_diffs`. Only PII is
+    // the user-typed `label`, kept as a `has_label` bool.
     const latestSnapshotFull = latest_snapshot
       ? {
           createdAt: latest_snapshot.createdAt,
@@ -129,19 +114,16 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
       : null
     const latestSnapshotJson = serializeForTelemetry(latestSnapshotFull)
 
-    // Fires on EVERY ComfyUI instance boot (fresh install, restart, port
-    // realloc) — not on new-install completion. Despite its previous name
-    // (`session.installation_started`) it tracks per-instance boots. The old
-    // name is also emitted below for one release cycle so existing PostHog
-    // dashboards stay alive while migration happens (issue #1054).
+    // Fires on EVERY ComfyUI instance boot, not on new-install completion. The
+    // legacy `installation_started` name below tracks the same thing; kept for
+    // one release cycle so existing dashboards survive migration (issue #1054).
     const instanceStartedProps = {
       ...(metadata as Record<string, string | number | boolean | null | undefined>),
       boot_time_ms: info.bootTimeMs ?? null,
       port_retries: info.portRetries,
       reboot_retries: info.rebootRetries,
-      // Top-level so they stay queryable in PostHog's UI and survive even when
-      // `latest_snapshot_json` is dropped by the size cap (heavy installs are
-      // exactly the ones most likely to truncate).
+      // Top-level so they stay queryable and survive `latest_snapshot_json`
+      // truncation (heavy installs are the most likely to truncate).
       custom_nodes_count: latest_snapshot?.customNodes.length ?? null,
       pip_packages_count: latest_snapshot
         ? Object.keys(latest_snapshot.pipPackages).length
@@ -155,13 +137,8 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
     telemetry.capture('comfy.desktop.session.installation_started', instanceStartedProps)
 
     if (snapshot_diffs.length > 0) {
-      // Forward the FULL per-transition diffs (which nodes/packages were
-      // added/removed/changed, with versions) so the entire snapshot history
-      // can be reconstructed by applying these deltas backward from
-      // `latest_snapshot`. Drop only the user-typed `label` (kept as
-      // `has_label`); names/versions are public identifiers, and each pip spec
-      // value is run through `scrubAll` here at the emit site. PostHog only, per
-      // the Datadog "failures-only" policy.
+      // Full per-transition diffs so the history reconstructs by walking back
+      // from `latest_snapshot`. Drop only the user-typed `label` (→ `has_label`).
       const snapshotDiffsFull = (snapshot_diffs as unknown as RawSnapshotDiff[]).map((d) => ({
         createdAt: d.createdAt,
         trigger: d.trigger,

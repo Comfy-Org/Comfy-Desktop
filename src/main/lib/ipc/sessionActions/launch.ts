@@ -670,10 +670,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         lastStderr,
         ...crashDiagnosis,
       }
-      // Emit from main (not the panel renderer) so the event survives the
-      // Desktop 2 panel teardown around exit. `telemetry.emit` captures to
-      // PostHog and mirrors to Datadog (crash-rate monitor). `last_stderr` is
-      // redacted by `scrubProperties`.
+      // Emit from main so it survives the Desktop 2 panel teardown on exit.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
@@ -1148,10 +1146,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         lastStderr,
         ...crashDiagnosis,
       }
-      // Emit from main (not the panel renderer) so the event survives the
-      // Desktop 2 panel teardown around exit. `telemetry.emit` captures to
-      // PostHog and mirrors to Datadog (crash-rate monitor). `last_stderr` is
-      // redacted by `scrubProperties`.
+      // Emit from main so it survives the Desktop 2 panel teardown on exit.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,

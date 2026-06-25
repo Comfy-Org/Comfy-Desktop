@@ -134,10 +134,8 @@ export interface RestartCallbackInfo {
   process?: ChildProcess
 }
 
-/** Fired from `_addSession` on every ComfyUI instance boot, carrying the same
- *  timing/retry signal folded onto the `instance-started` broadcast. Drives the
- *  main-process `session.instance_started` / `snapshot_history` telemetry that
- *  used to live in the (now-unreliable) panel renderer. */
+/** Fired from `_addSession` on every ComfyUI instance boot; drives the
+ *  main-process `instance_started` / `snapshot_history` telemetry. */
 export interface InstanceStartedCallbackInfo {
   installationId: string
   bootTimeMs?: number
@@ -756,10 +754,9 @@ export function _addSession(
     rebootRetries: retries?.rebootRetries ?? 0,
   })
   sessionLifecycleEvents.emit('changed')
-  // Per-instance-boot telemetry (instance_started / snapshot_history). Emitted
-  // from main — not the panel renderer — because Desktop 2's unified window
-  // tears the panel down around server-ready, so the old renderer callback
-  // frequently never fired. Fire-and-forget; never blocks the launch.
+  // Per-instance-boot telemetry (instance_started / snapshot_history), emitted
+  // from main since Desktop 2 tears the panel down before the old renderer
+  // callback could fire. Fire-and-forget; never blocks the launch.
   if (_onInstanceStarted) {
     _onInstanceStarted({
       installationId,
@@ -797,13 +794,12 @@ export function _getPublicSessions(): Record<string, unknown>[] {
 }
 
 /**
- * Build the installation snapshot/disk context consumed by both the
+ * Build the installation snapshot/disk context for the
  * `get-installation-dd-context` IPC handler and the main-process
- * `instance_started` / `snapshot_history` telemetry emitters. Returns the full
- * latest snapshot plus reconstructable per-transition diffs (capped to
- * `MAX_CONTEXT_BYTES` so a deep history can't blow the event size); callers do
- * their own PII scrubbing of the snapshot fields at the emit site. Returns
- * `null` when the install is missing or has no install path.
+ * `instance_started` / `snapshot_history` telemetry. Returns the full latest
+ * snapshot plus reconstructable per-transition diffs (capped to
+ * `MAX_CONTEXT_BYTES`); callers scrub PII at the emit site. `null` when the
+ * install is missing or has no install path.
  */
 export async function buildInstallationDdContext(installationId: string) {
   const MAX_CONTEXT_BYTES = 200 * 1024
@@ -841,12 +837,9 @@ export async function buildInstallationDdContext(installationId: string) {
           trigger: latest.trigger,
           label: latest.label,
           comfyui: {
-            // `ref`/`releaseTag` come from the install's static manifest.json
-            // (the version the standalone env shipped with) and DON'T move on
-            // in-place ComfyUI updates. `commit` is live; `baseTag`/
-            // `commitsAhead`/`formattedVersion` are the resolved real version
-            // (nearest tag + N commits ahead) and are what to read for "what
-            // ComfyUI is actually running".
+            // `ref`/`releaseTag` are static manifest values (the version the env
+            // shipped with) and don't move on in-place updates; read
+            // `formattedVersion` (resolved from `commit`) for what's running.
             ref: latest.comfyui.ref,
             commit: latest.comfyui.commit,
             releaseTag: latest.comfyui.releaseTag,
@@ -904,10 +897,8 @@ export async function buildInstallationDdContext(installationId: string) {
       updateChannelChanged: diff.updateChannelChanged
     }
     if (diff.comfyui) {
-      // `formattedVersion` (+ raw `baseTag`/`commitsAhead`) is the resolved real
-      // ComfyUI version on each side of the transition; `ref` is the static
-      // manifest value and doesn't move on in-place updates. See the
-      // latest-snapshot comfyui note above.
+      // `formattedVersion` is the resolved version per side; `ref` is the static
+      // manifest value. See the latest-snapshot comfyui note above.
       entry.comfyui = {
         from: {
           ref: diff.comfyui.from.ref,
