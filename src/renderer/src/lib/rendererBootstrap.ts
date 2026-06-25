@@ -640,123 +640,17 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
     })
   }
 
-  // `comfy-exited` / `comfy-boot-log` / `instance-started` are install-
-  // lifecycle events whose renderer-side handlers convert them into
-  // telemetry Actions. These are owned by the panel renderer (which drives
-  // the install/lifecycle UI) — gating them to `'panel'` prevents the
-  // title-bar bootstrap from double-firing the broadcast `instance-started`
-  // event on Datadog/PostHog when both renderers are mounted.
+  // `comfy-boot-log` → telemetry Action, gated to `'panel'` so it fires once
+  // (not per host-window title-bar). It's safe here because it runs while the
+  // panel is still alive. `exited` / `instance_started` / `installation_started`
+  // / `snapshot_history` used to live here too but now emit from main, since
+  // Desktop 2 tears the panel down before those callbacks could fire.
   if (rendererRole === 'panel') {
-    window.api.onComfyExited((data) => {
-      trackTelemetryAction('comfy.desktop.comfyui.exited', {
-        installation_id: data.installationId,
-        crashed: data.crashed ?? false,
-        exit_code: data.exitCode ?? null,
-        last_stderr: data.lastStderr ?? null
-      })
-    })
-
     window.api.onComfyBootLog((data) => {
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {
         installation_id: data.installationId,
         boot_stderr: data.bootStderr
       })
-    })
-
-    window.api.onInstanceStarted((data) => {
-      const raw = data as unknown as Record<string, unknown>
-      const bootTimeMs = raw.bootTimeMs as number | undefined
-      // Spawn-retry counts folded onto the broadcast by `_addSession` (main).
-      // Carried here instead of a separate `server_ready` event: a boot that
-      // needed N port/reboot respawns before serving is a quality signal on
-      // the SAME boot the timing describes. Default 0 for the remote /
-      // skip-port paths that don't spawn-retry.
-      const portRetries = typeof raw.portRetries === 'number' ? raw.portRetries : 0
-      const rebootRetries = typeof raw.rebootRetries === 'number' ? raw.rebootRetries : 0
-      window.api
-        .getInstallationDdContext(data.installationId)
-        .then((ctx) => {
-          if (!ctx) return
-          const { snapshot_diffs, latest_snapshot, ...metadata } = ctx
-          // `latest_snapshot` is a nested object (dropped by the telemetry IPC
-          // bridge) and its raw form carries a user-typed `label` plus
-          // custom-node `dirName`s. Forward a PII-safe compact summary instead:
-          // counts + a `has_label` flag, never the raw label / node paths.
-          const latestSnapshotSummary = latest_snapshot
-            ? {
-                createdAt: latest_snapshot.createdAt,
-                trigger: latest_snapshot.trigger,
-                has_label: latest_snapshot.label != null,
-                comfyui: latest_snapshot.comfyui,
-                custom_nodes_count: latest_snapshot.customNodes.length,
-                pip_packages_count: Object.keys(latest_snapshot.pipPackages).length,
-                python_version: latest_snapshot.pythonVersion ?? null,
-                update_channel: latest_snapshot.updateChannel ?? null
-              }
-            : null
-          const latestSnapshotJson = serializeForTelemetry(latestSnapshotSummary)
-          // Fires on EVERY ComfyUI instance boot (fresh install, restart, port
-          // realloc) — not on new-install completion. Despite its previous name
-          // (`session.installation_started`) it tracks per-instance boots, so
-          // dashboards built off the old name were over-counting new installs by
-          // ~2.3x (median fires/user/week, 656 max). Use `install.flow.opened`
-          // or `op.result` with `op_kind='install'` for actual install activity.
-          // The old name is also emitted below for one release cycle so existing
-          // PostHog dashboards stay alive while migration happens.
-          const instanceStartedProps = {
-            ...(metadata as unknown as Record<
-              string,
-              string | number | boolean | null | undefined
-            >),
-            boot_time_ms: bootTimeMs ?? null,
-            port_retries: portRetries,
-            reboot_retries: rebootRetries,
-            latest_snapshot_json: latestSnapshotJson.json,
-            latest_snapshot_json_truncated: latestSnapshotJson.truncated
-          }
-          trackTelemetryAction(
-            'comfy.desktop.session.instance_started',
-            instanceStartedProps
-          )
-          // DEPRECATED 2026-06-12: misleadingly named — remove after 2026-07-01
-          // once any consumers have migrated to `session.instance_started`.
-          // Tracked in issue #1054.
-          trackTelemetryAction(
-            'comfy.desktop.session.installation_started',
-            instanceStartedProps
-          )
-          if (snapshot_diffs.length > 0) {
-            // Raw `SnapshotDiffEntry` carries user-typed `label`s and custom-node
-            // `dirName`s, so we send a PII-safe compact summary (counts +
-            // `has_label`) serialized to a `_json` string. Product/census event:
-            // PostHog only, per the Datadog "failures-only" policy.
-            const snapshotDiffsSummary = snapshot_diffs.map((d) => ({
-              createdAt: d.createdAt,
-              trigger: d.trigger,
-              has_label: d.label != null,
-              nodes_added: d.nodesAdded.length,
-              nodes_removed: d.nodesRemoved.length,
-              nodes_changed: d.nodesChanged.length,
-              pips_added: d.pipsAdded.length,
-              pips_removed: d.pipsRemoved.length,
-              pips_changed: d.pipsChanged.length,
-              comfyui_changed: d.comfyuiChanged,
-              update_channel_changed: d.updateChannelChanged
-            }))
-            const snapshotDiffsJson = serializeForTelemetry(snapshotDiffsSummary)
-            try {
-              window.api.captureTelemetry('comfy.desktop.session.snapshot_history', {
-                installation_id: ctx.installation_id,
-                snapshot_count: snapshot_diffs.length,
-                snapshot_diffs_json: snapshotDiffsJson.json,
-                snapshot_diffs_json_truncated: snapshotDiffsJson.truncated
-              })
-            } catch {
-              // ignore
-            }
-          }
-        })
-        .catch(() => {})
     })
   }
 }

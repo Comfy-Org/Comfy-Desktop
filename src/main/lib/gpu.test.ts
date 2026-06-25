@@ -5,6 +5,7 @@ import {
   selectPrimaryGpu,
   parseAmdSmiDriverVersion,
   parseRocmSmiDriverVersion,
+  parseWmiDriverVersions,
   type SystemGpuEntry
 } from './gpu'
 
@@ -176,5 +177,40 @@ describe('parseRocmSmiDriverVersion', () => {
   it('returns undefined when no driver version key is present', () => {
     expect(parseRocmSmiDriverVersion(JSON.stringify({ system: {} }))).toBeUndefined()
     expect(parseRocmSmiDriverVersion('not json')).toBeUndefined()
+  })
+})
+
+describe('parseWmiDriverVersions', () => {
+  it('parses an array of controllers, keyed by lowercased name', () => {
+    const out = JSON.stringify([
+      { Name: 'NVIDIA GeForce RTX 5090', DriverVersion: '32.0.15.9174' },
+      { Name: 'AMD Radeon(TM) Graphics', DriverVersion: '31.0.22044.1' }
+    ])
+    const map = parseWmiDriverVersions(out)
+    expect(map.get('nvidia geforce rtx 5090')).toBe('32.0.15.9174')
+    expect(map.get('amd radeon(tm) graphics')).toBe('31.0.22044.1')
+  })
+
+  it('parses a single bare object (ConvertTo-Json single-item shape)', () => {
+    const out = JSON.stringify({ Name: 'Intel Arc A770', DriverVersion: '31.0.101.5333' })
+    const map = parseWmiDriverVersions(out)
+    expect(map.get('intel arc a770')).toBe('31.0.101.5333')
+  })
+
+  it('skips entries with missing or blank driver versions', () => {
+    const out = JSON.stringify([
+      { Name: 'Real GPU', DriverVersion: '1.2.3.4' },
+      { Name: 'No Version' },
+      { Name: 'Blank Version', DriverVersion: '   ' }
+    ])
+    const map = parseWmiDriverVersions(out)
+    expect(map.get('real gpu')).toBe('1.2.3.4')
+    expect(map.has('no version')).toBe(false)
+    expect(map.has('blank version')).toBe(false)
+  })
+
+  it('returns an empty map for malformed or empty output', () => {
+    expect(parseWmiDriverVersions('not json').size).toBe(0)
+    expect(parseWmiDriverVersions('').size).toBe(0)
   })
 })

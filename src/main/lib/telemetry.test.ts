@@ -54,6 +54,7 @@ interface AliasCall {
   alias: string
 }
 const aliases: AliasCall[] = []
+let aliasImmediateFailure: Error | null = null
 
 interface IdentifyCall {
   distinctId: string
@@ -88,6 +89,7 @@ vi.mock('posthog-node', () => ({
     }
     aliasImmediate(call: AliasCall): Promise<void> {
       aliases.push(call)
+      if (aliasImmediateFailure) return Promise.reject(aliasImmediateFailure)
       return Promise.resolve()
     }
     flush(): Promise<void> {
@@ -103,6 +105,15 @@ vi.mock('posthog-node', () => ({
 }))
 
 const telemetry = await import('./telemetry')
+
+async function flushTelemetryAliasTasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+afterEach(() => {
+  aliasImmediateFailure = null
+})
 
 describe('telemetry.bucketError', () => {
   it('classifies cancellation messages', () => {
@@ -583,25 +594,6 @@ describe('telemetry consent state (3-state)', () => {
     expect(captured).toHaveLength(0)
   })
 
-  it('aliasImmediate is suppressed outside granted', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('any')
-    aliases.length = 0
-    await telemetry.aliasImmediate('new', 'legacy')
-    expect(aliases).toHaveLength(0)
-
-    telemetry.setConsentState('denied')
-    aliases.length = 0
-    await telemetry.aliasImmediate('new', 'legacy')
-    expect(aliases).toHaveLength(0)
-
-    // Sanity: granted DOES alias.
-    telemetry.setConsentState('granted')
-    aliases.length = 0
-    await telemetry.aliasImmediate('new', 'legacy')
-    expect(aliases).toHaveLength(1)
-  })
-
   it('captureException is suppressed outside granted', () => {
     telemetry.setConsentState('denied')
     telemetry.identify('any')
@@ -823,7 +815,7 @@ describe('telemetry deferMigrationAlias', () => {
     })
 
     // Async microtask + the aliasImmediate await chain.
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toContainEqual({ distinctId: 'new-id', alias: 'legacy-uuid-abc' })
     const migrated = captured.find((c) => c.event === 'comfy.desktop.identity.migrated')
@@ -854,13 +846,13 @@ describe('telemetry deferMigrationAlias', () => {
     })
 
     // Nothing should have shipped while undecided.
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     expect(aliases).toHaveLength(0)
     expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
     expect(onAliased).not.toHaveBeenCalled()
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toContainEqual({ distinctId: 'new-id', alias: 'legacy-uuid-abc' })
     expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeDefined()
@@ -881,12 +873,12 @@ describe('telemetry deferMigrationAlias', () => {
       onAliased
     })
 
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     expect(aliases).toHaveLength(0)
     expect(onAliased).not.toHaveBeenCalled()
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toHaveLength(1)
     expect(onAliased).toHaveBeenCalledTimes(1)
@@ -905,12 +897,272 @@ describe('telemetry deferMigrationAlias', () => {
     })
 
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
     telemetry.setConsentState('denied')
     telemetry.setConsentState('granted')
-    await new Promise((r) => setTimeout(r, 0))
+    await flushTelemetryAliasTasks()
 
     expect(aliases).toHaveLength(1)
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not clean up persisted retry state when aliasImmediate fails', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('new-id')
+    aliases.length = 0
+    captured.length = 0
+    aliasImmediateFailure = new Error('alias failed')
+
+    const onAliased = vi.fn()
+    telemetry.deferMigrationAlias({
+      legacyId: 'legacy-uuid-abc',
+      installationId: 'new-id',
+      idClass: 'machine_derived',
+      onAliased
+    })
+
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toEqual([{ distinctId: 'new-id', alias: 'legacy-uuid-abc' }])
+    expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
+    // onAliased clears the on-disk pending-alias file; skipping it preserves
+    // retry state for the next boot.
+    expect(onAliased).not.toHaveBeenCalled()
+  })
+})
+
+describe('telemetry deferDownloadTokenAlias', () => {
+  beforeEach(() => {
+    captured.length = 0
+    aliases.length = 0
+    identifies.length = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry.setConsentState('granted')
+  })
+
+  it('does not attach the token to pre-consent allow-listed events', async () => {
+    telemetry.setConsentState('undecided')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased
+    })
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+
+    telemetry.capture('comfy.desktop.first_use.consent_decision', {
+      decision: 'accept',
+      telemetry_enabled: true
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.properties).not.toHaveProperty('download_token')
+    expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
+    expect(aliases).toHaveLength(0)
+    expect(onAliased).not.toHaveBeenCalled()
+
+    telemetry.setConsentState('granted')
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toContainEqual({ distinctId: 'install-id', alias: 'AbC123xYz789' })
+    const attributed = captured.find(
+      (c) => c.event === 'comfy.desktop.identity.download_attributed'
+    )
+    expect(attributed?.properties).toMatchObject({
+      installation_id: 'install-id',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
+    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunch?.properties).toMatchObject({
+      installation_id: 'install-id',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename',
+      id_class: 'machine_derived'
+    })
+    const session = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(session?.properties).toMatchObject({
+      installation_id: 'install-id'
+    })
+    expect(session?.properties).not.toHaveProperty('download_token')
+    expect(session?.properties).not.toHaveProperty('download_token_source')
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not attach the token to unrelated later events', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn()
+    })
+    await flushTelemetryAliasTasks()
+    captured.length = 0
+
+    telemetry.capture('comfy.desktop.execution.started', {
+      mode: 'test'
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.properties).toMatchObject({
+      installation_id: 'install-id',
+      mode: 'test'
+    })
+    expect(captured[0]?.properties).not.toHaveProperty('download_token')
+    expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
+  })
+
+  it('attaches the token to only one first-launch event in a process', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn()
+    })
+
+    telemetry.captureFirstLaunch({ sequence: 'first' })
+    telemetry.captureFirstLaunch({ sequence: 'second' })
+    await flushTelemetryAliasTasks()
+
+    const firstLaunches = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunches).toHaveLength(2)
+    expect(firstLaunches[0]?.properties).toMatchObject({
+      sequence: 'first',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
+    expect(firstLaunches[1]?.properties).toMatchObject({ sequence: 'second' })
+    expect(firstLaunches[1]?.properties).not.toHaveProperty('download_token')
+    expect(firstLaunches[1]?.properties).not.toHaveProperty('download_token_source')
+  })
+
+  it('attaches the token to an already queued first-launch event', async () => {
+    telemetry.setConsentState('undecided')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn()
+    })
+
+    telemetry.setConsentState('granted')
+    await flushTelemetryAliasTasks()
+
+    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunch?.properties).toMatchObject({
+      id_class: 'machine_derived',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
+  })
+
+  it('retries attribution without attaching the token to first-launch after the first boot', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      attachToFirstLaunch: false,
+      onAliased
+    })
+    telemetry.captureFirstLaunch({ sequence: 'not-first-boot' })
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'AbC123xYz789' }])
+    const attributed = captured.find(
+      (c) => c.event === 'comfy.desktop.identity.download_attributed'
+    )
+    expect(attributed?.properties).toMatchObject({
+      installation_id: 'install-id',
+      download_token: 'AbC123xYz789',
+      download_token_source: 'windows_installer_filename'
+    })
+    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(firstLaunch?.properties).toMatchObject({ sequence: 'not-first-boot' })
+    expect(firstLaunch?.properties).not.toHaveProperty('download_token')
+    expect(firstLaunch?.properties).not.toHaveProperty('download_token_source')
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not clean up persisted download-token retry state when aliasImmediate fails', async () => {
+    telemetry.setConsentState('granted')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+    aliasImmediateFailure = new Error('alias failed')
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      attachToFirstLaunch: false,
+      onAliased
+    })
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'AbC123xYz789' }])
+    expect(
+      captured.find((c) => c.event === 'comfy.desktop.identity.download_attributed')
+    ).toBeUndefined()
+    expect(onAliased).not.toHaveBeenCalled()
+  })
+
+  it('queues the alias while denied and clears only after a later grant', async () => {
+    telemetry.setConsentState('denied')
+    telemetry.identify('install-id')
+    captured.length = 0
+    aliases.length = 0
+
+    const onAliased = vi.fn()
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'ZyX987wVu654',
+      installationId: 'install-id',
+      source: 'windows_installer_filename',
+      onAliased
+    })
+
+    await flushTelemetryAliasTasks()
+    expect(aliases).toHaveLength(0)
+    expect(onAliased).not.toHaveBeenCalled()
+
+    telemetry.setConsentState('granted')
+    await flushTelemetryAliasTasks()
+
+    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'ZyX987wVu654' }])
     expect(onAliased).toHaveBeenCalledTimes(1)
   })
 })

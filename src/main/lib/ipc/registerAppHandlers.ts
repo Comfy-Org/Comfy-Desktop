@@ -19,11 +19,13 @@ import {
   checkAmdDriver,
   selectPrimaryGpu,
   vendorMatches,
+  getWindowsGpuDriverVersions,
   sourceMap,
   getAppVersion,
   openPath,
   listSnapshots,
-  diffSnapshots
+  diffSnapshots,
+  buildInstallationDdContext
 } from './shared'
 import si from 'systeminformation'
 import type { FieldOption } from './shared'
@@ -238,6 +240,15 @@ export function registerAppHandlers(): void {
         vram_mb: ctrl.vram ?? null,
         driver_version: ctrl.driverVersion?.trim() || null
       }))
+      // systeminformation only fills `driverVersion` for NVIDIA on Windows
+      // (via nvidia-smi), leaving AMD/Intel blank even though WMI carries it.
+      // Backfill the missing versions from Win32_VideoController by name.
+      const wmiDrivers = await getWindowsGpuDriverVersions()
+      if (wmiDrivers.size > 0) {
+        allGpus = allGpus.map((g) =>
+          g.driver_version ? g : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
+        )
+      }
     }
 
     // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
@@ -410,112 +421,9 @@ export function registerAppHandlers(): void {
     return result
   })
 
-  ipcMain.handle('get-installation-dd-context', async (_event, installationId: string) => {
-    const MAX_CONTEXT_BYTES = 200 * 1024
-    const inst = await installations.get(installationId)
-    if (!inst || !inst.installPath) return null
-
-    const entries = await listSnapshots(inst.installPath)
-    const latest = entries.length > 0 ? entries[0]!.snapshot : null
-
-    const copiedFrom = inst.copiedFrom as string | undefined
-    const copyReason = inst.copyReason as string | undefined
-
-    let diskFreeGb: number | null = null
-    let diskTotalGb: number | null = null
-    try {
-      const disk = await getDiskSpace(inst.installPath)
-      diskFreeGb = Math.round(disk.free / 1073741824)
-      diskTotalGb = Math.round(disk.total / 1073741824)
-    } catch {}
-
-    const result = {
-      installation_id: inst.id,
-      variant: (inst.variant as string) || '',
-      source_id: (inst.sourceId as string) || '',
-      update_channel: (inst.updateChannel as string) || 'stable',
-      comfyui_version: (inst.comfyuiVersion as string) || '',
-      ...(copiedFrom ? { copied_from: copiedFrom } : {}),
-      ...(copyReason ? { copy_reason: copyReason } : {}),
-      snapshot_count: entries.length,
-      disk_free_gb: diskFreeGb,
-      disk_total_gb: diskTotalGb,
-      latest_snapshot: latest
-        ? {
-            createdAt: latest.createdAt,
-            trigger: latest.trigger,
-            label: latest.label,
-            comfyui: {
-              ref: latest.comfyui.ref,
-              commit: latest.comfyui.commit,
-              releaseTag: latest.comfyui.releaseTag,
-              variant: latest.comfyui.variant
-            },
-            customNodes: latest.customNodes.map((n) => ({
-              id: n.id,
-              type: n.type,
-              dirName: n.dirName,
-              enabled: n.enabled,
-              version: n.version,
-              commit: n.commit
-            })),
-            pipPackages: latest.pipPackages,
-            pythonVersion: latest.pythonVersion,
-            updateChannel: latest.updateChannel
-          }
-        : null,
-      snapshot_diffs: [] as Array<Record<string, unknown>>
-    }
-
-    let runningSize = JSON.stringify(result).length
-    for (let i = 0; i < entries.length - 1; i++) {
-      const newer = entries[i]!.snapshot
-      const older = entries[i + 1]!.snapshot
-      const diff = diffSnapshots(older, newer)
-      const entry: Record<string, unknown> = {
-        createdAt: newer.createdAt,
-        trigger: newer.trigger,
-        label: newer.label,
-        nodesAdded: diff.nodesAdded.map((n) => ({
-          id: n.id,
-          type: n.type,
-          dirName: n.dirName,
-          enabled: n.enabled,
-          version: n.version,
-          commit: n.commit
-        })),
-        nodesRemoved: diff.nodesRemoved.map((n) => ({
-          id: n.id,
-          type: n.type,
-          dirName: n.dirName,
-          enabled: n.enabled,
-          version: n.version,
-          commit: n.commit
-        })),
-        nodesChanged: diff.nodesChanged.map((n) => ({ id: n.id, from: n.from, to: n.to })),
-        pipsAdded: diff.pipsAdded,
-        pipsRemoved: diff.pipsRemoved,
-        pipsChanged: diff.pipsChanged,
-        comfyuiChanged: diff.comfyuiChanged,
-        updateChannelChanged: diff.updateChannelChanged
-      }
-      if (diff.comfyui) {
-        entry.comfyui = {
-          from: { ref: diff.comfyui.from.ref, commit: diff.comfyui.from.commit },
-          to: { ref: diff.comfyui.to.ref, commit: diff.comfyui.to.commit }
-        }
-      }
-      if (diff.updateChannel) {
-        entry.updateChannel = diff.updateChannel
-      }
-      const entrySize = JSON.stringify(entry).length + 1
-      if (runningSize + entrySize > MAX_CONTEXT_BYTES) break
-      result.snapshot_diffs.push(entry)
-      runningSize += entrySize
-    }
-
-    return result
-  })
+  ipcMain.handle('get-installation-dd-context', (_event, installationId: string) =>
+    buildInstallationDdContext(installationId)
+  )
 
   ipcMain.handle('get-device-id', () => getDeviceId())
 }
