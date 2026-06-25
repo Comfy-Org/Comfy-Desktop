@@ -841,10 +841,19 @@ export async function buildInstallationDdContext(installationId: string) {
           trigger: latest.trigger,
           label: latest.label,
           comfyui: {
+            // `ref`/`releaseTag` come from the install's static manifest.json
+            // (the version the standalone env shipped with) and DON'T move on
+            // in-place ComfyUI updates. `commit` is live; `baseTag`/
+            // `commitsAhead`/`formattedVersion` are the resolved real version
+            // (nearest tag + N commits ahead) and are what to read for "what
+            // ComfyUI is actually running".
             ref: latest.comfyui.ref,
             commit: latest.comfyui.commit,
             releaseTag: latest.comfyui.releaseTag,
-            variant: latest.comfyui.variant
+            variant: latest.comfyui.variant,
+            baseTag: latest.comfyui.baseTag ?? null,
+            commitsAhead: latest.comfyui.commitsAhead ?? null,
+            formattedVersion: formatSnapshotVersion(latest.comfyui, 'detail')
           },
           customNodes: latest.customNodes.map((n) => ({
             id: n.id,
@@ -895,9 +904,25 @@ export async function buildInstallationDdContext(installationId: string) {
       updateChannelChanged: diff.updateChannelChanged
     }
     if (diff.comfyui) {
+      // `formattedVersion` (+ raw `baseTag`/`commitsAhead`) is the resolved real
+      // ComfyUI version on each side of the transition; `ref` is the static
+      // manifest value and doesn't move on in-place updates. See the
+      // latest-snapshot comfyui note above.
       entry.comfyui = {
-        from: { ref: diff.comfyui.from.ref, commit: diff.comfyui.from.commit },
-        to: { ref: diff.comfyui.to.ref, commit: diff.comfyui.to.commit }
+        from: {
+          ref: diff.comfyui.from.ref,
+          commit: diff.comfyui.from.commit,
+          baseTag: diff.comfyui.from.baseTag ?? null,
+          commitsAhead: diff.comfyui.from.commitsAhead ?? null,
+          formattedVersion: diff.comfyui.from.formattedVersion
+        },
+        to: {
+          ref: diff.comfyui.to.ref,
+          commit: diff.comfyui.to.commit,
+          baseTag: diff.comfyui.to.baseTag ?? null,
+          commitsAhead: diff.comfyui.to.commitsAhead ?? null,
+          formattedVersion: diff.comfyui.to.formattedVersion
+        }
       }
     }
     if (diff.updateChannel) {
