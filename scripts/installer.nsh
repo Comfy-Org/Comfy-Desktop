@@ -271,7 +271,9 @@
       ${ExitDo}
     ${EndIf}
     StrCpy $R3 "$R0" 3 $R1
-    ${If} $R3 == "dt_"
+    ; S== is case-sensitive (LogicLib == is case-insensitive StrCmp); the proxy
+    ; emits a lowercase "dt_" marker, matching StrFunc's case-sensitive StrStr.
+    ${If} $R3 S== "dt_"
       IntOp $R3 $R1 + 3
       StrCpy $R4 "$R0" 12 $R3
       ${ExitDo}
