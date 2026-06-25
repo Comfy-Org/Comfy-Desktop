@@ -25,6 +25,7 @@
  */
 import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
+import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import { scrubAll } from '../../shared/piiScrub'
 
 /**
@@ -177,7 +178,12 @@ export function createExecutionTap(opts: {
   }
 
   function handleNewLine(line: string, source: 'stdout' | 'stderr'): void {
-    const trimmed = line.trim()
+    // `got prompt` / `Prompt executed in …` / `Failed to validate …` are
+    // logging-formatted, so on current ComfyUI they arrive with a colored
+    // `\x1b[..m[LEVEL]\x1b[0m ` tag the anchored patterns below don't expect.
+    // Strip ANSI first, then the level tag. Raw Python tracebacks carry
+    // neither, so TRACEBACK_START detection is unaffected.
+    const trimmed = stripLogLevelPrefix(stripAnsi(line).trim())
 
     if (trimmed.length === 0) return
 
