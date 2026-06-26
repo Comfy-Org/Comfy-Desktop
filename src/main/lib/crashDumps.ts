@@ -13,7 +13,10 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 
-const MAX_CRASH_DUMPS = 10
+// Keep just the few most recent dumps: the latest crash is what matters for
+// diagnosis, a couple of priors help spot a pattern, and at ~1-5 MB each we
+// don't want the folder to balloon for a crash-looping user.
+const MAX_CRASH_DUMPS = 3
 
 export function getCrashDumpsDir(): string {
   return app.getPath('crashDumps')
@@ -45,7 +48,8 @@ function collectDumps(dir: string): { file: string; mtimeMs: number }[] {
 
 /**
  * Delete all but the newest `maxFiles` crash dumps. `dir` and `maxFiles` are
- * injectable for tests; defaults are the Electron crashDumps path and 10.
+ * injectable for tests; defaults are the Electron crashDumps path and
+ * `MAX_CRASH_DUMPS`.
  */
 export function pruneCrashDumps(opts?: { dir?: string; maxFiles?: number }): number {
   const dir = opts?.dir ?? getCrashDumpsDir()
