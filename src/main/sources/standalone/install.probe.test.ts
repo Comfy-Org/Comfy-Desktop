@@ -66,4 +66,11 @@ describe('standalone probeInstallation', () => {
     fs.writeFileSync(path.join(comfy, 'main.py'), '')
     expect(await probeInstallation(comfy)).toBeNull()
   })
+
+  it('does not resolve up from a non-ComfyUI sibling inside a standalone', async () => {
+    const root = path.join(tmp, 'install')
+    makeStandalone(root)
+    // Pointing at standalone-env/ (a sibling of ComfyUI) must not track the root.
+    expect(await probeInstallation(path.join(root, 'standalone-env'))).toBeNull()
+  })
 })

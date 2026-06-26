@@ -62,5 +62,25 @@ describe('portable probeInstallation', () => {
     fs.mkdirSync(plain, { recursive: true })
     expect(await portable.probeInstallation!(plain)).toBeNull()
   })
+
+  it('does not resolve up from a non-ComfyUI sibling inside a portable root', async () => {
+    const root = path.join(tmp, 'ComfyUI_windows_portable')
+    makePortable(root)
+    fs.mkdirSync(path.join(root, 'update'), { recursive: true })
+    // Pointing at a sibling of ComfyUI must not track the portable root.
+    expect(await portable.probeInstallation!(path.join(root, 'update'))).toBeNull()
+  })
+
+  it('resolves the nested portable root, not the parent, for a nested portable layout', async () => {
+    // outer/downloads/<portable>/ — picking outer/downloads must resolve the
+    // nested portable via the down-scan, never jump up to a parent.
+    const downloads = path.join(tmp, 'downloads')
+    const nested = path.join(downloads, 'ComfyUI_windows_portable')
+    makePortable(nested)
+
+    const result = await portable.probeInstallation!(downloads)
+    expect(result).not.toBeNull()
+    expect(result!.installPath).toBe(nested)
+  })
 })
 

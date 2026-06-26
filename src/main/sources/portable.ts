@@ -41,9 +41,6 @@ interface GitHubAsset {
 
 function findPortableRoot(installPath: string): string | null {
   if (fs.existsSync(path.join(installPath, 'python_embeded'))) return installPath
-  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
-  const parent = path.dirname(installPath)
-  if (parent !== installPath && fs.existsSync(path.join(parent, 'python_embeded'))) return parent
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(installPath, { withFileTypes: true })
@@ -56,6 +53,25 @@ function findPortableRoot(installPath: string): string | null {
       const sub = path.join(installPath, entry.name)
       if (fs.existsSync(path.join(sub, 'python_embeded'))) return sub
     }
+  }
+  return null
+}
+
+/**
+ * Probe-only root resolution. Adds an upward check to {@link findPortableRoot}
+ * for when the user pointed at the nested `ComfyUI/` folder of a portable
+ * install. Kept separate so the runtime helper's resolution is unchanged.
+ */
+function findPortableProbeRoot(dirPath: string): string | null {
+  const root = findPortableRoot(dirPath)
+  if (root) return root
+  const parent = path.dirname(dirPath)
+  if (
+    parent !== dirPath &&
+    path.basename(dirPath).toLowerCase() === 'comfyui' &&
+    fs.existsSync(path.join(parent, 'python_embeded'))
+  ) {
+    return parent
   }
   return null
 }
@@ -260,7 +276,7 @@ export const portable: SourcePlugin = {
   },
 
   probeInstallation(dirPath: string): Record<string, unknown> | null {
-    const root = findPortableRoot(dirPath)
+    const root = findPortableProbeRoot(dirPath)
     if (!root) return null
     // Record the portable root, not whatever the user picked — they may have
     // pointed at the nested `ComfyUI/` folder or the parent of the install.
