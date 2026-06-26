@@ -98,6 +98,22 @@ async function handleBrowseField(field: DetailField): Promise<void> {
     await handleFieldChange(field, dir)
   }
 }
+
+/** True when a non-editable value is safe to open in the OS file manager:
+ *  an explicit path field, or a local-looking path that isn't a URL or date. */
+function canOpenFieldValue(field: DetailField): boolean {
+  const v = field.value == null ? '' : String(field.value).trim()
+  if (!v || v === '—') return false
+  if (field.editType === 'path') return true
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return false // URL scheme
+  if (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/.test(v)) return false // date-ish
+  return v.includes('/') || v.includes('\\') || v.startsWith('~')
+}
+
+function handleOpenPath(value: unknown): void {
+  const p = value == null ? '' : String(value)
+  if (p) void window.api.openPath(p)
+}
 </script>
 
 <template>
@@ -205,14 +221,30 @@ v-if="f.editable && f.editType === 'select'" class="detail-field-input"
 v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail-field-toggle"
                    :checked="f.value !== false" @change="handleFieldChange(f, ($event.target as HTMLInputElement).checked)">
             <div v-else-if="f.editable && f.editType === 'path'" class="path-input">
+              <div v-if="f.browseOnly" class="detail-path-open-wrap">
+                <button
+                  v-if="f.value"
+                  type="button"
+                  class="detail-path-open"
+                  :title="$t('actions.openDirectory', 'Open Directory')"
+                  @click="handleOpenPath(f.value)"
+                >{{ f.value }}</button>
+              </div>
               <input
-type="text" class="detail-field-input"
-                     :value="f.value ?? ''" :readonly="f.browseOnly" @change="!f.browseOnly && handleFieldChange(f, ($event.target as HTMLInputElement).value)">
+v-else type="text" class="detail-field-input"
+                     :value="f.value ?? ''" @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)">
               <button @click="handleBrowseField(f)">{{ $t('common.browse') }}</button>
             </div>
             <input
 v-else-if="f.editable" type="text" class="detail-field-input"
                    :value="f.value ?? ''" @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)">
+            <button
+              v-else-if="canOpenFieldValue(f)"
+              type="button"
+              class="detail-field-value detail-field-value-open"
+              :title="$t('actions.openDirectory', 'Open Directory')"
+              @click="handleOpenPath(f.value)"
+            >{{ f.value }}</button>
             <div v-else class="detail-field-value">{{ f.value }}</div>
           </template>
         </div>

@@ -1421,6 +1421,53 @@ input[type='checkbox']:checked::after {
   padding: 6px 8px;
   font-size: 14px;
 }
+/* Browse-only path: boxed row whose text opens the folder in the OS file
+ *  manager (replaces the old readonly <input>). Only the text is clickable. */
+.detail-path-open-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.detail-path-open {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+/* Clickable non-editable path value. */
+.detail-field-value-open {
+  margin-top: 1px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.detail-path-open:hover,
+.detail-path-open:focus-visible,
+.detail-field-value-open:hover,
+.detail-field-value-open:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
 .detail-section-desc {
   font-size: 14px;
   color: var(--text-muted);

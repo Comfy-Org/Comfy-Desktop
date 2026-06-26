@@ -661,6 +661,10 @@ async function handleBrowse(): Promise<void> {
   if (chosen) instPath.value = chosen
 }
 
+function handleOpenInstPath(): void {
+  if (instPath.value) void window.api.openPath(instPath.value)
+}
+
 async function handleSave(): Promise<void> {
   const source = currentSource.value
   if (!source) return
@@ -891,19 +895,20 @@ defineExpose({ open })
               class="config-field"
               :class="{ 'config-field--disabled': currentSource?.skipInstall }"
             >
-              <label class="config-label" for="inst-path">{{
-                $t('newInstall.installLocation')
-              }}</label>
+              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
               <div class="config-path-row">
                 <div class="brand-input config-path-input">
                   <HardDrive :size="14" aria-hidden="true" />
-                  <input
-                    id="inst-path"
-                    :value="instPath"
-                    type="text"
-                    readonly
-                    :disabled="!!currentSource?.skipInstall"
-                  />
+                  <button
+                    v-if="!currentSource?.skipInstall && instPath"
+                    type="button"
+                    class="config-path-open"
+                    :title="$t('actions.openDirectory', 'Open Directory')"
+                    @click="handleOpenInstPath"
+                  >{{ instPath }}</button>
+                  <span v-else class="config-path-open config-path-open--static">{{
+                    instPath
+                  }}</span>
                 </div>
                 <button
                   class="brand-tertiary"
@@ -1433,6 +1438,35 @@ defineExpose({ open })
   flex: 1 1 auto;
   min-width: 0;
   padding-inline: 12px;
+}
+/* Path text replaces the old readonly <input>; clicking it opens the selected
+ *  install directory in the OS file manager. Only the text is the click target. */
+.config-path-open {
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.config-path-open:hover,
+.config-path-open:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
+.config-path-open--static {
+  cursor: default;
+}
+.config-path-open--static:hover {
+  color: inherit;
+  text-decoration: none;
 }
 .config-path-row > button.brand-tertiary {
   padding-inline: 14px;

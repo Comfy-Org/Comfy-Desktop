@@ -92,6 +92,10 @@ async function handleBrowse(): Promise<void> {
   }
 }
 
+function handleOpenTrackPath(): void {
+  if (trackPath.value) void window.api.openPath(trackPath.value)
+}
+
 async function probe(dirPath: string): Promise<void> {
   const generation = ++probeGeneration
   probing.value = true
@@ -233,17 +237,20 @@ defineExpose({ open })
       >
         <div class="brand-card__body">
           <div class="track-field">
-            <label class="track-label" for="track-path">{{ $t('track.installDir') }}</label>
+            <label class="track-label">{{ $t('track.installDir') }}</label>
             <div class="track-path-row">
               <div class="brand-input track-path-input">
                 <HardDrive :size="14" aria-hidden="true" />
-                <input
-                  id="track-path"
-                  :value="trackPath"
-                  type="text"
-                  readonly
-                  :placeholder="$t('track.selectDir')"
-                />
+                <button
+                  v-if="trackPath"
+                  type="button"
+                  class="track-path-open"
+                  :title="$t('actions.openDirectory', 'Open Directory')"
+                  @click="handleOpenTrackPath"
+                >{{ trackPath }}</button>
+                <span v-else class="track-path-open track-path-placeholder">{{
+                  $t('track.selectDir')
+                }}</span>
               </div>
               <button class="brand-tertiary" type="button" @click="handleBrowse">
                 {{ $t('common.browse') }}
@@ -363,6 +370,36 @@ defineExpose({ open })
   flex: 1 1 auto;
   min-width: 0;
   padding-inline: 12px;
+}
+/* Path text replaces the old readonly <input>; clicking it opens the tracked
+ *  directory in the OS file manager. Only the text is the click target. */
+.track-path-open {
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.track-path-open:hover,
+.track-path-open:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
+.track-path-placeholder {
+  color: var(--neutral-400);
+  cursor: default;
+}
+.track-path-placeholder:hover {
+  color: var(--neutral-400);
+  text-decoration: none;
 }
 .track-path-row > button.brand-tertiary {
   padding-inline: 14px;
