@@ -461,13 +461,15 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
-      stderrBuf += text
+      // Strip ANSI once for both the tail buffer and the launch tracker.
+      const clean = stripAnsi(text)
+      stderrBuf += clean
       if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-4096)
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stderr')
       hwTap.ingest(text, 'stderr')
-      tracker.ingest(stripAnsi(text))
+      tracker.ingest(clean)
     })
     return { getStderr: () => stderrBuf }
   }
@@ -784,12 +786,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
 
   const sessionPath = createSessionPath()
   const launchEnv = buildLaunchEnv(inst, sessionPath)
-  const sendOutput = (text: string): void => {
-    if (!sender.isDestroyed()) {
-      sender.send('comfy-output', { installationId, text })
-    }
-    appendLog(installationId, text)
-  }
+  const sendOutput = makeSendOutput(sender, installationId)
 
   const logStream = await openLogStream(inst.installPath)
   const execTap = createExecutionTap({
