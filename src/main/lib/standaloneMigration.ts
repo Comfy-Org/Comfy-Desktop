@@ -10,6 +10,7 @@ import {
   validateExportEnvelope,
   importSnapshots,
   saveSnapshot,
+  ensureCurrentSnapshotOnTop,
   getSnapshotCount,
   restoreCustomNodes,
   restorePipPackages,
@@ -226,6 +227,17 @@ export async function restoreSnapshotIntoInstallation(
     sendOutput(
       `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\nYou can restore manually from the Snapshots tab.\n`
     )
+    // The import placed the (unapplied) target snapshot at the top of history;
+    // record the actual on-disk state so the newest snapshot stays accurate.
+    try {
+      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, freshInst)
+      if (filename) {
+        const snapshotCount = await getSnapshotCount(freshInst.installPath)
+        await update({ lastSnapshot: filename, snapshotCount })
+      }
+    } catch (err) {
+      console.warn('Failed to record rolled-back restore state:', err)
+    }
   } finally {
     if (ownsStagedFile) fs.promises.unlink(stagedFile).catch(() => {})
     await update({ pendingSnapshotRestore: undefined })

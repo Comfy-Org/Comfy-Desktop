@@ -387,6 +387,71 @@ export async function saveSnapshot(
   })
 }
 
+/**
+ * Stricter "does this snapshot represent the live state" check than
+ * `statesMatch`, which intentionally ignores `updateChannel` and
+ * `pythonVersion`. For the post-restore "is the top snapshot still accurate?"
+ * decision those two are user-visible state we don't want to collapse, so we
+ * compare them too.
+ */
+function snapshotRepresentsCurrentState(
+  snapshot: Snapshot,
+  current: Omit<Snapshot, 'createdAt' | 'trigger' | 'label' | 'version'>
+): boolean {
+  return (
+    statesMatch(snapshot, current) &&
+    (snapshot.updateChannel || 'stable') === (current.updateChannel || 'stable') &&
+    (snapshot.pythonVersion || '') === (current.pythonVersion || '')
+  )
+}
+
+/**
+ * Guarantee the newest snapshot reflects the actual live environment.
+ *
+ * Called after a snapshot restore *fails and rolls back*: the failed restore
+ * leaves the live state at the pre-restore version, but the snapshot the user
+ * tried to apply (typically a freshly imported one with a brand-new timestamp)
+ * is still the newest entry and would otherwise read as "current" in history.
+ *
+ * If the newest snapshot already represents the live state (e.g. restoring an
+ * existing in-history snapshot that failed, or a repeated retry that already
+ * produced a live-state snapshot) this is a no-op so we don't pile up
+ * duplicates. Otherwise we write a fresh `post-restore` snapshot of the live
+ * state so the top of the timeline is accurate again.
+ *
+ * Returns the filename representing the live state — either the newly written
+ * snapshot (`saved: true`) or the existing matching top snapshot (`saved:
+ * false`) — so the caller can refresh `installation.lastSnapshot`.
+ */
+export async function ensureCurrentSnapshotOnTop(
+  installPath: string,
+  installation: InstallationRecord
+): Promise<{ saved: boolean; filename?: string }> {
+  return withLock(installPath, async () => {
+    const current = await captureState(installPath, installation)
+    const [top] = await listSnapshots(installPath)
+
+    if (top && snapshotRepresentsCurrentState(top.snapshot, current)) {
+      return { saved: false, filename: top.filename }
+    }
+
+    const filename = await writeSnapshot(installPath, {
+      ...current,
+      trigger: 'post-restore',
+      label: null
+    })
+    emitSnapshotCreated({
+      installation,
+      trigger: 'post-restore',
+      customNodesCount: current.customNodes.length,
+      pipPackagesCount: Object.keys(current.pipPackages).length,
+      hasLabel: false,
+      deduplicatedPrevious: false
+    })
+    return { saved: true, filename }
+  })
+}
+
 export async function deduplicatePreUpdateSnapshot(
   installPath: string,
   preUpdateFilename: string

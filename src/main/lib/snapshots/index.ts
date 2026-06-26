@@ -21,6 +21,7 @@ export {
   loadSnapshot,
   saveSnapshot,
   statesMatch,
+  ensureCurrentSnapshotOnTop,
   deduplicatePreUpdateSnapshot,
   pruneAutoSnapshots,
 } from './store'

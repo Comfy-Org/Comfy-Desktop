@@ -67,6 +67,26 @@ export async function handleAction(
       await writeOpMarker(installation.installPath, { op: 'restore', preHead: preRestoreHead, startedAt: Date.now() })
     }
 
+    // After any failed/cancelled+rolled-back exit below, make sure the newest
+    // snapshot reflects the live (rolled-back) state instead of the never-applied
+    // target — otherwise a freshly imported snapshot keeps the top "current" slot
+    // even though the environment was rolled back. Best-effort: it must never turn
+    // a restore failure into a different failure.
+    const ensureLiveStateOnTop = async (): Promise<void> => {
+      try {
+        const currentInstallation = (await installations.get(installation.id)) || installation
+        const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
+          installation.installPath, currentInstallation
+        )
+        if (filename) {
+          const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+          await update({ lastSnapshot: filename, snapshotCount })
+        }
+      } catch (err) {
+        console.warn('Failed to record rolled-back restore state:', err)
+      }
+    }
+
     sendOutput('\n── Restore ComfyUI Version ──\n')
     const comfyResult = await snapshots.restoreComfyUIVersion(
       installation.installPath, targetSnapshot, sendOutput, signal
@@ -76,11 +96,13 @@ export async function handleAction(
     // If the source checkout itself failed, don't touch nodes/pip — nothing moved
     // to roll back, just report the failure.
     if (comfyResult.error) {
+      await ensureLiveStateOnTop()
       return { ok: false, message: `ComfyUI restore failed: ${comfyResult.error}` }
     }
 
     if (signal?.aborted) {
       if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
+      await ensureLiveStateOnTop()
       return { ok: false, message: 'Cancelled; ComfyUI source was rolled back.' }
     }
 
@@ -93,6 +115,7 @@ export async function handleAction(
 
     if (signal?.aborted) {
       if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
+      await ensureLiveStateOnTop()
       return { ok: false, message: 'Cancelled; ComfyUI source was rolled back. Custom node changes may be partial.' }
     }
 
@@ -143,6 +166,7 @@ export async function handleAction(
         : ''
       // Leave the op marker so recoverInterruptedComfyOp retries on next launch
       // if the in-process rollback failed; a successful rollback makes it a no-op.
+      await ensureLiveStateOnTop()
       return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
     }
 
