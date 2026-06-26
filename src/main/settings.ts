@@ -28,7 +28,8 @@ export interface KnownSettings {
    *  version-update notifications. Injected at launch as the
    *  `show_version_updates` feature flag, which seeds the frontend's
    *  `Comfy.Notification.ShowVersionUpdates` default (the user can still
-   *  override it inside ComfyUI). Defaults to true (show). */
+   *  override it inside ComfyUI). Defaults to false (off) — Comfy Desktop
+   *  has its own update notifications. */
   showComfyVersionUpdates?: boolean
   /** Opt-in auto-launch on Desktop startup. Values:
    *  - `'none'` (default) — land on the dashboard, current behavior.

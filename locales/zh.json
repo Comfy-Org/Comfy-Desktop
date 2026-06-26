@@ -438,7 +438,7 @@
     "autoUpdate": "启动时检查更新",
     "autoInstallUpdates": "自动安装桌面端更新",
     "showComfyVersionUpdates": "显示 ComfyUI 版本更新",
-    "showComfyVersionUpdatesDescription": "在 ComfyUI 内显示新版本和版本更新通知。关闭后将改为依赖 Comfy Desktop 自身的更新通知。",
+    "showComfyVersionUpdatesDescription": "在 ComfyUI 内显示新版本和版本更新通知。默认关闭，因为 Comfy Desktop 有自己的更新通知。",
     "appBehavior": "应用行为",
     "autoLaunchOnStartup": "启动时自动打开",
     "autoLaunchOnStartupDescription": "选择 Comfy Desktop 打开时自动启动的实例。默认为“无”。",

@@ -113,7 +113,7 @@ export function buildSettingsSections(
           id: 'showComfyVersionUpdates',
           label: i18n.t('settings.showComfyVersionUpdates'),
           type: 'boolean',
-          value: s.showComfyVersionUpdates !== false,
+          value: s.showComfyVersionUpdates === true,
           tooltip: i18n.t('settings.showComfyVersionUpdatesDescription')
         },
         // onAppClose field hidden while docking-to-tray is disabled.

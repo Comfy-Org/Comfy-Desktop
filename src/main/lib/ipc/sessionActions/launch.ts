@@ -358,7 +358,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
             desktopFeatureFlags(
               inst,
               settings.get('telemetryEnabled') === true,
-              settings.get('showComfyVersionUpdates') !== false
+              settings.get('showComfyVersionUpdates') === true
             )
           )
           for (const [key, value] of flagEntries) {
