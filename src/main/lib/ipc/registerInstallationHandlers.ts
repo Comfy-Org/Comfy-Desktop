@@ -45,6 +45,7 @@ import {
   startTemplateDownload,
   abortTemplateDownload,
   requestSkipTemplateDownload,
+  stopTemplateTrayMirror,
 } from '../../sources/standalone/templateDownloadTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 
@@ -339,8 +340,10 @@ export function registerInstallationHandlers(): void {
       } catch (err) {
         _operationAborts.delete(installationId)
         // Install failed or was cancelled — tear down the background template
-        // download too (the models would have nowhere to land).
+        // download too (the models would have nowhere to land) and drop its
+        // tray rows, since no comfy window will ever attach to clean them up.
         abortTemplateDownload(installationId)
+        stopTemplateTrayMirror(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
             mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {

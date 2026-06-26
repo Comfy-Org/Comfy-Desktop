@@ -254,6 +254,25 @@ describe('templateStateToTrayEntries', () => {
     expect(rows[1]!.progress).toBeCloseTo(0.25)
   })
 
+  it('marks unfinished files cancelled/errored when the task itself settled', () => {
+    // A cancelled or errored task must not leave unfinished files as
+    // 'downloading' — `getDownloadsTrayState` would count them active forever.
+    const cancelled = templateStateToTrayEntries(state({
+      status: 'cancelled',
+      files: [
+        file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
+        file({ name: 'b', received: 1 * GB, total: 4 * GB }),
+      ],
+    }))
+    expect(cancelled.map((r) => r.status)).toEqual(['completed', 'cancelled'])
+
+    const errored = templateStateToTrayEntries(state({
+      status: 'error',
+      files: [file({ name: 'b', received: 0, total: 4 * GB })],
+    }))
+    expect(errored[0]!.status).toBe('error')
+  })
+
   it('keys each row by a stable synthetic url so the tray updates in place', () => {
     const [row] = templateStateToTrayEntries(state({
       files: [file({ name: 'model.safetensors', directory: 'checkpoints' })],

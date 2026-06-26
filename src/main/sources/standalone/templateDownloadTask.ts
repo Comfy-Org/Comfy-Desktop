@@ -94,10 +94,14 @@ const _trayMirrors = new Map<string, ReturnType<typeof setInterval>>()
 export function mirrorTemplateDownloadToTray(installationId: string): void {
   if (_trayMirrors.has(installationId)) return
 
+  // Install-scope the synthetic row urls: `createdAtByUrl` and the renderer
+  // download store are keyed by url globally, so two installs pulling the same
+  // template model would otherwise clobber each other.
+  const urlPrefix = `template-model://${encodeURIComponent(installationId)}/`
   const publish = (): boolean => {
     const state = _templateDownloads.get(installationId)
     if (!state) return true
-    setTemplateTrayMirror(installationId, templateStateToTrayEntries(state))
+    setTemplateTrayMirror(installationId, templateStateToTrayEntries(state, urlPrefix))
     return isTerminal(state.status)
   }
 

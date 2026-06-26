@@ -155,6 +155,17 @@ const templateTrayMirrorByInstall = new Map<string, Map<string, DownloadProgress
  */
 export function setTemplateTrayMirror(installationId: string, entries: DownloadProgress[]): void {
   const prev = templateTrayMirrorByInstall.get(installationId)
+  // Empty set clears this install's rows. Don't keep (or create) an empty
+  // bucket: while a download is still resolving it has no files yet, and a
+  // lingering empty bucket would both leak and emit `tray-state-changed` on
+  // every poll with nothing to show.
+  if (entries.length === 0) {
+    if (!prev) return
+    for (const url of prev.keys()) createdAtByUrl.delete(url)
+    templateTrayMirrorByInstall.delete(installationId)
+    downloadEvents.emit('tray-state-changed')
+    return
+  }
   const nextUrls = new Set(entries.map((e) => e.url))
   if (prev) {
     for (const url of prev.keys()) {
