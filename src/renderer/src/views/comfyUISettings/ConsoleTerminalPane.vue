@@ -103,10 +103,13 @@ async function copySelection(): Promise<void> {
 
 /** Write the clipboard contents into the shared PTY as if typed. */
 async function pasteClipboard(): Promise<void> {
-  if (!currentId) return
+  // Snapshot the target before awaiting: switching installs mid-read must not
+  // redirect the paste to a different PTY.
+  const id = currentId
+  if (!id) return
   try {
     const text = await navigator.clipboard.readText()
-    if (text) await api.terminalWrite(currentId, text)
+    if (text) await api.terminalWrite(id, text)
   } catch {
     // See copySelection: clipboard access can fail; nothing else to do.
   }

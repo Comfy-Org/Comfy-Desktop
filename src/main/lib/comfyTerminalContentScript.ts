@@ -172,7 +172,10 @@ function renderTerminal(container) {
     if (action === 'paste') {
       try {
         navigator.clipboard.readText().then(function (text) {
-          if (text) { try { bridge.write(text); } catch (err) {} }
+          // Bail if the view was torn down (e.g. tab/install switch) while the
+          // async clipboard read was pending.
+          if (m.disposed || !text) return;
+          try { bridge.write(text); } catch (err) {}
         }).catch(function () {});
       } catch (err) {}
       return false;
