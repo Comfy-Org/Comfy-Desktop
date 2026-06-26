@@ -3,11 +3,12 @@
  * served ComfyUI frontend, for the window between our frontend/backend terminal
  * PRs landing and a stable release shipping them.
  *
- * It is injected (via `webContents.executeJavaScript`) only for STANDALONE
- * installs whose ComfyUI does not yet advertise the `supports_terminal` feature
- * flag — i.e. exactly when the real, flag-gated frontend tab cannot appear, so
- * there is never a duplicate. Delete this module (and its call site in
- * `attach.ts`) once stable ships the official tab.
+ * It is injected (via `webContents.executeJavaScript`) for local managed
+ * installs that back a per-install shell (standalone, portable, git). It runs
+ * always-on and dedupes in JS: the script bails before registering if it sees
+ * an existing native `command-terminal` tab, so a frontend that ships the real
+ * flag-gated tab never ends up with a duplicate. Delete this module (and its
+ * call site in `attach.ts`) once stable ships the official tab.
  *
  * The transport is the already-injected `window.__comfyDesktop2.Terminal`
  * bridge (see `comfyPreload.ts`). xterm isn't exposed on `window.comfyAPI`, so

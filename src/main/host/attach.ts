@@ -29,6 +29,12 @@ import type { ComfyWindowEntry } from './registry'
 
 const APP_VERSION = getAppVersion()
 
+/** Local managed source types that back the served frontend's terminal tab
+ *  with a per-install shell (a defined `getTerminalEnv` or the standalone
+ *  default). These get the stopgap Terminal-tab injection; remote/cloud and
+ *  external (legacy v1 desktop) installs do not. */
+const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
+
 /** Entry point that triggered a zoom reset, tagged as `source` on the
  *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
  *  and `menu` (the title menu's "Reset Zoom") flow through the per-install
@@ -395,7 +401,11 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
-    // Always inject the Terminal bottom-panel tab on standalone installs.
+    // Inject the Terminal bottom-panel tab on local managed installs that
+    // back it with a per-install shell (standalone, portable, git). They all
+    // ship the same served frontend and expose the same
+    // `window.__comfyDesktop2.Terminal` bridge + per-install PTY, so the
+    // injection works identically everywhere.
     //
     // Originally gated on `!supports_terminal` to avoid duplicating the
     // flag-gated frontend tab. Day-3 launch feedback put terminal
@@ -406,7 +416,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // `bottomPanelTabs` for an existing `command-terminal` entry and
     // bails out before registering a second copy. See
     // `comfyTerminalContentScript.ts` for the dedupe guard.
-    if (isLocal && installation.sourceId === 'standalone') {
+    if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
     }
     // Cloud-only patches (popup-blocked toast suppression + post-signin
