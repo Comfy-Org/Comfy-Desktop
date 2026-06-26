@@ -461,15 +461,16 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
-      // Strip ANSI before buffering: this tail feeds the crashed-state UI and
-      // telemetry, both of which want clean text rather than raw color codes.
-      stderrBuf += stripAnsi(text)
+      // Strip ANSI once: the tail (crashed-state UI + telemetry) and the
+      // launch tracker both want clean text rather than raw color codes.
+      const clean = stripAnsi(text)
+      stderrBuf += clean
       if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-4096)
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stderr')
       hwTap.ingest(text, 'stderr')
-      tracker.ingest(stripAnsi(text))
+      tracker.ingest(clean)
     })
     return { getStderr: () => stderrBuf }
   }
