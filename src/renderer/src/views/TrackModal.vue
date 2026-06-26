@@ -246,6 +246,7 @@ defineExpose({ open })
                   type="button"
                   class="track-path-open"
                   :title="$t('actions.openDirectory', 'Open Directory')"
+                  :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${trackPath}`"
                   @click="handleOpenTrackPath"
                 >{{ trackPath }}</button>
                 <span v-else class="track-path-open track-path-placeholder">{{

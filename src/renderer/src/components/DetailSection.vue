@@ -7,6 +7,7 @@ import InfoTooltip from './InfoTooltip.vue'
 import TooltipWrap from './TooltipWrap.vue'
 import ArgsBuilder from './ArgsBuilder.vue'
 import EnvVarsEditor from './EnvVarsEditor.vue'
+import { isOpenablePathString } from '../lib/openablePath'
 
 interface Props {
   title?: string
@@ -100,14 +101,12 @@ async function handleBrowseField(field: DetailField): Promise<void> {
 }
 
 /** True when a non-editable value is safe to open in the OS file manager:
- *  an explicit path field, or a local-looking path that isn't a URL or date. */
+ *  an explicit path field, or a local-looking path (not a URL, SSH remote, or
+ *  date). */
 function canOpenFieldValue(field: DetailField): boolean {
   const v = field.value == null ? '' : String(field.value).trim()
-  if (!v || v === '—') return false
-  if (field.editType === 'path') return true
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return false // URL scheme
-  if (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/.test(v)) return false // date-ish
-  return v.includes('/') || v.includes('\\') || v.startsWith('~')
+  if (field.editType === 'path') return v.length > 0
+  return isOpenablePathString(v)
 }
 
 function handleOpenPath(value: unknown): void {
@@ -227,6 +226,7 @@ v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail
                   type="button"
                   class="detail-path-open"
                   :title="$t('actions.openDirectory', 'Open Directory')"
+                  :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
                   @click="handleOpenPath(f.value)"
                 >{{ f.value }}</button>
               </div>
@@ -243,6 +243,7 @@ v-else-if="f.editable" type="text" class="detail-field-input"
               type="button"
               class="detail-field-value detail-field-value-open"
               :title="$t('actions.openDirectory', 'Open Directory')"
+              :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
               @click="handleOpenPath(f.value)"
             >{{ f.value }}</button>
             <div v-else class="detail-field-value">{{ f.value }}</div>

@@ -904,6 +904,7 @@ defineExpose({ open })
                     type="button"
                     class="config-path-open"
                     :title="$t('actions.openDirectory', 'Open Directory')"
+                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
                     @click="handleOpenInstPath"
                   >{{ instPath }}</button>
                   <span v-else class="config-path-open config-path-open--static">{{

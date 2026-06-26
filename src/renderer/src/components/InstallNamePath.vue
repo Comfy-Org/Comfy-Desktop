@@ -41,9 +41,11 @@ defineEmits<{
     <div class="path-input">
       <div class="path-open-wrap">
         <button
+          v-if="path"
           type="button"
           class="path-open"
           :title="$t('actions.openDirectory', 'Open Directory')"
+          :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
           @click="$emit('open')"
         >{{ path }}</button>
       </div>

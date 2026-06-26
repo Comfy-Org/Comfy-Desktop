@@ -12,6 +12,7 @@ import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import TooltipWrap from '../../components/TooltipWrap.vue'
+import { isOpenablePathString } from '../../lib/openablePath'
 import type { ActionDef, DetailField, DetailSection } from '../../types/ipc'
 
 /**
@@ -123,14 +124,11 @@ function isPathLikeValue(value: unknown): boolean {
 
 /** Stricter than `isPathLikeValue`: only values safe to open in the OS file
  *  manager. `editType === 'path'` is always openable; otherwise the value must
- *  look like a local path and not a URL or a date. */
+ *  look like a local path (not a URL, SSH remote, or date). */
 function canOpenFilesystemPath(field: DetailField): boolean {
-  if (field.editType === 'path') return asString(field.value).trim().length > 0
   const v = asString(field.value).trim()
-  if (!v || v === '—') return false
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return false // URL scheme (http://, file://, …)
-  if (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/.test(v)) return false // date-ish (2024/01/02, 01-02-2024)
-  return v.includes('/') || v.includes('\\') || v.startsWith('~')
+  if (field.editType === 'path') return v.length > 0
+  return isOpenablePathString(v)
 }
 
 function readonlyDisplayValue(field: DetailField): string {
@@ -280,6 +278,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
               type="button"
               class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open"
               :title="t('models.openDir', 'Open folder')"
+              :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
               @click="emit('open-path', readonlyDisplayValue(field))"
             >
               {{ readonlyDisplayValue(field) }}
@@ -653,8 +652,10 @@ function fieldOwnsLabel(field: DetailField): boolean {
 }
 
 /* Clickable path that opens the folder in the OS file manager. Only the path
- *  text is the click target (matches StorageDirRow / StatusFactPanel). */
+ *  text is the click target (matches StorageDirRow / StatusFactPanel), so the
+ *  button is sized to its text rather than filling the value column. */
 .settings-v2-field-readonly-open {
+  flex: 0 1 auto;
   padding: 0;
   border: none;
   background: transparent;
