@@ -461,7 +461,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
-      stderrBuf += text
+      // Strip ANSI before buffering: this tail feeds the crashed-state UI and
+      // telemetry, both of which want clean text rather than raw color codes.
+      stderrBuf += stripAnsi(text)
       if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-4096)
       writeLog(logStream, text)
       sendOutput(text)
@@ -784,12 +786,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
 
   const sessionPath = createSessionPath()
   const launchEnv = buildLaunchEnv(inst, sessionPath)
-  const sendOutput = (text: string): void => {
-    if (!sender.isDestroyed()) {
-      sender.send('comfy-output', { installationId, text })
-    }
-    appendLog(installationId, text)
-  }
+  const sendOutput = makeSendOutput(sender, installationId)
 
   const logStream = await openLogStream(inst.installPath)
   const execTap = createExecutionTap({
