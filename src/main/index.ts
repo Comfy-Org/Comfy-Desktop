@@ -24,6 +24,7 @@ import {
 } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
+import { pruneCrashDumps } from './lib/crashDumps'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
 import { openSystemModal, openSystemModalAsync, openSystemModalChoiceAsync, registerSystemModalIpc } from './popups/systemModal'
@@ -1322,6 +1323,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // any startup crash are captured.
     initAppLog()
     registerProcessErrorHandlers()
+    // Bound the local crash-dump folder; Crashpad's own pruning is coarse in
+    // upload-disabled mode and a crash-looping user can pile up multi-MB dumps.
+    pruneCrashDumps()
     console.info(
       `App started v${APP_VERSION} pid=${process.pid} platform=${process.platform} crashDumps=${app.getPath('crashDumps')}`
     )
