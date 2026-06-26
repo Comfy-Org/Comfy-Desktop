@@ -639,6 +639,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
   titleBarView.setBackgroundColor(opts.titleBarBackground)
   loadTitleBarUrl(titleBarView, opts.titleBarInstallationIdParam)
   comfyWindow.contentView.addChildView(titleBarView)
+  // Native right-click Copy/Paste for selectable text + inputs in the title bar.
+  attachContextMenu(comfyWindow, titleBarView.webContents)
   _registerExtraBroadcastTarget(titleBarView.webContents)
   // Title bar is the always-alive renderer per host window — register it as
   // the canonical telemetry relay target so main-emitted events reach

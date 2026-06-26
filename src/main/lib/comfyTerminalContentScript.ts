@@ -47,6 +47,37 @@ const TERMINAL_TAB_MAIN_JS = `
 var STATE = window.__comfyDesktopTerminalStopgap;
 var mounted = null;
 
+// Coarse OS bucket for the copy/paste shortcut matrix (mirrors the desktop
+// console's terminalShortcuts.ts). navigator.userAgent is reliable in Electron.
+var TERM_PLATFORM = (function () {
+  var ua = (navigator.userAgent || '').toLowerCase();
+  if (ua.indexOf('mac') !== -1) return 'mac';
+  if (ua.indexOf('win') !== -1) return 'windows';
+  return 'linux';
+})();
+
+// Returns 'copy' | 'paste' | 'swallow' | 'passthrough'. See terminalShortcuts.ts
+// for the rationale behind each per-OS rule.
+function decideTermKeyAction(e, hasSelection) {
+  if (e.type !== 'keydown') return 'passthrough';
+  var key = (e.key || '').toLowerCase();
+  if (TERM_PLATFORM === 'mac') {
+    var cmdOnly = e.metaKey && !e.ctrlKey && !e.altKey;
+    if (cmdOnly && key === 'c') return hasSelection ? 'copy' : 'swallow';
+    if (cmdOnly && key === 'v') return 'paste';
+    return 'passthrough';
+  }
+  var ctrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+  if (ctrlShift && key === 'c') return hasSelection ? 'copy' : 'swallow';
+  if (ctrlShift && key === 'v') return 'paste';
+  if (TERM_PLATFORM === 'windows') {
+    var ctrlOnly = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+    if (ctrlOnly && key === 'c') return hasSelection ? 'copy' : 'passthrough';
+    if (ctrlOnly && key === 'v') return 'paste';
+  }
+  return 'passthrough';
+}
+
 function destroyTerminal() {
   if (!mounted) return;
   var m = mounted;
@@ -128,6 +159,27 @@ function renderTerminal(container) {
     updateBanner();
     window.requestAnimationFrame(function () { doFit(true); });
   }
+
+  // Copy/paste shortcuts: intercept before xterm forwards keys to the PTY so
+  // e.g. Ctrl+C can copy a selection instead of always sending SIGINT.
+  term.attachCustomKeyEventHandler(function (e) {
+    var action = decideTermKeyAction(e, term.hasSelection());
+    if (action === 'copy') {
+      var text = term.getSelection();
+      if (text) { try { navigator.clipboard.writeText(text); } catch (err) {} }
+      return false;
+    }
+    if (action === 'paste') {
+      try {
+        navigator.clipboard.readText().then(function (text) {
+          if (text) { try { bridge.write(text); } catch (err) {} }
+        }).catch(function () {});
+      } catch (err) {}
+      return false;
+    }
+    if (action === 'swallow') return false;
+    return true;
+  });
 
   m.onData = term.onData(function (d) { try { bridge.write(d); } catch (e) {} });
   m.offOutput = bridge.onOutput(function (msg) {

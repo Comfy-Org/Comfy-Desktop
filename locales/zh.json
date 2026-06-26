@@ -410,7 +410,10 @@
     "processCrashed": "进程崩溃（退出代码 {code}）",
     "sessionEnded": "此控制台会话已结束。重启以继续使用 shell。",
     "restartSession": "重启控制台",
-    "shellLabel": "Shell"
+    "shellLabel": "Shell",
+    "copy": "复制",
+    "paste": "粘贴",
+    "selectAll": "全选"
   },
   "settingsModal": {
     "title": "设置",

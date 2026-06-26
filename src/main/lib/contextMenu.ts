@@ -2,9 +2,18 @@ import { Menu, clipboard, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import * as i18n from './i18n'
 
+export interface ContextMenuHooks {
+  /** Fired right before the native menu is shown. Used by auto-dismissing
+   *  popups to suspend blur-dismiss so the menu doesn't close its own host. */
+  onMenuOpen?: () => void
+  /** Fired once the native menu closes (selection made or dismissed). */
+  onMenuClose?: () => void
+}
+
 export function attachContextMenu(
   comfyWindow: BrowserWindow,
   webContents?: Electron.WebContents,
+  hooks?: ContextMenuHooks,
 ): void {
   ;(webContents || comfyWindow.webContents).on('context-menu', (_event, params) => {
     const { editFlags, isEditable, selectionText, linkURL } = params
@@ -41,6 +50,10 @@ export function attachContextMenu(
       )
     }
 
-    Menu.buildFromTemplate(menuItems).popup({ window: comfyWindow })
+    hooks?.onMenuOpen?.()
+    Menu.buildFromTemplate(menuItems).popup({
+      window: comfyWindow,
+      callback: () => hooks?.onMenuClose?.(),
+    })
   })
 }

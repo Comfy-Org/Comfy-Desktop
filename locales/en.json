@@ -410,7 +410,10 @@
     "processCrashed": "Process crashed (exit code {code})",
     "sessionEnded": "This console session ended. Restart it to keep using the shell.",
     "restartSession": "Restart console",
-    "shellLabel": "Shell"
+    "shellLabel": "Shell",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All"
   },
   "settingsModal": {
     "title": "Settings",

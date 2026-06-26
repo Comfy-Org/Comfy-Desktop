@@ -1,5 +1,6 @@
 import { WebContentsView, ipcMain } from 'electron'
 import path from 'path'
+import { attachContextMenu } from '../lib/contextMenu'
 import { resolveTheme } from '../lib/ipc/shared'
 import { get as getSetting } from '../settings'
 import { TITLEBAR_BG } from '../lib/theme'
@@ -60,6 +61,9 @@ export function ensurePanelView(
   })
   panelView.setBackgroundColor(isOpaqueBodyMode(initialPanel) ? opaquePanelBg() : '#00000000')
   entry.window.contentView.addChildView(panelView)
+  // Native right-click Copy/Paste for selectable text + inputs in panel bodies
+  // (chooser, install forms, settings, etc.).
+  attachContextMenu(entry.window, panelView.webContents)
   // Insert at zero size, behind the comfy view; layoutViews handles positioning.
   panelView.setBounds({ x: 0, y: TITLEBAR_HEIGHT + 1, width: 0, height: 0 })
   panelView.setVisible(false)
