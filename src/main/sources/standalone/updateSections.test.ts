@@ -188,3 +188,17 @@ describe('updateSections — channel picker reflects de-facto channel', () => {
     expect((field as unknown as { value: string }).value).toBe('latest')
   })
 })
+
+describe('updateSections — copy (duplicate) prompt default', () => {
+  interface ActionWithPrompt { id: string; prompt?: { defaultValue?: string } }
+  interface ActionsSection { title?: string; actions?: ActionWithPrompt[] }
+
+  it('pre-fills the duplicate prompt with the source name (number suffix added on save, not "(Copy)")', () => {
+    const sections = getDetailSections(baseInstall({ name: 'My Comfy' })) as unknown as ActionsSection[]
+    const copy = sections
+      .flatMap((s) => s.actions ?? [])
+      .find((a) => a.id === 'copy')
+    expect(copy).toBeDefined()
+    expect(copy!.prompt?.defaultValue).toBe('My Comfy')
+  })
+})

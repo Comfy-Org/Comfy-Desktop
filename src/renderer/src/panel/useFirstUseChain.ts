@@ -395,7 +395,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       // window the same way the Configure handoff does.
       await opts.handleShowProgress({
         installationId: result.entry.id,
-        title: `Installing — ${name}`,
+        title: `Installing — ${result.entry.name}`,
         apiCall: () => window.api.installInstance(result.entry!.id, true),
         autoLaunchOnFinish: true,
         opKind: 'install'

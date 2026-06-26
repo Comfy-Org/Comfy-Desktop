@@ -225,7 +225,10 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           prompt: {
             title: t('actions.copyInstallationTitle'),
             message: t('actions.copyInstallationMessage'),
-            defaultValue: `${installation.name} (Copy)`,
+            // Pre-fill with the source name; uniqueName() appends a number
+            // suffix on save ("ComfyUI" → "ComfyUI (1)") so duplicates are
+            // numbered consistently instead of getting a "(Copy)" label.
+            defaultValue: installation.name,
             confirmLabel: t('actions.copyInstallationConfirm'),
             required: true,
             field: 'name',

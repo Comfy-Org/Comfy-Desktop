@@ -781,7 +781,7 @@ async function handleSave(): Promise<void> {
     // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
     emit('show-progress', {
       installationId: result.entry.id,
-      title: `${t('newInstall.installing')} — ${name}`,
+      title: `${t('newInstall.installing')} — ${result.entry.name}`,
       apiCall: () => window.api.installInstance(result.entry!.id),
       autoLaunchOnFinish: true,
       opKind: 'install'
