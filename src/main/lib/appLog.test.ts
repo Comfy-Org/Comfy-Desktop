@@ -143,6 +143,22 @@ describe('appLog', () => {
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(1)
   })
 
+  it('flushes a buffered tail on the crash path without rotating past the cap', () => {
+    const isRotated = (f: string): boolean =>
+      /^app\.log_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/.test(f)
+    initAppLog({ dir: tmpDir })
+    // A partial operation line with no trailing newline stays buffered.
+    writeOperationOutput('inst-1', 'dying mid-line, no newline')
+    // Fill the live log to exactly the 5 MB cap.
+    writeAppLog('INFO', 'x'.repeat(5 * 1024 * 1024 - 35))
+    expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
+    // The crash-path flush (as called from processErrorHandlers) must append
+    // the tail in place rather than rotate, which could drop it.
+    flushOperationOutput(undefined, { rotate: false })
+    expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
+    expect(read()).toContain('dying mid-line, no newline')
+  })
+
   it('flushes only the targeted installation, leaving others buffered', () => {
     initAppLog({ dir: tmpDir })
     writeOperationOutput('inst-a', 'partial-a')

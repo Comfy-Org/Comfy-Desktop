@@ -1159,12 +1159,14 @@ export async function stopRunning(
     _stoppingInstallationIds.add(installationId)
     _broadcastToRenderer('instance-stopping', { installationId })
     onEnterStopping?.({ installationId })
-    flushOperationOutput(installationId)
     if (session.port) removePortLock(session.port)
     _runningSessions.delete(installationId)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
     }
+    // Flush after the kill so shutdown output emitted while dying is captured
+    // and can't bleed into the next run for this id.
+    flushOperationOutput(installationId)
     _stoppingInstallationIds.delete(installationId)
     _broadcastToRenderer('instance-stopped', { installationId })
     sessionLifecycleEvents.emit('changed')
@@ -1174,7 +1176,6 @@ export async function stopRunning(
       _stoppingInstallationIds.add(id)
       _broadcastToRenderer('instance-stopping', { installationId: id })
       onEnterStopping?.({ installationId: id })
-      flushOperationOutput(id)
     }
     for (const [, session] of sessions) {
       if (session.port) removePortLock(session.port)
@@ -1187,6 +1188,11 @@ export async function stopRunning(
       }
     }
     await Promise.all(kills)
+    // Flush after the kills so shutdown output is captured and can't bleed
+    // into the next run for these ids.
+    for (const [id] of sessions) {
+      flushOperationOutput(id)
+    }
     for (const [id] of sessions) {
       _stoppingInstallationIds.delete(id)
       _broadcastToRenderer('instance-stopped', { installationId: id })
