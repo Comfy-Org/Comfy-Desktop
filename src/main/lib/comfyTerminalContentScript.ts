@@ -167,12 +167,31 @@ function renderTerminal(container) {
   }).catch(function () {});
 }
 
+// True if a bottom-panel tab with this id is already registered in the
+// frontend store. This is where the native frontend registers both its Logs
+// ('logs-terminal') and Terminal ('command-terminal') tabs.
+function bottomPanelHasTab(app, id) {
+  try {
+    var bp = app && app.extensionManager && app.extensionManager.bottomPanel;
+    var terminalPanel = bp && bp.panels && bp.panels.terminal;
+    var tabs = terminalPanel && terminalPanel.tabs;
+    if (tabs) {
+      for (var i = 0; i < tabs.length; i++) {
+        if (tabs[i] && tabs[i].id === id) return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
 // Dedupe guard. The frontend ships a native flag-gated 'command-terminal'
 // bottom-panel tab via the companion ComfyUI_frontend PR; when that lands
 // it registers itself before we tick. Bail out if we see it so the user
-// never gets two tabs with the same id. Defensive over both shapes that
-// ComfyUI exposes (an extensions array, and a future-proof tab registry).
+// never gets two tabs with the same id. Defensive over the shapes ComfyUI
+// exposes: the bottom-panel store, an extensions array, and a future-proof
+// tab registry.
 function alreadyHasTerminalTab(app) {
+  if (bottomPanelHasTab(app, 'command-terminal')) return true;
   try {
     var exts = (app && app.extensions) || [];
     for (var i = 0; i < exts.length; i++) {
@@ -197,17 +216,7 @@ function alreadyHasTerminalTab(app) {
 // and Terminal lands second, matching the native frontend ordering (the store
 // makes the first-registered tab the default active one).
 function hasLogsTab(app) {
-  try {
-    var bp = app && app.extensionManager && app.extensionManager.bottomPanel;
-    var terminalPanel = bp && bp.panels && bp.panels.terminal;
-    var tabs = terminalPanel && terminalPanel.tabs;
-    if (tabs) {
-      for (var i = 0; i < tabs.length; i++) {
-        if (tabs[i] && tabs[i].id === 'logs-terminal') return true;
-      }
-    }
-  } catch (e) {}
-  return false;
+  return bottomPanelHasTab(app, 'logs-terminal');
 }
 
 function waitForRegister(timeoutMs) {
