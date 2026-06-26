@@ -47,4 +47,15 @@ describe('InstallWizardModal install-location field', () => {
     await pathBtn.trigger('click')
     expect(window.api.openPath).toHaveBeenCalledWith('/home/user/ComfyUI')
   })
+
+  it('renders a blank install location as inert (non-clickable, never opens a folder)', async () => {
+    ;(window.api.getDefaultInstallDir as ReturnType<typeof vi.fn>).mockResolvedValue('')
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.find('button.config-path-open').exists()).toBe(false)
+    expect(wrapper.find('.config-path-open--static').exists()).toBe(true)
+    expect(window.api.openPath).not.toHaveBeenCalled()
+  })
 })

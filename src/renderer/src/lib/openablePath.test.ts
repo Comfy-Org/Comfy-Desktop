@@ -34,6 +34,11 @@ describe('isOpenablePathString', () => {
     expect(isOpenablePathString('01-02-2024')).toBe(false)
   })
 
+  it('keeps date-prefixed paths openable', () => {
+    expect(isOpenablePathString('2024/01/02/models')).toBe(true)
+    expect(isOpenablePathString('2024-01-02/models')).toBe(true)
+  })
+
   it('rejects plain text without separators', () => {
     expect(isOpenablePathString('master')).toBe(false)
     expect(isOpenablePathString('ComfyUI')).toBe(false)

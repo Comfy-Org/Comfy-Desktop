@@ -110,7 +110,7 @@ function canOpenFieldValue(field: DetailField): boolean {
 }
 
 function handleOpenPath(value: unknown): void {
-  const p = value == null ? '' : String(value)
+  const p = value == null ? '' : String(value).trim()
   if (p) void window.api.openPath(p)
 }
 </script>
@@ -222,7 +222,7 @@ v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail
             <div v-else-if="f.editable && f.editType === 'path'" class="path-input">
               <div v-if="f.browseOnly" class="detail-path-open-wrap">
                 <button
-                  v-if="f.value"
+                  v-if="canOpenFieldValue(f)"
                   type="button"
                   class="detail-path-open"
                   :title="$t('actions.openDirectory', 'Open Directory')"

@@ -123,11 +123,12 @@ function isPathLikeValue(value: unknown): boolean {
 }
 
 /** Stricter than `isPathLikeValue`: only values safe to open in the OS file
- *  manager. `editType === 'path'` is always openable; otherwise the value must
- *  look like a local path (not a URL, SSH remote, or date). */
+ *  manager. `editType === 'path'` is openable when it holds a real value (not
+ *  empty or the `—` placeholder); otherwise the value must look like a local
+ *  path (not a URL, SSH remote, or date). */
 function canOpenFilesystemPath(field: DetailField): boolean {
   const v = asString(field.value).trim()
-  if (field.editType === 'path') return v.length > 0
+  if (field.editType === 'path') return v.length > 0 && v !== '—'
   return isOpenablePathString(v)
 }
 

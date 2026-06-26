@@ -14,6 +14,6 @@ export function isOpenablePathString(value: string): boolean {
   if (!v || v === '—') return false
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return false // URL scheme: http://, file://, …
   if (/^[^\s/\\@]+@[^\s/\\@]+:/.test(v)) return false // scp/SSH remote: git@github.com:owner/repo
-  if (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/.test(v)) return false // date-ish: 2024/01/02, 01-02-2024
+  if (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}$/.test(v)) return false // bare date-ish value only: 2024/01/02, 01-02-2024
   return v.includes('/') || v.includes('\\') || v.startsWith('~')
 }

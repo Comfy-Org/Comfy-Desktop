@@ -133,8 +133,7 @@ async function handleBrowseCacheDir(): Promise<void> {
 }
 
 function handleOpenCacheDir(): void {
-  const p = fieldPath(cacheDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(cacheDirField.value))
 }
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
@@ -156,8 +155,7 @@ async function handleBrowseInstallDir(): Promise<void> {
 }
 
 function handleOpenInstallDir(): void {
-  const p = fieldPath(installDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(installDirField.value))
 }
 
 function handleOpenPath(path: string): void {
