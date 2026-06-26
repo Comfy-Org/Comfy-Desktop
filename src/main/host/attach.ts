@@ -14,7 +14,7 @@ import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { clearPendingTemplateOpen, installationEvents, type InstallationRecord } from '../installations'
-import { buildTemplateDeeplink } from '../sources/standalone/bundledTemplates'
+import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import {
   abortTemplateDownload,
   stopTemplateTrayMirror,

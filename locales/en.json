@@ -792,6 +792,7 @@
     "starterTemplateNoneDesc": "Start with a blank canvas",
     "templatePickerTitle": "Choose a starter workflow",
     "templatePickerLead": "Opens a ready-to-run workflow. Models download during setup.",
+    "templateTabsAria": "Filter starter workflows by type",
     "templateInstall": "Install",
     "templateSkipAndInstall": "Skip & Install",
     "templateSkipAndInstallAria": "Skip starter workflow and install ComfyUI",

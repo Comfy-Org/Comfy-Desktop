@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle, ArrowDownToLine, ArrowRightLeft, MoreVertical } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
-import { useTruncation } from '../../composables/useTruncation'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
+import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import type { Installation } from '../../types/ipc'
 
@@ -86,10 +86,6 @@ const metaLine = computed(() =>
   [sourceLabel.value, inst.value.version].filter(Boolean).join(' · ')
 )
 
-const nameEl = ref<HTMLElement | null>(null)
-const metaEl = ref<HTMLElement | null>(null)
-const { isTruncated: nameTruncated, check: checkNameTruncation } = useTruncation(nameEl)
-const { isTruncated: metaTruncated, check: checkMetaTruncation } = useTruncation(metaEl)
 
 /** The single update/migrate affordance, or null when the install has neither.
  *  The Update tooltip surfaces the target version the bare pill hides. */
@@ -203,29 +199,12 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Stacked tiers (name → meta → recency); each truncates on its own row. -->
     <div class="chooser-tile-body">
-      <Tooltip
-        class="chooser-tile-name-tip"
-        :text="inst.name"
-        :disabled="!nameTruncated"
-        @mouseenter="checkNameTruncation"
-        @focusin="checkNameTruncation"
-      >
-        <span ref="nameEl" class="chooser-tile-name">{{ inst.name }}</span>
-      </Tooltip>
-      <Tooltip
-        v-if="metaLine"
-        class="chooser-tile-meta-tip"
-        :text="metaLine"
-        :disabled="!metaTruncated"
-        @mouseenter="checkMetaTruncation"
-        @focusin="checkMetaTruncation"
-      >
-        <span ref="metaEl" class="chooser-tile-meta-line">
-          <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
-          <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
-          <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
-        </span>
-      </Tooltip>
+      <TruncatedText class="chooser-tile-name" :text="inst.name" />
+      <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
+        <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
+        <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
+        <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
+      </TruncatedText>
       <div class="chooser-tile-footer">
         <Tooltip
           class="chooser-tile-recency"

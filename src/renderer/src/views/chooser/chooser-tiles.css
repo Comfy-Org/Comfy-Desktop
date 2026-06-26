@@ -91,45 +91,19 @@
   /* Reserve space for the type icon at top-left so name doesn't collide
    * (New-Install / Cloud tiles, where the icon is absolute). */
   margin-top: auto;
-  /* Single-line ellipsis: long install names (cloud workspace names,
-   * user-renamed installs) must not blow out the tile's fixed width
-   * or wrap into the rows below. Highest truncation priority — only the
-   * name's own length ellipsizes it, never a long source/meta line. */
   max-width: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .chooser-tile--install .chooser-tile-name {
   margin-top: 0;
-}
-.chooser-tile-name-tip {
-  display: flex;
-  max-width: 100%;
-  min-width: 0;
-}
-.chooser-tile-name-tip .chooser-tile-name {
-  min-width: 0;
-}
-.chooser-tile-meta-tip {
-  display: flex;
-  max-width: 100%;
-  min-width: 0;
-}
-.chooser-tile-meta-tip .chooser-tile-meta-line {
-  display: block;
-  min-width: 0;
 }
 
 .chooser-tile-meta-line {
   font-size: 12px;
   color: var(--text-faint);
+  display: block;
   max-width: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .chooser-tile-meta-source {
   color: var(--text-faint);

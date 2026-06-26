@@ -125,3 +125,56 @@ describe('download — R2 mirror fallback for binaries', () => {
     expect(requests.length).toBe(1)
   })
 })
+
+describe('download — no-progress watchdog', () => {
+  let tmpDir: string
+  const URL = 'https://huggingface.co/x/model.safetensors'
+
+  beforeEach(() => {
+    requests.length = 0
+    for (const k of Object.keys(settingsState)) delete settingsState[k]
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-stall-'))
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  /** Open response with a Content-Length but emit no `end` — caller controls bytes. */
+  function openStreaming(req: FakeRequest, totalLen: number): EventEmitter {
+    const res = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      headers: { 'content-length': String(totalLen) } as Record<string, string>,
+    })
+    req.emit('response', res)
+    return res
+  }
+
+  it('aborts and rejects when no bytes arrive within idleTimeoutMs', async () => {
+    const dest = path.join(tmpDir, 'model.safetensors')
+    const p = download(URL, dest, null, { idleTimeoutMs: 1000 })
+    const res = openStreaming(requests[0]!, 100)
+    res.emit('data', Buffer.from('ab')) // one chunk, then silence
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(p).rejects.toThrow(/stalled/i)
+    expect(requests[0]!.abort).toHaveBeenCalled()
+  })
+
+  it('does not fire while bytes keep arriving (timer rearms per chunk)', async () => {
+    const dest = path.join(tmpDir, 'model.safetensors')
+    const body = Buffer.from('hello world bytes!!!')
+    const p = download(URL, dest, null, { idleTimeoutMs: 1000, expectedSize: body.length })
+    const res = openStreaming(requests[0]!, body.length)
+    // Drip chunks 800ms apart — never idle for the full second.
+    for (const ch of [body.subarray(0, 7), body.subarray(7, 14), body.subarray(14)]) {
+      res.emit('data', ch)
+      await vi.advanceTimersByTimeAsync(800)
+    }
+    res.emit('end')
+    await vi.advanceTimersByTimeAsync(0)
+    await expect(p).resolves.toBe(dest)
+    expect(requests[0]!.abort).not.toHaveBeenCalled()
+  })
+})

@@ -792,6 +792,7 @@
     "starterTemplateNoneDesc": "从空白画布开始",
     "templatePickerTitle": "选择入门工作流",
     "templatePickerLead": "打开即可运行的工作流。模型会在安装期间下载。",
+    "templateTabsAria": "按类型筛选入门工作流",
     "templateInstall": "安装",
     "templateSkipAndInstall": "跳过并安装",
     "templateSkipAndInstallAria": "跳过入门工作流并安装 ComfyUI",

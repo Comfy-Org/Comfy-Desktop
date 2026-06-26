@@ -50,6 +50,10 @@ export interface InstallationRecord {
   /** POC: starter template id the user picked in the install wizard. Durable
    *  record of intent; survives relaunches. */
   bundledTemplateId?: string
+  /** Coarse model-download estimate (bytes) for `bundledTemplateId`, frozen from
+   *  the wizard's hydrated value so the background download's progress denominator
+   *  matches the consent label without re-fetching the template index. */
+  bundledTemplateSizeBytes?: number
   /** One-shot flag consumed by the first launch — when set, the comfy URL is
    *  decorated with `?template=<id>` so the frontend auto-opens it, then this is
    *  cleared so subsequent relaunches start blank. */

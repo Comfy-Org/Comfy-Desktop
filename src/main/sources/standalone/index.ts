@@ -12,10 +12,9 @@ import {
   getVenvDir, recommendVariant, writeComfyEnvironment,
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
-import { BUNDLED_TEMPLATES, NO_TEMPLATE_VALUE } from './bundledTemplates'
+import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
+import { loadTemplateCatalog } from './templateCatalog'
 
-/** Known starter-template ids — gates what `buildInstallation` will persist. */
-const VALID_BUNDLED_TEMPLATE_IDS = new Set(BUNDLED_TEMPLATES.map((tpl) => tpl.id))
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
@@ -193,14 +192,17 @@ export const standalone: SourcePlugin = {
         : undefined)
       : undefined
     // Starter template: the chosen template id, or undefined when the user left
-    // the (recommended) "None" option selected. Validated against the known set
-    // so a stale/forged selection can't persist an unknown id that later derails
-    // the open/download handling.
+    // the "None" option selected. Format-validated (not matched against the
+    // static curated set) so a live-index substitute still installs, while a
+    // stale/forged selection that could escape a path/URL is still rejected.
     const tplValue = selections.bundledTemplate?.value
-    const bundledTemplateId =
-      tplValue && tplValue !== NO_TEMPLATE_VALUE && VALID_BUNDLED_TEMPLATE_IDS.has(tplValue)
-        ? tplValue
-        : undefined
+    const bundledTemplateId = isPersistableTemplateId(tplValue) ? tplValue : undefined
+    // Freeze the hydrated size the user consented to, so the install-time
+    // download estimate matches the wizard label without re-hydrating the index.
+    const bundledTemplateSizeBytes =
+      typeof selections.bundledTemplate?.data?.sizeBytes === 'number'
+        ? (selections.bundledTemplate.data.sizeBytes as number)
+        : 0
     return {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
@@ -227,7 +229,12 @@ export const standalone: SourcePlugin = {
       // consumes (appends `?template=` to the comfy URL, then clears) so the
       // template only auto-opens once — not on every relaunch.
       ...(bundledTemplateId
-        ? { bundledTemplateId, pendingTemplateOpen: bundledTemplateId, downloadTemplateModels: true }
+        ? {
+            bundledTemplateId,
+            bundledTemplateSizeBytes,
+            pendingTemplateOpen: bundledTemplateId,
+            downloadTemplateModels: true,
+          }
         : {}),
     }
   },
@@ -509,24 +516,28 @@ export const standalone: SourcePlugin = {
     }
 
     if (fieldId === 'bundledTemplate') {
-      // "None" is recommended → the wizard auto-selects it, keeping the step
-      // skippable while still completing the field chain.
+      // "None" comes first as the skip option; the per-modality recommended
+      // picks carry `recommended` on their own option so the wizard auto-selects
+      // a real template (the lightest "wow"), not the skip.
+      const catalog = await loadTemplateCatalog()
       return [
         {
           value: NO_TEMPLATE_VALUE,
           label: t('standalone.starterTemplateNone'),
           description: t('standalone.starterTemplateNoneDesc'),
-          recommended: true,
         },
-        ...BUNDLED_TEMPLATES.map((tpl): FieldOption => ({
+        ...catalog.map((tpl): FieldOption => ({
           value: tpl.id,
           label: tpl.title,
           description: tpl.description,
+          recommended: tpl.recommended,
           data: {
             modality: tpl.modality,
+            category: tpl.category,
+            name: tpl.name,
+            task: tpl.task,
             thumbnailUrl: tpl.thumbnailUrl,
             sizeBytes: tpl.sizeBytes,
-            previewKind: tpl.previewKind,
           },
         })),
       ]

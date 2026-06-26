@@ -54,6 +54,13 @@ describe('Content-Security-Policy: panel.html', () => {
   it('allows the typeform feedback origin in frame-src (Send Feedback modal)', () => {
     expect(csp['frame-src']).toBe('https://form.typeform.com')
   })
+
+  it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
+    // The template picker hydrates card previews from the live workflow_templates
+    // repo; without this the panel CSP would block them and every card would fall
+    // back to its modality glyph.
+    expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
+  })
 })
 
 describe.each(TELEMETRY_RENDERER_HTMLS)(

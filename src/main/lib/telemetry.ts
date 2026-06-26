@@ -45,7 +45,11 @@
  *     no-ops (prod: 0/13,528 stitched). Anonymous person-prop writes go
  *     through capture-`$set` instead, which updates the person without
  *     identifying the id.
- *   - `download_token` (TODO): web → desktop acquisition bridge.
+ *   - `download_token`: web → desktop acquisition bridge. The Windows
+ *     installer persists an opaque token from its filename; after consent,
+ *     Desktop aliases that token into `installation_id` and includes it only
+ *     on explicit acquisition/attribution events so regular product events do
+ *     not carry an extra join token.
  *   - `user_id`: set on login via `bindUserId`. The ONLY `client.identify()`
  *     call. Aliases `installation_id` → `user_id` (now merges, since the anon
  *     id was never identified). Logout (`unbindUserId`) restores the anon
@@ -166,6 +170,8 @@ export function _resetForTest(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingMigrationAlias = null
+  pendingDownloadTokenAlias = null
+  pendingDownloadTokenEventProperties = null
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
@@ -546,6 +552,24 @@ let pendingMigrationAlias: {
 } | null = null
 
 /**
+ * Deferred acquisition alias. The website/download proxy can bind a web
+ * anonymous person to an opaque `download_token`; Desktop later aliases that
+ * same token into `installation_id` after consent, completing the web download
+ * -> installed app bridge without putting a raw PostHog distinct id in the
+ * installer filename.
+ */
+let pendingDownloadTokenAlias: {
+  downloadToken: string
+  installationId: string
+  source: string
+  onAliased: () => void
+} | null = null
+let pendingDownloadTokenEventProperties: {
+  download_token: string
+  download_token_source: string
+} | null = null
+
+/**
  * The anonymous device identity bound at boot (typically `installation_id =
  * SHA-256(machine_id + salt)`). Kept separately from `distinctId` so the
  * logout path can switch the active distinct id back to this baseline
@@ -553,10 +577,23 @@ let pendingMigrationAlias: {
  *
  * On logout we explicitly do NOT call `posthog.reset()` (which would
  * generate a fresh anonymous id and clobber the deterministic
- * `installation_id` plus the acquisition `download_token`). Instead, we
- * switch `distinctId` back to this remembered baseline.
+ * `installation_id`). Instead, we switch `distinctId` back to this remembered
+ * baseline.
  */
 let installationDeviceId: string | null = null
+
+function takeDownloadTokenEventProperties(properties: TelemetryContext): TelemetryContext {
+  if (!pendingDownloadTokenEventProperties) return properties
+  const tokenProperties = pendingDownloadTokenEventProperties
+  pendingDownloadTokenEventProperties = null
+  return { ...properties, ...tokenProperties }
+}
+
+function applyDownloadTokenToPendingFirstLaunch(): void {
+  if (!pendingFirstLaunch || !pendingDownloadTokenEventProperties) return
+  pendingFirstLaunch = { ...pendingFirstLaunch, ...pendingDownloadTokenEventProperties }
+  pendingDownloadTokenEventProperties = null
+}
 
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
@@ -571,7 +608,8 @@ function tryFlushDeferred(): void {
     const m = pendingMigrationAlias
     pendingMigrationAlias = null
     void (async () => {
-      await aliasImmediate(m.installationId, m.legacyId)
+      const aliased = await aliasImmediateInternal(m.installationId, m.legacyId)
+      if (!aliased) return
       // Intentionally NOT publishing `from_id` (the legacy random UUID)
       // as an event property. The `alias` call above already merges
       // the legacy person record into the new one in PostHog, so the
@@ -588,6 +626,25 @@ function tryFlushDeferred(): void {
       } catch {
         // onAliased is the on-disk pending-alias / migration-guard cleanup
         // — best-effort; a failure leaves the alias to re-fire next boot.
+      }
+    })()
+  }
+  if (pendingDownloadTokenAlias) {
+    const d = pendingDownloadTokenAlias
+    pendingDownloadTokenAlias = null
+    void (async () => {
+      const aliased = await aliasImmediateInternal(d.installationId, d.downloadToken)
+      if (!aliased) return
+      capture('comfy.desktop.identity.download_attributed', {
+        installation_id: d.installationId,
+        download_token: d.downloadToken,
+        download_token_source: d.source
+      })
+      try {
+        d.onAliased()
+      } catch {
+        // onAliased clears pending-download-token.txt; best-effort so a
+        // cleanup failure retries the alias on the next boot.
       }
     })()
   }
@@ -620,6 +677,31 @@ export function deferMigrationAlias(opts: {
   onAliased: () => void
 }): void {
   pendingMigrationAlias = opts
+  tryFlushDeferred()
+}
+
+/**
+ * Queue the Windows download-token bridge to fire after consent. The token is
+ * kept off global defaults; only explicit acquisition/attribution events get it.
+ */
+export function deferDownloadTokenAlias(opts: {
+  downloadToken: string
+  installationId: string
+  source: string
+  attachToFirstLaunch?: boolean
+  onAliased: () => void
+}): void {
+  if (!opts.downloadToken) return
+  pendingDownloadTokenAlias = opts
+  if (opts.attachToFirstLaunch !== false) {
+    pendingDownloadTokenEventProperties = {
+      download_token: opts.downloadToken,
+      download_token_source: opts.source
+    }
+    applyDownloadTokenToPendingFirstLaunch()
+  } else {
+    pendingDownloadTokenEventProperties = null
+  }
   tryFlushDeferred()
 }
 
@@ -689,10 +771,9 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  * Switch back to the anonymous `installation_id` after a logout.
  *
  * **Not** `posthog.reset()`: that would generate a brand-new anonymous
- * device id and clobber the deterministic `installation_id` plus the
- * acquisition `download_token`. Instead, we restore `distinct_id` to
- * the remembered baseline so subsequent events ride under the device
- * identity (not the prior user).
+ * device id and clobber the deterministic `installation_id`. Instead, we
+ * restore `distinct_id` to the remembered baseline so subsequent events ride
+ * under the device identity (not the prior user).
  *
  * Flips `is_authenticated` back to `false` via a capture-`$set` (not
  * `identify()`, which would re-burn the anon id for the next login).
@@ -802,15 +883,16 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
  * in, or the rare migrator), it captures immediately.
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
+  const eventProperties = takeDownloadTokenEventProperties(properties)
   if (!canEmit() || !distinctId) {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
+    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
     return
   }
   if (consentState !== 'granted') {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
+    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
     return
   }
-  capture('comfy.desktop.app.first_launch', properties)
+  capture('comfy.desktop.app.first_launch', eventProperties)
 }
 
 /**
@@ -907,13 +989,14 @@ export function captureException(error: unknown, properties: TelemetryContext = 
  * (the legacy id), so we never even attempt the network call when consent
  * is `'denied'` or `'undecided'`.
  */
-export async function aliasImmediate(distinctId: string, alias: string): Promise<void> {
-  if (!canEmit()) return
-  if (consentState !== 'granted') return
+async function aliasImmediateInternal(distinctId: string, alias: string): Promise<boolean> {
+  if (!canEmit()) return false
+  if (consentState !== 'granted') return false
   try {
     await client!.aliasImmediate({ distinctId, alias })
+    return true
   } catch {
-    // ignore – telemetry must never break the app
+    return false
   }
 }
 

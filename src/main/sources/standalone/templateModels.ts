@@ -4,6 +4,7 @@ import { getActiveVenvDir } from '../../lib/pythonEnv'
 import { findSitePackages } from './envPaths'
 import { ALLOWED_EXTENSIONS, stripQueryParams } from '../../lib/comfyDownloadManager'
 import { fetchJSON } from '../../lib/fetch'
+import { RAW_TEMPLATES_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
 
 /**
@@ -31,8 +32,7 @@ interface RawModel {
   directory?: unknown
 }
 
-const RAW_TEMPLATES_REMOTE_BASE =
-  'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main/templates'
+const RAW_TEMPLATES_REMOTE_BASE = RAW_TEMPLATES_BASE
 
 /**
  * Resolve the workflow JSON for `templateId` — preferring the copy bundled in
@@ -55,7 +55,7 @@ const TEMPLATE_PACKAGE_DIRS = [
   'comfyui_workflow_templates_media_api',
 ]
 
-async function loadTemplateJson(
+export async function loadTemplateJson(
   installation: InstallationRecord,
   templateId: string,
 ): Promise<unknown | null> {

@@ -193,11 +193,13 @@ function selectTemplate(option: FieldOption): void {
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
-    // Default the selection to the first real template (Image) rather than the
-    // "None" sentinel, so the showcase leads.
-    const firstReal = templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE)
-    if (firstReal && selections.value.bundledTemplate?.value === NO_TEMPLATE_VALUE) {
-      selections.value.bundledTemplate = firstReal
+    // Lead with a real template rather than the "None" sentinel — prefer the
+    // recommended pick (the lightest "wow"), falling back to the first real one.
+    if (selections.value.bundledTemplate?.value === NO_TEMPLATE_VALUE) {
+      const lead =
+        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE && o.recommended) ??
+        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE)
+      if (lead) selections.value.bundledTemplate = lead
     }
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
@@ -947,12 +949,12 @@ defineExpose({ open })
                     role="radio"
                     :aria-checked="currentSource?.id === s.id"
                     :class="[
-                      'config-method',
-                      { 'config-method--selected': currentSource?.id === s.id }
+                      'brand-pill',
+                      { 'brand-pill--selected': currentSource?.id === s.id }
                     ]"
                     @click="selectSourceCard(s)"
                   >
-                    <span class="config-method__label">{{ s.label }}</span>
+                    <span>{{ s.label }}</span>
                     <span v-if="s.id === 'standalone'" class="brand-tag-recommended">
                       {{ $t('newInstall.recommended') }}
                     </span>
@@ -1178,7 +1180,7 @@ defineExpose({ open })
   height: 100%;
   max-height: 100%;
   width: 100%;
-  max-width: 640px;
+  max-width: 960px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1190,8 +1192,7 @@ defineExpose({ open })
 }
 .template-card {
   width: 100%;
-  min-height: clamp(360px, 56vh, 560px);
-  max-height: min(70vh, 100%);
+  max-height: min(80vh, 100%);
 }
 .template-alerts {
   display: flex;
@@ -1495,42 +1496,13 @@ defineExpose({ open })
   transform: translateY(0);
 }
 
-/* Install-method chips: pill picker inside Advanced for swapping source without leaving the brand chrome. */
+/* Install-method chips: pill picker inside Advanced for swapping source without
+ * leaving the brand chrome. Chips use the shared `.brand-pill` in main.css. */
 .config-method-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 16px;
-}
-.config-method {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 6px;
-  background: var(--brand-surface-bg);
-  color: var(--neutral-200);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    color 160ms ease;
-}
-.config-method:hover {
-  border-color: var(--brand-surface-border-hover);
-  background: var(--brand-surface-bg-hover);
-}
-.config-method:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.config-method--selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--neutral-100);
 }
 
 .config-continue {

@@ -46,7 +46,6 @@ import {
   abortTemplateDownload,
   requestSkipTemplateDownload,
 } from '../../sources/standalone/templateDownloadTask'
-import { BUNDLED_TEMPLATES } from '../../sources/standalone/bundledTemplates'
 import { recordIpcInvocation } from '../e2eOverrides'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
@@ -299,8 +298,7 @@ export function registerInstallationHandlers(): void {
           } catch {}
           appendLog(installationId, text)
         }
-        const sizeBytes =
-          BUNDLED_TEMPLATES.find((tpl) => tpl.id === inst.bundledTemplateId)?.sizeBytes ?? 0
+        const sizeBytes = inst.bundledTemplateSizeBytes ?? 0
         startTemplateDownload(inst, sizeBytes, { sendOutput: sendTemplateOutput })
       }
 
