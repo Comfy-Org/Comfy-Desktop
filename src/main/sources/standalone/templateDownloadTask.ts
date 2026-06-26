@@ -230,6 +230,12 @@ export function startTemplateDownload(
     }
     log(`[templates] Download task failed: ${(err as Error).message}\n`)
   })
+
+  // Reflect the download into the title-bar downloads tray for its whole
+  // lifetime — not just after a Skip — so a slow multi-GB pull is visible while
+  // it runs instead of being silently hidden. Idempotent: the launch gate's
+  // later Skip call is a no-op once this is active.
+  mirrorTemplateDownloadToTray(installationId)
 }
 
 async function runTask(
