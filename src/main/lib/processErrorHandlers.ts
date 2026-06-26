@@ -3,7 +3,7 @@ import * as mainTelemetry from './telemetry'
 import { _broadcastToRenderer } from './ipc/shared'
 import type { DatadogForwardedError } from '../../types/ipc'
 import { scrubAll } from '../../shared/piiScrub'
-import { writeAppLogSync } from './appLog'
+import { writeAppLogSync, flushOperationOutput } from './appLog'
 
 /**
  * Main-process error funnel: scrub, fan out to renderer for Datadog RUM,
@@ -69,6 +69,10 @@ export function registerProcessErrorHandlers(): void {
       'CRITICAL',
       `uncaughtException: ${serialized.message}${serialized.stack ? `\n${serialized.stack}` : ''}`
     )
+    // The process is about to die: flush any buffered operation/session tails
+    // (install/update/migrate output that hasn't hit a newline) so the last
+    // lines before the crash are durable. No-rotate to match the crash path.
+    flushOperationOutput(undefined, { rotate: false })
     forwardDatadogError({
       source: 'main-uncaught-exception',
       message: serialized.message,

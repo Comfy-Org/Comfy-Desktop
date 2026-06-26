@@ -81,12 +81,12 @@ export function writeAppLog(level: string, text: string): void {
 
 /**
  * Append a log line from the crash path (uncaught exception / process-gone).
- * Identical to `writeAppLog` — writes are already synchronous — but named so
- * call sites document that the line must survive an imminent process exit.
+ * Synchronous, and skips rotation so a failed rename/reopen can never drop the
+ * final record before an imminent process exit.
  */
 export function writeAppLogSync(level: string, text: string): void {
   if (!initialized) return
-  write(formatLine(level, text))
+  write(formatLine(level, text), { rotate: false })
 }
 
 /**
@@ -114,15 +114,16 @@ export function writeOperationOutput(installationId: string, text: string): void
 }
 
 /** Emit any buffered partial line for an installation (or all installations
- *  when no id is given). Call at operation end / app shutdown so the final
- *  unterminated line isn't dropped. */
-export function flushOperationOutput(installationId?: string): void {
+ *  when no id is given). Call at operation/session end so a final unterminated
+ *  line is durable and a later operation reusing the id can't be appended onto
+ *  it. Pass `{ rotate: false }` from the crash path to match `writeAppLogSync`. */
+export function flushOperationOutput(installationId?: string, opts?: { rotate?: boolean }): void {
   if (!initialized) return
   const ids = installationId ? [installationId] : [...opPendingById.keys()]
   for (const id of ids) {
     const pending = opPendingById.get(id)
     opPendingById.delete(id)
-    if (pending) write(pending.endsWith('\n') ? pending : `${pending}\n`)
+    if (pending) write(pending.endsWith('\n') ? pending : `${pending}\n`, opts)
   }
 }
 
@@ -130,12 +131,15 @@ function formatLine(level: string, text: string): string {
   return `[${new Date().toISOString()}] [${level}] ${text}\n`
 }
 
-function write(raw: string): void {
+function write(raw: string, opts?: { rotate?: boolean }): void {
   if (fd === null) return
   const clean = scrubAll(stripAnsi(raw))
   const len = Buffer.byteLength(clean)
   // Rotate before writing so the live file never exceeds the cap mid-write.
-  if (currentBytes + len > MAX_BYTES) rotateAppLogSync()
+  // Crash-path writes opt out: rotation closes the live fd to rename/reopen,
+  // and a failed reopen would drop the final record. Letting the file run
+  // slightly over the cap (a later normal write rotates it) is safer.
+  if (opts?.rotate !== false && currentBytes + len > MAX_BYTES) rotateAppLogSync()
   if (fd === null) return
   try {
     fs.writeSync(fd, clean)

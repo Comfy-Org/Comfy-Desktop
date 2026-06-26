@@ -125,6 +125,24 @@ describe('appLog', () => {
     expect(read()).toContain('no trailing newline here')
   })
 
+  it('never rotates on the crash path, so a crash line past the cap is not dropped', () => {
+    const isRotated = (f: string): boolean =>
+      /^app\.log_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/.test(f)
+    initAppLog({ dir: tmpDir })
+    // Fill the live log to exactly the 5 MB cap (the line's `[ts] [INFO] ..\n`
+    // framing adds 35 bytes) without crossing it, so no rotation happens here.
+    writeAppLog('INFO', 'x'.repeat(5 * 1024 * 1024 - 35))
+    expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
+    // The crash line crosses the cap; rotation here could fail and drop it, so
+    // the crash path must append in place instead of rotating.
+    writeAppLogSync('CRITICAL', 'final breath')
+    expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
+    expect(read()).toContain('[CRITICAL] final breath')
+    // A later normal write is free to rotate the overage.
+    writeAppLog('INFO', 'after crash')
+    expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(1)
+  })
+
   it('flushes only the targeted installation, leaving others buffered', () => {
     initAppLog({ dir: tmpDir })
     writeOperationOutput('inst-a', 'partial-a')
