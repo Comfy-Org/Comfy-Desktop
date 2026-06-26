@@ -2071,10 +2071,15 @@ function buildGlobalSettingsSnapshot(
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
   // Locale picker lives above the "App Behavior" microsection without a
   // header of its own, so it gets pulled out of generalFields here.
-  const desktopUpdateFields = generalRaw.filter((f) => f.id === 'autoInstallUpdates')
+  const desktopUpdateFields = generalRaw.filter(
+    (f) => f.id === 'autoInstallUpdates' || f.id === 'showComfyVersionUpdates'
+  )
   const languageFields = generalRaw.filter((f) => f.id === 'language')
   const generalFields = generalRaw.filter(
-    (f) => f.id !== 'autoInstallUpdates' && f.id !== 'language'
+    (f) =>
+      f.id !== 'autoInstallUpdates' &&
+      f.id !== 'showComfyVersionUpdates' &&
+      f.id !== 'language'
   )
   const telemetryFields = findSettingsFields(settingsSections, 'settings.telemetry', 1)
   const cache = findSettingsFields(settingsSections, 'settings.cache', 2)

@@ -24,6 +24,12 @@ export interface KnownSettings {
   /** When true (default), Desktop updates download and install silently; when
    *  false, the user is prompted before any download/install. */
   autoInstallUpdates?: boolean
+  /** Default for whether the embedded ComfyUI frontend shows new-release /
+   *  version-update notifications. Injected at launch as the
+   *  `show_version_updates` feature flag, which seeds the frontend's
+   *  `Comfy.Notification.ShowVersionUpdates` default (the user can still
+   *  override it inside ComfyUI). Defaults to true (show). */
+  showComfyVersionUpdates?: boolean
   /** Opt-in auto-launch on Desktop startup. Values:
    *  - `'none'` (default) — land on the dashboard, current behavior.
    *  - `'last'` — launch the install with the largest `lastLaunchedAt`.
@@ -110,6 +116,7 @@ const SETTINGS_SCHEMA = {
   theme: { nullable: false },
   autoUpdate: { nullable: false },
   autoInstallUpdates: { nullable: false },
+  showComfyVersionUpdates: { nullable: false },
   autoLaunchOnStartup: { nullable: false },
   confirmBeforeClosingWindow: { nullable: false },
   pypiMirror: { nullable: false },
