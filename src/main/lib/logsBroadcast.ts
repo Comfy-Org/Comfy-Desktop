@@ -65,7 +65,7 @@ export function appendLog(installationId: string, text: string): void {
   if (!text) return
   // Tee into the durable global app log so operation output survives the
   // modal/app lifecycle and background runs with no window.
-  writeOperationOutput(text)
+  writeOperationOutput(installationId, text)
   const state = ensureState(installationId)
   state.buffer.push(text)
   state.bufferSize += text.length

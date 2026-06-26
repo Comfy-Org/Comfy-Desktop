@@ -1,34 +1,15 @@
 /**
- * Persistent, rotating global application log.
+ * Persistent, rotating global `app.log` in Electron's per-user logs dir.
  *
- * The launcher previously had no durable record of what the *app itself*
- * did: `console.*` from the main process went nowhere, and operation output
- * (install / update / migrate / restore) lived only in an in-memory ring
- * buffer that vanished on modal close, app restart, or background runs with
- * no window. The only on-disk log was the per-session `comfyui.log`, which
- * covers the running ComfyUI process, not the app.
+ * Captures main-process `console.*`, uncaught errors / process-gone events,
+ * and teed operation output. Everything is ANSI-stripped and `scrubAll`-ed
+ * before write so credentials and usernames are not persisted.
  *
- * This module owns a single global `app.log` in Electron's per-user logs
- * dir. It captures:
- *
- *   - main-process `console.*` (patched in `initAppLog`),
- *   - uncaught errors / process-gone events (so the crash cause is durable
- *     even when the process is about to die),
- *   - the full operation output stream (teed from `appendLog`).
- *
- * Everything is ANSI-stripped and run through `scrubAll` before hitting disk
- * so credentials in index URLs and usernames in paths never get persisted.
- *
- * All writes are synchronous against a single append (`O_APPEND`) file
- * descriptor. Synchronous writes mean the crash path (uncaught exception /
- * process-gone) lands on disk before the dying process exits — a buffered
- * stream write would be lost. A single append fd avoids interleaving and
- * lets rotation close/rename/reopen deterministically (important on Windows,
- * where renaming a file with an open handle fails).
- *
- * Writes are no-ops until `initAppLog()` runs, which keeps the module inert
- * in unit tests (and during the brief window before the app is ready) unless
- * a log dir has been wired up.
+ * Writes are synchronous against a single `O_APPEND` fd: the crash path lands
+ * on disk before the dying process exits (a buffered write would be lost), and
+ * a single fd lets rotation close/rename/reopen deterministically (renaming a
+ * file with an open handle fails on Windows). Writes are no-ops until
+ * `initAppLog()` runs, keeping the module inert in unit tests.
  */
 
 import fs from 'fs'
@@ -54,10 +35,12 @@ let fd: number | null = null
 let currentBytes = 0
 let initialized = false
 let consolePatched = false
-// Carry for the operation-output tee so a credential split across two
-// process chunks ("https://user:to" + "ken@host") is still scrubbed: we
-// only write (and scrub) whole lines, keeping the partial tail buffered.
-let opPending = ''
+// Per-installation carry for the operation-output tee so a credential split
+// across two process chunks ("https://user:to" + "ken@host") is still
+// scrubbed: we only write (and scrub) whole lines, keeping the partial tail
+// buffered. Keyed by installationId so concurrent installs don't interleave
+// partial lines into each other.
+const opPendingById = new Map<string, string>()
 const originalConsole = new Map<ConsoleLevel, (...args: unknown[]) => void>()
 
 /** Resolve the directory the global log lives in. Falls back to Electron's
@@ -107,22 +90,39 @@ export function writeAppLogSync(level: string, text: string): void {
 }
 
 /**
- * Tee operation output (raw, possibly partial process chunks) to disk. Only
- * whole lines are written so cross-chunk secrets are scrubbed intact; the
- * trailing partial line is held until the next chunk completes it.
+ * Tee operation output (raw, possibly partial process chunks) to disk for a
+ * given installation. Only whole lines are written so cross-chunk secrets are
+ * scrubbed intact; the trailing partial line is held (per installation) until
+ * the next chunk completes it, the pending tail exceeds `MAX_PENDING_LINE`, or
+ * `flushOperationOutput` is called.
  */
-export function writeOperationOutput(text: string): void {
+export function writeOperationOutput(installationId: string, text: string): void {
   if (!initialized || !text) return
-  opPending += text
-  let nl = opPending.indexOf('\n')
+  let pending = (opPendingById.get(installationId) ?? '') + text
+  let nl = pending.indexOf('\n')
   while (nl !== -1) {
-    write(opPending.slice(0, nl + 1))
-    opPending = opPending.slice(nl + 1)
-    nl = opPending.indexOf('\n')
+    write(pending.slice(0, nl + 1))
+    pending = pending.slice(nl + 1)
+    nl = pending.indexOf('\n')
   }
-  if (opPending.length > MAX_PENDING_LINE) {
-    write(opPending)
-    opPending = ''
+  if (pending.length > MAX_PENDING_LINE) {
+    write(pending.endsWith('\n') ? pending : `${pending}\n`)
+    pending = ''
+  }
+  if (pending) opPendingById.set(installationId, pending)
+  else opPendingById.delete(installationId)
+}
+
+/** Emit any buffered partial line for an installation (or all installations
+ *  when no id is given). Call at operation end / app shutdown so the final
+ *  unterminated line isn't dropped. */
+export function flushOperationOutput(installationId?: string): void {
+  if (!initialized) return
+  const ids = installationId ? [installationId] : [...opPendingById.keys()]
+  for (const id of ids) {
+    const pending = opPendingById.get(id)
+    opPendingById.delete(id)
+    if (pending) write(pending.endsWith('\n') ? pending : `${pending}\n`)
   }
 }
 
@@ -216,7 +216,7 @@ export function resetAppLogForTest(): void {
   closeFd()
   logDir = null
   currentBytes = 0
-  opPending = ''
+  opPendingById.clear()
   initialized = false
   consolePatched = false
 }

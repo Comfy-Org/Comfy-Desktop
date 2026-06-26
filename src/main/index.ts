@@ -23,7 +23,7 @@ import {
   recordDashboardSurface
 } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
-import { initAppLog } from './lib/appLog'
+import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
 import { openSystemModal, openSystemModalAsync, openSystemModalChoiceAsync, registerSystemModalIpc } from './popups/systemModal'
@@ -1321,10 +1321,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // handlers before anything else runs, so the earliest console output and
     // any startup crash are captured.
     initAppLog()
+    registerProcessErrorHandlers()
     console.info(
       `App started v${APP_VERSION} pid=${process.pid} platform=${process.platform} crashDumps=${app.getPath('crashDumps')}`
     )
-    registerProcessErrorHandlers()
 
     // Test-only hooks for the E2E suite. Registered before any host
     // opens so seeded state (downloads, install-update overrides,
@@ -2308,6 +2308,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // restore it. Synchronous: the app exits without awaiting promises, so an
     // async write would be torn down mid-flight and lose a just-made change.
     flushLastSessionSync()
+    flushOperationOutput()
     cleanupTempDownloads()
   })
 

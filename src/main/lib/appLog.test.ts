@@ -14,6 +14,7 @@ import {
   writeAppLog,
   writeAppLogSync,
   writeOperationOutput,
+  flushOperationOutput,
   getAppLogPath,
   resetAppLogForTest
 } from './appLog'
@@ -36,7 +37,7 @@ describe('appLog', () => {
 
   it('is a no-op before init', () => {
     writeAppLog('INFO', 'should not write')
-    writeOperationOutput('nope')
+    writeOperationOutput('inst-1', 'nope')
     expect(fs.existsSync(path.join(tmpDir, 'app.log'))).toBe(false)
   })
 
@@ -91,17 +92,36 @@ describe('appLog', () => {
   it('tees operation output once a line completes', () => {
     initAppLog({ dir: tmpDir })
     expect(getAppLogPath()).toBe(path.join(tmpDir, 'app.log'))
-    writeOperationOutput('> uv pip install torch\n')
+    writeOperationOutput('inst-1', '> uv pip install torch\n')
     expect(read()).toContain('> uv pip install torch')
   })
 
   it('scrubs a credential split across two operation chunks', () => {
     initAppLog({ dir: tmpDir })
     // The secret straddles the chunk boundary; per-chunk scrubbing would miss it.
-    writeOperationOutput('downloading from https://user:to')
-    writeOperationOutput('ken@mirror.example/simple\n')
+    writeOperationOutput('inst-1', 'downloading from https://user:to')
+    writeOperationOutput('inst-1', 'ken@mirror.example/simple\n')
     const out = read()
     expect(out).toContain('//[REDACTED]@')
     expect(out).not.toContain('user:token@')
+  })
+
+  it('does not interleave partial lines from concurrent installations', () => {
+    initAppLog({ dir: tmpDir })
+    writeOperationOutput('inst-a', 'alpha-')
+    writeOperationOutput('inst-b', 'beta-')
+    writeOperationOutput('inst-a', 'one\n')
+    writeOperationOutput('inst-b', 'two\n')
+    const out = read()
+    expect(out).toContain('alpha-one')
+    expect(out).toContain('beta-two')
+  })
+
+  it('flushes the final unterminated line on flushOperationOutput', () => {
+    initAppLog({ dir: tmpDir })
+    writeOperationOutput('inst-1', 'no trailing newline here')
+    expect(read()).not.toContain('no trailing newline here')
+    flushOperationOutput()
+    expect(read()).toContain('no trailing newline here')
   })
 })
