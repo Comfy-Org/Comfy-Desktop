@@ -1173,6 +1173,8 @@
   "contextMenu": {
     "openLinkInBrowser": "Open Link in Browser",
     "copyLinkAddress": "Copy Link Address",
+    "saveImage": "Save Image",
+    "copyImage": "Copy Image",
     "cut": "Cut",
     "copy": "Copy",
     "paste": "Paste",
