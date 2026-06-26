@@ -57,7 +57,8 @@ import {
   captureState,
   saveSnapshot,
   captureSnapshotIfChanged,
-  ensureCurrentSnapshotOnTop
+  ensureCurrentSnapshotOnTop,
+  listSnapshots
 } from './store'
 import * as telemetry from '../telemetry'
 import type { InstallationRecord } from '../../installations'
@@ -466,6 +467,43 @@ describe('ensureCurrentSnapshotOnTop', () => {
     // No new file written — only the seeded one remains.
     const files = [...memory.keys()].filter((k) => k.endsWith('.json'))
     expect(files).toHaveLength(1)
+  })
+
+  it('writes a snapshot that sorts above an imported top with a future timestamp', async () => {
+    const memory = installFsMemory()
+    // A multi-snapshot import (or a same-ms import) can leave the newest entry
+    // with a timestamp at/after `now`; the correction snapshot must still win.
+    seedTopSnapshot(
+      memory,
+      {
+        ...liveStateSnapshot,
+        createdAt: new Date(Date.now() + 60_000).toISOString(),
+        comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' }
+      },
+      '29991231_000000_000-manual-imported.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    expect(result.saved).toBe(true)
+    const entries = await listSnapshots('/test/install')
+    expect(entries[0]!.filename).toBe(result.filename)
+  })
+
+  it('writes a new snapshot when only updateChannel or pythonVersion differ (stricter than statesMatch)', async () => {
+    const memory = installFsMemory()
+    // Same comfyui/nodes/pips as live (so `statesMatch` is true) but a different
+    // updateChannel — `snapshotRepresentsCurrentState` must treat this as stale.
+    seedTopSnapshot(
+      memory,
+      { ...liveStateSnapshot, updateChannel: 'nightly' },
+      '20250101_000000_000-boot-channel.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    expect(result.saved).toBe(true)
+    expect(result.filename).toMatch(/-post-restore-/)
   })
 
   it('does not pile up duplicates across repeated failed restores (retry)', async () => {

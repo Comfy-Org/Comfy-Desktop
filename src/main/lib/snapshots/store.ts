@@ -162,9 +162,10 @@ async function writeSnapshot(
   data: Omit<Snapshot, 'createdAt' | 'version'> & {
     trigger: Snapshot['trigger']
     label: string | null
-  }
+  },
+  at: Date = new Date()
 ): Promise<string> {
-  const now = new Date()
+  const now = at
   const snapshot: Snapshot = {
     version: 1,
     createdAt: now.toISOString(),
@@ -435,11 +436,19 @@ export async function ensureCurrentSnapshotOnTop(
       return { saved: false, filename: top.filename }
     }
 
-    const filename = await writeSnapshot(installPath, {
-      ...current,
-      trigger: 'post-restore',
-      label: null
-    })
+    // Snapshots are ordered by `createdAt`. The stale top is often a freshly
+    // imported snapshot whose timestamp is the same millisecond as — or, for a
+    // multi-snapshot import, slightly ahead of — now, so stamp this one strictly
+    // after it to guarantee it lands on top.
+    const topTime = top ? Date.parse(top.snapshot.createdAt) : NaN
+    const writeAt = Number.isFinite(topTime)
+      ? new Date(Math.max(Date.now(), topTime + 1))
+      : new Date()
+    const filename = await writeSnapshot(
+      installPath,
+      { ...current, trigger: 'post-restore', label: null },
+      writeAt
+    )
     emitSnapshotCreated({
       installation,
       trigger: 'post-restore',
