@@ -43,6 +43,14 @@ describe('getComfyTerminalContentScript', () => {
     expect(script).toContain('extensionManager')
   })
 
+  it('dedupes the native Terminal tab via the bottom-panel store', () => {
+    // The frontend registers 'command-terminal' directly into the
+    // bottom-panel store, so the guard must inspect that shape (not just
+    // app.extensions) or it would register a duplicate tab.
+    expect(script).toContain('bottomPanelHasTab')
+    expect(script).toContain(`bottomPanelHasTab(app, 'command-terminal')`)
+  })
+
   it('uses the shared desktop terminal transport', () => {
     for (const member of ['subscribe', 'write', 'resize', 'restart', 'onOutput', 'onExited']) {
       expect(script).toContain(member)

@@ -3,11 +3,12 @@
  * served ComfyUI frontend, for the window between our frontend/backend terminal
  * PRs landing and a stable release shipping them.
  *
- * It is injected (via `webContents.executeJavaScript`) only for STANDALONE
- * installs whose ComfyUI does not yet advertise the `supports_terminal` feature
- * flag — i.e. exactly when the real, flag-gated frontend tab cannot appear, so
- * there is never a duplicate. Delete this module (and its call site in
- * `attach.ts`) once stable ships the official tab.
+ * It is injected (via `webContents.executeJavaScript`) for local managed
+ * installs that back a per-install shell (standalone, portable, git). It runs
+ * always-on and dedupes in JS: the script bails before registering if it sees
+ * an existing native `command-terminal` tab, so a frontend that ships the real
+ * flag-gated tab never ends up with a duplicate. Delete this module (and its
+ * call site in `attach.ts`) once stable ships the official tab.
  *
  * The transport is the already-injected `window.__comfyDesktop2.Terminal`
  * bridge (see `comfyPreload.ts`). xterm isn't exposed on `window.comfyAPI`, so
@@ -166,12 +167,31 @@ function renderTerminal(container) {
   }).catch(function () {});
 }
 
+// True if a bottom-panel tab with this id is already registered in the
+// frontend store. This is where the native frontend registers both its Logs
+// ('logs-terminal') and Terminal ('command-terminal') tabs.
+function bottomPanelHasTab(app, id) {
+  try {
+    var bp = app && app.extensionManager && app.extensionManager.bottomPanel;
+    var terminalPanel = bp && bp.panels && bp.panels.terminal;
+    var tabs = terminalPanel && terminalPanel.tabs;
+    if (tabs) {
+      for (var i = 0; i < tabs.length; i++) {
+        if (tabs[i] && tabs[i].id === id) return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
 // Dedupe guard. The frontend ships a native flag-gated 'command-terminal'
 // bottom-panel tab via the companion ComfyUI_frontend PR; when that lands
 // it registers itself before we tick. Bail out if we see it so the user
-// never gets two tabs with the same id. Defensive over both shapes that
-// ComfyUI exposes (an extensions array, and a future-proof tab registry).
+// never gets two tabs with the same id. Defensive over the shapes ComfyUI
+// exposes: the bottom-panel store, an extensions array, and a future-proof
+// tab registry.
 function alreadyHasTerminalTab(app) {
+  if (bottomPanelHasTab(app, 'command-terminal')) return true;
   try {
     var exts = (app && app.extensions) || [];
     for (var i = 0; i < exts.length; i++) {
@@ -196,17 +216,7 @@ function alreadyHasTerminalTab(app) {
 // and Terminal lands second, matching the native frontend ordering (the store
 // makes the first-registered tab the default active one).
 function hasLogsTab(app) {
-  try {
-    var bp = app && app.extensionManager && app.extensionManager.bottomPanel;
-    var terminalPanel = bp && bp.panels && bp.panels.terminal;
-    var tabs = terminalPanel && terminalPanel.tabs;
-    if (tabs) {
-      for (var i = 0; i < tabs.length; i++) {
-        if (tabs[i] && tabs[i].id === 'logs-terminal') return true;
-      }
-    }
-  } catch (e) {}
-  return false;
+  return bottomPanelHasTab(app, 'logs-terminal');
 }
 
 function waitForRegister(timeoutMs) {
