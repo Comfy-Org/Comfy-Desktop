@@ -1317,6 +1317,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(async () => {
+    // Open the durable global app log and install the main-process error
+    // handlers before anything else runs, so the earliest console output and
+    // any startup crash are captured.
+    initAppLog()
+    console.info(
+      `App started v${APP_VERSION} pid=${process.pid} platform=${process.platform} crashDumps=${app.getPath('crashDumps')}`
+    )
+    registerProcessErrorHandlers()
+
     // Test-only hooks for the E2E suite. Registered before any host
     // opens so seeded state (downloads, install-update overrides,
     // app-update state) is visible to the very first title-bar paint.
@@ -1355,13 +1364,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     migrateXdgPaths()
     persistWinDataRootChoice()
-    // Open the durable global app log before anything else logs, so the
-    // error handlers below (and all subsequent console output) are captured.
-    initAppLog()
-    console.info(
-      `App started v${APP_VERSION} pid=${process.pid} platform=${process.platform} crashDumps=${app.getPath('crashDumps')}`
-    )
-    registerProcessErrorHandlers()
 
     // Strip Electron's default menu before any BrowserWindow opens so
     // OAuth / cloud-login popups (and every other window) can't reach

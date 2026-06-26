@@ -12,12 +12,19 @@
  * dir. It captures:
  *
  *   - main-process `console.*` (patched in `initAppLog`),
- *   - uncaught errors / process-gone events (written synchronously from the
- *     error handlers so the crash cause survives the dying process),
+ *   - uncaught errors / process-gone events (so the crash cause is durable
+ *     even when the process is about to die),
  *   - the full operation output stream (teed from `appendLog`).
  *
  * Everything is ANSI-stripped and run through `scrubAll` before hitting disk
  * so credentials in index URLs and usernames in paths never get persisted.
+ *
+ * All writes are synchronous against a single append (`O_APPEND`) file
+ * descriptor. Synchronous writes mean the crash path (uncaught exception /
+ * process-gone) lands on disk before the dying process exits — a buffered
+ * stream write would be lost. A single append fd avoids interleaving and
+ * lets rotation close/rename/reopen deterministically (important on Windows,
+ * where renaming a file with an open handle fails).
  *
  * Writes are no-ops until `initAppLog()` runs, which keeps the module inert
  * in unit tests (and during the brief window before the app is ready) unless
@@ -35,15 +42,22 @@ const BASE_NAME = 'app.log'
 const MAX_BYTES = 5 * 1024 * 1024 // rotate mid-session past 5 MB
 const MAX_FILES = 50 // match comfyui.log retention
 const ROTATED_RE = /^app\.log_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/
+// Flush a not-yet-terminated operation line once it grows past this so a
+// chunk stream that never emits a newline can't buffer unbounded.
+const MAX_PENDING_LINE = 64 * 1024
 
 const CONSOLE_LEVELS = ['log', 'info', 'warn', 'error', 'debug'] as const
 type ConsoleLevel = (typeof CONSOLE_LEVELS)[number]
 
 let logDir: string | null = null
-let stream: fs.WriteStream | null = null
+let fd: number | null = null
 let currentBytes = 0
 let initialized = false
 let consolePatched = false
+// Carry for the operation-output tee so a credential split across two
+// process chunks ("https://user:to" + "ken@host") is still scrubbed: we
+// only write (and scrub) whole lines, keeping the partial tail buffered.
+let opPending = ''
 const originalConsole = new Map<ConsoleLevel, (...args: unknown[]) => void>()
 
 /** Resolve the directory the global log lives in. Falls back to Electron's
@@ -66,105 +80,97 @@ export function initAppLog(opts?: { dir?: string }): void {
   logDir = opts?.dir ?? app.getPath('logs')
   try {
     fs.mkdirSync(logDir, { recursive: true })
+    // Rotates the previous session's app.log (if any) and opens a fresh fd.
     rotateAppLogSync()
-    stream = openStream()
-    currentBytes = 0
   } catch {
     // If we can't open the log, keep going as a no-op rather than crash.
-    stream = null
+    closeFd()
   }
   initialized = true
   patchConsole()
 }
 
-/** Buffered append for normal runtime logging. */
+/** Append a runtime log line. Synchronous; safe on the crash path. */
 export function writeAppLog(level: string, text: string): void {
   if (!initialized) return
-  appendAsync(formatLine(level, text))
+  write(formatLine(level, text))
 }
 
 /**
- * Synchronous append for the crash path. A buffered stream write would be
- * lost when an uncaught exception or process-gone event kills the process
- * before the buffer flushes, so the error handlers use this to guarantee
- * the cause reaches disk.
+ * Append a log line from the crash path (uncaught exception / process-gone).
+ * Identical to `writeAppLog` — writes are already synchronous — but named so
+ * call sites document that the line must survive an imminent process exit.
  */
 export function writeAppLogSync(level: string, text: string): void {
   if (!initialized) return
-  appendSync(formatLine(level, text))
+  write(formatLine(level, text))
 }
 
-/** Tee operation output (already chunked, no per-line framing) to disk. */
+/**
+ * Tee operation output (raw, possibly partial process chunks) to disk. Only
+ * whole lines are written so cross-chunk secrets are scrubbed intact; the
+ * trailing partial line is held until the next chunk completes it.
+ */
 export function writeOperationOutput(text: string): void {
   if (!initialized || !text) return
-  appendAsync(text)
-}
-
-/** Flush buffered (non-sync) writes to disk. Resolves once the stream has
- *  drained everything queued so far. */
-export function flushAppLog(): Promise<void> {
-  return new Promise((resolve) => {
-    if (!stream || stream.writableEnded) {
-      resolve()
-      return
-    }
-    stream.write('', () => resolve())
-  })
-}
-
-/** Open the append stream with an error listener so a transient FS error
- *  (disk full, locked file) is swallowed instead of crashing the app. */
-function openStream(): fs.WriteStream {
-  const s = fs.createWriteStream(getAppLogPath(), { flags: 'a' })
-  s.on('error', () => {})
-  return s
+  opPending += text
+  let nl = opPending.indexOf('\n')
+  while (nl !== -1) {
+    write(opPending.slice(0, nl + 1))
+    opPending = opPending.slice(nl + 1)
+    nl = opPending.indexOf('\n')
+  }
+  if (opPending.length > MAX_PENDING_LINE) {
+    write(opPending)
+    opPending = ''
+  }
 }
 
 function formatLine(level: string, text: string): string {
   return `[${new Date().toISOString()}] [${level}] ${text}\n`
 }
 
-function appendAsync(raw: string): void {
+function write(raw: string): void {
+  if (fd === null) return
   const clean = scrubAll(stripAnsi(raw))
-  currentBytes += Buffer.byteLength(clean)
-  if (stream && !stream.writableEnded) {
-    try {
-      stream.write(clean)
-    } catch {
-      // Stream may have torn down; fall back to a synchronous append.
-      try {
-        fs.appendFileSync(getAppLogPath(), clean)
-      } catch {}
-    }
-  } else {
-    try {
-      fs.appendFileSync(getAppLogPath(), clean)
-    } catch {}
+  const len = Buffer.byteLength(clean)
+  // Rotate before writing so the live file never exceeds the cap mid-write.
+  if (currentBytes + len > MAX_BYTES) rotateAppLogSync()
+  if (fd === null) return
+  try {
+    fs.writeSync(fd, clean)
+    currentBytes += len
+  } catch {
+    // Disk full / locked file — drop the line rather than crash the app.
   }
-  if (currentBytes > MAX_BYTES) rotateAppLogSync()
 }
 
-function appendSync(raw: string): void {
-  const clean = scrubAll(stripAnsi(raw))
+function openFd(): void {
   try {
-    fs.appendFileSync(getAppLogPath(), clean)
-  } catch {}
-  currentBytes += Buffer.byteLength(clean)
-  if (currentBytes > MAX_BYTES) rotateAppLogSync()
+    fd = fs.openSync(getAppLogPath(), 'a')
+  } catch {
+    fd = null
+  }
+}
+
+function closeFd(): void {
+  if (fd !== null) {
+    try {
+      fs.closeSync(fd)
+    } catch {}
+    fd = null
+  }
 }
 
 /**
- * Synchronous rotation: prune the oldest rotated files past the retention
- * cap, rename the live log to a timestamped sibling, and reopen a fresh
- * stream. Synchronous so it stays consistent when called from the crash
- * path or mid-write.
+ * Synchronous rotation: close the live fd, prune the oldest rotated files
+ * past the retention cap, rename the live log to a timestamped sibling, and
+ * reopen a fresh fd. Synchronous throughout so the handle is closed before
+ * the rename (required on Windows) and `currentBytes` stays consistent.
  */
 function rotateAppLogSync(): void {
   if (!logDir) return
-  try {
-    stream?.end()
-  } catch {}
-  stream = null
+  closeFd()
   try {
     const names = fs
       .readdirSync(logDir)
@@ -182,11 +188,7 @@ function rotateAppLogSync(): void {
       fs.renameSync(getAppLogPath(), path.join(logDir, `${BASE_NAME}_${timestamp}.log`))
     }
   } catch {}
-  try {
-    stream = openStream()
-  } catch {
-    stream = null
-  }
+  openFd()
   currentBytes = 0
 }
 
@@ -211,12 +213,10 @@ export function resetAppLogForTest(): void {
     console[level] = original
   }
   originalConsole.clear()
-  try {
-    stream?.destroy()
-  } catch {}
-  stream = null
+  closeFd()
   logDir = null
   currentBytes = 0
+  opPending = ''
   initialized = false
   consolePatched = false
 }

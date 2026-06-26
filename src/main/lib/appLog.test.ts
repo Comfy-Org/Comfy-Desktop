@@ -14,7 +14,6 @@ import {
   writeAppLog,
   writeAppLogSync,
   writeOperationOutput,
-  flushAppLog,
   getAppLogPath,
   resetAppLogForTest
 } from './appLog'
@@ -65,10 +64,9 @@ describe('appLog', () => {
     expect(out).not.toContain('alice')
   })
 
-  it('captures patched console output after init', async () => {
+  it('captures patched console output after init', () => {
     initAppLog({ dir: tmpDir })
     console.error('handler exploded', { code: 2 })
-    await flushAppLog()
     expect(read()).toContain('[ERROR] handler exploded')
   })
 
@@ -90,11 +88,20 @@ describe('appLog', () => {
     expect(read()).not.toContain('session one')
   })
 
-  it('tees operation output verbatim', async () => {
+  it('tees operation output once a line completes', () => {
     initAppLog({ dir: tmpDir })
     expect(getAppLogPath()).toBe(path.join(tmpDir, 'app.log'))
     writeOperationOutput('> uv pip install torch\n')
-    await flushAppLog()
     expect(read()).toContain('> uv pip install torch')
+  })
+
+  it('scrubs a credential split across two operation chunks', () => {
+    initAppLog({ dir: tmpDir })
+    // The secret straddles the chunk boundary; per-chunk scrubbing would miss it.
+    writeOperationOutput('downloading from https://user:to')
+    writeOperationOutput('ken@mirror.example/simple\n')
+    const out = read()
+    expect(out).toContain('//[REDACTED]@')
+    expect(out).not.toContain('user:token@')
   })
 })
