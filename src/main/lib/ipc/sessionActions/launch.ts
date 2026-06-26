@@ -461,8 +461,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
-      // Strip ANSI once: the tail (crashed-state UI + telemetry) and the
-      // launch tracker both want clean text rather than raw color codes.
+      // Strip ANSI once for both the tail buffer and the launch tracker.
       const clean = stripAnsi(text)
       stderrBuf += clean
       if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-4096)

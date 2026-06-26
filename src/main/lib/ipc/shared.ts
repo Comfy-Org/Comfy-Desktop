@@ -1127,11 +1127,8 @@ export function makeSendProgress(sender: Electron.WebContents, installationId: s
 /** Helper to create a sendOutput callback from an IPC event sender */
 export function makeSendOutput(sender: Electron.WebContents, installationId: string): (text: string) => void {
   return (text: string): void => {
-    // ComfyUI colorizes its logs with ANSI escape codes. The interactive
-    // terminal (xterm.js, via the separate `terminal-output` channel) renders
-    // them, but the plain-text consumers fed from here (progress modal,
-    // finished-state logs, pop-out logs window via the ring buffer) would show
-    // the raw codes — strip them so every plain-text surface stays clean.
+    // Strip ANSI: these are plain-text surfaces. The xterm.js terminal keeps
+    // its colors via the separate `terminal-output` channel.
     const clean = stripAnsi(text)
     try { if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text: clean }) } catch {}
     appendLog(installationId, clean)
