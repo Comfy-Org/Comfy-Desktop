@@ -1,4 +1,4 @@
-import { app, Menu, ipcMain, net, dialog } from 'electron'
+import { app, Menu, ipcMain, net, dialog, crashReporter } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
@@ -23,6 +23,7 @@ import {
   recordDashboardSurface
 } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { initAppLog } from './lib/appLog'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
 import { openSystemModal, openSystemModalAsync, openSystemModalChoiceAsync, registerSystemModalIpc } from './popups/systemModal'
@@ -149,6 +150,15 @@ import {
 } from './host/panelView'
 
 export type { ComfyPanelKey } from './host/registry'
+
+// Collect native crash minidumps (GPU / renderer / V8 OOM segfaults that
+// never reach a JS handler) into app.getPath('crashDumps'). Kept local — we
+// don't upload, we ask the user to send them. Must start before app ready.
+try {
+  crashReporter.start({ uploadToServer: false })
+} catch {
+  // Never let crash-reporter setup block app startup.
+}
 
 todesktop.init({ autoUpdater: false })
 
@@ -1345,6 +1355,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     migrateXdgPaths()
     persistWinDataRootChoice()
+    // Open the durable global app log before anything else logs, so the
+    // error handlers below (and all subsequent console output) are captured.
+    initAppLog()
+    console.info(
+      `App started v${APP_VERSION} pid=${process.pid} platform=${process.platform} crashDumps=${app.getPath('crashDumps')}`
+    )
     registerProcessErrorHandlers()
 
     // Strip Electron's default menu before any BrowserWindow opens so

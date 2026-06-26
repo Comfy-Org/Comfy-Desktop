@@ -19,6 +19,7 @@ import * as i18n from '../lib/i18n'
 import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
 import { convertLevelToZoomPercent } from '../lib/zoom'
+import { getAppLogDir } from '../lib/appLog'
 import {
   openPath as openPathHelper,
   getAppVersion,
@@ -2961,6 +2962,12 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const targetPath = payload?.path
     if (typeof targetPath !== 'string' || targetPath.length === 0) return
     void openPathHelper(targetPath)
+  })
+
+  // Open the global app-log folder so users can grab logs for a bug report.
+  ipcMain.on('comfy-titlepopup:global-settings-open-logs-folder', (event) => {
+    if (!settingsEntryFor(event.sender.id)) return
+    void openPathHelper(getAppLogDir())
   })
 
   // Reveal a file in the OS file manager (highlights it in its parent folder),
