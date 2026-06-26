@@ -124,4 +124,14 @@ describe('appLog', () => {
     flushOperationOutput()
     expect(read()).toContain('no trailing newline here')
   })
+
+  it('flushes only the targeted installation, leaving others buffered', () => {
+    initAppLog({ dir: tmpDir })
+    writeOperationOutput('inst-a', 'partial-a')
+    writeOperationOutput('inst-b', 'partial-b')
+    flushOperationOutput('inst-a')
+    const out = read()
+    expect(out).toContain('partial-a')
+    expect(out).not.toContain('partial-b')
+  })
 })
