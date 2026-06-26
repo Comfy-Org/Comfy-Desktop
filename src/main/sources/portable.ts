@@ -41,6 +41,9 @@ interface GitHubAsset {
 
 function findPortableRoot(installPath: string): string | null {
   if (fs.existsSync(path.join(installPath, 'python_embeded'))) return installPath
+  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
+  const parent = path.dirname(installPath)
+  if (parent !== installPath && fs.existsSync(path.join(parent, 'python_embeded'))) return parent
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(installPath, { withFileTypes: true })
@@ -257,8 +260,11 @@ export const portable: SourcePlugin = {
   },
 
   probeInstallation(dirPath: string): Record<string, unknown> | null {
-    if (findPortableRoot(dirPath)) return { version: 'unknown', asset: '', launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
-    return null
+    const root = findPortableRoot(dirPath)
+    if (!root) return null
+    // Record the portable root, not whatever the user picked — they may have
+    // pointed at the nested `ComfyUI/` folder or the parent of the install.
+    return { version: 'unknown', asset: '', installPath: root, launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
   },
 
   async handleAction(

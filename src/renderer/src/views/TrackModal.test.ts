@@ -159,3 +159,56 @@ describe('TrackModal — browse-only install directory', () => {
     expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
   })
 })
+
+describe('TrackModal — install path resolution on save', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('records the probe-resolved root when the user picked a nested folder', async () => {
+    const standaloneProbe: ProbeResult = {
+      sourceId: 'standalone',
+      sourceLabel: 'Standalone',
+      version: 'v0.1.0',
+      installPath: '/Users/jo/standalone',
+    }
+    const api = installMockApi({
+      // User browses to the nested ComfyUI folder; the probe corrects the root.
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/standalone/ComfyUI'),
+      probeInstallation: vi.fn().mockResolvedValue([standaloneProbe]),
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+
+    await wrapper.get('button.brand-tertiary').trigger('click')
+    await flushPromises()
+
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(api.trackInstallation).toHaveBeenCalledTimes(1)
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.installPath).toBe('/Users/jo/standalone')
+  })
+
+  it('falls back to the picked folder when the probe has no resolved root', async () => {
+    const api = installMockApi({
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+      // gitProbe has no installPath.
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+
+    await wrapper.get('button.brand-tertiary').trigger('click')
+    await flushPromises()
+
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(api.trackInstallation).toHaveBeenCalledTimes(1)
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.installPath).toBe('/Users/jo/ComfyUI')
+  })
+})
