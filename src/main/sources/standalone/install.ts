@@ -20,6 +20,7 @@ import {
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
 import { tagsEqual, type ComfyVersion } from '../../lib/version'
+import { resolveNestedComfyUIParent } from '../common/nestedRoot'
 import type { InstallTools, PostInstallTools } from '../../types/sources'
 
 const BULKY_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
@@ -308,11 +309,7 @@ function findStandaloneRoot(dirPath: string): string | null {
     fs.existsSync(path.join(root, 'ComfyUI', 'main.py'))
   if (hasMarkers(dirPath)) return dirPath
   // User pointed at the nested `ComfyUI/` folder — the root is one level up.
-  const parent = path.dirname(dirPath)
-  if (parent !== dirPath && path.basename(dirPath).toLowerCase() === 'comfyui' && hasMarkers(parent)) {
-    return parent
-  }
-  return null
+  return resolveNestedComfyUIParent(dirPath, hasMarkers)
 }
 
 export async function probeInstallation(dirPath: string): Promise<Record<string, unknown> | null> {

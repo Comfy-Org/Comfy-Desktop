@@ -12,6 +12,7 @@ import { fetchLatestRelease, truncateNotes } from '../lib/comfyui-releases'
 import { buildChannelCards, buildChannelLabelMap } from '../lib/channel-cards'
 import type { ChannelDef } from '../lib/channel-cards'
 import { buildLaunchSettingsFields, buildStorageFields } from './common/launchSettingsFields'
+import { resolveNestedComfyUIParent } from './common/nestedRoot'
 import type { InstallationRecord } from '../installations'
 import type {
   SourcePlugin,
@@ -65,15 +66,8 @@ function findPortableRoot(installPath: string): string | null {
 function findPortableProbeRoot(dirPath: string): string | null {
   const root = findPortableRoot(dirPath)
   if (root) return root
-  const parent = path.dirname(dirPath)
-  if (
-    parent !== dirPath &&
-    path.basename(dirPath).toLowerCase() === 'comfyui' &&
-    fs.existsSync(path.join(parent, 'python_embeded'))
-  ) {
-    return parent
-  }
-  return null
+  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
+  return resolveNestedComfyUIParent(dirPath, (parent) => fs.existsSync(path.join(parent, 'python_embeded')))
 }
 
 export const portable: SourcePlugin = {
