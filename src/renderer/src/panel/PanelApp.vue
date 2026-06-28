@@ -158,13 +158,14 @@ const {
   switchPanel
 } = overlays
 
-// Warm picker thumbnails during idle so the install wizard shows images, not
-// loaders; defers while an instance/overlay is active so it never competes.
+// Defers only for a running instance, not an open overlay — the picker lives
+// inside the new-install takeover, which is exactly when we want it warm.
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
-  isBusy: () => sessionStore.runningTabCount > 0 || currentOverlay.value !== null
+  isBusy: () => sessionStore.runningTabCount > 0
 })
 
 async function warmTemplateThumbnails(): Promise<void> {
+  if (firstUseCompleted.value) return
   try {
     const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
     prefetchThumbnails(
@@ -497,6 +498,8 @@ onMounted(async () => {
     // `firstUseCompleted` stays false until the explicit completion
     // path runs.
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
+      // Warm before opening so the prefetch queue is pumping as the picker mounts.
+      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
@@ -508,8 +511,6 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
-    // Fire-and-forget after the panel is interactive; self-defers when busy.
-    void warmTemplateThumbnails()
   }
 })
 
