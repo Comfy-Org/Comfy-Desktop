@@ -195,6 +195,27 @@ describe('GlobalSettingsView', () => {
     expect(bridge.updateFieldCalls).toEqual([{ id: 'inputDir', value: '/picked/in' }])
   })
 
+  // Every dir in the global Storage tab is shared, so all rows carry the shared
+  // glyph — matching the per-instance Storage tab (StoragePane.vue).
+  it('Storage tab marks shared models and input/output dirs with the shared glyph', async () => {
+    installMockBridge()
+    const snapshot = makeSnapshot({
+      sharedDirectoriesFields: [
+        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
+        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' },
+      ],
+    })
+    const wrapper = mountView(snapshot)
+    await wrapper.findAll('.gs-tab').find((t) => t.text() === 'Storage')!.trigger('click')
+    await nextTick()
+    const modelRows = wrapper.findAll('.models-dir-row')
+    expect(modelRows.length).toBeGreaterThan(0)
+    expect(modelRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
+    const dirRows = wrapper.findAll('.storage-dir-row')
+    expect(dirRows).toHaveLength(2)
+    expect(dirRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
+  })
+
   it('Storage tab opens a Shared Directory in the OS file manager when clicked', async () => {
     const bridge = installMockBridge()
     const snapshot = makeSnapshot({
