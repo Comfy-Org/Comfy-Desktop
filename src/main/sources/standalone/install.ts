@@ -20,6 +20,7 @@ import {
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
 import { tagsEqual, type ComfyVersion } from '../../lib/version'
+import { resolveNestedComfyUIParent } from '../common/nestedRoot'
 import type { InstallTools, PostInstallTools } from '../../types/sources'
 
 const BULKY_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
@@ -296,20 +297,34 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
   // phase, so the bytes overlap env setup instead of blocking the install.
 }
 
+/**
+ * Resolve the standalone root for a probed directory. Returns the directory
+ * itself when it holds the standalone markers (`standalone-env/` +
+ * `ComfyUI/main.py`), or its parent when the user pointed at the nested
+ * `ComfyUI/` folder inside a standalone install. Returns null otherwise.
+ */
+function findStandaloneRoot(dirPath: string): string | null {
+  const hasMarkers = (root: string): boolean =>
+    fs.existsSync(path.join(root, 'standalone-env')) &&
+    fs.existsSync(path.join(root, 'ComfyUI', 'main.py'))
+  if (hasMarkers(dirPath)) return dirPath
+  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
+  return resolveNestedComfyUIParent(dirPath, hasMarkers)
+}
+
 export async function probeInstallation(dirPath: string): Promise<Record<string, unknown> | null> {
-  const envExists = fs.existsSync(path.join(dirPath, 'standalone-env'))
-  const mainExists = fs.existsSync(path.join(dirPath, 'ComfyUI', 'main.py'))
-  if (!envExists || !mainExists) return null
-  const hasVenv = fs.existsSync(path.join(dirPath, 'ComfyUI', '.venv'))
-  const hasLegacyEnvs = fs.existsSync(path.join(dirPath, 'envs'))
-  const hasGit = fs.existsSync(path.join(dirPath, 'ComfyUI', '.git'))
+  const root = findStandaloneRoot(dirPath)
+  if (!root) return null
+  const hasVenv = fs.existsSync(path.join(root, 'ComfyUI', '.venv'))
+  const hasLegacyEnvs = fs.existsSync(path.join(root, 'envs'))
+  const hasGit = fs.existsSync(path.join(root, 'ComfyUI', '.git'))
 
   let version = 'unknown'
   let releaseTag = ''
   let variant = ''
   let pythonVersion = ''
   try {
-    const data = JSON.parse(fs.readFileSync(path.join(dirPath, MANIFEST_FILE), 'utf8')) as Record<string, string>
+    const data = JSON.parse(fs.readFileSync(path.join(root, MANIFEST_FILE), 'utf8')) as Record<string, string>
     version = data.comfyui_ref || version
     releaseTag = data.version || releaseTag
     variant = data.id || variant
@@ -318,7 +333,7 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
 
   let comfyVersion: ComfyVersion | undefined
   if (hasGit) {
-    const comfyuiDir = path.join(dirPath, 'ComfyUI')
+    const comfyuiDir = path.join(root, 'ComfyUI')
     const commit = readGitHead(comfyuiDir)
     if (commit) {
       const manifestTag = version !== 'unknown' ? version : undefined
@@ -333,6 +348,9 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
     variant,
     pythonVersion,
     hasGit,
+    // Record the standalone root, not whatever the user picked — they may have
+    // pointed at the nested `ComfyUI/` folder. Runtime paths resolve off this.
+    installPath: root,
     launchArgs: DEFAULT_LAUNCH_ARGS,
     launchMode: 'window',
     ...(hasLegacyEnvs && !hasVenv ? { needsEnvMigration: true } : {}),
