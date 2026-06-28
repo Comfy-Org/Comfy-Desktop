@@ -101,15 +101,17 @@ async function copySelection(): Promise<void> {
   }
 }
 
-/** Write the clipboard contents into the shared PTY as if typed. */
+/** Paste the clipboard into the terminal. Used by the right-click menu; the
+ *  keyboard paste shortcut is handled natively by xterm (see the key handler).
+ *  `terminal.paste()` routes through onData and honors bracketed-paste mode. */
 async function pasteClipboard(): Promise<void> {
-  // Snapshot the target before awaiting: switching installs mid-read must not
-  // redirect the paste to a different PTY.
-  const id = currentId
-  if (!id) return
+  const term = terminal
+  if (!term) return
   try {
     const text = await navigator.clipboard.readText()
-    if (text) await api.terminalWrite(id, text)
+    // Ignore if this view was torn down / swapped to another install during
+    // the async clipboard read.
+    if (text && term === terminal) term.paste(text)
   } catch {
     // See copySelection: clipboard access can fail; nothing else to do.
   }
@@ -199,7 +201,9 @@ async function attach(id: string): Promise<void> {
         void copySelection()
         return false
       case 'paste':
-        void pasteClipboard()
+        // xterm pastes natively via the browser's paste event; returning false
+        // only swallows the keydown so no stray ^V reaches the PTY. Pasting
+        // manually here too would double-paste.
         return false
       case 'swallow':
         return false

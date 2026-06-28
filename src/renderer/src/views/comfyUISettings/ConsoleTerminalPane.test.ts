@@ -22,6 +22,7 @@ const fakeTerminal = {
   reset: vi.fn(),
   dispose: vi.fn(),
   selectAll: vi.fn(),
+  paste: vi.fn(),
   hasSelection: vi.fn(() => selectionText.length > 0),
   getSelection: vi.fn(() => selectionText),
   element: {
@@ -239,15 +240,19 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
       expect(clipboard.writeText).not.toHaveBeenCalled()
     })
 
-    it('Ctrl+V pastes clipboard text into the PTY (Windows)', async () => {
+    it('Ctrl+V swallows the keydown and lets xterm paste natively (no double paste)', async () => {
       mountPane()
       await flushPromises()
 
       const result = keyHandler()(keyEvent({ key: 'v', ctrlKey: true }))
       await flushPromises()
 
+      // Returns false so no stray ^V reaches the PTY, but does NOT paste
+      // manually — xterm's native paste event handles it, so writing here too
+      // would double-paste.
       expect(result).toBe(false)
-      expect(window.api.terminalWrite).toHaveBeenCalledWith('install-A', 'pasted')
+      expect(fakeTerminal.paste).not.toHaveBeenCalled()
+      expect(window.api.terminalWrite).not.toHaveBeenCalled()
     })
 
     // ContextMenu teleports to <body>, so query the document rather than the wrapper.
@@ -265,6 +270,21 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
       copyItem!.click()
       await flushPromises()
       expect(clipboard.writeText).toHaveBeenCalledWith('pick me')
+    })
+
+    it('right-click Paste writes the clipboard into the terminal via paste()', async () => {
+      const w = mountPane()
+      await flushPromises()
+
+      await w.find(`[data-testid="${TID.consoleTerminal}"]`).trigger('contextmenu')
+      const pasteItem = document.body.querySelector<HTMLButtonElement>(
+        `[data-testid="${TID.contextMenuItem('paste')}"]`
+      )
+      expect(pasteItem).not.toBeNull()
+
+      pasteItem!.click()
+      await flushPromises()
+      expect(fakeTerminal.paste).toHaveBeenCalledWith('pasted')
     })
 
     it('disables the Copy menu item when nothing is selected', async () => {

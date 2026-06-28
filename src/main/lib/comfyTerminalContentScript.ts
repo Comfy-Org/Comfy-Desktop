@@ -159,14 +159,8 @@ function renderTerminal(container) {
       return false;
     }
     if (action === 'paste') {
-      try {
-        navigator.clipboard.readText().then(function (text) {
-          // Bail if the view was torn down (e.g. tab/install switch) while the
-          // async clipboard read was pending.
-          if (m.disposed || !text) return;
-          try { bridge.write(text); } catch (err) {}
-        }).catch(function () {});
-      } catch (err) {}
+      // xterm pastes natively via the browser's paste event; just swallow the
+      // keydown so no stray ^V is sent. A manual paste here would double-paste.
       return false;
     }
     if (action === 'swallow') return false;
