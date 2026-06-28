@@ -21,6 +21,7 @@
 
 import { createRequire } from 'module'
 import { readFileSync } from 'fs'
+import { decideTerminalKeyAction } from '../../shared/terminalShortcuts'
 
 // The main bundle is CommonJS, so `__filename` is the right anchor for
 // require.resolve (import.meta.url is unavailable there).
@@ -56,26 +57,13 @@ var TERM_PLATFORM = (function () {
   return 'linux';
 })();
 
-// Returns 'copy' | 'paste' | 'swallow' | 'passthrough'. See terminalShortcuts.ts
-// for the rationale behind each per-OS rule.
+// Single source of truth for the shortcut matrix: this injected terminal and
+// the desktop console (ConsoleTerminalPane.vue) both use
+// src/shared/terminalShortcuts.ts, embedded here verbatim via .toString() so
+// the two can't drift. decideTermKeyAction just binds the detected platform.
+var decideTerminalKeyAction = ${decideTerminalKeyAction.toString()};
 function decideTermKeyAction(e, hasSelection) {
-  if (e.type !== 'keydown') return 'passthrough';
-  var key = (e.key || '').toLowerCase();
-  if (TERM_PLATFORM === 'mac') {
-    var cmdOnly = e.metaKey && !e.ctrlKey && !e.altKey;
-    if (cmdOnly && key === 'c') return hasSelection ? 'copy' : 'swallow';
-    if (cmdOnly && key === 'v') return 'paste';
-    return 'passthrough';
-  }
-  var ctrlShift = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
-  if (ctrlShift && key === 'c') return hasSelection ? 'copy' : 'swallow';
-  if (ctrlShift && key === 'v') return 'paste';
-  if (TERM_PLATFORM === 'windows') {
-    var ctrlOnly = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
-    if (ctrlOnly && key === 'c') return hasSelection ? 'copy' : 'passthrough';
-    if (ctrlOnly && key === 'v') return 'paste';
-  }
-  return 'passthrough';
+  return decideTerminalKeyAction(e, TERM_PLATFORM, hasSelection);
 }
 
 function destroyTerminal() {
@@ -166,7 +154,8 @@ function renderTerminal(container) {
     var action = decideTermKeyAction(e, term.hasSelection());
     if (action === 'copy') {
       var text = term.getSelection();
-      if (text) { try { navigator.clipboard.writeText(text); } catch (err) {} }
+      // writeText is async: also swallow promise rejections, not just sync throws.
+      if (text) { try { navigator.clipboard.writeText(text).catch(function () {}); } catch (err) {} }
       return false;
     }
     if (action === 'paste') {

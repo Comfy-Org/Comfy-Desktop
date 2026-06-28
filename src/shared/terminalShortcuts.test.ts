@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { decideTerminalKeyAction, type TerminalKeyEventLike } from './terminalShortcuts'
-import type { RendererPlatform } from '../composables/usePlatform'
+import {
+  decideTerminalKeyAction,
+  type TerminalKeyEventLike,
+  type TerminalPlatform,
+} from './terminalShortcuts'
 
 function ev(overrides: Partial<TerminalKeyEventLike>): TerminalKeyEventLike {
   return {
@@ -16,7 +19,7 @@ function ev(overrides: Partial<TerminalKeyEventLike>): TerminalKeyEventLike {
 
 const decide = (
   e: Partial<TerminalKeyEventLike>,
-  platform: RendererPlatform,
+  platform: TerminalPlatform,
   hasSelection: boolean,
 ): ReturnType<typeof decideTerminalKeyAction> =>
   decideTerminalKeyAction(ev(e), platform, hasSelection)

@@ -1,5 +1,11 @@
 // OS-aware copy/paste shortcut handling for the xterm.js consoles.
 //
+// Lives in `src/shared` because it is the single source of truth for the
+// shortcut matrix: the renderer's ConsoleTerminalPane imports it directly, and
+// the injected stopgap terminal (comfyTerminalContentScript.ts) embeds this
+// exact function via `decideTerminalKeyAction.toString()` so the two can never
+// drift apart.
+//
 // Terminals are special: Ctrl+C is the shell's interrupt (SIGINT, echoed as
 // "^C"), so a terminal can't blindly treat it as "copy". Each OS resolves this
 // differently, and we mirror the platform's native terminal so the shortcuts
@@ -12,7 +18,8 @@
 //   Linux    — Ctrl+Shift+C / Ctrl+Shift+V copy / paste (GNOME Terminal et al);
 //              Ctrl+C is always SIGINT.
 
-import type { RendererPlatform } from '../composables/usePlatform'
+/** Coarse OS bucket the shortcut matrix branches on. */
+export type TerminalPlatform = 'mac' | 'windows' | 'linux' | 'unknown'
 
 /** A minimal shape of `KeyboardEvent` so the decision is trivially unit-testable. */
 export interface TerminalKeyEventLike {
@@ -36,7 +43,7 @@ export type TerminalKeyAction = 'copy' | 'paste' | 'swallow' | 'passthrough'
 
 export function decideTerminalKeyAction(
   e: TerminalKeyEventLike,
-  platform: RendererPlatform,
+  platform: TerminalPlatform,
   hasSelection: boolean,
 ): TerminalKeyAction {
   // Only act on key-down; key-up/press for the same chord would double-fire.

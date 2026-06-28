@@ -8,7 +8,7 @@ import '@xterm/xterm/css/xterm.css'
 import type { TerminalRestore } from '../../../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { normalizePlatform } from '../../composables/usePlatform'
-import { decideTerminalKeyAction } from '../../lib/terminalShortcuts'
+import { decideTerminalKeyAction } from '../../../../shared/terminalShortcuts'
 import ContextMenu from '../../components/ContextMenu.vue'
 import type { ContextMenuItem } from '../../types/context-menu'
 
