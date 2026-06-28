@@ -850,6 +850,7 @@
     "updateConfirmMessageLatest": "Update {installed} to the latest master commit ({latest})?",
     "updateConfirmMessageDowngrade": "Roll back from {installed} to stable {latest}? Newer commits will be removed.",
     "updateBreakingWarning": "⚠️ This may break your custom nodes and workflows.",
+    "updateSnapshotUndoHint": "💾 To undo, restore the snapshot saved before the update from the Snapshots tab.",
     "updateConfirmMessagePicked": "Update ComfyUI to **{tag}**?",
     "updatingTitle": "Updating to {version}",
     "downgradingTitle": "Downgrading to {version}",

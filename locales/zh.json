@@ -850,6 +850,7 @@
     "updateConfirmMessageLatest": "将 {installed} 更新到最新 master 提交（{latest}）？",
     "updateConfirmMessageDowngrade": "从 {installed} 回滚到稳定版 {latest}？较新的提交将被移除。",
     "updateBreakingWarning": "⚠️ 这可能会破坏你的自定义节点和工作流。",
+    "updateSnapshotUndoHint": "💾 如需撤销，可在快照标签页恢复更新前保存的快照。",
     "updateConfirmMessagePicked": "将 ComfyUI 更新到 **{tag}**？",
     "updatingTitle": "正在更新到 {version}",
     "downgradingTitle": "正在降级到 {version}",
