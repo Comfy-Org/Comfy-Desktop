@@ -471,6 +471,8 @@ onMounted(async () => {
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
+      // Warm before opening so the prefetch queue is pumping as the picker mounts.
+      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
 
