@@ -248,12 +248,12 @@ defineExpose({ open })
                 <button
                   v-if="trackPath"
                   type="button"
-                  class="track-path-open"
+                  class="open-folder-link track-path-open"
                   :title="$t('actions.openDirectory', 'Open Directory')"
                   :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${trackPath}`"
                   @click="handleOpenTrackPath"
                 >{{ trackPath }}</button>
-                <span v-else class="track-path-open track-path-placeholder">{{
+                <span v-else class="open-folder-link track-path-open track-path-placeholder">{{
                   $t('track.selectDir')
                 }}</span>
               </div>
@@ -377,26 +377,12 @@ defineExpose({ open })
   padding-inline: 12px;
 }
 /* Path text replaces the old readonly <input>; clicking it opens the tracked
- *  directory in the OS file manager. Only the text is the click target. */
+ *  directory in the OS file manager. Inherits .open-folder-link; only the
+ *  row-specific sizing/inheritance differ. */
 .track-path-open {
-  min-width: 0;
   flex: 0 1 auto;
-  padding: 0;
-  border: none;
-  background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-.track-path-open:hover,
-.track-path-open:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
 }
 .track-path-placeholder {
   color: var(--neutral-400);

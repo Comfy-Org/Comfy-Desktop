@@ -224,7 +224,7 @@ v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail
                 <button
                   v-if="canOpenFieldValue(f)"
                   type="button"
-                  class="detail-path-open"
+                  class="open-folder-link detail-path-open"
                   :title="$t('actions.openDirectory', 'Open Directory')"
                   :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
                   @click="handleOpenPath(f.value)"

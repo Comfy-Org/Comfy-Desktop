@@ -43,7 +43,7 @@ defineEmits<{
         <button
           v-if="path"
           type="button"
-          class="path-open"
+          class="open-folder-link path-open"
           :title="$t('actions.openDirectory', 'Open Directory')"
           :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
           @click="$emit('open')"
@@ -79,25 +79,8 @@ defineEmits<{
   background: var(--surface);
 }
 
+/* Inherits .open-folder-link; matches the shared color/font, only caps width. */
 .path-open {
-  min-width: 0;
   max-width: 100%;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: 14px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.path-open:hover,
-.path-open:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
 }
 </style>

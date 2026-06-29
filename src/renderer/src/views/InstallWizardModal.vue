@@ -902,12 +902,12 @@ defineExpose({ open })
                   <button
                     v-if="!currentSource?.skipInstall && instPath"
                     type="button"
-                    class="config-path-open"
+                    class="open-folder-link config-path-open"
                     :title="$t('actions.openDirectory', 'Open Directory')"
                     :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
                     @click="handleOpenInstPath"
                   >{{ instPath }}</button>
-                  <span v-else class="config-path-open config-path-open--static">{{
+                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
                     instPath
                   }}</span>
                 </div>
@@ -1441,26 +1441,12 @@ defineExpose({ open })
   padding-inline: 12px;
 }
 /* Path text replaces the old readonly <input>; clicking it opens the selected
- *  install directory in the OS file manager. Only the text is the click target. */
+ *  install directory in the OS file manager. Inherits .open-folder-link; only
+ *  the row-specific sizing/inheritance differ. */
 .config-path-open {
-  min-width: 0;
   flex: 0 1 auto;
-  padding: 0;
-  border: none;
-  background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-.config-path-open:hover,
-.config-path-open:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
 }
 .config-path-open--static {
   cursor: default;
