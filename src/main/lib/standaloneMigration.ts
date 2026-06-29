@@ -9,7 +9,6 @@ import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from './paths'
 import {
   validateExportEnvelope,
   importSnapshots,
-  saveSnapshot,
   ensureCurrentSnapshotOnTop,
   getSnapshotCount,
   restoreCustomNodes,
@@ -157,9 +156,12 @@ export async function restoreSnapshotIntoInstallation(
 
   const restoreContext = { installation_id: entry.id }
   try {
+    // Validate the envelope as a restore *target* only — do NOT commit it to
+    // history yet. A snapshot in history must record a state the install has
+    // actually been in, so the envelope is committed via `importSnapshots` only
+    // after the restore below succeeds (see snapshots/AGENTS.md, #1137).
     const fileContent = await fs.promises.readFile(stagedFile, 'utf-8')
     const importEnvelope = validateExportEnvelope(JSON.parse(fileContent))
-    await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
     const targetSnapshot = importEnvelope.snapshots[0]!
 
     // Restore ComfyUI version
@@ -173,11 +175,11 @@ export async function restoreSnapshotIntoInstallation(
     )
 
     sendOutput('\n── Restore Nodes ──\n')
-    await telemetry.trackedStep(
+    const nodeResult = await telemetry.trackedStep(
       'comfy.desktop.snapshot.restore_custom_nodes',
       restoreContext,
       async () => {
-        await restoreCustomNodes(
+        return restoreCustomNodes(
           freshInst.installPath,
           freshInst,
           targetSnapshot,
@@ -189,13 +191,14 @@ export async function restoreSnapshotIntoInstallation(
       }
     )
 
+    let pipResult: Awaited<ReturnType<typeof restorePipPackages>> | null = null
     if (!signal.aborted && !targetSnapshot.skipPipSync) {
       sendOutput('\n── Restore Packages ──\n')
-      await telemetry.trackedStep(
+      pipResult = await telemetry.trackedStep(
         'comfy.desktop.snapshot.restore_pip_packages',
         restoreContext,
         async () => {
-          await restorePipPackages(
+          return restorePipPackages(
             freshInst.installPath,
             freshInst,
             targetSnapshot,
@@ -217,18 +220,40 @@ export async function restoreSnapshotIntoInstallation(
     )
     await update(restoreState)
 
+    // The restore "succeeded" only if the target state was actually reached.
+    // restoreComfyUIVersion/restorePipPackages report failures by RETURNING a
+    // result (they revert their own changes) rather than throwing, so we must
+    // inspect them — otherwise a pip install that can't be satisfied (the #1137
+    // repro) would still commit the never-applied target to history.
+    const restoreSucceeded =
+      !comfyResult.error &&
+      !signal.aborted &&
+      nodeResult.failed.length === 0 &&
+      (pipResult?.failed.length ?? 0) === 0
+
+    const updatedInst = { ...freshInst, ...restoreState }
     try {
-      const updatedInst = { ...freshInst, ...restoreState }
-      const snapFilename = await saveSnapshot(freshInst.installPath, updatedInst, 'post-restore')
+      // Only commit the imported envelope to history once the install has
+      // actually been in that state (#1137).
+      if (restoreSucceeded) {
+        await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
+      }
+      // Make the newest snapshot reflect the real current state: on success this
+      // is a no-op (the just-committed target already matches and stays Latest);
+      // on a partial restore with no source rollback it captures the novel
+      // on-disk state so the top is never a never-applied target.
+      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, updatedInst)
       const snapshotCount = await getSnapshotCount(freshInst.installPath)
-      await update({ lastSnapshot: snapFilename, snapshotCount })
+      await update({ lastSnapshot: filename ?? freshInst.lastSnapshot, snapshotCount })
     } catch {}
   } catch (restoreErr) {
     sendOutput(
-      `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\nYou can restore manually from the Snapshots tab.\n`
+      `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\n`
     )
-    // The import placed the (unapplied) target snapshot at the top of history;
-    // record the actual on-disk state so the newest snapshot stays accurate.
+    // The target was never committed to history (restore failed), but this
+    // fresh-install migration has no source rollback, so the on-disk state can
+    // be a novel partial-restore state that no existing snapshot matches.
+    // Capture it so the newest snapshot still reflects the real current state.
     try {
       const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, freshInst)
       if (filename) {

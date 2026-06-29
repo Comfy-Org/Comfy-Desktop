@@ -37,8 +37,13 @@ export async function handleAction(
   }
 
   if (actionId === 'snapshot-restore') {
+    // Restore target is either a snapshot already in this install's history
+    // (`file`) or a freshly imported envelope staged outside history
+    // (`restoreToken`). A staged import is only committed to history once the
+    // restore succeeds, so a failed restore leaves the timeline untouched.
     const file = actionData?.file as string | undefined
-    if (!file) return { ok: false, message: t('standalone.snapshotNoFile') }
+    const restoreToken = actionData?.restoreToken as string | undefined
+    if (!file && !restoreToken) return { ok: false, message: t('standalone.snapshotNoFile') }
 
     // Drop the shared shell + pop-outs first: on Windows a live shell holds a
     // handle on the install dir and any running python locks venv DLLs, which
@@ -53,7 +58,12 @@ export async function handleAction(
     sendProgress('restore-comfyui', { percent: 0, status: 'Loading snapshot…' })
     sendOutput('Loading snapshot…\n')
 
-    const targetSnapshot = await snapshots.loadSnapshot(installation.installPath, file)
+    const stagedEnvelope = restoreToken
+      ? await snapshots.loadStagedSnapshotEnvelope(restoreToken)
+      : undefined
+    const targetSnapshot = stagedEnvelope
+      ? stagedEnvelope.snapshots[0]!
+      : await snapshots.loadSnapshot(installation.installPath, file!)
 
     // Capture HEAD before the git checkout so a failed/cancelled restore can roll
     // the source back, keeping source + packages consistent (all-or-nothing).
@@ -67,11 +77,13 @@ export async function handleAction(
       await writeOpMarker(installation.installPath, { op: 'restore', preHead: preRestoreHead, startedAt: Date.now() })
     }
 
-    // After any failed/cancelled+rolled-back exit below, make sure the newest
-    // snapshot reflects the live (rolled-back) state instead of the never-applied
-    // target — otherwise a freshly imported snapshot keeps the top "current" slot
-    // even though the environment was rolled back. Best-effort: it must never turn
-    // a restore failure into a different failure.
+    // Safety net for failed/cancelled+rolled-back exits below. A staged import
+    // is not committed to history on failure, so the previous snapshot is
+    // normally already the newest and represents the live state (no-op here).
+    // This only writes a fresh current-state snapshot in the genuine edge cases
+    // — no previous snapshot at all, or a partial rollback the previous snapshot
+    // no longer matches. Best-effort: it must never turn a restore failure into
+    // a different failure.
     const ensureLiveStateOnTop = async (): Promise<void> => {
       try {
         const currentInstallation = (await installations.get(installation.id)) || installation
@@ -218,6 +230,19 @@ export async function handleAction(
     if (summary.length === 0) {
       sendOutput(`\n✓ ${t('standalone.snapshotRestoreNothingToDo')}\n`)
       sendProgress('done', { percent: 100, status: t('standalone.snapshotRestoreNothingToDo') })
+      // Nothing changed because the live state already matches the target. For a
+      // staged import that still means the import succeeded: commit the envelope
+      // to history and drop the staged file. ensureLiveStateOnTop is then a
+      // no-op (the committed target already represents the current state).
+      if (stagedEnvelope) {
+        try {
+          await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
+          if (restoreToken) await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
+        } catch (err) {
+          console.warn('Committing imported snapshots failed:', err)
+        }
+        await ensureLiveStateOnTop()
+      }
       return { ok: true, navigate: 'detail' }
     }
 
@@ -242,14 +267,40 @@ export async function handleAction(
     }
     await update(restoreState)
 
+    // Best-effort node failures don't roll the source back, so the live state
+    // is the (partially) restored one — it does NOT match the imported target.
+    const restoreSucceeded = totalFailures === 0
+    const updatedInstallation = {
+      ...installation,
+      ...restoreState,
+    }
     try {
-      const updatedInstallation = {
-        ...installation,
-        ...restoreState,
+      if (stagedEnvelope) {
+        // Commit a staged import to history ONLY once the restore fully
+        // succeeded — the install has actually been in this state (#1137). On
+        // partial node failure we leave the staged token in place so a retry can
+        // reuse it, and don't pollute history with a never-fully-applied target.
+        if (restoreSucceeded) {
+          await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
+          // Release only after the commit succeeds, so a failed commit keeps the
+          // staged file for retry.
+          if (restoreToken) await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
+        }
+        // Make the newest snapshot reflect the real current state. On success the
+        // just-committed target already matches (no-op, stays Latest); otherwise
+        // a fresh post-restore snapshot is written strictly on top — including
+        // above the future-dated imported entries, since ensureCurrentSnapshotOnTop
+        // stamps after the current top.
+        const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
+        const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+        if (filename) await update({ lastSnapshot: filename, snapshotCount })
+      } else {
+        // Restoring an existing in-history snapshot: it carries an older
+        // timestamp, so a plain post-restore snapshot lands on top.
+        const filename = await snapshots.saveSnapshot(installation.installPath, updatedInstallation, 'post-restore')
+        const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+        await update({ lastSnapshot: filename, snapshotCount })
       }
-      const filename = await snapshots.saveSnapshot(installation.installPath, updatedInstallation, 'post-restore')
-      const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
-      await update({ lastSnapshot: filename, snapshotCount })
     } catch (err) {
       console.warn('Post-restore snapshot failed:', err)
     }

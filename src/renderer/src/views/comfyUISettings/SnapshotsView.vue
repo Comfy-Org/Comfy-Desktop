@@ -83,6 +83,9 @@ const restoreOp = computed<ActiveOperation | null>(() => {
 const restoreOpFile = computed<string | null>(
   () => (restoreOp.value?.actionData as { file?: string } | undefined)?.file ?? null
 )
+const restoreOpIsImport = computed<boolean>(
+  () => !!(restoreOp.value?.actionData as { restoreToken?: string } | undefined)?.restoreToken
+)
 const restoreInFlight = computed<boolean>(() => !!restoreOp.value && !restoreOp.value.done)
 const restorePhase = computed<string>(() => {
   const op = restoreOp.value
@@ -104,7 +107,7 @@ const restoreCancellable = computed<boolean>(
  *  when the row isn't loaded locally yet. */
 const restoreFromLabel = computed<string>(() => {
   const file = restoreOpFile.value
-  if (!file) return ''
+  if (!file) return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
   const target = snapshots.value.find((s) => s.filename === file)
   if (target) {
     const trigger = triggerLabel(target.trigger, t)
@@ -546,14 +549,14 @@ async function handleImport(): Promise<void> {
     imported_bucket: toCountBucket(importResult.imported ?? 0)
   })
 
-  await load()
-  emit('refresh-all')
-
-  if (importResult.restoreFile) {
+  // The import only staged a restore target; nothing landed in the live history
+  // yet, so don't reload here. The restore commits it on success and the
+  // success watcher reloads then.
+  if (importResult.restoreToken) {
     emit('run-action', {
       id: 'snapshot-restore',
       label: t('standalone.snapshotRestore', 'Restore'),
-      data: { file: importResult.restoreFile },
+      data: { restoreToken: importResult.restoreToken },
       showProgress: true,
       progressTitle: t('standalone.snapshotRestoringTitle', 'Restoring snapshot'),
       cancellable: true,

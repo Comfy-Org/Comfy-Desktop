@@ -1230,7 +1230,7 @@ export interface ElectronApi {
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
   importSnapshotsConfirm(
     installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreFile?: string; message?: string }>
+  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewDesktopMigration(): Promise<{
     ok: boolean

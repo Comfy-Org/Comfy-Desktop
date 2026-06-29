@@ -407,18 +407,20 @@ function snapshotRepresentsCurrentState(
 }
 
 /**
- * Guarantee the newest snapshot reflects the actual live environment.
+ * Repair safety-net: guarantee the newest snapshot reflects the actual live
+ * environment.
  *
- * Called after a snapshot restore *fails and rolls back*: the failed restore
- * leaves the live state at the pre-restore version, but the snapshot the user
- * tried to apply (typically a freshly imported one with a brand-new timestamp)
- * is still the newest entry and would otherwise read as "current" in history.
+ * This is NOT the primary fix for the #1137 "failed restore shows the unapplied
+ * target as Latest" bug — that is solved by never committing an imported target
+ * to history until the restore succeeds (see exportImport.ts / AGENTS.md). After
+ * a normal failed restore the previous in-history snapshot already represents
+ * the rolled-back live state, so this is a no-op.
  *
- * If the newest snapshot already represents the live state (e.g. restoring an
- * existing in-history snapshot that failed, or a repeated retry that already
- * produced a live-state snapshot) this is a no-op so we don't pile up
- * duplicates. Otherwise we write a fresh `post-restore` snapshot of the live
- * state so the top of the timeline is accurate again.
+ * It only does real work in genuine edge cases where the on-disk state is novel
+ * and no existing snapshot matches it: an install with no prior snapshot, or a
+ * partial restore with no source rollback (e.g. fresh-install migration). In
+ * those cases it writes a fresh `post-restore` snapshot of the live state so the
+ * top of the timeline is accurate again.
  *
  * Returns the filename representing the live state — either the newly written
  * snapshot (`saved: true`) or the existing matching top snapshot (`saved:

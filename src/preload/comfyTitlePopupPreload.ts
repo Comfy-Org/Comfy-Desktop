@@ -312,7 +312,7 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsImportSnapshotsConfirm(installationId: string): Promise<{
     ok: boolean
     imported?: number
-    restoreFile?: string
+    restoreToken?: string
     message?: string
   }>
   pickerSettingsPreviewSnapshotFile(): Promise<{
