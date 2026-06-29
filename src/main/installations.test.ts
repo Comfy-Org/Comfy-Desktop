@@ -676,7 +676,6 @@ describe('installations.uniqueName', () => {
 
   it('renumbers an already-suffixed name instead of compounding it', async () => {
     const { uniqueName } = await loadInstallations()
-    // The bug: "ComfyUI (1)" used to become "ComfyUI (1) (1)".
     expect(uniqueName('ComfyUI (1)', recs('ComfyUI', 'ComfyUI (1)'))).toBe('ComfyUI (2)')
   })
 
