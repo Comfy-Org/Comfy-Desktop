@@ -164,19 +164,24 @@ const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
 })
 
-async function warmTemplateThumbnails(): Promise<void> {
-  if (firstUseCompleted.value) return
-  try {
-    const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
-    prefetchThumbnails(
-      options.map((o) => {
-        const url = o.data?.thumbnailUrl
-        return typeof url === 'string' ? url : null
-      })
-    )
-  } catch {
-    // Best-effort warm-up; the picker still loads thumbnails on demand.
-  }
+let warmTemplateThumbnailsOnce: Promise<void> | null = null
+function warmTemplateThumbnails(): Promise<void> {
+  if (firstUseCompleted.value) return Promise.resolve()
+  // Both first-use branches can reach this on one cold start; warm just once.
+  warmTemplateThumbnailsOnce ??= (async () => {
+    try {
+      const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
+      prefetchThumbnails(
+        options.map((o) => {
+          const url = o.data?.thumbnailUrl
+          return typeof url === 'string' ? url : null
+        })
+      )
+    } catch {
+      // Best-effort warm-up; the picker still loads thumbnails on demand.
+    }
+  })()
+  return warmTemplateThumbnailsOnce
 }
 
 // E2E surface: tests drive UI-level flows (e.g. inject a finished

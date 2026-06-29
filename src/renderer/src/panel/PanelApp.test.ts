@@ -527,6 +527,7 @@ describe('PanelApp', () => {
     mountPanel()
     await flushPromises()
     const api = (window as unknown as { api: { getFieldOptions: ReturnType<typeof vi.fn> } }).api
+    expect(api.getFieldOptions).toHaveBeenCalledTimes(1)
     expect(api.getFieldOptions).toHaveBeenCalledWith('standalone', 'bundledTemplate', {}, {})
   })
 
