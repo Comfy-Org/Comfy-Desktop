@@ -220,4 +220,17 @@ describe('loadTemplateCatalog', () => {
     await loadTemplateCatalog()
     expect(mockedFetchJSON).toHaveBeenCalledTimes(2)
   })
+
+  it('refetches once the TTL lapses', async () => {
+    vi.useFakeTimers()
+    try {
+      mockedFetchJSON.mockResolvedValue([])
+      await loadTemplateCatalog()
+      vi.advanceTimersByTime(60_001)
+      await loadTemplateCatalog()
+      expect(mockedFetchJSON).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
