@@ -2,6 +2,7 @@ import { WebContentsView } from 'electron'
 import type { BrowserWindow } from 'electron'
 import path from 'path'
 import { _registerExtraBroadcastTarget } from '../lib/ipc/broadcast'
+import { attachContextMenu } from '../lib/contextMenu'
 
 /**
  * Lifecycle primitive for a transparent popup `WebContentsView` attached to a host BrowserWindow's
@@ -69,6 +70,24 @@ export class EmbeddedPopupView {
 
     // Opt the popup into main's broadcast fan-out (getAllWindows only reaches top-level windows).
     _registerExtraBroadcastTarget(popup.webContents)
+
+    // Native right-click Copy/Paste for selectable text + inputs inside popups
+    // (pill-drawer settings, system modals, etc.). The native menu blurs the
+    // popup webContents, which would normally auto-dismiss it, so suspend
+    // blur-dismiss while the menu is open and restore the prior value after —
+    // never unconditionally re-enable it, since the picker keeps it suppressed.
+    {
+      let priorSuppress = false
+      attachContextMenu(parent, popup.webContents, {
+        onMenuOpen: () => {
+          priorSuppress = this.suppressBlurDismiss
+          this.suppressBlurDismiss = true
+        },
+        onMenuClose: () => {
+          this.suppressBlurDismiss = priorSuppress
+        },
+      })
+    }
 
     const isDev = !!process.env['ELECTRON_RENDERER_URL']
     const loadPromise = isDev

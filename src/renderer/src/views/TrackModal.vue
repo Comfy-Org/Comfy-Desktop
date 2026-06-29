@@ -191,10 +191,14 @@ async function handleSave(): Promise<void> {
   if (venvOverride.value !== null) {
     rawProbe.venvPath = venvOverride.value
   }
+  // A probe may resolve the real install root when the user pointed at a nested
+  // folder (e.g. the `ComfyUI/` dir of a standalone/portable install). Prefer
+  // that over the raw picked path so runtime paths resolve correctly.
+  const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
   const data: Record<string, unknown> = {
     name,
-    installPath: trackPath.value,
-    ...rawProbe
+    ...rawProbe,
+    installPath
   }
 
   const result = await window.api.trackInstallation(data)

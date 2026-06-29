@@ -36,6 +36,7 @@ interface UpdateAction {
   id: string
   progressTitle: string
   data?: { channel?: string; isDowngrade?: boolean }
+  confirm?: { title?: string; message?: string }
 }
 interface ChannelOption {
   value: string
@@ -144,6 +145,14 @@ describe('updateSections — update-comfyui action payload', () => {
     const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
     expect(action!.data?.channel).toBe('stable')
     expect(action!.data?.isDowngrade).toBeDefined()
+  })
+
+  it('confirm copy carries the breakage warning and the snapshot-undo hint', () => {
+    // The update is reversible via the auto-saved pre-update snapshot; the
+    // confirm copy must surface both the risk and the undo path.
+    const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
+    expect(action!.confirm?.message).toContain('standalone.updateBreakingWarning')
+    expect(action!.confirm?.message).toContain('standalone.updateSnapshotUndoHint')
   })
 })
 
