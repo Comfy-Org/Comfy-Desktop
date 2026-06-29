@@ -16,6 +16,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
 }))
 
 import { standalone, buildPinnedVariant } from './index'
+import { resetTemplateCatalogCache } from './templateCatalog'
 import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
@@ -193,6 +194,11 @@ describe('standalone.buildInstallation', () => {
 // --- getFieldOptions('bundledTemplate') — curated + hydrated picker options ---
 
 describe('standalone.getFieldOptions bundledTemplate', () => {
+  beforeEach(() => {
+    mockedFetchJSON.mockReset()
+    resetTemplateCatalogCache()
+  })
+
   it('leads with the skip sentinel, then one option per curated template', async () => {
     mockedFetchJSON.mockResolvedValue([])
     const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
