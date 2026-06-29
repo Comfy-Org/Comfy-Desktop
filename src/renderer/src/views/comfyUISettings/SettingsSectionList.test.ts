@@ -17,6 +17,13 @@ function mountList(fields: DetailField[]) {
   })
 }
 
+function mountReadonly(fields: DetailField[]) {
+  return mount(SettingsSectionList, {
+    props: { sections: [{ fields }], readonly: true },
+    global: { plugins: [makeI18n()] },
+  })
+}
+
 describe('SettingsSectionList', () => {
   // When main attaches a field `description`, the renderer must surface it under the control.
   describe('field descriptions', () => {
@@ -82,6 +89,44 @@ describe('SettingsSectionList', () => {
       const trigger = wrapper.find('.info-tooltip-trigger')
       expect(trigger.exists()).toBe(true)
       expect(trigger.attributes('aria-label')).toContain('gitcode.com')
+    })
+  })
+
+  // Readonly path values render as a clickable open-folder button, keeping the
+  // copy button, and only fire `open-path` for real filesystem paths.
+  describe('readonly path rows', () => {
+    it('renders a clickable button that emits open-path for a path value', async () => {
+      const wrapper = mountReadonly([
+        { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' },
+      ])
+      const btn = wrapper.find('button.settings-v2-field-readonly-open')
+      expect(btn.exists()).toBe(true)
+      expect(btn.text()).toBe('/home/user/ComfyUI')
+      await btn.trigger('click')
+      expect(wrapper.emitted('open-path')?.[0]).toEqual(['/home/user/ComfyUI'])
+    })
+
+    it('keeps the copy button alongside the path', () => {
+      const wrapper = mountReadonly([
+        { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' },
+      ])
+      expect(wrapper.find('.settings-v2-readonly-path').exists()).toBe(true)
+      // BaseCopyButton renders a button; together with the open button there are two.
+      expect(wrapper.findAll('.settings-v2-readonly-path button').length).toBe(2)
+    })
+
+    it('does not make a URL value clickable', () => {
+      const wrapper = mountReadonly([
+        { id: 'repo', label: 'Repository', value: 'https://github.com/comfyanonymous/ComfyUI' },
+      ])
+      expect(wrapper.find('button.settings-v2-field-readonly-open').exists()).toBe(false)
+    })
+
+    it('does not make a date value clickable', () => {
+      const wrapper = mountReadonly([
+        { id: 'updated', label: 'Last updated', value: '2024/01/02' },
+      ])
+      expect(wrapper.find('button.settings-v2-field-readonly-open').exists()).toBe(false)
     })
   })
 })

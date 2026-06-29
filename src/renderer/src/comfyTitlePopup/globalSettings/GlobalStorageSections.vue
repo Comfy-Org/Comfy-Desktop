@@ -60,6 +60,12 @@ const sharedDirFields = computed<Record<string, DetailField>>(() => {
 const sharedInputField = computed(() => sharedDirFields.value.inputDir)
 const sharedOutputField = computed(() => sharedDirFields.value.outputDir)
 
+/** Every dir here is globally shared, so flag them all to render the shared
+ *  glyph — matching the per-instance Storage tab (StoragePane.vue). */
+const sharedModelDirs = computed(() =>
+  props.snapshot.modelsDirs.map((d) => ({ ...d, shared: true }))
+)
+
 function sharedFieldPath(field: DetailField | undefined): string {
   return typeof field?.value === 'string' ? field.value : ''
 }
@@ -143,7 +149,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     :tooltip="t('tooltips.sharedModels')"
   >
     <ModelsDirList
-      :dirs="snapshot.modelsDirs"
+      :dirs="sharedModelDirs"
       @change="handleChangeModelsDir"
       @remove="handleRemoveModelsDir"
       @make-primary="handleMakePrimary"
@@ -157,6 +163,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
       v-if="sharedInputField"
       :label="sharedInputField.label || t('media.inputDir', 'Input Directory')"
       :path="sharedFieldPath(sharedInputField)"
+      shared
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
       @browse="handleBrowseSharedInput"
     />
@@ -164,6 +171,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
       v-if="sharedOutputField"
       :label="sharedOutputField.label || t('media.outputDir', 'Output Directory')"
       :path="sharedFieldPath(sharedOutputField)"
+      shared
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
       @browse="handleBrowseSharedOutput"
     />

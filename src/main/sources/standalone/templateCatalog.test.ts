@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
-import { loadTemplateCatalog } from './templateCatalog'
+import { loadTemplateCatalog, resetTemplateCatalogCache } from './templateCatalog'
 import {
   CURATED_TEMPLATES,
   TEMPLATE_MODALITY_ORDER,
@@ -24,7 +24,10 @@ function indexFor(overrides: Record<string, Record<string, unknown>>, category =
 }
 
 describe('loadTemplateCatalog', () => {
-  beforeEach(() => mockedFetchJSON.mockReset())
+  beforeEach(() => {
+    mockedFetchJSON.mockReset()
+    resetTemplateCatalogCache()
+  })
 
   it('returns every curated template, ordered by modality', async () => {
     mockedFetchJSON.mockResolvedValue([])
@@ -197,6 +200,37 @@ describe('loadTemplateCatalog', () => {
     const catalog = await loadTemplateCatalog()
     for (const card of catalog) {
       expect(TEMPLATE_MODALITY_ORDER).toContain(card.modality)
+    }
+  })
+
+  it('coalesces concurrent reads into a single index fetch', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const [a, b] = await Promise.all([loadTemplateCatalog(), loadTemplateCatalog()])
+    expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
+    expect(a).toBe(b)
+  })
+
+  it('serves a cached result on a follow-up read, then refetches after reset', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await loadTemplateCatalog()
+    await loadTemplateCatalog()
+    expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
+
+    resetTemplateCatalogCache()
+    await loadTemplateCatalog()
+    expect(mockedFetchJSON).toHaveBeenCalledTimes(2)
+  })
+
+  it('refetches once the TTL lapses', async () => {
+    vi.useFakeTimers()
+    try {
+      mockedFetchJSON.mockResolvedValue([])
+      await loadTemplateCatalog()
+      vi.advanceTimersByTime(60_001)
+      await loadTemplateCatalog()
+      expect(mockedFetchJSON).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
     }
   })
 })

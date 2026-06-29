@@ -661,6 +661,10 @@ async function handleBrowse(): Promise<void> {
   if (chosen) instPath.value = chosen
 }
 
+function handleOpenInstPath(): void {
+  if (instPath.value) void window.api.openPath(instPath.value)
+}
+
 async function handleSave(): Promise<void> {
   const source = currentSource.value
   if (!source) return
@@ -891,19 +895,21 @@ defineExpose({ open })
               class="config-field"
               :class="{ 'config-field--disabled': currentSource?.skipInstall }"
             >
-              <label class="config-label" for="inst-path">{{
-                $t('newInstall.installLocation')
-              }}</label>
+              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
               <div class="config-path-row">
                 <div class="brand-input config-path-input">
                   <HardDrive :size="14" aria-hidden="true" />
-                  <input
-                    id="inst-path"
-                    :value="instPath"
-                    type="text"
-                    readonly
-                    :disabled="!!currentSource?.skipInstall"
-                  />
+                  <button
+                    v-if="!currentSource?.skipInstall && instPath"
+                    type="button"
+                    class="open-folder-link config-path-open"
+                    :title="$t('actions.openDirectory', 'Open Directory')"
+                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
+                    @click="handleOpenInstPath"
+                  >{{ instPath }}</button>
+                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
+                    instPath
+                  }}</span>
                 </div>
                 <button
                   class="brand-tertiary"
@@ -1433,6 +1439,21 @@ defineExpose({ open })
   flex: 1 1 auto;
   min-width: 0;
   padding-inline: 12px;
+}
+/* Path text replaces the old readonly <input>; clicking it opens the selected
+ *  install directory in the OS file manager. Inherits .open-folder-link; only
+ *  the row-specific sizing/inheritance differ. */
+.config-path-open {
+  flex: 0 1 auto;
+  color: inherit;
+  font: inherit;
+}
+.config-path-open--static {
+  cursor: default;
+}
+.config-path-open--static:hover {
+  color: inherit;
+  text-decoration: none;
 }
 .config-path-row > button.brand-tertiary {
   padding-inline: 14px;

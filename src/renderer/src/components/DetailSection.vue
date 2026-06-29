@@ -7,6 +7,7 @@ import InfoTooltip from './InfoTooltip.vue'
 import TooltipWrap from './TooltipWrap.vue'
 import ArgsBuilder from './ArgsBuilder.vue'
 import EnvVarsEditor from './EnvVarsEditor.vue'
+import { isOpenablePathString } from '../lib/openablePath'
 
 interface Props {
   title?: string
@@ -97,6 +98,20 @@ async function handleBrowseField(field: DetailField): Promise<void> {
   if (dir) {
     await handleFieldChange(field, dir)
   }
+}
+
+/** True when a non-editable value is safe to open in the OS file manager:
+ *  an explicit path field, or a local-looking path (not a URL, SSH remote, or
+ *  date). */
+function canOpenFieldValue(field: DetailField): boolean {
+  const v = field.value == null ? '' : String(field.value).trim()
+  if (field.editType === 'path') return v.length > 0
+  return isOpenablePathString(v)
+}
+
+function handleOpenPath(value: unknown): void {
+  const p = value == null ? '' : String(value).trim()
+  if (p) void window.api.openPath(p)
 }
 </script>
 
@@ -205,14 +220,32 @@ v-if="f.editable && f.editType === 'select'" class="detail-field-input"
 v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail-field-toggle"
                    :checked="f.value !== false" @change="handleFieldChange(f, ($event.target as HTMLInputElement).checked)">
             <div v-else-if="f.editable && f.editType === 'path'" class="path-input">
+              <div v-if="f.browseOnly" class="detail-path-open-wrap">
+                <button
+                  v-if="canOpenFieldValue(f)"
+                  type="button"
+                  class="open-folder-link detail-path-open"
+                  :title="$t('actions.openDirectory', 'Open Directory')"
+                  :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
+                  @click="handleOpenPath(f.value)"
+                >{{ f.value }}</button>
+              </div>
               <input
-type="text" class="detail-field-input"
-                     :value="f.value ?? ''" :readonly="f.browseOnly" @change="!f.browseOnly && handleFieldChange(f, ($event.target as HTMLInputElement).value)">
+v-else type="text" class="detail-field-input"
+                     :value="f.value ?? ''" @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)">
               <button @click="handleBrowseField(f)">{{ $t('common.browse') }}</button>
             </div>
             <input
 v-else-if="f.editable" type="text" class="detail-field-input"
                    :value="f.value ?? ''" @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)">
+            <button
+              v-else-if="canOpenFieldValue(f)"
+              type="button"
+              class="detail-field-value detail-field-value-open"
+              :title="$t('actions.openDirectory', 'Open Directory')"
+              :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
+              @click="handleOpenPath(f.value)"
+            >{{ f.value }}</button>
             <div v-else class="detail-field-value">{{ f.value }}</div>
           </template>
         </div>

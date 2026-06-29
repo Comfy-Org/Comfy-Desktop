@@ -12,6 +12,9 @@ import type { LocaleSource } from '../lib/useAppLocale'
 const API_MAP = {
   getDetailSections: 'pickerSettingsGetDetailSections',
   getDiskSpace: 'pickerSettingsGetDiskSpace',
+  // Open a folder in the OS file manager (clickable storage path rows). Reuses
+  // the popup's existing globalSettings open-path bridge.
+  openPath: 'globalSettingsOpenPath',
   updateInstallation: 'pickerSettingsUpdateInstallation',
   runAction: 'pickerSettingsRunAction',
   getFieldOptions: 'pickerSettingsGetFieldOptions',

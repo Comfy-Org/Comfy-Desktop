@@ -133,8 +133,7 @@ async function handleBrowseCacheDir(): Promise<void> {
 }
 
 function handleOpenCacheDir(): void {
-  const p = fieldPath(cacheDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(cacheDirField.value))
 }
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
@@ -156,8 +155,11 @@ async function handleBrowseInstallDir(): Promise<void> {
 }
 
 function handleOpenInstallDir(): void {
-  const p = fieldPath(installDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(installDirField.value))
+}
+
+function handleOpenPath(path: string): void {
+  if (path) bridge?.globalSettingsOpenPath(path)
 }
 const appUpdateState = computed<AppUpdateState>(
   () => props.snapshot.appUpdate.state as unknown as AppUpdateState
@@ -281,14 +283,22 @@ onMounted(() => {
         <template v-if="activeTab === 'general'">
           <!-- Locale picker first, no microsection header — it's a single
                control and the lone "Language" label on it is enough. -->
-          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" />
+          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" @open-path="handleOpenPath" />
 
           <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
-            <SettingsSectionList :sections="generalSections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="generalSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.privacy', 'Privacy')">
-            <SettingsSectionList :sections="telemetrySections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="telemetrySections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.community', 'Community')">
@@ -314,6 +324,7 @@ onMounted(() => {
             @update-now="handleUpdateNow"
             @check-for-update="handleCheckForUpdate"
             @update-field="handleUpdateField"
+            @open-path="handleOpenPath"
           />
         </template>
 
@@ -336,7 +347,11 @@ onMounted(() => {
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="snapshot.i18n.advanced">
-            <SettingsSectionList :sections="advancedSections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="advancedSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.cache', 'Cache')">

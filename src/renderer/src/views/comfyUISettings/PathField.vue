@@ -3,10 +3,13 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpen } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
+import StorageDirRow from './StorageDirRow.vue'
 import type { DetailField } from '../../types/ipc'
 
 /**
- * Path field for the Settings drawer. `field.browseOnly === true` makes the input read-only so the value is only changed via Browse.
+ * Path field for the Settings drawer. `field.browseOnly === true` renders a
+ * clickable open-in-file-manager path row (the value is only changed via
+ * Browse); otherwise the path is an editable text input.
  */
 
 interface Props {
@@ -33,12 +36,22 @@ function handleChange(value: string): void {
   if (isBrowseOnly.value) return
   emit('update', props.field, value)
 }
+
+function handleOpen(): void {
+  if (stringValue.value) void window.api.openPath(stringValue.value)
+}
 </script>
 
 <template>
+  <StorageDirRow
+    v-if="isBrowseOnly"
+    :path="stringValue"
+    @open="handleOpen"
+    @browse="handleBrowse"
+  />
   <BaseInput
+    v-else
     :model-value="stringValue"
-    :readonly="isBrowseOnly"
     :aria-label="field.label || undefined"
     @change="handleChange"
   >

@@ -1421,6 +1421,70 @@ input[type='checkbox']:checked::after {
   padding: 6px 8px;
   font-size: 14px;
 }
+/* Inline filesystem path rendered as a button that opens the folder in the OS
+ *  file manager. Resets the button chrome to plain text, truncates with an
+ *  ellipsis on one line, and underlines in the accent color on hover/focus.
+ *  Components add only their own sizing (e.g. `max-width` vs `flex`) or override
+ *  `color`/`font` where they must inherit a surrounding scale. Reused by every
+ *  clickable path display so they cannot drift apart. */
+.open-folder-link {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.open-folder-link:hover,
+.open-folder-link:focus-visible {
+  /* background stays transparent against the global `button:hover` reset
+   *  (specificity 0,1,1) — only the text underlines in the accent color. */
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
+
+/* Browse-only path: boxed row whose text opens the folder in the OS file
+ *  manager (replaces the old readonly <input>). Only the text is clickable. */
+.detail-path-open-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.detail-path-open {
+  max-width: 100%;
+}
+/* Clickable non-editable path value (wraps instead of truncating). */
+.detail-field-value-open {
+  margin-top: 1px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.detail-field-value-open:hover,
+.detail-field-value-open:focus-visible {
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
 .detail-section-desc {
   font-size: 14px;
   color: var(--text-muted);
