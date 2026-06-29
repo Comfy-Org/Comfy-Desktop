@@ -423,6 +423,10 @@ export interface ProbeResult {
   version?: string
   repo?: string
   branch?: string
+  /** Resolved install root. Set when the probe corrected the user-picked path
+   *  (e.g. they pointed at the nested `ComfyUI/` folder of a standalone or
+   *  portable install). When present, it should be recorded as the installPath. */
+  installPath?: string
   [key: string]: unknown
 }
 
