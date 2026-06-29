@@ -17,6 +17,7 @@ defineEmits<{
   'update:name': [value: string]
   'update:path': [value: string]
   browse: []
+  open: []
 }>()
 </script>
 
@@ -36,14 +37,18 @@ defineEmits<{
     v-if="!hideInstallPath"
     class="field"
   >
-    <label for="inst-path">{{ $t('newInstall.installLocation') }}</label>
+    <label>{{ $t('newInstall.installLocation') }}</label>
     <div class="path-input">
-      <input
-        id="inst-path"
-        :value="path"
-        type="text"
-        readonly
-      />
+      <div class="path-open-wrap">
+        <button
+          v-if="path"
+          type="button"
+          class="open-folder-link path-open"
+          :title="$t('actions.openDirectory', 'Open Directory')"
+          :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
+          @click="$emit('open')"
+        >{{ path }}</button>
+      </div>
       <button @click="$emit('browse')">{{ $t('common.browse') }}</button>
       <button
         v-if="path !== defaultPath"
@@ -58,3 +63,24 @@ defineEmits<{
     />
   </div>
 </template>
+
+<style scoped>
+/* Replaces the old readonly <input>: a boxed path row whose text opens the
+ *  folder in the OS file manager. Only the path text is the click target. */
+.path-open-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+/* Inherits .open-folder-link; matches the shared color/font, only caps width. */
+.path-open {
+  max-width: 100%;
+}
+</style>

@@ -6,10 +6,11 @@ import TrackModal from './TrackModal.vue'
 import type { ProbeResult } from '../types/ipc'
 
 /**
- * The Install Directory field is browse-only: typing/pasting must not
- * change it. The only way to populate it is the Browse button, which
- * runs the probe and enables the "Track Install" button when an
- * existing install is detected.
+ * The Install Directory field is browse-only: it has no editable input, so
+ * typing/pasting is impossible. The only way to populate it is the Browse
+ * button, which runs the probe and enables the "Track Install" button when an
+ * existing install is detected. Once populated, the path text is clickable to
+ * open the folder in the OS file manager.
  */
 
 // Minimal catalog covering the keys the template reads. Missing keys fall
@@ -50,6 +51,7 @@ interface MockApi {
   browseFolder: ReturnType<typeof vi.fn>
   probeInstallation: ReturnType<typeof vi.fn>
   trackInstallation: ReturnType<typeof vi.fn>
+  openPath: ReturnType<typeof vi.fn>
 }
 
 const gitProbe: ProbeResult = {
@@ -67,6 +69,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     browseFolder: vi.fn().mockResolvedValue(undefined),
     probeInstallation: vi.fn().mockResolvedValue([gitProbe]),
     trackInstallation: vi.fn().mockResolvedValue({ ok: true }),
+    openPath: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
   ;(window as unknown as { api: MockApi }).api = api
@@ -102,28 +105,33 @@ describe('TrackModal — browse-only install directory', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders the install-directory input as readonly', async () => {
+  it('renders a non-clickable placeholder (no editable input) before a folder is picked', async () => {
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
 
-    const input = wrapper.get('#track-path')
-    expect(input.attributes('readonly')).toBeDefined()
+    // Browse-only: the directory has no editable text input at all.
+    expect(wrapper.find('.track-path-input input').exists()).toBe(false)
+    // Empty → muted placeholder, not a clickable open button.
+    expect(wrapper.find('button.track-path-open').exists()).toBe(false)
+    expect(wrapper.find('.track-path-placeholder').exists()).toBe(true)
   })
 
-  it('does not probe when the user attempts to type into the field', async () => {
-    const api = installMockApi()
+  it('opens the folder in the file manager when the populated path text is clicked', async () => {
+    const api = installMockApi({
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+    })
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
 
-    // Programmatically dispatch an input event — readonly prevents real
-    // keyboard input but a stray input dispatch must not reach probe().
-    await wrapper.get('#track-path').trigger('input')
+    await wrapper.get('button.brand-tertiary').trigger('click')
     await flushPromises()
 
-    expect(api.probeInstallation).not.toHaveBeenCalled()
-    expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+    const pathBtn = wrapper.get('button.track-path-open')
+    expect(pathBtn.text()).toBe('/Users/jo/ComfyUI')
+    await pathBtn.trigger('click')
+    expect(api.openPath).toHaveBeenCalledWith('/Users/jo/ComfyUI')
   })
 
   it('probes and enables Track Install when a folder is picked via Browse', async () => {

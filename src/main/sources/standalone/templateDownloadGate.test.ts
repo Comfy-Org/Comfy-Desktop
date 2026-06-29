@@ -36,7 +36,9 @@ import {
   startTemplateDownload,
   getTemplateDownloadState,
 } from './templateDownloadTask'
+import { setTemplateTrayMirror } from '../../lib/comfyDownloadManager'
 
+const mockSetTrayMirror = vi.mocked(setTemplateTrayMirror)
 const sendOutput = vi.fn()
 
 function makeInstall(id: string) {
@@ -61,6 +63,7 @@ describe('awaitTemplateDownloadSettled', () => {
     resolveTemplateModels.mockReset()
     download.mockReset()
     sendOutput.mockReset()
+    mockSetTrayMirror.mockReset()
     getDiskSpace.mockReset().mockResolvedValue({ free: 1e15, total: 1e15 })
   })
   afterEach(() => {
@@ -129,6 +132,20 @@ describe('awaitTemplateDownloadSettled', () => {
     requestSkipTemplateDownload('skip-1')
     await vi.advanceTimersByTimeAsync(300) // one poll tick
     await expect(settled).resolves.toBe('skipped')
+  })
+
+  it('mirrors the download into the tray from the start, before any Skip (#1173)', async () => {
+    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
+    download.mockImplementation(() => new Promise<void>(() => { /* hangs */ }))
+    startTemplateDownload(makeInstall('mirror-1'), 0, { sendOutput })
+    await flush()
+    await vi.advanceTimersByTimeAsync(600) // let the 500 ms mirror poll tick
+
+    // Reflected into the downloads tray without anyone requesting a skip.
+    expect(mockSetTrayMirror).toHaveBeenCalledWith(
+      'mirror-1',
+      expect.arrayContaining([expect.objectContaining({ filename: 'm.safetensors' })]),
+    )
   })
 
   it("resolves 'aborted' when the gate's own signal aborts (launch teardown)", async () => {

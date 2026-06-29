@@ -71,6 +71,10 @@ async function handleBrowse(): Promise<void> {
   if (chosen) instPath.value = chosen
 }
 
+function handleOpenPath(): void {
+  if (instPath.value) void window.api.openPath(instPath.value)
+}
+
 /** Deep-strip Vue reactive proxies for safe IPC serialization */
 function rawSelections(): Record<string, FieldOption> {
   const result: Record<string, FieldOption> = {}
@@ -321,6 +325,7 @@ defineExpose({ open })
           @update:name="instName = $event"
           @update:path="instPath = $event"
           @browse="handleBrowse"
+          @open="handleOpenPath"
         />
       </template>
     </div>

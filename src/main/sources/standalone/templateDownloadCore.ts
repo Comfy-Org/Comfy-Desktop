@@ -85,7 +85,7 @@ export interface TemplateTrayEntry {
   filename: string
   directory: string
   progress: number
-  status: 'downloading' | 'completed' | 'error'
+  status: 'downloading' | 'completed' | 'error' | 'cancelled'
   receivedBytes: number
   totalBytes: number
   speedBytesPerSec: number
@@ -109,12 +109,20 @@ export function templateStateToTrayEntries(
   const etaSeconds = state.etaSecs >= 0 ? state.etaSecs : 0
   let liveRowAssigned = false
 
+  // When the task itself has settled (cancel / error) before every file
+  // finished — e.g. an abort mid-pool or a disk-space pre-flight that errors
+  // with files already listed but none downloaded — the still-unfinished files
+  // must inherit that terminal status. Otherwise they'd map to 'downloading'
+  // and `getDownloadsTrayState` would count them as active forever.
+  const unfinishedStatus: TemplateTrayEntry['status'] | null =
+    state.status === 'cancelled' ? 'cancelled' : state.status === 'error' ? 'error' : null
+
   return state.files.map((file) => {
     const status: TemplateTrayEntry['status'] = file.failed
       ? 'error'
       : file.done
         ? 'completed'
-        : 'downloading'
+        : (unfinishedStatus ?? 'downloading')
     const progress = file.total > 0 ? Math.min(1, file.received / file.total) : 0
     const isLiveRow = status === 'downloading' && !liveRowAssigned
     if (isLiveRow) liveRowAssigned = true
