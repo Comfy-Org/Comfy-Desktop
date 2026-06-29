@@ -1442,6 +1442,9 @@ input[type='checkbox']:checked::after {
 }
 .open-folder-link:hover,
 .open-folder-link:focus-visible {
+  /* background stays transparent against the global `button:hover` reset
+   *  (specificity 0,1,1) — only the text underlines in the accent color. */
+  background: transparent;
   color: var(--accent);
   text-decoration: underline;
   outline: none;
@@ -1477,6 +1480,7 @@ input[type='checkbox']:checked::after {
 }
 .detail-field-value-open:hover,
 .detail-field-value-open:focus-visible {
+  background: transparent;
   color: var(--accent);
   text-decoration: underline;
   outline: none;
