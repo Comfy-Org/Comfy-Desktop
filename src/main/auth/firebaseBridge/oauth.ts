@@ -10,7 +10,7 @@ interface CreateAuthUriResponse {
   providerId: string
 }
 
-interface ProviderUserInfo {
+export interface ProviderUserInfo {
   providerId?: string
   rawId?: string
   email?: string
@@ -99,11 +99,68 @@ export async function signInWithIdpExchange(
   return (await resp.json()) as SignInWithIdpResponse
 }
 
+/** One entry of the persisted user's `providerData` array. */
+export interface PersistedProviderData {
+  providerId: string
+  uid: string
+  displayName: string | null
+  email: string | null
+  phoneNumber: null
+  photoURL: string | null
+}
+
+/** Profile + token fields a sign-in path must supply to persist a user. */
+export interface PersistedUserProfile {
+  uid: string
+  email: string | null
+  emailVerified: boolean
+  displayName: string | null
+  photoURL: string | null
+  providerData: PersistedProviderData[]
+  refreshToken: string
+  /** Firebase ID token; persisted as `stsTokenManager.accessToken`. */
+  idToken: string
+  /** ms-epoch when the ID token expires. */
+  expirationTime: number
+  /** Stringified ms-epochs (the SDK's metadata format). */
+  createdAt: string
+  lastLoginAt: string
+}
+
 /**
- * Build the JSON shape Firebase JS SDK persists to IndexedDB at
+ * Assemble the JSON shape Firebase JS SDK persists to IndexedDB at
  * `firebase:authUser:<apiKey>:[DEFAULT]`. Must match the SDK's `User.toJSON()`
  * schema for the fields it reads on rehydration (stable across v9-v11).
+ * Single source of truth for that contract — shared by the OAuth-code and
+ * desktop-login-code (custom token) sign-in paths.
  */
+export function assemblePersistedUser(
+  apiKey: string,
+  profile: PersistedUserProfile,
+): Record<string, unknown> {
+  return {
+    uid: profile.uid,
+    email: profile.email,
+    emailVerified: profile.emailVerified,
+    displayName: profile.displayName,
+    isAnonymous: false,
+    photoURL: profile.photoURL,
+    phoneNumber: null,
+    tenantId: null,
+    providerData: profile.providerData,
+    stsTokenManager: {
+      refreshToken: profile.refreshToken,
+      accessToken: profile.idToken,
+      expirationTime: profile.expirationTime,
+    },
+    createdAt: profile.createdAt,
+    lastLoginAt: profile.lastLoginAt,
+    apiKey,
+    appName: '[DEFAULT]',
+  }
+}
+
+/** Build the persisted user from a signInWithIdp exchange. */
 export function buildPersistedUser(
   config: FirebaseProjectConfig,
   resp: SignInWithIdpResponse,
@@ -111,9 +168,8 @@ export function buildPersistedUser(
 ): Record<string, unknown> {
   const nowMs = Date.now()
   const expiresInSec = Number(resp.expiresIn || '3600')
-  const expirationTime = nowMs + expiresInSec * 1000
   // Prefer Firebase's parsed list, else synthesise one entry from the top-level fields.
-  const providerData =
+  const providerData: PersistedProviderData[] =
     resp.providerUserInfo && resp.providerUserInfo.length > 0
       ? resp.providerUserInfo.map((p) => ({
           providerId: p.providerId ?? providerId,
@@ -134,26 +190,19 @@ export function buildPersistedUser(
           },
         ]
 
-  return {
+  return assemblePersistedUser(config.apiKey, {
     uid: resp.localId,
     email: resp.email ?? null,
     emailVerified: resp.emailVerified ?? false,
     displayName: resp.displayName ?? null,
-    isAnonymous: false,
     photoURL: resp.photoUrl ?? null,
-    phoneNumber: null,
-    tenantId: null,
     providerData,
-    stsTokenManager: {
-      refreshToken: resp.refreshToken,
-      accessToken: resp.idToken,
-      expirationTime,
-    },
+    refreshToken: resp.refreshToken,
+    idToken: resp.idToken,
+    expirationTime: nowMs + expiresInSec * 1000,
     // Stringified ms-epochs; true createdAt is unknown so both default to now and
     // get re-minted on subsequent token refreshes.
     createdAt: String(nowMs),
     lastLoginAt: String(nowMs),
-    apiKey: config.apiKey,
-    appName: '[DEFAULT]',
-  }
+  })
 }

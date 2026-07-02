@@ -10,6 +10,7 @@ import {
 import { buildIndexedDbInjectScript } from './inject'
 import { extractProviderId, type SupportedProvider } from './intercept'
 import { startBridgeServer } from './server'
+import { signInViaDesktopLoginCode } from '../desktopLoginCode'
 import * as i18n from '../../lib/i18n'
 import * as mainTelemetry from '../../lib/telemetry'
 
@@ -42,7 +43,7 @@ import * as mainTelemetry from '../../lib/telemetry'
  * telemetry binds nothing. Wrapped so a telemetry failure can never
  * break the auth flow.
  */
-function bindSignedInUser(user: Record<string, unknown>): void {
+export function bindSignedInUser(user: Record<string, unknown>): void {
   try {
     const uid = typeof user.uid === 'string' && user.uid.length > 0 ? user.uid : null
     if (!uid) return
@@ -110,6 +111,24 @@ export interface HandleFirebasePopupOpts {
 let activeBridge: Awaited<ReturnType<typeof startBridgeServer>> | null = null
 
 /**
+ * Close + clear the in-flight loopback bridge, if any. Both sign-in paths
+ * call this at the start of a new attempt. Without it, a second Sign-in
+ * click hits an EADDRINUSE on the fixed loopback port (the legacy path),
+ * or a stale bridge from an earlier fallback attempt stays alive
+ * underneath the login-code flow and can complete a competing sign-in
+ * from its still-open browser tab later.
+ */
+export function closeActiveBridge(): void {
+  if (!activeBridge) return
+  try {
+    activeBridge.close()
+  } catch {
+    // best-effort
+  }
+  activeBridge = null
+}
+
+/**
  * Teardown for the in-flight "copy login link" card: removes the injected
  * DOM node and detaches the `console-message` listener bound to it. Held
  * at module scope (like `activeBridge`) so a fresh sign-in attempt can
@@ -118,7 +137,7 @@ let activeBridge: Awaited<ReturnType<typeof startBridgeServer>> | null = null
 let activeBannerCleanup: (() => void) | null = null
 
 /** Run + clear the in-flight card teardown, if any. Safe to call twice. */
-function runBannerCleanup(): void {
+export function runBannerCleanup(): void {
   const cleanup = activeBannerCleanup
   activeBannerCleanup = null
   cleanup?.()
@@ -130,7 +149,7 @@ function runBannerCleanup(): void {
  * Copy stays in-page; only "Open again" reaches main, via a top-frame
  * `OPEN_LINK_SENTINEL` console message that re-opens our own URL.
  */
-function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void {
+export function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void {
   if (comfyContents.isDestroyed()) return
 
   const labels = {
@@ -169,13 +188,21 @@ function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void 
  * the user into the embedded view and pulling focus to Desktop. The
  * bridge HTML renders a synchronised countdown — keep these in lockstep.
  */
-const POST_SIGNIN_HOLD_MS = 3000
+export const POST_SIGNIN_HOLD_MS = 3000
 
 export async function handleFirebasePopup(
   url: string,
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
 ): Promise<void> {
+  // Prefer the cloud login-code flow (GTM-93): sign-in happens on the
+  // real Cloud login page and Desktop polls for a one-time custom token —
+  // no loopback server. 'fallback' means the flow died before the browser
+  // opened (e.g. backend without the endpoints), so the legacy bridge
+  // below takes over transparently.
+  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts)
+  if (outcome === 'handled') return
+
   const providerId = extractProviderId(url)
   if (!providerId) {
     opts.onError?.(new Error(`Firebase popup URL missing providerId: ${url}`))
@@ -187,19 +214,11 @@ export async function handleFirebasePopup(
   mainTelemetry.capture('comfy.desktop.auth.sign_in_started', { provider: providerId })
   const env = detectFirebaseEnv(url)
 
-  // Kill any stale bridge from a prior sign-in attempt the user
-  // didn't complete. Without this, the second Sign-in click hits an
-  // EADDRINUSE on the fixed loopback port and the user sees an
-  // unhelpful auth/popup-blocked error from the embedded view (we
-  // denied the popup but couldn't open the replacement bridge).
-  if (activeBridge) {
-    try {
-      activeBridge.close()
-    } catch {
-      // best-effort
-    }
-    activeBridge = null
-  }
+  // Kill any stale bridge from a prior sign-in attempt the user didn't
+  // complete — otherwise the user sees an unhelpful auth/popup-blocked
+  // error from the embedded view (we denied the popup but couldn't open
+  // the replacement bridge on the taken port).
+  closeActiveBridge()
   // Clear a prior attempt's "copy link" card + its console listener so a
   // new attempt doesn't stack a second card or leak a stale listener.
   runBannerCleanup()
