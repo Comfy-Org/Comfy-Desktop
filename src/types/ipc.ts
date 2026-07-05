@@ -65,7 +65,7 @@ export interface RunningInstance {
 
 // --- Source / New Install types ---
 export interface Source {
-  id: string
+  id: SourceId
   label: string
   category?: string
   description?: string
@@ -73,6 +73,18 @@ export interface Source {
   hideInstallPath?: boolean
   skipInstall?: boolean
 }
+
+export const SOURCE_META = {
+  standalone: { id: 'standalone', label: 'Standalone' },
+  portable: { id: 'portable', label: 'Portable' },
+  git: { id: 'git', label: 'Git Clone' },
+  remote: { id: 'remote', label: 'Remote' },
+  cloud: { id: 'cloud', label: 'Comfy Cloud' },
+  desktop: { id: 'desktop', label: 'Legacy Desktop' },
+  comfybuilder: { id: 'comfybuilder', label: 'ComfyBuilder' },
+} as const
+
+export type SourceId = keyof typeof SOURCE_META
 
 export interface SourceField {
   id: string
