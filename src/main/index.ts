@@ -53,6 +53,7 @@ import { hasActiveTemplateDownloads, getTemplateDownloadState } from './sources/
 import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
+import { registerComfybuilderAuthIpc } from './comfybuilder/authIpc'
 import { emitInstanceStartedTelemetry } from './lib/ipc/sessionStartTelemetry'
 import {
   get as getInstallation,
@@ -2129,6 +2130,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerPickerSettingsIpc()
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
+    registerComfybuilderAuthIpc()
     cleanupTempDownloads()
     ipc.register({
       onLaunch,
