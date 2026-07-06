@@ -102,11 +102,16 @@ const step = ref<Step>('signin')
 const authStore = useAuthStore()
 
 async function handleSignIn() {
-  const status = await authStore.signIn()
-  if (status.signedIn) {
-    setTimeout(() => {
-      step.value = 'start'
-    }, 1500)
+  try {
+    const status = await authStore.signIn()
+    if (status.signedIn) {
+      setTimeout(() => {
+        step.value = 'start'
+      }, 1500)
+    }
+  } catch {
+    // Sign-in was cancelled or failed; stay on the sign-in step so the user
+    // can retry or skip. Matches InstallWizardModal/ComfyBuilderReauth handling.
   }
 }
 
