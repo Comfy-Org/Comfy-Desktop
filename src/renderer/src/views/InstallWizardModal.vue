@@ -31,6 +31,7 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
 import ComfyBuilderReauth from '../components/ComfyBuilderReauth.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
+import { useAuthStore } from '../stores/authStore'
 
 const emit = defineEmits<{
   close: []
@@ -613,6 +614,67 @@ async function onReauthRecovered(): Promise<void> {
   }
 }
 
+// --- ComfyBuilder pipeline field: auth-gated rendering ---------------------
+const authStore = useAuthStore()
+const cbSigningIn = ref(false)
+
+/** True when the field belongs to the ComfyBuilder source (the pipeline picker). */
+function isComfyBuilderField(field: SourceField): boolean {
+  return currentSource.value?.id === 'comfybuilder' && field.renderAs === 'cards'
+}
+
+/** The sole `requiresAuth` sentinel is returned when no one is signed in. */
+function cbRequiresAuth(field: SourceField): boolean {
+  const options = fieldOptions.value.get(field.id)
+  if (!options || options.length === 0) return false
+  return options.some((o) => (o.data as { requiresAuth?: boolean } | undefined)?.requiresAuth === true)
+}
+
+/** Real pipeline options (the sentinel filtered out). */
+function cbPipelineOptions(field: SourceField): FieldOption[] {
+  const options = fieldOptions.value.get(field.id) ?? []
+  return options.filter(
+    (o) => (o.data as { requiresAuth?: boolean } | undefined)?.requiresAuth !== true
+  )
+}
+
+function cbPipelineInstallable(option: FieldOption): boolean {
+  const meta = (option.data as { meta?: { installable?: boolean } } | undefined)?.meta
+  return meta?.installable !== false
+}
+
+function cbPipelineReason(option: FieldOption): string | null {
+  const meta = (option.data as { meta?: { installable?: boolean; reason?: string } } | undefined)
+    ?.meta
+  if (!meta || meta.installable !== false) return null
+  return meta.reason === 'platform-mismatch'
+    ? 'No artifact for your platform'
+    : 'No successful build yet'
+}
+
+/** Signed in but the account has no pipelines at all. */
+function cbEmpty(field: SourceField): boolean {
+  if (!fieldOptions.value.has(field.id)) return false
+  if (cbRequiresAuth(field)) return false
+  return cbPipelineOptions(field).length === 0
+}
+
+/** Sign in from the pipeline gate, then reload the pipeline list on success. */
+async function cbSignIn(fieldIndex: number): Promise<void> {
+  if (cbSigningIn.value) return
+  cbSigningIn.value = true
+  try {
+    const status = await authStore.signIn()
+    if (status.signedIn) {
+      await loadFieldOptions(fieldIndex)
+    }
+  } catch {
+    // Sign-in was cancelled or failed; leave the gate in place.
+  } finally {
+    cbSigningIn.value = false
+  }
+}
+
 function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: string): void {
   const source = currentSource.value
   if (!source) return
@@ -1039,6 +1101,56 @@ defineExpose({ open })
                         role="alert"
                       >
                         {{ urlFieldError }}
+                      </div>
+                    </template>
+
+                    <template v-else-if="isComfyBuilderField(field)">
+                      <div v-if="fieldLoading.get(field.id)" class="wizard-loading with-spinner">
+                        {{ $t('newInstall.loading') }}
+                      </div>
+                      <!-- Signed out: sign-in gate -->
+                      <div
+                        v-else-if="cbRequiresAuth(field)"
+                        class="cb-signin-gate"
+                        data-testid="cb-source-signin"
+                      >
+                        <p class="cb-signin-gate__msg">Sign in to view your pipelines</p>
+                        <button
+                          type="button"
+                          class="brand-primary"
+                          :disabled="cbSigningIn"
+                          @click="cbSignIn(fieldIndex)"
+                        >
+                          {{ cbSigningIn ? 'Signing in…' : 'Sign in to ComfyBuilder' }}
+                        </button>
+                      </div>
+                      <!-- Signed in, no pipelines -->
+                      <div v-else-if="cbEmpty(field)" class="wizard-loading" data-testid="cb-empty">
+                        No pipelines in this account
+                      </div>
+                      <!-- Signed in with pipelines: one card each (all selectable) -->
+                      <div v-else-if="fieldOptions.has(field.id)" class="cb-pipeline-list">
+                        <button
+                          v-for="opt in cbPipelineOptions(field)"
+                          :key="opt.value"
+                          type="button"
+                          class="cb-pipeline-card"
+                          :class="{
+                            'cb-pipeline-card--selected': selections[field.id]?.value === opt.value,
+                            'cb-pipeline-card--blocked': !cbPipelineInstallable(opt)
+                          }"
+                          :data-testid="`cb-pipeline-card-${opt.value}`"
+                          @click="selectCardOption(field, fieldIndex, opt)"
+                        >
+                          <span class="cb-pipeline-card__name">{{ opt.label }}</span>
+                          <span
+                            v-if="cbPipelineReason(opt)"
+                            class="cb-pipeline-card__reason"
+                            :data-testid="`cb-pipeline-reason-${opt.value}`"
+                          >
+                            {{ cbPipelineReason(opt) }}
+                          </span>
+                        </button>
                       </div>
                     </template>
 
@@ -1544,5 +1656,58 @@ defineExpose({ open })
 
 .config-continue {
   min-width: 120px;
+}
+
+/* --- ComfyBuilder pipeline field ---------------------------------------- */
+.cb-signin-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 8px;
+  background: var(--brand-surface-bg);
+}
+.cb-signin-gate__msg {
+  margin: 0;
+  color: var(--neutral-200);
+}
+.cb-pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cb-pipeline-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 8px;
+  background: var(--brand-surface-bg);
+  color: var(--neutral-200);
+  cursor: pointer;
+}
+.cb-pipeline-card:hover {
+  border-color: var(--brand-surface-border-hover);
+  color: var(--neutral-100);
+}
+.cb-pipeline-card--selected {
+  border-color: var(--comfy-blue, var(--brand-surface-border-hover));
+  color: var(--neutral-100);
+}
+.cb-pipeline-card--blocked {
+  opacity: 0.7;
+}
+.cb-pipeline-card__name {
+  font-weight: 500;
+}
+.cb-pipeline-card__reason {
+  font-size: var(--takeover-fs-caption);
+  color: var(--neutral-400);
 }
 </style>
