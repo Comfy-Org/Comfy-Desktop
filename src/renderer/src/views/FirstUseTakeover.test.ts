@@ -1,6 +1,7 @@
 // Start-screen tests for FirstUseTakeover. Heavy children are stubbed to focus on the start-step DOM.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
 import { createI18n } from 'vue-i18n'
 
 vi.mock('../lib/telemetry', () => ({
@@ -65,18 +66,32 @@ beforeEach(() => {
     // this per-case before mounting.
     telemetryGetExperimentFlag: vi.fn().mockResolvedValue(undefined),
     telemetryRecordExposure: vi.fn(),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      signIn: vi.fn().mockResolvedValue({ signedIn: false }),
+      signOut: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn().mockReturnValue(() => {}),
+    },
   } as unknown as typeof window.api
 })
 
-function mountTakeover() {
-  return mount(FirstUseTakeover, {
-    global: { plugins: [i18n] },
+// The takeover now opens on the optional ComfyBuilder sign-in step; the
+// start-step tests below assert the start screen, so skip past sign-in first.
+async function mountTakeover() {
+  const wrapper = mount(FirstUseTakeover, {
+    global: { plugins: [i18n, createTestingPinia({ stubActions: false })] },
   })
+  const skip = wrapper.find('[data-testid="cb-signin-skip"]')
+  if (skip.exists()) {
+    await skip.trigger('click')
+    await flushPromises()
+  }
+  return wrapper
 }
 
 describe('FirstUseTakeover start step', () => {
   it('Continue triggers a nudge shake on the ToS row when terms are not accepted', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     const tosRow = wrapper.find('[data-testid="first-use-consent-tos"]')
     expect(tosRow.classes()).not.toContain('start-consent-row--nudge')
 
@@ -89,7 +104,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('clicking the EULA inline link opens the modal with doc="eula"', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper.find('[data-testid="first-use-eula-link"]').trigger('click')
     const modal = wrapper.find('[data-testid="stub-terms-modal"]')
     expect(modal.exists()).toBe(true)
@@ -97,21 +112,21 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('clicking the Terms of Service inline link opens the modal with doc="tos"', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper.find('[data-testid="first-use-tos-link"]').trigger('click')
     const modal = wrapper.find('[data-testid="stub-terms-modal"]')
     expect(modal.attributes('data-doc')).toBe('tos')
   })
 
   it('clicking the telemetry Learn-more opens the modal with doc="privacy"', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper.find('[data-testid="first-use-telemetry-learn-more"]').trigger('click')
     const modal = wrapper.find('[data-testid="stub-terms-modal"]')
     expect(modal.attributes('data-doc')).toBe('privacy')
   })
 
-  it('Cloud (i) icon is wrapped in TooltipWrap carrying the whyTryCloud copy', () => {
-    const wrapper = mountTakeover()
+  it('Cloud (i) icon is wrapped in TooltipWrap carrying the whyTryCloud copy', async () => {
+    const wrapper = await mountTakeover()
     const infoBtn = wrapper.find('[data-testid="first-use-why-cloud"]')
     expect(infoBtn.exists()).toBe(true)
     const tooltip = infoBtn.element.closest(
@@ -122,7 +137,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('Express-install checkbox is visible on the default Local pick and hides only when Cloud is picked', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     // The row stays mounted (reserved layout space, no jump on swap)
     // but is visually + a11y hidden whenever Cloud is the active pick.
     const express = () => wrapper.find('[data-testid="first-use-express-install"]')
@@ -140,7 +155,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('emits `chain-local` with `express: false` when Local is picked and Express is left at its default-off state (no legacy desktop)', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     // Accept T&C (Continue is gated on it), pick Local, leave Express
     // at its default unchecked state, press Continue.
     await wrapper
@@ -155,7 +170,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('emits `chain-local` with `express: true` when Express is explicitly ticked', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
@@ -171,9 +186,10 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('hasLegacyDesktop + Express OFF + migrate OFF routes to the localBranch sub-step', async () => {
-    const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
+    const wrapper = await mountTakeover()
+    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void> }).open({
       hasLegacyDesktop: true,
+      initialStep: 'start',
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -194,7 +210,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('renders the "Migrate existing install" checkbox only when hasLegacyDesktop is true', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     // Default open() has hasLegacyDesktop = false — the row is not in
     // the DOM at all (v-if), so no test-id should resolve. With no
     // legacy install detected, no migrate-related affordance is shown
@@ -203,16 +219,18 @@ describe('FirstUseTakeover start step', () => {
     // After the host plumbs the detected legacy install in, the
     // checkbox mounts as a peer of Express. Visibility is then driven
     // by the Local pick via the hidden-class pattern.
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
+    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void> }).open({
       hasLegacyDesktop: true,
+      initialStep: 'start',
     })
     expect(wrapper.find('[data-testid="first-use-migrate-existing"]').exists()).toBe(true)
   })
 
   it('routes Local + migrate-existing + Express to `chain-migrate` with express: true', async () => {
-    const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
+    const wrapper = await mountTakeover()
+    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void> }).open({
       hasLegacyDesktop: true,
+      initialStep: 'start',
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -236,9 +254,10 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('routes Local + migrate-existing + Express OFF to `chain-migrate` with express: false (confirm surface still shown by host)', async () => {
-    const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
+    const wrapper = await mountTakeover()
+    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void> }).open({
       hasLegacyDesktop: true,
+      initialStep: 'start',
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -257,9 +276,10 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('routes Local + Express + migrate-existing OFF to `chain-local` (fresh express install)', async () => {
-    const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
+    const wrapper = await mountTakeover()
+    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void> }).open({
       hasLegacyDesktop: true,
+      initialStep: 'start',
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -283,7 +303,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('emits `complete-cloud` (not `chain-local`) when the user flips to Cloud and presses Continue', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
@@ -296,7 +316,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('Continue button switches to the loading copy + becomes disabled while Continue is in flight', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
@@ -317,7 +337,7 @@ describe('FirstUseTakeover start step', () => {
     // unmount), so on a cancel-and-return the host re-invokes open()
     // on the still-mounted instance with a stale `isContinuing=true`
     // — open() must reset it.
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
@@ -328,7 +348,9 @@ describe('FirstUseTakeover start step', () => {
     expect(btnBusy.text()).toBe('firstUse.startContinueBusy')
     expect(btnBusy.attributes('disabled')).toBeDefined()
 
-    await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await (
+      wrapper.vm as unknown as { open: (opts: { initialStep?: string }) => Promise<void> }
+    ).open({ initialStep: 'start' })
 
     const btnFresh = wrapper.find('[data-testid="first-use-continue"]')
     expect(btnFresh.text()).toBe('firstUse.startContinue')
@@ -337,7 +359,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('closing the terms modal clears termsDoc (modal unmounts)', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper.find('[data-testid="first-use-eula-link"]').trigger('click')
     const stub = wrapper.findComponent('[data-testid="stub-terms-modal"]')
     expect(stub.exists()).toBe(true)
@@ -349,7 +371,7 @@ describe('FirstUseTakeover start step', () => {
   })
 
   it('Continue without touching the picker routes to chain-local (Local is the default)', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
@@ -362,7 +384,7 @@ describe('FirstUseTakeover start step', () => {
 
 describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
   it('keeps Local as the default when the flag is missing (control / fallback)', async () => {
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await flushPromises()
 
     await wrapper
@@ -385,7 +407,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
 
   it("pre-selects Cloud when the flag returns 'cloud' (cloud-default arm) and fires exposure with source='cache'", async () => {
     ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('cloud')
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await flushPromises()
 
     await wrapper
@@ -406,7 +428,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
 
   it("pre-selects nothing when the flag returns 'none' (no-default arm) and disables Continue until a card is picked", async () => {
     ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('none')
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await flushPromises()
 
     await wrapper
@@ -438,7 +460,7 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
 
   it("treats any other flag value ('control', unknown string, true) as control", async () => {
     ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('control')
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await flushPromises()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -456,10 +478,12 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
 
   it('legacy-desktop precedence forces Local even when the cloud-default variant says Cloud', async () => {
     ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('cloud')
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await (
-      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
-    ).open({ hasLegacyDesktop: true })
+      wrapper.vm as unknown as {
+        open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void>
+      }
+    ).open({ hasLegacyDesktop: true, initialStep: 'start' })
     await flushPromises()
 
     // The migrate-existing checkbox renders → user with legacy install
@@ -477,10 +501,12 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     // Pre-selecting nothing for them would force an extra click for
     // zero signal value, so the experiment is bypassed on this path.
     ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('none')
-    const wrapper = mountTakeover()
+    const wrapper = await mountTakeover()
     await (
-      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
-    ).open({ hasLegacyDesktop: true })
+      wrapper.vm as unknown as {
+        open: (opts: { hasLegacyDesktop: boolean; initialStep?: string }) => Promise<void>
+      }
+    ).open({ hasLegacyDesktop: true, initialStep: 'start' })
     await flushPromises()
 
     // Continue is immediately actionable — Local is pre-selected.

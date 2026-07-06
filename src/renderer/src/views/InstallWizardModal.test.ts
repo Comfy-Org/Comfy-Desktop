@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
 import { createI18n } from 'vue-i18n'
 
 import { en } from '../lib/i18nMessages.ts'
@@ -12,7 +13,7 @@ function makeI18n() {
 function mountModal() {
   return mount(InstallWizardModal, {
     global: {
-      plugins: [makeI18n()],
+      plugins: [makeI18n(), createTestingPinia({ stubActions: false })],
       stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } },
     },
   })
@@ -31,6 +32,12 @@ beforeEach(() => {
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
     validateInstallPath: vi.fn().mockResolvedValue([]),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      signIn: vi.fn().mockResolvedValue({ signedIn: false }),
+      signOut: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn().mockReturnValue(() => {}),
+    },
   } as unknown as typeof window.api
 })
 
