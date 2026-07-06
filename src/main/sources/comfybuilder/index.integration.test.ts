@@ -187,4 +187,21 @@ describe('comfybuilder source', () => {
       'bundledTemplate',
     ])
   })
+
+  it('wires install + reuses the standalone post-extract phases and manifest probe', () => {
+    expect(typeof comfybuilder.install).toBe('function')
+    expect(comfybuilder.install).not.toBe(standalone.install)
+
+    // A ComfyBuilder artifact unpacks to the standalone layout, so the venv/
+    // package phases and manifest probe are the standalone source's, reused as-is.
+    expect(comfybuilder.postInstall).toBe(standalone.postInstall)
+    expect(comfybuilder.probeInstallation).toBe(standalone.probeInstallation)
+
+    expect(comfybuilder.installSteps?.map((s) => s.phase)).toEqual([
+      'download',
+      'extract',
+      'setup',
+      'cleanup',
+    ])
+  })
 })

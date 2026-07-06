@@ -13,9 +13,12 @@
  */
 import fs from 'fs'
 import path from 'path'
+import { t } from '../../lib/i18n'
 import { parseArgs, extractPort } from '../../lib/util'
 import { getActivePythonPath } from '../../lib/pythonEnv'
 import { DEFAULT_LAUNCH_ARGS } from '../standalone/envPaths'
+import { install } from './install'
+import { postInstall, probeInstallation } from '../standalone/install'
 import { listDeployments, listPipelines } from '../../comfybuilder/apiClient'
 import type { ApiClientOptions } from '../../comfybuilder/apiClient'
 import { pipelineInstallState, resolveLatestArtifact } from '../../comfybuilder/latestArtifact'
@@ -132,6 +135,15 @@ export const comfybuilder: SourcePlugin = {
 
   defaultLaunchArgs: DEFAULT_LAUNCH_ARGS,
 
+  get installSteps() {
+    return [
+      { phase: 'download', label: t('common.download') },
+      { phase: 'extract', label: t('common.extract') },
+      { phase: 'setup', label: t('standalone.setupEnv') },
+      { phase: 'cleanup', label: t('standalone.cleanupEnv') },
+    ]
+  },
+
   getDefaults() {
     return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
   },
@@ -160,6 +172,9 @@ export const comfybuilder: SourcePlugin = {
     return {
       pipelineId: data?.pipelineId ?? '',
       pipelineName: data?.pipelineName ?? '',
+      // Read back by install.ts to block an un-installable pipeline at install time.
+      installable: meta?.installable === true,
+      ...(meta?.reason ? { reason: meta.reason } : {}),
       ...(meta?.deploymentId ? { deploymentId: meta.deploymentId } : {}),
       version: meta?.version ?? '',
       downloadUrl: artifact?.download_url ?? '',
@@ -230,9 +245,11 @@ export const comfybuilder: SourcePlugin = {
     ]
   },
 
-  probeInstallation(_dirPath: string): Record<string, unknown> | null {
-    return null
-  },
+  install,
+  postInstall,
+  // A ComfyBuilder artifact unpacks to the same standalone-env + ComfyUI layout,
+  // so the standalone probe reads the manifest identically.
+  probeInstallation,
 
   async handleAction(
     actionId: string,

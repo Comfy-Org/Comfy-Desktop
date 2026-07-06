@@ -57,22 +57,13 @@ vi.mock('../../comfybuilder/tokenStore', () => ({
   loadTokens: vi.fn(),
 }))
 
-// Stub the reused standalone post-extract phases at their boundary. Every export
-// is replaced so the heavy standalone dependency tree never loads.
-vi.mock('../standalone/install', () => ({
-  install: vi.fn(async () => {}),
-  postInstall: vi.fn(async () => {}),
-  probeInstallation: vi.fn(async () => null),
-  migrateEnvLayout: vi.fn(async () => false),
-}))
-
-import { installComfyBuilderPipeline, ComfyBuilderInstallError } from './install'
+import { install, installComfyBuilderPipeline, ComfyBuilderInstallError } from './install'
 import type { InstallPipelineTools } from './install'
 import type { PipelineOptionMeta } from './index'
-import { postInstall as standalonePostInstall } from '../standalone/install'
 import { loadTokens } from '../../comfybuilder/tokenStore'
 import { createCache } from '../../lib/cache'
 import type { Artifact } from '../../comfybuilder/dto'
+import type { InstallTools } from '../../types/sources'
 import type { AuthTokens } from '../../comfybuilder/types'
 import type { InstallationRecord } from '../../installations'
 import {
@@ -112,7 +103,15 @@ function makeTools(cacheDir: string): InstallPipelineTools {
   return {
     sendProgress: vi.fn(),
     cache: createCache(cacheDir, 5),
-    update: vi.fn(async () => {}),
+  }
+}
+
+function makeInstallTools(cacheDir: string): InstallTools {
+  return {
+    sendProgress: vi.fn(),
+    download: vi.fn(async () => ''),
+    cache: createCache(cacheDir, 5),
+    extract: vi.fn(async () => {}),
   }
 }
 
@@ -186,17 +185,10 @@ describe('installComfyBuilderPipeline', () => {
       installComfyBuilderPipeline({ installation, meta, tools, baseUrl: goodApi.baseUrl }),
     ).resolves.toBeUndefined()
 
-    // The downloaded artifact was fully extracted into the install directory.
+    // The downloaded artifact was fully extracted + validated into the install directory.
     expect(fs.statSync(path.join(installPath, 'standalone-env')).isDirectory()).toBe(true)
     expect(fs.statSync(path.join(installPath, 'ComfyUI')).isDirectory()).toBe(true)
     expect(fs.existsSync(path.join(installPath, 'manifest.json'))).toBe(true)
-
-    // The reused standalone post-extract phase (venv/package/torch) was reached.
-    expect(vi.mocked(standalonePostInstall)).toHaveBeenCalledTimes(1)
-    const call = vi.mocked(standalonePostInstall).mock.calls[0]!
-    expect(call[0]).toBe(installation)
-    expect(typeof call[1].sendProgress).toBe('function')
-    expect(typeof call[1].update).toBe('function')
   })
 
   it('invalid manifest: aborts with a manifest-validation error and removes partial extracted files', async () => {
@@ -226,9 +218,6 @@ describe('installComfyBuilderPipeline', () => {
     expect(fs.existsSync(path.join(installPath, 'standalone-env'))).toBe(false)
     expect(fs.existsSync(path.join(installPath, 'ComfyUI'))).toBe(false)
     expect(fs.existsSync(path.join(installPath, 'manifest.json'))).toBe(false)
-
-    // The post-extract phase never ran on the invalid artifact.
-    expect(vi.mocked(standalonePostInstall)).not.toHaveBeenCalled()
   })
 
   it('block-at-install: throws no-successful-build and makes zero download requests', async () => {
@@ -256,7 +245,34 @@ describe('installComfyBuilderPipeline', () => {
     expect(netState.requestCount).toBe(netBefore)
     expect(fs.existsSync(cacheDir)).toBe(false)
     expect(fs.existsSync(installPath)).toBe(false)
-    expect(vi.mocked(standalonePostInstall)).not.toHaveBeenCalled()
+
+    fetchSpy.mockRestore()
+  })
+
+  it('install(inst, ctx): reconstructs meta and blocks an un-installable record before any download', async () => {
+    const installPath = path.join(tmpRoot, 'install')
+    const cacheDir = path.join(tmpRoot, 'cache')
+    const installation: InstallationRecord = {
+      ...makeInstallation(installPath, 'pipe-failed'),
+      installable: false,
+      reason: 'no-successful-build',
+    }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const netBefore = netState.requestCount
+
+    let caught: unknown
+    try {
+      await install(installation, makeInstallTools(cacheDir))
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(ComfyBuilderInstallError)
+    expect((caught as ComfyBuilderInstallError).kind).toBe('no-successful-build')
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(netState.requestCount).toBe(netBefore)
+    expect(fs.existsSync(cacheDir)).toBe(false)
+    expect(fs.existsSync(installPath)).toBe(false)
 
     fetchSpy.mockRestore()
   })

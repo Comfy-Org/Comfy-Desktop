@@ -194,6 +194,17 @@ function selectTemplate(option: FieldOption): void {
  *  when the picker is gated off (non-standalone source, no template options,
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
+  // ComfyBuilder: block an un-installable pipeline here so the selection shows a
+  // specific error and never starts an install — no record is created and no
+  // artifact download begins.
+  if (currentSource.value?.id === 'comfybuilder') {
+    const selected = cbSelectedPipeline()
+    if (selected && !cbPipelineInstallable(selected)) {
+      cbInstallError.value = cbInstallErrorText(selected)
+      return
+    }
+    cbInstallError.value = ''
+  }
   if (shouldShowPickerStep.value) {
     // Lead with a real template rather than the "None" sentinel — prefer the
     // recommended pick (the lightest "wow"), falling back to the first real one.
@@ -398,6 +409,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   detectedGpu.value = t('newInstall.detectingGpu')
   resetDiskSpace()
   sourceError.value = ''
+  cbInstallError.value = ''
   initializing.value = true
   step.value = 'configure'
   dontShowTemplatePicker.value = false
@@ -485,6 +497,7 @@ async function selectSource(source: Source): Promise<void> {
   textFieldValues.value.clear()
   saveDisabled.value = true
   sourceError.value = ''
+  cbInstallError.value = ''
 
   for (const f of source.fields) {
     if (f.type === 'text') {
@@ -617,6 +630,10 @@ async function onReauthRecovered(): Promise<void> {
 // --- ComfyBuilder pipeline field: auth-gated rendering ---------------------
 const authStore = useAuthStore()
 const cbSigningIn = ref(false)
+/** Inline install error for a ComfyBuilder pipeline: a blocked selection (no
+ *  successful build / platform mismatch) caught before install, or a
+ *  download/manifest failure surfaced from the install call. */
+const cbInstallError = ref('')
 
 /** True when the field belongs to the ComfyBuilder source (the pipeline picker). */
 function isComfyBuilderField(field: SourceField): boolean {
@@ -650,6 +667,23 @@ function cbPipelineReason(option: FieldOption): string | null {
   return meta.reason === 'platform-mismatch'
     ? 'No artifact for your platform'
     : 'No successful build yet'
+}
+
+/** The currently-selected ComfyBuilder pipeline option, if the comfybuilder
+ *  source is active and a card is chosen. */
+function cbSelectedPipeline(): FieldOption | null {
+  const field = currentSource.value?.fields.find((f) => isComfyBuilderField(f))
+  if (!field) return null
+  return selections.value[field.id] ?? null
+}
+
+/** Install-time error text for a blocked pipeline (distinct wording from the
+ *  card's inline reason). */
+function cbInstallErrorText(option: FieldOption): string {
+  const meta = (option.data as { meta?: { reason?: string } } | undefined)?.meta
+  return meta?.reason === 'platform-mismatch'
+    ? 'No artifact for your platform.'
+    : 'This pipeline has no successful build yet.'
 }
 
 /** Signed in but the account has no pipelines at all. */
@@ -695,6 +729,7 @@ function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: 
 
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
   selections.value[field.id] = option
+  if (isComfyBuilderField(field)) cbInstallError.value = ''
   if (field.id === 'variant') {
     emitTelemetryAction('comfy.desktop.install.variant.selected', {
       variant_bucket: toVariantBucket(
@@ -856,11 +891,27 @@ async function handleSave(): Promise<void> {
     return
   }
   if (result.entry) {
+    const entryId = result.entry.id
+    const isComfyBuilder = source.id === 'comfybuilder'
     // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
     emit('show-progress', {
-      installationId: result.entry.id,
+      installationId: entryId,
       title: `${t('newInstall.installing')} — ${name}`,
-      apiCall: () => window.api.installInstance(result.entry!.id),
+      // For ComfyBuilder, also mirror a download/manifest failure into the
+      // wizard's inline error (the progress overlay shows it too).
+      apiCall: async () => {
+        try {
+          await window.api.installInstance(entryId)
+        } catch (err) {
+          if (isComfyBuilder) {
+            cbInstallError.value =
+              err instanceof Error && err.message
+                ? err.message
+                : 'ComfyBuilder install failed.'
+          }
+          throw err
+        }
+      },
       autoLaunchOnFinish: true,
       opKind: 'install'
     })
@@ -1152,6 +1203,14 @@ defineExpose({ open })
                           </span>
                         </button>
                       </div>
+                      <div
+                        v-if="cbInstallError"
+                        class="cb-install-error"
+                        data-testid="cb-install-error"
+                        role="alert"
+                      >
+                        {{ cbInstallError }}
+                      </div>
                     </template>
 
                     <template v-else-if="field.renderAs === 'cards'">
@@ -1211,6 +1270,7 @@ defineExpose({ open })
           <button
             class="brand-primary config-continue"
             :disabled="!canContinue"
+            :data-testid="currentSource?.id === 'comfybuilder' ? 'cb-install-btn' : undefined"
             @click="handleConfigureContinue"
           >
             {{ $t('common.continue') }}
@@ -1709,5 +1769,16 @@ defineExpose({ open })
 .cb-pipeline-card__reason {
   font-size: var(--takeover-fs-caption);
   color: var(--neutral-400);
+}
+.cb-install-error {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: var(--takeover-fs-caption);
+  line-height: 1.4;
+  text-align: left;
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 28%, transparent);
 }
 </style>
