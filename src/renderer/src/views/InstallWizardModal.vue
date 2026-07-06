@@ -901,7 +901,7 @@ async function handleSave(): Promise<void> {
       // wizard's inline error (the progress overlay shows it too).
       apiCall: async () => {
         try {
-          await window.api.installInstance(entryId)
+          return await window.api.installInstance(entryId)
         } catch (err) {
           if (isComfyBuilder) {
             cbInstallError.value =

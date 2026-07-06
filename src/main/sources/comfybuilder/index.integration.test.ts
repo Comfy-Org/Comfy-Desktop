@@ -9,6 +9,8 @@
 // none of their behaviour is exercised here.
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import os from 'os'
+import fs from 'fs'
+import path from 'path'
 import { EventEmitter } from 'events'
 
 vi.mock('electron', () => ({
@@ -203,5 +205,60 @@ describe('comfybuilder source', () => {
       'setup',
       'cleanup',
     ])
+  })
+
+  // getLaunchCommand must append `--cpu` for a CPU distribution (CPU-only Torch
+  // crashes on boot without it) and must NOT for a GPU one. Derivation reads the
+  // extracted manifest, so a real install tree with a venv python + manifest is
+  // laid down on disk per case.
+  describe('getLaunchCommand CPU flag', () => {
+    const pythonRel = process.platform === 'win32'
+      ? path.join('ComfyUI', '.venv', 'Scripts', 'python.exe')
+      : path.join('ComfyUI', '.venv', 'bin', 'python3')
+
+    function makeInstall(manifest: Record<string, unknown>): string {
+      const installPath = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-launch-'))
+      const py = path.join(installPath, pythonRel)
+      fs.mkdirSync(path.dirname(py), { recursive: true })
+      fs.writeFileSync(py, '')
+      fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), '')
+      fs.writeFileSync(path.join(installPath, 'manifest.json'), JSON.stringify(manifest))
+      return installPath
+    }
+
+    const created: string[] = []
+    const record = (installPath: string): string => {
+      created.push(installPath)
+      return installPath
+    }
+    afterEach(() => {
+      while (created.length) {
+        fs.rmSync(created.pop()!, { recursive: true, force: true })
+      }
+    })
+
+    it('appends --cpu for a CPU manifest (torch_version +cpu, id linux-cpu-targz)', () => {
+      const installPath = record(
+        makeInstall({ id: 'linux-cpu-targz', torch_version: '2.5.1+cpu' }),
+      )
+      const cmd = comfybuilder.getLaunchCommand!({ installPath, launchArgs: '--enable-manager' } as never)
+      expect(cmd?.args).toContain('--cpu')
+    })
+
+    it('does NOT append --cpu for a GPU manifest (torch_version +cu121, id linux-nvidia-targz)', () => {
+      const installPath = record(
+        makeInstall({ id: 'linux-nvidia-targz', torch_version: '2.5.1+cu121' }),
+      )
+      const cmd = comfybuilder.getLaunchCommand!({ installPath, launchArgs: '--enable-manager' } as never)
+      expect(cmd?.args).not.toContain('--cpu')
+    })
+
+    it('does not duplicate --cpu when the user already set it', () => {
+      const installPath = record(
+        makeInstall({ id: 'linux-cpu-targz', torch_version: '2.5.1+cpu' }),
+      )
+      const cmd = comfybuilder.getLaunchCommand!({ installPath, launchArgs: '--enable-manager --cpu' } as never)
+      expect((cmd?.args ?? []).filter((a) => a === '--cpu')).toHaveLength(1)
+    })
   })
 })

@@ -1028,7 +1028,7 @@ export interface ElectronApi {
   /** `express` flags the one-click express-install path (vs the manual
    *  Configure wizard). Used only to label the `install.completed`
    *  telemetry event's `method`; defaults to false. */
-  installInstance(installationId: string, express?: boolean): Promise<void>
+  installInstance(installationId: string, express?: boolean): Promise<ActionResult>
   /** Skip waiting on the starter-template model download — hands the still-
    *  running task off to the title-bar downloads tray (no restart). */
   skipTemplateDownload(installationId: string): Promise<void>

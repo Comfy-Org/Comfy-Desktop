@@ -16,7 +16,7 @@ import path from 'path'
 import { t } from '../../lib/i18n'
 import { parseArgs, extractPort } from '../../lib/util'
 import { getActivePythonPath } from '../../lib/pythonEnv'
-import { DEFAULT_LAUNCH_ARGS } from '../standalone/envPaths'
+import { DEFAULT_LAUNCH_ARGS, MANIFEST_FILE } from '../standalone/envPaths'
 import { install } from './install'
 import { postInstall, probeInstallation } from '../standalone/install'
 import { listDeployments, listPipelines } from '../../comfybuilder/apiClient'
@@ -121,6 +121,26 @@ async function buildPipelineOption(
   }
 }
 
+/**
+ * True when the extracted distribution is a CPU-only build, detected from the
+ * authoritative `manifest.json` (`torch_version` ending `+cpu`, or an `id` like
+ * `linux-cpu-targz`). CPU builds must launch with `--cpu`, or ComfyUI crashes on
+ * boot ("Torch not compiled with CUDA enabled") initializing a Torch CUDA device.
+ * Fails safe to false so an unreadable manifest never forces CPU mode onto a GPU
+ * install.
+ */
+function isCpuManifest(installPath: string): boolean {
+  try {
+    const raw = fs.readFileSync(path.join(installPath, MANIFEST_FILE), 'utf8')
+    const manifest = JSON.parse(raw) as Record<string, unknown>
+    const torch = typeof manifest.torch_version === 'string' ? manifest.torch_version : ''
+    const id = typeof manifest.id === 'string' ? manifest.id : ''
+    return /\+cpu$/i.test(torch) || /(^|-)cpu(-|$)/i.test(id)
+  } catch {
+    return false
+  }
+}
+
 export const comfybuilder: SourcePlugin = {
   id: 'comfybuilder',
   label: 'ComfyBuilder',
@@ -206,6 +226,13 @@ export const comfybuilder: SourcePlugin = {
     if (!fs.existsSync(mainPy)) return null
     const userArgs = ((installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS).trim()
     const parsed = userArgs.length > 0 ? parseArgs(userArgs) : []
+    // A CPU distribution ships a CPU-only Torch; without `--cpu` ComfyUI crashes
+    // on boot grabbing a CUDA device. Derived from the manifest at launch (not
+    // baked into the persisted `launchArgs`) so already-installed CPU environments
+    // are fixed too. Skip if the user already passed `--cpu`.
+    if (isCpuManifest(installation.installPath) && !parsed.includes('--cpu')) {
+      parsed.push('--cpu')
+    }
     const port = extractPort(parsed)
     return {
       cmd: pythonPath,
