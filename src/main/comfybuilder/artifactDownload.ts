@@ -2,9 +2,10 @@ import { statSync } from 'fs'
 
 import { download } from '../lib/download'
 import type { DownloadProgress } from '../lib/download'
+import { broadcastAuthChanged } from './authIpc'
 import { COMFYBUILDER_BASE_URL } from './config'
 import type { Artifact } from './dto'
-import { loadTokens } from './tokenStore'
+import { clearTokens, loadTokens } from './tokenStore'
 
 export interface DownloadPipelineArtifactOptions {
   pipelineId: string
@@ -23,6 +24,16 @@ interface DownloadTokenResponse {
 }
 
 const TOKEN_DOWNLOAD_ATTEMPTS = 2
+
+class DownloadAuthError extends Error {
+  override name = 'DownloadAuthError'
+}
+
+/** Forget the rejected token and broadcast `signedIn: false` so the renderer can prompt for re-auth. */
+function signalReauthRequired(): void {
+  clearTokens()
+  broadcastAuthChanged({ signedIn: false })
+}
 
 function resolveDownloadUrl(downloadUrl: string, baseUrl: string): string {
   if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl
@@ -50,6 +61,9 @@ async function mintDownloadToken(
     signal,
     redirect: 'manual',
   })
+  if (response.status === 401 || response.status === 403) {
+    throw new DownloadAuthError(`Not authorized to mint download token: HTTP ${response.status}`)
+  }
   if (!response.ok) {
     throw new Error(`Failed to mint download token: HTTP ${response.status}`)
   }
@@ -96,6 +110,7 @@ export async function downloadPipelineArtifact(
 
   // Download tokens are single-use, so every attempt mints a fresh one.
   let lastError: unknown
+  let authFailed = false
   for (let attempt = 0; attempt < TOKEN_DOWNLOAD_ATTEMPTS; attempt++) {
     if (signal?.aborted) throw new Error('Download cancelled')
 
@@ -104,6 +119,7 @@ export async function downloadPipelineArtifact(
       token = await mintDownloadToken(artifactBase, accessToken, signal)
     } catch (error) {
       lastError = error
+      authFailed = error instanceof DownloadAuthError
       break
     }
 
@@ -118,5 +134,6 @@ export async function downloadPipelineArtifact(
     }
   }
 
+  if (authFailed) signalReauthRequired()
   throw lastError instanceof Error ? lastError : new Error('Failed to download pipeline artifact')
 }

@@ -29,6 +29,7 @@ import BrandVariantList from '../components/BrandVariantList.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
+import ComfyBuilderReauth from '../components/ComfyBuilderReauth.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 
 const emit = defineEmits<{
@@ -601,6 +602,17 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
   }
 }
 
+/** Re-auth recovered mid-flow: reload the current source's first loadable field
+ *  (the ComfyBuilder pipeline list) now that the session is valid again. */
+async function onReauthRecovered(): Promise<void> {
+  const source = currentSource.value
+  if (!source) return
+  const firstLoadable = source.fields.findIndex((f) => f.type !== 'text')
+  if (firstLoadable >= 0) {
+    await loadFieldOptions(firstLoadable)
+  }
+}
+
 function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: string): void {
   const source = currentSource.value
   if (!source) return
@@ -847,6 +859,10 @@ defineExpose({ open })
       <p class="brand-lead">{{ $t('newInstall.configureLead') }}</p>
       <div class="config-card">
         <div class="config-card__body">
+          <ComfyBuilderReauth
+            v-if="currentSource?.id === 'comfybuilder'"
+            @recovered="onReauthRecovered"
+          />
           <div class="config-field">
             <label class="config-label" for="inst-name-standalone">{{ $t('common.name') }}</label>
             <div class="brand-input" :class="{ 'brand-input--invalid': nameError }">

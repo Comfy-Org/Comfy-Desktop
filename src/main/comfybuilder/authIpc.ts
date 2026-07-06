@@ -27,8 +27,12 @@ const SIGNED_OUT: AuthStatus = { signedIn: false }
 /**
  * Push the renderer-safe {@link AuthStatus} to every open window so all
  * surfaces update in lockstep. Only the status (never tokens) is sent.
+ *
+ * Exported so the API client and artifact downloader can announce a
+ * session that expired mid-request (a failed refresh, or a rejected
+ * Bearer with no usable token) — the renderer then prompts for re-auth.
  */
-function broadcastAuthChanged(status: AuthStatus): void {
+export function broadcastAuthChanged(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(COMFYBUILDER_AUTH_CHANNELS.authChanged, status)
   }

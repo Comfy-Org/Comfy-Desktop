@@ -11,14 +11,21 @@
  * {@link saveTokens}, and replays the original request exactly once. It never
  * retries more than once, so a persistently rejecting server cannot loop.
  *
+ * When that refresh definitively fails — no refresh token, the refresh call
+ * throws, or the retry is still rejected — the session is dead: the client
+ * clears the stored tokens and broadcasts `authChanged { signedIn: false }` so
+ * the renderer can prompt for re-auth, then surfaces a typed `unauthorized`
+ * error.
+ *
  * Failures surface as a typed {@link ComfyBuilderApiError} whose `kind`
  * discriminates the four failure classes callers care about.
  */
+import { broadcastAuthChanged } from './authIpc'
 import { COMFYBUILDER_API_BASE } from './config'
 import type { Deployment, Pipeline } from './dto'
 import { parseDeployments, parsePipelines } from './dto'
 import { refresh } from './oauth'
-import { loadTokens, saveTokens } from './tokenStore'
+import { clearTokens, loadTokens, saveTokens } from './tokenStore'
 import type { AuthTokens } from './types'
 
 /** The failure classes a caller can branch on. */
@@ -96,29 +103,31 @@ async function requestJson(path: string, options: ApiClientOptions): Promise<unk
 
   const retry = await sendRequest(url, refreshed.accessToken, timeoutMs)
   if (retry.status === 401) {
-    throw new ComfyBuilderApiError(
-      'unauthorized',
-      'ComfyBuilder rejected the request after a token refresh',
-    )
+    failExpiredSession('ComfyBuilder rejected the request after a token refresh')
   }
   return readResult(retry)
+}
+
+/**
+ * A token refresh has definitively failed. Forget the dead tokens and broadcast
+ * `signedIn: false` so the renderer can prompt for re-auth, then throw a typed
+ * `unauthorized` error. Never logs or returns the tokens.
+ */
+function failExpiredSession(message: string): never {
+  clearTokens()
+  broadcastAuthChanged({ signedIn: false })
+  throw new ComfyBuilderApiError('unauthorized', message)
 }
 
 /** Exchange the refresh token for fresh tokens, mapping any failure to `unauthorized`. */
 async function refreshTokens(tokens: AuthTokens): Promise<AuthTokens> {
   if (!tokens.refreshToken) {
-    throw new ComfyBuilderApiError(
-      'unauthorized',
-      'ComfyBuilder session expired and no refresh token is available',
-    )
+    failExpiredSession('ComfyBuilder session expired and no refresh token is available')
   }
   try {
     return await refresh(tokens.refreshToken)
   } catch {
-    throw new ComfyBuilderApiError(
-      'unauthorized',
-      'ComfyBuilder session expired and the token refresh failed',
-    )
+    failExpiredSession('ComfyBuilder session expired and the token refresh failed')
   }
 }
 

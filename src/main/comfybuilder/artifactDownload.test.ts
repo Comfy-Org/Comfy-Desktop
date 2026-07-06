@@ -38,13 +38,17 @@ vi.mock('electron', async () => {
 vi.mock('../settings', () => ({ get: () => undefined, set: () => {} }))
 
 // Drive the access token from the test rather than the encrypted store.
-vi.mock('./tokenStore', () => ({ loadTokens: vi.fn() }))
+vi.mock('./tokenStore', () => ({ loadTokens: vi.fn(), clearTokens: vi.fn() }))
+
+// Mock the re-auth broadcast so it never touches Electron's BrowserWindow.
+vi.mock('./authIpc', () => ({ broadcastAuthChanged: vi.fn() }))
 
 import { ensureMockArtifact, MOCK_ARTIFACT_PATH, startMockBuilderApi } from '../../test/comfybuilder/mockServers'
 import type { MockServer } from '../../test/comfybuilder/mockServers'
 import { downloadPipelineArtifact } from './artifactDownload'
+import { broadcastAuthChanged } from './authIpc'
 import type { Artifact } from './dto'
-import { loadTokens } from './tokenStore'
+import { clearTokens, loadTokens } from './tokenStore'
 import type { AuthTokens } from './types'
 
 const ACCESS_TOKEN = 'access-token-super-secret-value-1234567890'
@@ -191,6 +195,8 @@ describe('comfybuilder artifactDownload', () => {
   beforeEach(() => {
     netCapture.requests.length = 0
     vi.mocked(loadTokens).mockReset()
+    vi.mocked(clearTokens).mockReset()
+    vi.mocked(broadcastAuthChanged).mockReset()
     tmpDir = mkdtempSync(join(tmpdir(), 'artifact-download-'))
   })
 
@@ -288,6 +294,38 @@ describe('comfybuilder artifactDownload', () => {
       }
     } finally {
       for (const spy of spies) spy.mockRestore()
+      await server.stop()
+    }
+  })
+
+  it('signals re-auth when the download cannot be authenticated (no usable token)', async () => {
+    // No token: the direct Bearer path is skipped and the download-token mint is
+    // rejected 401, so the session is dead.
+    vi.mocked(loadTokens).mockReturnValue(null)
+    const server = await startTokenArtifactServer({ allowDirect: false, failFirstTokenDownload: false })
+    try {
+      const artifact = makeArtifact('pipe-success', 'dep-success-1', fixtureSize)
+      const destPath = join(tmpDir, 'reauth.tar.gz')
+
+      await expect(
+        downloadPipelineArtifact({
+          pipelineId: 'pipe-success',
+          deploymentId: 'dep-success-1',
+          artifact,
+          destPath,
+          baseUrl: server.baseUrl,
+        }),
+      ).rejects.toThrow()
+
+      // The renderer is told to re-auth exactly once and the dead token is cleared.
+      expect(clearTokens).toHaveBeenCalledTimes(1)
+      expect(broadcastAuthChanged).toHaveBeenCalledTimes(1)
+      expect(broadcastAuthChanged).toHaveBeenCalledWith({ signedIn: false })
+
+      // No token could be minted, so nothing was written to disk.
+      expect(server.minted).toHaveLength(0)
+      expect(() => statSync(destPath)).toThrow()
+    } finally {
       await server.stop()
     }
   })

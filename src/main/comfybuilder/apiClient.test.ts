@@ -3,19 +3,25 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 // apiClient pulls tokens from tokenStore and refreshes via oauth; mock both so
 // the tests drive auth entirely, and no real OAuth network traffic is made.
+// authIpc is mocked so the broadcast never touches Electron's BrowserWindow.
 vi.mock('./tokenStore', () => ({
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
+  clearTokens: vi.fn(),
 }))
 vi.mock('./oauth', () => ({
   refresh: vi.fn(),
+}))
+vi.mock('./authIpc', () => ({
+  broadcastAuthChanged: vi.fn(),
 }))
 
 import { startMockBuilderApi } from '../../test/comfybuilder/mockServers'
 import type { MockServer } from '../../test/comfybuilder/mockServers'
 import { ComfyBuilderApiError, listDeployments, listPipelines } from './apiClient'
+import { broadcastAuthChanged } from './authIpc'
 import { refresh } from './oauth'
-import { loadTokens, saveTokens } from './tokenStore'
+import { clearTokens, loadTokens, saveTokens } from './tokenStore'
 import type { AuthTokens } from './types'
 
 function makeTokens(overrides: Partial<AuthTokens> = {}): AuthTokens {
@@ -50,7 +56,9 @@ describe('comfybuilder apiClient', () => {
   beforeEach(() => {
     vi.mocked(loadTokens).mockReset()
     vi.mocked(saveTokens).mockReset()
+    vi.mocked(clearTokens).mockReset()
     vi.mocked(refresh).mockReset()
+    vi.mocked(broadcastAuthChanged).mockReset()
   })
 
   afterEach(() => {
@@ -115,6 +123,10 @@ describe('comfybuilder apiClient', () => {
     // refreshed token.
     expect(fetchSpy).toHaveBeenCalledTimes(2)
     expect(authHeaderOf(fetchSpy, 1)).toBe('Bearer fresh-access')
+
+    // A recovered session is still signed in: no re-auth broadcast, tokens kept.
+    expect(clearTokens).not.toHaveBeenCalled()
+    expect(broadcastAuthChanged).not.toHaveBeenCalled()
   })
 
   it('throws a typed unauthorized error when the refresh fails, without looping', async () => {
@@ -131,6 +143,10 @@ describe('comfybuilder apiClient', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(saveTokens).not.toHaveBeenCalled()
+
+    // A failed refresh ends the session: tokens cleared + renderer told to re-auth.
+    expect(clearTokens).toHaveBeenCalledTimes(1)
+    expect(broadcastAuthChanged).toHaveBeenCalledWith({ signedIn: false })
   })
 
   it('throws unauthorized without attempting a refresh when there is no refresh token', async () => {
@@ -142,6 +158,10 @@ describe('comfybuilder apiClient', () => {
     expect(refresh).not.toHaveBeenCalled()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(saveTokens).not.toHaveBeenCalled()
+
+    // No refresh token means no recovery: tokens cleared + renderer told to re-auth.
+    expect(clearTokens).toHaveBeenCalledTimes(1)
+    expect(broadcastAuthChanged).toHaveBeenCalledWith({ signedIn: false })
   })
 
   it('throws unauthorized without any request when not signed in', async () => {
@@ -152,6 +172,10 @@ describe('comfybuilder apiClient', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()
+
+    // Never-signed-in is not a mid-flow expiry: no clear, no re-auth broadcast.
+    expect(clearTokens).not.toHaveBeenCalled()
+    expect(broadcastAuthChanged).not.toHaveBeenCalled()
   })
 
   it('maps an unknown route (404) to a typed notFound error', async () => {
