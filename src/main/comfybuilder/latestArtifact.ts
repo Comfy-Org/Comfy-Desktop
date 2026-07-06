@@ -30,9 +30,14 @@ export interface PipelineInstallState {
 /** A succeeded deployment whose artifact is guaranteed present. */
 type DeploymentWithArtifact = Deployment & { artifact: Artifact }
 
-/** True when the deployment succeeded and has an artifact to download. */
+/**
+ * True when the deployment has an artifact to download. A `partial` deployment
+ * (some matrix targets failed, others succeeded) still serves the artifact a
+ * succeeded target produced, so it is downloadable just like a fully `succeeded`
+ * one.
+ */
 function hasDownloadableArtifact(deployment: Deployment): deployment is DeploymentWithArtifact {
-  return deployment.status === 'succeeded' && deployment.artifact != null
+  return (deployment.status === 'succeeded' || deployment.status === 'partial') && deployment.artifact != null
 }
 
 /**

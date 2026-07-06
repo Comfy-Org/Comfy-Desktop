@@ -60,6 +60,39 @@ describe('comfybuilder install resolver', () => {
     expect(pipelineInstallState(deployments)).toEqual({ installable: true })
   })
 
+  it('treats a partial build with an artifact as installable and downloadable', () => {
+    const deployments: Deployment[] = [
+      makeDeployment({
+        id: 'dep-partial',
+        status: 'partial',
+        finished_at: '2024-07-01T00:00:00Z',
+        artifact: makeArtifact({ artifact_id: 'art-partial' }),
+        target_statuses: [
+          { target_id: 'linux-nvidia-targz', status: 'succeeded' },
+          { target_id: 'win-nvidia-zip', status: 'failed', error: 'toolchain missing' }
+        ]
+      })
+    ]
+
+    const result = resolveLatestArtifact(deployments)
+    expect(result?.deployment.id).toBe('dep-partial')
+    expect(result?.deployment.status).toBe('partial')
+    expect(result?.artifact.artifact_id).toBe('art-partial')
+    expect(pipelineInstallState(deployments)).toEqual({ installable: true })
+  })
+
+  it('ignores a partial build with no artifact', () => {
+    const deployments: Deployment[] = [
+      makeDeployment({ id: 'dep-partial-empty', status: 'partial', artifact: null })
+    ]
+
+    expect(resolveLatestArtifact(deployments)).toBeNull()
+    expect(pipelineInstallState(deployments)).toEqual({
+      installable: false,
+      reason: 'no-successful-build'
+    })
+  })
+
   it('returns null and reports no-successful-build when nothing succeeded with an artifact', () => {
     const deployments: Deployment[] = [
       makeDeployment({ id: 'dep-failed', status: 'failed', artifact: null }),

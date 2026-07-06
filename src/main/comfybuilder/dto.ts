@@ -20,7 +20,7 @@ export interface Deployment {
   pipeline_id: string
   pipeline_revision: number
   version: string
-  status: 'queued' | 'building' | 'succeeded' | 'failed'
+  status: 'queued' | 'building' | 'succeeded' | 'partial' | 'failed'
   finished_at?: string | null
   artifact?: Artifact | null
   error_code?: string | null
@@ -92,8 +92,14 @@ function parseDeployment(value: unknown, index: number): Deployment {
   if (!isRecord(value)) parseError(`Invalid deployment at index ${index}: expected object`)
 
   const status = value.status
-  if (status !== 'queued' && status !== 'building' && status !== 'succeeded' && status !== 'failed') {
-    parseError(`Invalid deployment[${index}].status: expected queued | building | succeeded | failed`)
+  if (
+    status !== 'queued' &&
+    status !== 'building' &&
+    status !== 'succeeded' &&
+    status !== 'partial' &&
+    status !== 'failed'
+  ) {
+    parseError(`Invalid deployment[${index}].status: expected queued | building | succeeded | partial | failed`)
   }
 
   const artifact = value.artifact === undefined ? undefined : value.artifact === null ? null : parseArtifactObject(value.artifact)
