@@ -17,7 +17,7 @@ import {
 import { startMockBuilderApi, startMockOAuthIssuer } from './mockServers'
 import type { MockServer } from './mockServers'
 
-const CLIENT_ID = 'comfy-builder-dev'
+const CLIENT_ID = 'comfy-desktop'
 const REDIRECT_URI = 'http://127.0.0.1:53682/callback'
 
 function decodeJwtPayload(token: string): Record<string, unknown> {

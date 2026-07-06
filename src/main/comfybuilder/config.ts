@@ -1,6 +1,6 @@
 const DEFAULT_COMFYBUILDER_BASE_URL = 'https://comfy-builder.fennec-typhon.ts.net'
 const DEFAULT_OAUTH_ISSUER = 'https://cloud.comfy.org'
-const DEFAULT_OAUTH_CLIENT_ID = 'comfy-builder-dev'
+const DEFAULT_OAUTH_CLIENT_ID = 'comfy-desktop'
 
 export const COMFYBUILDER_BASE_URL = process.env.COMFYBUILDER_BASE_URL || DEFAULT_COMFYBUILDER_BASE_URL
 export const COMFYBUILDER_API_BASE = `${COMFYBUILDER_BASE_URL}/api/v1`

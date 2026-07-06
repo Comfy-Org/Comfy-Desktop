@@ -34,7 +34,7 @@ describe('pkce helpers', () => {
   it('builds an authorize url with required query params', () => {
     const url = buildAuthorizeUrl({
       authorizeUrl: 'https://login.example.com/oauth2/authorize',
-      clientId: 'comfy-builder-dev',
+      clientId: 'comfy-desktop',
       redirectUri: 'http://127.0.0.1:5173/callback?x=1',
       scope: 'openid profile email',
       resource: 'https://cloud.example.com/api',
@@ -46,7 +46,7 @@ describe('pkce helpers', () => {
 
     expect(parsed.origin + parsed.pathname).toBe('https://login.example.com/oauth2/authorize')
     expect(parsed.searchParams.get('response_type')).toBe('code')
-    expect(parsed.searchParams.get('client_id')).toBe('comfy-builder-dev')
+    expect(parsed.searchParams.get('client_id')).toBe('comfy-desktop')
     expect(parsed.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:5173/callback?x=1')
     expect(parsed.searchParams.get('scope')).toBe('openid profile email')
     expect(parsed.searchParams.get('resource')).toBe('https://cloud.example.com/api')
