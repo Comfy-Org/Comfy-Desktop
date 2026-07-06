@@ -38,6 +38,8 @@ import type {
   ShowProgressOpts
 } from '../types/ipc'
 
+import { useAuthStore } from '../stores/authStore'
+
 interface Props {
   installation: Installation | null
   initialTab?: string
@@ -67,6 +69,7 @@ const modal = useModal()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 const actionGuard = useActionGuard()
+const authStore = useAuthStore()
 const { confirmMigration } = useMigrateAction()
 
 // Always emits `close`; the parent decides what to do.
@@ -529,6 +532,17 @@ function navigateToInstallation(installationId: string): void {
         @navigate-installation="navigateToInstallation"
       />
       <template v-else>
+        <div v-if="activeTab === 'settings'" class="detail-section cb-signin-section">
+          <div class="detail-section-body">
+            <div class="cb-signin-container" style="display: flex; align-items: center; justify-content: space-between; padding: 16px; background: var(--surface); border-radius: 8px; border: 1px solid var(--border);">
+              <button v-if="!authStore.isSignedIn" data-testid="cb-settings-signin" class="brand-primary" @click="authStore.signIn()">Sign in to ComfyBuilder</button>
+              <div v-else class="cb-signed-in" style="display: flex; align-items: center; gap: 16px; width: 100%; justify-content: space-between;">
+                <span data-testid="cb-settings-signin" style="color: var(--text-muted);">Signed in as {{ authStore.status.email }}</span>
+                <button class="brand-secondary" @click="authStore.signOut()">Sign out</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <DetailSectionComponent
           v-for="section in mainSections"
           :key="section.title ?? 'untitled'"
@@ -621,6 +635,17 @@ function navigateToInstallation(installationId: string): void {
         @navigate-installation="navigateToInstallation"
       />
       <template v-else>
+        <div v-if="activeTab === 'settings'" class="detail-section cb-signin-section">
+          <div class="detail-section-body">
+            <div class="cb-signin-container" style="display: flex; align-items: center; justify-content: space-between; padding: 16px; background: var(--surface); border-radius: 8px; border: 1px solid var(--border);">
+              <button v-if="!authStore.isSignedIn" data-testid="cb-settings-signin" class="brand-primary" @click="authStore.signIn()">Sign in to ComfyBuilder</button>
+              <div v-else class="cb-signed-in" style="display: flex; align-items: center; gap: 16px; width: 100%; justify-content: space-between;">
+                <span data-testid="cb-settings-signin" style="color: var(--text-muted);">Signed in as {{ authStore.status.email }}</span>
+                <button class="brand-secondary" @click="authStore.signOut()">Sign out</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <DetailSectionComponent
           v-for="section in mainSections"
           :key="section.title ?? 'untitled'"

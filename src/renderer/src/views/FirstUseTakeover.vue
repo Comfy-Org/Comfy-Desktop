@@ -59,7 +59,9 @@ import InlineRichText from '../components/InlineRichText.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
 
-type Step = 'start' | 'mirrors' | 'localBranch'
+import { useAuthStore } from '../stores/authStore'
+
+type Step = 'signin' | 'start' | 'mirrors' | 'localBranch'
 
 const emit = defineEmits<{
   /** Cloud branch explicitly picked at the cloud-vs-local fork. Host
@@ -96,7 +98,21 @@ const emit = defineEmits<{
   'chain-migrate': [{ express: boolean }]
 }>()
 
-const step = ref<Step>('start')
+const step = ref<Step>('signin')
+const authStore = useAuthStore()
+
+async function handleSignIn() {
+  const status = await authStore.signIn()
+  if (status.signedIn) {
+    setTimeout(() => {
+      step.value = 'start'
+    }, 1500)
+  }
+}
+
+function handleSkipSignIn() {
+  step.value = 'start'
+}
 const telemetryEnabled = ref(true)
 const locale = ref('en')
 
@@ -334,7 +350,7 @@ const isChinese = computed(() => locale.value.startsWith('zh'))
  *  entrance animation plays once on overlay open, not on every internal
  *  step swap. Mirrors still ships as `ModalShell` until it gets the
  *  brand treatment too. */
-const isBrandStep = computed(() => step.value === 'start' || step.value === 'localBranch')
+const isBrandStep = computed(() => step.value === 'signin' || step.value === 'start' || step.value === 'localBranch')
 
 /** Single Continue commit for the merged start screen: T&C acceptance,
  *  telemetry pref, fork choice, and the Express-install modifier all
@@ -565,11 +581,11 @@ interface OpenOpts {
   /** Skip ahead to a specific brand step on open. Used by the
    *  Configure → Back chain to land the user back on the localBranch
    *  sub-step instead of restarting at start. Defaults to 'start'. */
-  initialStep?: 'start' | 'localBranch'
+  initialStep?: 'signin' | 'start' | 'localBranch'
 }
 
 async function open(opts: OpenOpts = {}): Promise<void> {
-  step.value = opts.initialStep ?? 'start'
+  step.value = opts.initialStep ?? 'signin'
   skipPick.value = opts.skipPick === true
   hasLegacyDesktop.value = opts.hasLegacyDesktop === true
   whyCloudOpen.value = false
@@ -719,12 +735,42 @@ defineExpose({ open, resetContinue })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isBrandStep" :vignette="step === 'start'">
+  <BrandTakeoverLayout v-if="isBrandStep" :vignette="step === 'start' || step === 'signin'">
+    <div v-if="step === 'signin'" class="start-screen">
+      <div class="brand-hero start-hero">
+        <h1 class="brand-title">Sign in to ComfyBuilder</h1>
+        <p class="brand-lead">Connect your account to access your pipelines and cloud resources.</p>
+        <div class="start-cards" style="flex-direction: column; gap: 16px; align-items: center; justify-content: center; margin-top: 32px;">
+          <button
+            type="button"
+            class="brand-primary start-continue"
+            data-testid="cb-signin-cta"
+            style="width: 100%; max-width: 300px;"
+            @click="handleSignIn"
+          >
+            Sign in to ComfyBuilder
+          </button>
+          <button
+            type="button"
+            class="brand-secondary"
+            data-testid="cb-signin-skip"
+            style="width: 100%; max-width: 300px;"
+            @click="handleSkipSignIn"
+          >
+            Skip
+          </button>
+        </div>
+        <div v-if="authStore.isSignedIn" data-testid="cb-signin-status" class="signin-status" style="margin-top: 16px; text-align: center; color: var(--text-muted);">
+          Signed in as {{ authStore.status.email }}
+        </div>
+      </div>
+    </div>
+
     <!-- Step 1: Merged start screen. Wordmark on top, Cloud-vs-Local
          radio cards in the middle, Express-Install opt-out modifier,
          then the legal/telemetry checkboxes and the Continue / Cancel
          action row. T&C must be accepted before Continue activates. -->
-    <div v-if="step === 'start'" class="start-screen">
+    <div v-else-if="step === 'start'" class="start-screen">
       <div class="brand-hero start-hero">
         <h1 class="brand-title">{{ $t('firstUse.pickTitle') }}</h1>
         <p class="brand-lead">{{ $t('firstUse.pickLead') }}</p>
