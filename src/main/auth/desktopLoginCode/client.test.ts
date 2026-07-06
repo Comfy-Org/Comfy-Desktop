@@ -75,6 +75,28 @@ describe('createDesktopLoginCode', () => {
     )
   })
 
+  it('rejects a grant with a non-positive poll_interval', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(201, { code: 'dlc_abc', expires_in: 300, poll_interval: 0 }))
+    )
+
+    await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toThrow(
+      DesktopLoginCodeError
+    )
+  })
+
+  it('rejects a grant with a non-positive expires_in', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(201, { code: 'dlc_abc', expires_in: -1, poll_interval: 3 }))
+    )
+
+    await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toThrow(
+      DesktopLoginCodeError
+    )
+  })
+
   it('classifies a timeout as retryable', async () => {
     vi.stubGlobal('fetch', vi.fn(hangingFetch()))
 

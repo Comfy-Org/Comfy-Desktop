@@ -16,6 +16,16 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
+/** fetch stub that stays pending until its abort signal fires. */
+function hangingFetch(): typeof fetch {
+  return (...args: Parameters<typeof fetch>) =>
+    new Promise<Response>((_resolve, reject) => {
+      args[1]?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('This operation was aborted', 'AbortError'))
+      )
+    })
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -120,25 +130,25 @@ describe('custom-token sign-in', () => {
     expect(user.lastLoginAt).toEqual(expect.any(String))
   })
 
-  it('forwards the abort signal to fetch so a superseded flow can cancel in-flight calls', async () => {
+  it('aborts an in-flight call when a superseded flow cancels its signal', async () => {
+    vi.stubGlobal('fetch', vi.fn(hangingFetch()))
     const controller = new AbortController()
-    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
-      if (String(args[0]).includes('signInWithCustomToken')) {
-        return jsonResponse(200, {
-          idToken: 'id-token',
-          refreshToken: 'refresh-token',
-          expiresIn: '3600'
-        })
-      }
-      return jsonResponse(200, { users: [{ localId: 'uid-1' }] })
+
+    const pending = signInWithCustomToken('api-key', 'custom-token-value', {
+      signal: controller.signal
     })
-    vi.stubGlobal('fetch', fetchMock)
+    controller.abort()
 
-    await signInWithCustomToken('api-key', 'custom-token-value', { signal: controller.signal })
-    await lookupAccount('api-key', 'id-token', { signal: controller.signal })
+    const err = await pending.catch((e: unknown) => e)
+    expect((err as Error).name).toBe('AbortError')
+  })
 
-    expect(fetchMock.mock.calls[0]![1]?.signal).toBe(controller.signal)
-    expect(fetchMock.mock.calls[1]![1]?.signal).toBe(controller.signal)
+  it('times out a hung identitytoolkit call instead of stalling the flow', async () => {
+    vi.stubGlobal('fetch', vi.fn(hangingFetch()))
+
+    await expect(lookupAccount('api-key', 'id-token', { timeoutMs: 5 })).rejects.toThrow(
+      /timed out/
+    )
   })
 
   it('surfaces the HTTP status when sign-in fails', async () => {

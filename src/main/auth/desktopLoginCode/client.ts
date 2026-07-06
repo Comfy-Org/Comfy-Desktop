@@ -66,7 +66,7 @@ export interface RequestOpts {
  * messages carry only the HTTP status — never request or response bodies
  * (they hold the code and verifier).
  */
-async function postJson(url: string, body: unknown, opts: RequestOpts): Promise<Response> {
+export async function postJson(url: string, body: unknown, opts: RequestOpts): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? REQUEST_TIMEOUT_MS)
   const forwardAbort = (): void => controller.abort()
@@ -121,12 +121,17 @@ export async function createDesktopLoginCode(
     expires_in?: unknown
     poll_interval?: unknown
   } | null
+  // Non-positive timings would spin the poll loop (interval) or expire the
+  // code before the user can sign in (deadline) — reject them here, where
+  // the caller can still fall back to the legacy bridge.
   if (
     !data ||
     typeof data.code !== 'string' ||
     data.code.length === 0 ||
     typeof data.expires_in !== 'number' ||
-    typeof data.poll_interval !== 'number'
+    data.expires_in <= 0 ||
+    typeof data.poll_interval !== 'number' ||
+    data.poll_interval <= 0
   ) {
     throw new DesktopLoginCodeError('desktop login code create returned an unexpected payload', {
       status: resp.status

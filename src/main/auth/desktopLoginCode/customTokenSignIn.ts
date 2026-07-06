@@ -1,3 +1,4 @@
+import { postJson, type RequestOpts } from './client'
 import type { FirebaseProjectConfig } from '../firebaseBridge/config'
 import {
   assemblePersistedUser,
@@ -30,19 +31,20 @@ export interface LookedUpAccount {
 /**
  * Exchange the backend-minted Firebase custom token for ID/refresh tokens.
  * REST mirror of the SDK's signInWithCustomToken — the main process has no
- * firebase dependency (see oauth.ts for the same pattern).
+ * firebase dependency (see oauth.ts for the same pattern). Goes through the
+ * same timeout-guarded postJson as the login-code endpoints so a hung
+ * identitytoolkit call can't stall the flow indefinitely.
  */
 export async function signInWithCustomToken(
   apiKey: string,
   token: string,
-  opts: { signal?: AbortSignal } = {}
+  opts: RequestOpts = {}
 ): Promise<SignInWithCustomTokenResponse> {
-  const resp = await fetch(`${IDP_BASE}/accounts:signInWithCustomToken?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, returnSecureToken: true }),
-    signal: opts.signal
-  })
+  const resp = await postJson(
+    `${IDP_BASE}/accounts:signInWithCustomToken?key=${apiKey}`,
+    { token, returnSecureToken: true },
+    opts
+  )
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(`signInWithCustomToken ${resp.status}: ${text || resp.statusText}`)
@@ -63,14 +65,9 @@ export async function signInWithCustomToken(
 export async function lookupAccount(
   apiKey: string,
   idToken: string,
-  opts: { signal?: AbortSignal } = {}
+  opts: RequestOpts = {}
 ): Promise<LookedUpAccount> {
-  const resp = await fetch(`${IDP_BASE}/accounts:lookup?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idToken }),
-    signal: opts.signal
-  })
+  const resp = await postJson(`${IDP_BASE}/accounts:lookup?key=${apiKey}`, { idToken }, opts)
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(`accounts:lookup ${resp.status}: ${text || resp.statusText}`)
