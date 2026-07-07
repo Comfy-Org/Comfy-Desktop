@@ -140,10 +140,9 @@ function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryVa
  *   Launcher-UI senders have no comfyView entry and stay untagged — their
  *   events are app-level, not deployment-scoped.
  */
-function deploymentForSender(sender: WebContents | undefined): string | null {
+function deploymentForSender(sender: WebContents | undefined): mainTelemetry.Deployment | null {
   if (!sender) return null
-  const category = findEntryByComfySender(sender)?.sourceCategory
-  return category === 'local' || category === 'cloud' || category === 'remote' ? category : null
+  return mainTelemetry.asDeployment(findEntryByComfySender(sender)?.sourceCategory)
 }
 
 function withPlatformAxes(
@@ -152,8 +151,13 @@ function withPlatformAxes(
 ): mainTelemetry.TelemetryContext {
   delete properties['client']
   const deployment = deploymentForSender(sender)
-  if (deployment === null) return properties
-  return { ...properties, deployment }
+  if (deployment !== null) return { ...properties, deployment }
+  // Unknown sender (launcher UI, popouts): a payload deployment may pass
+  // through, but only if it's a valid axis value — junk is stripped.
+  if (mainTelemetry.asDeployment(properties['deployment']) === null) {
+    delete properties['deployment']
+  }
+  return properties
 }
 
 export function registerTelemetryHandlers(): void {

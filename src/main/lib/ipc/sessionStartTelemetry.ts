@@ -119,10 +119,10 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
     // one release cycle so existing dashboards survive migration (issue #1054).
     const instanceStartedProps = {
       ...(metadata as Record<string, string | number | boolean | null | undefined>),
-      // local | cloud | remote, derived from the install's source plugin —
-      // the cross-surface axis analysts filter on (paired with `client`,
-      // which the telemetry defaults pin to 'desktop' for this pipe).
-      deployment: sourceMap[ctx.source_id]?.category ?? null,
+      // The cross-surface axis analysts filter on (paired with `client`,
+      // which the telemetry defaults pin to 'desktop'). Narrowed through
+      // asDeployment since a source plugin's category is an open string.
+      deployment: telemetry.asDeployment(sourceMap[ctx.source_id]?.category),
       boot_time_ms: info.bootTimeMs ?? null,
       port_retries: info.portRetries,
       reboot_retries: info.rebootRetries,

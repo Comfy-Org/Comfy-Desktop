@@ -24,6 +24,9 @@ vi.mock('../../host/registry', () => ({
 }))
 
 vi.mock('../telemetry', () => ({
+  // Real (pure) narrowing logic, mirrored here because importOriginal would
+  // pull in telemetry.ts's electron/posthog-node imports under the stub mock.
+  asDeployment: (v: unknown) => (v === 'local' || v === 'cloud' || v === 'remote' ? v : null),
   bindUserId: mocks.bindUserId,
   capture: mocks.capture,
   captureException: mocks.captureException,
@@ -206,5 +209,31 @@ describe('registerTelemetryHandlers', () => {
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.deployment).toBeUndefined()
+  })
+
+  it('strips an invalid payload deployment even from non-comfyView senders', () => {
+    mocks.findEntryByComfySender.mockReturnValue(null)
+
+    listener('telemetry:capture')(
+      { sender: { id: 7 } },
+      { event: 'popout.event', properties: { deployment: 'banana' } }
+    )
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.deployment).toBeUndefined()
+  })
+
+  it('applies the same platform-axes handling to relayed exceptions', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
+
+    listener('telemetry:captureException')(
+      { sender: { id: 8 } },
+      { message: 'boom', properties: { client: 'web', deployment: 'cloud' } }
+    )
+
+    const [err, sent] = mocks.captureException.mock.calls[0]! as [Error, Record<string, unknown>]
+    expect(err.message).toBe('boom')
+    expect(sent.deployment).toBe('local')
+    expect(sent.client).toBeUndefined()
   })
 })

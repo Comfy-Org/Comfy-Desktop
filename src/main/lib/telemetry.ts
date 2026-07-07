@@ -231,6 +231,20 @@ function canEmit(): boolean {
 let defaultEventProperties: Record<string, TelemetryValue> = {}
 
 /**
+ * The `deployment` analytics axis: which backend ran the work. Paired with
+ * the `client` default event property (desktop | web | cli) to identify the
+ * product surface (MAR-51). Shared by every site that tags `deployment` so
+ * the enum can't drift.
+ */
+export type Deployment = 'local' | 'cloud' | 'remote'
+
+/** Narrow an untrusted value (payload property, source-plugin category) to a
+ *  valid `Deployment`, or `null` — never let junk reach the shared axis. */
+export function asDeployment(value: unknown): Deployment | null {
+  return value === 'local' || value === 'cloud' || value === 'remote' ? value : null
+}
+
+/**
  * Coarse release-channel classification derived from a semver-ish
  * `appVersion`. `-beta` / `-canary` / `-alpha` markers map to their
  * channel; a missing suffix is `stable`; an unrecognised suffix is
@@ -466,11 +480,8 @@ export function initTelemetry(opts: InitOptions): void {
     is_packaged: opts.isPackaged,
     platform: process.platform,
     arch: process.arch,
-    // Cross-surface analytics axis shared with the cloud frontend and CLI:
-    // `client` says which surface emitted the event (desktop | web | cli),
-    // `deployment` (attached per-event where known) says which backend ran
-    // the work (local | cloud | remote). Everything through this pipe is by
-    // definition the desktop app.
+    // Cross-surface analytics axis (MAR-51); this pipe is always the desktop
+    // app. `deployment` (see the `Deployment` type) is its per-event pair.
     client: 'desktop'
   }
 
@@ -978,7 +989,9 @@ export function captureException(error: unknown, properties: TelemetryContext = 
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return
   try {
-    client!.captureException(error, distinctId, properties)
+    // Same default merge as capture() so exception events stay filterable by
+    // the shared axes (app_version, client, ...) instead of arriving bare.
+    client!.captureException(error, distinctId, { ...defaultEventProperties, ...properties })
   } catch {
     // ignore
   }
