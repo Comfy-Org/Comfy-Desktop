@@ -121,14 +121,24 @@ function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryVa
 }
 
 /**
- * `deployment` tag for relayed events, resolved from the SENDER rather than
- * trusted from the payload: a hosted ComfyUI frontend doesn't know (and
- * shouldn't have to know) whether its install is local, cloud, or remote,
- * but main does — via the comfyView → install attachment. Per-sender (not a
- * process-global default) so two windows in different modes tag correctly.
- * Launcher-UI senders have no comfyView entry and stay untagged — their
- * events are app-level, not deployment-scoped. A `deployment` already
- * present in the payload wins (see the merge order at the call sites).
+ * Platform axes (`client` / `deployment`) for relayed events are
+ * HOST-AUTHORITATIVE, never trusted from the payload:
+ *
+ * - `client` is stripped from every relayed payload so the SDK default
+ *   ('desktop') applies. Anything arriving over this IPC channel was by
+ *   definition emitted from inside the desktop app — but a hosted frontend
+ *   bundle that also runs in a browser (the cloud frontend) registers
+ *   `client` as a posthog-js super property, and if a future EventSink-style
+ *   tap ever forwards posthog-js state through the bridge, its value
+ *   ('web') would be wrong here.
+ * - `deployment` is resolved from the SENDER: a hosted ComfyUI frontend
+ *   doesn't know (and shouldn't have to know) whether its install is local,
+ *   cloud, or remote, but main does — via the comfyView → install
+ *   attachment. Per-sender (not a process-global default) so two windows in
+ *   different modes tag correctly. When the sender resolves, its value
+ *   overwrites any payload `deployment` for the same reason as `client`.
+ *   Launcher-UI senders have no comfyView entry and stay untagged — their
+ *   events are app-level, not deployment-scoped.
  */
 function deploymentForSender(sender: WebContents | undefined): string | null {
   if (!sender) return null
@@ -136,20 +146,21 @@ function deploymentForSender(sender: WebContents | undefined): string | null {
   return category === 'local' || category === 'cloud' || category === 'remote' ? category : null
 }
 
-function withDeployment(
+function withPlatformAxes(
   properties: mainTelemetry.TelemetryContext,
   sender: WebContents | undefined
 ): mainTelemetry.TelemetryContext {
+  delete properties['client']
   const deployment = deploymentForSender(sender)
   if (deployment === null) return properties
-  return { deployment, ...properties }
+  return { ...properties, deployment }
 }
 
 export function registerTelemetryHandlers(): void {
   ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
-    mainTelemetry.capture(eventName, withDeployment(asProps(payload.properties), event?.sender))
+    mainTelemetry.capture(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
   })
 
   ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
@@ -157,7 +168,10 @@ export function registerTelemetryHandlers(): void {
     const stackStr = asString(payload?.stack) ?? undefined
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
-    mainTelemetry.captureException(err, withDeployment(asProps(payload?.properties), event?.sender))
+    mainTelemetry.captureException(
+      err,
+      withPlatformAxes(asProps(payload?.properties), event?.sender)
+    )
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {

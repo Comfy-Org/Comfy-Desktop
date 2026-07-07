@@ -159,7 +159,10 @@ describe('registerTelemetryHandlers', () => {
     expect(sent.deployment).toBeUndefined()
   })
 
-  it('lets an explicit payload deployment win over the sender-derived tag', () => {
+  it('overwrites a payload deployment with the sender-derived value', () => {
+    // A hosted frontend may forward stale posthog-js super properties (e.g. a
+    // cloud bundle's deployment=cloud) — main's attachment lookup is the
+    // ground truth for which install actually emitted the event.
     mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
 
     listener('telemetry:capture')(
@@ -168,7 +171,32 @@ describe('registerTelemetryHandlers', () => {
     )
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent.deployment).toBe('cloud')
+    expect(sent.deployment).toBe('local')
+  })
+
+  it('keeps a payload deployment when the sender is not an attached comfyView', () => {
+    mocks.findEntryByComfySender.mockReturnValue(null)
+
+    listener('telemetry:capture')(
+      { sender: { id: 5 } },
+      { event: 'popout.event', properties: { deployment: 'local' } }
+    )
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.deployment).toBe('local')
+  })
+
+  it('strips a payload client so the SDK default (desktop) applies', () => {
+    mocks.findEntryByComfySender.mockReturnValue(null)
+
+    listener('telemetry:capture')(
+      { sender: { id: 6 } },
+      { event: 'execution_start', properties: { client: 'web', a: 1 } }
+    )
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.client).toBeUndefined()
+    expect(sent.a).toBe(1)
   })
 
   it('ignores unknown source categories rather than emitting a junk tag', () => {
