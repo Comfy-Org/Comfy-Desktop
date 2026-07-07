@@ -114,10 +114,37 @@ function tokenize(value: string): string[] {
     .filter((token) => token.length > 0)
 }
 
-/** True when two platform identifiers share at least one token. */
+/**
+ * Map a Node `process.platform` token to the OS token ComfyBuilder stamps onto
+ * artifact target ids. Node reports `win32`/`darwin`; build targets are named
+ * `windows-*`/`macos-*`, so a raw token match never overlaps. `linux` is already
+ * shared by both sides and needs no mapping.
+ */
+const NODE_PLATFORM_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  win32: ['windows'],
+  darwin: ['macos', 'darwin', 'osx'],
+}
+
+/**
+ * Expand a caller-supplied platform string into its tokens plus any
+ * ComfyBuilder OS aliases, so a Node `process.platform` value matches the
+ * `windows`/`macos` tokens used in build target ids.
+ */
+function expandPlatformTokens(value: string): string[] {
+  const tokens = tokenize(value)
+  const expanded = new Set(tokens)
+  for (const token of tokens) {
+    for (const alias of NODE_PLATFORM_ALIASES[token] ?? []) {
+      expanded.add(alias)
+    }
+  }
+  return [...expanded]
+}
+
+/** True when two platform identifiers share at least one token, applying Node platform aliases. */
 function platformsOverlap(a: string, b: string): boolean {
   const tokens = new Set(tokenize(a))
-  return tokenize(b).some((token) => tokens.has(token))
+  return expandPlatformTokens(b).some((token) => tokens.has(token))
 }
 
 /**

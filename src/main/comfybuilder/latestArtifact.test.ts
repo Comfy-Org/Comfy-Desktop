@@ -169,6 +169,30 @@ describe('comfybuilder install resolver', () => {
     // A platform sharing the `linux` token installs.
     expect(pipelineInstallState([linuxDeployment], 'linux-x64')).toEqual({ installable: true })
 
+    // Node's `win32` maps to the `windows` build-target token and installs.
+    const windowsDeployment = makeDeployment({
+      id: 'dep-windows',
+      finished_at: '2024-04-01T00:00:00Z',
+      artifact: makeArtifact({ artifact_id: 'art-windows' }),
+      target_statuses: [{ target_id: 'windows-nvidia-targz', status: 'succeeded' }]
+    })
+    expect(pipelineInstallState([windowsDeployment], 'win32')).toEqual({ installable: true })
+
+    // Node's `darwin` maps to the `macos` build-target token and installs.
+    const macDeployment = makeDeployment({
+      id: 'dep-macos',
+      finished_at: '2024-04-01T00:00:00Z',
+      artifact: makeArtifact({ artifact_id: 'art-macos' }),
+      target_statuses: [{ target_id: 'macos-nvidia-targz', status: 'succeeded' }]
+    })
+    expect(pipelineInstallState([macDeployment], 'darwin')).toEqual({ installable: true })
+
+    // A Windows host is still blocked from a linux-only build.
+    expect(pipelineInstallState([linuxDeployment], 'win32')).toEqual({
+      installable: false,
+      reason: 'platform-mismatch'
+    })
+
     // With no platform metadata, the platform check is best-effort and never blocks.
     const bareDeployment = makeDeployment({
       id: 'dep-bare',
