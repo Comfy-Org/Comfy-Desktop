@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   bindUserId: vi.fn(),
   capture: vi.fn(),
   captureException: vi.fn(),
+  findEntryByComfySender: vi.fn(),
   getFlag: vi.fn(),
   handle: vi.fn(),
   on: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock('electron', () => ({
     handle: mocks.handle,
     on: mocks.on
   }
+}))
+
+vi.mock('../../host/registry', () => ({
+  findEntryByComfySender: mocks.findEntryByComfySender
 }))
 
 vi.mock('../telemetry', () => ({
@@ -132,5 +137,46 @@ describe('registerTelemetryHandlers', () => {
     expect(sent.blob_json).toBe('j'.repeat(2048))
     expect(sent.key_124).toBe(124)
     expect(sent.key_125).toBeUndefined()
+  })
+
+  it('tags relayed events with the deployment of the sender comfyView install', () => {
+    const sender = { id: 1 }
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+
+    listener('telemetry:capture')({ sender }, { event: 'execution_start', properties: { a: 1 } })
+
+    expect(mocks.findEntryByComfySender).toHaveBeenCalledWith(sender)
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent).toEqual({ deployment: 'cloud', a: 1 })
+  })
+
+  it('leaves events untagged when the sender is not an attached comfyView', () => {
+    mocks.findEntryByComfySender.mockReturnValue(null)
+
+    listener('telemetry:capture')({ sender: { id: 2 } }, { event: 'launcher.click', properties: {} })
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.deployment).toBeUndefined()
+  })
+
+  it('lets an explicit payload deployment win over the sender-derived tag', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
+
+    listener('telemetry:capture')(
+      { sender: { id: 3 } },
+      { event: 'execution_start', properties: { deployment: 'cloud' } }
+    )
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.deployment).toBe('cloud')
+  })
+
+  it('ignores unknown source categories rather than emitting a junk tag', () => {
+    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: null })
+
+    listener('telemetry:capture')({ sender: { id: 4 } }, { event: 'execution_start', properties: {} })
+
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.deployment).toBeUndefined()
   })
 })

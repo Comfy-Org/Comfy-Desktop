@@ -1,7 +1,8 @@
 // IPC for renderer-originated telemetry: the renderer routes through main so
 // identity, consent, and dedup live in one place. Capture messages are
 // fire-and-forget (ipcMain.on).
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
+import { findEntryByComfySender } from '../../host/registry'
 import * as mainTelemetry from '../telemetry'
 import {
   getFlagAsync as getExperimentFlagAsync,
@@ -119,19 +120,44 @@ function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryVa
   return asTelemetryObject(value, false, false)
 }
 
+/**
+ * `deployment` tag for relayed events, resolved from the SENDER rather than
+ * trusted from the payload: a hosted ComfyUI frontend doesn't know (and
+ * shouldn't have to know) whether its install is local, cloud, or remote,
+ * but main does — via the comfyView → install attachment. Per-sender (not a
+ * process-global default) so two windows in different modes tag correctly.
+ * Launcher-UI senders have no comfyView entry and stay untagged — their
+ * events are app-level, not deployment-scoped. A `deployment` already
+ * present in the payload wins (see the merge order at the call sites).
+ */
+function deploymentForSender(sender: WebContents | undefined): string | null {
+  if (!sender) return null
+  const category = findEntryByComfySender(sender)?.sourceCategory
+  return category === 'local' || category === 'cloud' || category === 'remote' ? category : null
+}
+
+function withDeployment(
+  properties: mainTelemetry.TelemetryContext,
+  sender: WebContents | undefined
+): mainTelemetry.TelemetryContext {
+  const deployment = deploymentForSender(sender)
+  if (deployment === null) return properties
+  return { deployment, ...properties }
+}
+
 export function registerTelemetryHandlers(): void {
-  ipcMain.on('telemetry:capture', (_event, payload: CapturePayload) => {
+  ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
-    mainTelemetry.capture(eventName, asProps(payload.properties))
+    mainTelemetry.capture(eventName, withDeployment(asProps(payload.properties), event?.sender))
   })
 
-  ipcMain.on('telemetry:captureException', (_event, payload: CaptureExceptionPayload) => {
+  ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
     const message = asString(payload?.message) ?? 'Unknown renderer error'
     const stackStr = asString(payload?.stack) ?? undefined
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
-    mainTelemetry.captureException(err, asProps(payload?.properties))
+    mainTelemetry.captureException(err, withDeployment(asProps(payload?.properties), event?.sender))
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {

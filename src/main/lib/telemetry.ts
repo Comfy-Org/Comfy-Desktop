@@ -216,7 +216,8 @@ function canEmit(): boolean {
 /**
  * Default properties merged into every `capture()` payload. Seeded at
  * `initTelemetry()` time from `InitOptions` with `app_version`,
- * `app_channel`, `app_env`, `platform`, `arch`, and `is_packaged` so
+ * `app_channel`, `app_env`, `platform`, `arch`, `is_packaged`, and
+ * `client` so
  * per-event filters / breakdowns work without a join against the person
  * profile (PostHog person properties are joined at query time and are
  * point-in-time as of write — releasing a new app version while the user
@@ -464,7 +465,13 @@ export function initTelemetry(opts: InitOptions): void {
     app_env: opts.appEnv,
     is_packaged: opts.isPackaged,
     platform: process.platform,
-    arch: process.arch
+    arch: process.arch,
+    // Cross-surface analytics axis shared with the cloud frontend and CLI:
+    // `client` says which surface emitted the event (desktop | web | cli),
+    // `deployment` (attached per-event where known) says which backend ran
+    // the work (local | cloud | remote). Everything through this pipe is by
+    // definition the desktop app.
+    client: 'desktop'
   }
 
   // Suppress event capture on unpackaged (developer / `pnpm dev`) runs.

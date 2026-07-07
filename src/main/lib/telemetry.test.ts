@@ -226,7 +226,7 @@ describe('telemetry default event properties', () => {
     telemetry._resetForTest()
   })
 
-  it('injects app_version, app_channel, app_env, platform, arch on every capture', () => {
+  it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
     telemetry.initTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', isPackaged: true })
     telemetry.identify('id')
     telemetry.setConsentState('granted')
@@ -242,7 +242,8 @@ describe('telemetry default event properties', () => {
       app_env: 'prod',
       is_packaged: true,
       platform: process.platform,
-      arch: process.arch
+      arch: process.arch,
+      client: 'desktop'
     })
   })
 
