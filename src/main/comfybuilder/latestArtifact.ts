@@ -6,16 +6,27 @@
  * rather than by hiding entries. These helpers implement that computation and
  * never filter pipelines themselves.
  *
- * {@link resolveLatestArtifact} selects the newest succeeded deployment that
- * actually carries a downloadable artifact. {@link pipelineInstallState} turns
- * that selection into an install decision, with a best-effort platform check.
+ * {@link resolveLatestArtifact} selects the newest succeeded deployment and,
+ * within it, the per-target artifact matching the host platform. A ComfyBuilder
+ * deployment fans out across a matrix (linux/windows × cpu/nvidia); each target
+ * ships its own platform-specific archive, so a Windows host MUST install the
+ * windows artifact — not the deployment-level `artifact`, which is only whichever
+ * target happened to build first. {@link pipelineInstallState} turns the
+ * selection into an install decision.
  */
-import type { Artifact, Deployment } from './dto'
+import type { Artifact, Deployment, TargetBuildStatus } from './dto'
 
-/** A succeeded deployment paired with its downloadable artifact. */
+/**
+ * A succeeded deployment paired with the artifact chosen for the host platform,
+ * plus the matrix target it came from. `targetId` is the empty string only for a
+ * legacy deployment served through the deployment-level `artifact` (a build from
+ * before targets carried their own artifacts); a per-target selection always
+ * carries the concrete target id the download must be scoped to.
+ */
 export interface ResolvedArtifact {
   deployment: Deployment
   artifact: Artifact
+  targetId: string
 }
 
 /** Why a pipeline cannot be installed right now. */
@@ -68,44 +79,6 @@ function byFinishedThenId(a: Deployment, b: Deployment): number {
   return a.id < b.id ? 1 : -1
 }
 
-/**
- * Pick the newest succeeded deployment that has an artifact, or `null` when no
- * deployment qualifies.
- */
-export function resolveLatestArtifact(deployments: Deployment[]): ResolvedArtifact | null {
-  const candidates = deployments.filter(hasDownloadableArtifact)
-  if (candidates.length === 0) return null
-  const [best] = [...candidates].sort(byFinishedThenId)
-  if (!best) return null
-  return { deployment: best, artifact: best.artifact }
-}
-
-/**
- * Collect best-effort platform identifiers for a deployment. ComfyBuilder does
- * not yet stamp explicit platform metadata onto Deployment/Artifact objects, so
- * these fields are read defensively through the Deployment index signature; when
- * none are present the caller treats the build as installable and defers to
- * install-time manifest validation.
- */
-function collectPlatformHints(deployment: Deployment): string[] {
-  const hints: string[] = []
-  const add = (value: unknown): void => {
-    if (typeof value === 'string' && value.length > 0) hints.push(value)
-  }
-  add(deployment.platform)
-  add(deployment.target_id)
-  add(deployment.target)
-  const targetStatuses = deployment.target_statuses
-  if (Array.isArray(targetStatuses)) {
-    for (const entry of targetStatuses) {
-      if (entry !== null && typeof entry === 'object') {
-        add((entry as Record<string, unknown>).target_id)
-      }
-    }
-  }
-  return hints
-}
-
 /** Split a platform identifier into lowercase alphanumeric tokens. */
 function tokenize(value: string): string[] {
   return value
@@ -141,10 +114,79 @@ function expandPlatformTokens(value: string): string[] {
   return [...expanded]
 }
 
-/** True when two platform identifiers share at least one token, applying Node platform aliases. */
-function platformsOverlap(a: string, b: string): boolean {
-  const tokens = new Set(tokenize(a))
-  return expandPlatformTokens(b).some((token) => tokens.has(token))
+/** True when a matrix target id's tokens include one of the host platform's (aliased) tokens. */
+function targetMatchesPlatform(targetId: string, platform: string): boolean {
+  const targetTokens = new Set(tokenize(targetId))
+  return expandPlatformTokens(platform).some((token) => targetTokens.has(token))
+}
+
+/** A succeeded target status whose per-target artifact is guaranteed present. */
+type TargetWithArtifact = TargetBuildStatus & { artifact: Artifact }
+
+function targetHasArtifact(status: TargetBuildStatus): status is TargetWithArtifact {
+  return status.status === 'succeeded' && status.artifact != null
+}
+
+/**
+ * From a deployment's per-target statuses, pick the artifact matching `platform`.
+ * Among OS-matching succeeded targets a `cpu` build is preferred over `nvidia`:
+ * a CPU archive runs on any machine, whereas a GPU archive assumes CUDA, so CPU
+ * is the safe default until the installer detects the host GPU. Returns `null`
+ * when the deployment carries no per-target artifacts (legacy build) or none
+ * match the host.
+ */
+function selectTargetArtifact(
+  deployment: Deployment,
+  platform: string
+): { artifact: Artifact; targetId: string } | null {
+  const statuses = deployment.target_statuses
+  if (!Array.isArray(statuses)) return null
+  const matches = statuses
+    .filter(targetHasArtifact)
+    .filter((status) => targetMatchesPlatform(status.target_id, platform))
+  const [firstMatch] = matches
+  if (firstMatch === undefined) return null
+  const chosen =
+    matches.find((status) => tokenize(status.target_id).includes('cpu')) ?? firstMatch
+  return { artifact: chosen.artifact, targetId: chosen.target_id }
+}
+
+/**
+ * True when a deployment fans out into per-target statuses that carry their own
+ * artifacts — i.e. the backend is new enough to expose per-platform artifacts.
+ * A legacy deployment (no such statuses) falls back to its single `artifact`.
+ */
+function hasPerTargetArtifacts(deployment: Deployment): boolean {
+  const statuses = deployment.target_statuses
+  return Array.isArray(statuses) && statuses.some(targetHasArtifact)
+}
+
+/**
+ * Pick the newest succeeded deployment and the artifact to install from it.
+ *
+ * When `platform` is given and the deployment exposes per-target artifacts, the
+ * artifact whose target matches the host OS is chosen and `targetId` is set so
+ * the download is scoped to that target. When the deployment predates per-target
+ * artifacts, the legacy deployment-level `artifact` is returned with an empty
+ * `targetId`. Returns `null` when no deployment has any downloadable artifact,
+ * or when per-target artifacts exist but none match the host platform (a
+ * wrong-platform install is refused rather than served the wrong archive).
+ */
+export function resolveLatestArtifact(
+  deployments: Deployment[],
+  platform?: string
+): ResolvedArtifact | null {
+  const candidates = deployments.filter(hasDownloadableArtifact)
+  if (candidates.length === 0) return null
+  const [best] = [...candidates].sort(byFinishedThenId)
+  if (!best) return null
+
+  if (typeof platform === 'string' && platform.length > 0 && hasPerTargetArtifacts(best)) {
+    const selected = selectTargetArtifact(best, platform)
+    if (selected === null) return null
+    return { deployment: best, artifact: selected.artifact, targetId: selected.targetId }
+  }
+  return { deployment: best, artifact: best.artifact, targetId: '' }
 }
 
 /**
@@ -152,24 +194,21 @@ function platformsOverlap(a: string, b: string): boolean {
  *
  * - No succeeded deployment with an artifact -> not installable
  *   (`no-successful-build`).
- * - A `platform` is supplied AND the latest deployment carries platform
- *   metadata that shares no token with it -> not installable
- *   (`platform-mismatch`). Best-effort only: absent metadata never blocks.
- * - Otherwise installable.
+ * - The latest deployment exposes per-target artifacts but none match the host
+ *   `platform` -> not installable (`platform-mismatch`).
+ * - Otherwise installable. A legacy deployment with no per-target artifacts is
+ *   installable regardless of platform and defers to install-time manifest
+ *   validation.
  */
 export function pipelineInstallState(
   deployments: Deployment[],
   platform?: string
 ): PipelineInstallState {
-  const resolved = resolveLatestArtifact(deployments)
-  if (resolved === null) {
+  if (resolveLatestArtifact(deployments) === null) {
     return { installable: false, reason: 'no-successful-build' }
   }
-  if (typeof platform === 'string' && platform.length > 0) {
-    const hints = collectPlatformHints(resolved.deployment)
-    if (hints.length > 0 && !hints.some((hint) => platformsOverlap(hint, platform))) {
-      return { installable: false, reason: 'platform-mismatch' }
-    }
+  if (resolveLatestArtifact(deployments, platform) === null) {
+    return { installable: false, reason: 'platform-mismatch' }
   }
   return { installable: true }
 }

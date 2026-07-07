@@ -39,7 +39,13 @@ else
 fi
 echo ""
 
+# --network host: use the host network stack instead of Docker's default
+# bridge. A running `kind` cluster sets the host FORWARD policy to DROP and
+# leaves other bridges' outbound traffic blackholed, so a bridged container
+# cannot reach the npm registry (corepack/pnpm install fails). Host networking
+# sidesteps the poisoned bridge and needs no root iptables changes.
 docker run --rm \
+  --network host \
   -v "$(pwd)":/project \
   -v "${HOME}/.cache/electron":/root/.cache/electron \
   -v "${HOME}/.cache/electron-builder":/root/.cache/electron-builder \

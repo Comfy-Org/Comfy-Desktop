@@ -92,6 +92,7 @@ interface TokenArtifactServer {
   downloadedTokens: string[]
   rejectedTokens: string[]
   counters: { direct: number; download: number }
+  requestUrls: string[]
   stop: () => Promise<void>
 }
 
@@ -110,6 +111,7 @@ async function startTokenArtifactServer(opts: {
   const rejectedTokens: string[] = []
   const validTokens = new Set<string>()
   const counters = { direct: 0, download: 0 }
+  const requestUrls: string[] = []
   let tokenCounter = 0
 
   const streamFixture = (res: ServerResponse): void => {
@@ -119,6 +121,7 @@ async function startTokenArtifactServer(opts: {
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+    requestUrls.push(req.url ?? '')
     const segments = url.pathname.split('/').filter(Boolean)
     const auth = req.headers.authorization
     const hasBearer = typeof auth === 'string' && /^Bearer\s+.+/i.test(auth)
@@ -174,7 +177,7 @@ async function startTokenArtifactServer(opts: {
   })
 
   const baseUrl = await listen(server)
-  return { baseUrl, minted, downloadedTokens, rejectedTokens, counters, stop: makeStop(server) }
+  return { baseUrl, minted, downloadedTokens, rejectedTokens, counters, requestUrls, stop: makeStop(server) }
 }
 
 describe('comfybuilder artifactDownload', () => {
@@ -253,6 +256,35 @@ describe('comfybuilder artifactDownload', () => {
       expect(statSync(destPath).size).toBe(fixtureSize)
       const listing = execFileSync('tar', ['tzf', destPath], { encoding: 'utf8' })
       expect(listing).toContain('manifest.json')
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it('scopes the token mint and download routes to the target when one is given', async () => {
+    vi.mocked(loadTokens).mockReturnValue(makeTokens())
+    const server = await startTokenArtifactServer({ allowDirect: false, failFirstTokenDownload: false })
+    try {
+      const artifact = makeArtifact('pipe-success', 'dep-success-1', fixtureSize)
+      const destPath = join(tmpDir, 'targeted.tar.gz')
+
+      await downloadPipelineArtifact({
+        pipelineId: 'pipe-success',
+        deploymentId: 'dep-success-1',
+        artifact,
+        destPath,
+        baseUrl: server.baseUrl,
+        targetId: 'windows-nvidia-targz'
+      })
+
+      const mintUrl = server.requestUrls.find((u) => u.includes('/download-token'))
+      const downloadUrl = server.requestUrls.find((u) => u.includes('/download?') || u.includes('/download&'))
+      expect(mintUrl).toContain('?target=windows-nvidia-targz')
+      // The download route repeats the target AND carries the token; the server
+      // binds the token to the target, so both must be present.
+      expect(downloadUrl).toContain('target=windows-nvidia-targz')
+      expect(downloadUrl).toContain('token=')
+      expect(statSync(destPath).size).toBe(fixtureSize)
     } finally {
       await server.stop()
     }

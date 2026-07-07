@@ -15,6 +15,13 @@ export interface Artifact {
   size_bytes: number
 }
 
+export interface TargetBuildStatus {
+  target_id: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
+  artifact?: Artifact | null
+  [key: string]: unknown
+}
+
 export interface Deployment {
   id: string
   pipeline_id: string
@@ -23,6 +30,7 @@ export interface Deployment {
   status: 'queued' | 'building' | 'succeeded' | 'partial' | 'failed'
   finished_at?: string | null
   artifact?: Artifact | null
+  target_statuses?: TargetBuildStatus[] | null
   error_code?: string | null
   error_message?: string | null
   [key: string]: unknown
@@ -70,6 +78,22 @@ function parseArtifactObject(value: unknown): Artifact {
   }
 }
 
+function parseTargetStatuses(value: unknown): TargetBuildStatus[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const statuses: TargetBuildStatus[] = []
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.target_id !== 'string' || typeof entry.status !== 'string') continue
+    const artifact = entry.artifact == null ? null : parseArtifactObject(entry.artifact)
+    statuses.push({
+      ...entry,
+      target_id: entry.target_id,
+      status: entry.status as TargetBuildStatus['status'],
+      artifact
+    })
+  }
+  return statuses
+}
+
 function parseEnvelope<T>(json: unknown, itemParser: (value: unknown, index: number) => T, label: string): T[] {
   const items = Array.isArray(json) ? json : isRecord(json) && Array.isArray(json.items) ? json.items : undefined
   if (!items) parseError(`Invalid ${label}: expected array or { items: array }`)
@@ -103,6 +127,7 @@ function parseDeployment(value: unknown, index: number): Deployment {
   }
 
   const artifact = value.artifact === undefined ? undefined : value.artifact === null ? null : parseArtifactObject(value.artifact)
+  const targetStatuses = parseTargetStatuses(value.target_statuses)
 
   return {
     ...value,
@@ -113,6 +138,7 @@ function parseDeployment(value: unknown, index: number): Deployment {
     status,
     finished_at: parseNullableString(value.finished_at, `deployment[${index}].finished_at`),
     artifact,
+    ...(targetStatuses ? { target_statuses: targetStatuses } : {}),
     error_code: parseNullableString(value.error_code, `deployment[${index}].error_code`),
     error_message: parseNullableString(value.error_message, `deployment[${index}].error_message`)
   }

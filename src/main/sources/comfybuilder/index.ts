@@ -55,6 +55,9 @@ export interface PipelineOptionMeta {
   deploymentId?: string
   version?: string
   artifact?: Artifact
+  /** Matrix target the artifact was selected for; scopes the install download to
+   *  the host platform's build. Empty for a legacy deployment-level artifact. */
+  targetId?: string
 }
 
 /**
@@ -100,8 +103,12 @@ async function buildPipelineOption(
   orgId: string,
 ): Promise<FieldOption> {
   const deployments = await listDeployments(pipelineId, apiClientOptions)
-  const resolved = resolveLatestArtifact(deployments)
   const state = pipelineInstallState(deployments, process.platform)
+  // Resolve the artifact for THIS host: a per-target selection scoped to the
+  // platform, falling back to the legacy artifact only when the platform yields
+  // nothing (so an un-installable card still shows the build's id/version).
+  const resolved =
+    resolveLatestArtifact(deployments, process.platform) ?? resolveLatestArtifact(deployments)
   const meta: PipelineOptionMeta = {
     installable: state.installable,
     ...(state.reason ? { reason: state.reason } : {}),
@@ -110,6 +117,7 @@ async function buildPipelineOption(
           deploymentId: resolved.deployment.id,
           version: resolved.deployment.version,
           artifact: resolved.artifact,
+          targetId: resolved.targetId,
         }
       : {}),
   }
@@ -196,6 +204,7 @@ export const comfybuilder: SourcePlugin = {
       installable: meta?.installable === true,
       ...(meta?.reason ? { reason: meta.reason } : {}),
       ...(meta?.deploymentId ? { deploymentId: meta.deploymentId } : {}),
+      ...(meta?.targetId ? { targetId: meta.targetId } : {}),
       version: meta?.version ?? '',
       downloadUrl: artifact?.download_url ?? '',
       ...(artifact

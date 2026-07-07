@@ -66,8 +66,8 @@ describe('comfybuilder dto parsers', () => {
     expect(parsed[4]?.status).toBe('partial')
     expect(parsed[4]?.artifact?.artifact_id).toBe('a2')
     expect(parsed[4]?.target_statuses).toEqual([
-      { target_id: 'linux-nvidia-targz', status: 'succeeded' },
-      { target_id: 'win-nvidia-zip', status: 'failed', error: 'toolchain missing' }
+      { target_id: 'linux-nvidia-targz', status: 'succeeded', artifact: null },
+      { target_id: 'win-nvidia-zip', status: 'failed', error: 'toolchain missing', artifact: null }
     ])
   })
 

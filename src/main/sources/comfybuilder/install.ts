@@ -173,6 +173,7 @@ export async function installComfyBuilderPipeline(params: InstallPipelineParams)
     destPath: archivePath,
     onProgress: (p: DownloadProgress) =>
       sendProgress('download', { percent: p.percent, status: `Downloading… ${p.receivedMB} / ${p.totalMB} MB` }),
+    ...(meta.targetId ? { targetId: meta.targetId } : {}),
     ...(signal ? { signal } : {}),
     ...(baseUrl ? { baseUrl } : {}),
   })
@@ -212,6 +213,7 @@ function readInstallMeta(installation: InstallationRecord): PipelineOptionMeta {
       : undefined
   const deploymentId =
     typeof installation.deploymentId === 'string' ? installation.deploymentId : undefined
+  const targetId = typeof installation.targetId === 'string' ? installation.targetId : undefined
   const version = typeof installation.version === 'string' ? installation.version : undefined
   const downloadUrl = asString(installation.downloadUrl)
   const artifact: Artifact | undefined = downloadUrl
@@ -228,6 +230,7 @@ function readInstallMeta(installation: InstallationRecord): PipelineOptionMeta {
     installable: installation.installable === true,
     ...(reason ? { reason } : {}),
     ...(deploymentId ? { deploymentId } : {}),
+    ...(targetId ? { targetId } : {}),
     ...(version ? { version } : {}),
     ...(artifact ? { artifact } : {}),
   }

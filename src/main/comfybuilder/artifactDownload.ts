@@ -16,6 +16,10 @@ export interface DownloadPipelineArtifactOptions {
   signal?: AbortSignal
   /** Overrides `COMFYBUILDER_BASE_URL` for resolving relative URLs; used by tests. */
   baseUrl?: string
+  /** Matrix target scoping the download to the host platform's build. When set,
+   *  the mint + token download routes carry `?target=`, so the server serves and
+   *  the token authorizes that target's artifact. Empty = legacy artifact. */
+  targetId?: string
 }
 
 interface DownloadTokenResponse {
@@ -50,12 +54,13 @@ function verifyDownloadedSize(destPath: string, sizeBytes: number): void {
 
 async function mintDownloadToken(
   artifactBase: string,
+  targetQuery: string,
   accessToken: string | undefined,
   signal?: AbortSignal,
 ): Promise<string> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
-  const response = await fetch(`${artifactBase}/download-token`, {
+  const response = await fetch(`${artifactBase}/download-token${targetQuery}`, {
     method: 'POST',
     headers,
     signal,
@@ -77,11 +82,15 @@ async function mintDownloadToken(
 export async function downloadPipelineArtifact(
   options: DownloadPipelineArtifactOptions,
 ): Promise<void> {
-  const { pipelineId, deploymentId, artifact, destPath, onProgress, signal } = options
+  const { pipelineId, deploymentId, artifact, destPath, onProgress, signal, targetId } = options
   const baseUrl = options.baseUrl ?? COMFYBUILDER_BASE_URL
   const progress = onProgress ?? null
   const expectedSize = artifact.size_bytes > 0 ? artifact.size_bytes : undefined
 
+  // The target scopes the mint + token-download routes to the host platform's
+  // build; the token the server issues is bound to this exact target, so the
+  // download route MUST repeat it or the server rejects the token as replayed.
+  const targetQuery = targetId ? `?target=${encodeURIComponent(targetId)}` : ''
   const directUrl = resolveDownloadUrl(artifact.download_url, baseUrl)
   const artifactBase = `${baseUrl}/api/v1/pipelines/${encodeURIComponent(pipelineId)}/deployments/${encodeURIComponent(deploymentId)}/artifact`
 
@@ -116,7 +125,7 @@ export async function downloadPipelineArtifact(
 
     let token: string
     try {
-      token = await mintDownloadToken(artifactBase, accessToken, signal)
+      token = await mintDownloadToken(artifactBase, targetQuery, accessToken, signal)
     } catch (error) {
       lastError = error
       authFailed = error instanceof DownloadAuthError
@@ -124,7 +133,8 @@ export async function downloadPipelineArtifact(
     }
 
     try {
-      const tokenUrl = `${artifactBase}/download?token=${encodeURIComponent(token)}`
+      const tokenSep = targetQuery ? '&' : '?'
+      const tokenUrl = `${artifactBase}/download${targetQuery}${tokenSep}token=${encodeURIComponent(token)}`
       await download(tokenUrl, destPath, progress, { signal, expectedSize })
       verifyDownloadedSize(destPath, artifact.size_bytes)
       return
