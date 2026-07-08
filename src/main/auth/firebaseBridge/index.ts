@@ -9,6 +9,7 @@ import {
 } from './copyLinkBanner'
 import { buildIndexedDbInjectScript } from './inject'
 import { extractProviderId, type SupportedProvider } from './intercept'
+import { restoreParentWindow } from './restoreParentWindow'
 import { startBridgeServer } from './server'
 import { signInViaDesktopLoginCode } from '../desktopLoginCode'
 import * as i18n from '../../lib/i18n'
@@ -73,13 +74,6 @@ export interface HandleFirebasePopupOpts {
    */
   parentWindow?: BrowserWindow
   onError?: (err: Error) => void
-}
-
-export function restoreParentWindow(parentWindow?: BrowserWindow): void {
-  if (!parentWindow || parentWindow.isDestroyed()) return
-  if (parentWindow.isMinimized()) parentWindow.restore()
-  parentWindow.show()
-  parentWindow.focus()
 }
 
 /**

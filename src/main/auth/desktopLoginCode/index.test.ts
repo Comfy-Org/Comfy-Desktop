@@ -10,7 +10,6 @@ const h = vi.hoisted(() => ({
   emit: vi.fn(),
   bucketError: vi.fn(() => 'bucketed'),
   bindSignedInUser: vi.fn(),
-  restoreParentWindow: vi.fn(),
   showCopyLinkBanner: vi.fn(),
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
@@ -40,13 +39,6 @@ vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
 vi.mock('../firebaseBridge', () => ({
   bindSignedInUser: h.bindSignedInUser,
-  restoreParentWindow: (parentWindow?: BrowserWindow) => {
-    h.restoreParentWindow(parentWindow)
-    if (!parentWindow || parentWindow.isDestroyed()) return
-    if (parentWindow.isMinimized()) parentWindow.restore()
-    parentWindow.show()
-    parentWindow.focus()
-  },
   showCopyLinkBanner: h.showCopyLinkBanner,
   runBannerCleanup: h.runBannerCleanup,
   closeActiveBridge: h.closeActiveBridge,

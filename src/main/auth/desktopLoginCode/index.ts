@@ -19,13 +19,13 @@ import {
   closeActiveBridge,
   type HandleFirebasePopupOpts,
   POST_SIGNIN_HOLD_MS,
-  restoreParentWindow,
   runBannerCleanup,
   showCopyLinkBanner
 } from '../firebaseBridge'
 import { detectFirebaseEnv, getFirebaseConfig } from '../firebaseBridge/config'
 import { buildIndexedDbInjectScript } from '../firebaseBridge/inject'
 import { extractProviderId } from '../firebaseBridge/intercept'
+import { restoreParentWindow } from '../firebaseBridge/restoreParentWindow'
 import { getDeviceId } from '../../lib/deviceId'
 import * as mainTelemetry from '../../lib/telemetry'
 import * as settings from '../../settings'
