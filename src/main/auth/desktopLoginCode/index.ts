@@ -19,6 +19,7 @@ import {
   closeActiveBridge,
   type HandleFirebasePopupOpts,
   POST_SIGNIN_HOLD_MS,
+  restoreParentWindow,
   runBannerCleanup,
   showCopyLinkBanner
 } from '../firebaseBridge'
@@ -42,6 +43,11 @@ const POLL_JITTER_MS = 500
  * cancelled before the new one starts.
  */
 let activeFlow: AbortController | null = null
+
+function cancelActiveFlow(): void {
+  activeFlow?.abort()
+  activeFlow = null
+}
 
 /** setTimeout that rejects when the flow is aborted mid-sleep. */
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -91,10 +97,13 @@ export async function signInViaDesktopLoginCode(
   // (whose /api fronts a matching dev backend) can serve the dev flow, so
   // anything else hands off to the legacy loopback bridge.
   if (firebaseEnv === 'dev' && cloudOrigin === CLOUD_LOGIN_ORIGIN) {
+    cancelActiveFlow()
+    runBannerCleanup()
+    closeActiveBridge()
     return 'fallback'
   }
 
-  activeFlow?.abort()
+  cancelActiveFlow()
   const controller = new AbortController()
   activeFlow = controller
   // Clear a prior attempt's "copy link" card so this attempt doesn't
@@ -231,12 +240,7 @@ export async function signInViaDesktopLoginCode(
       true
     )
     if (controller.signal.aborted) return 'handled'
-    const { parentWindow } = opts
-    if (parentWindow && !parentWindow.isDestroyed()) {
-      if (parentWindow.isMinimized()) parentWindow.restore()
-      parentWindow.show()
-      parentWindow.focus()
-    }
+    restoreParentWindow(opts.parentWindow)
     return 'handled'
   } catch (err) {
     // A superseded attempt isn't a failure — the newer one owns the UX.

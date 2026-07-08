@@ -75,6 +75,13 @@ export interface HandleFirebasePopupOpts {
   onError?: (err: Error) => void
 }
 
+export function restoreParentWindow(parentWindow?: BrowserWindow): void {
+  if (!parentWindow || parentWindow.isDestroyed()) return
+  if (parentWindow.isMinimized()) parentWindow.restore()
+  parentWindow.show()
+  parentWindow.focus()
+}
+
 /**
  * Orchestrate the system-browser sign-in for a Firebase auth-handler
  * URL that the embedded cloud-workspace view tried to open via
@@ -255,15 +262,8 @@ export async function handleFirebasePopup(
     await new Promise<void>((resolve) => setTimeout(resolve, POST_SIGNIN_HOLD_MS))
     if (comfyContents.isDestroyed()) return
     await comfyContents.executeJavaScript(buildIndexedDbInjectScript(user, apiKey), true)
-    // Pull the user back into the app. `show()` un-minimises on
-    // platforms that need it; `focus()` lifts the OS-level focus from
-    // the browser. Best-effort — a destroyed window is a no-op.
-    const { parentWindow } = opts
-    if (parentWindow && !parentWindow.isDestroyed()) {
-      if (parentWindow.isMinimized()) parentWindow.restore()
-      parentWindow.show()
-      parentWindow.focus()
-    }
+    // Pull the user back into the app after the browser completes sign-in.
+    restoreParentWindow(opts.parentWindow)
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
     // Mirrored to Datadog (allow-list) so ops can alert if sign-in

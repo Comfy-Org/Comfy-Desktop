@@ -2,11 +2,19 @@ import { postJson, type RequestOpts } from './client'
 import type { FirebaseProjectConfig } from '../firebaseBridge/config'
 import {
   assemblePersistedUser,
-  type PersistedProviderData,
+  expiresInSecondsOrDefault,
+  mapProviderUserInfo,
   type ProviderUserInfo
 } from '../firebaseBridge/oauth'
 
 const IDP_BASE = 'https://identitytoolkit.googleapis.com/v1'
+
+async function assertOk(resp: Response, label: string): Promise<void> {
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    throw new Error(`${label} ${resp.status}: ${text || resp.statusText}`)
+  }
+}
 
 export interface SignInWithCustomTokenResponse {
   idToken: string
@@ -45,10 +53,7 @@ export async function signInWithCustomToken(
     { token, returnSecureToken: true },
     opts
   )
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`signInWithCustomToken ${resp.status}: ${text || resp.statusText}`)
-  }
+  await assertOk(resp, 'signInWithCustomToken')
   const data = (await resp.json()) as SignInWithCustomTokenResponse
   if (!data.idToken || !data.refreshToken) {
     throw new Error('signInWithCustomToken returned without idToken/refreshToken')
@@ -68,10 +73,7 @@ export async function lookupAccount(
   opts: RequestOpts = {}
 ): Promise<LookedUpAccount> {
   const resp = await postJson(`${IDP_BASE}/accounts:lookup?key=${apiKey}`, { idToken }, opts)
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`accounts:lookup ${resp.status}: ${text || resp.statusText}`)
-  }
+  await assertOk(resp, 'accounts:lookup')
   const data = (await resp.json()) as { users?: LookedUpAccount[] }
   const account = data.users?.[0]
   if (!account?.localId) {
@@ -90,17 +92,10 @@ export function buildPersistedUserFromCustomToken(
   account: LookedUpAccount
 ): Record<string, unknown> {
   const nowMs = Date.now()
-  const expiresInSec = Number(signIn.expiresIn || '3600')
+  const expiresInSec = expiresInSecondsOrDefault(signIn.expiresIn)
   // Custom tokens carry no IdP context, so providerData comes solely from
   // the lookup (empty for a user with no linked providers).
-  const providerData: PersistedProviderData[] = (account.providerUserInfo ?? []).map((p) => ({
-    providerId: p.providerId ?? 'firebase',
-    uid: p.rawId ?? account.localId,
-    displayName: p.displayName ?? null,
-    email: p.email ?? null,
-    phoneNumber: null,
-    photoURL: p.photoUrl ?? null
-  }))
+  const providerData = mapProviderUserInfo(account.providerUserInfo, 'firebase', account.localId)
 
   return assemblePersistedUser(config.apiKey, {
     uid: account.localId,

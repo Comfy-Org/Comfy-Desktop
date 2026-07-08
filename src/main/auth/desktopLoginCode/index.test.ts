@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   emit: vi.fn(),
   bucketError: vi.fn(() => 'bucketed'),
   bindSignedInUser: vi.fn(),
+  restoreParentWindow: vi.fn(),
   showCopyLinkBanner: vi.fn(),
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
@@ -39,6 +40,13 @@ vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
 vi.mock('../firebaseBridge', () => ({
   bindSignedInUser: h.bindSignedInUser,
+  restoreParentWindow: (parentWindow?: BrowserWindow) => {
+    h.restoreParentWindow(parentWindow)
+    if (!parentWindow || parentWindow.isDestroyed()) return
+    if (parentWindow.isMinimized()) parentWindow.restore()
+    parentWindow.show()
+    parentWindow.focus()
+  },
   showCopyLinkBanner: h.showCopyLinkBanner,
   runBannerCleanup: h.runBannerCleanup,
   closeActiveBridge: h.closeActiveBridge,
@@ -315,6 +323,29 @@ describe('signInViaDesktopLoginCode', () => {
     // The stale loop is dead: no further polls happen.
     await vi.advanceTimersByTimeAsync(30_000)
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels a prior code flow before falling back to the legacy bridge', async () => {
+    h.settingsGet.mockReturnValue(true)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
+    const mod = await loadOrchestrator()
+
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.advanceTimersByTimeAsync(3500)
+    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
+
+    const fallback = await mod.signInViaDesktopLoginCode(
+      'https://dreamboothy-dev.firebaseapp.com/__/auth/handler?providerId=google.com',
+      fakeContents('https://cloud.comfy.org/'),
+      {}
+    )
+
+    expect(fallback).toBe('fallback')
+    expect(await first).toBe('handled')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
+    expect(h.emit).not.toHaveBeenCalled()
   })
 
   it('performs no tail side-effects when superseded after the exchange completed', async () => {

@@ -3,12 +3,18 @@ import { describe, expect, it } from 'vitest'
 import { CLOUD_LOGIN_ORIGIN, cloudLoginOriginForUrl, isLoopbackHostname } from './origins'
 
 describe('isLoopbackHostname', () => {
-  it.each(['localhost', 'LOCALHOST', '127.0.0.1', '127.1.2.3', '::1', '[::1]'])(
-    'treats %s as loopback',
-    (hostname) => {
-      expect(isLoopbackHostname(hostname)).toBe(true)
-    }
-  )
+  it.each([
+    'localhost',
+    'LOCALHOST',
+    '127.0.0.1',
+    '127.1.2.3',
+    '::1',
+    '[::1]',
+    '0:0:0:0:0:0:0:1',
+    '[0:0:0:0:0:0:0:1]'
+  ])('treats %s as loopback', (hostname) => {
+    expect(isLoopbackHostname(hostname)).toBe(true)
+  })
 
   it.each(['cloud.comfy.org', '128.0.0.1', '10.0.0.1', 'example.com', '127.evil.com'])(
     'rejects %s',
@@ -22,6 +28,7 @@ describe('cloudLoginOriginForUrl', () => {
   it('passes a loopback dev origin through', () => {
     expect(cloudLoginOriginForUrl('http://localhost:5173/some/page')).toBe('http://localhost:5173')
     expect(cloudLoginOriginForUrl('http://127.0.0.1:8000/')).toBe('http://127.0.0.1:8000')
+    expect(cloudLoginOriginForUrl('http://[0:0:0:0:0:0:0:1]:5173/')).toBe('http://[::1]:5173')
   })
 
   it('resolves production cloud to the production origin', () => {

@@ -46,15 +46,14 @@ interface SignInWithIdpResponse {
 export async function createOauthAuthUri(
   apiKey: string,
   providerId: SupportedProvider,
-  continueUri: string,
+  continueUri: string
 ): Promise<CreateAuthUriResponse> {
   // Scopes mirror Firebase's signInWithPopup to keep the consent screen identical.
-  const oauthScope =
-    providerId === 'github.com' ? 'read:user user:email' : 'profile email'
+  const oauthScope = providerId === 'github.com' ? 'read:user user:email' : 'profile email'
   const resp = await fetch(`${IDP_BASE}/accounts:createAuthUri?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providerId, continueUri, oauthScope }),
+    body: JSON.stringify({ providerId, continueUri, oauthScope })
   })
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
@@ -75,7 +74,7 @@ export async function signInWithIdpExchange(
   apiKey: string,
   providerId: SupportedProvider,
   requestUri: string,
-  sessionId: string,
+  sessionId: string
 ): Promise<SignInWithIdpResponse> {
   const queryStart = requestUri.indexOf('?')
   const queryParams = queryStart >= 0 ? requestUri.slice(queryStart + 1) : ''
@@ -89,8 +88,8 @@ export async function signInWithIdpExchange(
       requestUri,
       sessionId,
       returnIdpCredential: true,
-      returnSecureToken: true,
-    }),
+      returnSecureToken: true
+    })
   })
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
@@ -107,6 +106,26 @@ export interface PersistedProviderData {
   email: string | null
   phoneNumber: null
   photoURL: string | null
+}
+
+export function mapProviderUserInfo(
+  list: ProviderUserInfo[] | undefined,
+  fallbackProviderId: string,
+  fallbackUid: string
+): PersistedProviderData[] {
+  return (list ?? []).map((p) => ({
+    providerId: p.providerId ?? fallbackProviderId,
+    uid: p.rawId ?? fallbackUid,
+    displayName: p.displayName ?? null,
+    email: p.email ?? null,
+    phoneNumber: null,
+    photoURL: p.photoUrl ?? null
+  }))
+}
+
+export function expiresInSecondsOrDefault(expiresIn: string | undefined): number {
+  const parsed = Number(expiresIn)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3600
 }
 
 /** Profile + token fields a sign-in path must supply to persist a user. */
@@ -136,7 +155,7 @@ export interface PersistedUserProfile {
  */
 export function assemblePersistedUser(
   apiKey: string,
-  profile: PersistedUserProfile,
+  profile: PersistedUserProfile
 ): Record<string, unknown> {
   return {
     uid: profile.uid,
@@ -151,12 +170,12 @@ export function assemblePersistedUser(
     stsTokenManager: {
       refreshToken: profile.refreshToken,
       accessToken: profile.idToken,
-      expirationTime: profile.expirationTime,
+      expirationTime: profile.expirationTime
     },
     createdAt: profile.createdAt,
     lastLoginAt: profile.lastLoginAt,
     apiKey,
-    appName: '[DEFAULT]',
+    appName: '[DEFAULT]'
   }
 }
 
@@ -164,21 +183,14 @@ export function assemblePersistedUser(
 export function buildPersistedUser(
   config: FirebaseProjectConfig,
   resp: SignInWithIdpResponse,
-  providerId: SupportedProvider,
+  providerId: SupportedProvider
 ): Record<string, unknown> {
   const nowMs = Date.now()
-  const expiresInSec = Number(resp.expiresIn || '3600')
+  const expiresInSec = expiresInSecondsOrDefault(resp.expiresIn)
   // Prefer Firebase's parsed list, else synthesise one entry from the top-level fields.
   const providerData: PersistedProviderData[] =
     resp.providerUserInfo && resp.providerUserInfo.length > 0
-      ? resp.providerUserInfo.map((p) => ({
-          providerId: p.providerId ?? providerId,
-          uid: p.rawId ?? resp.localId,
-          displayName: p.displayName ?? null,
-          email: p.email ?? null,
-          phoneNumber: null,
-          photoURL: p.photoUrl ?? null,
-        }))
+      ? mapProviderUserInfo(resp.providerUserInfo, providerId, resp.localId)
       : [
           {
             providerId,
@@ -186,8 +198,8 @@ export function buildPersistedUser(
             displayName: resp.displayName ?? null,
             email: resp.email ?? null,
             phoneNumber: null,
-            photoURL: resp.photoUrl ?? null,
-          },
+            photoURL: resp.photoUrl ?? null
+          }
         ]
 
   return assemblePersistedUser(config.apiKey, {
@@ -203,6 +215,6 @@ export function buildPersistedUser(
     // Stringified ms-epochs; true createdAt is unknown so both default to now and
     // get re-minted on subsequent token refreshes.
     createdAt: String(nowMs),
-    lastLoginAt: String(nowMs),
+    lastLoginAt: String(nowMs)
   })
 }

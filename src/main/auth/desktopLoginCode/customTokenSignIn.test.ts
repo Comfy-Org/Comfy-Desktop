@@ -114,11 +114,12 @@ describe('custom-token sign-in', () => {
     expect(sts.expirationTime).toBeLessThanOrEqual(Date.now() + 3600 * 1000)
   })
 
-  it('defaults profile fields when the lookup is sparse', () => {
+  it('defaults profile fields and malformed expiresIn values', () => {
     const config = getFirebaseConfig('prod')
+    const before = Date.now()
     const user = buildPersistedUserFromCustomToken(
       config,
-      { idToken: 'id-token', refreshToken: 'refresh-token', expiresIn: '3600' },
+      { idToken: 'id-token', refreshToken: 'refresh-token', expiresIn: 'not-a-number' },
       { localId: 'uid-2' }
     )
 
@@ -128,6 +129,9 @@ describe('custom-token sign-in', () => {
     expect(user.providerData).toEqual([])
     expect(user.createdAt).toEqual(expect.any(String))
     expect(user.lastLoginAt).toEqual(expect.any(String))
+    const sts = user.stsTokenManager as { expirationTime: number }
+    expect(sts.expirationTime).toBeGreaterThan(before)
+    expect(sts.expirationTime).toBeLessThanOrEqual(Date.now() + 3600 * 1000)
   })
 
   it('aborts an in-flight call when a superseded flow cancels its signal', async () => {

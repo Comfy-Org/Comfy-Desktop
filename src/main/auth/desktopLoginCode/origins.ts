@@ -5,8 +5,17 @@ export const CLOUD_LOGIN_ORIGIN = 'https://cloud.comfy.org'
 
 export function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase()
-  if (normalized === 'localhost' || normalized === '::1' || normalized === '[::1]') return true
-  return isIP(normalized) === 4 && normalized.startsWith('127.')
+  const bare =
+    normalized.startsWith('[') && normalized.endsWith(']') ? normalized.slice(1, -1) : normalized
+  if (bare === 'localhost') return true
+  if (bare.includes(':')) {
+    try {
+      if (new URL(`http://[${bare}]/`).hostname === '[::1]') return true
+    } catch {
+      return false
+    }
+  }
+  return isIP(bare) === 4 && bare.startsWith('127.')
 }
 
 /**

@@ -177,6 +177,18 @@ describe('exchangeDesktopLoginCode', () => {
     expect(typed.retryable).toBe(true)
   })
 
+  it('treats an unexpected 200 payload as retryable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(200, { status: 'wat' }))
+    )
+
+    const err = await exchangeDesktopLoginCode(ORIGIN, EXCHANGE_REQUEST).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(DesktopLoginCodeError)
+    expect((err as DesktopLoginCodeError).retryable).toBe(true)
+  })
+
   it('treats a network failure as retryable', async () => {
     vi.stubGlobal(
       'fetch',

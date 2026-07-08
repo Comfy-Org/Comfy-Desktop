@@ -59,6 +59,10 @@ export interface RequestOpts {
   timeoutMs?: number
 }
 
+function isRetryableStatus(status: number): boolean {
+  return status >= 500
+}
+
 /**
  * JSON POST with a hard timeout. A caller abort propagates untouched so
  * the poll loop can tell cancellation apart from failure; timeouts and
@@ -112,7 +116,7 @@ export async function createDesktopLoginCode(
   if (!resp.ok) {
     throw new DesktopLoginCodeError(`desktop login code create failed: ${resp.status}`, {
       status: resp.status,
-      retryable: resp.status >= 500,
+      retryable: isRetryableStatus(resp.status),
       featureMissing: resp.status === 404
     })
   }
@@ -158,7 +162,7 @@ export async function exchangeDesktopLoginCode(
   if (!resp.ok) {
     throw new DesktopLoginCodeError(`desktop login code exchange failed: ${resp.status}`, {
       status: resp.status,
-      retryable: resp.status >= 500
+      retryable: isRetryableStatus(resp.status)
     })
   }
   const data = (await resp.json().catch(() => null)) as {
@@ -174,6 +178,7 @@ export async function exchangeDesktopLoginCode(
     return { status: 'complete', custom_token: data.custom_token }
   }
   throw new DesktopLoginCodeError('desktop login code exchange returned an unexpected payload', {
-    status: resp.status
+    status: resp.status,
+    retryable: true
   })
 }
