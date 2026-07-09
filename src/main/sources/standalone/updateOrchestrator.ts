@@ -237,6 +237,20 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
   if (signal?.aborted) return { ok: false, message: 'Cancelled', installation }
 
   if (result.exitCode !== 0) {
+    // Transactional guard for a failed git step: the update script advances the
+    // branch ref before the working-tree checkout, so a mid-checkout failure
+    // (e.g. a symlink the user can't create on Windows) can leave the source
+    // moved. Roll it back so this session never launches new source against the
+    // old venv (crashes on import, e.g. `comfy_aimdo.vram_buffer`). The op marker
+    // is intentionally left in place so recoverInterruptedComfyOp retries on the
+    // next launch if this in-process rollback fails.
+    let rollbackNote = ''
+    if (preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
+      const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
+      rollbackNote = rolledBack
+        ? `\n\nComfyUI source was rolled back to ${preOpHead.slice(0, 7)}.`
+        : `\n\nComfyUI source rollback failed; installation may be inconsistent.`
+    }
     const detail = [result.stderrBuf, result.stdoutBuf].filter(Boolean).join('\n').trim().split('\n').slice(-20).join('\n')
     if (sendOutput) {
       let message: string
@@ -247,9 +261,9 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       } else {
         message = `${t('standalone.updateFailed', { code: result.exitCode })}\n\nProcess produced no output.\npython: ${updaterPython}\nscript: ${getBundledScriptPath('update_comfyui.py')}`
       }
-      return { ok: false, message, installation }
+      return { ok: false, message: message + rollbackNote, installation }
     }
-    console.warn(`Auto-update script failed (exit ${result.exitCode}):\n${detail.split('\n').slice(-10).join('\n')}`)
+    console.warn(`Auto-update script failed (exit ${result.exitCode}):\n${detail.split('\n').slice(-10).join('\n')}${rollbackNote}`)
     return { ok: false, installation }
   }
 

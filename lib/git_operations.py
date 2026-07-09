@@ -33,7 +33,7 @@ from collections import deque
 
 import pygit2
 
-from pygit2_compat import harden_pygit2_config
+from pygit2_compat import harden_pygit2_config, disable_symlinks
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +124,11 @@ def open_repo(repo_path):
         for err in errors:
             print(err, file=sys.stderr)
         sys.exit(1)
+
+    # Force core.symlinks=false on Windows so any checkout on this repo can't
+    # fail on a symlink the user lacks the privilege to create (see
+    # disable_symlinks). Covers checkout / fetch-and-checkout / rollback paths.
+    disable_symlinks(repo)
 
     return repo
 
