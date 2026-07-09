@@ -48,6 +48,7 @@ import {
   stopTemplateTrayMirror,
 } from '../../sources/standalone/templateDownloadTask'
 import { recordIpcInvocation } from '../e2eOverrides'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -194,7 +195,7 @@ export function registerInstallationHandlers(): void {
   })
 
   ipcMain.handle('add-installation', async (_event, data: Record<string, unknown>) => {
-    data.name = await uniqueName((data.name as string) || 'ComfyUI')
+    data.name = await uniqueName((data.name as string) || DEFAULT_INSTALL_NAME)
     if (data.installPath) {
       const dirName = sanitizeDirName(data.name as string)
       data.installPath = allocateUniqueDir(data.installPath as string, dirName)
