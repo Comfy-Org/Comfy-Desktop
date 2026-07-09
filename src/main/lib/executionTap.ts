@@ -87,7 +87,11 @@ export function createExecutionTap(opts: {
   const baseContext = {
     installation_id: state.installationId,
     variant: state.variant,
-    release: state.release
+    release: state.release,
+    // The tap tails a locally-spawned ComfyUI process, so every event it
+    // emits is local execution by construction. Cloud executions never pass
+    // through here — the cloud frontend/backend report those directly.
+    deployment: 'local' satisfies telemetry.Deployment
   }
 
   function pushPromptStart(): void {
