@@ -604,7 +604,10 @@ export function getTrackedSettingsTelemetryProperties(
  * default-comparison guards against `load()`'s merged write persisting defaults
  * as a side effect, which would otherwise fool the legacy-adopt carry. A user
  * who explicitly picks the default value is misclassified as "not set"
- * (accepted). Returns `false` on parse errors or a missing file.
+ * (accepted). Sentinel values `set()` treats as unset (`autoLaunchOnStartup:
+ * 'none'`, whitespace-only `pypiMirror`) are also treated as absent, so a
+ * stale/hand-edited file can't masquerade as a user choice. Returns `false` on
+ * parse errors or a missing file.
  */
 export function has(key: string): boolean {
   const raw = readFileSafe(dataPath)
@@ -614,6 +617,15 @@ export function has(key: string): boolean {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
     const value = (parsed as Record<string, unknown>)[key]
     if (value === undefined || value === null) return false
+    // Honor the same "means unset" sentinels `set()` drops, so a stale/manually
+    // edited settings.json can't report a sentinel (e.g. `autoLaunchOnStartup:
+    // 'none'`, a whitespace-only `pypiMirror`) as a user choice.
+    if (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key)) {
+      return false
+    }
+    if (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) {
+      return false
+    }
     if (key in defaults) {
       const def = (defaults as Record<string, unknown>)[key]
       if (typeof def === 'string' && typeof value === 'string') {

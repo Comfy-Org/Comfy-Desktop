@@ -355,6 +355,20 @@ describe('settings.has (persisted-only check)', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ theme: null }), 'utf-8')
     expect(settings.has('theme')).toBe(false)
   })
+
+  it('treats a stale sentinel value as unset (autoLaunchOnStartup: none)', () => {
+    // A manually edited / migrated file may still carry the 'none' sentinel that
+    // set() would have dropped; has() must not report it as a user choice.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ autoLaunchOnStartup: 'none' }), 'utf-8')
+    expect(settings.has('autoLaunchOnStartup')).toBe(false)
+  })
+
+  it('treats a whitespace-only pypiMirror as unset', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: '   ' }), 'utf-8')
+    expect(settings.has('pypiMirror')).toBe(false)
+  })
 })
 
 describe('modelsDirs user ordering', () => {
