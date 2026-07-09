@@ -62,6 +62,7 @@ beforeEach(async () => {
         if (name === 'home') return homePath
         return userDataPath
       },
+      getLocale: () => 'en-US',
     },
   }))
   settings = await import('./settings')
@@ -502,14 +503,45 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     }
   }
 
-  it('default-on autoInstallUpdates: unset reports true, explicit false reports false', () => {
+  it('autoInstallUpdates: effective value plus an explicit-set companion', () => {
+    // Unset => default-on and not explicit.
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: true,
+      auto_install_updates_explicit: false,
     })
+    // Explicit false => off and explicit.
     settings.set('autoInstallUpdates', false)
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: false,
+      auto_install_updates_explicit: true,
     })
+    // Explicit true => on and explicit (distinct from the default-on majority).
+    settings.set('autoInstallUpdates', true)
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: true,
+      auto_install_updates_explicit: true,
+    })
+  })
+
+  it('language: emits selected (null when unset) and effective (resolved) locale', () => {
+    // Unset => selected null, effective from the OS locale (mocked en-US).
+    expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
+      setting_language_selected: null,
+      setting_language: 'en',
+    })
+    // Explicit choice => both reflect it.
+    settings.set('language', 'zh')
+    expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
+      setting_language_selected: 'zh',
+      setting_language: 'zh',
+    })
+  })
+
+  it('omits the dark-only theme setting entirely', () => {
+    settings.set('theme', 'light')
+    const props = settings.getTrackedSettingsTelemetryProperties()
+    expect(props).not.toHaveProperty('setting_theme')
+    expect(props).not.toHaveProperty('setting_theme_selected')
   })
 
   it('default-off useChineseMirrors: unset reports false, explicit true reports true', () => {

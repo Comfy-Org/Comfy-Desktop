@@ -106,6 +106,23 @@ export type SettingTelemetryValue = boolean | number | string | null
  *  platform-aware (e.g. Windows-only gates report `null` off-Windows). */
 type SettingTelemetryCtx = { platform: NodeJS.Platform }
 
+/** A `value` telemetry transform. Returning `null` means "not applicable /
+ *  default"; NEVER return an array/object. Settings whose default is applied at
+ *  runtime (not via the `defaults` object) MUST coalesce `undefined` to their
+ *  effective default here, so emitted values stay self-describing if a default
+ *  changes over time. */
+type SettingTelemetryTransform<K extends keyof KnownSettings> = (
+  raw: KnownSettings[K] | undefined,
+  ctx: SettingTelemetryCtx
+) => SettingTelemetryValue
+
+/** A single emitted property. `value` emits the (optionally transformed) value;
+ *  `presence` emits `settings.has(key)` — used both for PII-safe path settings
+ *  and as an "explicitly set?" companion to a `value` emitter. */
+type SettingEmitter<K extends keyof KnownSettings> =
+  | { kind: 'value'; prop: string; toTelemetry?: SettingTelemetryTransform<K> }
+  | { kind: 'presence'; prop: string }
+
 /**
  * Per-setting tracking policy (issue #1223). Every `SETTINGS_SCHEMA` entry MUST
  * declare one, so a new setting can't silently ship untracked:
@@ -115,8 +132,12 @@ type SettingTelemetryCtx = { platform: NodeJS.Platform }
  *  - `'presence'`— emit only a boolean (`settings.has(key)` = user-set / differs
  *                  from default). For path / URL / PII-bearing settings whose raw
  *                  value must never leave the machine.
- *  - `'omit'`    — internal bookkeeping; never emitted.
- * `prop` overrides the default `setting_<snake_case_key>` property name.
+ *  - `'multi'`   — emit several props for one setting (e.g. a raw "selected"
+ *                  value plus a resolved "effective" value, or a `value` plus an
+ *                  "explicitly set?" `presence` companion). Each emitter names its
+ *                  own `prop`.
+ *  - `'omit'`    — internal bookkeeping / dead settings; never emitted.
+ * For `value`/`presence`, `prop` overrides the default `setting_<snake_case_key>`.
  */
 type SettingTelemetryPolicy<K extends keyof KnownSettings> =
   | { policy: 'omit' }
@@ -124,8 +145,9 @@ type SettingTelemetryPolicy<K extends keyof KnownSettings> =
   | {
       policy: 'value'
       prop?: string
-      toTelemetry?: (raw: KnownSettings[K] | undefined, ctx: SettingTelemetryCtx) => SettingTelemetryValue
+      toTelemetry?: SettingTelemetryTransform<K>
     }
+  | { policy: 'multi'; emitters: SettingEmitter<K>[] }
 
 type SettingSchemaEntry<K extends keyof KnownSettings> = {
   nullable: boolean
@@ -140,8 +162,32 @@ const SETTINGS_SCHEMA = {
   inputDir: { nullable: false, telemetry: { policy: 'presence' } },
   outputDir: { nullable: false, telemetry: { policy: 'presence' } },
   installDir: { nullable: false, telemetry: { policy: 'presence' } },
-  language: { nullable: false, telemetry: { policy: 'value' } },
-  theme: { nullable: false, telemetry: { policy: 'value' } },
+  language: {
+    // Track both what the user selected (null when following the OS default) and
+    // the effective locale actually in use. Effective mirrors the boot resolution
+    // (`get('language') || app.getLocale()`), so it stays correct if the default
+    // OS-locale mapping changes.
+    nullable: false,
+    telemetry: {
+      policy: 'multi',
+      emitters: [
+        {
+          kind: 'value',
+          prop: 'setting_language_selected',
+          toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null),
+        },
+        {
+          kind: 'value',
+          prop: 'setting_language',
+          toTelemetry: (raw) =>
+            typeof raw === 'string' && raw ? raw : app.getLocale().split('-')[0] || 'unknown',
+        },
+      ],
+    },
+  },
+  // App is dark-only; the theme setting is inert (see resolveTheme), so tracking
+  // it carries no signal.
+  theme: { nullable: false, telemetry: { policy: 'omit' } },
   autoUpdate: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
@@ -149,8 +195,16 @@ const SETTINGS_SCHEMA = {
   autoInstallUpdates: {
     // Default-on: any non-`false` value (incl. missing) is enabled. Mirrors
     // `isAutoInstallEnabled()` in updater.ts. Exact prop name required by #1220.
+    // `auto_install_updates_explicit` separates users who explicitly chose a value
+    // from the default-on majority (the opt-in/out cohort from #1220).
     nullable: false,
-    telemetry: { policy: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
+    telemetry: {
+      policy: 'multi',
+      emitters: [
+        { kind: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
+        { kind: 'presence', prop: 'auto_install_updates_explicit' },
+      ],
+    },
   },
   // Emit "auto-launch configured?" as a boolean; the raw value can be an
   // installation id (potentially identifying).
@@ -572,28 +626,33 @@ function toScalarOrNull(v: unknown): SettingTelemetryValue {
  * Build the durable telemetry snapshot of the tracked global settings, driven by
  * each `SETTINGS_SCHEMA` entry's `telemetry` policy (issue #1223). Returned as a
  * flat `prop -> scalar` map suitable for PostHog person properties or as event
- * properties. `'omit'` keys are dropped, `'presence'` keys emit a boolean, and
- * `'value'` keys emit their (optionally transformed) scalar. Pass `keys` to
- * snapshot a subset (e.g. a single changed key).
+ * properties. `'omit'` keys are dropped, `'presence'` keys emit a boolean,
+ * `'value'` keys emit their (optionally transformed) scalar, and `'multi'` keys
+ * emit one entry per declared emitter. Pass `keys` to snapshot a subset (e.g. a
+ * single changed key).
  */
 export function getTrackedSettingsTelemetryProperties(
   keys: readonly string[] = KNOWN_SETTING_KEYS
 ): Record<string, SettingTelemetryValue> {
   const ctx: SettingTelemetryCtx = { platform: process.platform }
   const out: Record<string, SettingTelemetryValue> = {}
+  const emitValue = (raw: unknown, transform?: SettingTelemetryTransform<KnownSettingKey>): SettingTelemetryValue =>
+    transform ? transform(raw as never, ctx) : toScalarOrNull(raw)
   for (const key of keys) {
     if (!isKnownSettingKey(key)) continue
     const tel = (SETTINGS_SCHEMA[key] as SettingSchemaEntry<KnownSettingKey>).telemetry
     if (tel.policy === 'omit') continue
-    const prop = tel.prop ?? `setting_${camelToSnake(key)}`
     if (tel.policy === 'presence') {
-      out[prop] = has(key)
+      out[tel.prop ?? `setting_${camelToSnake(key)}`] = has(key)
       continue
     }
-    const raw = get(key)
-    out[prop] = tel.toTelemetry
-      ? tel.toTelemetry(raw as never, ctx)
-      : toScalarOrNull(raw)
+    if (tel.policy === 'multi') {
+      for (const em of tel.emitters) {
+        out[em.prop] = em.kind === 'presence' ? has(key) : emitValue(get(key), em.toTelemetry)
+      }
+      continue
+    }
+    out[tel.prop ?? `setting_${camelToSnake(key)}`] = emitValue(get(key), tel.toTelemetry)
   }
   return out
 }
