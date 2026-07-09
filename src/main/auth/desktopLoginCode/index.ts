@@ -142,7 +142,7 @@ export async function signInViaDesktopLoginCode(
     // reports 'handled' instead so the caller doesn't start a second
     // sign-in underneath the newer one.
     if (activeFlow === controller) activeFlow = null
-    return controller.signal.aborted ? 'handled' : 'fallback'
+    return controller.signal.aborted || comfyContents.isDestroyed() ? 'handled' : 'fallback'
   }
   if (controller.signal.aborted || comfyContents.isDestroyed()) {
     if (activeFlow === controller) activeFlow = null

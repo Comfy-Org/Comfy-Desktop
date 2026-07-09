@@ -117,6 +117,26 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.emit).not.toHaveBeenCalled()
   })
 
+  it('does not fall back when the view is destroyed before code creation fails', async () => {
+    h.settingsGet.mockReturnValue(true)
+    let destroyed = false
+    h.createDesktopLoginCode.mockImplementation(async () => {
+      destroyed = true
+      throw new Error('create failed')
+    })
+    const contents = fakeContents()
+    contents.isDestroyed = vi.fn(() => destroyed)
+    const mod = await loadOrchestrator()
+
+    const outcome = await mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+
+    expect(outcome).toBe('handled')
+    expect(h.openExternal).not.toHaveBeenCalled()
+    expect(h.showCopyLinkBanner).not.toHaveBeenCalled()
+    expect(h.capture).not.toHaveBeenCalled()
+    expect(h.emit).not.toHaveBeenCalled()
+  })
+
   it('completes the happy path: opens the browser, polls pending→complete, injects the user', async () => {
     h.settingsGet.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
