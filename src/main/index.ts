@@ -1433,6 +1433,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       id_class: getIdClass()
     })
 
+    // Durable snapshot of the tracked global settings as person properties
+    // (issues #1220/#1223), so adoption of every setting is queryable across the
+    // whole base. Consent-gated: queued until granted. Re-registered on change in
+    // `applySettingSet`.
+    mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
+
     const isFirstLaunch = consumeFirstLaunch()
     const pendingDownloadToken = readPendingDownloadToken()
     if (pendingDownloadToken) {

@@ -98,35 +98,111 @@ const dataPath = path.join(configDir(), "settings.json")
 
 const SHARED_ROOT = path.join(defaultDataRoot(), "ComfyUI-Shared")
 
+/** Scalar shapes allowed as a telemetry property value. Arrays/objects are
+ *  never emitted (they'd leak paths/PII and blow up cardinality). */
+export type SettingTelemetryValue = boolean | number | string | null
+
+/** Runtime context passed to per-setting telemetry transforms so they can be
+ *  platform-aware (e.g. Windows-only gates report `null` off-Windows). */
+type SettingTelemetryCtx = { platform: NodeJS.Platform }
+
+/**
+ * Per-setting tracking policy (issue #1223). Every `SETTINGS_SCHEMA` entry MUST
+ * declare one, so a new setting can't silently ship untracked:
+ *  - `'value'`   — emit the setting's value. Use `toTelemetry` to coalesce
+ *                  default-on/off booleans and platform-gate Windows-only keys;
+ *                  without it the raw scalar (or `null`) is emitted.
+ *  - `'presence'`— emit only a boolean (`settings.has(key)` = user-set / differs
+ *                  from default). For path / URL / PII-bearing settings whose raw
+ *                  value must never leave the machine.
+ *  - `'omit'`    — internal bookkeeping; never emitted.
+ * `prop` overrides the default `setting_<snake_case_key>` property name.
+ */
+type SettingTelemetryPolicy<K extends keyof KnownSettings> =
+  | { policy: 'omit' }
+  | { policy: 'presence'; prop?: string }
+  | {
+      policy: 'value'
+      prop?: string
+      toTelemetry?: (raw: KnownSettings[K] | undefined, ctx: SettingTelemetryCtx) => SettingTelemetryValue
+    }
+
+type SettingSchemaEntry<K extends keyof KnownSettings> = {
+  nullable: boolean
+  telemetry: SettingTelemetryPolicy<K>
+}
+
 const SETTINGS_SCHEMA = {
-  cacheDir: { nullable: false },
-  maxCachedDownloads: { nullable: false },
-  onAppClose: { nullable: false },
-  modelsDirs: { nullable: false },
-  inputDir: { nullable: false },
-  outputDir: { nullable: false },
-  installDir: { nullable: false },
-  language: { nullable: false },
-  theme: { nullable: false },
-  autoUpdate: { nullable: false },
-  autoInstallUpdates: { nullable: false },
-  autoLaunchOnStartup: { nullable: false },
-  confirmBeforeClosingWindow: { nullable: false },
-  pypiMirror: { nullable: false },
-  useChineseMirrors: { nullable: false },
-  chineseMirrorsPrompted: { nullable: false },
-  telemetryEnabled: { nullable: false },
-  firstUseCompleted: { nullable: false },
-  hideCloudFromPicker: { nullable: false },
-  oemManagedModelDirs: { nullable: false },
-  oemWorkflowImportVersion: { nullable: false },
-  lastSaveDialogDir: { nullable: true },
-  skipTemplatePickerStep: { nullable: false },
-  pendingDownloadedUpdateVersion: { nullable: true },
-  lastStartupUpdateAttemptVersion: { nullable: true },
-  installUpdatesOnStartup: { nullable: false },
-  showInstallerUI: { nullable: false },
-} as const satisfies Record<keyof KnownSettings, { nullable: boolean }>
+  cacheDir: { nullable: false, telemetry: { policy: 'presence' } },
+  maxCachedDownloads: { nullable: false, telemetry: { policy: 'value' } },
+  onAppClose: { nullable: false, telemetry: { policy: 'value' } },
+  modelsDirs: { nullable: false, telemetry: { policy: 'presence' } },
+  inputDir: { nullable: false, telemetry: { policy: 'presence' } },
+  outputDir: { nullable: false, telemetry: { policy: 'presence' } },
+  installDir: { nullable: false, telemetry: { policy: 'presence' } },
+  language: { nullable: false, telemetry: { policy: 'value' } },
+  theme: { nullable: false, telemetry: { policy: 'value' } },
+  autoUpdate: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  autoInstallUpdates: {
+    // Default-on: any non-`false` value (incl. missing) is enabled. Mirrors
+    // `isAutoInstallEnabled()` in updater.ts. Exact prop name required by #1220.
+    nullable: false,
+    telemetry: { policy: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
+  },
+  // Emit "auto-launch configured?" as a boolean; the raw value can be an
+  // installation id (potentially identifying).
+  autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  confirmBeforeClosingWindow: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  // Mirror URL can be a private/identifying endpoint — presence only.
+  pypiMirror: { nullable: false, telemetry: { policy: 'presence' } },
+  useChineseMirrors: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  chineseMirrorsPrompted: { nullable: false, telemetry: { policy: 'omit' } },
+  // Consent gate, not a durable trackable setting: once disabled we can't emit a
+  // fresh `false` without violating the consent gate, so the value would go stale.
+  telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
+  firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
+  hideCloudFromPicker: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  oemManagedModelDirs: { nullable: false, telemetry: { policy: 'presence' } },
+  oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
+  lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
+  skipTemplatePickerStep: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  installUpdatesOnStartup: {
+    // Windows-only, default-on. Off-Windows the gate is inert, so report `null`
+    // ("not applicable") to keep it distinct from an explicit opt-out. Exact
+    // prop name required by #1220.
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      prop: 'install_updates_on_startup',
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null),
+    },
+  },
+  showInstallerUI: {
+    // Windows-only, default-on — same `null`-off-Windows convention.
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null),
+    },
+  },
+} as const satisfies { [K in keyof KnownSettings]: SettingSchemaEntry<K> }
 
 export type KnownSettingKey = keyof typeof SETTINGS_SCHEMA
 export type NullableKnownSettingKey = {
@@ -477,6 +553,49 @@ export function set<K extends string>(
 
 export function getAll(): Settings {
   return load()
+}
+
+function camelToSnake(s: string): string {
+  // Handle acronym runs so `showInstallerUI` -> `show_installer_ui`, not
+  // `show_installer_u_i`.
+  return s
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase()
+}
+
+function toScalarOrNull(v: unknown): SettingTelemetryValue {
+  return typeof v === 'boolean' || typeof v === 'number' || typeof v === 'string' ? v : null
+}
+
+/**
+ * Build the durable telemetry snapshot of the tracked global settings, driven by
+ * each `SETTINGS_SCHEMA` entry's `telemetry` policy (issue #1223). Returned as a
+ * flat `prop -> scalar` map suitable for PostHog person properties or as event
+ * properties. `'omit'` keys are dropped, `'presence'` keys emit a boolean, and
+ * `'value'` keys emit their (optionally transformed) scalar. Pass `keys` to
+ * snapshot a subset (e.g. a single changed key).
+ */
+export function getTrackedSettingsTelemetryProperties(
+  keys: readonly string[] = KNOWN_SETTING_KEYS
+): Record<string, SettingTelemetryValue> {
+  const ctx: SettingTelemetryCtx = { platform: process.platform }
+  const out: Record<string, SettingTelemetryValue> = {}
+  for (const key of keys) {
+    if (!isKnownSettingKey(key)) continue
+    const tel = (SETTINGS_SCHEMA[key] as SettingSchemaEntry<KnownSettingKey>).telemetry
+    if (tel.policy === 'omit') continue
+    const prop = tel.prop ?? `setting_${camelToSnake(key)}`
+    if (tel.policy === 'presence') {
+      out[prop] = has(key)
+      continue
+    }
+    const raw = get(key)
+    out[prop] = tel.toTelemetry
+      ? tel.toTelemetry(raw as never, ctx)
+      : toScalarOrNull(raw)
+  }
+  return out
 }
 
 /**

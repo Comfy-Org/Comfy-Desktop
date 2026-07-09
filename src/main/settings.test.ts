@@ -32,6 +32,9 @@ let settings: {
   get: (key: string) => unknown
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
+  getTrackedSettingsTelemetryProperties: (
+    keys?: readonly string[]
+  ) => Record<string, boolean | number | string | null>
 }
 
 const settingsPath = process.platform === 'linux'
@@ -470,5 +473,116 @@ describe('modelsDirs user ordering', () => {
     const dirs = settings.get('modelsDirs') as string[]
     expect(dirs.length).toBe(1)
     expect(path.resolve(dirs[0]!)).toBe(path.join(homePath, 'ComfyUI-Shared', 'models'))
+  })
+})
+
+describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
+  const realPlatform = process.platform
+
+  function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    try {
+      return fn()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+    }
+  }
+
+  it('default-on autoInstallUpdates: unset reports true, explicit false reports false', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: true,
+    })
+    settings.set('autoInstallUpdates', false)
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: false,
+    })
+  })
+
+  it('default-off useChineseMirrors: unset reports false, explicit true reports true', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
+      setting_use_chinese_mirrors: false,
+    })
+    settings.set('useChineseMirrors', true)
+    expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
+      setting_use_chinese_mirrors: true,
+    })
+  })
+
+  it('Windows-only installUpdatesOnStartup: default-on true on win32, false when opted out', () => {
+    withPlatform('win32', () => {
+      expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
+        install_updates_on_startup: true,
+      })
+    })
+    settings.set('installUpdatesOnStartup', false)
+    withPlatform('win32', () => {
+      expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
+        install_updates_on_startup: false,
+      })
+    })
+  })
+
+  it('Windows-only gates report null off-Windows (not applicable, not opted out)', () => {
+    withPlatform('darwin', () => {
+      expect(
+        settings.getTrackedSettingsTelemetryProperties([
+          'installUpdatesOnStartup',
+          'showInstallerUI',
+        ])
+      ).toEqual({
+        install_updates_on_startup: null,
+        setting_show_installer_ui: null,
+      })
+    })
+  })
+
+  it('path settings emit presence booleans, never the raw path', () => {
+    const before = settings.getTrackedSettingsTelemetryProperties([
+      'installDir',
+      'modelsDirs',
+      'cacheDir',
+    ])
+    expect(before).toEqual({
+      setting_install_dir: false,
+      setting_models_dirs: false,
+      setting_cache_dir: false,
+    })
+    settings.set('installDir', path.join(homePath, 'Custom', 'Installs'))
+    const after = settings.getTrackedSettingsTelemetryProperties(['installDir'])
+    expect(after.setting_install_dir).toBe(true)
+    expect(Object.values(after).every((v) => typeof v !== 'string')).toBe(true)
+  })
+
+  it('autoLaunchOnStartup emits presence (bool-ified), never the install id', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
+      setting_auto_launch_on_startup: false,
+    })
+    settings.set('autoLaunchOnStartup', 'some-install-id')
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
+      setting_auto_launch_on_startup: true,
+    })
+  })
+
+  it('omits internal bookkeeping and consent keys', () => {
+    settings.set('firstUseCompleted', true)
+    settings.set('telemetryEnabled', true)
+    settings.set('chineseMirrorsPrompted', true)
+    const props = settings.getTrackedSettingsTelemetryProperties()
+    expect(props).not.toHaveProperty('setting_first_use_completed')
+    expect(props).not.toHaveProperty('setting_telemetry_enabled')
+    expect(props).not.toHaveProperty('setting_chinese_mirrors_prompted')
+  })
+
+  it('full snapshot includes both #1220 exact names and never emits arrays/objects', () => {
+    const props = withPlatform('win32', () =>
+      settings.getTrackedSettingsTelemetryProperties()
+    )
+    expect(props).toHaveProperty('auto_install_updates')
+    expect(props).toHaveProperty('install_updates_on_startup')
+    for (const value of Object.values(props)) {
+      expect(['boolean', 'number', 'string']).toContain(
+        value === null ? 'boolean' : typeof value
+      )
+    }
   })
 })
