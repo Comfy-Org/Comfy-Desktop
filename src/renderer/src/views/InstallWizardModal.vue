@@ -96,12 +96,12 @@ const advancedRef = ref<HTMLElement | null>(null)
 
 /** Entrypoint that opened this wizard, for the handoff funnel events (#1224). */
 const entrypoint = ref('unknown')
-/** Flipped true once this wizard session reaches a terminal handoff outcome
- *  (install dispatched, or an abort we've already reported). Guards the
- *  onBeforeUnmount `wizard_cancelled` emit so exactly one dispatched /
- *  not_started fires per open. `add_installation_failed` intentionally leaves
- *  this false — the wizard stays open and a later retry or cancel is still the
- *  truthful outcome. */
+/** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
+ *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
+ *  onBeforeUnmount `wizard_cancelled` emit so exactly one *terminal* event
+ *  fires per open. `add_installation_failed` is an attempt-level failure — it
+ *  intentionally leaves this false so a later retry (→ dispatched) or give-up
+ *  (→ wizard_cancelled) is still recorded as the true terminal outcome. */
 const resolved = ref(false)
 
 /** Shared context for the install-handoff funnel events (#1224). */
