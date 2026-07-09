@@ -433,7 +433,10 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
         })
         return fakeProc({
-          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`],
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`,
+            '[BACKUP_BRANCH] backup_branch_test\n',
+          ],
           stderr: ['_pygit2.GitError: could not create symlink CLAUDE.md: A required privilege is not held by the client.\n'],
           exitCode: 1,
         })
@@ -450,6 +453,9 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect(headSha()).toBe(repoShas.v1Sha)
       // Marker is left behind so a launch-time recovery re-runs if needed.
       expect(markerExists()).toBe(true)
+      // The local backup branch is recorded for offline manual recovery.
+      const marker = JSON.parse(fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8'))
+      expect(marker.backupBranch).toBe('backup_branch_test')
     })
   })
 

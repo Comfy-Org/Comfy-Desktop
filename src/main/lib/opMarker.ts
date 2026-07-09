@@ -23,6 +23,14 @@ export interface OpMarker {
   postHead?: string
   /** Number of launch-time recovery attempts that failed to roll the source back. */
   recoveryAttempts?: number
+  /**
+   * Name of the local backup branch the update script created at the pre-op HEAD
+   * (it also carries any uncommitted edits). Recorded for diagnostics only: it
+   * lets a failed-recovery message point the user at an offline restore point.
+   * It is NOT a rollback target: recovery always resets to `preHead` so the
+   * source stays clean and matches the installed deps.
+   */
+  backupBranch?: string
 }
 
 // After this many failed launch-time rollbacks we stop blocking the launch and
@@ -112,19 +120,24 @@ export async function recoverInterruptedComfyOp(
       // Reliability signal (mirrored to Datadog): how often a hard-killed op
       // leaves source we can't roll back, and how often we give up entirely.
       telemetry.emit('comfy.desktop.recovery.failed', { op: marker.op, attempts, gave_up: gaveUp })
+      const backupHint = marker.backupBranch
+        ? ` Your previous state is preserved on local git branch "${marker.backupBranch}".`
+        : ''
       if (gaveUp) {
         // Rollback can't succeed (e.g. the pre-op commit is gone). Stop blocking:
         // drop the marker and let the launch proceed. ComfyUI may crash on import,
         // but that surfaces a real, recoverable error instead of an opaque,
         // permanent launch lockout — and the user can re-run an update to repair.
+        // If the update script saved a local backup branch, name it so the user
+        // has an offline restore point when automatic rollback can't finish.
         console.warn(`Giving up rolling ComfyUI source back after ${attempts} attempts; dropping recovery marker.`)
-        sendOutput?.(`\n⚠ Could not roll ComfyUI source back after ${attempts} attempts; continuing launch. Re-run an update if ComfyUI fails to start.\n`)
+        sendOutput?.(`\n⚠ Could not roll ComfyUI source back after ${attempts} attempts; continuing launch. Re-run an update if ComfyUI fails to start.${backupHint}\n`)
         await clearOpMarker(installPath)
         return true
       }
       // Persist the attempt count and block this launch so the next one retries.
       await writeOpMarker(installPath, { ...marker, recoveryAttempts: attempts })
-      throw new Error(`could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}`)
+      throw new Error(`could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`)
     }
     // Successfully recovered a hard-killed op — informational signal (PostHog).
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })

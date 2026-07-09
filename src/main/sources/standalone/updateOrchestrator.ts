@@ -14,7 +14,7 @@ import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { repairMacBinaries } from './macRepair'
 import { getActivePythonPath, getActiveUvPath, getMasterPythonPath } from './envPaths'
-import { writeOpMarker, completeOpMarker } from '../../lib/opMarker'
+import { writeOpMarker, completeOpMarker, readOpMarker } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
 
 interface ScriptResult {
@@ -232,6 +232,16 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     result = await spawnUpdateScript(updaterPython, comfyuiDir, channelArgs, sendOutput, signal)
   }
 
+  // Record the local backup branch (created by the update script at the pre-op
+  // HEAD) in the op marker so a failed launch-time recovery can point the user at
+  // an offline restore point. Diagnostics only — the rollback target stays preHead.
+  if (result.markers.BACKUP_BRANCH && preOpHead) {
+    const existingMarker = readOpMarker(installPath)
+    if (existingMarker && !existingMarker.postHead) {
+      await writeOpMarker(installPath, { ...existingMarker, backupBranch: result.markers.BACKUP_BRANCH })
+    }
+  }
+
   // Check cancellation before the exit code — aborted processes exit non-zero
   // and shouldn't surface an error.
   if (signal?.aborted) return { ok: false, message: 'Cancelled', installation }
@@ -247,9 +257,12 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     let rollbackNote = ''
     if (preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
       const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
+      const backupHint = result.markers.BACKUP_BRANCH
+        ? ` Your previous state is preserved on local git branch "${result.markers.BACKUP_BRANCH}".`
+        : ''
       rollbackNote = rolledBack
         ? `\n\nComfyUI source was rolled back to ${preOpHead.slice(0, 7)}.`
-        : `\n\nComfyUI source rollback failed; installation may be inconsistent.`
+        : `\n\nComfyUI source rollback failed; installation may be inconsistent.${backupHint}`
     }
     const detail = [result.stderrBuf, result.stdoutBuf].filter(Boolean).join('\n').trim().split('\n').slice(-20).join('\n')
     if (sendOutput) {
