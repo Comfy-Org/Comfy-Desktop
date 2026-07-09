@@ -137,7 +137,15 @@
       "logging": "Logging",
       "advanced": "Advanced",
       "other": "Other"
-    }
+    },
+    "configureArgs": "Configure arguments",
+    "argsSchemaUnavailable": "Argument schema unavailable for this install.",
+    "argsAutocompleteLabel": "Argument suggestions",
+    "argsAutocompleteHint": "↑↓ navigate · Tab/Enter select · Esc dismiss",
+    "argsAwaitingValue": "expects a value",
+    "argsUnsupported": "Unsupported:",
+    "argsMissingValue": "Missing value for:",
+    "argsUnexpected": "Unexpected:"
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",

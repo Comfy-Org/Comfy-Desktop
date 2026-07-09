@@ -137,7 +137,15 @@
       "logging": "日志",
       "advanced": "高级",
       "other": "其他"
-    }
+    },
+    "configureArgs": "配置参数",
+    "argsSchemaUnavailable": "此安装的参数信息不可用。",
+    "argsAutocompleteLabel": "参数建议",
+    "argsAutocompleteHint": "↑↓ 导航 · Tab/Enter 选择 · Esc 关闭",
+    "argsAwaitingValue": "需要一个值",
+    "argsUnsupported": "不支持：",
+    "argsMissingValue": "缺少值：",
+    "argsUnexpected": "意外的参数："
   },
   "comfyLifecycle": {
     "preparingTitle": "正在准备…",
