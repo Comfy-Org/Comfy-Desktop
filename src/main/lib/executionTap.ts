@@ -320,6 +320,16 @@ export function createExecutionTap(opts: {
       for (const line of lines) handleLine(line, source)
     },
     flushSummary(): void {
+      // Flush any buffered partial line (a final line written without a
+      // trailing newline when the process exited) through the parser first —
+      // that trailing line is often the fatal exception / validation reason we
+      // want, and it would otherwise sit unparsed in `pending`.
+      for (const source of ['stdout', 'stderr'] as const) {
+        const partial = pending[source]
+        if (partial.length === 0) continue
+        pending[source] = ''
+        handleLine(partial, source)
+      }
       // Drain an in-flight validation block (process exited before the block's
       // terminating line arrived) so the failure isn't dropped.
       emitValidationError()

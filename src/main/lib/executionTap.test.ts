@@ -191,6 +191,37 @@ describe('executionTap', () => {
     ).toHaveLength(1)
   })
 
+  it('flushSummary parses a final line written without a trailing newline', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    // The fatal exception line is the LAST thing written and has no trailing
+    // newline (process died mid-line), so it sits unparsed in `pending`.
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        '  File "z.py", line 3, in run',
+        '    raise KeyError("gone")',
+        'KeyError: gone' // no trailing '\n'
+      ].join('\n'),
+      'stderr'
+    )
+    expect(captured.filter((c) => c.event === 'comfy.desktop.execution.error')).toHaveLength(0)
+    tap.flushSummary()
+    const errs = captured.filter((c) => c.event === 'comfy.desktop.execution.error')
+    expect(errs).toHaveLength(1)
+    expect(errs[0]!.ctx).toMatchObject({ error_class: 'KeyError' })
+  })
+
+  it('flushSummary captures a validation reason line written without a trailing newline', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('Failed to validate prompt for output 3:\n', 'stdout')
+    // Reason line is the final write and has no trailing newline.
+    tap.ingest("  - Value not in list: ckpt_name: 'x' not in ['y']", 'stdout')
+    tap.flushSummary()
+    const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
+    expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '3' })
+    expect(String(err!.ctx.error_message)).toContain('Value not in list')
+  })
+
   it('caps promptStartTimes so unpaired starts cannot grow unbounded', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // Far more than the cap (256).

@@ -1109,24 +1109,6 @@ export async function trackedStep<T>(
 }
 
 /**
- * Capture + Datadog-forward a failure event with the standard error schema.
- *
- * Every failure event MUST carry `error_class` / `error_message` /
- * `error_bucket` / `error_signature` (see `src/shared/errorEvent.ts`). This
- * is the single enforced path for that: pass the base context and the raw
- * error, and the four fields are derived and merged. Base-context keys win on
- * collision so a call site can override a derived field when it has better
- * information (e.g. a fixed `error_class` for a parser-detected failure).
- */
-export function emitError(
-  event: string,
-  context: TelemetryContext,
-  errorInput: unknown
-): void {
-  emit(event, { ...buildErrorFields(errorInput), ...context })
-}
-
-/**
  * Coarse error categorisation. Re-exported from `src/shared/errorBucket.ts`
  * so main and renderer classify identically (dedup).
  */
