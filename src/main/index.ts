@@ -1,4 +1,4 @@
-import { app, Menu, ipcMain, net, dialog, crashReporter } from 'electron'
+import { app, Menu, ipcMain, net, dialog, crashReporter, nativeTheme } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
@@ -1323,6 +1323,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // any startup crash are captured.
     initAppLog()
     registerProcessErrorHandlers()
+    // App is dark-only: force Chromium/native surfaces (OS dialogs, menus) dark
+    // regardless of the OS appearance, matching the dark-only app UI (see
+    // resolveTheme). Set before any window opens.
+    nativeTheme.themeSource = 'dark'
     // Bound the local crash-dump folder; Crashpad's own pruning is coarse in
     // upload-disabled mode and a crash-looping user can pile up multi-MB dumps.
     pruneCrashDumps()

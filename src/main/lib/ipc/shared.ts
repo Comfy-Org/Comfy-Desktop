@@ -1075,12 +1075,13 @@ export async function migrateDefaults(): Promise<void> {
   }
 }
 
-const VALID_THEMES: readonly string[] = ['system', 'dark', 'light'] satisfies readonly Theme[]
-
 export function resolveTheme(): ResolvedTheme {
-  const raw = settings.get('theme') as string | undefined
-  const theme: Theme = raw && VALID_THEMES.includes(raw) ? (raw as Theme) : 'system'
-  return theme === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : theme
+  // The app is dark-only. Ignore the `theme` setting and OS appearance entirely
+  // so a stale `theme: 'light'` in settings.json or a light-mode OS can't leak a
+  // broken light UI (the title bar, native controls, splash and brand elements
+  // are all dark-only). The `theme` plumbing stays wired; re-enabling light mode
+  // means restoring this resolution and completing the dark-only overrides.
+  return 'dark'
 }
 
 // Single-flight: overlapping calls (boot, periodic timer, manual refresh) share one run
