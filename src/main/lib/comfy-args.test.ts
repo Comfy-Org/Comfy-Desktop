@@ -120,10 +120,10 @@ options:
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
-    expect(byName.get('port')?.category).toBe('Network')
-    expect(byName.get('listen')?.category).toBe('Network')
-    expect(byName.get('gpu-only')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-manager')?.category).toBe('Manager')
+    expect(byName.get('port')?.category).toBe('network')
+    expect(byName.get('listen')?.category).toBe('network')
+    expect(byName.get('gpu-only')?.category).toBe('gpu')
+    expect(byName.get('enable-manager')?.category).toBe('manager')
   })
 
   it('categorizes --fast-disk and --enable-triton-backend', () => {
@@ -137,8 +137,8 @@ options:
 `
     const schema = parseHelpOutput(help)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
-    expect(byName.get('fast-disk')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-triton-backend')?.category).toBe('Performance')
+    expect(byName.get('fast-disk')?.category).toBe('gpu')
+    expect(byName.get('enable-triton-backend')?.category).toBe('performance')
   })
 
   it('handles Windows \\r\\n line endings', () => {

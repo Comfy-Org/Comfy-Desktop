@@ -23,7 +23,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Run on CPU only.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpu',
   },
   {
     name: 'gpu-only',
@@ -31,7 +31,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Force GPU usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpu',
   },
   {
     name: 'lowvram',
@@ -39,7 +39,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Reduce VRAM usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpu',
   },
   {
     name: 'port',
@@ -47,7 +47,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Server port.',
     type: 'value',
     metavar: 'PORT',
-    category: 'Network',
+    category: 'network',
   },
 ]
 

@@ -36,6 +36,30 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+/** English fallbacks for the stable category keys emitted by `comfy-args.ts`,
+ *  used when a locale hasn't translated a given `comfyUISettings.argsCategory.*` key. */
+const CATEGORY_LABELS: Record<string, string> = {
+  active: 'Active',
+  network: 'Network',
+  launch: 'Launch',
+  gpu: 'GPU & VRAM',
+  precision: 'Precision',
+  performance: 'Performance',
+  cache: 'Cache',
+  preview: 'Preview',
+  manager: 'Manager',
+  frontend: 'Frontend',
+  features: 'Features',
+  paths: 'Paths',
+  logging: 'Logging',
+  advanced: 'Advanced',
+  other: 'Other',
+}
+
+function categoryLabel(key: string): string {
+  return t(`comfyUISettings.argsCategory.${key}`, CATEGORY_LABELS[key] ?? key)
+}
+
 const localValue = ref(props.initialValue)
 const schema = ref<ComfyArgDef[]>([])
 const loading = ref(false)
@@ -317,7 +341,7 @@ const structuredGroups = computed(() => {
   }
   if (activeItems.length === 0) return result
   const ordered = new Map<string, GroupItem[]>()
-  ordered.set(t('comfyUISettings.argsActiveTitle', 'Active'), activeItems)
+  ordered.set('active', activeItems)
   for (const [category, items] of result) ordered.set(category, items)
   return ordered
 })
@@ -417,7 +441,7 @@ function onRawChange(value: string): void {
         :key="category"
         class="args-page-category"
       >
-        <header class="args-page-category-title">{{ category }}</header>
+        <header class="args-page-category-title">{{ categoryLabel(category) }}</header>
 
         <div v-for="(item, idx) in items" :key="idx" class="args-page-item">
           <!-- Exclusive cluster as a compact dropdown; the label lists the members so you can see the choices before opening, and a synthetic "None" option clears the group. -->
