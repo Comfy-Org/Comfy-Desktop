@@ -99,15 +99,22 @@ export function buildSettingsSections(
           tooltip: i18n.t('settings.hideCloudFromPickerDescription')
         },
 
-        // autoInstallUpdates is filtered out of generalFields by
-        // buildGlobalSettingsSnapshot — it renders inside the Updates
-        // tab. Keeping the field definition here so the schema stays
+        // autoInstallUpdates and showComfyVersionUpdates are filtered out of
+        // generalFields by buildGlobalSettingsSnapshot — they render inside the
+        // Updates tab. Keeping the field definitions here so the schema stays
         // single-source.
         {
           id: 'autoInstallUpdates',
           label: i18n.t('settings.autoInstallUpdates'),
           type: 'boolean',
           value: s.autoInstallUpdates !== false
+        },
+        {
+          id: 'showComfyVersionUpdates',
+          label: i18n.t('settings.showComfyVersionUpdates'),
+          type: 'boolean',
+          value: s.showComfyVersionUpdates === true,
+          tooltip: i18n.t('settings.showComfyVersionUpdatesDescription')
         },
         // onAppClose field hidden while docking-to-tray is disabled.
         ...(isChinese ? [chineseMirrorsField] : [])

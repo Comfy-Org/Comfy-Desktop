@@ -63,7 +63,8 @@ import type { WriteStream } from 'fs'
 // --list-feature-flags registry so we never inject unrecognized keys.
 export function desktopFeatureFlags(
   inst: InstallationRecord,
-  telemetryEnabled: boolean
+  telemetryEnabled: boolean,
+  showVersionUpdates: boolean
 ): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
@@ -71,6 +72,10 @@ export function desktopFeatureFlags(
     // may surface its bottom-panel terminal. The actual transport is the
     // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
     supports_terminal: 'true',
+    // Seeds the frontend's Comfy.Notification.ShowVersionUpdates default so
+    // Desktop, which has its own update/What's-New UI, can suppress the
+    // redundant in-frontend release notifications (the user can still override).
+    show_version_updates: String(showVersionUpdates),
   }
   // Telemetry is opt-in (default off) and only signaled for managed standalone
   // installs — never for portable or user-managed git clones.
@@ -350,7 +355,11 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
           const registry = await getComfyFeatureFlagRegistry(launchCmd.cmd, mainPyAbs, launchCmd.cwd, installationId, version)
           const flagEntries = Object.entries(
-            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
+            desktopFeatureFlags(
+              inst,
+              settings.get('telemetryEnabled') === true,
+              settings.get('showComfyVersionUpdates') === true
+            )
           )
           for (const [key, value] of flagEntries) {
             if (key in registry) {

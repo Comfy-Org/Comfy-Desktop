@@ -23,26 +23,35 @@ const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
 describe('desktopFeatureFlags', () => {
   it('always injects the unconditional desktop flags', () => {
-    const flags = desktopFeatureFlags(installOf('standalone'), false)
+    const flags = desktopFeatureFlags(installOf('standalone'), false, true)
     expect(flags.show_signin_button).toBe('true')
     expect(flags.supports_terminal).toBe('true')
   })
 
   it('injects enable_telemetry only for standalone installs that opted in', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), true).enable_telemetry).toBe('true')
+    expect(desktopFeatureFlags(installOf('standalone'), true, true).enable_telemetry).toBe('true')
   })
 
   it('omits enable_telemetry when telemetry is disabled (default off)', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), false)).not.toHaveProperty(
+    expect(desktopFeatureFlags(installOf('standalone'), false, true)).not.toHaveProperty(
       'enable_telemetry'
     )
   })
 
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
-    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty(
+    expect(desktopFeatureFlags(installOf('portable'), true, true)).not.toHaveProperty(
       'enable_telemetry'
     )
-    expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+    expect(desktopFeatureFlags(installOf('git'), true, true)).not.toHaveProperty('enable_telemetry')
+  })
+
+  it('reflects the showVersionUpdates argument in show_version_updates', () => {
+    expect(desktopFeatureFlags(installOf('standalone'), false, true).show_version_updates).toBe(
+      'true'
+    )
+    expect(desktopFeatureFlags(installOf('standalone'), false, false).show_version_updates).toBe(
+      'false'
+    )
   })
 })
 
