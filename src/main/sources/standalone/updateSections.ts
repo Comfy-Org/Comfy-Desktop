@@ -176,7 +176,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           title: t('standalone.copyAndUpdateTitle'),
           message: (isSwitching ? switchPrefix : '') + t('standalone.copyAndUpdateMessage', { installed: boldInstalled, latest: boldLatest }),
           placeholder: t('standalone.copyAndUpdatePlaceholder'),
-          defaultValue: `${installation.name} (${latestDisplay})`,
+          // Default to the source name (never the target version, which goes
+          // stale the moment the copy is updated again). `uniquifyDefault` shows
+          // the numbered name it will actually get on save (e.g. "ComfyUI (8)").
+          defaultValue: installation.name,
+          uniquifyDefault: true,
           confirmLabel: t('standalone.copyAndUpdateConfirm'),
           required: true,
           field: 'name',
@@ -227,7 +231,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           prompt: {
             title: t('actions.copyInstallationTitle'),
             message: t('actions.copyInstallationMessage'),
-            defaultValue: `${installation.name} (Copy)`,
+            // Pre-fill with the numbered name the duplicate will actually get on
+            // save ("ComfyUI" → "ComfyUI (1)"), via uniqueName(), instead of a
+            // "(Copy)" label or a stale suggestion that differs from the result.
+            defaultValue: installation.name,
+            uniquifyDefault: true,
             confirmLabel: t('actions.copyInstallationConfirm'),
             required: true,
             field: 'name',

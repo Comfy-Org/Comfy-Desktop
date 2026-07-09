@@ -5,6 +5,7 @@ import { HardDrive } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import TakeoverBack from '../components/TakeoverBack.vue'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 
 import type { ProbeResult } from '../types/ipc'
@@ -77,7 +78,7 @@ function open(): void {
   probing.value = false
   isOpen.value = true
   void window.api
-    .getUniqueName('ComfyUI')
+    .getUniqueName(DEFAULT_INSTALL_NAME)
     .then((name) => {
       suggestedName.value = name
     })
@@ -189,7 +190,7 @@ async function handleBrowseVenv(): Promise<void> {
 async function handleSave(): Promise<void> {
   if (!selectedProbe.value) return
 
-  const name = trackName.value.trim() || `ComfyUI (${selectedProbe.value.sourceLabel})`
+  const name = trackName.value.trim() || DEFAULT_INSTALL_NAME
 
   const rawProbe = JSON.parse(JSON.stringify(toRaw(selectedProbe.value))) as Record<string, unknown>
   if (venvOverride.value !== null) {
