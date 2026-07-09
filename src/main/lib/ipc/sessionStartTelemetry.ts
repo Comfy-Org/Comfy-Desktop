@@ -135,6 +135,13 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
     // DEPRECATED 2026-06-12: misleadingly named — remove after 2026-07-01 once
     // consumers migrate to `session.instance_started`. Tracked in issue #1054.
     telemetry.capture('comfy.desktop.session.installation_started', instanceStartedProps)
+    // Durable per-person activation milestone (#1224). `$set_once` keeps the
+    // earliest local-instance boot on the person profile, so the funnel can ask
+    // "did this person EVER reach a running local instance?" independent of the
+    // session in which it happened.
+    telemetry.registerPersonPropertiesOnce({
+      first_local_instance_started_at: new Date().toISOString()
+    })
 
     if (snapshot_diffs.length > 0) {
       // Full per-transition diffs so the history reconstructs by walking back

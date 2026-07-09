@@ -45,6 +45,13 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // monitor filters on `status:error` to page on a phase failure (e.g.
   // torch_deps_sync hard-failing for a population after a release).
   'comfy.desktop.install.phase',
+  // Onboarding→install handoff abort (#1224): the user left the install path
+  // without dispatching an install (wizard_cancelled / add_installation_failed /
+  // dispatch_no_entry / back_to_local_branch). This is the previously-silent
+  // new-user drop-off; a monitor filters on the failure-class `reason`s so a
+  // spike after a release pages ops. `install.dispatched` is the paired success
+  // gate and stays PostHog-only (product/funnel, not an alerting signal).
+  'comfy.desktop.install.not_started',
   // ComfyUI server boot failed — waitForPort timeout / early process exit /
   // renderer did-fail-load / render-process-gone. Paired with the buffered
   // boot_phase timings so a monitor can alert on boot-failure rate per
