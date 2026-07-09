@@ -5,7 +5,8 @@ import { autoUpdater as electronAutoUpdater } from 'electron-updater'
 import * as settings from '../settings'
 import { clearQuitReason, isSessionEnding, setQuitReason } from './quit-state'
 import { _broadcastToRenderer } from './ipc/shared'
-import { emit as emitTelemetry, bucketError } from './telemetry'
+import { emit as emitTelemetry } from './telemetry'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 /**
  * Title-bar status pills consume the current app-update state via
@@ -379,7 +380,10 @@ function bindUpdaterEvents(): void {
           : 'check'
     emitTelemetry('comfy.desktop.app_update.error', {
       stage,
-      error_bucket: bucketError(updaterErrorMessage(args)),
+      // Standard error schema: the message was previously computed only for
+      // the bucket + the user modal and never emitted, so 1.3M events carried
+      // no actionable text. Now class / message / bucket / signature ship.
+      ...buildErrorFields(updaterErrorMessage(args)),
       user_initiated: wasUserInitiated
     })
     clearQuitReason()

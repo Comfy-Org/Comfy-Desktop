@@ -116,6 +116,7 @@ import {
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
+import { buildErrorFields } from '../../shared/errorEvent'
 import { scrubAll } from '../../shared/piiScrub'
 
 export type TelemetryValue = boolean | number | string | null | undefined
@@ -1095,20 +1096,34 @@ export async function trackedStep<T>(
     capture(`${step}.end`, { ...context, duration_ms: Date.now() - t0 })
     return result
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Bucket runs on raw text — its regexes don't care about user paths
-    // and would otherwise miss legitimate matches hidden inside a
-    // `[REDACTED]` substitution. The wire-bound field gets scrubbed
-    // before the 500-char slice so the redaction prefix can't get
-    // truncated mid-token.
+    // Standard error schema (class / message / bucket / signature) so every
+    // `${step}.error` (adopt.register, migrate.*, snapshot.restore_*) is
+    // diagnosable and groups by class regardless of locale or user paths.
     capture(`${step}.error`, {
       ...context,
       duration_ms: Date.now() - t0,
-      error_bucket: bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }
+}
+
+/**
+ * Capture + Datadog-forward a failure event with the standard error schema.
+ *
+ * Every failure event MUST carry `error_class` / `error_message` /
+ * `error_bucket` / `error_signature` (see `src/shared/errorEvent.ts`). This
+ * is the single enforced path for that: pass the base context and the raw
+ * error, and the four fields are derived and merged. Base-context keys win on
+ * collision so a call site can override a derived field when it has better
+ * information (e.g. a fixed `error_class` for a parser-detected failure).
+ */
+export function emitError(
+  event: string,
+  context: TelemetryContext,
+  errorInput: unknown
+): void {
+  emit(event, { ...buildErrorFields(errorInput), ...context })
 }
 
 /**

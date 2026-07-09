@@ -47,12 +47,41 @@ describe('executionTap', () => {
     })
   })
 
-  it('emits validation_failed errors when prompt validation fails', () => {
+  it('emits validation_failed errors with the reason lines as the message', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
-    tap.ingest('Failed to validate prompt for output 42:\n', 'stdout')
+    // ComfyUI logs the header, then `* node:` / `- reason` detail lines, then
+    // an unrelated line that terminates the block.
+    tap.ingest(
+      [
+        'Failed to validate prompt for output 42:',
+        '* CheckpointLoaderSimple 4:',
+        "  - Value not in list: ckpt_name: 'missing.ckpt' not in ['real.safetensors']",
+        'Something else entirely'
+      ].join('\n') + '\n',
+      'stdout'
+    )
     const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
     expect(err).toBeDefined()
-    expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '42' })
+    expect(err!.ctx).toMatchObject({
+      error_class: 'validation_failed',
+      error_bucket: 'validation',
+      node_id: '42'
+    })
+    // The reason detail is captured, not just the header.
+    expect(String(err!.ctx.error_message)).toContain('Value not in list')
+    // The signature normalizes user-specific values so distinct reasons still
+    // group by shape.
+    expect(String(err!.ctx.error_signature)).toContain('validation_failed|')
+  })
+
+  it('defers the validation error until the block ends and flushes on exit', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('Failed to validate prompt for output 7:\n', 'stdout')
+    // No terminating line yet â€” nothing emitted.
+    expect(captured.filter((c) => c.event === 'comfy.desktop.execution.error')).toHaveLength(0)
+    tap.flushSummary()
+    const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
+    expect(err!.ctx).toMatchObject({ error_class: 'validation_failed', node_id: '7' })
   })
 
   it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
@@ -63,6 +92,8 @@ describe('executionTap', () => {
     tap.ingest('\u001b[32m[INFO]\u001b[0m got prompt\n', 'stdout')
     tap.ingest('\u001b[32m[INFO]\u001b[0m Prompt executed in 7.78 seconds\n', 'stdout')
     tap.ingest('\u001b[1m\u001b[31m[ERROR]\u001b[0m Failed to validate prompt for output 9:\n', 'stdout')
+    // Deferred validation error flushes when the block ends.
+    tap.flushSummary()
 
     const started = captured.find((c) => c.event === 'comfy.desktop.execution.started')
     expect(started).toBeDefined()
