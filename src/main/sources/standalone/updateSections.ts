@@ -176,7 +176,10 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           title: t('standalone.copyAndUpdateTitle'),
           message: (isSwitching ? switchPrefix : '') + t('standalone.copyAndUpdateMessage', { installed: boldInstalled, latest: boldLatest }),
           placeholder: t('standalone.copyAndUpdatePlaceholder'),
-          defaultValue: `${installation.name} (${latestDisplay})`,
+          // Default to the source name (never the target version, which goes
+          // stale the moment the copy is updated again). `uniqueName()` appends
+          // " (N)" on save so the copy is numbered, not version-stamped.
+          defaultValue: installation.name,
           confirmLabel: t('standalone.copyAndUpdateConfirm'),
           required: true,
           field: 'name',

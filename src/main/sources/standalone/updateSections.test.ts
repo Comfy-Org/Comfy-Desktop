@@ -37,6 +37,7 @@ interface UpdateAction {
   progressTitle: string
   data?: { channel?: string; isDowngrade?: boolean }
   confirm?: { title?: string; message?: string }
+  prompt?: { defaultValue?: string }
 }
 interface ChannelOption {
   value: string
@@ -45,12 +46,16 @@ interface ChannelOption {
 interface UpdateField { id: string; options: ChannelOption[] }
 interface UpdateSection { tab: string; fields?: UpdateField[] }
 
-function getUpdateAction(installation: InstallationRecord, channel: 'stable' | 'latest'): UpdateAction | undefined {
+function getChannelAction(installation: InstallationRecord, channel: 'stable' | 'latest', actionId: string): UpdateAction | undefined {
   const sections = getDetailSections(installation) as unknown as UpdateSection[]
   const updates = sections.find((s) => s.tab === 'update')
   const channelField = updates?.fields?.find((f) => f.id === 'updateChannel')
   const option = channelField?.options?.find((o) => o.value === channel)
-  return option?.data?.actions?.find((a) => a.id === 'update-comfyui')
+  return option?.data?.actions?.find((a) => a.id === actionId)
+}
+
+function getUpdateAction(installation: InstallationRecord, channel: 'stable' | 'latest'): UpdateAction | undefined {
+  return getChannelAction(installation, channel, 'update-comfyui')
 }
 
 function baseInstall(overrides: Partial<InstallationRecord> = {}): InstallationRecord {
@@ -209,5 +214,19 @@ describe('updateSections — copy (duplicate) prompt default', () => {
       .find((a) => a.id === 'copy')
     expect(copy).toBeDefined()
     expect(copy!.prompt?.defaultValue).toBe('My Comfy')
+  })
+
+  it('pre-fills the copy & update prompt with the source name only, never the target version (which goes stale)', () => {
+    // commitsAhead makes the effective channel `latest`, so the `latest` card
+    // exposes the copy-update action for an install that's on stable.
+    const copyUpdate = getChannelAction(
+      baseInstall({ name: 'My Comfy', updateChannel: 'stable' }),
+      'latest',
+      'copy-update'
+    )
+    expect(copyUpdate).toBeDefined()
+    expect(copyUpdate!.prompt?.defaultValue).toBe('My Comfy')
+    // Guard against version-stamping regressions like "My Comfy (v0.3.20+12)".
+    expect(copyUpdate!.prompt?.defaultValue).not.toContain('(')
   })
 })

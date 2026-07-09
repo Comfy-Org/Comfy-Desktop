@@ -12,6 +12,7 @@ import type { MigrationTools, StandaloneTargetSelection } from './standaloneMigr
 import type { Snapshot, SnapshotExportEnvelope } from './snapshots'
 import type { InstallationRecord } from '../installations'
 import * as i18n from './i18n'
+import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 
 /** Find a Python executable in a portable install (python_embeded/ at the portable root). */
 function findPortablePython(installPath: string): string | null {
@@ -129,7 +130,6 @@ export async function performLocalMigration(
     throw new Error(i18n.t('migrate.noComfyUIDir'))
   }
 
-  const sourceLabel = sourceId === 'portable' ? 'Portable' : 'Git Clone'
   const hasPreStaged = !!(actionData?.snapshotPath && typeof actionData.snapshotPath === 'string' && fs.existsSync(actionData.snapshotPath as string))
 
   sendMigrationSteps(sendProgress, {
@@ -160,7 +160,7 @@ export async function performLocalMigration(
   const target = actionData?.target as StandaloneTargetSelection | undefined
 
   return migrateToStandaloneFromSnapshot({
-    installNameBase: `ComfyUI (from ${sourceLabel})`,
+    installNameBase: DEFAULT_INSTALL_NAME,
     stagedSnapshot: { path: stagedFile, owned: ownsStagedFile },
     sourcePaths: {
       userDir: path.join(comfyUIDir, 'user'),

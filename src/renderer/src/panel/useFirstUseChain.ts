@@ -4,6 +4,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useMigrateAction } from '../composables/useMigrateAction'
 import { useOverlay } from '../composables/useOverlay'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { FieldOption, Installation, ShowProgressOpts, Source } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
@@ -373,7 +374,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
 
       const instData = await window.api.buildInstallation(standalone.id, selections)
-      const name = await window.api.getUniqueName('ComfyUI')
+      const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
       const installPath = installDir ?? ''
 
       const result = await window.api.addInstallation({
