@@ -6,6 +6,7 @@ import { useModal } from '../composables/useModal'
 import type { Source, FieldOption, ShowProgressOpts } from '../types/ipc'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import VariantCardGrid from '../components/VariantCardGrid.vue'
 import {
   trackGuardrailBlocked,
@@ -240,7 +241,7 @@ async function handleInstall(): Promise<void> {
     }
 
     const instData = await window.api.buildInstallation('standalone', rawSelections())
-    const baseName = instName.value.trim() || 'ComfyUI'
+    const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
     const name = await window.api.getUniqueName(baseName)
 
     const result = await window.api.addInstallation({
@@ -262,7 +263,7 @@ async function handleInstall(): Promise<void> {
     if (result.entry) {
       emit('show-progress', {
         installationId: result.entry.id,
-        title: `${t('newInstall.installing')} — ${name}`,
+        title: `${t('newInstall.installing')} — ${result.entry.name}`,
         apiCall: () => window.api.installInstance(result.entry!.id),
         autoLaunchOnFinish: true,
         opKind: 'install'
