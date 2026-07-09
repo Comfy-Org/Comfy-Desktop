@@ -1,7 +1,8 @@
 // IPC for renderer-originated telemetry: the renderer routes through main so
 // identity, consent, and dedup live in one place. Capture messages are
 // fire-and-forget (ipcMain.on).
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
+import { findEntryByComfySender } from '../../host/registry'
 import * as mainTelemetry from '../telemetry'
 import {
   getFlagAsync as getExperimentFlagAsync,
@@ -119,19 +120,62 @@ function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryVa
   return asTelemetryObject(value, false, false)
 }
 
+/**
+ * Platform axes (`client` / `deployment`) for relayed events are
+ * HOST-AUTHORITATIVE, never trusted from the payload:
+ *
+ * - `client` is stripped from every relayed payload so the SDK default
+ *   ('desktop') applies. Anything arriving over this IPC channel was by
+ *   definition emitted from inside the desktop app — but a hosted frontend
+ *   bundle that also runs in a browser (the cloud frontend) registers
+ *   `client` as a posthog-js super property, and if a future EventSink-style
+ *   tap ever forwards posthog-js state through the bridge, its value
+ *   ('web') would be wrong here.
+ * - `deployment` is resolved from the SENDER: a hosted ComfyUI frontend
+ *   doesn't know (and shouldn't have to know) whether its install is local,
+ *   cloud, or remote, but main does — via the comfyView → install
+ *   attachment. Per-sender (not a process-global default) so two windows in
+ *   different modes tag correctly. When the sender resolves, its value
+ *   overwrites any payload `deployment` for the same reason as `client`.
+ *   Launcher-UI senders have no comfyView entry and stay untagged — their
+ *   events are app-level, not deployment-scoped.
+ */
+function deploymentForSender(sender: WebContents | undefined): mainTelemetry.Deployment | null {
+  if (!sender) return null
+  return mainTelemetry.asDeployment(findEntryByComfySender(sender)?.sourceCategory)
+}
+
+function withPlatformAxes(
+  properties: mainTelemetry.TelemetryContext,
+  sender: WebContents | undefined
+): mainTelemetry.TelemetryContext {
+  delete properties['client']
+  const deployment = deploymentForSender(sender)
+  if (deployment !== null) return { ...properties, deployment }
+  // Unknown sender (launcher UI, popouts): a payload deployment may pass
+  // through, but only if it's a valid axis value — junk is stripped.
+  if (mainTelemetry.asDeployment(properties['deployment']) === null) {
+    delete properties['deployment']
+  }
+  return properties
+}
+
 export function registerTelemetryHandlers(): void {
-  ipcMain.on('telemetry:capture', (_event, payload: CapturePayload) => {
+  ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
-    mainTelemetry.capture(eventName, asProps(payload.properties))
+    mainTelemetry.capture(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
   })
 
-  ipcMain.on('telemetry:captureException', (_event, payload: CaptureExceptionPayload) => {
+  ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
     const message = asString(payload?.message) ?? 'Unknown renderer error'
     const stackStr = asString(payload?.stack) ?? undefined
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
-    mainTelemetry.captureException(err, asProps(payload?.properties))
+    mainTelemetry.captureException(
+      err,
+      withPlatformAxes(asProps(payload?.properties), event?.sender)
+    )
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {
