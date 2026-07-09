@@ -37,7 +37,7 @@ interface UpdateAction {
   progressTitle: string
   data?: { channel?: string; isDowngrade?: boolean }
   confirm?: { title?: string; message?: string }
-  prompt?: { defaultValue?: string }
+  prompt?: { defaultValue?: string; uniquifyDefault?: boolean }
 }
 interface ChannelOption {
   value: string
@@ -204,16 +204,18 @@ describe('updateSections — channel picker reflects de-facto channel', () => {
 })
 
 describe('updateSections — copy (duplicate) prompt default', () => {
-  interface ActionWithPrompt { id: string; prompt?: { defaultValue?: string } }
+  interface ActionWithPrompt { id: string; prompt?: { defaultValue?: string; uniquifyDefault?: boolean } }
   interface ActionsSection { title?: string; actions?: ActionWithPrompt[] }
 
-  it('pre-fills the duplicate prompt with the source name (number suffix added on save, not "(Copy)")', () => {
+  it('pre-fills the duplicate prompt with the source name, flagged to resolve to the numbered name on show', () => {
     const sections = getDetailSections(baseInstall({ name: 'My Comfy' })) as unknown as ActionsSection[]
     const copy = sections
       .flatMap((s) => s.actions ?? [])
       .find((a) => a.id === 'copy')
     expect(copy).toBeDefined()
     expect(copy!.prompt?.defaultValue).toBe('My Comfy')
+    // uniquifyDefault tells the renderer to show the name it will actually get.
+    expect(copy!.prompt?.uniquifyDefault).toBe(true)
   })
 
   it('pre-fills the copy & update prompt with the source name only, never the target version (which goes stale)', () => {
@@ -225,8 +227,9 @@ describe('updateSections — copy (duplicate) prompt default', () => {
       'copy-update'
     )
     expect(copyUpdate).toBeDefined()
-    expect(copyUpdate!.prompt?.defaultValue).toBe('My Comfy')
     // Guard against version-stamping regressions like "My Comfy (v0.3.20+12)".
-    expect(copyUpdate!.prompt?.defaultValue).not.toContain('(')
+    expect(copyUpdate!.prompt?.defaultValue).toBe('My Comfy')
+    // Flagged so the renderer shows the numbered name it will actually be saved as.
+    expect(copyUpdate!.prompt?.uniquifyDefault).toBe(true)
   })
 })
