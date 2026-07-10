@@ -43,6 +43,17 @@ function markerPath(installPath: string): string {
   return path.join(installPath, MARKER_NAME)
 }
 
+/**
+ * Trailing sentence naming the local backup branch as an offline restore point,
+ * or '' when there is none. Shared so the update-failure and launch-recovery
+ * messages can't drift apart.
+ */
+export function backupBranchHint(branchName: string | undefined): string {
+  return branchName
+    ? ` Your previous state is preserved on local git branch "${branchName}".`
+    : ''
+}
+
 export async function writeOpMarker(installPath: string, marker: OpMarker): Promise<void> {
   try {
     await fs.promises.writeFile(markerPath(installPath), JSON.stringify(marker), 'utf-8')
@@ -120,9 +131,7 @@ export async function recoverInterruptedComfyOp(
       // Reliability signal (mirrored to Datadog): how often a hard-killed op
       // leaves source we can't roll back, and how often we give up entirely.
       telemetry.emit('comfy.desktop.recovery.failed', { op: marker.op, attempts, gave_up: gaveUp })
-      const backupHint = marker.backupBranch
-        ? ` Your previous state is preserved on local git branch "${marker.backupBranch}".`
-        : ''
+      const backupHint = backupBranchHint(marker.backupBranch)
       if (gaveUp) {
         // Rollback can't succeed (e.g. the pre-op commit is gone). Stop blocking:
         // drop the marker and let the launch proceed. ComfyUI may crash on import,

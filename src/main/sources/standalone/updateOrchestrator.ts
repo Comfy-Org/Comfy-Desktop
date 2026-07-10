@@ -14,7 +14,7 @@ import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { repairMacBinaries } from './macRepair'
 import { getActivePythonPath, getActiveUvPath, getMasterPythonPath } from './envPaths'
-import { writeOpMarker, completeOpMarker, readOpMarker } from '../../lib/opMarker'
+import { writeOpMarker, completeOpMarker, readOpMarker, backupBranchHint } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
 
 interface ScriptResult {
@@ -257,9 +257,7 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     let rollbackNote = ''
     if (preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
       const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
-      const backupHint = result.markers.BACKUP_BRANCH
-        ? ` Your previous state is preserved on local git branch "${result.markers.BACKUP_BRANCH}".`
-        : ''
+      const backupHint = backupBranchHint(result.markers.BACKUP_BRANCH)
       rollbackNote = rolledBack
         ? `\n\nComfyUI source was rolled back to ${preOpHead.slice(0, 7)}.`
         : `\n\nComfyUI source rollback failed; installation may be inconsistent.${backupHint}`

@@ -276,6 +276,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
+  const headSha = (): string =>
+    execFileSync('git', ['rev-parse', 'HEAD'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()
+  const markerExists = (): boolean =>
+    fs.existsSync(path.join(installPath, '.comfyui-op-in-progress.json'))
+
   describe('PyTorch filtering', () => {
     it('excludes PyTorch packages from requirements before installing', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
@@ -348,11 +353,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
   })
 
   describe('dependency-sync rollback', () => {
-    const headSha = (): string =>
-      execFileSync('git', ['rev-parse', 'HEAD'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()
-    const markerExists = (): boolean =>
-      fs.existsSync(path.join(installPath, '.comfyui-op-in-progress.json'))
-
     it('rolls ComfyUI source back to PRE_UPDATE_HEAD when the requirements install fails', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
       spawnState.uvHandler = () => fakeProc({ exitCode: 1 })
@@ -419,11 +419,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
   })
 
   describe('git-script-failure rollback', () => {
-    const headSha = (): string =>
-      execFileSync('git', ['rev-parse', 'HEAD'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()
-    const markerExists = (): boolean =>
-      fs.existsSync(path.join(installPath, '.comfyui-op-in-progress.json'))
-
     it('rolls the source back when the update script exits non-zero after moving HEAD', async () => {
       // Simulate update_comfyui.py advancing the branch ref, then failing the
       // working-tree checkout (e.g. the Windows symlink-privilege error) and
