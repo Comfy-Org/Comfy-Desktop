@@ -38,6 +38,7 @@ import {
 import type { LatestTagOverride, SnapshotExportEnvelope, FieldOption, Snapshot } from './shared'
 import type { CopyEvent } from '../../../types/ipc'
 import * as telemetry from '../telemetry'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 
 async function _findReferenceRepo(): Promise<{
   comfyuiDir: string
@@ -566,7 +567,7 @@ export function registerSnapshotHandlers(): void {
         // core commit; updateChannel mirrors the snapshot as the manual pref.
         ...frozenSnapshotInstallOverrides(targetSnapshot.updateChannel)
       }
-      const baseName = customName || envelope.installationName || 'ComfyUI'
+      const baseName = customName || envelope.installationName || DEFAULT_INSTALL_NAME
       const name = await uniqueName(baseName)
       const dirName = sanitizeDirName(name)
       const installDir = defaultInstallDir()
