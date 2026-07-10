@@ -9,6 +9,7 @@ import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import * as telemetry from '../../lib/telemetry'
+import { buildErrorFields } from '../../../shared/errorEvent'
 import type { InstallationRecord } from '../../installations'
 
 // Vendor variant → the accelerator tag fragment its torch wheel carries. CPU and
@@ -328,7 +329,7 @@ export async function maybeRepairTorch(
   telemetry.emit('comfy.desktop.torch_repair.failed', {
     variant: mismatch.variantBase,
     attempts,
-    error_message: result.message.slice(0, 200),
+    ...buildErrorFields(result.message),
   })
   tools.sendOutput?.(`PyTorch repair failed (will retry on next launch): ${result.message}\n`)
   return false

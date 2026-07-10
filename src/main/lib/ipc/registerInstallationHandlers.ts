@@ -40,6 +40,7 @@ import { hasGitDir } from '../git'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
+import { buildErrorFields } from '../../../shared/errorEvent'
 import { appendLog } from '../logsBroadcast'
 import {
   startTemplateDownload,
@@ -408,8 +409,7 @@ export function registerInstallationHandlers(): void {
             from_version: formatComfyVersion(priorComfyVersion, 'short'),
             to_version: null,
             result: 'error',
-            error_bucket: mainTelemetry.bucketError(err),
-            error_message: (err as Error).message.slice(0, 500)
+            ...buildErrorFields(err)
           })
         }
         return { ok: false, message: (err as Error).message }
