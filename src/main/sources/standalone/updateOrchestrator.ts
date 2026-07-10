@@ -410,7 +410,7 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     const message = sourceMoved
       ? (rolledBack
           ? `${reason}\n\nComfyUI source was rolled back to ${preHead!.slice(0, 7)}.`
-          : `${reason}\n\nComfyUI source rollback failed; installation may be inconsistent.`)
+          : `${reason}\n\nComfyUI source rollback failed; installation may be inconsistent.${backupBranchHint(markers.BACKUP_BRANCH)}`)
       : reason
     if (!sendOutput) console.warn(`ComfyUI update aborted: ${reason}`)
     // Leave the op marker: if the in-process rollback failed (rolledBack=false),
