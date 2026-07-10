@@ -114,21 +114,21 @@ pnpm run dev               # Windows / macOS
 ./linux-dev.sh             # Linux
 ```
 
-To set up a fresh clone and start the app in one command, run `pnpm run init:dev`.
+On Windows/macOS, set up a fresh clone and start the app in one command with `pnpm run init:dev`.
 
 ### Common tasks
 
-| Command                          | Description                                                       |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `pnpm run init:dev`              | Install dependencies, build bootstrap Python, then start dev mode |
-| `pnpm run dev`                   | Start the app in dev mode                                         |
-| `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                        |
-| `pnpm run test:integration`      | Integration suite                                                 |
-| `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))          |
-| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                       |
-| `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                     |
-| `pnpm run format`                | Format (Prettier)                                                 |
-| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                              |
+| Command                          | Description                                                           |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `pnpm run init:dev`              | Install dependencies, build bootstrap Python, then run `pnpm run dev` |
+| `pnpm run dev`                   | Start the app in dev mode                                             |
+| `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
+| `pnpm run test:integration`      | Integration suite                                                     |
+| `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
+| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
+| `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
+| `pnpm run format`                | Format (Prettier)                                                     |
+| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
 
 ### Project structure
 
