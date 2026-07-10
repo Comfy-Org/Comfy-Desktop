@@ -7,7 +7,7 @@
  */
 import * as telemetry from '../telemetry'
 import * as settings from '../../settings'
-import { buildInstallationDdContext } from './shared'
+import { buildInstallationDdContext, sourceMap } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
 
 // Mirror the bridge's large-`_json` ceiling: ship intact or omit + flag
@@ -124,6 +124,10 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
       // current state is queryable on a recurring event without a person-property
       // join.
       ...settings.getTrackedSettingsTelemetryProperties(),
+      // The cross-surface axis analysts filter on (paired with `client`,
+      // which the telemetry defaults pin to 'desktop'). Narrowed through
+      // asDeployment since a source plugin's category is an open string.
+      deployment: telemetry.asDeployment(sourceMap[ctx.source_id]?.category),
       boot_time_ms: info.bootTimeMs ?? null,
       port_retries: info.portRetries,
       reboot_retries: info.rebootRetries,

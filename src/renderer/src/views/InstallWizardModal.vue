@@ -12,6 +12,7 @@ import type {
   ShowProgressOpts
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { emitTelemetryAction, toSizeBucket, toVariantBucket } from '../lib/telemetry'
 import {
   trackGuardrailBlocked,
@@ -379,7 +380,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
   suggestedName.value = ''
   void window.api
-    .getUniqueName('ComfyUI')
+    .getUniqueName(DEFAULT_INSTALL_NAME)
     .then((name) => {
       suggestedName.value = name
     })
@@ -693,8 +694,7 @@ async function handleSave(): Promise<void> {
   // The renderer doesn't sync a separate consent field.
 
   const instData = await window.api.buildInstallation(source.id, rawSelections())
-  const baseName =
-    instName.value.trim() || (source.id === 'standalone' ? 'ComfyUI' : `ComfyUI (${source.label})`)
+  const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
   const name = await window.api.getUniqueName(baseName)
 
   if (source.skipInstall) {
@@ -785,7 +785,7 @@ async function handleSave(): Promise<void> {
     // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
     emit('show-progress', {
       installationId: result.entry.id,
-      title: `${t('newInstall.installing')} — ${name}`,
+      title: `${t('newInstall.installing')} — ${result.entry.name}`,
       apiCall: () => window.api.installInstance(result.entry!.id),
       autoLaunchOnFinish: true,
       opKind: 'install'
