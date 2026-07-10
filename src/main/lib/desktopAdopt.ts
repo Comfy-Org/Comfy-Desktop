@@ -27,7 +27,7 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields } from '../../shared/errorEvent'
 import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
@@ -1013,15 +1013,9 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     const result = await runAdoption(info, phaseAwareTools, deps)
     return result
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Scrub before slice so the redacted prefix doesn't get truncated
-    // mid-token. The bucket runs on raw text because its regexes don't
-    // care about user paths and would otherwise miss a legitimate match
-    // hidden inside a `[REDACTED]` substitution.
     telemetry.capture('comfy.desktop.adopt.failed', {
       stage: currentPhase,
-      error_bucket: telemetry.bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }
