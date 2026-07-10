@@ -6,6 +6,7 @@ let mockAppImage: string | undefined
 let mockIsPackaged = true
 let mockExePath = '/opt/Comfy Desktop/comfyui-desktop-2'
 let mockAppVersion = '1.0.0'
+let powerMonitorListeners: Record<string, Array<() => void>> = {}
 
 vi.mock('electron', () => ({
   app: {
@@ -21,6 +22,12 @@ vi.mock('electron', () => ({
   },
   ipcMain: {
     handle: vi.fn()
+  },
+  powerMonitor: {
+    on: vi.fn((event: string, listener: () => void) => {
+      powerMonitorListeners[event] = powerMonitorListeners[event] || []
+      powerMonitorListeners[event].push(listener)
+    })
   },
   BrowserWindow: {
     getAllWindows: () => []
@@ -54,6 +61,118 @@ async function bootUpdater(): Promise<typeof UpdaterModule> {
   mod.register()
   return mod
 }
+
+describe('background update check scheduling', () => {
+  let fakeUpdater: { on: ReturnType<typeof vi.fn>; checkForUpdates: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-09T12:00:00Z'))
+    vi.resetModules()
+    powerMonitorListeners = {}
+    fakeUpdater = {
+      on: vi.fn(),
+      checkForUpdates: vi.fn(async () => ({ updateInfo: null }))
+    }
+    vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  function fireResume(): void {
+    for (const listener of powerMonitorListeners['resume'] || []) listener()
+  }
+
+  it('adds bounded jitter around the six-hour background cadence', async () => {
+    const updater = await import('./updater')
+
+    expect(updater.getNextBackgroundUpdateCheckDelay(() => 0)).toBe(5.5 * 60 * 60 * 1000)
+    expect(updater.getNextBackgroundUpdateCheckDelay(() => 0.5)).toBe(6 * 60 * 60 * 1000)
+    expect(updater.getNextBackgroundUpdateCheckDelay(() => 1)).toBe(6.5 * 60 * 60 * 1000)
+  })
+
+  it('checks shortly after startup and then uses the jittered cadence', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    await bootUpdater()
+
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(fakeUpdater.checkForUpdates).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenLastCalledWith(
+      expect.objectContaining({ source: 'auto-check' })
+    )
+
+    await vi.advanceTimersByTimeAsync(5.5 * 60 * 60 * 1000 - 1)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('checks after resume when the last check is stale', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(1)
+    await bootUpdater()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000 - 1)
+    fireResume()
+    await Promise.resolve()
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    fireResume()
+    await Promise.resolve()
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenLastCalledWith(
+      expect.objectContaining({ source: 'resume-check' })
+    )
+
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not check after resume when a manual check is still fresh', async () => {
+    await bootUpdater()
+    await vi.advanceTimersByTimeAsync(2000)
+    const updater = await import('./updater')
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    await updater.runCheck('manual-check')
+    fireResume()
+    await Promise.resolve()
+
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenLastCalledWith(
+      expect.objectContaining({ source: 'manual-check' })
+    )
+  })
+
+  it('restarts the background cadence after a manual check', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const updater = await bootUpdater()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 60 * 1000)
+    await updater.runCheck('manual-check')
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 60 * 1000)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenCalledTimes(3)
+    expect(fakeUpdater.checkForUpdates).toHaveBeenLastCalledWith(
+      expect.objectContaining({ source: 'auto-check' })
+    )
+  })
+})
 
 describe('isSystemPackageInstall (via get-update-capabilities)', () => {
   let registeredHandlers: Record<string, (...args: unknown[]) => unknown>

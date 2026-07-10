@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, powerMonitor } from 'electron'
 import semver from 'semver'
 import todesktop from '@todesktop/runtime'
 import { autoUpdater as electronAutoUpdater } from 'electron-updater'
@@ -74,6 +74,27 @@ function _shouldEmitAppUpdateOnce(event: string, version: string | null): boolea
 let _userInitiatedDownload = false
 const _stateChangeCallbacks = new Set<(state: AppUpdateState) => void>()
 let _listenersBound = false
+let _lastUpdateCheckStartedAt: number | null = null
+let _rescheduleBackgroundUpdateCheck: (() => void) | null = null
+
+const STARTUP_UPDATE_CHECK_DELAY_MS = 2 * 1000
+const BACKGROUND_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+const BACKGROUND_UPDATE_CHECK_JITTER_MS = 30 * 60 * 1000
+
+export function getNextBackgroundUpdateCheckDelay(random: () => number = Math.random): number {
+  return (
+    BACKGROUND_UPDATE_CHECK_INTERVAL_MS + (random() * 2 - 1) * BACKGROUND_UPDATE_CHECK_JITTER_MS
+  )
+}
+
+export function isUpdateCheckStale(
+  lastCheckStartedAt: number | null,
+  now: number = Date.now()
+): boolean {
+  return (
+    lastCheckStartedAt !== null && now - lastCheckStartedAt >= BACKGROUND_UPDATE_CHECK_INTERVAL_MS
+  )
+}
 
 function _setUpdateState(next: AppUpdateState): void {
   _appUpdateState = next
@@ -447,7 +468,7 @@ function bindUpdaterEvents(): void {
 
 /** Triggers that originate from explicit user intent (the title-bar
  *  "Check for Updates" menu and the auto-off available-pill confirm
- *  modal). Background triggers (`auto-check` every 10 min, plus any
+ *  modal). Background triggers (`auto-check` every ~6 hours, resume checks, plus any
  *  app-open / dashboard-revisit / IPP-click code path that quietly
  *  re-runs a check) are implementation details and would otherwise
  *  fire on every periodic interval without carrying analytical
@@ -462,6 +483,8 @@ const USER_INITIATED_CHECK_TRIGGERS = new Set(['manual-check', 'download-button'
 async function checkForUpdate(
   source: string
 ): Promise<{ available: boolean; version?: string; error?: string }> {
+  _lastUpdateCheckStartedAt = Date.now()
+  _rescheduleBackgroundUpdateCheck?.()
   const updater = getAutoUpdater()
   if (!updater) {
     if (USER_INITIATED_CHECK_TRIGGERS.has(source)) {
@@ -871,9 +894,37 @@ export function register(): void {
   // user-controllable `autoInstallUpdates` setting only gates whether
   // a discovered update silently downloads + installs vs prompts the
   // user; the check loop itself is no longer user-disablable.
-  const runAutoCheck = (): void => {
-    runCheck('auto-check').catch(() => {})
+  let nextBackgroundCheck: ReturnType<typeof setTimeout> | null = null
+  let backgroundCheckInFlight = false
+
+  function scheduleNextBackgroundCheck(): void {
+    if (nextBackgroundCheck) clearTimeout(nextBackgroundCheck)
+    nextBackgroundCheck = setTimeout(
+      () => runBackgroundCheck('auto-check'),
+      getNextBackgroundUpdateCheckDelay()
+    )
   }
-  setTimeout(runAutoCheck, 2000)
-  setInterval(runAutoCheck, 10 * 60 * 1000)
+  function runBackgroundCheck(source: 'auto-check' | 'resume-check'): void {
+    if (backgroundCheckInFlight) {
+      scheduleNextBackgroundCheck()
+      return
+    }
+    backgroundCheckInFlight = true
+    runCheck(source)
+      .catch(() => {})
+      .finally(() => {
+        backgroundCheckInFlight = false
+      })
+  }
+
+  _rescheduleBackgroundUpdateCheck = scheduleNextBackgroundCheck
+
+  nextBackgroundCheck = setTimeout(
+    () => runBackgroundCheck('auto-check'),
+    STARTUP_UPDATE_CHECK_DELAY_MS
+  )
+  powerMonitor.on('resume', () => {
+    if (!isUpdateCheckStale(_lastUpdateCheckStartedAt)) return
+    runBackgroundCheck('resume-check')
+  })
 }
