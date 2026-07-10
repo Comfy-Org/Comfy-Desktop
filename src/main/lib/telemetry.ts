@@ -1099,7 +1099,9 @@ export async function trackedStep<T>(
     // Standard error schema (class / message / bucket / signature) so every
     // `${step}.error` (adopt.register, migrate.*, snapshot.restore_*) is
     // diagnosable and groups by class regardless of locale or user paths.
-    capture(`${step}.error`, {
+    // `emit` (not `capture`) so allow-listed step errors also mirror to Datadog
+    // for alerting; the `.start` / `.end` funnel events stay PostHog-only.
+    emit(`${step}.error`, {
       ...context,
       duration_ms: Date.now() - t0,
       ...buildErrorFields(err)

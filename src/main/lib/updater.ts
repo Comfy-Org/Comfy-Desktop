@@ -380,9 +380,7 @@ function bindUpdaterEvents(): void {
           : 'check'
     emitTelemetry('comfy.desktop.app_update.error', {
       stage,
-      // Standard error schema: the message was previously computed only for
-      // the bucket + the user modal and never emitted, so 1.3M events carried
-      // no actionable text. Now class / message / bucket / signature ship.
+      // Standard error schema: class / message / bucket / signature.
       ...buildErrorFields(updaterErrorMessage(args)),
       user_initiated: wasUserInitiated
     })
