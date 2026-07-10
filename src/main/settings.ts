@@ -156,42 +156,40 @@ type SettingSchemaEntry<K extends keyof KnownSettings> = {
 
 const SETTINGS_SCHEMA = {
   cacheDir: { nullable: false, telemetry: { policy: 'presence' } },
-  maxCachedDownloads: { nullable: false, telemetry: { policy: 'value' } },
-  onAppClose: { nullable: false, telemetry: { policy: 'value' } },
+  // Validate the scalar type so a hand-edited settings.json can't leak a
+  // free-form string; fall back to null ("not a real value") otherwise.
+  maxCachedDownloads: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => (typeof raw === 'number' ? raw : null) },
+  },
+  onAppClose: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw) => (raw === 'quit' || raw === 'tray' ? raw : null),
+    },
+  },
   modelsDirs: { nullable: false, telemetry: { policy: 'presence' } },
   inputDir: { nullable: false, telemetry: { policy: 'presence' } },
   outputDir: { nullable: false, telemetry: { policy: 'presence' } },
   installDir: { nullable: false, telemetry: { policy: 'presence' } },
+  // What the user actually selected (null = following the OS default). The
+  // *effective* locale the app resolves to is emitted on the
+  // `app.language_resolved` event instead, where it's known post-i18n-init.
   language: {
-    // Track both what the user selected (null when following the OS default) and
-    // the effective locale actually in use. Effective mirrors the boot resolution
-    // (`get('language') || app.getLocale()`), so it stays correct if the default
-    // OS-locale mapping changes.
     nullable: false,
     telemetry: {
-      policy: 'multi',
-      emitters: [
-        {
-          kind: 'value',
-          prop: 'setting_language_selected',
-          toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null),
-        },
-        {
-          kind: 'value',
-          prop: 'setting_language',
-          toTelemetry: (raw) =>
-            typeof raw === 'string' && raw ? raw : app.getLocale().split('-')[0] || 'unknown',
-        },
-      ],
+      policy: 'value',
+      prop: 'setting_language_selected',
+      toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null),
     },
   },
   // App is dark-only; the theme setting is inert (see resolveTheme), so tracking
   // it carries no signal.
   theme: { nullable: false, telemetry: { policy: 'omit' } },
-  autoUpdate: {
-    nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
-  },
+  // Legacy toggle no longer gated on a setting (see KnownSettings), so its value
+  // has no effective meaning — don't emit it as if it did.
+  autoUpdate: { nullable: false, telemetry: { policy: 'omit' } },
   autoInstallUpdates: {
     // Default-on: any non-`false` value (incl. missing) is enabled. Mirrors
     // `isAutoInstallEnabled()` in updater.ts. Exact prop name required by #1220.

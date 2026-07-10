@@ -32,6 +32,7 @@ vi.mock('../settings', () => {
     has: vi.fn((key: string) => store[key] !== undefined && store[key] !== null),
     getAll: vi.fn(() => ({ ...store })),
     getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
+    getTrackedSettingsTelemetryProperties: vi.fn(() => ({})),
     __store: store
   }
 })
@@ -129,6 +130,7 @@ vi.mock('../installations', () => {
 vi.mock('./telemetry', () => ({
   capture: vi.fn(),
   captureInstallCompleted: vi.fn(),
+  registerPersonProperties: vi.fn(),
   bucketError: vi.fn(() => 'other'),
   trackedStep: vi.fn(async (_step: string, _ctx: unknown, fn: () => Promise<unknown>) => fn())
 }))

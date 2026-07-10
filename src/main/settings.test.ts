@@ -62,7 +62,6 @@ beforeEach(async () => {
         if (name === 'home') return homePath
         return userDataPath
       },
-      getLocale: () => 'en-US',
     },
   }))
   settings = await import('./settings')
@@ -523,17 +522,43 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     })
   })
 
-  it('language: emits selected (null when unset) and effective (resolved) locale', () => {
-    // Unset => selected null, effective from the OS locale (mocked en-US).
+  it('language: emits only the selected value (null when following the OS default)', () => {
+    // Effective locale lives on the app.language_resolved event, not here.
     expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
       setting_language_selected: null,
-      setting_language: 'en',
     })
-    // Explicit choice => both reflect it.
     settings.set('language', 'zh')
     expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
       setting_language_selected: 'zh',
-      setting_language: 'zh',
+    })
+  })
+
+  it('omits the legacy autoUpdate setting entirely', () => {
+    settings.set('autoUpdate', false)
+    expect(settings.getTrackedSettingsTelemetryProperties()).not.toHaveProperty('setting_auto_update')
+  })
+
+  it('scalar value settings emit their typed value, never a hand-edited string', () => {
+    // onAppClose enum + maxCachedDownloads number pass through when valid
+    // (onAppClose resolves to its 'quit' default while tray docking is disabled).
+    settings.set('maxCachedDownloads', 5)
+    expect(
+      settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
+    ).toEqual({
+      setting_on_app_close: 'quit',
+      setting_max_cached_downloads: 5,
+    })
+    // A corrupt/hand-edited settings.json can't leak a free-form string.
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ onAppClose: '/Users/me/secret', maxCachedDownloads: 'lots' }),
+      'utf-8'
+    )
+    expect(
+      settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
+    ).toEqual({
+      setting_on_app_close: null,
+      setting_max_cached_downloads: null,
     })
   })
 
