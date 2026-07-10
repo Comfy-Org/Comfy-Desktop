@@ -1,4 +1,4 @@
-import { postJson, type RequestOpts } from './client'
+import { postJson, type JsonPostResponse, type RequestOpts } from './client'
 import type { FirebaseProjectConfig } from '../firebaseBridge/config'
 import {
   assemblePersistedUser,
@@ -9,10 +9,9 @@ import {
 
 const IDP_BASE = 'https://identitytoolkit.googleapis.com/v1'
 
-async function assertOk(resp: Response, label: string): Promise<void> {
+function assertOk(resp: JsonPostResponse, label: string): void {
   if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`${label} ${resp.status}: ${text || resp.statusText}`)
+    throw new Error(`${label} ${resp.status}: ${resp.bodyText || resp.statusText}`)
   }
 }
 
@@ -53,12 +52,22 @@ export async function signInWithCustomToken(
     { token, returnSecureToken: true },
     opts
   )
-  await assertOk(resp, 'signInWithCustomToken')
-  const data = (await resp.json()) as SignInWithCustomTokenResponse
-  if (!data.idToken || !data.refreshToken) {
+  assertOk(resp, 'signInWithCustomToken')
+  const data = resp.data as Partial<SignInWithCustomTokenResponse> | null
+  if (
+    !data ||
+    typeof data.idToken !== 'string' ||
+    data.idToken.length === 0 ||
+    typeof data.refreshToken !== 'string' ||
+    data.refreshToken.length === 0
+  ) {
     throw new Error('signInWithCustomToken returned without idToken/refreshToken')
   }
-  return data
+  return {
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    expiresIn: typeof data.expiresIn === 'string' ? data.expiresIn : '3600'
+  }
 }
 
 /**
@@ -73,9 +82,9 @@ export async function lookupAccount(
   opts: RequestOpts = {}
 ): Promise<LookedUpAccount> {
   const resp = await postJson(`${IDP_BASE}/accounts:lookup?key=${apiKey}`, { idToken }, opts)
-  await assertOk(resp, 'accounts:lookup')
-  const data = (await resp.json()) as { users?: LookedUpAccount[] }
-  const account = data.users?.[0]
+  assertOk(resp, 'accounts:lookup')
+  const data = resp.data as { users?: LookedUpAccount[] } | null
+  const account = data?.users?.[0]
   if (!account?.localId) {
     throw new Error('accounts:lookup returned no user for the signed-in token')
   }

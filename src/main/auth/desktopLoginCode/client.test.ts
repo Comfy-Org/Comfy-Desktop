@@ -29,6 +29,24 @@ function hangingFetch(): typeof fetch {
     })
 }
 
+/** fetch stub that resolves headers but leaves the response body open. */
+function stalledBodyFetch(): typeof fetch {
+  return (...args: Parameters<typeof fetch>) => {
+    const signal = args[1]?.signal
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{'))
+        signal?.addEventListener(
+          'abort',
+          () => controller.error(new DOMException('This operation was aborted', 'AbortError')),
+          { once: true }
+        )
+      }
+    })
+    return Promise.resolve(new Response(body, { status: 200 }))
+  }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -106,6 +124,17 @@ describe('createDesktopLoginCode', () => {
 
     expect(err).toBeInstanceOf(DesktopLoginCodeError)
     expect((err as DesktopLoginCodeError).retryable).toBe(true)
+  })
+
+  it('keeps the timeout active until the response body finishes', async () => {
+    vi.stubGlobal('fetch', vi.fn(stalledBodyFetch()))
+
+    const err = await createDesktopLoginCode(ORIGIN, CREATE_REQUEST, { timeoutMs: 5 }).catch(
+      (e: unknown) => e
+    )
+
+    expect(err).toBeInstanceOf(DesktopLoginCodeError)
+    expect((err as DesktopLoginCodeError).message).toMatch(/timed out/)
   })
 })
 

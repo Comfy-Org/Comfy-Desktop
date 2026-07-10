@@ -25,10 +25,16 @@ describe('isLoopbackHostname', () => {
 })
 
 describe('cloudLoginOriginForUrl', () => {
-  it('passes a loopback dev origin through', () => {
-    expect(cloudLoginOriginForUrl('http://localhost:5173/some/page')).toBe('http://localhost:5173')
-    expect(cloudLoginOriginForUrl('http://127.0.0.1:8000/')).toBe('http://127.0.0.1:8000')
-    expect(cloudLoginOriginForUrl('http://[0:0:0:0:0:0:0:1]:5173/')).toBe('http://[::1]:5173')
+  it('passes an explicitly trusted loopback dev origin through', () => {
+    expect(cloudLoginOriginForUrl('http://localhost:5173/some/page', true)).toBe(
+      'http://localhost:5173'
+    )
+    expect(cloudLoginOriginForUrl('http://127.0.0.1:8000/', true)).toBe('http://127.0.0.1:8000')
+    expect(cloudLoginOriginForUrl('http://[0:0:0:0:0:0:0:1]:5173/', true)).toBe('http://[::1]:5173')
+  })
+
+  it('does not trust a loopback renderer origin by default', () => {
+    expect(cloudLoginOriginForUrl('http://127.0.0.1:8188/')).toBe(CLOUD_LOGIN_ORIGIN)
   })
 
   it('resolves production cloud to the production origin', () => {

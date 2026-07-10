@@ -59,6 +59,14 @@ export interface RequestOpts {
   timeoutMs?: number
 }
 
+export interface JsonPostResponse {
+  ok: boolean
+  status: number
+  statusText: string
+  data: unknown
+  bodyText: string
+}
+
 function isRetryableStatus(status: number): boolean {
   return status >= 500
 }
@@ -67,22 +75,42 @@ function isRetryableStatus(status: number): boolean {
  * JSON POST with a hard timeout. A caller abort propagates untouched so
  * the poll loop can tell cancellation apart from failure; timeouts and
  * network errors come back as retryable DesktopLoginCodeErrors. Error
- * messages carry only the HTTP status — never request or response bodies
- * (they hold the code and verifier).
+ * Transport-error messages never include request or response bodies (which
+ * may hold the code, verifier, or token).
  */
-export async function postJson(url: string, body: unknown, opts: RequestOpts): Promise<Response> {
+export async function postJson(
+  url: string,
+  body: unknown,
+  opts: RequestOpts
+): Promise<JsonPostResponse> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? REQUEST_TIMEOUT_MS)
   const forwardAbort = (): void => controller.abort()
   if (opts.signal?.aborted) controller.abort()
   else opts.signal?.addEventListener('abort', forwardAbort, { once: true })
   try {
-    return await fetch(url, {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal
     })
+    // Fetch resolves when response headers arrive. Consume the body before
+    // clearing the timer so a headers-only response cannot stall auth forever.
+    const bodyText = await resp.text()
+    let data: unknown = null
+    try {
+      data = JSON.parse(bodyText)
+    } catch {
+      // Callers classify malformed JSON according to their endpoint contract.
+    }
+    return {
+      ok: resp.ok,
+      status: resp.status,
+      statusText: resp.statusText,
+      data,
+      bodyText: resp.ok ? '' : bodyText
+    }
   } catch (err) {
     if (opts.signal?.aborted) throw err
     if (controller.signal.aborted) {
@@ -120,7 +148,7 @@ export async function createDesktopLoginCode(
       featureMissing: resp.status === 404
     })
   }
-  const data = (await resp.json().catch(() => null)) as {
+  const data = resp.data as {
     code?: unknown
     expires_in?: unknown
     poll_interval?: unknown
@@ -165,7 +193,7 @@ export async function exchangeDesktopLoginCode(
       retryable: isRetryableStatus(resp.status)
     })
   }
-  const data = (await resp.json().catch(() => null)) as {
+  const data = resp.data as {
     status?: unknown
     custom_token?: unknown
   } | null

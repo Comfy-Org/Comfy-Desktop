@@ -23,6 +23,7 @@ import {
   showCopyLinkBanner
 } from '../firebaseBridge'
 import { detectFirebaseEnv, getFirebaseConfig } from '../firebaseBridge/config'
+import { abortableSleep } from '../firebaseBridge/flowControl'
 import { buildIndexedDbInjectScript } from '../firebaseBridge/inject'
 import { extractProviderId } from '../firebaseBridge/intercept'
 import { restoreParentWindow } from '../firebaseBridge/restoreParentWindow'
@@ -36,9 +37,12 @@ const CREATE_CODE_TIMEOUT_MS = 8000
 /** Random 0-500ms added to each poll so a fleet of desktops doesn't sync-poll. */
 const POLL_JITTER_MS = 500
 
+/** Cloud keeps a redeemed grant exchangeable for this long after its original TTL. */
+const POST_REDEEM_RETRY_GRACE_MS = 120_000
+
 /**
  * In-flight flow, aborted on re-entry (mirror of firebaseBridge's
- * `activeBridge`): if the user clicks Sign in again while a previous
+ * `activeBridgeFlow`): if the user clicks Sign in again while a previous
  * attempt is still parked on an open browser tab, the stale poll loop is
  * cancelled before the new one starts.
  */
@@ -47,25 +51,6 @@ let activeFlow: AbortController | null = null
 function cancelActiveFlow(): void {
   activeFlow?.abort()
   activeFlow = null
-}
-
-/** setTimeout that rejects when the flow is aborted mid-sleep. */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new Error('desktop login code flow aborted'))
-      return
-    }
-    const onAbort = (): void => {
-      clearTimeout(timer)
-      reject(new Error('desktop login code flow aborted'))
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
 }
 
 /**
@@ -90,7 +75,10 @@ export async function signInViaDesktopLoginCode(
   opts: HandleFirebasePopupOpts = {}
 ): Promise<'handled' | 'fallback'> {
   const firebaseEnv = detectFirebaseEnv(interceptedAuthUrl)
-  const cloudOrigin = cloudLoginOriginForUrl(comfyContents.getURL())
+  const cloudOrigin = cloudLoginOriginForUrl(
+    comfyContents.getURL(),
+    firebaseEnv === 'dev' && !app.isPackaged
+  )
   // The Cloud origin's backend mints custom tokens for its own Firebase
   // project. A dev-project auth URL against the production origin would
   // mint a PROD token the dev project rejects — only a loopback dev origin
@@ -168,9 +156,10 @@ export async function signInViaDesktopLoginCode(
     showCopyLinkBanner(comfyContents, loginUrl.href)
 
     const deadlineMs = Date.now() + grant.expires_in * 1000
+    const retryDeadlineMs = deadlineMs + POST_REDEEM_RETRY_GRACE_MS
     let customToken: string | null = null
     while (customToken === null) {
-      await sleep(
+      await abortableSleep(
         grant.poll_interval * 1000 + Math.floor(Math.random() * POLL_JITTER_MS),
         controller.signal
       )
@@ -178,11 +167,11 @@ export async function signInViaDesktopLoginCode(
         controller.abort()
         return 'handled'
       }
-      // Past the deadline the code itself has expired, but a redeem that
-      // landed within the last poll interval is still exchangeable (the
-      // backend keeps a 120s post-redeem window) — so make one final
-      // exchange attempt before giving up.
-      const finalAttempt = Date.now() >= deadlineMs
+      // Past the original deadline, a pending result means the code expired.
+      // A redeem in the last poll interval can still be exchangeable because
+      // Cloud keeps a 120s post-redeem window; bounded transport/mint failures
+      // therefore keep retrying through that grace period.
+      const pastCodeDeadline = Date.now() >= deadlineMs
       try {
         const exchange = await exchangeDesktopLoginCode(
           cloudOrigin,
@@ -192,14 +181,16 @@ export async function signInViaDesktopLoginCode(
         if (exchange.status === 'complete') customToken = exchange.custom_token
       } catch (err) {
         // Transient server/network hiccups may clear up within the code's
-        // TTL; terminal verdicts (403/404) never will.
-        if (!finalAttempt && err instanceof DesktopLoginCodeError && err.retryable) {
+        // TTL. A redeem near expiry extends Cloud's exchange window, so keep
+        // retrying bounded failures through that grace period; terminal
+        // verdicts (403/404) still stop immediately.
+        if (Date.now() < retryDeadlineMs && err instanceof DesktopLoginCodeError && err.retryable) {
           retriedPollErrors += 1
           continue
         }
         throw err
       }
-      if (customToken === null && finalAttempt) {
+      if (customToken === null && pastCodeDeadline) {
         throw new Error('desktop login code expired before sign-in completed')
       }
     }
@@ -233,7 +224,7 @@ export async function signInViaDesktopLoginCode(
     // Same hold as the legacy bridge: let the user see the browser's
     // signed-in state before Desktop pulls focus back. Abort-aware — a
     // re-click during the hold rejects into the catch below as 'handled'.
-    await sleep(POST_SIGNIN_HOLD_MS, controller.signal)
+    await abortableSleep(POST_SIGNIN_HOLD_MS, controller.signal)
     if (controller.signal.aborted || comfyContents.isDestroyed()) return 'handled'
     await comfyContents.executeJavaScript(
       buildIndexedDbInjectScript(user, firebaseConfig.apiKey),

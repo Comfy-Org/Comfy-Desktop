@@ -19,16 +19,16 @@ export function isLoopbackHostname(hostname: string): boolean {
 }
 
 /**
- * Resolve the Cloud origin the sign-in should run against. When the embedded
- * view is served from a loopback dev server we keep the developer's origin
- * (its `/api` proxies to their local backend); anything else — including a
- * malformed URL — resolves to production Cloud so the flow can never be
- * redirected off-site.
+ * Resolve the Cloud origin the sign-in should run against. A caller may
+ * explicitly trust a loopback development origin whose `/api` proxies to a
+ * matching local backend. Packaged and production-project flows must leave
+ * that disabled so renderer location never chooses the credential endpoint.
  */
-export function cloudLoginOriginForUrl(currentUrl: string): string {
+export function cloudLoginOriginForUrl(currentUrl: string, allowLoopbackDevOrigin = false): string {
   try {
     const url = new URL(currentUrl)
     if (
+      allowLoopbackDevOrigin &&
       (url.protocol === 'https:' || url.protocol === 'http:') &&
       isLoopbackHostname(url.hostname)
     ) {

@@ -5,6 +5,7 @@ import type * as ClientModule from './client'
 import type * as OrchestratorModule from './index'
 
 const h = vi.hoisted(() => ({
+  appIsPackaged: false,
   openExternal: vi.fn((_url: string) => Promise.resolve()),
   capture: vi.fn(),
   emit: vi.fn(),
@@ -23,7 +24,12 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
-  app: { getVersion: () => '1.2.3' },
+  app: {
+    getVersion: () => '1.2.3',
+    get isPackaged() {
+      return h.appIsPackaged
+    }
+  },
   shell: { openExternal: h.openExternal }
 }))
 
@@ -91,6 +97,7 @@ function mockSignInChain(persistedUser: Record<string, unknown>): void {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.resetAllMocks()
+  h.appIsPackaged = false
   // Deterministic poll jitter.
   vi.spyOn(Math, 'random').mockReturnValue(0)
 })
@@ -205,6 +212,31 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.closeActiveBridge).toHaveBeenCalledTimes(1)
   })
 
+  it('uses production Cloud for a prod sign-in opened from a local ComfyUI view', async () => {
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(
+      AUTH_URL,
+      fakeContents('http://127.0.0.1:8188/'),
+      {}
+    )
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    expect(h.createDesktopLoginCode).toHaveBeenCalledWith(
+      'https://cloud.comfy.org',
+      expect.anything(),
+      expect.anything()
+    )
+    expect(h.openExternal.mock.calls[0]![0]).toMatch(/^https:\/\/cloud\.comfy\.org\/cloud\/login/)
+  })
+
   it('omits installation_id when telemetry consent is off or undecided', async () => {
     for (const consent of [false, undefined]) {
       h.settingsGet.mockReturnValue(consent)
@@ -310,6 +342,27 @@ describe('signInViaDesktopLoginCode', () => {
     })
     expect(h.bindSignedInUser).toHaveBeenCalled()
     expect(h.emit).not.toHaveBeenCalled()
+  })
+
+  it('retries a transient mint failure after redemption at the original deadline', async () => {
+    const { DesktopLoginCodeError } = await import('./client')
+    h.createDesktopLoginCode.mockResolvedValue({ code: 'dlc_x', expires_in: 7, poll_interval: 3 })
+    h.exchangeDesktopLoginCode
+      .mockResolvedValueOnce({ status: 'pending' })
+      .mockResolvedValueOnce({ status: 'pending' })
+      .mockRejectedValueOnce(new DesktopLoginCodeError('mint unavailable', { retryable: true }))
+      .mockResolvedValueOnce({ status: 'complete', custom_token: 'late-token' })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(4)
+    expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'late-token', {
+      signal: expect.any(AbortSignal)
+    })
   })
 
   it('aborts the prior poll loop on re-entry without reporting a failure', async () => {
@@ -455,5 +508,19 @@ describe('signInViaDesktopLoginCode', () => {
       expect.anything(),
       expect.anything()
     )
+  })
+
+  it('does not trust a loopback dev origin in a packaged build', async () => {
+    h.appIsPackaged = true
+    const mod = await loadOrchestrator()
+
+    const outcome = await mod.signInViaDesktopLoginCode(
+      'https://dreamboothy-dev.firebaseapp.com/__/auth/handler?providerId=google.com',
+      fakeContents('http://localhost:5173/'),
+      {}
+    )
+
+    expect(outcome).toBe('fallback')
+    expect(h.createDesktopLoginCode).not.toHaveBeenCalled()
   })
 })
