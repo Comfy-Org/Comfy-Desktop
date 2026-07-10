@@ -17,6 +17,7 @@ import { restoreParentWindow } from './restoreParentWindow'
 import { startBridgeServer, type BridgeHandle } from './server'
 import { signInViaDesktopLoginCode } from '../desktopLoginCode'
 import * as mainTelemetry from '../../lib/telemetry'
+import { extractErrorClass } from '../../../shared/errorEvent'
 
 const LEGACY_AUTH_FLOW = 'loopback_bridge'
 
@@ -131,9 +132,12 @@ export async function handleFirebasePopup(
     const error = err instanceof Error ? err : new Error(String(err))
     // Mirrored to Datadog (allow-list) so ops can alert if sign-in
     // breaks for a provider. error_bucket keeps the dashboard low-
-    // cardinality; the raw message stays out (may carry tokens / URLs).
+    // cardinality; error_class adds a locale-independent type for grouping.
+    // The raw message stays out by design (may carry tokens / URLs), so we
+    // deliberately do NOT ship `error_message` / `error_signature` here.
     mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
       provider: providerId,
+      error_class: extractErrorClass(error),
       error_bucket: mainTelemetry.bucketError(error.message),
       flow: LEGACY_AUTH_FLOW
     })

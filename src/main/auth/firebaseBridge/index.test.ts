@@ -155,6 +155,7 @@ describe('handleFirebasePopup legacy cancellation', () => {
 
     expect(h.emit).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_failed', {
       provider: 'google.com',
+      error_class: 'unknown',
       error_bucket: 'other',
       flow: 'loopback_bridge'
     })
