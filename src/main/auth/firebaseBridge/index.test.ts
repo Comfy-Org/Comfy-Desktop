@@ -13,12 +13,13 @@ const h = vi.hoisted(() => ({
   buildInjectScript: vi.fn(() => 'inject-user'),
   capture: vi.fn(),
   emit: vi.fn(),
+  openExternal: vi.fn(() => Promise.resolve()),
   restoreParentWindow: vi.fn(),
   signInViaDesktopLoginCode: vi.fn(),
   startBridgeServer: vi.fn()
 }))
 
-vi.mock('electron', () => ({ shell: { openExternal: vi.fn(() => Promise.resolve()) } }))
+vi.mock('electron', () => ({ shell: { openExternal: h.openExternal } }))
 vi.mock('./copyLinkBanner', () => ({
   buildCopyLinkBannerScript: () => 'show-banner',
   buildRemoveCopyLinkBannerScript: () => 'remove-banner',
@@ -82,6 +83,10 @@ describe('handleFirebasePopup legacy cancellation', () => {
     const staleFlow = handleFirebasePopup(AUTH_URL, contents)
     await vi.advanceTimersByTimeAsync(0)
     expect(h.bindUserId).toHaveBeenCalledWith('old-user', expect.anything())
+    expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_started', {
+      provider: 'google.com',
+      flow: 'loopback_bridge'
+    })
 
     closeActiveBridge()
     runBannerCleanup()
@@ -140,5 +145,34 @@ describe('handleFirebasePopup legacy cancellation', () => {
     })
     await vi.advanceTimersByTimeAsync(0)
     expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('tags legacy failures with the loopback flow axis', async () => {
+    h.startBridgeServer.mockRejectedValueOnce(new Error('startup failed'))
+    const onError = vi.fn()
+
+    await handleFirebasePopup(AUTH_URL, fakeContents(), { onError })
+
+    expect(h.emit).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_failed', {
+      provider: 'google.com',
+      error_bucket: 'other',
+      flow: 'loopback_bridge'
+    })
+    expect(onError).toHaveBeenCalledWith(expect.any(Error))
+  })
+
+  it('continues through the banner when the initial browser open rejects', async () => {
+    h.openExternal.mockRejectedValueOnce(new Error('no default browser'))
+    h.startBridgeServer.mockResolvedValue({
+      url: 'http://localhost:9876/',
+      signInPromise: Promise.resolve({ user: { uid: 'user-1' }, apiKey: 'api-key' }),
+      close: vi.fn()
+    })
+
+    const flow = handleFirebasePopup(AUTH_URL, fakeContents())
+    await vi.runAllTimersAsync()
+
+    await expect(flow).resolves.toBeUndefined()
+    expect(h.emit).not.toHaveBeenCalled()
   })
 })

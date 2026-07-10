@@ -43,11 +43,17 @@ vi.mock('../../lib/deviceId', () => ({ getDeviceId: h.getDeviceId }))
 
 vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
-vi.mock('../firebaseBridge', () => ({
-  bindSignedInUser: h.bindSignedInUser,
+vi.mock('../firebaseBridge/flowState', () => ({
   showCopyLinkBanner: h.showCopyLinkBanner,
   runBannerCleanup: h.runBannerCleanup,
   closeActiveBridge: h.closeActiveBridge,
+  openExternalSafely: (url: string) => {
+    void h.openExternal(url).catch(() => {})
+  }
+}))
+
+vi.mock('../firebaseBridge/flowShared', () => ({
+  bindSignedInUser: h.bindSignedInUser,
   POST_SIGNIN_HOLD_MS: 3000
 }))
 
@@ -65,7 +71,12 @@ vi.mock('./customTokenSignIn', () => ({
 
 const AUTH_URL = 'https://dreamboothy.firebaseapp.com/__/auth/handler?providerId=google.com'
 
-const GRANT = { code: 'dlc_test-code', expires_in: 300, poll_interval: 3 }
+const GRANT = {
+  code: 'dlc_test-code',
+  expires_in: 300,
+  poll_interval: 3,
+  exchange_window: 120
+}
 
 function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   executeJavaScript: ReturnType<typeof vi.fn>
@@ -98,6 +109,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.resetAllMocks()
   h.appIsPackaged = false
+  h.openExternal.mockResolvedValue(undefined)
   // Deterministic poll jitter.
   vi.spyOn(Math, 'random').mockReturnValue(0)
 })
@@ -212,6 +224,46 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.closeActiveBridge).toHaveBeenCalledTimes(1)
   })
 
+  it('continues through the banner when the initial browser open rejects', async () => {
+    h.openExternal.mockRejectedValueOnce(new Error('no default browser'))
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    expect(h.showCopyLinkBanner).toHaveBeenCalledOnce()
+    expect(h.emit).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'https://dreamboothy.firebaseapp.com/__/auth/handler',
+    'https://dreamboothy.firebaseapp.com/__/auth/handler?providerId=microsoft.com'
+  ])('deliberately routes %s through the provider-neutral Cloud login page', async (authUrl) => {
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(authUrl, fakeContents(), {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_started', {
+      provider: 'cloud',
+      flow: 'desktop_login_code'
+    })
+  })
+
   it('uses production Cloud for a prod sign-in opened from a local ComfyUI view', async () => {
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({
@@ -301,7 +353,12 @@ describe('signInViaDesktopLoginCode', () => {
 
   it('gives up at the expiry deadline with a sign_in_failed event', async () => {
     h.settingsGet.mockReturnValue(true)
-    h.createDesktopLoginCode.mockResolvedValue({ code: 'dlc_x', expires_in: 7, poll_interval: 3 })
+    h.createDesktopLoginCode.mockResolvedValue({
+      code: 'dlc_x',
+      expires_in: 7,
+      poll_interval: 3,
+      exchange_window: 120
+    })
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
     const onError = vi.fn()
     const mod = await loadOrchestrator()
@@ -322,7 +379,12 @@ describe('signInViaDesktopLoginCode', () => {
 
   it('honors a redeem that landed in the last poll interval via a final exchange at the deadline', async () => {
     h.settingsGet.mockReturnValue(true)
-    h.createDesktopLoginCode.mockResolvedValue({ code: 'dlc_x', expires_in: 7, poll_interval: 3 })
+    h.createDesktopLoginCode.mockResolvedValue({
+      code: 'dlc_x',
+      expires_in: 7,
+      poll_interval: 3,
+      exchange_window: 120
+    })
     h.exchangeDesktopLoginCode
       .mockResolvedValueOnce({ status: 'pending' })
       .mockResolvedValueOnce({ status: 'pending' })
@@ -346,7 +408,12 @@ describe('signInViaDesktopLoginCode', () => {
 
   it('retries a transient mint failure after redemption at the original deadline', async () => {
     const { DesktopLoginCodeError } = await import('./client')
-    h.createDesktopLoginCode.mockResolvedValue({ code: 'dlc_x', expires_in: 7, poll_interval: 3 })
+    h.createDesktopLoginCode.mockResolvedValue({
+      code: 'dlc_x',
+      expires_in: 7,
+      poll_interval: 3,
+      exchange_window: 120
+    })
     h.exchangeDesktopLoginCode
       .mockResolvedValueOnce({ status: 'pending' })
       .mockResolvedValueOnce({ status: 'pending' })

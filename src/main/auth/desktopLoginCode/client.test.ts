@@ -54,20 +54,30 @@ afterEach(() => {
 describe('createDesktopLoginCode', () => {
   it('POSTs the request and parses a 201 grant', async () => {
     const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
-      jsonResponse(201, { code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
+      jsonResponse(201, {
+        code: 'dlc_abc',
+        expires_in: 300,
+        poll_interval: 3,
+        exchange_window: 120
+      })
     )
     vi.stubGlobal('fetch', fetchMock)
 
     const grant = await createDesktopLoginCode(ORIGIN, CREATE_REQUEST)
 
-    expect(grant).toEqual({ code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
+    expect(grant).toEqual({
+      code: 'dlc_abc',
+      expires_in: 300,
+      poll_interval: 3,
+      exchange_window: 120
+    })
     const [url, init] = fetchMock.mock.calls[0]!
     expect(url).toBe(`${ORIGIN}/api/auth/desktop-login-codes`)
     expect(init?.method).toBe('POST')
     expect(JSON.parse(String(init?.body))).toEqual(CREATE_REQUEST)
   })
 
-  it('flags a 404 as the backend missing the feature', async () => {
+  it('treats a create 404 as terminal', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(404, { error: 'not found' }))
@@ -78,7 +88,6 @@ describe('createDesktopLoginCode', () => {
     expect(err).toBeInstanceOf(DesktopLoginCodeError)
     const typed = err as DesktopLoginCodeError
     expect(typed.status).toBe(404)
-    expect(typed.featureMissing).toBe(true)
     expect(typed.retryable).toBe(false)
   })
 
@@ -96,7 +105,14 @@ describe('createDesktopLoginCode', () => {
   it('rejects a grant with a non-positive poll_interval', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse(201, { code: 'dlc_abc', expires_in: 300, poll_interval: 0 }))
+      vi.fn(async () =>
+        jsonResponse(201, {
+          code: 'dlc_abc',
+          expires_in: 300,
+          poll_interval: 0,
+          exchange_window: 120
+        })
+      )
     )
 
     await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toThrow(
@@ -107,7 +123,32 @@ describe('createDesktopLoginCode', () => {
   it('rejects a grant with a non-positive expires_in', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse(201, { code: 'dlc_abc', expires_in: -1, poll_interval: 3 }))
+      vi.fn(async () =>
+        jsonResponse(201, {
+          code: 'dlc_abc',
+          expires_in: -1,
+          poll_interval: 3,
+          exchange_window: 120
+        })
+      )
+    )
+
+    await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toThrow(
+      DesktopLoginCodeError
+    )
+  })
+
+  it('rejects a grant with a non-positive exchange_window', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(201, {
+          code: 'dlc_abc',
+          expires_in: 300,
+          poll_interval: 3,
+          exchange_window: 0
+        })
+      )
     )
 
     await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toThrow(

@@ -17,18 +17,12 @@ export class DesktopLoginCodeError extends Error {
   /** HTTP status, when the server responded at all. */
   readonly status?: number
   readonly retryable: boolean
-  /** True when create hit a 404 — the backend doesn't ship the feature yet. */
-  readonly featureMissing: boolean
 
-  constructor(
-    message: string,
-    opts: { status?: number; retryable?: boolean; featureMissing?: boolean } = {}
-  ) {
+  constructor(message: string, opts: { status?: number; retryable?: boolean } = {}) {
     super(message)
     this.name = 'DesktopLoginCodeError'
     this.status = opts.status
     this.retryable = opts.retryable ?? false
-    this.featureMissing = opts.featureMissing ?? false
   }
 }
 
@@ -48,6 +42,8 @@ export interface DesktopLoginCodeGrant {
   expires_in: number
   /** Seconds to wait between exchange polls. */
   poll_interval: number
+  /** Seconds a redeemed code remains exchangeable. */
+  exchange_window: number
 }
 
 export type DesktopLoginCodeExchange =
@@ -74,7 +70,7 @@ function isRetryableStatus(status: number): boolean {
 /**
  * JSON POST with a hard timeout. A caller abort propagates untouched so
  * the poll loop can tell cancellation apart from failure; timeouts and
- * network errors come back as retryable DesktopLoginCodeErrors. Error
+ * network errors come back as retryable DesktopLoginCodeErrors.
  * Transport-error messages never include request or response bodies (which
  * may hold the code, verifier, or token).
  */
@@ -127,9 +123,8 @@ export async function postJson(
 
 /**
  * Mint a short-lived login code bound to the PKCE challenge. Expects a
- * 201 grant; any failure means the flow can't start (a 404 marks a
- * backend without the endpoint, so callers fall back to the legacy
- * loopback bridge).
+ * 201 grant; any failure means the flow can't start, so callers fall back
+ * to the legacy loopback bridge.
  */
 export async function createDesktopLoginCode(
   apiOrigin: string,
@@ -144,14 +139,14 @@ export async function createDesktopLoginCode(
   if (!resp.ok) {
     throw new DesktopLoginCodeError(`desktop login code create failed: ${resp.status}`, {
       status: resp.status,
-      retryable: isRetryableStatus(resp.status),
-      featureMissing: resp.status === 404
+      retryable: isRetryableStatus(resp.status)
     })
   }
   const data = resp.data as {
     code?: unknown
     expires_in?: unknown
     poll_interval?: unknown
+    exchange_window?: unknown
   } | null
   // Non-positive timings would spin the poll loop (interval) or expire the
   // code before the user can sign in (deadline) — reject them here, where
@@ -163,13 +158,20 @@ export async function createDesktopLoginCode(
     typeof data.expires_in !== 'number' ||
     data.expires_in <= 0 ||
     typeof data.poll_interval !== 'number' ||
-    data.poll_interval <= 0
+    data.poll_interval <= 0 ||
+    typeof data.exchange_window !== 'number' ||
+    data.exchange_window <= 0
   ) {
     throw new DesktopLoginCodeError('desktop login code create returned an unexpected payload', {
       status: resp.status
     })
   }
-  return { code: data.code, expires_in: data.expires_in, poll_interval: data.poll_interval }
+  return {
+    code: data.code,
+    expires_in: data.expires_in,
+    poll_interval: data.poll_interval,
+    exchange_window: data.exchange_window
+  }
 }
 
 /**

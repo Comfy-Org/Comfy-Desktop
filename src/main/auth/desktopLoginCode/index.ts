@@ -1,4 +1,4 @@
-import { app, shell, type WebContents } from 'electron'
+import { app, type WebContents } from 'electron'
 
 import {
   createDesktopLoginCode,
@@ -15,15 +15,18 @@ import {
 import { CLOUD_LOGIN_ORIGIN, cloudLoginOriginForUrl } from './origins'
 import { codeChallengeS256, createCodeVerifier } from './pkce'
 import {
-  bindSignedInUser,
   closeActiveBridge,
-  type HandleFirebasePopupOpts,
-  POST_SIGNIN_HOLD_MS,
+  openExternalSafely,
   runBannerCleanup,
   showCopyLinkBanner
-} from '../firebaseBridge'
+} from '../firebaseBridge/flowState'
 import { detectFirebaseEnv, getFirebaseConfig } from '../firebaseBridge/config'
 import { abortableSleep } from '../firebaseBridge/flowControl'
+import {
+  bindSignedInUser,
+  type HandleFirebasePopupOpts,
+  POST_SIGNIN_HOLD_MS
+} from '../firebaseBridge/flowShared'
 import { buildIndexedDbInjectScript } from '../firebaseBridge/inject'
 import { extractProviderId } from '../firebaseBridge/intercept'
 import { restoreParentWindow } from '../firebaseBridge/restoreParentWindow'
@@ -37,8 +40,7 @@ const CREATE_CODE_TIMEOUT_MS = 8000
 /** Random 0-500ms added to each poll so a fleet of desktops doesn't sync-poll. */
 const POLL_JITTER_MS = 500
 
-/** Cloud keeps a redeemed grant exchangeable for this long after its original TTL. */
-const POST_REDEEM_RETRY_GRACE_MS = 120_000
+const DESKTOP_LOGIN_CODE_FLOW = 'desktop_login_code'
 
 /**
  * In-flight flow, aborted on re-entry (mirror of firebaseBridge's
@@ -101,6 +103,8 @@ export async function signInViaDesktopLoginCode(
   runBannerCleanup()
   closeActiveBridge()
 
+  // The Cloud page owns provider choice when Firebase omitted or supplied an
+  // unsupported providerId, so keep that widened path visible in the funnel.
   const provider = extractProviderId(interceptedAuthUrl) ?? 'cloud'
   const firebaseConfig = getFirebaseConfig(firebaseEnv)
   const codeVerifier = createCodeVerifier()
@@ -143,7 +147,7 @@ export async function signInViaDesktopLoginCode(
   // double-count with the legacy path's own started event.
   mainTelemetry.capture('comfy.desktop.auth.sign_in_started', {
     provider,
-    flow: 'desktop_login_code'
+    flow: DESKTOP_LOGIN_CODE_FLOW
   })
 
   let retriedPollErrors = 0
@@ -152,11 +156,11 @@ export async function signInViaDesktopLoginCode(
     // installation_id or any auth material.
     const loginUrl = new URL('/cloud/login', cloudOrigin)
     loginUrl.searchParams.set('desktop_login_code', grant.code)
-    void shell.openExternal(loginUrl.href)
+    openExternalSafely(loginUrl.href)
     showCopyLinkBanner(comfyContents, loginUrl.href)
 
     const deadlineMs = Date.now() + grant.expires_in * 1000
-    const retryDeadlineMs = deadlineMs + POST_REDEEM_RETRY_GRACE_MS
+    const retryDeadlineMs = deadlineMs + grant.exchange_window * 1000
     let customToken: string | null = null
     while (customToken === null) {
       await abortableSleep(
@@ -169,8 +173,8 @@ export async function signInViaDesktopLoginCode(
       }
       // Past the original deadline, a pending result means the code expired.
       // A redeem in the last poll interval can still be exchangeable because
-      // Cloud keeps a 120s post-redeem window; bounded transport/mint failures
-      // therefore keep retrying through that grace period.
+      // Cloud reports its post-redeem exchange window; bounded transport/mint
+      // failures therefore keep retrying through the matching grace period.
       const pastCodeDeadline = Date.now() >= deadlineMs
       try {
         const exchange = await exchangeDesktopLoginCode(
@@ -240,7 +244,7 @@ export async function signInViaDesktopLoginCode(
     mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
       provider,
       error_bucket: mainTelemetry.bucketError(error.message),
-      flow: 'desktop_login_code',
+      flow: DESKTOP_LOGIN_CODE_FLOW,
       retried_poll_errors: retriedPollErrors
     })
     opts.onError?.(error)
