@@ -122,7 +122,7 @@ options:
 
     expect(byName.get('port')?.category).toBe('network')
     expect(byName.get('listen')?.category).toBe('network')
-    expect(byName.get('gpu-only')?.category).toBe('gpu')
+    expect(byName.get('gpu-only')?.category).toBe('gpuVram')
     expect(byName.get('enable-manager')?.category).toBe('manager')
   })
 
@@ -137,7 +137,7 @@ options:
 `
     const schema = parseHelpOutput(help)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
-    expect(byName.get('fast-disk')?.category).toBe('gpu')
+    expect(byName.get('fast-disk')?.category).toBe('gpuVram')
     expect(byName.get('enable-triton-backend')?.category).toBe('performance')
   })
 

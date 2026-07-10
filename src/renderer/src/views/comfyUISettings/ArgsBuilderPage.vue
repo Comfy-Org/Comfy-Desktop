@@ -36,28 +36,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** English fallbacks for the stable category keys emitted by `comfy-args.ts`,
- *  used when a locale hasn't translated a given `comfyUISettings.argsCategory.*` key. */
-const CATEGORY_LABELS: Record<string, string> = {
-  active: 'Active',
-  network: 'Network',
-  launch: 'Launch',
-  gpu: 'GPU & VRAM',
-  precision: 'Precision',
-  performance: 'Performance',
-  cache: 'Cache',
-  preview: 'Preview',
-  manager: 'Manager',
-  frontend: 'Frontend',
-  features: 'Features',
-  paths: 'Paths',
-  logging: 'Logging',
-  advanced: 'Advanced',
-  other: 'Other',
-}
-
+/** Translate a stable category slug (from `comfy-args.ts`) for display.
+ *  vue-i18n falls back to the English (`en`) catalog for any untranslated key. */
 function categoryLabel(key: string): string {
-  return t(`comfyUISettings.argsCategory.${key}`, CATEGORY_LABELS[key] ?? key)
+  return t(`comfyUISettings.argsCategory.${key}`)
 }
 
 const localValue = ref(props.initialValue)

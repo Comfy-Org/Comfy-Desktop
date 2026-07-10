@@ -125,7 +125,7 @@
       "active": "Active",
       "network": "Network",
       "launch": "Launch",
-      "gpu": "GPU & VRAM",
+      "gpuVram": "GPU & VRAM",
       "precision": "Precision",
       "performance": "Performance",
       "cache": "Cache",

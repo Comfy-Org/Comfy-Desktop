@@ -125,7 +125,7 @@
       "active": "已启用",
       "network": "网络",
       "launch": "启动",
-      "gpu": "GPU 与显存",
+      "gpuVram": "GPU 与显存",
       "precision": "精度",
       "performance": "性能",
       "cache": "缓存",
