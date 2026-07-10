@@ -15,7 +15,7 @@
  *   - `error_class`     Stable, LOCALE-INDEPENDENT type identifier for
  *                       grouping (e.g. `ModuleNotFoundError`, `CUDAError`).
  *                       Derived from the exception class name / a fixed
- *                       English signature dictionary â€” never from a
+ *                       English signature dictionary — never from a
  *                       localized OS string, so the same failure groups on
  *                       a Chinese and an English machine alike.
  *   - `error_message`   Human-readable message, PII-scrubbed and capped.
@@ -26,7 +26,7 @@
  *                       regardless of user-specific paths or values.
  *
  * Process-boot failures also carry `error_tail` (the last N lines of
- * stderr, where tracebacks and the fatal line live) â€” see `errorTail`.
+ * stderr, where tracebacks and the fatal line live) — see `errorTail`.
  *
  * Lives in `src/shared/` (no Electron / Node / DOM deps) so both main and
  * renderer classify identically. Adding a rule here updates every failure
@@ -84,7 +84,7 @@ function messageOf(input: unknown): string {
 /**
  * The final Python exception line in a (possibly multi-line) text, e.g.
  * `ModuleNotFoundError: No module named 'torch'`. Scans line by line and
- * returns the LAST match â€” the final exception of a chained traceback is the
+ * returns the LAST match — the final exception of a chained traceback is the
  * user-facing one. `null` when the text has no exception line (a plain JS
  * error message, a launch string, etc.).
  */
@@ -99,7 +99,7 @@ function findExceptionLine(text: string): string | null {
 
 /**
  * Extract a locale-independent `error_class`. Priority:
- *   1. A Python exception class token anywhere in the text (last match wins â€”
+ *   1. A Python exception class token anywhere in the text (last match wins —
  *      the final exception in a chained traceback is the user-facing one).
  *   2. A fixed English signature (CUDA / OOM) that isn't a class name.
  *   3. A meaningful JS `Error.name` (not the generic `Error`).

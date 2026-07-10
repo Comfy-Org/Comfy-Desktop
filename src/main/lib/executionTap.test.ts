@@ -77,7 +77,7 @@ describe('executionTap', () => {
   it('defers the validation error until the block ends and flushes on exit', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest('Failed to validate prompt for output 7:\n', 'stdout')
-    // No terminating line yet â€” nothing emitted.
+    // No terminating line yet — nothing emitted.
     expect(captured.filter((c) => c.event === 'comfy.desktop.execution.error')).toHaveLength(0)
     tap.flushSummary()
     const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')

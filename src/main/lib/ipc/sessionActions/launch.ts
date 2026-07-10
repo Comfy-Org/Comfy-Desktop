@@ -949,7 +949,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // Standard error schema derived from the failure message + the stderr
     // tail (a Python traceback in the tail yields a real `error_class` /
     // `error_message`; otherwise the launch message drives it). `error_tail`
-    // carries the last ~40 lines of stderr â€” where the fatal error prints â€”
+    // carries the last ~40 lines of stderr — where the fatal error prints —
     // scrubbed and capped, so the failure is diagnosable without depending on
     // the separate, unreliable `boot_log` event.
     const tail = errorTail(launchResult.stderr)

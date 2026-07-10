@@ -52,7 +52,7 @@ interface TapState {
   // Buffer for a multi-line prompt-validation failure (header + reason lines).
   // Empty when not collecting. Deferred so `error_message` carries the actual
   // reasons ("Value not in list", "Required input is missing"), not just the
-  // header â€” otherwise every validation_failed groups into one opaque bucket.
+  // header — otherwise every validation_failed groups into one opaque bucket.
   validationBuffer: string[]
   validationNodeId: string | null
 }
@@ -68,7 +68,7 @@ const MAX_TRACEBACK_LINES = 200
 const MAX_TRACEBACK_CHARS = 16 * 1024
 // A validation block is header + a handful of reason lines; bound it tightly.
 const MAX_VALIDATION_LINES = 30
-// Detail lines ComfyUI prints under the header: `* Node 4:` / `  - reason: â€¦`.
+// Detail lines ComfyUI prints under the header: `* Node 4:` / `  - reason: …`.
 const VALIDATION_DETAIL = /^[*-]/
 
 export function createExecutionTap(opts: {
@@ -224,7 +224,7 @@ export function createExecutionTap(opts: {
 
     // Collecting a multi-line validation block: keep appending the `* node:` /
     // `- reason` detail lines; any other line ends the block (then falls
-    // through so it is processed normally â€” a new header, `got prompt`, etc.).
+    // through so it is processed normally — a new header, `got prompt`, etc.).
     if (state.validationBuffer.length > 0) {
       if (VALIDATION_DETAIL.test(trimmed) && state.validationBuffer.length < MAX_VALIDATION_LINES) {
         state.validationBuffer.push(trimmed)
