@@ -1076,11 +1076,7 @@ export async function migrateDefaults(): Promise<void> {
 }
 
 export function resolveTheme(): ResolvedTheme {
-  // The app is dark-only. Ignore the `theme` setting and OS appearance entirely
-  // so a stale `theme: 'light'` in settings.json or a light-mode OS can't leak a
-  // broken light UI (the title bar, native controls, splash and brand elements
-  // are all dark-only). The `theme` plumbing stays wired; re-enabling light mode
-  // means restoring this resolution and completing the dark-only overrides.
+  // App is dark-only — ignore the `theme` setting and OS appearance.
   return 'dark'
 }
 
