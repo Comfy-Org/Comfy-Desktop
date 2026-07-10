@@ -74,8 +74,7 @@ const AUTH_URL = 'https://dreamboothy.firebaseapp.com/__/auth/handler?providerId
 const GRANT = {
   code: 'dlc_test-code',
   expires_in: 300,
-  poll_interval: 3,
-  exchange_window: 120
+  poll_interval: 3
 }
 
 function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
@@ -356,8 +355,7 @@ describe('signInViaDesktopLoginCode', () => {
     h.createDesktopLoginCode.mockResolvedValue({
       code: 'dlc_x',
       expires_in: 7,
-      poll_interval: 3,
-      exchange_window: 120
+      poll_interval: 3
     })
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
     const onError = vi.fn()
@@ -382,8 +380,7 @@ describe('signInViaDesktopLoginCode', () => {
     h.createDesktopLoginCode.mockResolvedValue({
       code: 'dlc_x',
       expires_in: 7,
-      poll_interval: 3,
-      exchange_window: 120
+      poll_interval: 3
     })
     h.exchangeDesktopLoginCode
       .mockResolvedValueOnce({ status: 'pending' })
@@ -411,8 +408,7 @@ describe('signInViaDesktopLoginCode', () => {
     h.createDesktopLoginCode.mockResolvedValue({
       code: 'dlc_x',
       expires_in: 7,
-      poll_interval: 3,
-      exchange_window: 120
+      poll_interval: 3
     })
     h.exchangeDesktopLoginCode
       .mockResolvedValueOnce({ status: 'pending' })

@@ -42,8 +42,6 @@ export interface DesktopLoginCodeGrant {
   expires_in: number
   /** Seconds to wait between exchange polls. */
   poll_interval: number
-  /** Seconds a redeemed code remains exchangeable. */
-  exchange_window: number
 }
 
 export type DesktopLoginCodeExchange =
@@ -146,7 +144,6 @@ export async function createDesktopLoginCode(
     code?: unknown
     expires_in?: unknown
     poll_interval?: unknown
-    exchange_window?: unknown
   } | null
   // Non-positive timings would spin the poll loop (interval) or expire the
   // code before the user can sign in (deadline) — reject them here, where
@@ -158,9 +155,7 @@ export async function createDesktopLoginCode(
     typeof data.expires_in !== 'number' ||
     data.expires_in <= 0 ||
     typeof data.poll_interval !== 'number' ||
-    data.poll_interval <= 0 ||
-    typeof data.exchange_window !== 'number' ||
-    data.exchange_window <= 0
+    data.poll_interval <= 0
   ) {
     throw new DesktopLoginCodeError('desktop login code create returned an unexpected payload', {
       status: resp.status
@@ -169,8 +164,7 @@ export async function createDesktopLoginCode(
   return {
     code: data.code,
     expires_in: data.expires_in,
-    poll_interval: data.poll_interval,
-    exchange_window: data.exchange_window
+    poll_interval: data.poll_interval
   }
 }
 

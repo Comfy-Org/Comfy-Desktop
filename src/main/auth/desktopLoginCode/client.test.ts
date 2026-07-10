@@ -57,8 +57,7 @@ describe('createDesktopLoginCode', () => {
       jsonResponse(201, {
         code: 'dlc_abc',
         expires_in: 300,
-        poll_interval: 3,
-        exchange_window: 120
+        poll_interval: 3
       })
     )
     vi.stubGlobal('fetch', fetchMock)
@@ -68,8 +67,7 @@ describe('createDesktopLoginCode', () => {
     expect(grant).toEqual({
       code: 'dlc_abc',
       expires_in: 300,
-      poll_interval: 3,
-      exchange_window: 120
+      poll_interval: 3
     })
     const [url, init] = fetchMock.mock.calls[0]!
     expect(url).toBe(`${ORIGIN}/api/auth/desktop-login-codes`)
@@ -109,8 +107,7 @@ describe('createDesktopLoginCode', () => {
         jsonResponse(201, {
           code: 'dlc_abc',
           expires_in: 300,
-          poll_interval: 0,
-          exchange_window: 120
+          poll_interval: 0
         })
       )
     )
@@ -127,26 +124,7 @@ describe('createDesktopLoginCode', () => {
         jsonResponse(201, {
           code: 'dlc_abc',
           expires_in: -1,
-          poll_interval: 3,
-          exchange_window: 120
-        })
-      )
-    )
-
-    await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toThrow(
-      DesktopLoginCodeError
-    )
-  })
-
-  it('rejects a grant with a non-positive exchange_window', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        jsonResponse(201, {
-          code: 'dlc_abc',
-          expires_in: 300,
-          poll_interval: 3,
-          exchange_window: 0
+          poll_interval: 3
         })
       )
     )

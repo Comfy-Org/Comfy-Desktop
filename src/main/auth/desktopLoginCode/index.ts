@@ -40,6 +40,9 @@ const CREATE_CODE_TIMEOUT_MS = 8000
 /** Random 0-500ms added to each poll so a fleet of desktops doesn't sync-poll. */
 const POLL_JITTER_MS = 500
 
+/** Cloud currently keeps a redeemed grant exchangeable for this long. */
+const POST_REDEEM_RETRY_GRACE_MS = 120_000
+
 const DESKTOP_LOGIN_CODE_FLOW = 'desktop_login_code'
 
 /**
@@ -160,7 +163,7 @@ export async function signInViaDesktopLoginCode(
     showCopyLinkBanner(comfyContents, loginUrl.href)
 
     const deadlineMs = Date.now() + grant.expires_in * 1000
-    const retryDeadlineMs = deadlineMs + grant.exchange_window * 1000
+    const retryDeadlineMs = deadlineMs + POST_REDEEM_RETRY_GRACE_MS
     let customToken: string | null = null
     while (customToken === null) {
       await abortableSleep(
@@ -173,8 +176,8 @@ export async function signInViaDesktopLoginCode(
       }
       // Past the original deadline, a pending result means the code expired.
       // A redeem in the last poll interval can still be exchangeable because
-      // Cloud reports its post-redeem exchange window; bounded transport/mint
-      // failures therefore keep retrying through the matching grace period.
+      // Cloud keeps a 120s post-redeem window; bounded transport/mint failures
+      // therefore keep retrying through that grace period.
       const pastCodeDeadline = Date.now() >= deadlineMs
       try {
         const exchange = await exchangeDesktopLoginCode(
