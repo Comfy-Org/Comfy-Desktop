@@ -6,6 +6,7 @@ import { killProcTree } from './process'
 import { getBundledScriptPath } from './bundledScript'
 import { removeQuarantine, codesignBinaries } from '../sources/standalone/macRepair'
 import * as telemetry from './telemetry'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 // ───────────────────────────────────────────────────────────────────────────
 // pygit2 fallback state + circuit breaker
@@ -229,7 +230,7 @@ export async function tryConfigurePygit2Fallback(installPath: string): Promise<b
     // can correlate with release / signing-cert changes.
     telemetry.emit('comfy.desktop.pygit2.probe_failed', {
       source: 'standalone',
-      error_bucket: telemetry.bucketError(probe.reason)
+      ...buildErrorFields(probe.reason)
     })
     return false
   }
@@ -280,7 +281,7 @@ export async function tryConfigureBootstrapPygit2(): Promise<boolean> {
     console.warn(`[git] bootstrap pygit2 rejected at ${pythonPath}: ${probe.reason}`)
     telemetry.emit('comfy.desktop.pygit2.probe_failed', {
       source: 'bootstrap',
-      error_bucket: telemetry.bucketError(probe.reason)
+      ...buildErrorFields(probe.reason)
     })
     return false
   }
