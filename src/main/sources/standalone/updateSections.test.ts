@@ -37,6 +37,7 @@ interface UpdateAction {
   progressTitle: string
   data?: { channel?: string; isDowngrade?: boolean }
   confirm?: { title?: string; message?: string }
+  prompt?: { defaultValue?: string; uniquifyDefault?: boolean }
 }
 interface ChannelOption {
   value: string
@@ -45,12 +46,16 @@ interface ChannelOption {
 interface UpdateField { id: string; options: ChannelOption[] }
 interface UpdateSection { tab: string; fields?: UpdateField[] }
 
-function getUpdateAction(installation: InstallationRecord, channel: 'stable' | 'latest'): UpdateAction | undefined {
+function getChannelAction(installation: InstallationRecord, channel: 'stable' | 'latest', actionId: string): UpdateAction | undefined {
   const sections = getDetailSections(installation) as unknown as UpdateSection[]
   const updates = sections.find((s) => s.tab === 'update')
   const channelField = updates?.fields?.find((f) => f.id === 'updateChannel')
   const option = channelField?.options?.find((o) => o.value === channel)
-  return option?.data?.actions?.find((a) => a.id === 'update-comfyui')
+  return option?.data?.actions?.find((a) => a.id === actionId)
+}
+
+function getUpdateAction(installation: InstallationRecord, channel: 'stable' | 'latest'): UpdateAction | undefined {
+  return getChannelAction(installation, channel, 'update-comfyui')
 }
 
 function baseInstall(overrides: Partial<InstallationRecord> = {}): InstallationRecord {
@@ -195,5 +200,36 @@ describe('updateSections — channel picker reflects de-facto channel', () => {
     } as Partial<InstallationRecord>)) as unknown as UpdateSection[]
     const field = sections.find((s) => s.tab === 'update')?.fields?.find((f) => f.id === 'updateChannel')
     expect((field as unknown as { value: string }).value).toBe('latest')
+  })
+})
+
+describe('updateSections — copy (duplicate) prompt default', () => {
+  interface ActionWithPrompt { id: string; prompt?: { defaultValue?: string; uniquifyDefault?: boolean } }
+  interface ActionsSection { title?: string; actions?: ActionWithPrompt[] }
+
+  it('pre-fills the duplicate prompt with the source name, flagged to resolve to the numbered name on show', () => {
+    const sections = getDetailSections(baseInstall({ name: 'My Comfy' })) as unknown as ActionsSection[]
+    const copy = sections
+      .flatMap((s) => s.actions ?? [])
+      .find((a) => a.id === 'copy')
+    expect(copy).toBeDefined()
+    expect(copy!.prompt?.defaultValue).toBe('My Comfy')
+    // uniquifyDefault tells the renderer to show the name it will actually get.
+    expect(copy!.prompt?.uniquifyDefault).toBe(true)
+  })
+
+  it('pre-fills the copy & update prompt with the source name only, never the target version (which goes stale)', () => {
+    // commitsAhead makes the effective channel `latest`, so the `latest` card
+    // exposes the copy-update action for an install that's on stable.
+    const copyUpdate = getChannelAction(
+      baseInstall({ name: 'My Comfy', updateChannel: 'stable' }),
+      'latest',
+      'copy-update'
+    )
+    expect(copyUpdate).toBeDefined()
+    // Guard against version-stamping regressions like "My Comfy (v0.3.20+12)".
+    expect(copyUpdate!.prompt?.defaultValue).toBe('My Comfy')
+    // Flagged so the renderer shows the numbered name it will actually be saved as.
+    expect(copyUpdate!.prompt?.uniquifyDefault).toBe(true)
   })
 })

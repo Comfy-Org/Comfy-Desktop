@@ -69,7 +69,9 @@ function buildApi(overrides: Partial<TestApi> = {}): TestApi {
       .fn()
       .mockResolvedValue({ sourceId: 'standalone', sourceCategory: 'local' }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
-    addInstallation: vi.fn().mockResolvedValue({ ok: true, entry: { id: 'inst-express-1' } }),
+    addInstallation: vi
+      .fn()
+      .mockResolvedValue({ ok: true, entry: { id: 'inst-express-1', name: 'ComfyUI' } }),
     installInstance: vi.fn().mockResolvedValue(undefined),
     setFirstUseMode: vi.fn(),
     setSetting: vi.fn().mockResolvedValue(undefined),

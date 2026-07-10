@@ -28,6 +28,7 @@ import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
 import { scrubAll } from '../../shared/piiScrub'
+import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
   KNOWN_MODEL_FOLDERS,
@@ -50,7 +51,7 @@ const SNAPSHOTS_REL = '.snapshots'
 // Keeping the name plain — instead of "Adopted from Legacy Desktop" —
 // matches user expectation that the picker shows their app, not the
 // provenance story.
-const ADOPT_INSTALL_NAME = 'ComfyUI'
+const ADOPT_INSTALL_NAME = DEFAULT_INSTALL_NAME
 const COMFY_SETTINGS_FILE = 'comfy.settings.json'
 const DESKTOP_CONFIG_FILE = 'config.json'
 const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
