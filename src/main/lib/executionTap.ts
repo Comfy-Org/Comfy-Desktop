@@ -26,7 +26,7 @@
 import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 /**
  * Traceback collection state. We collect until a blank line follows an
@@ -49,6 +49,12 @@ interface TapState {
   tracebackBuffer: string[]
   tracebackChars: number
   tracebackPhase: TracebackPhase
+  // Buffer for a multi-line prompt-validation failure (header + reason lines).
+  // Empty when not collecting. Deferred so `error_message` carries the actual
+  // reasons ("Value not in list", "Required input is missing"), not just the
+  // header — otherwise every validation_failed groups into one opaque bucket.
+  validationBuffer: string[]
+  validationNodeId: string | null
 }
 
 const TRACEBACK_START = /^Traceback \(most recent call last\):/
@@ -60,8 +66,10 @@ const EXCEPTION_LINE = /^[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Inter
 const MAX_PENDING_PROMPTS = 256
 const MAX_TRACEBACK_LINES = 200
 const MAX_TRACEBACK_CHARS = 16 * 1024
-const ERROR_MESSAGE_MAX = 500
-const ERROR_CLASS_MAX = 80
+// A validation block is header + a handful of reason lines; bound it tightly.
+const MAX_VALIDATION_LINES = 30
+// Detail lines ComfyUI prints under the header: `* Node 4:` / `  - reason: …`.
+const VALIDATION_DETAIL = /^[*-]/
 
 export function createExecutionTap(opts: {
   installationId: string
@@ -81,7 +89,9 @@ export function createExecutionTap(opts: {
     errorCount: 0,
     tracebackBuffer: [],
     tracebackChars: 0,
-    tracebackPhase: 'none'
+    tracebackPhase: 'none',
+    validationBuffer: [],
+    validationNodeId: null
   }
 
   const baseContext = {
@@ -146,8 +156,6 @@ export function createExecutionTap(opts: {
         break
       }
     }
-    const errorClass = exceptionLine.split(':')[0]?.trim() || 'unknown'
-    const scrubbedMessage = scrubAll(exceptionLine).slice(0, ERROR_MESSAGE_MAX)
     state.errorCount++
     // Wall-clock between the matching `Got prompt` and the error end —
     // mirror what `execution.completed` already emits so error-vs-success
@@ -155,17 +163,42 @@ export function createExecutionTap(opts: {
     // error fired without a paired start (already-pending traceback at
     // boot, etc.).
     const wallMs = consumePromptStart()
+    // Standard error schema derived from the final exception line (class /
+    // message / bucket / signature).
     telemetry.emit('comfy.desktop.execution.error', {
       ...baseContext,
-      error_class: errorClass.slice(0, ERROR_CLASS_MAX),
-      error_message: scrubbedMessage,
-      error_bucket: telemetry.bucketError(scrubbedMessage),
+      ...buildErrorFields(exceptionLine),
       error_count: state.errorCount,
       wall_clock_ms: wallMs
     })
     state.tracebackPhase = 'none'
     state.tracebackBuffer = []
     state.tracebackChars = 0
+  }
+
+  /**
+   * Emit a deferred prompt-validation failure. The buffer holds the header
+   * (`Failed to validate prompt for output N:`) plus the `* node:` / `- reason`
+   * detail lines; the joined block drives `error_message` / `error_signature`
+   * so distinct validation reasons group separately, while `error_class` stays
+   * the stable `validation_failed` and `error_bucket` stays `validation`.
+   */
+  function emitValidationError(): void {
+    if (state.validationBuffer.length === 0) return
+    const block = state.validationBuffer.join('\n')
+    const nodeId = state.validationNodeId
+    state.validationBuffer = []
+    state.validationNodeId = null
+    state.errorCount++
+    const wallMs = consumePromptStart()
+    telemetry.emit('comfy.desktop.execution.error', {
+      ...baseContext,
+      ...buildErrorFields(block, { errorClass: 'validation_failed' }),
+      error_bucket: 'validation',
+      error_count: state.errorCount,
+      node_id: nodeId,
+      wall_clock_ms: wallMs
+    })
   }
 
   function appendTracebackLine(line: string): void {
@@ -188,6 +221,17 @@ export function createExecutionTap(opts: {
     // Strip ANSI first, then the level tag. Raw Python tracebacks carry
     // neither, so TRACEBACK_START detection is unaffected.
     const trimmed = stripLogLevelPrefix(stripAnsi(line).trim())
+
+    // Collecting a multi-line validation block: keep appending the `* node:` /
+    // `- reason` detail lines; any other line ends the block (then falls
+    // through so it is processed normally — a new header, `got prompt`, etc.).
+    if (state.validationBuffer.length > 0) {
+      if (VALIDATION_DETAIL.test(trimmed) && state.validationBuffer.length < MAX_VALIDATION_LINES) {
+        state.validationBuffer.push(trimmed)
+        return
+      }
+      emitValidationError()
+    }
 
     if (trimmed.length === 0) return
 
@@ -218,16 +262,11 @@ export function createExecutionTap(opts: {
 
     const validationMatch = trimmed.match(VALIDATION_FAIL)
     if (validationMatch?.groups) {
-      state.errorCount++
-      const wallMs = consumePromptStart()
-      telemetry.emit('comfy.desktop.execution.error', {
-        ...baseContext,
-        error_class: 'validation_failed',
-        error_bucket: 'validation',
-        error_count: state.errorCount,
-        node_id: validationMatch.groups['nodeId'],
-        wall_clock_ms: wallMs
-      })
+      // Start deferred collection; the paired error emits once the block ends
+      // (a non-detail line, a new header, or flushSummary) so `error_message`
+      // carries the reasons that follow, not just this header.
+      state.validationBuffer = [trimmed]
+      state.validationNodeId = validationMatch.groups['nodeId'] ?? null
       return
     }
 
@@ -285,6 +324,19 @@ export function createExecutionTap(opts: {
       for (const line of lines) handleLine(line, source)
     },
     flushSummary(): void {
+      // Flush any buffered partial line (a final line written without a
+      // trailing newline when the process exited) through the parser first —
+      // that trailing line is often the fatal exception / validation reason we
+      // want, and it would otherwise sit unparsed in `pending`.
+      for (const source of ['stdout', 'stderr'] as const) {
+        const partial = pending[source]
+        if (partial.length === 0) continue
+        pending[source] = ''
+        handleLine(partial, source)
+      }
+      // Drain an in-flight validation block (process exited before the block's
+      // terminating line arrived) so the failure isn't dropped.
+      emitValidationError()
       // Drain any in-flight traceback so we don't drop the error if the
       // process exited before a boundary line arrived.
       if (

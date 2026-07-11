@@ -5,6 +5,7 @@ import { fetchJSON } from './fetch'
 import { download } from './download'
 import { extract } from './extract'
 import * as telemetry from './telemetry'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 interface CnrInstallInfo {
   downloadUrl: string
@@ -110,15 +111,13 @@ export async function installCnrNode(
       } catch {}
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
     telemetry.capture('comfy.desktop.node.installed', {
       node_id: nodeId,
       version: resolvedVersion,
       action: 'install',
       result: 'failure',
       duration_ms: Date.now() - startedAt,
-      error_bucket: telemetry.bucketError(message),
-      error_message: message.slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }
@@ -215,15 +214,13 @@ export async function switchCnrVersion(
       try { await fs.promises.rm(tmpExtract, { recursive: true, force: true }) } catch {}
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
     telemetry.capture('comfy.desktop.node.installed', {
       node_id: nodeId,
       version: resolvedVersion,
       action: 'switch',
       result: 'failure',
       duration_ms: Date.now() - startedAt,
-      error_bucket: telemetry.bucketError(message),
-      error_message: message.slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }

@@ -6,6 +6,7 @@
  * renderer callbacks frequently never ran. Same event names/shapes as before.
  */
 import * as telemetry from '../telemetry'
+import * as settings from '../../settings'
 import { buildInstallationDdContext, sourceMap } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
 
@@ -119,6 +120,10 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
     // one release cycle so existing dashboards survive migration (issue #1054).
     const instanceStartedProps = {
       ...(metadata as Record<string, string | number | boolean | null | undefined>),
+      // Point-in-time snapshot of the tracked global settings (issue #1223) so
+      // current state is queryable on a recurring event without a person-property
+      // join.
+      ...settings.getTrackedSettingsTelemetryProperties(),
       // The cross-surface axis analysts filter on (paired with `client`,
       // which the telemetry defaults pin to 'desktop'). Narrowed through
       // asDeployment since a source plugin's category is an open string.
