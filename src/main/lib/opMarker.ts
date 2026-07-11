@@ -54,6 +54,20 @@ export function backupBranchHint(branchName: string | undefined): string {
     : ''
 }
 
+/**
+ * Status line describing the outcome of a ComfyUI source rollback. Shared by the
+ * git-script-failure and dependency-sync-failure paths so their wording can't drift.
+ */
+export function rollbackStatusMessage(
+  rolledBack: boolean,
+  headSha: string,
+  backupBranch: string | undefined,
+): string {
+  return rolledBack
+    ? `ComfyUI source was rolled back to ${headSha.slice(0, 7)}.`
+    : `ComfyUI source rollback failed; installation may be inconsistent.${backupBranchHint(backupBranch)}`
+}
+
 export async function writeOpMarker(installPath: string, marker: OpMarker): Promise<void> {
   try {
     await fs.promises.writeFile(markerPath(installPath), JSON.stringify(marker), 'utf-8')

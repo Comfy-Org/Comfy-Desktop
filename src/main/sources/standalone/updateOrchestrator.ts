@@ -14,7 +14,7 @@ import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { repairMacBinaries } from './macRepair'
 import { getActivePythonPath, getActiveUvPath, getMasterPythonPath } from './envPaths'
-import { writeOpMarker, completeOpMarker, readOpMarker, backupBranchHint } from '../../lib/opMarker'
+import { writeOpMarker, completeOpMarker, readOpMarker, rollbackStatusMessage } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
 
 interface ScriptResult {
@@ -257,10 +257,7 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     let rollbackNote = ''
     if (preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
       const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
-      const backupHint = backupBranchHint(result.markers.BACKUP_BRANCH)
-      rollbackNote = rolledBack
-        ? `\n\nComfyUI source was rolled back to ${preOpHead.slice(0, 7)}.`
-        : `\n\nComfyUI source rollback failed; installation may be inconsistent.${backupHint}`
+      rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
     }
     const detail = [result.stderrBuf, result.stdoutBuf].filter(Boolean).join('\n').trim().split('\n').slice(-20).join('\n')
     if (sendOutput) {
@@ -408,9 +405,7 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     }
     const reason = signal?.aborted ? 'Cancelled' : depFailure!
     const message = sourceMoved
-      ? (rolledBack
-          ? `${reason}\n\nComfyUI source was rolled back to ${preHead!.slice(0, 7)}.`
-          : `${reason}\n\nComfyUI source rollback failed; installation may be inconsistent.${backupBranchHint(markers.BACKUP_BRANCH)}`)
+      ? `${reason}\n\n${rollbackStatusMessage(rolledBack, preHead!, markers.BACKUP_BRANCH)}`
       : reason
     if (!sendOutput) console.warn(`ComfyUI update aborted: ${reason}`)
     // Leave the op marker: if the in-process rollback failed (rolledBack=false),
