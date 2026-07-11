@@ -49,6 +49,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'temp-directory': 'paths',
   'input-directory': 'paths',
   'user-directory': 'paths',
+  'models-directory': 'paths',
   'front-end-root': 'paths',
 
   'auto-launch': 'launch',
@@ -70,6 +71,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'novram': 'gpuVram',
   'cpu': 'gpuVram',
   'reserve-vram': 'gpuVram',
+  'vram-headroom': 'gpuVram',
   'async-offload': 'gpuVram',
   'disable-async-offload': 'gpuVram',
   'disable-dynamic-vram': 'gpuVram',
@@ -106,6 +108,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'use-sage-attention': 'performance',
   'use-flash-attention': 'performance',
   'enable-triton-backend': 'performance',
+  'disable-triton-backend': 'performance',
   'disable-xformers': 'performance',
   'force-upcast-attention': 'performance',
   'dont-upcast-attention': 'performance',
@@ -118,6 +121,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'cache-lru': 'cache',
   'cache-none': 'cache',
   'cache-ram': 'cache',
+  'high-ram': 'cache',
 
   'preview-method': 'preview',
   'preview-size': 'preview',
@@ -133,10 +137,12 @@ const CATEGORY_MAP: Record<string, string> = {
   'whitelist-custom-nodes': 'features',
   'disable-api-nodes': 'features',
   'enable-assets': 'features',
+  'enable-asset-hashing': 'features',
 
   'verbose': 'logging',
   'log-stdout': 'logging',
   'dont-print-server': 'logging',
+  'debug-hang': 'logging',
 
   'default-hashing-function': 'advanced',
   'quick-test-for-ci': 'advanced',
