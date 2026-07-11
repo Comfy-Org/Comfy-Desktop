@@ -15,6 +15,10 @@ vi.mock('./shared', () => ({
   )
 }))
 
+vi.mock('../../settings', () => ({
+  getTrackedSettingsTelemetryProperties: vi.fn(() => ({}))
+}))
+
 vi.mock('../telemetry', () => ({
   capture: vi.fn(),
   registerPersonPropertiesOnce: vi.fn(),
