@@ -46,6 +46,7 @@ import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
 import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
+import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
 import {
   startBootPhases,
   recordBootPhase,
@@ -372,7 +373,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     } catch (err) {
       console.warn('Failed to seed ComfyUI-Manager mirror config:', err)
       telemetry.capture('comfy.desktop.manager.mirror_seed_failed', {
-        error_message: String(err).slice(0, 200),
+        ...buildErrorFields(err),
       })
     }
   }
@@ -821,7 +822,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
   const bootId = randomUUID()
 
-  const tryLaunch = async (): Promise<{ ok: true; proc: ChildProcess; getStderr: () => string } | { ok: false; message: string; cancelled?: boolean }> => {
+  const tryLaunch = async (): Promise<{ ok: true; proc: ChildProcess; getStderr: () => string } | { ok: false; message: string; cancelled?: boolean; stderr?: string; exitCode?: number | null; signal?: string | null }> => {
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!].map((a, ci, ca) => {
       if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
       return /\s/.test(a) ? `"${a}"` : a
@@ -852,6 +853,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const spawned = spawnComfy()
 
     let earlyExit: string | null = null
+    // Exit code / signal of an early process exit, surfaced on `boot_failed`
+    // so the failure carries WHY the process died, not just that it did.
+    let exitCode: number | null = null
+    let exitSignal: string | null = null
     const earlyExitPromise = new Promise<void>((_resolve, reject) => {
       spawned.proc.on('error', (err: Error) => {
         const code = (err as NodeJS.ErrnoException).code ? ` (${(err as NodeJS.ErrnoException).code})` : ''
@@ -859,6 +864,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
       spawned.proc.on('exit', async (code, signal) => {
+        exitCode = code
+        exitSignal = signal
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
           // A startup crash (e.g. a C-extension segfault during import) is the
@@ -905,8 +912,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
           return tryLaunch()
         } catch { }
       }
-      if (abort.signal.aborted) return { ok: false, message: (err as Error).message, cancelled: true }
-      return { ok: false, message: (err as Error).message }
+      // Carry the in-memory stderr tail + exit info out so `boot_failed` can
+      // report the actual error. The buffer lives in main (survives a hard
+      // child crash) but was previously discarded on the failure path.
+      const failureStderr = spawned.getStderr()
+      if (abort.signal.aborted) return { ok: false, message: (err as Error).message, cancelled: true, stderr: failureStderr, exitCode, signal: exitSignal }
+      return { ok: false, message: (err as Error).message, stderr: failureStderr, exitCode, signal: exitSignal }
     }
   }
 
@@ -935,12 +946,25 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // reached (null if it never entered one). The error is bucketed; the
     // retry counters surface how many times we re-spawned before giving up.
     const failedPhase = flushBootPhasesOnFailure(installationId)
+    // Standard error schema derived from the failure message + the stderr
+    // tail (a Python traceback in the tail yields a real `error_class` /
+    // `error_message`; otherwise the launch message drives it). `error_tail`
+    // carries the last ~40 lines of stderr — where the fatal error prints —
+    // scrubbed and capped, so the failure is diagnosable without depending on
+    // the separate, unreliable `boot_log` event.
+    const tail = errorTail(launchResult.stderr)
+    const errorSource = tail
+      ? `${launchResult.message}\n${launchResult.stderr}`
+      : launchResult.message
     telemetry.emit('comfy.desktop.comfyui.boot_failed', {
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
       failed_phase: failedPhase,
-      error_bucket: telemetry.bucketError(launchResult.message),
+      ...buildErrorFields(errorSource),
+      error_tail: tail,
+      exit_code: launchResult.exitCode ?? null,
+      signal: launchResult.signal ?? null,
       retry_count: portRetries + rebootRetries,
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,

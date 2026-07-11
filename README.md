@@ -58,14 +58,18 @@ Comfy Desktop is the official desktop application for **ComfyUI**, the node-base
 **macOS** — open the `.dmg`, drag **Comfy Desktop** to Applications, and launch from there.
 
 **Linux** — `.deb` (Debian/Ubuntu), from the directory you downloaded it to:
+
 ```bash
 sudo apt install ./*.deb
 ```
+
 AppImage:
+
 ```bash
 chmod +x ./*.AppImage
 ./*.AppImage --no-sandbox
 ```
+
 Then launch from your application menu.
 
 </details>
@@ -110,18 +114,21 @@ pnpm run dev               # Windows / macOS
 ./linux-dev.sh             # Linux
 ```
 
+On Windows/macOS, set up a fresh clone and start the app in one command with `pnpm run init:dev`.
+
 ### Common tasks
 
-| Command | Description |
-|---|---|
-| `pnpm run dev` | Start the app in dev mode |
-| `pnpm test` | Unit tests ([Vitest](https://vitest.dev/)) |
-| `pnpm run test:integration` | Integration suite |
-| `pnpm run test:e2e` | End-to-end tests ([Playwright](https://playwright.dev/)) |
-| `pnpm run typecheck` | Type-check (node + web + e2e + integration) |
-| `pnpm run lint` / `lint:fix` | Lint (ESLint) |
-| `pnpm run format` | Format (Prettier) |
-| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/` |
+| Command                          | Description                                                           |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `pnpm run init:dev`              | Install dependencies, build bootstrap Python, then run `pnpm run dev` |
+| `pnpm run dev`                   | Start the app in dev mode                                             |
+| `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
+| `pnpm run test:integration`      | Integration suite                                                     |
+| `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
+| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
+| `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
+| `pnpm run format`                | Format (Prettier)                                                     |
+| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
 
 ### Project structure
 
@@ -141,9 +148,9 @@ locales/         # i18n translations
 
 The app ships a minimal (~15–20 MB) standalone Python with `pygit2` baked in, under `bootstrap-python/<platform>/`. It provides git operations (clone, fetch, ls-remote) before any standalone ComfyUI environment is provisioned, so the app works on machines without system `git`.
 
-| Command | What it does |
-|---|---|
-| `pnpm run bootstrap` | Build locally via `scripts/build-bootstrap-python.py` (requires Python 3.13). Auto-detects the host platform; pass `--platform win-x64\|mac-arm64\|linux-x64` for another. |
+| Command                    | What it does                                                                                                                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run bootstrap`       | Build locally via `scripts/build-bootstrap-python.py` (requires Python 3.13). Auto-detects the host platform; pass `--platform win-x64\|mac-arm64\|linux-x64` for another.                                |
 | `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v1`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v1) release (faster; no local Python needed). Set `GITHUB_TOKEN` to authenticate. |
 
 Both write to `bootstrap-python/{win-x64,mac-arm64,linux-x64}/` (gitignored). The directory must exist before `pnpm run dev` or `pnpm run build:*`.
@@ -170,18 +177,20 @@ At runtime the main process picks a git backend in priority order ([`src/main/li
 
 Three workflows in [`.github/workflows/`](.github/workflows/):
 
-| Workflow | Trigger | Role |
-|---|---|---|
-| `version-bump.yml` | manual (**Run workflow**) | Opens the version-bump PR (bot-authored) and labels it `Release`. |
-| `release-from-pr-label.yml` | `pull_request_target: closed` | On merge of a `Release`-labeled PR, tags `vX.Y.Z` and dispatches the build. |
-| `build-release.yml` | push of a `v*` tag | Runs `pnpm run build`, uploads Datadog sourcemaps, runs `todesktop build`, and publishes the GitHub Release (`stable` → Latest, `-rc` → pre-release). |
+| Workflow                    | Trigger                       | Role                                                                                                                                                  |
+| --------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version-bump.yml`          | manual (**Run workflow**)     | Opens the version-bump PR (bot-authored) and labels it `Release`.                                                                                     |
+| `release-from-pr-label.yml` | `pull_request_target: closed` | On merge of a `Release`-labeled PR, tags `vX.Y.Z` and dispatches the build.                                                                           |
+| `build-release.yml`         | push of a `v*` tag            | Runs `pnpm run build`, uploads Datadog sourcemaps, runs `todesktop build`, and publishes the GitHub Release (`stable` → Latest, `-rc` → pre-release). |
 
 CLI equivalent of step 1:
+
 ```bash
 gh workflow run version-bump.yml -f channel=stable -f bump=patch
 ```
 
 **GitHub Actions config:**
+
 - Variable `APP_ID` + secret `CLOUD_CODE_BOT_PRIVATE_KEY` — the `cloud-code-bot` GitHub App that opens the version-bump PR, so any maintainer can release without a personal token.
 - Secrets `TODESKTOP_ACCESS_TOKEN`, `TODESKTOP_EMAIL` (ToDesktop CLI) and `DATADOG_API_KEY` (RUM sourcemaps).
 
@@ -194,10 +203,10 @@ gh workflow run version-bump.yml -f channel=stable -f bump=patch
 
 On Windows/macOS, app data lives under the standard Electron `userData` path. Dev and production use **separate** directories because Electron derives the name from `package.json` `name` (`comfyui-desktop-2`) in dev vs `productName` (`Comfy Desktop`) in packaged builds:
 
-| | Windows | macOS | Linux |
-|---|---|---|---|
-| **Dev** | `%APPDATA%\comfyui-desktop-2` | `~/Library/Application Support/comfyui-desktop-2` | `~/.config/comfyui-desktop-2` |
-| **Production** | `%APPDATA%\Comfy Desktop` | `~/Library/Application Support/Comfy Desktop` | `~/.config/Comfy Desktop` |
+|                | Windows                       | macOS                                             | Linux                         |
+| -------------- | ----------------------------- | ------------------------------------------------- | ----------------------------- |
+| **Dev**        | `%APPDATA%\comfyui-desktop-2` | `~/Library/Application Support/comfyui-desktop-2` | `~/.config/comfyui-desktop-2` |
+| **Production** | `%APPDATA%\Comfy Desktop`     | `~/Library/Application Support/Comfy Desktop`     | `~/.config/Comfy Desktop`     |
 
 On Linux the app follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/) for config, data, cache, and state. The default install directory is `~/ComfyUI-Installs`.
 
@@ -215,6 +224,7 @@ Quit the app first, then:
 iwr -useb https://raw.githubusercontent.com/Comfy-Org/Comfy-Desktop/main/scripts/reset-windows.ps1 -OutFile reset-windows.ps1
 powershell -ExecutionPolicy Bypass -File .\reset-windows.ps1
 ```
+
 ```sh
 # macOS
 curl -fsSLO https://raw.githubusercontent.com/Comfy-Org/Comfy-Desktop/main/scripts/reset-mac.sh && bash reset-mac.sh
