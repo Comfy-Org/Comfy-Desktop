@@ -27,7 +27,8 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields } from '../../shared/errorEvent'
+import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
   KNOWN_MODEL_FOLDERS,
@@ -50,7 +51,7 @@ const SNAPSHOTS_REL = '.snapshots'
 // Keeping the name plain — instead of "Adopted from Legacy Desktop" —
 // matches user expectation that the picker shows their app, not the
 // provenance story.
-const ADOPT_INSTALL_NAME = 'ComfyUI'
+const ADOPT_INSTALL_NAME = DEFAULT_INSTALL_NAME
 const COMFY_SETTINGS_FILE = 'comfy.settings.json'
 const DESKTOP_CONFIG_FILE = 'config.json'
 const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
@@ -892,6 +893,15 @@ function carryLegacySettings(
   tryCarry('inputDir', path.join(basePath, 'input'))
   tryCarry('outputDir', path.join(basePath, 'output'))
 
+  // This flow writes settings.json directly (not via applySettingSet), so refresh
+  // the durable per-setting person properties for what we just changed instead of
+  // waiting for the next boot (issues #1220/#1223). Consent-gated + queued.
+  const changedKeys = additions.length > 0 ? [...carriedKeys, 'modelsDirs'] : carriedKeys
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties(changedKeys)
+  if (Object.keys(trackedProps).length > 0) {
+    telemetry.registerPersonProperties(trackedProps)
+  }
+
   return { addedModelsDirs: additions, carriedKeys, carrySkippedKeys }
 }
 
@@ -1012,15 +1022,9 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     const result = await runAdoption(info, phaseAwareTools, deps)
     return result
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Scrub before slice so the redacted prefix doesn't get truncated
-    // mid-token. The bucket runs on raw text because its regexes don't
-    // care about user paths and would otherwise miss a legitimate match
-    // hidden inside a `[REDACTED]` substitution.
     telemetry.capture('comfy.desktop.adopt.failed', {
       stage: currentPhase,
-      error_bucket: telemetry.bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }

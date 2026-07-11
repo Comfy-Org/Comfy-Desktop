@@ -89,3 +89,37 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
 export function isDatadogMirroredEvent(eventName: string): boolean {
   return DATADOG_MIRRORED_EVENT_NAMES.has(eventName)
 }
+
+/**
+ * Context keys stripped from the Datadog RUM copy of a mirrored event.
+ *
+ * Datadog is the alerting surface: monitors group and alert on LOW-cardinality
+ * facets (`error_class`, `error_bucket`, `exit_code`, `signal`, phase / variant
+ * / retry fields). The free-text diagnostic fields below are high-cardinality
+ * and/or large (`error_tail` and `last_stderr` run to kilobytes), which bloats
+ * RUM action payloads and pollutes facets for no monitoring benefit. They stay
+ * in PostHog (where the actual triage happens); only the Datadog mirror drops
+ * them. Mirrors the deliberate choice already made for `auth.sign_in_failed`.
+ */
+export const DATADOG_DROPPED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
+  'error_message',
+  'error_signature',
+  'error_tail',
+  'last_stderr',
+])
+
+/**
+ * Return a copy of `context` with the high-cardinality / large diagnostic keys
+ * removed, for sending to Datadog RUM. Returns the input unchanged when it
+ * carries none of them (the common case) to avoid a needless allocation.
+ */
+export function stripDatadogDroppedKeys<T extends Record<string, unknown>>(context: T): T {
+  let out: T | null = null
+  for (const key of DATADOG_DROPPED_CONTEXT_KEYS) {
+    if (key in context) {
+      if (!out) out = { ...context }
+      delete out[key]
+    }
+  }
+  return out ?? context
+}

@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
 import type { InstallPhaseName, InstallPhaseStatus } from '../../lib/installer'
 import * as mainTelemetry from '../../lib/telemetry'
+import { buildErrorFields } from '../../../shared/errorEvent'
 import { copyDirWithProgress } from '../../lib/copy'
 import { readGitHead, isGitAvailable, isPygit2Configured, tryConfigurePygit2Fallback, fetchTags } from '../../lib/git'
 import { resolveLocalVersion } from '../../lib/version-resolve'
@@ -57,9 +58,9 @@ function emitInstallPhase(
     }
     if (typeof info.durationMs === 'number') props.duration_ms = info.durationMs
     if (status === 'error') {
-      props.error_bucket = mainTelemetry.bucketError(
-        info.error instanceof Error ? info.error.message : String(info.error ?? '')
-      )
+      // Standard error schema so a failing phase carries the actual error
+      // text, not just the coarse bucket.
+      Object.assign(props, buildErrorFields(info.error))
     }
     mainTelemetry.emit('comfy.desktop.install.phase', props)
   } catch (err) {
