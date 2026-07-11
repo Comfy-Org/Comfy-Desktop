@@ -1018,6 +1018,20 @@ describe('adoptDesktopInstall', () => {
     }
   })
 
+  it('refreshes durable person properties for the settings it carries', async () => {
+    const legacy = buildFakeLegacy()
+    try {
+      // carryLegacySettings writes settings.json directly (bypassing
+      // applySettingSet), so it must refresh person properties itself.
+      const carried = { auto_install_updates: true, auto_install_updates_explicit: true }
+      vi.mocked(settings.getTrackedSettingsTelemetryProperties).mockReturnValueOnce(carried)
+      await adoptDesktopInstall({ tools: buildSilentTools(), deps: buildDeps({}, legacy.info) })
+      expect(telemetry.registerPersonProperties).toHaveBeenCalledWith(carried)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
   it('respects a pre-existing v2 autoInstallUpdates choice on reconcile', async () => {
     // A reconcile pass must not silently flip a user's explicit v2 choice back on.
     settingsMock.__store['autoInstallUpdates'] = false
