@@ -32,6 +32,7 @@ vi.mock('../settings', () => {
     has: vi.fn((key: string) => store[key] !== undefined && store[key] !== null),
     getAll: vi.fn(() => ({ ...store })),
     getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
+    getTrackedSettingsTelemetryProperties: vi.fn(() => ({})),
     __store: store
   }
 })
@@ -129,6 +130,7 @@ vi.mock('../installations', () => {
 vi.mock('./telemetry', () => ({
   capture: vi.fn(),
   captureInstallCompleted: vi.fn(),
+  registerPersonProperties: vi.fn(),
   bucketError: vi.fn(() => 'other'),
   trackedStep: vi.fn(async (_step: string, _ctx: unknown, fn: () => Promise<unknown>) => fn())
 }))
@@ -1011,6 +1013,20 @@ describe('adoptDesktopInstall', () => {
       expect(settingsMock.__store['chineseMirrorsPrompted']).toBe(true)
       // TorchInstallMirror has no v2 consumer, never stashed on the record.
       expect(record).not.toHaveProperty('adoptedTorchMirror')
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('refreshes durable person properties for the settings it carries', async () => {
+    const legacy = buildFakeLegacy()
+    try {
+      // carryLegacySettings writes settings.json directly (bypassing
+      // applySettingSet), so it must refresh person properties itself.
+      const carried = { auto_install_updates: true, auto_install_updates_explicit: true }
+      vi.mocked(settings.getTrackedSettingsTelemetryProperties).mockReturnValueOnce(carried)
+      await adoptDesktopInstall({ tools: buildSilentTools(), deps: buildDeps({}, legacy.info) })
+      expect(telemetry.registerPersonProperties).toHaveBeenCalledWith(carried)
     } finally {
       legacy.cleanup()
     }

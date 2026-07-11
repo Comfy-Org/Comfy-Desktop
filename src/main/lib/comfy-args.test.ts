@@ -120,10 +120,10 @@ options:
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
-    expect(byName.get('port')?.category).toBe('Network')
-    expect(byName.get('listen')?.category).toBe('Network')
-    expect(byName.get('gpu-only')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-manager')?.category).toBe('Manager')
+    expect(byName.get('port')?.category).toBe('network')
+    expect(byName.get('listen')?.category).toBe('network')
+    expect(byName.get('gpu-only')?.category).toBe('gpuVram')
+    expect(byName.get('enable-manager')?.category).toBe('manager')
   })
 
   it('categorizes --fast-disk and --enable-triton-backend', () => {
@@ -137,8 +137,34 @@ options:
 `
     const schema = parseHelpOutput(help)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
-    expect(byName.get('fast-disk')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-triton-backend')?.category).toBe('Performance')
+    expect(byName.get('fast-disk')?.category).toBe('gpuVram')
+    expect(byName.get('enable-triton-backend')?.category).toBe('performance')
+  })
+
+  it('categorizes newer ComfyUI flags instead of falling to "other"', () => {
+    const help = `usage: main.py [-h] [--vram-headroom VRAM_HEADROOM] [--high-ram] [--models-directory MODELS_DIRECTORY] [--disable-triton-backend] [--enable-asset-hashing] [--debug-hang]
+
+options:
+  -h, --help            show this help message and exit
+  --vram-headroom VRAM_HEADROOM
+                        Extra VRAM headroom for DynamicVRAM.
+  --high-ram            Improve performance on high RAM systems.
+  --models-directory MODELS_DIRECTORY
+                        Set the ComfyUI models directory.
+  --disable-triton-backend
+                        Force-disable the comfy-kitchen Triton backend.
+  --enable-asset-hashing
+                        Compute blake3 content hashes when scanning assets.
+  --debug-hang          Enable stack trace dumps on Ctrl-C for debugging hangs.
+`
+    const schema = parseHelpOutput(help)
+    const byName = new Map(schema.args.map((a) => [a.name, a]))
+    expect(byName.get('vram-headroom')?.category).toBe('gpuVram')
+    expect(byName.get('high-ram')?.category).toBe('cache')
+    expect(byName.get('models-directory')?.category).toBe('paths')
+    expect(byName.get('disable-triton-backend')?.category).toBe('performance')
+    expect(byName.get('enable-asset-hashing')?.category).toBe('features')
+    expect(byName.get('debug-hang')?.category).toBe('logging')
   })
 
   it('handles Windows \\r\\n line endings', () => {

@@ -17,6 +17,14 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_completed')).toBe(false)
   })
 
+  // The onboarding→install handoff (#1224) splits the same way: install.not_started
+  // is the abort/failure signal ops alerts on; install.dispatched is the paired
+  // funnel success gate (PostHog only).
+  it('mirrors install.not_started but not install.dispatched', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.install.not_started')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)
+  })
+
   it('returns false for unknown event names', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })

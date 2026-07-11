@@ -1435,6 +1435,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       id_class: getIdClass()
     })
 
+    // Durable snapshot of the tracked global settings as person properties
+    // (issues #1220/#1223), so adoption of every setting is queryable across the
+    // whole base. Consent-gated: queued until granted. Re-registered on change in
+    // `applySettingSet`.
+    mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
+
     const isFirstLaunch = consumeFirstLaunch()
     const pendingDownloadToken = readPendingDownloadToken()
     if (pendingDownloadToken) {
@@ -1499,6 +1505,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)
+
+    // Locale adoption + unsupported-locale demand. `effective_language` is read
+    // after i18n.init so it's the locale the app actually renders (falls back to
+    // 'en' when no bundle exists), distinct from the OS locale and the user's
+    // pick. Not a global setting, but the only place the effective locale is known.
+    mainTelemetry.capture('comfy.desktop.app.language_resolved', {
+      os_locale: app.getLocale(),
+      selected_language: (settings.get('language') as string | undefined) || null,
+      effective_language: i18n.getLocale()
+    })
 
     // Desktop-side anchor of the website → download → first-launch acquisition
     // funnel. Fires exactly once per installation, ever (guard file alongside
