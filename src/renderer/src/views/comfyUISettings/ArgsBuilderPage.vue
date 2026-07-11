@@ -36,6 +36,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+/** Translate a stable category slug (from `comfy-args.ts`) for display.
+ *  vue-i18n falls back to the English (`en`) catalog for any untranslated key. */
+function categoryLabel(key: string): string {
+  return t(`comfyUISettings.argsCategory.${key}`)
+}
+
 const localValue = ref(props.initialValue)
 const schema = ref<ComfyArgDef[]>([])
 const loading = ref(false)
@@ -317,7 +323,7 @@ const structuredGroups = computed(() => {
   }
   if (activeItems.length === 0) return result
   const ordered = new Map<string, GroupItem[]>()
-  ordered.set(t('comfyUISettings.argsActiveTitle', 'Active'), activeItems)
+  ordered.set('active', activeItems)
   for (const [category, items] of result) ordered.set(category, items)
   return ordered
 })
@@ -417,7 +423,7 @@ function onRawChange(value: string): void {
         :key="category"
         class="args-page-category"
       >
-        <header class="args-page-category-title">{{ category }}</header>
+        <header class="args-page-category-title">{{ categoryLabel(category) }}</header>
 
         <div v-for="(item, idx) in items" :key="idx" class="args-page-item">
           <!-- Exclusive cluster as a compact dropdown; the label lists the members so you can see the choices before opening, and a synthetic "None" option clears the group. -->
