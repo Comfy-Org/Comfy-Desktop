@@ -1,5 +1,5 @@
 /**
- * Typed client for the ingest desktop-login-code endpoints (GTM-93).
+ * Typed client for the ingest desktop-login-code endpoints.
  * Talks to the same origin that serves the Cloud frontend — the load
  * balancer routes `/api/*` to ingest — so there is no separate API base
  * URL to configure.

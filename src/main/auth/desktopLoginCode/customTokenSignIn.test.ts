@@ -5,26 +5,10 @@ import {
   lookupAccount,
   signInWithCustomToken
 } from './customTokenSignIn'
+import { hangingFetch, jsonResponse } from './testHelpers'
 import { getFirebaseConfig } from '../firebaseBridge/config'
 
 const IDP_BASE = 'https://identitytoolkit.googleapis.com/v1'
-
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  })
-}
-
-/** fetch stub that stays pending until its abort signal fires. */
-function hangingFetch(): typeof fetch {
-  return (...args: Parameters<typeof fetch>) =>
-    new Promise<Response>((_resolve, reject) => {
-      args[1]?.signal?.addEventListener('abort', () =>
-        reject(new DOMException('This operation was aborted', 'AbortError'))
-      )
-    })
-}
 
 afterEach(() => {
   vi.unstubAllGlobals()

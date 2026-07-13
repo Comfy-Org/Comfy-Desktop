@@ -109,7 +109,6 @@ beforeEach(() => {
   vi.resetAllMocks()
   h.appIsPackaged = false
   h.openExternal.mockResolvedValue(undefined)
-  // Deterministic poll jitter.
   vi.spyOn(Math, 'random').mockReturnValue(0)
 })
 
@@ -185,7 +184,6 @@ describe('signInViaDesktopLoginCode', () => {
       flow: 'desktop_login_code'
     })
 
-    // Browser opened with only the opaque code — no installation_id.
     expect(h.openExternal).toHaveBeenCalledTimes(1)
     const openedUrl = h.openExternal.mock.calls[0]![0]
     expect(openedUrl.startsWith('https://cloud.comfy.org/cloud/login')).toBe(true)
@@ -194,7 +192,6 @@ describe('signInViaDesktopLoginCode', () => {
     expect(openedUrl).not.toContain('machine-hash-1234')
     expect(h.showCopyLinkBanner).toHaveBeenCalledWith(contents, openedUrl)
 
-    // Consent on → create body carries the machine hash.
     expect(h.createDesktopLoginCode).toHaveBeenCalledWith(
       'https://cloud.comfy.org',
       expect.objectContaining({
