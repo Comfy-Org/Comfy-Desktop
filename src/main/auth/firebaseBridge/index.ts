@@ -10,14 +10,18 @@ import {
   showCopyLinkBanner
 } from './flowState'
 import { abortable, abortableSleep } from './flowControl'
-import { bindSignedInUser, type HandleFirebasePopupOpts, POST_SIGNIN_HOLD_MS } from './flowShared'
+import {
+  bindSignedInUser,
+  emitSignInFailure,
+  type HandleFirebasePopupOpts,
+  POST_SIGNIN_HOLD_MS
+} from './flowShared'
 import { buildIndexedDbInjectScript } from './inject'
 import { extractProviderId, type SupportedProvider } from './intercept'
 import { restoreParentWindow } from './restoreParentWindow'
 import { startBridgeServer, type BridgeHandle } from './server'
 import { signInViaDesktopLoginCode } from '../desktopLoginCode'
 import * as mainTelemetry from '../../lib/telemetry'
-import { extractErrorClass } from '../../../shared/errorEvent'
 
 const LEGACY_AUTH_FLOW = 'loopback_bridge'
 
@@ -135,12 +139,7 @@ export async function handleFirebasePopup(
     // cardinality; error_class adds a locale-independent type for grouping.
     // The raw message stays out by design (may carry tokens / URLs), so we
     // deliberately do NOT ship `error_message` / `error_signature` here.
-    mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
-      provider: providerId,
-      error_class: extractErrorClass(error),
-      error_bucket: mainTelemetry.bucketError(error.message),
-      flow: LEGACY_AUTH_FLOW
-    })
+    emitSignInFailure(providerId, LEGACY_AUTH_FLOW, error)
     opts.onError?.(error)
   } finally {
     handle?.close()

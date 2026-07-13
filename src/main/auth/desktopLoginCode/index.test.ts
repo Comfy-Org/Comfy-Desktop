@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as ClientModule from './client'
 import type * as OrchestratorModule from './index'
+import type * as FlowSharedModule from '../firebaseBridge/flowShared'
 
 const h = vi.hoisted(() => ({
   appIsPackaged: false,
@@ -52,7 +53,8 @@ vi.mock('../firebaseBridge/flowState', () => ({
   }
 }))
 
-vi.mock('../firebaseBridge/flowShared', () => ({
+vi.mock('../firebaseBridge/flowShared', async (importOriginal) => ({
+  ...(await importOriginal<typeof FlowSharedModule>()),
   bindSignedInUser: h.bindSignedInUser,
   POST_SIGNIN_HOLD_MS: 3000
 }))
@@ -341,7 +343,13 @@ describe('signInViaDesktopLoginCode', () => {
     expect(await promise).toBe('handled')
     expect(h.emit).toHaveBeenCalledWith(
       'comfy.desktop.auth.sign_in_failed',
-      expect.objectContaining({ provider: 'google.com', flow: 'desktop_login_code' })
+      {
+        provider: 'google.com',
+        error_class: 'DesktopLoginCodeError',
+        error_bucket: 'bucketed',
+        flow: 'desktop_login_code',
+        retried_poll_errors: 0
+      }
     )
     expect(onError).toHaveBeenCalledWith(expect.any(Error))
     expect(h.bindSignedInUser).not.toHaveBeenCalled()

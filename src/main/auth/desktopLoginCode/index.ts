@@ -24,6 +24,7 @@ import { detectFirebaseEnv, getFirebaseConfig } from '../firebaseBridge/config'
 import { abortableSleep } from '../firebaseBridge/flowControl'
 import {
   bindSignedInUser,
+  emitSignInFailure,
   type HandleFirebasePopupOpts,
   POST_SIGNIN_HOLD_MS
 } from '../firebaseBridge/flowShared'
@@ -244,10 +245,7 @@ export async function signInViaDesktopLoginCode(
     // A superseded attempt isn't a failure — the newer one owns the UX.
     if (controller.signal.aborted) return 'handled'
     const error = err instanceof Error ? err : new Error(String(err))
-    mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
-      provider,
-      error_bucket: mainTelemetry.bucketError(error.message),
-      flow: DESKTOP_LOGIN_CODE_FLOW,
+    emitSignInFailure(provider, DESKTOP_LOGIN_CODE_FLOW, error, {
       retried_poll_errors: retriedPollErrors
     })
     opts.onError?.(error)

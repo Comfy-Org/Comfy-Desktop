@@ -1,6 +1,22 @@
 import type { BrowserWindow } from 'electron'
 
 import * as mainTelemetry from '../../lib/telemetry'
+import { extractErrorClass } from '../../../shared/errorEvent'
+
+export function emitSignInFailure(
+  provider: string,
+  flow: string,
+  error: Error,
+  extra: Record<string, string | number> = {}
+): void {
+  mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
+    ...extra,
+    provider,
+    error_class: extractErrorClass(error),
+    error_bucket: mainTelemetry.bucketError(error.message),
+    flow
+  })
+}
 
 /** Bind the anonymous installation to the resolved Firebase user. */
 export function bindSignedInUser(user: Record<string, unknown>): void {
