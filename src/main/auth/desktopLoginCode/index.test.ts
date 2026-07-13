@@ -351,7 +351,13 @@ describe('signInViaDesktopLoginCode', () => {
         retried_poll_errors: 0
       }
     )
-    expect(onError).toHaveBeenCalledWith(expect.any(Error))
+    expect(onError).toHaveBeenCalledWith({
+      provider: 'google.com',
+      error_class: 'DesktopLoginCodeError',
+      error_bucket: 'bucketed',
+      flow: 'desktop_login_code',
+      retried_poll_errors: 0
+    })
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
   })
 
@@ -377,7 +383,13 @@ describe('signInViaDesktopLoginCode', () => {
       'comfy.desktop.auth.sign_in_failed',
       expect.objectContaining({ flow: 'desktop_login_code' })
     )
-    expect(onError).toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'google.com',
+        error_class: 'unknown',
+        flow: 'desktop_login_code'
+      })
+    )
   })
 
   it('honors a redeem that landed in the last poll interval via a final exchange at the deadline', async () => {

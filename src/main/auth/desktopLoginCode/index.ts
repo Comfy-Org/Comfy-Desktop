@@ -245,10 +245,10 @@ export async function signInViaDesktopLoginCode(
     // A superseded attempt isn't a failure — the newer one owns the UX.
     if (controller.signal.aborted) return 'handled'
     const error = err instanceof Error ? err : new Error(String(err))
-    emitSignInFailure(provider, DESKTOP_LOGIN_CODE_FLOW, error, {
+    const failure = emitSignInFailure(provider, DESKTOP_LOGIN_CODE_FLOW, error, {
       retried_poll_errors: retriedPollErrors
     })
-    opts.onError?.(error)
+    opts.onError?.(failure)
     return 'handled'
   } finally {
     // Capture ownership before nulling: a superseded flow finishing late

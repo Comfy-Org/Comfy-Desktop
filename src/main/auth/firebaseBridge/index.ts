@@ -27,7 +27,7 @@ const LEGACY_AUTH_FLOW = 'loopback_bridge'
 
 export { extractProviderId, isFirebaseAuthHandlerUrl } from './intercept'
 export { bindSignedInUser, POST_SIGNIN_HOLD_MS } from './flowShared'
-export type { HandleFirebasePopupOpts } from './flowShared'
+export type { HandleFirebasePopupOpts, SignInFailureContext } from './flowShared'
 export { closeActiveBridge, runBannerCleanup, showCopyLinkBanner } from './flowState'
 
 /**
@@ -59,7 +59,9 @@ export async function handleFirebasePopup(
 
   const providerId = extractProviderId(url)
   if (!providerId) {
-    opts.onError?.(new Error(`Firebase popup URL missing providerId: ${url}`))
+    const error = new Error(`Firebase popup URL missing providerId: ${url}`)
+    const failure = emitSignInFailure('cloud', LEGACY_AUTH_FLOW, error)
+    opts.onError?.(failure)
     return
   }
   // Sign-in funnel: started -> (app:user_logged_in | auth.sign_in_failed).
@@ -139,8 +141,8 @@ export async function handleFirebasePopup(
     // cardinality; error_class adds a locale-independent type for grouping.
     // The raw message stays out by design (may carry tokens / URLs), so we
     // deliberately do NOT ship `error_message` / `error_signature` here.
-    emitSignInFailure(providerId, LEGACY_AUTH_FLOW, error)
-    opts.onError?.(error)
+    const failure = emitSignInFailure(providerId, LEGACY_AUTH_FLOW, error)
+    opts.onError?.(failure)
   } finally {
     handle?.close()
     if (releaseActiveBridgeFlow(flow)) {

@@ -3,19 +3,31 @@ import type { BrowserWindow } from 'electron'
 import * as mainTelemetry from '../../lib/telemetry'
 import { extractErrorClass } from '../../../shared/errorEvent'
 
+export type FirebaseAuthFlow = 'desktop_login_code' | 'loopback_bridge'
+
+export interface SignInFailureContext extends mainTelemetry.TelemetryContext {
+  provider: string
+  error_class: string
+  error_bucket: string
+  flow: FirebaseAuthFlow
+  retried_poll_errors?: number
+}
+
 export function emitSignInFailure(
   provider: string,
-  flow: string,
+  flow: FirebaseAuthFlow,
   error: Error,
-  extra: Record<string, string | number> = {}
-): void {
-  mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
-    ...extra,
+  extra: Partial<Pick<SignInFailureContext, 'retried_poll_errors'>> = {}
+): SignInFailureContext {
+  const failure: SignInFailureContext = {
     provider,
     error_class: extractErrorClass(error),
     error_bucket: mainTelemetry.bucketError(error.message),
-    flow
-  })
+    flow,
+    ...extra
+  }
+  mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', failure)
+  return failure
 }
 
 /** Bind the anonymous installation to the resolved Firebase user. */
@@ -41,7 +53,7 @@ export function bindSignedInUser(user: Record<string, unknown>): void {
 export interface HandleFirebasePopupOpts {
   /** Window restored after sign-in completes. */
   parentWindow?: BrowserWindow
-  onError?: (err: Error) => void
+  onError?: (failure: SignInFailureContext) => void
 }
 
 /** Keep in sync with the countdown rendered by the legacy bridge page. */

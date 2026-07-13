@@ -159,7 +159,12 @@ describe('handleFirebasePopup legacy cancellation', () => {
       error_bucket: 'other',
       flow: 'loopback_bridge'
     })
-    expect(onError).toHaveBeenCalledWith(expect.any(Error))
+    expect(onError).toHaveBeenCalledWith({
+      provider: 'google.com',
+      error_class: 'unknown',
+      error_bucket: 'other',
+      flow: 'loopback_bridge'
+    })
   })
 
   it('continues through the banner when the initial browser open rejects', async () => {

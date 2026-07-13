@@ -19,6 +19,7 @@ vi.mock('electron', () => ({
 
 import type { InstallationRecord } from '../installations'
 import {
+  buildFirebaseAuthForwardedError,
   cascadeOffsetForCollisions,
   expectedPartitionFor,
   installCloseNeedsConfirm,
@@ -27,6 +28,36 @@ import {
   shouldBailAfterConsult,
   shouldShowInstallCloseConfirm,
 } from './createHostWindow'
+
+describe('buildFirebaseAuthForwardedError', () => {
+  it.each([
+    ['desktop_login_code', 'firebase-desktop-login-code-failed'],
+    ['loopback_bridge', 'firebase-loopback-bridge-failed'],
+  ] as const)('labels the %s flow without forwarding raw error text', (flow, source) => {
+    const forwarded = buildFirebaseAuthForwardedError({
+      provider: 'google.com',
+      error_class: 'DesktopLoginCodeError',
+      error_bucket: 'other',
+      flow,
+      retried_poll_errors: 2,
+    })
+
+    expect(forwarded).toEqual({
+      source,
+      message: 'Firebase sign-in failed',
+      level: 'warn',
+      context: {
+        origin: 'main-process',
+        provider: 'google.com',
+        error_class: 'DesktopLoginCodeError',
+        error_bucket: 'other',
+        flow,
+        retried_poll_errors: 2,
+      },
+    })
+    expect(forwarded.context).not.toHaveProperty('error')
+  })
+})
 
 function makeInstallation(overrides: Partial<InstallationRecord> = {}): InstallationRecord {
   return {
@@ -197,5 +228,4 @@ describe('shouldBailAfterCloseChoice', () => {
     expect(shouldBailAfterCloseChoice('cancel', true)).toBe(false)
   })
 })
-
 
