@@ -12,6 +12,49 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024
 
+/**
+ * True only for a genuine same-origin call from the bridge page we serve.
+ *
+ * The loopback socket check cannot help here: every page in every browser on
+ * this machine also reaches us from 127.0.0.1. Since `/callback` accepts a
+ * signed-in user, it needs positive proof of the caller, so require the three
+ * things our own `fetch('/callback', {method:'POST', headers:{'Content-Type':
+ * 'application/json'}})` always sends and that a cross-site caller cannot all
+ * produce:
+ *
+ *  - `Content-Type: application/json` — the load-bearing one. A cross-site
+ *    request can only reach us without a CORS preflight by staying within the
+ *    "simple request" content-types (text/plain, form-encoded, multipart). We
+ *    serve no OPTIONS handler, so demanding JSON means any cross-site attempt
+ *    must preflight, and the preflight fails.
+ *  - `Sec-Fetch-Site: same-origin` — a forbidden header; a page cannot forge it.
+ *    Absent on browsers that don't send it, so it is checked only when present.
+ *  - `Origin` — must be this server's own loopback origin when supplied.
+ */
+export function isSameOriginBridgeCall(req: IncomingMessage, port: number): boolean {
+  const contentType = String(req.headers['content-type'] ?? '')
+    .split(';')[0]!
+    .trim()
+    .toLowerCase()
+  if (contentType !== 'application/json') return false
+
+  const site = req.headers['sec-fetch-site']
+  if (typeof site === 'string' && site !== 'same-origin') return false
+
+  const origin = req.headers.origin
+  if (typeof origin === 'string' && origin.length > 0) {
+    const allowed = [`http://localhost:${port}`, `http://127.0.0.1:${port}`]
+    if (!allowed.includes(origin.toLowerCase())) return false
+    return true
+  }
+
+  // No Origin. Accept only when the browser positively attests same-origin;
+  // otherwise fail closed. Every browser sends Origin on a cross-origin POST,
+  // and same-origin POSTs send Origin and/or Sec-Fetch-Site, so this rejects
+  // only callers that are not the bridge page.
+  return site === 'same-origin'
+}
+
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -168,6 +211,15 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
       if (req.method === 'POST' && path === '/callback') {
         if (providerId !== 'github.com') {
           res.statusCode = 404
+          res.end()
+          return
+        }
+        // The loopback check above cannot distinguish our own bridge page from
+        // any other page in any browser on this machine — they all arrive from
+        // 127.0.0.1. This endpoint accepts a signed-in user, so require proof
+        // the request really is our page: a same-origin JSON fetch. Fail closed.
+        if (!isSameOriginBridgeCall(req, (server!.address() as AddressInfo).port)) {
+          res.statusCode = 403
           res.end()
           return
         }
