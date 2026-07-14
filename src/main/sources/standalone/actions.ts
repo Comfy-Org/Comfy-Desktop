@@ -16,16 +16,22 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { publicVersion, torchTupleMatches } from './torchStackTypes'
+import { publicVersion, torchTupleMatches, torchPackageTuplesEqual } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
 import {
-  preflightDiskSpace, prepareBundleStack, applyTorchStackTransaction, DiskSpaceError,
+  preflightDiskSpace, prepareBundleStack, applyTorchStackTransaction,
+  recoverTorchStackTransaction, DiskSpaceError,
 } from './torchStackTransaction'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import type { InstallationRecord } from '../../installations'
 import type { ActionResult, ActionTools } from '../../types/sources'
+
+/** Actions that mutate the venv. Each must first resolve any PyTorch change
+ *  that died mid-transaction — mutating a venv that recovery is about to roll
+ *  back (or failing to roll back and mutating debris) would corrupt it. */
+const VENV_MUTATING_ACTIONS = new Set(['snapshot-restore', 'change-pytorch', 'update-comfyui', 'migrate-from'])
 
 export async function handleAction(
   actionId: string,
@@ -33,6 +39,15 @@ export async function handleAction(
   actionData: Record<string, unknown> | undefined,
   { update, sendProgress, sendOutput, signal }: ActionTools
 ): Promise<ActionResult> {
+  if (VENV_MUTATING_ACTIONS.has(actionId) && installation.adopted !== true) {
+    try {
+      await recoverTorchStackTransaction(installation)
+    } catch (err) {
+      // Fail closed: the venv is in an unknown state and must not be mutated.
+      return { ok: false, message: t('errors.recoveryFailed', { message: (err as Error).message }) }
+    }
+  }
+
   if (actionId === 'snapshot-save') {
     const label = (actionData?.label as string | undefined) || undefined
     const filename = await snapshots.saveSnapshot(installation.installPath, installation, 'manual', label)
@@ -76,13 +91,10 @@ export async function handleAction(
           return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
         }
         // Metadata drift guard: the re-resolved catalog entry must still be
-        // the exact tuple the snapshot recorded, or the "exact stack" promise
-        // would quietly become "whatever that bundle tag ships now".
-        if (torchTarget && !torchTupleMatches(torchTarget.packages, {
-          torch: snapTorch.ref.packages.torch,
-          torchvision: snapTorch.ref.packages.torchvision ?? null,
-          torchaudio: snapTorch.ref.packages.torchaudio ?? null,
-        })) {
+        // the exact tuple the snapshot recorded (symmetric — a package the
+        // catalog dropped or added is drift too), or the "exact stack"
+        // promise would quietly become "whatever that bundle tag ships now".
+        if (torchTarget && !torchPackageTuplesEqual(torchTarget.packages, snapTorch.ref.packages)) {
           torchTarget = null
         }
         if (!torchTarget) {

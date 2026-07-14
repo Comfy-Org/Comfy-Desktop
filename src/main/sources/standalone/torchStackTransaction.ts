@@ -277,6 +277,11 @@ export async function applyTorchStackTransaction(
   const venvPath = getActiveVenvDir(installation)
   const backupPath = venvPath + BACKUP_SUFFIX
   const gcPath = venvPath + GC_SUFFIX
+  // Captured so a rollback after the metadata persist (step 7) can restore
+  // them — a rolled-back venv with the NEW stack ref persisted would hand
+  // repair a false acquisition source.
+  const priorVerified = installation.lastVerifiedTorchStack ?? null
+  const priorObserved = installation.observedTorchStack ?? null
 
   // From here this function owns the staging dir: every exit removes it.
   try {
@@ -330,7 +335,13 @@ export async function applyTorchStackTransaction(
       tools.sendOutput?.(`\nPyTorch change failed: ${(err as Error).message}\nRestoring previous environment…\n`)
       try {
         await rollback(venvPath, backupPath)
-        await fs.promises.rm(journalPath(installPath), { force: true })
+        // Undo the step-7 metadata persist if the failure came after it (e.g.
+        // the commit rename itself failed) — a rolled-back venv with the NEW
+        // stack ref persisted would hand repair a false acquisition source.
+        // Best-effort, as is the journal removal: only a failed venv rollback
+        // may propagate.
+        await tools.update({ lastVerifiedTorchStack: priorVerified, observedTorchStack: priorObserved }).catch(() => {})
+        await fs.promises.rm(journalPath(installPath), { force: true }).catch(() => {})
         return { ok: false, message: `${(err as Error).message} — the previous environment was restored` }
       } catch (rbErr) {
         // Leave the journal in place: launch-time recovery retries the rollback.
@@ -389,6 +400,9 @@ export async function recoverTorchStackTransaction(installation: InstallationRec
     // Rollback failure throws to the caller — do NOT swallow it and launch.
     await rollback(venvPath, backupPath)
   }
-  await fs.promises.rm(journalPath(installPath), { force: true })
+  // Best-effort: once no rollback-eligible backup remains the canonical venv
+  // is authoritative, so a locked journal (AV scan) must not block launch —
+  // it is reclassified as debris on the next pass.
+  await fs.promises.rm(journalPath(installPath), { force: true }).catch(() => {})
   return hasBackup
 }

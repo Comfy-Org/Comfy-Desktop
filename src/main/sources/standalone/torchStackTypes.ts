@@ -87,6 +87,20 @@ export function torchTupleMatches(expected: TorchStackPackages, installed: Insta
   return true
 }
 
+/** Symmetric exact-tuple equality for metadata drift checks: both sides must
+ *  declare the same packages at the same public versions. A package present
+ *  on one side but omitted on the other is drift, not a match — unlike
+ *  `torchTupleMatches`, which only checks the packages `expected` declares. */
+export function torchPackageTuplesEqual(a: TorchStackPackages, b: TorchStackPackages): boolean {
+  for (const pkg of ['torch', 'torchvision', 'torchaudio'] as const) {
+    const av = a[pkg]
+    const bv = b[pkg]
+    if (!av !== !bv) return false
+    if (av && bv && publicVersion(av) !== publicVersion(bv)) return false
+  }
+  return true
+}
+
 const STACK_ID_RE = /^comfy-bundle:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/
 
 /** Parse a `comfy-bundle` stackId into its variant and bundle tag; null when

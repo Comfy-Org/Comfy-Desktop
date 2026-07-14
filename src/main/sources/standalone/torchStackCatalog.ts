@@ -213,9 +213,13 @@ export async function reconcileTorchStack(
     return
   }
 
+  // Falling through to observed: any verified ref is stale (e.g. a torch
+  // change persisted its metadata but was rolled back before commit) and MUST
+  // be cleared — repair would otherwise trust it as the acquisition source.
   const prior = installation.observedTorchStack as { torchVersion?: string } | undefined
-  if (prior?.torchVersion === installed.torch) return // already recorded
+  if (!verified && prior?.torchVersion === installed.torch) return // already recorded
   await update({
+    lastVerifiedTorchStack: null,
     observedTorchStack: { torchVersion: installed.torch, observedAt: new Date().toISOString() },
   })
 }
