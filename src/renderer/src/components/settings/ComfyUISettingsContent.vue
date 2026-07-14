@@ -230,8 +230,11 @@ watch(
 
 // Auto-refresh stale channel-cards when the Update tab opens, so a user
 // who opens the picker long after install doesn't see release data from
-// the last manual check. Per-(install, channel) dedupe via
-// `refreshedChannelKeys`; main short-circuits on a 10s window.
+// the last manual check. Fires only when the selected card's
+// `data.lastCheckedAt` is missing or older than `STALE_CHANNEL_CARD_MS`.
+// Per-(install, channel) dedupe via `refreshedChannelKeys`; main
+// short-circuits on a 10s window.
+const STALE_CHANNEL_CARD_MS = 15 * 60 * 1000
 const refreshedChannelKeys = new Set<string>()
 watch(
   [() => activeTab.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
@@ -248,6 +251,16 @@ watch(
 
     const currentChannel = typeof channelField.value === 'string' ? channelField.value : null
     if (!currentChannel) return
+
+    // Skip while the selected card's data is still fresh. Without this
+    // gate the watcher fires on every Update-tab mount regardless of
+    // cache age — the dedupe set below only blocks repeat fires within
+    // the same component instance, not re-mounts (the picker rebuilds
+    // on every open).
+    const currentCard = channelField.options?.find((o) => o.value === currentChannel)
+    const lastCheckedAt = (currentCard?.data as { lastCheckedAt?: number } | undefined)
+      ?.lastCheckedAt
+    if (lastCheckedAt && Date.now() - lastCheckedAt <= STALE_CHANNEL_CARD_MS) return
 
     // Look up the canonical action def from sections to inherit whatever
     // `enabled` / disabledMessage main attaches. Bail if main isn't

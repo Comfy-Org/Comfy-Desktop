@@ -258,7 +258,7 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
   const staleChannelField = staleUpdateSection.fields!.find((f) => f.id === 'updateChannel')!
   const staleCard = staleChannelField.options!.find((o) => o.value === staleChannelField.value)
   expect(
-    (staleCard?.data as { checkedAt?: number } | undefined)?.checkedAt,
+    (staleCard?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt,
     'ageReleaseCache hook did not mutate the in-memory map main reads from',
   ).toBe(stalenessTs)
 
@@ -295,7 +295,7 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
       const updateSection = sections.find((s) => s.tab === 'update')!
       const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!
       const card = channelField.options!.find((o) => o.value === channelField.value)
-      const checkedAt = (card?.data as { checkedAt?: number } | undefined)?.checkedAt
+      const checkedAt = (card?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt
       return typeof checkedAt === 'number' && checkedAt > stalenessTs
     }, { timeout: 15_000, intervals: [250, 500, 1_000] })
     .toBe(true)
