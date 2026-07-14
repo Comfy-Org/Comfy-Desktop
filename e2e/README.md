@@ -36,10 +36,16 @@ so lifecycle tests must not either. During app execution the following are
 The following **scaffolding** is allowed, because it stages the scenario rather than
 faking the product's behavior:
 
-- The isolated per-run profile directory and its cleanup (`electronHarness.ts`)
-- Seeding installation records, settings, and files on disk **before launch**
-  (`SeedOptions`: `installations`, `settings`, `onSetup`) — e.g. staging a fixture git
-  repo, a legacy install tree, or snapshot envelopes
+- The isolated per-run profile directory and its cleanup (`electronHarness.ts`),
+  including the harness's global `dialog.showErrorBox` no-op — a native crash dialog
+  would hang the run instead of failing it
+- Staging the scenario via `SeedOptions`: `settings` and `onSetup` apply before
+  Electron launches; `installations` (and their `snapshots`) are written by the
+  harness after launch but before the test interacts — e.g. a fixture git repo, a
+  legacy install tree, or snapshot envelopes
+- Stubbing native OS file dialogs (`showOpenDialog` / `showSaveDialog`) with a
+  predetermined path — Playwright cannot drive OS-native dialogs. The stub may only
+  supply the path; it must never fake the operation's result
 - Manipulating pre-conditions that only encode elapsed time (e.g. `ageReleaseCache`)
   before the flow under test
 - Observation-only hooks (`getIpcInvocations`, `getRunningSessionSnapshot`,
@@ -71,26 +77,26 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `lifecycle-cloud.test.ts` | `@lifecycle` | Yes | Real navigation to `https://cloud.comfy.org/`. |
 | `lifecycle-copy-update-fail.test.ts` | `@lifecycle` | Yes (light) | Real local copy; real update-failure branch on disk. |
 | `lifecycle-copy.test.ts` | `@lifecycle` | Yes (light) | Real local disk copy of a staged install. |
-| `lifecycle-deep-links.test.ts` | `@lifecycle` | Borderline | Real `comfy://` deep links, but asserts IPC dispatch rather than end state. |
+| `lifecycle-deep-links.test.ts` | `@lifecycle` | **No — retag candidate** | Real `comfy://` deep links, but asserts IPC dispatch rather than end state. |
 | `lifecycle-delete-untrack.test.ts` | `@lifecycle` | Yes (light) | Real directory preservation/removal on disk. |
-| `lifecycle-dismiss-error.test.ts` | `@lifecycle` | Yes (light) | Seeded error record (pre-launch scaffolding); real dismiss flow. |
-| `lifecycle-first-use-migrate.test.ts` | `@lifecycle` | Borderline | Real first-use flow, but the R2 download action is asserted as dispatch only. |
-| `lifecycle-first-use-skip.test.ts` | `@lifecycle` | Yes (light) | Real skip-onboarding flow, no injection. |
+| `lifecycle-dismiss-error.test.ts` | `@lifecycle` | **No — retag candidate** | Injects the error into the renderer store at runtime (`__e2eRenderer.seedErrorInstance`). |
+| `lifecycle-first-use-migrate.test.ts` | `@lifecycle` | Strengthen or retag | Real first-use flow, but the R2 download action is asserted as dispatch only. |
+| `lifecycle-first-use-skip.test.ts` | `@lifecycle` | Strengthen or retag | Real skip flow, but triggered by sending the skip IPC directly instead of clicking the File-menu item. |
 | `lifecycle-migrate.test.ts` | `@lifecycle` | Yes (light) | Staged legacy install tree (pre-launch scaffolding); real migration preview. |
 | `lifecycle-periodic-update-check.test.ts` | `@lifecycle` | Yes | Real background re-fetch of the release cache. |
 | `lifecycle-picker-cluster.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts IPC dispatch. |
 | `lifecycle-port-conflict.test.ts` | `@lifecycle` | **No — retag candidate** | Synthetic `portConflict` operation state; no real port conflict. |
-| `lifecycle-progress-reboot.test.ts` | `@lifecycle` | Borderline | Errored install staged pre-launch; re-runs the real operation call. |
-| `lifecycle-snapshot-export.test.ts` | `@lifecycle` | Yes (light) | Writes real snapshot envelope JSON to disk. |
-| `lifecycle-snapshot-import.test.ts` | `@lifecycle` | Yes (light) | Consumes a real envelope; writes a snapshot into the install. |
+| `lifecycle-progress-reboot.test.ts` | `@lifecycle` | **No — retag candidate** | `injectRetryableProgressError` fakes a failing operation and its retry outcome. |
+| `lifecycle-snapshot-export.test.ts` | `@lifecycle` | Yes (light) | Writes real snapshot envelope JSON to disk; native save dialog stubbed with a fixed path. |
+| `lifecycle-snapshot-import.test.ts` | `@lifecycle` | Yes (light) | Consumes a real envelope; writes a snapshot into the install; native open dialog stubbed with a fixed path. |
 | `lifecycle-snapshot-restore.test.ts` | `@lifecycle` | Yes | Live restore against real git repos; moves real HEADs. |
-| `lifecycle-snapshot-roundtrip.test.ts` | `@lifecycle` | Yes (light) | Real export from install A, real import into install B. |
-| `lifecycle-snapshot-share.test.ts` | `@lifecycle` | Yes (light) | Real export of the latest snapshot. |
+| `lifecycle-snapshot-roundtrip.test.ts` | `@lifecycle` | Yes (light) | Real export from install A, real import into install B; native dialogs stubbed with fixed paths. |
+| `lifecycle-snapshot-share.test.ts` | `@lifecycle` | Yes (light) | Real export of the latest snapshot; native save dialog stubbed with a fixed path. |
 | `lifecycle-snapshot.test.ts` | `@lifecycle` | Yes (light) | Real snapshot capture via `runAction`. |
 | `lifecycle-startup-update-check.test.ts` | `@lifecycle` | Yes | One real `git ls-remote` to github.com per startup. |
 | `lifecycle-update-check.test.ts` | `@lifecycle` | Yes | Live `git ls-remote --tags` against Comfy-Org/ComfyUI; `ageReleaseCache` is time scaffolding. |
 | `lifecycle.test.ts` | `@lifecycle` | Yes | Real ~500 MB install, real updater, real copies, real delete. |
-| `nav-matrix-cloud.test.ts` | `@lifecycle` | **No — retag candidate** | Synthetic sessions; asserts window/IPC behavior. |
+| `nav-matrix-cloud.test.ts` | `@lifecycle` | **No — retag candidate** | Seeds a cloud installation record, drives the picker-popup bridge directly, and avoids a real cloud attach. |
 | `nav-matrix-dashboard.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts window/IPC behavior. |
 | `nav-matrix-instance.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts window/IPC behavior. |
 | `picker-settings-staleness.test.ts` | `@lifecycle` | **No — retag candidate** | Seeded-state UI regression test. |
@@ -105,7 +111,10 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 "Retag candidate" specs are E2E tests by the definitions above: they inject synthetic
 runtime state or assert dispatch instead of real side effects. Retagging them to the
 platform projects would add them to PR-blocking CI, so each needs a platform-stability
-check first — that migration is tracked separately from this document.
+check first — that migration is tracked separately from this document. "Strengthen or
+retag" specs exercise a mostly-real flow with one weak link (a direct IPC trigger or a
+dispatch-only assertion); fixing that link keeps them in `@lifecycle`, otherwise they
+should be retagged too.
 
 ## Running lifecycle tests
 
