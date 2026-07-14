@@ -14,11 +14,11 @@ import fs from 'fs'
 import path from 'path'
 import { dataDir } from '../../lib/paths'
 import { writeFileSafe } from '../../lib/safe-file'
-import { getTorchVersion } from './envPaths'
+import { getInstalledTorchTuple } from './envPaths'
 import { fetchR2VendorReleases, r2BundleUrl } from './r2Catalog'
 import type { R2Variant } from './r2Catalog'
 import {
-  makeBundleStackId, parseBundleStackId, pythonAbiCompatible,
+  makeBundleStackId, parseBundleStackId, pythonAbiCompatible, torchTupleMatches,
 } from './torchStackTypes'
 import type { PersistedTorchStack, ManagedTorchStackRef } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
@@ -193,17 +193,20 @@ export async function reconcileTorchStack(
 ): Promise<void> {
   const variant = installVariant(installation)
   if (!variant) return
-  const observed = getTorchVersion(installation)
-  if (!observed) return
+  const installed = getInstalledTorchTuple(installation)
+  if (!installed.torch) return
 
+  // Full-tuple comparison everywhere: two stacks can share a torch version
+  // but differ in torchvision/torchaudio, and dist-info versions may carry a
+  // local tag (+cu128) the catalog omits.
   const verified = getLastVerifiedTorchStack(installation)
-  if (verified && verified.packages.torch === observed) {
+  if (verified && torchTupleMatches(verified.packages, installed)) {
     // Consistent; clear any stale observed marker.
     if (installation.observedTorchStack) await update({ observedTorchStack: null })
     return
   }
 
-  const match = getCachedTorchStacks(installation).find((e) => e.packages.torch === observed)
+  const match = getCachedTorchStacks(installation).find((e) => torchTupleMatches(e.packages, installed))
   if (match) {
     // Manual change to an official stack — adopt it as verified/restorable.
     await update({ lastVerifiedTorchStack: match, observedTorchStack: null })
@@ -211,9 +214,9 @@ export async function reconcileTorchStack(
   }
 
   const prior = installation.observedTorchStack as { torchVersion?: string } | undefined
-  if (prior?.torchVersion === observed) return // already recorded
+  if (prior?.torchVersion === installed.torch) return // already recorded
   await update({
-    observedTorchStack: { torchVersion: observed, observedAt: new Date().toISOString() },
+    observedTorchStack: { torchVersion: installed.torch, observedAt: new Date().toISOString() },
   })
 }
 
@@ -221,12 +224,12 @@ export async function reconcileTorchStack(
 export function classifyTorchStackForSnapshot(
   installation: InstallationRecord,
 ): { kind: 'managed'; ref: ManagedTorchStackRef } | { kind: 'observed'; torchVersion: string | null; observedAt: string } {
-  const observed = getTorchVersion(installation)
+  const installed = getInstalledTorchTuple(installation)
   const verified = getLastVerifiedTorchStack(installation)
-  if (observed && verified && verified.packages.torch === observed) {
+  if (installed.torch && verified && torchTupleMatches(verified.packages, installed)) {
     // Strip acquisition info — snapshots carry identity; restore re-resolves.
     const { stackId, variant, pythonVersion, packages, source } = verified
     return { kind: 'managed', ref: { stackId, variant, pythonVersion, packages, source } }
   }
-  return { kind: 'observed', torchVersion: observed, observedAt: new Date().toISOString() }
+  return { kind: 'observed', torchVersion: installed.torch, observedAt: new Date().toISOString() }
 }

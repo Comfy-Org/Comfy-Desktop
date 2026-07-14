@@ -9,7 +9,8 @@ import { truncateNotes } from '../../lib/comfyui-releases'
 import { deleteAction, untrackAction, launchAction, openFolderAction, renameAction } from '../../lib/actions'
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
-import { getVariantLabel, getTorchVersion, DEFAULT_LAUNCH_ARGS } from './envPaths'
+import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
+import { torchTupleMatches } from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
@@ -70,8 +71,12 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   const stacks = getCachedTorchStacks(installation)
   if (stacks.length === 0) return null
 
-  const currentTorch = getTorchVersion(installation)
-  const current = currentTorch ? stacks.find((s) => s.packages.torch === currentTorch) : undefined
+  // Full-tuple match (local tags stripped): torch version alone can't
+  // distinguish stacks, and dist-info versions may carry a +cuXXX tag the
+  // catalog omits.
+  const installedTuple = getInstalledTorchTuple(installation)
+  const currentTorch = installedTuple.torch
+  const current = currentTorch ? stacks.find((s) => torchTupleMatches(s.packages, installedTuple)) : undefined
   const fieldValue = current ? current.stackId : 'pytorch-current'
 
   const options: Record<string, unknown>[] = []

@@ -15,7 +15,8 @@ import { t } from '../../lib/i18n'
 import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
-import { getActivePythonPath, getActiveUvPath, getMasterPythonPath, getTorchVersion } from './envPaths'
+import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
+import { publicVersion, torchTupleMatches } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
@@ -58,10 +59,13 @@ export async function handleAction(
     // stack. The swap itself is applied LAST, after pip, so nothing later in
     // the restore can override the final stack.
     const snapTorch = targetSnapshot.torchStack
-    const torchBefore = getTorchVersion(installation)
+    const installedTorch = getInstalledTorchTuple(installation)
+    const torchBefore = installedTorch.torch
     let torchTarget: Awaited<ReturnType<typeof resolveTorchStack>> = null
     let torchNote: string | null = null
-    if (snapTorch?.kind === 'managed' && snapTorch.ref.packages.torch !== torchBefore) {
+    // Skip the torch phase only on a FULL tuple match — torch version alone
+    // can't distinguish stacks that differ in torchvision/torchaudio.
+    if (snapTorch?.kind === 'managed' && !torchTupleMatches(snapTorch.ref.packages, installedTorch)) {
       if (installation.adopted === true) {
         // Adopted envs are observed/read-only — a restore never mutates torch.
         torchNote = t('standalone.pytorchSnapshotAdoptedSkip', { version: snapTorch.ref.packages.torch })
@@ -70,6 +74,16 @@ export async function handleAction(
           torchTarget = await resolveTorchStack(installation, snapTorch.ref.stackId)
         } catch (err) {
           return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+        }
+        // Metadata drift guard: the re-resolved catalog entry must still be
+        // the exact tuple the snapshot recorded, or the "exact stack" promise
+        // would quietly become "whatever that bundle tag ships now".
+        if (torchTarget && !torchTupleMatches(torchTarget.packages, {
+          torch: snapTorch.ref.packages.torch,
+          torchvision: snapTorch.ref.packages.torchvision ?? null,
+          torchaudio: snapTorch.ref.packages.torchaudio ?? null,
+        })) {
+          torchTarget = null
         }
         if (!torchTarget) {
           return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
@@ -81,7 +95,10 @@ export async function handleAction(
           throw err
         }
       }
-    } else if (snapTorch?.kind === 'observed' && snapTorch.torchVersion && snapTorch.torchVersion !== torchBefore) {
+    } else if (
+      snapTorch?.kind === 'observed' && snapTorch.torchVersion &&
+      (!torchBefore || publicVersion(snapTorch.torchVersion) !== publicVersion(torchBefore))
+    ) {
       // The snapshot's stack isn't a known official build — it can't be
       // re-acquired, so it is reported instead of silently skipped.
       torchNote = t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
@@ -422,9 +439,9 @@ export async function handleAction(
     }
     if (!entry) return { ok: false, message: t('standalone.pytorchStackUnavailable') }
 
-    const currentTorch = getTorchVersion(installation)
-    if (currentTorch && currentTorch === entry.packages.torch) {
-      return { ok: true, navigate: 'detail', message: t('standalone.pytorchAlreadyInstalled', { version: currentTorch }) }
+    const currentTuple = getInstalledTorchTuple(installation)
+    if (currentTuple.torch && torchTupleMatches(entry.packages, currentTuple)) {
+      return { ok: true, navigate: 'detail', message: t('standalone.pytorchAlreadyInstalled', { version: currentTuple.torch }) }
     }
 
     // Hard gate before anything is downloaded or touched.

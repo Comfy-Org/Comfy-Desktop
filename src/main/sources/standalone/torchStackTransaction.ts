@@ -14,11 +14,13 @@
  *   5. mutate the copy (bundle torch-family swap)
  *   6. verify (exact tuple + import probe + accelerator evidence)
  *   7. persist lastVerifiedTorchStack
- *   8. delete backup + journal
+ *   8. commit: rename backup → .venv.torch-gc (atomic), then best-effort
+ *      delete journal + gc dir
  *
- * Failure or process death in 4–6: delete the candidate, rename the backup
+ * Failure or process death in 4–7: delete the candidate, rename the backup
  * back. `recoverTorchStackTransaction` performs the same recovery at launch
- * when a journal is found.
+ * whenever the backup dir exists; a leftover gc dir or journal without a
+ * backup is post-commit debris and only swept.
  */
 import fs from 'fs'
 import path from 'path'
@@ -33,12 +35,17 @@ import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
 import { copyTorchFamily } from './torchRepair'
+import { publicVersion } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 import type { TorchStackPackages } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
 
 const JOURNAL_FILE = '.torch-stack-journal.json'
 const BACKUP_SUFFIX = '.torch-backup'
+/** Post-commit trash path for the old venv: renaming the backup here IS the
+ *  commit point (atomic), so a failed/killed deletion can never be confused
+ *  with a rollback-eligible backup. */
+const GC_SUFFIX = '.torch-gc'
 const STAGING_DIR = '.torch-stack-tmp'
 /** Compressed → extracted size headroom for the bundle staging estimate. */
 const EXTRACT_FACTOR = 3
@@ -46,26 +53,24 @@ const EXTRACT_FACTOR = 3
 const DISK_MARGIN = 0.1
 const IMPORT_PROBE_TIMEOUT_MS = 180_000
 
+/** Informational only — recovery never trusts paths read from disk; it
+ *  derives them from the installation record. */
 interface TorchStackJournal {
   version: 1
   startedAt: number
   stackId: string
-  venvPath: string
-  backupPath: string
 }
 
 function journalPath(installPath: string): string {
   return path.join(installPath, JOURNAL_FILE)
 }
 
-async function readJournal(installPath: string): Promise<TorchStackJournal | null> {
-  try {
-    const raw = JSON.parse(await fs.promises.readFile(journalPath(installPath), 'utf-8')) as TorchStackJournal
-    if (raw.version !== 1 || typeof raw.venvPath !== 'string' || typeof raw.backupPath !== 'string') return null
-    return raw
-  } catch {
-    return null
-  }
+async function writeJournal(installPath: string, journal: TorchStackJournal): Promise<void> {
+  // Atomic write (temp + rename) so a kill mid-write can't leave a torn file.
+  const target = journalPath(installPath)
+  const tmp = `${target}.tmp`
+  await fs.promises.writeFile(tmp, JSON.stringify(journal, null, 2))
+  await fs.promises.rename(tmp, target)
 }
 
 export interface TorchStackTools {
@@ -133,23 +138,30 @@ export async function prepareBundleStack(
   await fs.promises.rm(stagingDir, { recursive: true, force: true })
   await fs.promises.mkdir(stagingDir, { recursive: true })
 
-  const cache = createCache(settings.get('cacheDir') as string, settings.get('maxCachedDownloads') as number)
-  const ctx = { sendProgress: tools.sendProgress, download, cache, extract, signal: tools.signal }
-  const bundleTag = entry.source.kind === 'comfy-bundle' ? entry.source.bundleTag : entry.stackId
+  // This function owns the staging dir until it returns: any throw (download,
+  // extract, missing site-packages) removes it so no caller path can leak a
+  // multi-GB directory.
+  try {
+    const cache = createCache(settings.get('cacheDir') as string, settings.get('maxCachedDownloads') as number)
+    const ctx = { sendProgress: tools.sendProgress, download, cache, extract, signal: tools.signal }
+    const bundleTag = entry.source.kind === 'comfy-bundle' ? entry.source.bundleTag : entry.stackId
 
-  const files = [{ url: entry.bundle.url, filename: entry.bundle.filename, size: entry.bundle.size }]
-  if (files[0]!.filename) {
-    await downloadAndExtractMulti(files, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
-  } else {
-    await downloadAndExtract(entry.bundle.url, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
-  }
+    const files = [{ url: entry.bundle.url, filename: entry.bundle.filename, size: entry.bundle.size }]
+    if (files[0]!.filename) {
+      await downloadAndExtractMulti(files, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
+    } else {
+      await downloadAndExtract(entry.bundle.url, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
+    }
 
-  const srcSite = findSitePackages(path.join(stagingDir, 'standalone-env'))
-  if (!srcSite || !fs.existsSync(srcSite)) {
+    const srcSite = findSitePackages(path.join(stagingDir, 'standalone-env'))
+    if (!srcSite || !fs.existsSync(srcSite)) {
+      throw new Error('Could not locate the PyTorch packages inside the downloaded bundle.')
+    }
+    return { srcSite, stagingDir, entry }
+  } catch (err) {
     await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => {})
-    throw new Error('Could not locate the PyTorch packages inside the downloaded bundle.')
+    throw err
   }
-  return { srcSite, stagingDir, entry }
 }
 
 function readDistInfoVersion(sitePackages: string, pkg: string): string | null {
@@ -169,8 +181,7 @@ function readDistInfoVersion(sitePackages: string, pkg: string): string | null {
  *  (e.g. `2.10.0+cu128` vs `2.10.0`); compare on the public version. */
 function versionMatches(installed: string | null, expected: string): boolean {
   if (!installed) return false
-  const pub = (v: string): string => (v.includes('+') ? v.slice(0, v.indexOf('+')) : v)
-  return pub(installed) === pub(expected)
+  return publicVersion(installed) === publicVersion(expected)
 }
 
 function runImportProbe(pythonPath: string, cwd: string, packages: TorchStackPackages): Promise<string | null> {
@@ -228,11 +239,11 @@ async function verifyStack(
   const accelErr = expectedAcceleratorOk(entry.variant, site)
   if (accelErr) return accelErr
 
+  // A candidate with valid dist-info but no interpreter must never commit.
   const pythonPath = getVenvPythonPath(installation.installPath)
-  if (fs.existsSync(pythonPath)) {
-    const probeErr = await runImportProbe(pythonPath, installation.installPath, entry.packages)
-    if (probeErr) return `import probe failed: ${probeErr}`
-  }
+  if (!fs.existsSync(pythonPath)) return 'venv python not found after swap'
+  const probeErr = await runImportProbe(pythonPath, installation.installPath, entry.packages)
+  if (probeErr) return `import probe failed: ${probeErr}`
   return null
 }
 
@@ -265,96 +276,119 @@ export async function applyTorchStackTransaction(
   const installPath = installation.installPath
   const venvPath = getActiveVenvDir(installation)
   const backupPath = venvPath + BACKUP_SUFFIX
+  const gcPath = venvPath + GC_SUFFIX
 
-  if (!fs.existsSync(venvPath)) return { ok: false, message: 'installation venv not found' }
-  if (tools.signal?.aborted) return { ok: false, message: 'Cancelled' }
-
-  // Refuse to start over the debris of a previous run (recovery owns that).
-  if (fs.existsSync(backupPath)) {
-    return { ok: false, message: 'a previous PyTorch change did not finish; relaunch the app to recover, then retry' }
-  }
-
-  const journal: TorchStackJournal = {
-    version: 1,
-    startedAt: Date.now(),
-    stackId: entry.stackId,
-    venvPath,
-    backupPath,
-  }
-  await fs.promises.writeFile(journalPath(installPath), JSON.stringify(journal, null, 2))
-
+  // From here this function owns the staging dir: every exit removes it.
   try {
-    // 3. Move the live venv aside — from here the backup is the good copy.
-    await fs.promises.rename(venvPath, backupPath)
+    if (!fs.existsSync(venvPath)) return { ok: false, message: 'installation venv not found' }
+    if (tools.signal?.aborted) return { ok: false, message: 'Cancelled' }
 
-    // 4. Rebuild the canonical venv path as a copy of the backup.
-    tools.sendProgress('torch-swap', { percent: -1, status: 'Copying environment…' })
-    await copyDirWithProgress(backupPath, venvPath, (copied, total) => {
-      const percent = total > 0 ? Math.round((copied / total) * 60) : 0
-      tools.sendProgress('torch-swap', { percent, status: `Copying environment…  ${copied} / ${total}` })
-    })
+    // Refuse to start over the debris of a previous run (recovery owns that).
+    if (fs.existsSync(backupPath)) {
+      return { ok: false, message: 'a previous PyTorch change did not finish; relaunch the app to recover, then retry' }
+    }
+    // Post-commit trash from a previous run whose deletion failed/died —
+    // sweep it now so the commit rename below can't collide.
+    if (fs.existsSync(gcPath)) {
+      await fs.promises.rm(gcPath, { recursive: true, force: true })
+    }
 
-    // 5. Swap the torch-family payload inside the copy.
-    tools.sendProgress('torch-swap', { percent: 65, status: 'Installing PyTorch packages…' })
-    const dstSite = findSitePackages(venvPath)
-    if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
-    await copyTorchFamily(prepared.srcSite, dstSite)
+    await writeJournal(installPath, { version: 1, startedAt: Date.now(), stackId: entry.stackId })
 
-    // 6. Verify before committing.
-    tools.sendProgress('torch-swap', { percent: 85, status: 'Verifying PyTorch…' })
-    const verifyErr = await verifyStack(installation, entry)
-    if (verifyErr) throw new Error(`verification failed: ${verifyErr}`)
-
-    // 7. Persist the verified stack ref (with acquisition info for repair).
-    await tools.update({ lastVerifiedTorchStack: entry, observedTorchStack: null })
-
-    // 8. Commit: drop backup + journal.
-    tools.sendProgress('torch-swap', { percent: 95, status: 'Cleaning up…' })
-    await fs.promises.rm(backupPath, { recursive: true, force: true })
-    await fs.promises.rm(journalPath(installPath), { force: true })
-    tools.sendProgress('torch-swap', { percent: 100, status: 'PyTorch updated' })
-    return { ok: true, message: `PyTorch ${entry.packages.torch} installed` }
-  } catch (err) {
-    tools.sendOutput?.(`\nPyTorch change failed: ${(err as Error).message}\nRestoring previous environment…\n`)
     try {
-      await rollback(venvPath, backupPath)
-      await fs.promises.rm(journalPath(installPath), { force: true })
-      return { ok: false, message: `${(err as Error).message} — the previous environment was restored` }
-    } catch (rbErr) {
-      // Leave the journal in place: launch-time recovery retries the rollback.
-      return {
-        ok: false,
-        message: `${(err as Error).message} — rollback also failed (${(rbErr as Error).message}); it will be retried on next launch`,
+      // 3. Move the live venv aside — from here the backup is the good copy.
+      await fs.promises.rename(venvPath, backupPath)
+
+      // 4. Rebuild the canonical venv path as a copy of the backup.
+      tools.sendProgress('torch-swap', { percent: -1, status: 'Copying environment…' })
+      await copyDirWithProgress(backupPath, venvPath, (copied, total) => {
+        const percent = total > 0 ? Math.round((copied / total) * 60) : 0
+        tools.sendProgress('torch-swap', { percent, status: `Copying environment…  ${copied} / ${total}` })
+      })
+
+      // 5. Swap the torch-family payload inside the copy.
+      tools.sendProgress('torch-swap', { percent: 65, status: 'Installing PyTorch packages…' })
+      const dstSite = findSitePackages(venvPath)
+      if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
+      await copyTorchFamily(prepared.srcSite, dstSite)
+
+      // 6. Verify before committing.
+      tools.sendProgress('torch-swap', { percent: 85, status: 'Verifying PyTorch…' })
+      const verifyErr = await verifyStack(installation, entry)
+      if (verifyErr) throw new Error(`verification failed: ${verifyErr}`)
+
+      // 7. Persist the verified stack ref (with acquisition info for repair).
+      await tools.update({ lastVerifiedTorchStack: entry, observedTorchStack: null })
+
+      // 8. Commit: atomically rename the backup out of rollback scope. This
+      // single rename is the commit point — after it, no failure path may
+      // touch the verified venv. Deleting a large directory is neither atomic
+      // nor reliable (Windows/AV locks), so it must never double as commit.
+      tools.sendProgress('torch-swap', { percent: 95, status: 'Cleaning up…' })
+      await fs.promises.rename(backupPath, gcPath)
+    } catch (err) {
+      tools.sendOutput?.(`\nPyTorch change failed: ${(err as Error).message}\nRestoring previous environment…\n`)
+      try {
+        await rollback(venvPath, backupPath)
+        await fs.promises.rm(journalPath(installPath), { force: true })
+        return { ok: false, message: `${(err as Error).message} — the previous environment was restored` }
+      } catch (rbErr) {
+        // Leave the journal in place: launch-time recovery retries the rollback.
+        return {
+          ok: false,
+          message: `${(err as Error).message} — rollback also failed (${(rbErr as Error).message}); it will be retried on next launch`,
+        }
       }
     }
+
+    // Committed. Cleanup is best-effort: launch-time recovery sweeps a
+    // leftover gc dir, and a leftover journal with no backup is recognized as
+    // a completed commit (never rolled back).
+    await fs.promises.rm(journalPath(installPath), { force: true }).catch(() => {})
+    await fs.promises.rm(gcPath, { recursive: true, force: true }).catch(() => {})
+    tools.sendProgress('torch-swap', { percent: 100, status: 'PyTorch updated' })
+    return { ok: true, message: `PyTorch ${entry.packages.torch} installed` }
   } finally {
     await fs.promises.rm(prepared.stagingDir, { recursive: true, force: true }).catch(() => {})
   }
 }
 
 /**
- * Launch-time recovery: if a journal exists, a PyTorch change died mid-flight.
- * The backup (when present) is authoritative — the candidate venv may be a
- * partial copy or partially-swapped. Restores the backup and clears the
- * journal. When no backup exists the rename never happened (or the commit
- * completed), so only the journal is stale.
+ * Launch-time recovery for a PyTorch change that died mid-flight. All paths
+ * are derived from the installation record — the on-disk journal is never
+ * trusted for filesystem targets (a tampered journal must not be able to
+ * direct deletes/renames outside the install).
+ *
+ * State machine:
+ * - backup dir present (journal or not): the swap never committed — the
+ *   backup is authoritative; restore it over the candidate venv.
+ * - no backup: the commit rename happened (or mutation never started); the
+ *   canonical venv is good. Only debris (journal, gc dir, staging) remains.
+ *
+ * Throws when the rollback itself fails — launching over a half-swapped venv
+ * would defeat the transaction, so callers must fail the launch closed.
  */
 export async function recoverTorchStackTransaction(installation: InstallationRecord): Promise<boolean> {
   const installPath = installation.installPath
-  const journal = await readJournal(installPath)
-  // Also sweep staging debris from a hard kill during prepare.
+  const venvPath = getActiveVenvDir(installation)
+  const backupPath = venvPath + BACKUP_SUFFIX
+  const gcPath = venvPath + GC_SUFFIX
+
+  // Debris sweeps are best-effort: staging from a kill during prepare, gc
+  // from a kill during post-commit deletion. Neither affects correctness.
   const staging = path.join(installPath, STAGING_DIR)
   if (fs.existsSync(staging)) await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {})
-  if (!journal) return false
+  if (fs.existsSync(gcPath)) await fs.promises.rm(gcPath, { recursive: true, force: true }).catch(() => {})
+  await fs.promises.rm(`${journalPath(installPath)}.tmp`, { force: true }).catch(() => {})
 
-  try {
-    if (fs.existsSync(journal.backupPath)) {
-      await rollback(journal.venvPath, journal.backupPath)
-    }
-    await fs.promises.rm(journalPath(installPath), { force: true })
-    return true
-  } catch (err) {
-    console.warn('PyTorch stack transaction recovery failed:', err)
-    return false
+  const hasJournal = fs.existsSync(journalPath(installPath))
+  const hasBackup = fs.existsSync(backupPath)
+  if (!hasJournal && !hasBackup) return false
+
+  if (hasBackup) {
+    // Rollback failure throws to the caller — do NOT swallow it and launch.
+    await rollback(venvPath, backupPath)
   }
+  await fs.promises.rm(journalPath(installPath), { force: true })
+  return hasBackup
 }

@@ -289,8 +289,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     } catch (err) {
       console.warn('Env layout migration failed:', err)
     }
-    // Recover a PyTorch stack change that died mid-transaction (journal on
-    // disk): restore the backed-up venv so we never launch a half-swapped env.
+    // Recover a PyTorch stack change that died mid-transaction: restore the
+    // backed-up venv so we never launch a half-swapped env. A failed rollback
+    // fails the launch closed — reconciliation/repair/ComfyUI must not run
+    // against a venv in an unknown state (the backup remains for retry).
     try {
       const { recoverTorchStackTransaction } = await import(
         '../../../sources/standalone/torchStackTransaction'
@@ -298,6 +300,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       await recoverTorchStackTransaction(inst)
     } catch (err) {
       console.warn('PyTorch stack transaction recovery failed:', err)
+      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
     }
     // Reconcile the persisted stack state with what's actually in the venv
     // (e.g. a manual terminal install). Never mutates the venv; must run

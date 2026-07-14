@@ -60,6 +60,33 @@ export interface PersistedTorchStack extends ManagedTorchStackRef {
   }
 }
 
+/** Strip a PEP 440 local tag: dist-info versions can carry one the R2
+ *  metadata omits (e.g. `2.10.0+cu128` vs `2.10.0`). All stack version
+ *  comparisons go through this so verification, reconciliation, and snapshot
+ *  classification can never disagree about what "same version" means. */
+export function publicVersion(v: string): string {
+  return v.includes('+') ? v.slice(0, v.indexOf('+')) : v
+}
+
+export interface InstalledTorchTuple {
+  torch: string | null
+  torchvision: string | null
+  torchaudio: string | null
+}
+
+/** Full-tuple stack identity check: every package the stack declares must be
+ *  installed at the same public version. Comparing torch alone is not enough —
+ *  two stacks can share a torch version but differ in torchvision/torchaudio. */
+export function torchTupleMatches(expected: TorchStackPackages, installed: InstalledTorchTuple): boolean {
+  for (const pkg of ['torch', 'torchvision', 'torchaudio'] as const) {
+    const want = expected[pkg]
+    if (!want) continue
+    const have = installed[pkg]
+    if (!have || publicVersion(have) !== publicVersion(want)) return false
+  }
+  return true
+}
+
 const STACK_ID_RE = /^comfy-bundle:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/
 
 /** Parse a `comfy-bundle` stackId into its variant and bundle tag; null when
