@@ -304,7 +304,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     }
     // Reconcile the persisted stack state with what's actually in the venv
     // (e.g. a manual terminal install). Never mutates the venv; must run
-    // before repair so repair sees up-to-date verified/observed state.
+    // before repair so repair sees up-to-date verified/observed state. If it
+    // fails, `lastVerifiedTorchStack` may be stale (e.g. persisted by a torch
+    // change that was rolled back) — skip repair for this launch rather than
+    // let it trust that ref as an acquisition source. Repair is optional;
+    // launching the un-repaired venv is safer than repairing on bad metadata.
+    let stackStateTrusted = true
     try {
       const { reconcileTorchStack } = await import(
         '../../../sources/standalone/torchStackCatalog'
@@ -313,40 +318,43 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       inst = (await installations.get(installationId)) || inst
     } catch (err) {
       console.warn('PyTorch stack reconciliation failed:', err)
+      stackStateTrusted = false
     }
     // One-time repair for installs damaged by the brief `--upgrade` window that
     // replaced bundled GPU torch with a CPU build. Non-fatal: CPU torch still
     // runs, so a failed repair must never block launch (it retries next time).
     // Held under `_operationAborts` for its duration so a second launch can't
     // run a concurrent repair against the same venv, and so it stays cancellable.
-    const repairAbort = new AbortController()
-    _operationAborts.set(installationId, repairAbort)
-    try {
-      const { maybeRepairTorch, getTorchVendorMismatch } = await import(
-        '../../../sources/standalone/torchRepair'
-      )
-      // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
-      // live `torchRepair` step rather than flashing a flat status. Detection is
-      // a cheap sync check; arming only when a repair will actually run.
-      if (getTorchVendorMismatch(inst)) {
-        preLaunchPhases.push('torchRepair')
-        await armLaunchTracker()
-      }
-      const repaired = await maybeRepairTorch(inst, {
-        sendProgress,
-        sendOutput: makeSendOutput(event.sender, installationId),
-        update: updateFn,
-        signal: repairAbort.signal,
-      })
-      if (repaired) inst = (await installations.get(installationId)) || inst
-    } catch (err) {
-      if (repairAbort.signal.aborted) {
+    if (stackStateTrusted) {
+      const repairAbort = new AbortController()
+      _operationAborts.set(installationId, repairAbort)
+      try {
+        const { maybeRepairTorch, getTorchVendorMismatch } = await import(
+          '../../../sources/standalone/torchRepair'
+        )
+        // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
+        // live `torchRepair` step rather than flashing a flat status. Detection is
+        // a cheap sync check; arming only when a repair will actually run.
+        if (getTorchVendorMismatch(inst)) {
+          preLaunchPhases.push('torchRepair')
+          await armLaunchTracker()
+        }
+        const repaired = await maybeRepairTorch(inst, {
+          sendProgress,
+          sendOutput: makeSendOutput(event.sender, installationId),
+          update: updateFn,
+          signal: repairAbort.signal,
+        })
+        if (repaired) inst = (await installations.get(installationId)) || inst
+      } catch (err) {
+        if (repairAbort.signal.aborted) {
+          if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
+          return { ok: false, cancelled: true }
+        }
+        console.warn('PyTorch vendor repair failed:', err)
+      } finally {
         if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
-        return { ok: false, cancelled: true }
       }
-      console.warn('PyTorch vendor repair failed:', err)
-    } finally {
-      if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
     }
     await writeComfyEnvironment(path.join(inst.installPath, 'ComfyUI'))
   }
