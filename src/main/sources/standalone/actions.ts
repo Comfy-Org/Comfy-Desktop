@@ -100,6 +100,26 @@ export async function handleAction(
       }
     }
 
+    // A cancel is only "clean" if the source is back at the pre-restore commit.
+    // A failed rollback leaves a hybrid state (snapshot source + reverted
+    // packages) the user could launch straight into, so it surfaces as an error
+    // instead of a quietly dismissed cancel. The op marker stays behind either
+    // way, so recoverInterruptedComfyOp retries a failed rollback on next launch.
+    const cancelledResult = async (note?: string): Promise<ActionResult> => {
+      let rolledBack = true
+      if (preRestoreHead && readGitHead(comfyuiDir) !== preRestoreHead) {
+        rolledBack = await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
+      }
+      await ensureLiveStateOnTop()
+      if (rolledBack) {
+        sendOutput(`\nCancelled; ComfyUI source was rolled back.${note ? ` ${note}` : ''}\n`)
+        return { ok: false, cancelled: true, message: MSG_CANCELLED }
+      }
+      const message = `Cancelled, but ComfyUI source rollback failed — it will be retried on the next launch.${note ? ` ${note}` : ''}`
+      sendOutput(`\n${message}\n`)
+      return { ok: false, message }
+    }
+
     sendOutput('\n── Restore ComfyUI Version ──\n')
     const comfyResult = await snapshots.restoreComfyUIVersion(
       installation.installPath, targetSnapshot, sendOutput, signal
@@ -114,10 +134,7 @@ export async function handleAction(
     }
 
     if (signal?.aborted) {
-      if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
-      await ensureLiveStateOnTop()
-      sendOutput('\nCancelled; ComfyUI source was rolled back.\n')
-      return { ok: false, cancelled: true, message: MSG_CANCELLED }
+      return await cancelledResult()
     }
 
     // Restore custom nodes before pip — node installs may add pip dependencies.
@@ -128,10 +145,7 @@ export async function handleAction(
     )
 
     if (signal?.aborted) {
-      if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
-      await ensureLiveStateOnTop()
-      sendOutput('\nCancelled; ComfyUI source was rolled back. Custom node changes may be partial.\n')
-      return { ok: false, cancelled: true, message: MSG_CANCELLED }
+      return await cancelledResult('Custom node changes may be partial.')
     }
 
     let pipResult: snapshots.RestoreResult = {
@@ -161,13 +175,16 @@ export async function handleAction(
     // commit so we land on the consistent pre-restore state instead of
     // snapshot-source + original-packages.
     if (pipError || pipResult.failed.length > 0 || signal?.aborted) {
+      // Leave the op marker so recoverInterruptedComfyOp retries on next launch
+      // if the in-process rollback failed; a successful rollback makes it a no-op.
+      if (signal?.aborted) {
+        return await cancelledResult('Package changes were reverted where possible.')
+      }
       let rolledBack = true
       if (preRestoreHead && readGitHead(comfyuiDir) !== preRestoreHead) {
         rolledBack = await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
       }
-      const headline = signal?.aborted
-        ? 'Snapshot restore cancelled.'
-        : (pipError ? `Snapshot package restore failed: ${pipError}` : 'Snapshot package restore failed.')
+      const headline = pipError ? `Snapshot package restore failed: ${pipError}` : 'Snapshot package restore failed.'
       const tail = rolledBack
         ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
         : 'Package changes were reverted where possible, but ComfyUI source rollback failed.'
@@ -176,16 +193,10 @@ export async function handleAction(
       // a large restore can't produce a wall-of-text dialog.
       const shownErrors = pipResult.errors.slice(0, 20)
       const omittedErrors = pipResult.errors.length - shownErrors.length
-      const pkgDetail = !signal?.aborted && shownErrors.length > 0
+      const pkgDetail = shownErrors.length > 0
         ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
         : ''
-      // Leave the op marker so recoverInterruptedComfyOp retries on next launch
-      // if the in-process rollback failed; a successful rollback makes it a no-op.
       await ensureLiveStateOnTop()
-      if (signal?.aborted) {
-        sendOutput(`\n${headline} ${tail}\n`)
-        return { ok: false, cancelled: true, message: MSG_CANCELLED }
-      }
       return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
     }
 
