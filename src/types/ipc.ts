@@ -1241,12 +1241,6 @@ export interface ElectronApi {
     installationId: string
   ): Promise<{ ok: boolean; imported?: number; restoreFile?: string; message?: string }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
-  previewDesktopMigration(): Promise<{
-    ok: boolean
-    message?: string
-    preview?: SnapshotFilePreview
-    snapshotPath?: string
-  }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string
@@ -1612,7 +1606,6 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
-  previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',

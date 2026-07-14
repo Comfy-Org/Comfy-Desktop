@@ -115,8 +115,7 @@ test('migrate sub-step opens MigrateConfirmTakeover (takeover surface) @lifecycl
   await ctx.panel.waitForVisible('[data-testid="migrate-takeover-cancel"]')
 
   // Wait until the takeover's Confirm CTA leaves loading state — the
-  // preview fetch (`previewDesktopMigration`) is awaited before the
-  // confirm becomes enabled.
+  // adoption confirm populates its details before enabling the button.
   await ctx.panel.waitFor(
     async () => ctx.panel.evaluate<boolean>(
       `!document.querySelector('[data-testid="migrate-takeover-confirm"]').disabled`,

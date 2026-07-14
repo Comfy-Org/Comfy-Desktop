@@ -13,8 +13,6 @@ import {
   hasGitDir,
   defaultInstallDir,
   detectGPU,
-  detectDesktopInstall,
-  stageDesktopSnapshot,
   stageLocalSnapshot,
   getSnapshotCount,
   getSnapshotListData,
@@ -345,32 +343,6 @@ export function registerSnapshotHandlers(): void {
       return { ok: true, imported: result.imported, restoreFile: result.filenames[0]! }
     } catch (err) {
       return { ok: false, message: (err as Error)?.message ?? 'Failed to import snapshots.' }
-    }
-  })
-
-  let _lastDesktopPreviewFile: string | null = null
-
-  ipcMain.handle('preview-desktop-migration', async () => {
-    try {
-      if (_lastDesktopPreviewFile) {
-        fs.promises.unlink(_lastDesktopPreviewFile).catch(() => {})
-        _lastDesktopPreviewFile = null
-      }
-
-      const desktopInfo = detectDesktopInstall()
-      if (!desktopInfo) return { ok: false, message: i18n.t('desktop.notFound') }
-
-      const { envelope, stagedFile } = await stageDesktopSnapshot(desktopInfo)
-
-      _lastDesktopPreviewFile = stagedFile
-      return {
-        ok: true,
-        preview: await buildSnapshotPreview(stagedFile, envelope),
-        snapshotPath: stagedFile
-      }
-    } catch (err) {
-      console.warn('preview-desktop-migration failed:', err)
-      return { ok: false, message: (err as Error)?.message ?? String(err) }
     }
   })
 

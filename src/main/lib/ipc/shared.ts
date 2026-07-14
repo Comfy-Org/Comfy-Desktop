@@ -32,7 +32,7 @@ import {
   COMFY_BOOT_TIMEOUT_MS,
 } from '../process'
 import { detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions } from '../gpu'
-import { detectDesktopInstall, stageDesktopSnapshot } from '../desktopDetect'
+import { detectDesktopInstall } from '../desktopDetect'
 import { performLocalMigration, stageLocalSnapshot } from '../localMigration'
 import { getDiskSpace, getDirectorySize, validateInstallPath } from '../disk'
 import { syncOemSeed } from '../oem'
@@ -72,7 +72,7 @@ export {
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
   detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions,
-  detectDesktopInstall, stageDesktopSnapshot,
+  detectDesktopInstall,
   performLocalMigration, stageLocalSnapshot,
   getDiskSpace, getDirectorySize, validateInstallPath,
   syncOemSeed, formatTime, getActiveDownloads,
