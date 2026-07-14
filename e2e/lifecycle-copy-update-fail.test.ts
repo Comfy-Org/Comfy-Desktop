@@ -121,15 +121,26 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   })()`)
   expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
 
+  // The action may or may not interpose a confirmation, and on a slow run
+  // it can appear well after any fixed guess. Poll for EITHER the confirm
+  // control (click it) OR evidence the copy already ran without one (the
+  // new install landing in the registry), whichever comes first.
   const confirmSelector = `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
-  let confirmAppeared = false
-  try {
-    await popup.waitForVisible(confirmSelector, { timeout: 2_000 })
-    confirmAppeared = true
-  } catch {
-    // This action does not always require a confirmation.
+  const copyRegistered = async (): Promise<boolean> => {
+    const installs = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
+    return installs.some((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   }
-  if (confirmAppeared) expect(await popup.click(confirmSelector)).toBe(true)
+  const confirmDeadline = Date.now() + 30_000
+  while (Date.now() < confirmDeadline) {
+    if (await popup.isVisible(confirmSelector).catch(() => false)) {
+      // A false click return means the surface vanished between the
+      // visibility check and the click — keep polling.
+      if (await popup.click(confirmSelector)) break
+    } else if (await copyRegistered()) {
+      break
+    }
+    await new Promise((r) => setTimeout(r, 250))
+  }
 
   let installations: InstallationLike[] = []
   await expect.poll(async () => {

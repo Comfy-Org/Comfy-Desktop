@@ -55,11 +55,29 @@ import {
   systemModalPage,
   titlePopupPage,
   waitForWebContents,
+  type WebContentsPage,
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
+
+/** Wait until the config takeover's Continue CTA
+ *  (`.brand-primary.config-continue`, bound to `:disabled="!canContinue"`)
+ *  is enabled — i.e. the form is fully filled and settled. */
+async function waitForConfigContinueEnabled(message: string): Promise<void> {
+  await ctx.panel.waitFor(
+    async () => evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
+      if (!wc) return false
+      return wc.executeJavaScript(`(() => {
+        const btn = document.querySelector('.brand-primary.config-continue')
+        return !!btn && !btn.disabled
+      })()`) as Promise<boolean>
+    })),
+    { timeout: 60_000, message },
+  )
+}
 
 /** True after `beforeAll` if an install record was hydrated from disk.
  *  Setup tests (consent / first-use / completes-install / post-install
@@ -241,17 +259,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // `.brand-primary.config-continue` is bound to `:disabled="!canContinue"`,
   // so once it goes enabled the form is fully pre-filled (release picked,
   // variant picked, no path issues).
-  await ctx.panel.waitFor(
-    async () => evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
-      const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
-      if (!wc) return false
-      return wc.executeJavaScript(`(() => {
-        const btn = document.querySelector('.brand-primary.config-continue')
-        return !!btn && !btn.disabled
-      })()`) as Promise<boolean>
-    })),
-    { timeout: 60_000, message: 'Continue button never became enabled (form did not pre-fill)' },
-  )
+  await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
 
   // Open Advanced so the release BaseSelect + variant rows are
   // interactive. The body is CSS-hidden when collapsed; the BaseSelect
@@ -293,17 +301,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // which flips `saveDisabled` true until the variant options resolve
   // and the recommended variant is re-picked. Wait for Continue to
   // come back enabled before moving on.
-  await ctx.panel.waitFor(
-    async () => evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
-      const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
-      if (!wc) return false
-      return wc.executeJavaScript(`(() => {
-        const btn = document.querySelector('.brand-primary.config-continue')
-        return !!btn && !btn.disabled
-      })()`) as Promise<boolean>
-    })),
-    { timeout: 60_000, message: 'Continue button never re-enabled after picking the older stable tag' },
-  )
+  await waitForConfigContinueEnabled('Continue button never re-enabled after picking the older stable tag')
 
   // On Windows, force the CPU variant so the test is deterministic
   // across runners (NVIDIA hosts would otherwise download a multi-GB
@@ -489,6 +487,38 @@ interface InstallationLite {
   id: string
   name: string
   installPath: string
+}
+
+/** Fill the picker's BasePrompt name input and submit it. Both copy entry
+ *  points (picker More → Copy, dashboard kebab → copy-install) prompt for
+ *  the new install's name through `useDialogs` → DialogHost → BasePrompt. */
+async function submitCopyNamePrompt(popup: WebContentsPage, name: string): Promise<void> {
+  await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
+  await popup.evaluate<void>(
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(byTestId(TID.basePromptInput))})
+      if (!el) throw new Error('prompt input not found')
+      el.value = ${JSON.stringify(name)}
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`,
+  )
+  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
+}
+
+/** Wait for a copy operation to complete. The completion signal is the new
+ *  registry record — main registers it only AFTER the file copy finishes
+ *  (`performCopy`). Real ~500MB filesystem copy → generous timeout. */
+async function waitForCopyRegistered(name: string): Promise<InstallationLite> {
+  let copyRecord: InstallationLite | undefined
+  await expect
+    .poll(async () => {
+      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      copyRecord = installs.find((i) => i.name === name)
+      return copyRecord ?? null
+    }, { timeout: 540_000, intervals: [2_000, 5_000] })
+    .not.toBeNull()
+  return copyRecord!
 }
 
 interface UpdateActionResult {
@@ -706,17 +736,22 @@ async function returnToDashboardThroughConfirm(): Promise<void> {
     const panelConfirmVisible = await ctx.panel
       .isVisible(byTestId(TID.baseAlertAction))
       .catch(() => false) // panel.html may not exist on the system-modal path
+    // A false click return means the surface vanished between the
+    // visibility check and the click — keep polling instead of letting
+    // `returnPromise` hang on a confirm that was never actually pressed.
     if (panelConfirmVisible) {
-      await ctx.panel.click(byTestId(TID.baseAlertAction))
-      clicked = true
-      break
+      if (await ctx.panel.click(byTestId(TID.baseAlertAction))) {
+        clicked = true
+        break
+      }
     }
     if (await isPopupVisible(ctx.app, 'comfySystemModal.html')) {
       const sysModal = systemModalPage(ctx.app)
       if (await sysModal.isVisible(byTestId(TID.baseAlertAction))) {
-        await sysModal.click(byTestId(TID.baseAlertAction))
-        clicked = true
-        break
+        if (await sysModal.click(byTestId(TID.baseAlertAction))) {
+          clicked = true
+          break
+        }
       }
     }
     await new Promise((r) => setTimeout(r, 200))
@@ -1178,37 +1213,18 @@ test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycl
   // Prompt for the copy's new name. The picker drives dialogs through
   // `useDialogs` → DialogHost → BasePrompt, so the surface carries the
   // base-prompt test ids (not ModalDialog's modal-prompt ones).
-  await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 10_000 })
   const newName = 'ComfyUI Copy E2E'
-  await popup.evaluate<void>(
-    `(() => {
-      const el = document.querySelector(${JSON.stringify(byTestId(TID.basePromptInput))})
-      if (!el) throw new Error('prompt input not found')
-      el.value = ${JSON.stringify(newName)}
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      el.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
-  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
+  await submitCopyNamePrompt(popup, newName)
 
   await waitForProgressTakeoverAfterPopupClose()
 
-  // Wait for the copy to complete. The picker routes copy 'inline-picker'
-  // (`resolveProgressRouting`): the op renders in the picker's right pane
-  // and its success screen auto-dismisses after a countdown — no window is
-  // opened for the new install. The completion signal is the new registry
-  // record, which main registers only AFTER the file copy finishes
-  // (`performCopy`). Real ~500MB filesystem copy → generous timeout.
-  let copyRecord: InstallationLite | undefined
-  await expect
-    .poll(async () => {
-      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
-      copyRecord = installs.find((i) => i.name === newName)
-      return copyRecord ?? null
-    }, { timeout: 540_000, intervals: [2_000, 5_000] })
-    .not.toBeNull()
-  _copyInstallId = copyRecord!.id
-  _copyInstallPath = copyRecord!.installPath
+  // The picker routes copy 'inline-picker' (`resolveProgressRouting`):
+  // the op renders in the picker's right pane and its success screen
+  // auto-dismisses after a countdown — no window is opened for the new
+  // install.
+  const copyRecord = await waitForCopyRegistered(newName)
+  _copyInstallId = copyRecord.id
+  _copyInstallPath = copyRecord.installPath
   await waitForOperationDrain(_updateInstallId)
 
   // Disk shape: copy is a full standalone tree (ComfyUI/.git +
@@ -1288,37 +1304,16 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @lifecycle'
   // prompt for the new install name (BasePrompt via useDialogs).
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
-
   const newName = 'ComfyUI Kebab Copy E2E'
-  await popup.evaluate<void>(
-    `(() => {
-      const el = document.querySelector(${JSON.stringify(byTestId(TID.basePromptInput))})
-      if (!el) throw new Error('prompt input not found')
-      el.value = ${JSON.stringify(newName)}
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      el.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
-  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
+  await submitCopyNamePrompt(popup, newName)
 
   // Copy op renders inline in the picker's right pane (same
   // 'inline-picker' routing as the pin-bottom Copy above).
   await waitForProgressTakeoverAfterPopupClose()
 
-  // Wait for the copy to complete — signalled by the new registry
-  // record, which main registers only after the file copy finishes.
-  // Real ~500MB filesystem copy → generous timeout.
-  let copyRecord: InstallationLite | undefined
-  await expect
-    .poll(async () => {
-      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
-      copyRecord = installs.find((i) => i.name === newName)
-      return copyRecord ?? null
-    }, { timeout: 540_000, intervals: [2_000, 5_000] })
-    .not.toBeNull()
-  _kebabCopyInstallId = copyRecord!.id
-  _kebabCopyInstallPath = copyRecord!.installPath
+  const copyRecord = await waitForCopyRegistered(newName)
+  _kebabCopyInstallId = copyRecord.id
+  _kebabCopyInstallPath = copyRecord.installPath
   await waitForOperationDrain(_updateInstallId)
 
   // Disk shape: kebab copy materializes the same standalone tree the

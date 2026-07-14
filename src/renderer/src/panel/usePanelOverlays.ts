@@ -157,10 +157,11 @@ export function firstUseModeForOverlaySwap(
   prev: Overlay | null | undefined,
   chainActive: boolean
 ): FirstUseMode | null {
-  if (isProgressTakeover(next) && !isProgressTakeover(prev)) {
+  const nextIsProgress = isProgressTakeover(next)
+  if (nextIsProgress && !isProgressTakeover(prev)) {
     return 'loading-lockdown'
   }
-  if (isProgressTakeover(next) || isFirstUseTakeover(next)) return null
+  if (nextIsProgress || isFirstUseTakeover(next)) return null
   const isChainHandoff =
     isFirstUseTakeover(prev) && next?.kind === 'takeover' && chainActive
   return isChainHandoff ? null : 'none'

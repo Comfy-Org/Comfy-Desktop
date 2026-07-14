@@ -35,6 +35,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Lifecycle tests exercise the real install path, which prefers the
+      # bundled bootstrap-python git backend (the same backend shipped to
+      # users). Fetch it so the run covers production wiring instead of
+      # silently falling back to the runner's system git.
+      - name: Fetch bootstrap Python
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm run bootstrap:fetch
+
       - name: Build app
         run: pnpm run build
 

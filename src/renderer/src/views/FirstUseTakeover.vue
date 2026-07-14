@@ -273,9 +273,12 @@ let completedFired = false
 let chainHandoff = false
 
 function emitCompleted(exitPath: 'cloud' | 'local-new' | 'local-migrate' | 'skipped'): void {
+  // Recompute the handoff flag on every exit — even telemetry-deduped
+  // ones — so a cancelled chain followed by a different exit path can't
+  // leave a stale `chainHandoff` suppressing the unmount's `'none'` push.
+  chainHandoff = exitPath === 'local-new' || exitPath === 'local-migrate'
   if (completedFired) return
   completedFired = true
-  chainHandoff = exitPath === 'local-new' || exitPath === 'local-migrate'
   const durationMs = Date.now() - mountedAt
   // Cohort the onboarding-completion dashboard into fresh-user,
   // returning-user, and Desktop-1-migrator splits via had_legacy /
@@ -720,6 +723,10 @@ onUnmounted(() => {
  *  user can retry Continue. */
 function resetContinue(): void {
   isContinuing.value = false
+  // The chain was cancelled, so its handoff is off — a later unmount
+  // must clear `firstUseMode` normally instead of honoring a ghost
+  // handoff from the aborted exit.
+  chainHandoff = false
 }
 
 defineExpose({ open, resetContinue })

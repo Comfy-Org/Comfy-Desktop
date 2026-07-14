@@ -35,9 +35,8 @@ test.afterAll(async () => {
 })
 
 test('cold start lands on first-use start screen with the waffle menu hidden @lifecycle', async () => {
-  // Consent + cloud/local pick share a single merged start screen
-  // (commit 5619823). The hero + Continue CTA prove we've reached the
-  // takeover.
+  // Consent + cloud/local pick share a single merged start screen.
+  // The hero + Continue CTA prove we've reached the takeover.
   await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
 

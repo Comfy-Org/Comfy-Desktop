@@ -98,7 +98,7 @@ test.afterAll(async () => {
   if (stagedPath) await rm(stagedPath, { recursive: true, force: true })
 })
 
-test('waffle menu → Add Existing opens TrackModal; Browse probes the staged directory @lifecycle', async () => {
+test('waffle menu → Add Existing → Browse probes the staged directory → Track Install registers it @lifecycle', async () => {
   // Real entry point: title-bar waffle menu → "Add Existing Instance".
   // On a dashboard host the flow takes over the current window's panel.
   expect(await ctx.titleBar.click('.title-menu-button')).toBe(true)
@@ -127,9 +127,11 @@ test('waffle menu → Add Existing opens TrackModal; Browse probes the staged di
     },
     { timeout: 15_000, message: 'probe never populated the detected-install summary' },
   )
-})
 
-test('Track Install registers the directory and chooser shows the tile @lifecycle', async () => {
+  // Name + Track Install stay in the same test as the modal setup above:
+  // the flow is one user journey through a single TrackModal instance, and
+  // splitting it would leave the second half depending on modal state from
+  // an earlier test (broken under focused runs / worker restarts).
   await ctx.panel.evaluate<void>(
     `(() => {
       const el = document.querySelector('#track-name')

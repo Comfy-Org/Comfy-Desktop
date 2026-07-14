@@ -146,15 +146,33 @@ test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer rele
 
   const checkButton = byTestId(TID.updateActionButton('check-update'))
   await popup.waitForVisible(checkButton, { timeout: 15_000 })
+  const waitForCheckButtonEnabled = (message: string): Promise<void> =>
+    popup.waitFor(
+      () => popup.evaluate<boolean>(
+        `(() => { const el = document.querySelector('${checkButton}'); return !!el && !el.disabled })()`,
+      ),
+      { timeout: 30_000, message },
+    )
   // The auto-refresh fired on tab open may still be running (button
   // disabled + spinner). Wait for it to settle so the click lands.
-  await popup.waitFor(
-    () => popup.evaluate<boolean>(
-      `(() => { const el = document.querySelector('${checkButton}'); return !!el && !el.disabled })()`,
-    ),
-    { timeout: 30_000, message: 'check-update button never became enabled' },
-  )
+  await waitForCheckButtonEnabled('check-update button never became enabled')
+  // Drop the auto-refresh's recorded dispatch so the polls below verify
+  // the MANUAL check itself — otherwise the channel-card assertion could
+  // be satisfied by data the auto-refresh already landed, silently
+  // skipping the button-driven path this test exists to prove.
+  await resetIpcInvocations(ctx.app, 'run-action')
   expect(await popup.click(checkButton)).toBe(true)
+
+  // The click must dispatch its own check-update run-action…
+  await expect
+    .poll(async () => countAutoCheckUpdateCalls(
+      await getIpcInvocations(ctx.app, 'run-action'),
+      INSTALL_ID,
+    ), { timeout: 10_000, intervals: [200, 500] })
+    .toBeGreaterThanOrEqual(1)
+  // …and that manual check must finish (the button re-enables when its
+  // operation drains) before the popup can be safely closed below.
+  await waitForCheckButtonEnabled('check-update button never re-enabled after the manual check')
 
   // The check runs a real `git ls-remote` (~hundreds of ms). Poll the
   // channel cards until the remote's data lands.

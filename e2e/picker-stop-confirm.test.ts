@@ -153,6 +153,27 @@ async function forwardUpdateActionFromPicker(): Promise<void> {
   )
 }
 
+/**
+ * Poll for the forwarded `update-comfyui` dispatch itself — not a bare
+ * invocation count. The picker's auto-`check-update` watcher can also
+ * fire a run-action against the freshly-mounted Update tab depending on
+ * release-cache freshness, so a bare count could be satisfied before
+ * the self-stop wrapper finishes waiting for the session to leave the
+ * running state.
+ */
+async function pollForForwardedUpdateDispatch(): Promise<void> {
+  await expect
+    .poll(async () => {
+      const calls = await getIpcInvocations(ctx.app, 'run-action') as
+        { installationId?: string; actionId?: string }[]
+      return calls.some((c) => c.actionId === 'update-comfyui')
+    }, {
+      timeout: 10_000,
+      intervals: [200, 500],
+    })
+    .toBe(true)
+}
+
 test('Self-stops the running session and dispatches the action @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, {
     installationId: INSTALL_ID,
@@ -190,21 +211,7 @@ test('Self-stops the running session and dispatches the action @windows @macos @
       intervals: [100, 250],
     })
     .toBeGreaterThanOrEqual(1)
-  // Poll for the forwarded `update-comfyui` dispatch itself. The picker's
-  // auto-`check-update` watcher can also fire a run-action against the
-  // freshly-mounted Update tab depending on release-cache freshness, so a
-  // bare invocation count could be satisfied before the self-stop wrapper
-  // finishes waiting for the session to leave the running state.
-  await expect
-    .poll(async () => {
-      const calls = await getIpcInvocations(ctx.app, 'run-action') as
-        { installationId?: string; actionId?: string }[]
-      return calls.some((c) => c.actionId === 'update-comfyui')
-    }, {
-      timeout: 10_000,
-      intervals: [200, 500],
-    })
-    .toBe(true)
+  await pollForForwardedUpdateDispatch()
 
   const runCalls = await getIpcInvocations(ctx.app, 'run-action') as
     { installationId?: string; actionId?: string }[]
@@ -236,20 +243,7 @@ test('Skips self-stop when the install is NOT running @windows @macos @linux', a
     })
     .toBe(false)
 
-  // Same race tolerance as the running-session variant — poll for the
-  // forwarded `update-comfyui` dispatch itself, not a bare invocation
-  // count (the auto-`check-update` watcher may have fired against the
-  // freshly-mounted Update tab).
-  await expect
-    .poll(async () => {
-      const calls = await getIpcInvocations(ctx.app, 'run-action') as
-        { installationId?: string; actionId?: string }[]
-      return calls.some((c) => c.actionId === 'update-comfyui')
-    }, {
-      timeout: 10_000,
-      intervals: [200, 500],
-    })
-    .toBe(true)
+  await pollForForwardedUpdateDispatch()
 
   const stopCalls = await getIpcInvocations(ctx.app, 'stop-comfyui')
   expect(stopCalls.length).toBe(0)
