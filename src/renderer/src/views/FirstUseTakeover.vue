@@ -266,10 +266,16 @@ const showGpuHint = computed(
 let mountedAt = Date.now()
 const stepsSeen = new Set<Step>()
 let completedFired = false
+/** True when the exit hands off to a chain flow (chain-local /
+ *  chain-migrate). Those chains keep the host locked to `'post-consent'`
+ *  across the takeover swap, so the unmount hook must not clobber their
+ *  mode push with `'none'`. */
+let chainHandoff = false
 
 function emitCompleted(exitPath: 'cloud' | 'local-new' | 'local-migrate' | 'skipped'): void {
   if (completedFired) return
   completedFired = true
+  chainHandoff = exitPath === 'local-new' || exitPath === 'local-migrate'
   const durationMs = Date.now() - mountedAt
   // Cohort the onboarding-completion dashboard into fresh-user,
   // returning-user, and Desktop-1-migrator splits via had_legacy /
@@ -610,6 +616,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // also adds it on first mount, but Set.add is idempotent.
   stepsSeen.add(step.value)
   completedFired = false
+  chainHandoff = false
   // Pre-load existing telemetry preference so the toggle reflects the
   // user's current persisted choice if the takeover is replaying after
   // a mid-flow cancel (the consent step is the only one that can flip
@@ -694,15 +701,15 @@ onUnmounted(() => {
       had_legacy: hasLegacyDesktop.value
     })
   }
-  // Clear the host's `firstUseMode` whenever the takeover unmounts,
-  // regardless of why (Cloud-branch
-  // completion, Local-branch chain swap, file-menu Skip Onboarding,
-  // OS-chrome window close, dev-tools refresh). The host's
-  // `dismissTakeoverDirect` ALSO pushes `'none'` for the renderer-
-  // internal dismiss path; the duplicate landing here is harmless and
-  // keeps unmount paths that go through useOverlay's silent Tier 3 →
-  // Tier 3 swap (chain-local) covered too.
-  window.api.setFirstUseMode('none')
+  // Clear the host's `firstUseMode` whenever the takeover unmounts
+  // (Cloud-branch completion, file-menu Skip Onboarding, OS-chrome
+  // window close, dev-tools refresh). The host's `dismissTakeoverDirect`
+  // ALSO pushes `'none'` for the renderer-internal dismiss path; the
+  // duplicate landing here is harmless. Chain handoffs are the
+  // exception: chain-local / chain-migrate assert `'post-consent'`
+  // before this unmount flushes, and pushing `'none'` here would
+  // clobber that and briefly surface the full file menu mid-onboarding.
+  if (!chainHandoff) window.api.setFirstUseMode('none')
 })
 
 /** Host-callable: clears the Continue-button spinner without resetting

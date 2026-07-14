@@ -181,7 +181,17 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       if (isProgressTakeover(next) && !isProgressTakeover(prev)) {
         window.api.setFirstUseMode('loading-lockdown')
       } else if (!isProgressTakeover(next) && !isFirstUseTakeover(next)) {
-        window.api.setFirstUseMode('none')
+        // First-use chain handoff (first-use takeover silently swapped
+        // for the new-install takeover): the chain handler asserted
+        // `'post-consent'` so the file menu stays locked to Skip
+        // Onboarding while the wizard loads — don't clobber it. Scoped
+        // to the takeover → takeover swap so a stale chain flag can't
+        // suppress the `'none'` push on ordinary overlay closes.
+        const isChainHandoff =
+          isFirstUseTakeover(prev) &&
+          next?.kind === 'takeover' &&
+          opts.firstUseChain?.shouldForceTakeover() === true
+        if (!isChainHandoff) window.api.setFirstUseMode('none')
       }
     },
     { immediate: true }
