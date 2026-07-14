@@ -131,6 +131,8 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 | `pnpm run format`                | Format (Prettier)                                                     |
 | `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
 
+For the test categories, how to run each, and which one a new test belongs in, see [`TESTING.md`](TESTING.md).
+
 ### Project structure
 
 ```
