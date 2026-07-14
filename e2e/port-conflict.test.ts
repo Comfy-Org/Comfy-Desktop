@@ -128,27 +128,6 @@ test('port-conflict banner + dual-action footer render when result.portConflict 
   expect(await ctx.panel.exists(byTestId(TID.progressReboot))).toBe(false)
 })
 
-test('Use Next Port fires runAction(launch) with portOverride @windows @macos @linux', async () => {
-  await injectConflict()
-  await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictUsePort), { timeout: 10_000 })
-
-  expect(await ctx.panel.click(byTestId(TID.progressPortConflictUsePort))).toBe(true)
-
-  await expect
-    .poll(
-      async () => (await getIpcInvocations(ctx.app, 'run-action')).length,
-      { timeout: 5_000, intervals: [100, 200] },
-    )
-    .toBeGreaterThanOrEqual(1)
-
-  const runCalls = (await getIpcInvocations(ctx.app, 'run-action')) as RunActionInvocation[]
-  const launchCall = runCalls.find(
-    (c) => c.installationId === INSTALL_ID && c.actionId === 'launch',
-  )
-  expect(launchCall, 'Use Next Port must fire runAction("launch") for the install').toBeDefined()
-  expect(launchCall!.actionData).toEqual({ portOverride: NEXT_PORT })
-})
-
 test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @windows @macos @linux', async () => {
   await injectConflict()
   await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictKill), { timeout: 10_000 })
@@ -195,4 +174,30 @@ test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @w
     runCalls.filter((c) => c.installationId === INSTALL_ID && c.actionId === 'launch'),
     'Kill Process must re-invoke op.apiCall, not the fresh-launch fallback',
   ).toEqual([])
+})
+
+// Runs LAST: the click fires a REAL `runAction('launch')` whose op stays
+// in flight until main's launch attempt fails. `handleShowProgress` skips
+// `startOperation` while an unfinished op exists for the install, so a
+// subsequent `injectConflict` in a later test would silently no-op on a
+// slow runner where the launch hasn't failed yet.
+test('Use Next Port fires runAction(launch) with portOverride @windows @macos @linux', async () => {
+  await injectConflict()
+  await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictUsePort), { timeout: 10_000 })
+
+  expect(await ctx.panel.click(byTestId(TID.progressPortConflictUsePort))).toBe(true)
+
+  await expect
+    .poll(
+      async () => (await getIpcInvocations(ctx.app, 'run-action')).length,
+      { timeout: 5_000, intervals: [100, 200] },
+    )
+    .toBeGreaterThanOrEqual(1)
+
+  const runCalls = (await getIpcInvocations(ctx.app, 'run-action')) as RunActionInvocation[]
+  const launchCall = runCalls.find(
+    (c) => c.installationId === INSTALL_ID && c.actionId === 'launch',
+  )
+  expect(launchCall, 'Use Next Port must fire runAction("launch") for the install').toBeDefined()
+  expect(launchCall!.actionData).toEqual({ portOverride: NEXT_PORT })
 })

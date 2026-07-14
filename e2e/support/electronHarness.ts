@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -130,68 +130,50 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     await options.onSetup({ homeDir, appDataDir })
   }
 
-  // Expose a CDP remote-debugging port so tests can connect to non-BrowserWindow
-  // webContents. Derive the port from the worker index to avoid collisions.
-  const workerIndex = parseInt(process.env['TEST_WORKER_INDEX'] || '0', 10)
-  const cdpPort = 19200 + workerIndex
+  // Normalize seed records up front: they ride into main via
+  // `E2E_INSTALLATIONS_SEED` (mirroring `E2E_SETTINGS_SEED`), written to the
+  // platform-specific installations.json by main before its first read. A
+  // post-launch file write from here raced main's boot-time cloud-entry seed
+  // and the renderer store's one-shot hydration (which only refetches on an
+  // `installations-changed` broadcast that a behind-the-back write never fires).
+  const seedRecords = (options?.installations ?? []).map((inst, i) => {
+    const { snapshots: _snapshots, ...rest } = inst
+    return {
+      id: inst.id ?? `inst-test-${i}`,
+      name: inst.name ?? `Test Install ${i + 1}`,
+      createdAt: new Date().toISOString(),
+      installPath: inst.installPath ?? path.join(homeDir, `install-${i}`),
+      sourceId: inst.sourceId ?? 'standalone',
+      status: inst.status ?? 'installed',
+      ...rest,
+    }
+  })
 
-  // Linux CI runners lack the SUID sandbox binary; disable it the same way linux-dev.sh does.
-  const args = ['.', `--remote-debugging-port=${cdpPort}`]
-  if (process.platform === 'linux') {
-    args.push('--no-sandbox')
+  // Boot-time sweep protection: main reclaims install dirs that contain only
+  // ignored entries (marker file etc.) as aborted installs — removing the
+  // record. Seeded dirs typically hold just the marker, so give each EXISTING
+  // dir a `.launcher/` entry (what a real managed install has) to classify as
+  // populated. Dirs the test deliberately left missing stay missing (the sweep
+  // never reclaims those).
+  for (const record of seedRecords) {
+    if (!record.installPath) continue
+    try {
+      await stat(record.installPath)
+    } catch {
+      continue
+    }
+    await mkdir(path.join(record.installPath, '.launcher'), { recursive: true })
   }
 
-  const application = await electron.launch({
-    args,
-    env: buildIsolatedEnv(homeDir, options?.settings),
-  })
-
-  // Under Playwright the ready-to-show event may fire but isVisible() can lag,
-  // so force-show once a BrowserWindow exists.
-  const page = await application.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  await application.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win && !win.isVisible()) win.show()
-  })
-
-  // Suppress the native uncaught-exception dialog and exit fast so tests don't
-  // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
-  await application.evaluate(({ app: electronApp, dialog }) => {
-    dialog.showErrorBox = () => {}
-    electronApp.on('render-process-gone', () => electronApp.exit(1))
-  })
-
-  // Seed installations after launch so we can query app.getPath('userData')
-  // for the correct dir (Electron may modify the app name per platform).
-  if (options?.installations && options.installations.length > 0) {
-    const userDataDir = await application.evaluate(async ({ app: electronApp }) => {
-      return electronApp.getPath('userData')
-    })
-    const records = options.installations.map((inst, i) => {
-      const { snapshots: _snapshots, ...rest } = inst
-      return {
-        id: inst.id ?? `inst-test-${i}`,
-        name: inst.name ?? `Test Install ${i + 1}`,
-        createdAt: new Date().toISOString(),
-        installPath: inst.installPath ?? path.join(homeDir, `install-${i}`),
-        sourceId: inst.sourceId ?? 'standalone',
-        status: inst.status ?? 'installed',
-        ...rest,
-      }
-    })
+  // Seed snapshot JSON files under `<installPath>/.launcher/snapshots/` so
+  // the snapshots tab finds them on first read. Pure fs under the install
+  // paths (created above by the caller), so it can run before launch.
+  if (options?.installations) {
     const { writeFile: writeFileFs } = await import('node:fs/promises')
-    await mkdir(userDataDir, { recursive: true })
-    await writeFileFs(
-      path.join(userDataDir, 'installations.json'),
-      JSON.stringify(records, null, 2),
-    )
-    // Seed snapshot JSON files under `<installPath>/.launcher/snapshots/` so
-    // the snapshots tab finds them on first read.
     for (let i = 0; i < options.installations.length; i++) {
       const snaps = options.installations[i]!.snapshots
       if (!snaps || snaps.length === 0) continue
-      const installPath = records[i]!.installPath
+      const installPath = seedRecords[i]!.installPath
       const snapshotsDir = path.join(installPath, '.launcher', 'snapshots')
       await mkdir(snapshotsDir, { recursive: true })
       for (let j = 0; j < snaps.length; j++) {
@@ -214,6 +196,43 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       }
     }
   }
+
+  // Expose a CDP remote-debugging port so tests can connect to non-BrowserWindow
+  // webContents. Derive the port from the worker index to avoid collisions.
+  const workerIndex = parseInt(process.env['TEST_WORKER_INDEX'] || '0', 10)
+  const cdpPort = 19200 + workerIndex
+
+  // Linux CI runners lack the SUID sandbox binary; disable it the same way linux-dev.sh does.
+  const args = ['.', `--remote-debugging-port=${cdpPort}`]
+  if (process.platform === 'linux') {
+    args.push('--no-sandbox')
+  }
+
+  const env = buildIsolatedEnv(homeDir, options?.settings)
+  if (seedRecords.length > 0) {
+    env['E2E_INSTALLATIONS_SEED'] = JSON.stringify(seedRecords)
+  }
+
+  const application = await electron.launch({
+    args,
+    env,
+  })
+
+  // Under Playwright the ready-to-show event may fire but isVisible() can lag,
+  // so force-show once a BrowserWindow exists.
+  const page = await application.firstWindow()
+  await page.waitForLoadState('domcontentloaded')
+  await application.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win && !win.isVisible()) win.show()
+  })
+
+  // Suppress the native uncaught-exception dialog and exit fast so tests don't
+  // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
+  await application.evaluate(({ app: electronApp, dialog }) => {
+    dialog.showErrorBox = () => {}
+    electronApp.on('render-process-gone', () => electronApp.exit(1))
+  })
 
   const cleanup = async (): Promise<void> => {
     try {

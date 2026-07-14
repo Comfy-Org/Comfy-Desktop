@@ -210,6 +210,9 @@ export function isPopupVisible(
     }
     return false
   }, marker)
+    // A popup/webContents torn down mid-evaluate destroys the execution
+    // context; treat that as "not visible" rather than failing the test.
+    .catch(() => false)
 }
 
 /** Force-close the title popup via its bridge if it is currently visible. */
@@ -221,6 +224,9 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return
     return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
+  }).catch(() => {
+    // Popup dismissed between the visibility check and the close call —
+    // already in the desired state.
   })
   await expect.poll(
     () => isPopupVisible(app, 'comfyTitlePopup.html'),
