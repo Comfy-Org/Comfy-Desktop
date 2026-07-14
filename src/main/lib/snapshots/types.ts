@@ -1,7 +1,10 @@
 import type { ScannedNode } from '../nodes'
+import type { SnapshotTorchStack } from '../../sources/standalone/torchStackTypes'
 
 export interface Snapshot {
-  version: 1
+  /** 1 = legacy (no torch stack data); 2 = adds `torchStack`. New snapshots
+   *  are written as v2; v1 snapshots remain readable. */
+  version: 1 | 2
   createdAt: string
   trigger: 'boot' | 'restart' | 'manual' | 'pre-update' | 'post-update' | 'post-restore'
   label: string | null
@@ -19,6 +22,9 @@ export interface Snapshot {
   skipPipSync?: boolean
   pythonVersion?: string
   updateChannel?: string
+  /** v2: identity of the PyTorch stack at capture time. `managed` = exact
+   *  catalog stack (restorable); `observed` = unknown provenance (info only). */
+  torchStack?: SnapshotTorchStack
 }
 
 export interface SnapshotEntry {
@@ -28,7 +34,9 @@ export interface SnapshotEntry {
 
 export interface SnapshotExportEnvelope {
   type: 'comfyui-desktop-2-snapshot'
-  version: 1
+  /** 2 since torch stack data was added. Older Desktop versions reject v2
+   *  instead of importing it and silently skipping the torch restore. */
+  version: 1 | 2
   exportedAt: string
   installationName: string
   snapshots: Snapshot[]

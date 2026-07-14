@@ -10,6 +10,7 @@ import { deleteAction, untrackAction, launchAction, openFolderAction, renameActi
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
 import { getVariantLabel, getTorchVersion, DEFAULT_LAUNCH_ARGS } from './envPaths'
+import { getCachedTorchStacks } from './torchStackCatalog'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
 
@@ -55,6 +56,77 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
     return { label: t('standalone.updateAvailableTag', { version }), style: 'update', version }
   }
   return undefined
+}
+
+/**
+ * The PyTorch stack picker on the Update tab. Uses the synchronously cached
+ * catalog (refreshed by check-update); hidden entirely until the cache has
+ * compatible stacks, and always hidden for adopted installs (their env is not
+ * ours to mutate). Options are presentation only — the change-pytorch handler
+ * re-resolves the stackId on the main side.
+ */
+function buildPytorchSection(installation: InstallationRecord, installed: boolean): Record<string, unknown> | null {
+  if (!installed || installation.adopted === true) return null
+  const stacks = getCachedTorchStacks(installation)
+  if (stacks.length === 0) return null
+
+  const currentTorch = getTorchVersion(installation)
+  const current = currentTorch ? stacks.find((s) => s.packages.torch === currentTorch) : undefined
+  const fieldValue = current ? current.stackId : 'pytorch-current'
+
+  const options: Record<string, unknown>[] = []
+  if (!current) {
+    // The installed torch doesn't match any catalog stack (manual install or
+    // catalog gap): surface it as a read-only "current" entry.
+    options.push({
+      value: 'pytorch-current',
+      label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
+      description: t('standalone.pytorchObservedDesc'),
+      data: { installedVersion: currentTorch ?? '—', updateAvailable: false },
+    })
+  }
+  for (const s of stacks) {
+    const isCurrent = s.stackId === current?.stackId
+    const parts: string[] = []
+    if (s.packages.torchvision) parts.push(`torchvision ${s.packages.torchvision}`)
+    if (s.packages.torchaudio) parts.push(`torchaudio ${s.packages.torchaudio}`)
+    const sizeGB = (s.bundle.size / 1024 ** 3).toFixed(1)
+    parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
+    const actions = isCurrent ? undefined : [{
+      id: 'change-pytorch', label: t('standalone.pytorchChangeNow'), style: 'primary', enabled: true,
+      showProgress: true, cancellable: true,
+      progressTitle: t('standalone.pytorchChangingTitle', { version: s.packages.torch }),
+      data: { stackId: s.stackId },
+      confirm: {
+        title: t('standalone.pytorchConfirmTitle'),
+        message: t('standalone.pytorchConfirmMessage', {
+          from: `**${currentTorch ?? '—'}**`,
+          to: `**${s.packages.torch}**`,
+          size: sizeGB,
+        }) + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
+      },
+    }]
+    options.push({
+      value: s.stackId,
+      label: `PyTorch ${s.packages.torch}`,
+      description: parts.join('  ·  '),
+      data: {
+        installedVersion: currentTorch ?? '—',
+        latestVersion: s.packages.torch,
+        updateAvailable: !isCurrent,
+        ...(actions ? { actions } : {}),
+      },
+    })
+  }
+
+  return {
+    tab: 'update',
+    title: t('standalone.pytorchSection'),
+    fields: [{
+      id: 'pytorchStack', label: t('standalone.pytorch'), value: fieldValue, editable: true,
+      refreshSection: true, editType: 'channel-cards', options, tooltip: t('tooltips.pytorchStack'),
+    }],
+  }
 }
 
 export function getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
@@ -209,6 +281,9 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     fields: updateFields,
     actions: updateActions,
   })
+
+  const pytorchSection = buildPytorchSection(installation, installed)
+  if (pytorchSection) sections.push(pytorchSection)
 
   sections.push(
     {

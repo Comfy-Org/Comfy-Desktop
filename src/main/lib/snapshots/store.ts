@@ -4,6 +4,7 @@ import { readGitHead } from '../git'
 import { scanCustomNodes, nodeKey } from '../nodes'
 import { pipFreeze } from '../pip'
 import { getActiveUvPath, getActivePythonPath } from '../pythonEnv'
+import { classifyTorchStackForSnapshot } from '../../sources/standalone/torchStackCatalog'
 import * as telemetry from '../telemetry'
 import type { Snapshot, SnapshotEntry } from './types'
 import type { InstallationRecord } from '../../installations'
@@ -120,7 +121,8 @@ export async function captureState(
     customNodes,
     pipPackages,
     pythonVersion: (installation.pythonVersion as string | undefined) || undefined,
-    updateChannel: (installation.updateChannel as string | undefined) || 'stable'
+    updateChannel: (installation.updateChannel as string | undefined) || 'stable',
+    torchStack: classifyTorchStackForSnapshot(installation)
   }
 }
 
@@ -166,7 +168,7 @@ async function writeSnapshot(
 ): Promise<string> {
   const now = new Date()
   const snapshot: Snapshot = {
-    version: 1,
+    version: 2,
     createdAt: now.toISOString(),
     trigger: data.trigger,
     label: data.label,
@@ -174,7 +176,8 @@ async function writeSnapshot(
     customNodes: data.customNodes,
     pipPackages: data.pipPackages,
     pythonVersion: data.pythonVersion,
-    updateChannel: data.updateChannel
+    updateChannel: data.updateChannel,
+    torchStack: data.torchStack
   }
 
   const dir = snapshotsDir(installPath)

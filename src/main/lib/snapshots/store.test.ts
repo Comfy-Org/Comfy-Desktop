@@ -23,6 +23,16 @@ vi.mock('../telemetry', () => ({
   emit: vi.fn()
 }))
 
+// Imports the R2 catalog (electron `net`, cacheDir) transitively — stub it
+// out so this unit test stays free of the Electron runtime.
+vi.mock('../../sources/standalone/torchStackCatalog', () => ({
+  classifyTorchStackForSnapshot: vi.fn(() => ({
+    kind: 'observed',
+    torchVersion: null,
+    observedAt: '2026-03-01T12:00:00.000Z'
+  }))
+}))
+
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
   return {

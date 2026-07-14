@@ -547,14 +547,44 @@ export function registerSnapshotHandlers(): void {
       // The release dropdown only exposes the 'stable'/'latest' channels (whose
       // variants point at the newest bundle), so without this the install would
       // download the latest env — a different Python/torch baseline than the
-      // snapshot. Falls back to the newest bundle when the tag has been pruned.
-      const installVariant =
-        buildPinnedVariant(
+      // snapshot.
+      //
+      // v2 snapshots with a managed torch stack make the stack's bundle tag
+      // authoritative: it is the artifact whose torch family matches the
+      // snapshot exactly (it can differ from comfyui.releaseTag after an
+      // in-place PyTorch change), and if it has been pruned from R2 the
+      // create fails with the reason rather than silently building a
+      // different-stack install. v1 snapshots (no torch identity) keep the
+      // legacy behavior: pin when possible, else newest bundle.
+      const managedTorch =
+        targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
+      let installVariant: FieldOption
+      if (managedTorch && managedTorch.source.kind === 'comfy-bundle') {
+        const pinned = buildPinnedVariant(
           selectedRelease,
           matched.data?.variantId as string,
-          targetSnapshot.comfyui.releaseTag,
+          managedTorch.source.bundleTag,
           gpu?.id
-        ) ?? matched
+        )
+        if (!pinned) {
+          return {
+            ok: false,
+            message: i18n.t('snapshots.torchBundleUnavailable', {
+              torch: managedTorch.packages.torch,
+              tag: managedTorch.source.bundleTag
+            })
+          }
+        }
+        installVariant = pinned
+      } else {
+        installVariant =
+          buildPinnedVariant(
+            selectedRelease,
+            matched.data?.variantId as string,
+            targetSnapshot.comfyui.releaseTag,
+            gpu?.id
+          ) ?? matched
+      }
 
       const instData = {
         sourceId: source.id,

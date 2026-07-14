@@ -289,6 +289,28 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     } catch (err) {
       console.warn('Env layout migration failed:', err)
     }
+    // Recover a PyTorch stack change that died mid-transaction (journal on
+    // disk): restore the backed-up venv so we never launch a half-swapped env.
+    try {
+      const { recoverTorchStackTransaction } = await import(
+        '../../../sources/standalone/torchStackTransaction'
+      )
+      await recoverTorchStackTransaction(inst)
+    } catch (err) {
+      console.warn('PyTorch stack transaction recovery failed:', err)
+    }
+    // Reconcile the persisted stack state with what's actually in the venv
+    // (e.g. a manual terminal install). Never mutates the venv; must run
+    // before repair so repair sees up-to-date verified/observed state.
+    try {
+      const { reconcileTorchStack } = await import(
+        '../../../sources/standalone/torchStackCatalog'
+      )
+      await reconcileTorchStack(inst, updateFn)
+      inst = (await installations.get(installationId)) || inst
+    } catch (err) {
+      console.warn('PyTorch stack reconciliation failed:', err)
+    }
     // One-time repair for installs damaged by the brief `--upgrade` window that
     // replaced bundled GPU torch with a CPU build. Non-fatal: CPU torch still
     // runs, so a failed repair must never block launch (it retries next time).

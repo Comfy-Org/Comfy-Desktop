@@ -149,10 +149,10 @@ export async function restoreSnapshotIntoInstallation(
   ownsStagedFile: boolean,
   tools: Pick<MigrationTools, 'sendProgress' | 'sendOutput' | 'signal'>,
   update: (data: Record<string, unknown>) => Promise<void>
-): Promise<void> {
+): Promise<{ ok: boolean; error?: string }> {
   const { sendProgress, sendOutput, signal } = tools
   const freshInst = await installations.get(entry.id)
-  if (!freshInst || !fs.existsSync(stagedFile)) return
+  if (!freshInst || !fs.existsSync(stagedFile)) return { ok: true }
 
   const restoreContext = { installation_id: entry.id }
   try {
@@ -223,13 +223,18 @@ export async function restoreSnapshotIntoInstallation(
       await update({ lastSnapshot: snapFilename, snapshotCount })
     } catch {}
   } catch (restoreErr) {
+    // Honest failure: keep the staged snapshot and the pendingSnapshotRestore
+    // marker so the restore can be retried (or done manually from the
+    // Snapshots tab) instead of reporting a clean install running the wrong
+    // environment.
     sendOutput(
       `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\nYou can restore manually from the Snapshots tab.\n`
     )
-  } finally {
-    if (ownsStagedFile) fs.promises.unlink(stagedFile).catch(() => {})
-    await update({ pendingSnapshotRestore: undefined })
+    return { ok: false, error: (restoreErr as Error).message }
   }
+  if (ownsStagedFile) fs.promises.unlink(stagedFile).catch(() => {})
+  await update({ pendingSnapshotRestore: undefined })
+  return { ok: true }
 }
 
 /**
@@ -309,7 +314,7 @@ async function copyMigrationData(
 export async function migrateToStandaloneFromSnapshot(
   input: SharedMigrationInput,
   tools: MigrationTools
-): Promise<{ entry: InstallationRecord; destPath: string }> {
+): Promise<{ entry: InstallationRecord; destPath: string; restoreError?: string }> {
   const { sendProgress, signal, uniqueName } = tools
   const { stagedSnapshot, sourcePaths, labels, target } = input
 
@@ -381,7 +386,7 @@ export async function migrateToStandaloneFromSnapshot(
   })
 
   // 4. Restore snapshot (custom nodes + pip packages)
-  await restoreSnapshotIntoInstallation(
+  const restoreResult = await restoreSnapshotIntoInstallation(
     entry,
     stagedSnapshot.path,
     stagedSnapshot.owned,
@@ -407,5 +412,8 @@ export async function migrateToStandaloneFromSnapshot(
     express: false
   })
 
-  return { entry, destPath }
+  // The installation itself is usable, but a failed snapshot restore means it
+  // is NOT the migrated environment — surface that to the caller so the flow
+  // doesn't report a clean success.
+  return { entry, destPath, ...(restoreResult.ok ? {} : { restoreError: restoreResult.error }) }
 }

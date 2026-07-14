@@ -9,9 +9,12 @@ export function buildExportEnvelope(
   installationName: string,
   entries: SnapshotEntry[]
 ): SnapshotExportEnvelope {
+  // v2 carries torch stack data. Deliberate compatibility break: older Desktop
+  // versions reject a v2 file instead of importing it and silently performing
+  // the legacy skip-torch restore.
   return {
     type: 'comfyui-desktop-2-snapshot',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     installationName,
     snapshots: entries.map((e) => e.snapshot)
@@ -40,10 +43,48 @@ function isValidCustomNode(n: unknown): boolean {
   return true
 }
 
+// Version tuple: PEP 440-ish public version, optionally with a local tag.
+const VALID_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
+
+/** Strict validation of the v2 `torchStack` discriminated union. Only typed,
+ *  allowlisted sources are accepted — an imported snapshot can never smuggle
+ *  in an arbitrary URL or expand the protected-package surface. */
+function isValidTorchStack(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const obj = v as Record<string, unknown>
+  if (obj.kind === 'observed') {
+    return (obj.torchVersion === null || typeof obj.torchVersion === 'string') &&
+      typeof obj.observedAt === 'string'
+  }
+  if (obj.kind !== 'managed') return false
+  const ref = obj.ref as Record<string, unknown> | undefined
+  if (!ref || typeof ref !== 'object') return false
+  if (typeof ref.stackId !== 'string' || typeof ref.variant !== 'string' || typeof ref.pythonVersion !== 'string') return false
+  const packages = ref.packages as Record<string, unknown> | undefined
+  if (!packages || typeof packages !== 'object') return false
+  if (typeof packages.torch !== 'string' || !VALID_VERSION.test(packages.torch)) return false
+  for (const opt of ['torchvision', 'torchaudio'] as const) {
+    if (packages[opt] !== undefined && (typeof packages[opt] !== 'string' || !VALID_VERSION.test(packages[opt] as string))) return false
+  }
+  const source = ref.source as Record<string, unknown> | undefined
+  if (!source || typeof source !== 'object') return false
+  if (source.kind === 'comfy-bundle') {
+    return typeof source.variant === 'string' && typeof source.bundleTag === 'string'
+  }
+  if (source.kind === 'pytorch-index') {
+    return ['cuda', 'xpu', 'rocm', 'cpu'].includes(source.backend as string) &&
+      typeof source.indexTag === 'string' && /^[a-z0-9.]+$/.test(source.indexTag as string)
+  }
+  if (source.kind === 'pypi') return source.backend === 'mps'
+  return false
+}
+
 function isValidSnapshot(s: unknown): s is Snapshot {
   if (!s || typeof s !== 'object') return false
   const obj = s as Record<string, unknown>
-  if (obj.version !== 1) return false
+  if (obj.version !== 1 && obj.version !== 2) return false
+  // torchStack is a v2 concept; a v1 snapshot carrying one is malformed.
+  if (obj.torchStack !== undefined && (obj.version !== 2 || !isValidTorchStack(obj.torchStack))) return false
   if (typeof obj.createdAt !== 'string' || isNaN(Date.parse(obj.createdAt))) return false
   if (typeof obj.trigger !== 'string' || !VALID_TRIGGERS.has(obj.trigger)) return false
   if (obj.comfyui == null || typeof obj.comfyui !== 'object') return false
@@ -70,7 +111,8 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
   const obj = data as Record<string, unknown>
   if (obj.type !== 'comfyui-desktop-2-snapshot')
     throw new Error('Invalid file: not a Comfy Desktop snapshot export')
-  if (obj.version !== 1) throw new Error(`Unsupported snapshot version: ${obj.version}`)
+  if (obj.version !== 1 && obj.version !== 2)
+    throw new Error(`Unsupported snapshot version: ${obj.version}`)
   if (!Array.isArray(obj.snapshots) || obj.snapshots.length === 0)
     throw new Error('File contains no snapshots')
   for (let i = 0; i < obj.snapshots.length; i++) {

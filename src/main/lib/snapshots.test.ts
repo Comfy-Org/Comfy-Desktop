@@ -129,8 +129,13 @@ describe('validateExportEnvelope', () => {
     expect(() => validateExportEnvelope(rest)).toThrow('not a Comfy Desktop snapshot export')
   })
 
-  it('rejects wrong version', () => {
-    expect(() => validateExportEnvelope({ ...makeEnvelope(), version: 2 })).toThrow(
+  it('accepts a v2 envelope', () => {
+    const result = validateExportEnvelope({ ...makeEnvelope(), version: 2 })
+    expect(result.version).toBe(2)
+  })
+
+  it('rejects unknown version', () => {
+    expect(() => validateExportEnvelope({ ...makeEnvelope(), version: 3 })).toThrow(
       'Unsupported snapshot version'
     )
   })
@@ -155,9 +160,14 @@ describe('validateExportEnvelope', () => {
 
   // Snapshot-level validation
 
-  it('rejects snapshot with wrong version', () => {
+  it('accepts a v2 snapshot without torchStack', () => {
+    const result = validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 2 }]))
+    expect(result.snapshots[0]!.version).toBe(2)
+  })
+
+  it('rejects snapshot with unknown version', () => {
     expect(() =>
-      validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 2 as never }]))
+      validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 3 as never }]))
     ).toThrow('Invalid snapshot at index 0')
   })
 
@@ -296,6 +306,103 @@ describe('validateExportEnvelope', () => {
     expect(Object.keys(result.snapshots[0]!.pipPackages)).toHaveLength(6)
   })
 
+  // torchStack validation (v2)
+
+  const makeManagedTorchStack = (): Snapshot['torchStack'] => ({
+    kind: 'managed',
+    ref: {
+      stackId: 'comfy-bundle:win-nvidia:v0.4.2-env3',
+      variant: 'win-nvidia',
+      pythonVersion: '3.12.9',
+      packages: { torch: '2.7.0+cu128', torchvision: '0.22.0+cu128', torchaudio: '2.7.0+cu128' },
+      source: { kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v0.4.2-env3' }
+    }
+  })
+
+  it('accepts v2 snapshot with a managed torchStack', () => {
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: makeManagedTorchStack() }
+    const result = validateExportEnvelope(makeEnvelope([snap]))
+    expect(result.snapshots[0]!.torchStack?.kind).toBe('managed')
+  })
+
+  it('accepts v2 snapshot with an observed torchStack', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'observed', torchVersion: '2.4.1', observedAt: '2026-03-01T12:00:00.000Z' } as const
+    }
+    const result = validateExportEnvelope(makeEnvelope([snap]))
+    expect(result.snapshots[0]!.torchStack?.kind).toBe('observed')
+  })
+
+  it('accepts observed torchStack with null torchVersion', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'observed', torchVersion: null, observedAt: '2026-03-01T12:00:00.000Z' } as const
+    }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).not.toThrow()
+  })
+
+  it('rejects torchStack on a v1 snapshot', () => {
+    const snap = { ...makeSnapshot(), torchStack: makeManagedTorchStack() }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects torchStack with unknown kind', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'evil' } as unknown as Snapshot['torchStack']
+    }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  /** Deep-clone the managed fixture as raw JSON so tests can corrupt it
+   *  field-by-field without fighting the discriminated-union types. */
+  const rawManagedStack = (): { kind: string; ref: Record<string, unknown> } =>
+    JSON.parse(JSON.stringify(makeManagedTorchStack())) as { kind: string; ref: Record<string, unknown> }
+
+  it('rejects managed torchStack with a raw-URL source (untyped source smuggling)', () => {
+    const stack = rawManagedStack()
+    stack.ref.source = { kind: 'url', url: 'https://evil.example/torch.whl' }
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects managed torchStack with invalid torch version string', () => {
+    const stack = rawManagedStack()
+    ;(stack.ref.packages as Record<string, unknown>).torch = '2.7.0; rm -rf /'
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects managed torchStack missing packages', () => {
+    const stack = rawManagedStack()
+    delete stack.ref.packages
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('accepts torch versions with local build tags (+rocm7.1, +xpu)', () => {
+    for (const torch of ['2.7.0+rocm7.1', '2.9.0+xpu', '2.8.0']) {
+      const stack = makeManagedTorchStack()!
+      if (stack.kind === 'managed') stack.ref.packages.torch = torch
+      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack }
+      expect(() => validateExportEnvelope(makeEnvelope([snap]))).not.toThrow()
+    }
+  })
+
   it('reports correct index for invalid snapshot in multi-snapshot envelope', () => {
     expect(() =>
       validateExportEnvelope(
@@ -312,7 +419,7 @@ describe('buildExportEnvelope', () => {
     const entry = makeEntry()
     const result = buildExportEnvelope('My Install', [entry])
     expect(result.type).toBe('comfyui-desktop-2-snapshot')
-    expect(result.version).toBe(1)
+    expect(result.version).toBe(2)
     expect(result.installationName).toBe('My Install')
     expect(result.snapshots).toHaveLength(1)
     expect(result.snapshots[0]).toBe(entry.snapshot)

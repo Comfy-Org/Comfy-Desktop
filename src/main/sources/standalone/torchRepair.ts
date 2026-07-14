@@ -216,8 +216,19 @@ export async function repairTorch(
     await fs.promises.rm(tmpDir, { recursive: true, force: true })
     await fs.promises.mkdir(tmpDir, { recursive: true })
 
-    const files = installation.downloadFiles as Array<{ url: string; filename: string; size: number }> | undefined
-    const releaseTag = installation.releaseTag as string | undefined
+    // Prefer the last *verified* stack (set by a completed PyTorch change) over
+    // the install-time bundle, so repair restores the stack the user actually
+    // chose instead of reverting a deliberate switch to the original bundle.
+    const verified = installation.lastVerifiedTorchStack as
+      | { bundle?: { url: string; filename: string; size: number }; source?: { kind?: string; bundleTag?: string } }
+      | undefined
+    const verifiedBundle = verified?.bundle?.url ? verified.bundle : undefined
+    const verifiedTag = verified?.source?.kind === 'comfy-bundle' ? verified.source.bundleTag : undefined
+
+    const files = verifiedBundle
+      ? [verifiedBundle]
+      : (installation.downloadFiles as Array<{ url: string; filename: string; size: number }> | undefined)
+    const releaseTag = verifiedBundle && verifiedTag ? verifiedTag : (installation.releaseTag as string | undefined)
     const variant = installation.variant as string | undefined
     const downloadUrl = installation.downloadUrl as string | undefined
 
@@ -295,9 +306,12 @@ export async function maybeRepairTorch(
   const orphan = path.join(installation.installPath, '.torch-repair-tmp')
   if (fs.existsSync(orphan)) await fs.promises.rm(orphan, { recursive: true, force: true }).catch(() => {})
 
+  // A completed repair must not latch repair off forever: new damage after a
+  // successful repair is a new incident, so the attempt budget resets. Only a
+  // string of *failed* attempts is bounded.
   const state = installation.torchRepair as TorchRepairState | undefined
-  if (state?.status === 'done') return false
-  if ((state?.attempts ?? 0) >= MAX_REPAIR_ATTEMPTS) return false
+  const priorAttempts = state?.status === 'done' ? 0 : (state?.attempts ?? 0)
+  if (priorAttempts >= MAX_REPAIR_ATTEMPTS) return false
 
   const mismatch = getTorchVendorMismatch(installation)
   if (!mismatch) return false
@@ -317,7 +331,7 @@ export async function maybeRepairTorch(
     result = { ok: false, message: (err as Error).message }
   }
 
-  const attempts = (state?.attempts ?? 0) + 1
+  const attempts = priorAttempts + 1
   if (result.ok) {
     await tools.update({ torchRepair: { status: 'done', attempts, at: Date.now() } })
     telemetry.emit('comfy.desktop.torch_repair.succeeded', { variant: mismatch.variantBase })

@@ -15,9 +15,13 @@ import { t } from '../../lib/i18n'
 import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
-import { getActivePythonPath, getActiveUvPath, getMasterPythonPath } from './envPaths'
+import { getActivePythonPath, getActiveUvPath, getMasterPythonPath, getTorchVersion } from './envPaths'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
+import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
+import {
+  preflightDiskSpace, prepareBundleStack, applyTorchStackTransaction, DiskSpaceError,
+} from './torchStackTransaction'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import type { InstallationRecord } from '../../installations'
 import type { ActionResult, ActionTools } from '../../types/sources'
@@ -45,15 +49,77 @@ export async function handleAction(
     // breaks the site-packages removals/upgrades this restore performs.
     releaseInstallTerminalForFsOp(installation.id)
 
+    sendOutput('Loading snapshot…\n')
+    const targetSnapshot = await snapshots.loadSnapshot(installation.installPath, file)
+
+    // v2 snapshots carry the exact PyTorch stack identity. Resolve and
+    // disk-preflight it up front so an unavailable stack or a full disk aborts
+    // before anything is mutated — never silently restore onto the wrong
+    // stack. The swap itself is applied LAST, after pip, so nothing later in
+    // the restore can override the final stack.
+    const snapTorch = targetSnapshot.torchStack
+    const torchBefore = getTorchVersion(installation)
+    let torchTarget: Awaited<ReturnType<typeof resolveTorchStack>> = null
+    let torchNote: string | null = null
+    if (snapTorch?.kind === 'managed' && snapTorch.ref.packages.torch !== torchBefore) {
+      if (installation.adopted === true) {
+        // Adopted envs are observed/read-only — a restore never mutates torch.
+        torchNote = t('standalone.pytorchSnapshotAdoptedSkip', { version: snapTorch.ref.packages.torch })
+      } else {
+        try {
+          torchTarget = await resolveTorchStack(installation, snapTorch.ref.stackId)
+        } catch (err) {
+          return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+        }
+        if (!torchTarget) {
+          return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
+        }
+        try {
+          await preflightDiskSpace(installation, torchTarget, signal)
+        } catch (err) {
+          if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+          throw err
+        }
+      }
+    } else if (snapTorch?.kind === 'observed' && snapTorch.torchVersion && snapTorch.torchVersion !== torchBefore) {
+      // The snapshot's stack isn't a known official build — it can't be
+      // re-acquired, so it is reported instead of silently skipped.
+      torchNote = t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
+    }
+
     sendProgress('steps', { steps: [
       { phase: 'restore-comfyui', label: t('standalone.snapshotRestoreComfyUIPhase') },
       { phase: 'restore-nodes', label: t('standalone.snapshotRestoreNodesPhase') },
       { phase: 'restore-pip', label: t('standalone.snapshotRestorePipPhase') },
+      ...(torchTarget ? [{ phase: 'restore-torch', label: t('standalone.snapshotRestoreTorchPhase') }] : []),
     ] })
     sendProgress('restore-comfyui', { percent: 0, status: 'Loading snapshot…' })
-    sendOutput('Loading snapshot…\n')
 
-    const targetSnapshot = await snapshots.loadSnapshot(installation.installPath, file)
+    // Acquire the torch bundle into staging before any mutation, so a failed
+    // or cancelled download aborts the restore with nothing touched.
+    const torchProgress = (phase: string, data: Record<string, unknown>): void =>
+      sendProgress(
+        phase === 'download' || phase === 'extract' || phase === 'torch-swap' ? 'restore-torch' : phase,
+        data
+      )
+    let torchPrepared: Awaited<ReturnType<typeof prepareBundleStack>> | null = null
+    if (torchTarget) {
+      sendOutput('\n── Download PyTorch Bundle ──\n')
+      try {
+        torchPrepared = await prepareBundleStack(installation, torchTarget, { sendProgress: torchProgress, sendOutput, update, signal })
+        if (signal?.aborted) throw new Error('Cancelled')
+        // The download consumed disk between preflight and now — re-check.
+        await preflightDiskSpace(installation, torchTarget, signal)
+      } catch (err) {
+        if (torchPrepared) await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+        if (signal?.aborted) return { ok: false, message: 'Cancelled' }
+        if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+        return { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) }
+      }
+    }
+    const cleanupTorchStaging = async (): Promise<void> => {
+      if (torchPrepared) await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+    }
 
     // Capture HEAD before the git checkout so a failed/cancelled restore can roll
     // the source back, keeping source + packages consistent (all-or-nothing).
@@ -76,10 +142,12 @@ export async function handleAction(
     // If the source checkout itself failed, don't touch nodes/pip — nothing moved
     // to roll back, just report the failure.
     if (comfyResult.error) {
+      await cleanupTorchStaging()
       return { ok: false, message: `ComfyUI restore failed: ${comfyResult.error}` }
     }
 
     if (signal?.aborted) {
+      await cleanupTorchStaging()
       if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
       return { ok: false, message: 'Cancelled; ComfyUI source was rolled back.' }
     }
@@ -92,6 +160,7 @@ export async function handleAction(
     )
 
     if (signal?.aborted) {
+      await cleanupTorchStaging()
       if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
       return { ok: false, message: 'Cancelled; ComfyUI source was rolled back. Custom node changes may be partial.' }
     }
@@ -123,6 +192,7 @@ export async function handleAction(
     // commit so we land on the consistent pre-restore state instead of
     // snapshot-source + original-packages.
     if (pipError || pipResult.failed.length > 0 || signal?.aborted) {
+      await cleanupTorchStaging()
       let rolledBack = true
       if (preRestoreHead && readGitHead(comfyuiDir) !== preRestoreHead) {
         rolledBack = await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
@@ -149,6 +219,21 @@ export async function handleAction(
     // Source + packages are consistent — the restore succeeded. Stamp the marker
     // completed and clear it so the next launch doesn't roll a good restore back.
     await completeOpMarker(installation.installPath)
+
+    // Apply the PyTorch stack last so nothing later in the restore can
+    // override it. Failure rolls back torch only (the transaction restores the
+    // previous venv); the source/node/pip changes above stand and the restore
+    // reports partial — global atomicity across all phases is not promised.
+    let torchApplied = false
+    let torchFailure: string | null = null
+    if (torchPrepared && torchTarget) {
+      sendOutput('\n── Restore PyTorch ──\n')
+      const torchResult = await applyTorchStackTransaction(installation, torchPrepared, {
+        sendProgress: torchProgress, sendOutput, update, signal,
+      })
+      if (torchResult.ok) torchApplied = true
+      else torchFailure = torchResult.message
+    }
 
     const summary: string[] = []
 
@@ -179,15 +264,26 @@ export async function handleAction(
     if (pipResult.protectedSkipped.length > 0) summary.push(`${pipResult.protectedSkipped.length} protected (skipped)`)
     if (pipResult.failed.length > 0) summary.push(`${pipResult.failed.length} package(s) failed`)
 
+    if (torchApplied && torchTarget) {
+      summary.push(`PyTorch: ${torchBefore ?? '?'} → ${torchTarget.packages.torch}`)
+    }
+    if (torchFailure) summary.push('PyTorch restore failed (previous PyTorch kept)')
+    if (torchNote) {
+      sendOutput(`\n${torchNote}\n`)
+      summary.push(torchNote)
+    }
+
     // comfyResult.error and pip/abort failures already returned above; only
-    // best-effort custom-node failures can reach here.
-    const totalFailures = nodeResult.failed.length
+    // best-effort custom-node failures and a rolled-back torch swap can reach
+    // here.
+    const totalFailures = nodeResult.failed.length + (torchFailure ? 1 : 0)
 
     // Collect specific failures so the error surface explains WHY a restore
     // failed instead of a bare "N operation(s) failed".
     const failureDetails: string[] = []
     for (const f of nodeResult.failed) failureDetails.push(`Node ${f.id}: ${f.error}`)
     for (const e of pipResult.errors) failureDetails.push(e)
+    if (torchFailure) failureDetails.push(`PyTorch: ${torchFailure}`)
     const failMessage = (headline: string): string =>
       failureDetails.length > 0 ? `${headline}\n\n${failureDetails.join('\n')}` : headline
 
@@ -303,6 +399,90 @@ export async function handleAction(
     return { ok: true, message: lines.join('\n') }
   }
 
+  if (actionId === 'change-pytorch') {
+    const stackId = actionData?.stackId as string | undefined
+    if (!stackId) return { ok: false, message: t('standalone.pytorchNoStack') }
+    if (installation.adopted === true) {
+      return { ok: false, message: t('standalone.pytorchAdoptedUnsupported') }
+    }
+
+    sendProgress('steps', { steps: [
+      { phase: 'torch-prepare', label: t('standalone.pytorchPreparePhase') },
+      { phase: 'torch-swap', label: t('standalone.pytorchSwapPhase') },
+    ] })
+
+    // Trust boundary: the renderer's stackId is only a hint — re-resolve it
+    // against a fresh R2 fetch for THIS installation (variant + Python ABI).
+    sendProgress('torch-prepare', { percent: -1, status: t('standalone.pytorchResolving') })
+    let entry
+    try {
+      entry = await resolveTorchStack(installation, stackId)
+    } catch (err) {
+      return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+    }
+    if (!entry) return { ok: false, message: t('standalone.pytorchStackUnavailable') }
+
+    const currentTorch = getTorchVersion(installation)
+    if (currentTorch && currentTorch === entry.packages.torch) {
+      return { ok: true, navigate: 'detail', message: t('standalone.pytorchAlreadyInstalled', { version: currentTorch }) }
+    }
+
+    // Hard gate before anything is downloaded or touched.
+    try {
+      await preflightDiskSpace(installation, entry, signal)
+    } catch (err) {
+      if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+      throw err
+    }
+
+    // Drop the shared shell + pop-outs: a live shell holds a handle on the
+    // install dir and any running python locks venv DLLs, which would break
+    // the venv rename at the heart of the transaction.
+    releaseInstallTerminalForFsOp(installation.id)
+
+    // Safety net the user can roll back to from the Snapshots tab.
+    try {
+      const filename = await snapshots.saveSnapshot(installation.installPath, installation, 'pre-update')
+      const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+      await update({ lastSnapshot: filename, snapshotCount })
+    } catch (err) {
+      sendOutput(`Pre-change snapshot failed: ${(err as Error).message}\n`)
+    }
+
+    // Acquire the bundle into staging (no venv contact), then re-check disk —
+    // the download itself consumed space between preflight and the venv copy.
+    // The installer helpers emit 'download'/'extract' phases; fold them into
+    // the declared 'torch-prepare' step so the stepper tracks them.
+    const prepareProgress = (phase: string, data: Record<string, unknown>): void =>
+      sendProgress(phase === 'download' || phase === 'extract' ? 'torch-prepare' : phase, data)
+    let prepared
+    try {
+      prepared = await prepareBundleStack(installation, entry, { sendProgress: prepareProgress, sendOutput, update, signal })
+      if (signal?.aborted) throw new Error('Cancelled')
+      await preflightDiskSpace(installation, entry, signal)
+    } catch (err) {
+      if (prepared) await fs.promises.rm(prepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+      if (signal?.aborted) return { ok: false, message: 'Cancelled' }
+      if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+      return { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) }
+    }
+
+    const result = await applyTorchStackTransaction(installation, prepared, { sendProgress, sendOutput, update, signal })
+    if (!result.ok) return { ok: false, message: result.message }
+
+    try {
+      const freshInst = (await installations.get(installation.id)) || installation
+      const filename = await snapshots.saveSnapshot(installation.installPath, freshInst, 'post-update')
+      const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+      await update({ lastSnapshot: filename, snapshotCount })
+    } catch (err) {
+      console.warn('Post-change snapshot failed:', err)
+    }
+
+    sendProgress('done', { percent: 100, status: result.message })
+    return { ok: true, navigate: 'detail' }
+  }
+
   if (actionId === 'switch-channel') {
     const targetChannel = actionData?.channel as string | undefined
     if (!targetChannel) return { ok: false, message: 'No channel specified.' }
@@ -313,15 +493,18 @@ export async function handleAction(
   if (actionId === 'check-update') {
     const channel = getEffectiveChannel(installation)
     const otherChannels = ['stable', 'latest'].filter((ch) => ch !== channel)
-    await Promise.allSettled(
-      otherChannels.map((ch) =>
+    await Promise.allSettled([
+      ...otherChannels.map((ch) =>
         releaseCache.getOrFetch(COMFYUI_REPO, ch, async () => {
           const release = await fetchLatestRelease(ch)
           if (!release) return null
           return releaseCache.buildCacheEntry(release)
         }, true)
-      )
-    )
+      ),
+      // Refresh the switchable-PyTorch-stack catalog alongside the release
+      // check so the PyTorch picker on the Update tab has current options.
+      refreshTorchStackCatalog(installation),
+    ])
     const result = await releaseCache.checkForUpdate(COMFYUI_REPO, channel, installation, update)
     // Enrich the "+ N commits" label in the background (it can run a slow
     // `git fetch --unshallow`); the card refreshes in place when it lands.
