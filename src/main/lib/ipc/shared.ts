@@ -454,6 +454,10 @@ export function refreshInstallDirStates(): Promise<void> {
 }
 
 export function openPath(targetPath: string): Promise<string> {
+  // E2E asserts the IPC fired, not the OS side effect; skipping the real open
+  // also keeps headless Linux CI from hanging on dbus-send/xdg-open children
+  // that block app exit.
+  if (process.env['E2E'] === '1') return Promise.resolve('')
   if (process.platform === 'linux') {
     return new Promise((resolve) => {
       execFile('dbus-send', [
