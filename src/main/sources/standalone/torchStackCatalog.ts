@@ -14,13 +14,14 @@ import fs from 'fs'
 import path from 'path'
 import { dataDir } from '../../lib/paths'
 import { writeFileSafe } from '../../lib/safe-file'
-import { getInstalledTorchTuple } from './envPaths'
+import { getInstalledTorchTuple, PLATFORM_PREFIX } from './envPaths'
 import { fetchR2VendorReleases, r2BundleUrl } from './r2Catalog'
 import type { R2Variant } from './r2Catalog'
 import {
   makeBundleStackId, parseBundleStackId, pythonAbiCompatible, torchTupleMatches,
+  torchLocalTag, accelBaseForTag, torchTupleReacquirable,
 } from './torchStackTypes'
-import type { PersistedTorchStack, ManagedTorchStackRef } from './torchStackTypes'
+import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
 
 /** A resolvable catalog entry: managed ref + acquisition info. */
@@ -87,23 +88,34 @@ function packagesKey(e: TorchStackEntry): string {
 }
 
 /**
- * Build the list of stacks an installation may switch to: same variant (which
- * pins backend + OS + arch), compatible Python ABI, torch version present.
- * Deduplicated by torch tuple (several bundles can ship the same stack — keep
- * the newest bundle so restores pull the freshest artifact of that tuple).
- * Newest first.
+ * Build the list of stacks a variant's releases offer: valid entries only,
+ * newest first. NOT deduplicated — deduplication is per-install (after ABI /
+ * reacquirability filtering), or an entry dropped for one install could
+ * shadow a compatible duplicate another install needs.
+ *
+ * `requirePythonAbi: false` skips the bundle-Python check: adopted (pip-
+ * managed) installs never receive the bundle's interpreter — pip resolves
+ * wheels against the venv's own Python, so the bundle's Python is irrelevant
+ * (a tuple with no wheel for that Python fails cleanly and rolls back).
  */
 export function filterCompatibleStacks(
   variant: string,
   pythonVersion: string | undefined,
   releases: R2Variant[],
+  opts?: { requirePythonAbi?: boolean },
 ): TorchStackEntry[] {
-  const entries = releases
+  const requireAbi = opts?.requirePythonAbi !== false
+  return releases
     .filter((r) => !!r.torch_version && !!r.tag && !!r.file)
-    .filter((r) => pythonAbiCompatible(pythonVersion, r.python_version))
+    .filter((r) => !requireAbi || pythonAbiCompatible(pythonVersion, r.python_version))
     .map((r) => entryFromRelease(variant, r))
     .sort((a, b) => b.date.localeCompare(a.date))
+}
 
+/** Deduplicate by torch tuple, keeping the newest bundle of each (several
+ *  bundles can ship the same stack — restores pull the freshest artifact).
+ *  Expects newest-first input. */
+function dedupeByTuple(entries: TorchStackEntry[]): TorchStackEntry[] {
   const seen = new Set<string>()
   const deduped: TorchStackEntry[] = []
   for (const e of entries) {
@@ -115,8 +127,27 @@ export function filterCompatibleStacks(
   return deduped
 }
 
+/** R2 vendor variant an adopted (Legacy Desktop) install maps to. Adoption
+ *  records carry `variant: 'legacy-uv-py312'`, never an R2 vendor id, so the
+ *  vendor is inferred from the platform plus the GPU detected at adoption
+ *  (`adoptedFromGpu`), falling back to the installed torch's local tag. */
+function inferAdoptedVariant(installation: InstallationRecord): string | null {
+  const prefix = PLATFORM_PREFIX[process.platform]
+  if (!prefix) return null
+  if (process.platform === 'darwin') return 'mac-mps'
+  const gpu = installation.adoptedFromGpu as string | undefined
+  let base = gpu === 'nvidia' ? 'nvidia'
+    : gpu === 'amd' ? 'amd'
+    : gpu === 'intel' ? 'intel-xpu'
+    : null
+  if (!base) {
+    base = accelBaseForTag(torchLocalTag(getInstalledTorchTuple(installation).torch)) ?? 'cpu'
+  }
+  return prefix + base
+}
+
 function installVariant(installation: InstallationRecord): string | null {
-  if (installation.adopted === true) return null
+  if (installation.adopted === true) return inferAdoptedVariant(installation)
   const variant = installation.variant
   return typeof variant === 'string' && variant.length > 0 ? variant : null
 }
@@ -126,17 +157,33 @@ function installPython(installation: InstallationRecord): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined
 }
 
+/** Per-install filter applied at read time: bundle-managed installs receive
+ *  the bundle's interpreter payload, so its Python must match; adopted
+ *  installs are pip-applied against their own Python, but only tuples a
+ *  trusted index can serve are switchable (e.g. Windows ROCm builds have no
+ *  pip source). Deduplication runs after filtering so an entry dropped here
+ *  can't shadow a compatible duplicate. */
+function filterStacksForInstall(installation: InstallationRecord, stacks: TorchStackEntry[]): TorchStackEntry[] {
+  const filtered = installation.adopted === true
+    ? stacks.filter((e) => torchTupleReacquirable(e.packages))
+    : stacks.filter((e) => pythonAbiCompatible(installPython(installation), e.pythonVersion))
+  return dedupeByTuple(filtered)
+}
+
 /** Fetch + filter the switchable stacks for an installation and refresh the
- *  sync cache. Throws on network failure (callers treat it as best-effort). */
+ *  sync cache. Throws on network failure (callers treat it as best-effort).
+ *  The cache stores the unfiltered, undeduplicated list (it is keyed by
+ *  variant and shared between installs with different Pythons); per-install
+ *  filtering + dedupe are applied on read. */
 export async function refreshTorchStackCatalog(installation: InstallationRecord): Promise<TorchStackEntry[]> {
   const variant = installVariant(installation)
   if (!variant) return []
   const releases = await fetchR2VendorReleases(variant)
-  const stacks = filterCompatibleStacks(variant, installPython(installation), releases)
+  const stacks = filterCompatibleStacks(variant, undefined, releases, { requirePythonAbi: false })
   _ensureLoaded()
   _cache[variant] = stacks
   _persist()
-  return stacks
+  return filterStacksForInstall(installation, stacks)
 }
 
 /** Synchronous cached read for `getDetailSections`. Empty until the first
@@ -145,10 +192,7 @@ export function getCachedTorchStacks(installation: InstallationRecord): TorchSta
   const variant = installVariant(installation)
   if (!variant) return []
   _ensureLoaded()
-  const cached = _cache[variant] ?? []
-  const py = installPython(installation)
-  // Defence-in-depth: re-filter ABI on read in case the record changed since caching.
-  return cached.filter((e) => pythonAbiCompatible(py, e.pythonVersion))
+  return filterStacksForInstall(installation, _cache[variant] ?? [])
 }
 
 /**
@@ -168,8 +212,16 @@ export async function resolveTorchStack(
   const releases = await fetchR2VendorReleases(variant)
   const release = releases.find((r) => r.tag === parsed.bundleTag)
   if (!release || !release.torch_version) return null
-  if (!pythonAbiCompatible(installPython(installation), release.python_version)) return null
-  return entryFromRelease(variant, release)
+  const entry = entryFromRelease(variant, release)
+  if (installation.adopted === true) {
+    // Adopted installs apply via pip against their own Python — the bundle's
+    // interpreter never lands, so its ABI is not a constraint; instead the
+    // tuple must be servable by a trusted index.
+    if (!torchTupleReacquirable(entry.packages)) return null
+  } else if (!pythonAbiCompatible(installPython(installation), release.python_version)) {
+    return null
+  }
+  return entry
 }
 
 /** The persisted `lastVerifiedTorchStack`, validated in full — a partial
@@ -229,18 +281,30 @@ export async function reconcileTorchStack(
   // Falling through to observed: any verified ref is stale (e.g. a torch
   // change persisted its metadata but was rolled back before commit) and MUST
   // be cleared — repair would otherwise trust it as the acquisition source.
-  const prior = installation.observedTorchStack as { torchVersion?: string } | undefined
-  if (!verified && prior?.torchVersion === installed.torch) return // already recorded
+  const prior = installation.observedTorchStack as
+    { torchVersion?: string; torchvisionVersion?: string | null; torchaudioVersion?: string | null } | undefined
+  if (
+    !verified && prior?.torchVersion === installed.torch &&
+    (prior?.torchvisionVersion ?? null) === installed.torchvision &&
+    (prior?.torchaudioVersion ?? null) === installed.torchaudio
+  ) return // already recorded
   await update({
     lastVerifiedTorchStack: null,
-    observedTorchStack: { torchVersion: installed.torch, observedAt: new Date().toISOString() },
+    observedTorchStack: {
+      torchVersion: installed.torch,
+      torchvisionVersion: installed.torchvision,
+      torchaudioVersion: installed.torchaudio,
+      observedAt: new Date().toISOString(),
+    },
   })
 }
 
-/** Snapshot-time classification of the active stack. */
+/** Snapshot-time classification of the active stack. Observed records keep
+ *  the full installed tuple (with local tags) so pip-managed installs can
+ *  restore it from the derived index. */
 export function classifyTorchStackForSnapshot(
   installation: InstallationRecord,
-): { kind: 'managed'; ref: ManagedTorchStackRef } | { kind: 'observed'; torchVersion: string | null; observedAt: string } {
+): SnapshotTorchStack {
   const installed = getInstalledTorchTuple(installation)
   const verified = getLastVerifiedTorchStack(installation)
   if (installed.torch && verified && torchTupleMatches(verified.packages, installed)) {
@@ -248,5 +312,11 @@ export function classifyTorchStackForSnapshot(
     const { stackId, variant, pythonVersion, packages, source } = verified
     return { kind: 'managed', ref: { stackId, variant, pythonVersion, packages, source } }
   }
-  return { kind: 'observed', torchVersion: installed.torch, observedAt: new Date().toISOString() }
+  return {
+    kind: 'observed',
+    torchVersion: installed.torch,
+    torchvisionVersion: installed.torchvision,
+    torchaudioVersion: installed.torchaudio,
+    observedAt: new Date().toISOString(),
+  }
 }

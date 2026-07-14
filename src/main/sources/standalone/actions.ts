@@ -16,13 +16,14 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { publicVersion, torchTupleMatches, torchPackageTuplesEqual } from './torchStackTypes'
+import { publicVersion, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable } from './torchStackTypes'
+import type { TorchStackPackages, ObservedTorchStack } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
 import type { TorchStackEntry } from './torchStackCatalog'
 import {
-  preflightDiskSpace, prepareBundleStack, applyTorchStackTransaction,
+  preflightDiskSpace, prepareBundleStack, preparePipStack, applyTorchStackTransaction,
   recoverTorchStackTransaction, DiskSpaceError,
 } from './torchStackTransaction'
 import type { PreparedStack, TorchStackTools } from './torchStackTransaction'
@@ -30,9 +31,11 @@ import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import type { InstallationRecord } from '../../installations'
 import type { ActionResult, ActionTools } from '../../types/sources'
 
-/** Actions that mutate the venv. Each must first resolve any PyTorch change
- *  that died mid-transaction — mutating a venv that recovery is about to roll
- *  back (or failing to roll back and mutating debris) would corrupt it. */
+/** Actions that mutate the venv (adopted installs included — their legacy
+ *  venv goes through the same journaled torch transaction). Each must first
+ *  resolve any PyTorch change that died mid-transaction — mutating a venv
+ *  that recovery is about to roll back (or failing to roll back and mutating
+ *  debris) would corrupt it. */
 const VENV_MUTATING_ACTIONS = new Set(['snapshot-restore', 'change-pytorch', 'update-comfyui', 'migrate-from'])
 
 /** Download + stage a torch bundle, then re-check disk (`staged: true` — the
@@ -44,6 +47,11 @@ async function acquireTorchBundle(
   entry: TorchStackEntry,
   tools: TorchStackTools,
 ): Promise<{ prepared: PreparedStack; failure?: never } | { prepared?: never; failure: ActionResult }> {
+  // Adopted (pip-managed) installs skip bundle staging entirely: the exact
+  // tuple is pip-installed from the derived index inside the transaction.
+  if (installation.adopted === true) {
+    return { prepared: preparePipStack(entry.packages, entry) }
+  }
   let prepared: PreparedStack | undefined
   try {
     prepared = await prepareBundleStack(installation, entry, tools)
@@ -51,11 +59,29 @@ async function acquireTorchBundle(
     await preflightDiskSpace(installation, entry, tools.signal, { staged: true })
     return { prepared }
   } catch (err) {
-    if (prepared) await fs.promises.rm(prepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+    if (prepared && prepared.kind === 'bundle') {
+      await fs.promises.rm(prepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+    }
     if (tools.signal?.aborted) return { failure: { ok: false, message: 'Cancelled' } }
     if (err instanceof DiskSpaceError) return { failure: { ok: false, message: err.message } }
     return { failure: { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) } }
   }
+}
+
+/** Exact-version tuple of an observed snapshot record (local tags kept). */
+function observedTuple(s: ObservedTorchStack): TorchStackPackages {
+  return {
+    torch: s.torchVersion ?? '',
+    ...(s.torchvisionVersion ? { torchvision: s.torchvisionVersion } : {}),
+    ...(s.torchaudioVersion ? { torchaudio: s.torchaudioVersion } : {}),
+  }
+}
+
+/** Whether the observed record was written with the full-tuple fields (null
+ *  means "recorded as absent"; missing means a pre-tuple or partial record,
+ *  which stays note-only — both fields must be present to restore). */
+function hasFullObservedTuple(s: ObservedTorchStack): boolean {
+  return s.torchvisionVersion !== undefined && s.torchaudioVersion !== undefined
 }
 
 export async function handleAction(
@@ -64,7 +90,7 @@ export async function handleAction(
   actionData: Record<string, unknown> | undefined,
   { update, sendProgress, sendOutput, signal }: ActionTools
 ): Promise<ActionResult> {
-  if (VENV_MUTATING_ACTIONS.has(actionId) && installation.adopted !== true) {
+  if (VENV_MUTATING_ACTIONS.has(actionId)) {
     try {
       await recoverTorchStackTransaction(installation)
     } catch (err) {
@@ -101,56 +127,79 @@ export async function handleAction(
     const snapTorch = targetSnapshot.torchStack
     const installedTorch = getInstalledTorchTuple(installation)
     const torchBefore = installedTorch.torch
+    const adopted = installation.adopted === true
     let torchTarget: Awaited<ReturnType<typeof resolveTorchStack>> = null
+    // Observed tuple to pip-restore (adopted installs only): exact versions
+    // with local tags, re-acquirable from the derived index.
+    let torchObservedTuple: TorchStackPackages | null = null
     let torchNote: string | null = null
     // Skip the torch phase only on a FULL tuple match — torch version alone
     // can't distinguish stacks that differ in torchvision/torchaudio.
     if (snapTorch?.kind === 'managed' && !torchTupleMatches(snapTorch.ref.packages, installedTorch)) {
-      if (installation.adopted === true) {
-        // Adopted envs are observed/read-only — a restore never mutates torch.
-        torchNote = t('standalone.pytorchSnapshotAdoptedSkip', { version: snapTorch.ref.packages.torch })
-      } else {
-        try {
-          torchTarget = await resolveTorchStack(installation, snapTorch.ref.stackId)
-        } catch (err) {
-          return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
-        }
-        // Metadata drift guard: the re-resolved catalog entry must still be
-        // the exact tuple the snapshot recorded (symmetric — a package the
-        // catalog dropped or added is drift too), or the "exact stack"
-        // promise would quietly become "whatever that bundle tag ships now".
-        if (torchTarget && !torchPackageTuplesEqual(torchTarget.packages, snapTorch.ref.packages)) {
-          torchTarget = null
-        }
-        if (!torchTarget) {
-          return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
-        }
-        try {
-          await preflightDiskSpace(installation, torchTarget, signal)
-        } catch (err) {
-          if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
-          throw err
+      try {
+        torchTarget = await resolveTorchStack(installation, snapTorch.ref.stackId)
+      } catch (err) {
+        return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+      }
+      // Metadata drift guard: the re-resolved catalog entry must still be
+      // the exact tuple the snapshot recorded (symmetric — a package the
+      // catalog dropped or added is drift too), or the "exact stack"
+      // promise would quietly become "whatever that bundle tag ships now".
+      if (torchTarget && !torchPackageTuplesEqual(torchTarget.packages, snapTorch.ref.packages)) {
+        torchTarget = null
+      }
+      if (!torchTarget) {
+        return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
+      }
+      try {
+        // Adopted installs apply managed stacks via pip (no bundle download
+        // pending) — charge the pip staging estimate, not the bundle size.
+        await preflightDiskSpace(installation, adopted ? null : torchTarget, signal)
+      } catch (err) {
+        if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+        throw err
+      }
+    } else if (snapTorch?.kind === 'observed' && snapTorch.torchVersion) {
+      // Older snapshots record torch alone; only full-tuple records can be
+      // compared (and restored) as a stack.
+      const full = hasFullObservedTuple(snapTorch)
+      const tuple = observedTuple(snapTorch)
+      const differs = full
+        ? !torchTupleMatches(tuple, installedTorch)
+        : (!torchBefore || publicVersion(snapTorch.torchVersion) !== publicVersion(torchBefore))
+      if (differs) {
+        // Adopted (pip-managed) venvs can re-acquire an observed tuple from
+        // the index its local tag names — the snapshot IS the recipe.
+        // Requires the full-tuple record: restoring torch without its
+        // matching torchvision/torchaudio would break the stack.
+        // Bundle-managed installs never auto-restore observed stacks.
+        if (adopted && full && torchTupleReacquirable(tuple)) {
+          torchObservedTuple = tuple
+          try {
+            await preflightDiskSpace(installation, null, signal)
+          } catch (err) {
+            if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+            throw err
+          }
+        } else {
+          // Not re-acquirable — reported instead of silently skipped.
+          torchNote = t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
         }
       }
-    } else if (
-      snapTorch?.kind === 'observed' && snapTorch.torchVersion &&
-      (!torchBefore || publicVersion(snapTorch.torchVersion) !== publicVersion(torchBefore))
-    ) {
-      // The snapshot's stack isn't a known official build — it can't be
-      // re-acquired, so it is reported instead of silently skipped.
-      torchNote = t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
     }
 
     sendProgress('steps', { steps: [
       { phase: 'restore-comfyui', label: t('standalone.snapshotRestoreComfyUIPhase') },
       { phase: 'restore-nodes', label: t('standalone.snapshotRestoreNodesPhase') },
       { phase: 'restore-pip', label: t('standalone.snapshotRestorePipPhase') },
-      ...(torchTarget ? [{ phase: 'restore-torch', label: t('standalone.snapshotRestoreTorchPhase') }] : []),
+      ...(torchTarget || torchObservedTuple
+        ? [{ phase: 'restore-torch', label: t('standalone.snapshotRestoreTorchPhase') }] : []),
     ] })
     sendProgress('restore-comfyui', { percent: 0, status: 'Loading snapshot…' })
 
-    // Acquire the torch bundle into staging before any mutation, so a failed
-    // or cancelled download aborts the restore with nothing touched.
+    // Acquire the torch payload before any mutation, so a failed or cancelled
+    // download aborts the restore with nothing touched. (pip payloads carry
+    // no download — wheels are fetched inside the transaction.)
     const torchProgress = (phase: string, data: Record<string, unknown>): void =>
       sendProgress(
         phase === 'download' || phase === 'extract' || phase === 'torch-swap' ? 'restore-torch' : phase,
@@ -158,13 +207,18 @@ export async function handleAction(
       )
     let torchPrepared: PreparedStack | null = null
     if (torchTarget) {
-      sendOutput('\n── Download PyTorch Bundle ──\n')
+      // Adopted installs prepare a pip payload — nothing downloads here.
+      if (!adopted) sendOutput('\n── Download PyTorch Bundle ──\n')
       const acquired = await acquireTorchBundle(installation, torchTarget, { sendProgress: torchProgress, sendOutput, update, signal })
       if (acquired.failure) return acquired.failure
       torchPrepared = acquired.prepared
+    } else if (torchObservedTuple) {
+      torchPrepared = preparePipStack(torchObservedTuple, null)
     }
     const cleanupTorchStaging = async (): Promise<void> => {
-      if (torchPrepared) await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+      if (torchPrepared?.kind === 'bundle') {
+        await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+      }
     }
 
     // Capture HEAD before the git checkout so a failed/cancelled restore can roll
@@ -272,7 +326,7 @@ export async function handleAction(
     // reports partial — global atomicity across all phases is not promised.
     let torchApplied = false
     let torchFailure: string | null = null
-    if (torchPrepared && torchTarget) {
+    if (torchPrepared) {
       sendOutput('\n── Restore PyTorch ──\n')
       const torchResult = await applyTorchStackTransaction(installation, torchPrepared, {
         sendProgress: torchProgress, sendOutput, update, signal,
@@ -310,8 +364,9 @@ export async function handleAction(
     if (pipResult.protectedSkipped.length > 0) summary.push(`${pipResult.protectedSkipped.length} protected (skipped)`)
     if (pipResult.failed.length > 0) summary.push(`${pipResult.failed.length} package(s) failed`)
 
-    if (torchApplied && torchTarget) {
-      summary.push(`PyTorch: ${torchBefore ?? '?'} → ${torchTarget.packages.torch}`)
+    if (torchApplied) {
+      const torchAfter = torchTarget?.packages.torch ?? torchObservedTuple?.torch
+      if (torchAfter) summary.push(`PyTorch: ${torchBefore ?? '?'} → ${torchAfter}`)
     }
     if (torchFailure) summary.push('PyTorch restore failed (previous PyTorch kept)')
     if (torchNote) {
@@ -453,12 +508,10 @@ export async function handleAction(
   if (actionId === 'change-pytorch') {
     const stackId = actionData?.stackId as string | undefined
     if (!stackId) return { ok: false, message: t('standalone.pytorchNoStack') }
-    if (installation.adopted === true) {
-      return { ok: false, message: t('standalone.pytorchAdoptedUnsupported') }
-    }
 
+    // Adopted installs prepare a pip payload instead of downloading a bundle.
     sendProgress('steps', { steps: [
-      { phase: 'torch-prepare', label: t('standalone.pytorchPreparePhase') },
+      { phase: 'torch-prepare', label: t(installation.adopted === true ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
       { phase: 'torch-swap', label: t('standalone.pytorchSwapPhase') },
     ] })
 
@@ -478,9 +531,10 @@ export async function handleAction(
       return { ok: true, navigate: 'detail', message: t('standalone.pytorchAlreadyInstalled', { version: currentTuple.torch }) }
     }
 
-    // Hard gate before anything is downloaded or touched.
+    // Hard gate before anything is downloaded or touched. Adopted installs
+    // have no bundle download pending — charge the pip staging estimate.
     try {
-      await preflightDiskSpace(installation, entry, signal)
+      await preflightDiskSpace(installation, installation.adopted === true ? null : entry, signal)
     } catch (err) {
       if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
       throw err

@@ -62,14 +62,16 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
 /**
  * The PyTorch stack picker on the Update tab. Uses the synchronously cached
  * catalog (refreshed by check-update); hidden entirely until the cache has
- * compatible stacks, and always hidden for adopted installs (their env is not
- * ours to mutate). Options are presentation only — the change-pytorch handler
- * re-resolves the stackId on the main side.
+ * compatible stacks. Adopted (pip-managed) installs get the same picker but
+ * apply via pip, so the copy skips the bundle download size. Options are
+ * presentation only — the change-pytorch handler re-resolves the stackId on
+ * the main side.
  */
 function buildPytorchSection(installation: InstallationRecord, installed: boolean): Record<string, unknown> | null {
-  if (!installed || installation.adopted === true) return null
+  if (!installed) return null
   const stacks = getCachedTorchStacks(installation)
   if (stacks.length === 0) return null
+  const adopted = installation.adopted === true
 
   // Full-tuple match (local tags stripped): torch version alone can't
   // distinguish stacks, and dist-info versions may carry a +cuXXX tag the
@@ -96,7 +98,18 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     if (s.packages.torchvision) parts.push(`torchvision ${s.packages.torchvision}`)
     if (s.packages.torchaudio) parts.push(`torchaudio ${s.packages.torchaudio}`)
     const sizeGB = (s.bundle.size / 1024 ** 3).toFixed(1)
-    parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
+    // Adopted installs apply via pip — the bundle size is not what downloads.
+    if (!adopted) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
+    const confirmMessage = adopted
+      ? t('standalone.pytorchConfirmMessagePip', {
+          from: `**${currentTorch ?? '—'}**`,
+          to: `**${s.packages.torch}**`,
+        })
+      : t('standalone.pytorchConfirmMessage', {
+          from: `**${currentTorch ?? '—'}**`,
+          to: `**${s.packages.torch}**`,
+          size: sizeGB,
+        })
     const actions = isCurrent ? undefined : [{
       id: 'change-pytorch', label: t('standalone.pytorchChangeNow'), style: 'primary', enabled: true,
       showProgress: true, cancellable: true,
@@ -104,11 +117,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       data: { stackId: s.stackId },
       confirm: {
         title: t('standalone.pytorchConfirmTitle'),
-        message: t('standalone.pytorchConfirmMessage', {
-          from: `**${currentTorch ?? '—'}**`,
-          to: `**${s.packages.torch}**`,
-          size: sizeGB,
-        }) + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
+        message: confirmMessage + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
       },
     }]
     options.push({

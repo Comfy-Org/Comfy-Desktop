@@ -174,7 +174,12 @@ function torchStacksMatch(a: SnapshotTorchStack | undefined, b: SnapshotTorchSta
     return a.ref.stackId === b.ref.stackId && torchPackageTuplesEqual(a.ref.packages, b.ref.packages)
   }
   if (a.kind === 'observed' && b.kind === 'observed') {
-    return a.torchVersion === b.torchVersion
+    // Full tuple, with missing (pre-tuple record) distinct from null
+    // (recorded absent) — an upgrade to a fuller record must not be deduped
+    // away, or the only restorable capture of the tuple could be lost.
+    return a.torchVersion === b.torchVersion &&
+      a.torchvisionVersion === b.torchvisionVersion &&
+      a.torchaudioVersion === b.torchaudioVersion
   }
   return false
 }

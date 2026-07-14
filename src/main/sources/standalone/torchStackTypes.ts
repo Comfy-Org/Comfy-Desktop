@@ -38,10 +38,15 @@ export interface ManagedTorchStackRef {
 }
 
 /** Snapshot-time record of a stack that doesn't match any catalog entry —
- *  manual installs, custom indexes, unknown provenance. Never auto-restored. */
+ *  manual installs, custom indexes, unknown provenance. The versions keep
+ *  their local tags (`2.4.1+cu121`) so a pip-managed (adopted) install can
+ *  re-acquire the exact builds from the right index; bundle-managed installs
+ *  never auto-restore an observed stack. */
 export interface ObservedTorchStack {
   kind: 'observed'
   torchVersion: string | null
+  torchvisionVersion?: string | null
+  torchaudioVersion?: string | null
   observedAt: string
 }
 
@@ -68,6 +73,60 @@ export function publicVersion(v: string): string {
   return v.includes('+') ? v.slice(0, v.indexOf('+')) : v
 }
 
+/** PEP 440 local tag of a version string, lowercased: `2.10.0+cu130` →
+ *  `cu130`; empty string when the version carries none. */
+export function torchLocalTag(v: string | null | undefined): string {
+  if (!v || !v.includes('+')) return ''
+  return v.slice(v.indexOf('+') + 1).toLowerCase()
+}
+
+/** Version equality for stack identity: when BOTH sides carry a local tag the
+ *  tags must match too (`2.10.0+cu128` and `2.10.0+cu130` are different
+ *  builds, not the same version); when either side omits the tag, compare
+ *  public versions only (one side may legitimately lack it — e.g. older R2
+ *  metadata or PyPI/mac builds). */
+export function stackVersionMatches(a: string, b: string): boolean {
+  if (publicVersion(a) !== publicVersion(b)) return false
+  const ta = torchLocalTag(a)
+  const tb = torchLocalTag(b)
+  return !ta || !tb || ta === tb
+}
+
+const TORCH_INDEX_BASE = 'https://download.pytorch.org/whl'
+
+/** pip index that serves a torch build, derived from its local tag: the
+ *  pytorch.org index for `cu*`/`rocm*`/`xpu`/`cpu` builds, default PyPI
+ *  (null) for untagged builds (mac/MPS and PyPI-default wheels). Returns
+ *  null for tags no trusted index serves: custom builds, and `rocm*` on
+ *  Windows (pytorch.org publishes no Windows ROCm wheels — those builds
+ *  come from AMD's own channels). */
+export function torchIndexUrlFor(packages: TorchStackPackages): string | null {
+  const tag = torchLocalTag(packages.torch)
+  if (!tag) return null
+  if (tag.startsWith('rocm') && process.platform === 'win32') return null
+  if (/^(cu\d+|rocm[\d.]+|xpu|cpu)$/.test(tag)) return `${TORCH_INDEX_BASE}/${tag}`
+  // Unknown local tag (custom build) — no index we can trust to serve it.
+  return null
+}
+
+/** Whether a pip re-acquisition can actually honour the tuple: untagged
+ *  versions resolve from PyPI, tagged ones need `torchIndexUrlFor` to name
+ *  a trusted index that serves them. */
+export function torchTupleReacquirable(packages: TorchStackPackages): boolean {
+  return torchLocalTag(packages.torch) === '' || torchIndexUrlFor(packages) !== null
+}
+
+/** Accelerator-evidence variant base expected for a torch build, judged by
+ *  its local tag — used to verify a pip-installed stack the same way bundle
+ *  variants are verified ('nvidia' → cuda evidence, etc.). Null means no
+ *  accelerator assertion (cpu, mps, unknown). */
+export function accelBaseForTag(tag: string): string | null {
+  if (tag.startsWith('cu')) return 'nvidia'
+  if (tag.startsWith('rocm')) return 'amd'
+  if (tag === 'xpu') return 'intel-xpu'
+  return null
+}
+
 export interface InstalledTorchTuple {
   torch: string | null
   torchvision: string | null
@@ -75,30 +134,32 @@ export interface InstalledTorchTuple {
 }
 
 /** Full-tuple stack identity check, symmetric: every package the stack
- *  declares must be installed at the same public version, and a torch-family
- *  package installed but NOT declared by the stack is a mismatch too.
- *  Comparing torch alone is not enough — two stacks can share a torch version
- *  but differ in torchvision/torchaudio. */
+ *  declares must be installed at the same version (tag-aware, see
+ *  `stackVersionMatches`), and a torch-family package installed but NOT
+ *  declared by the stack is a mismatch too. Comparing torch alone is not
+ *  enough — two stacks can share a torch version but differ in
+ *  torchvision/torchaudio. */
 export function torchTupleMatches(expected: TorchStackPackages, installed: InstalledTorchTuple): boolean {
   for (const pkg of ['torch', 'torchvision', 'torchaudio'] as const) {
     const want = expected[pkg]
     const have = installed[pkg]
     if (!want !== !have) return false
-    if (want && have && publicVersion(have) !== publicVersion(want)) return false
+    if (want && have && !stackVersionMatches(have, want)) return false
   }
   return true
 }
 
 /** Symmetric exact-tuple equality for metadata drift checks: both sides must
- *  declare the same packages at the same public versions. A package present
- *  on one side but omitted on the other is drift, not a match — unlike
- *  `torchTupleMatches`, which only checks the packages `expected` declares. */
+ *  declare the same packages at the same versions (tag-aware). A package
+ *  present on one side but omitted on the other is drift, not a match —
+ *  unlike `torchTupleMatches`, which only checks the packages `expected`
+ *  declares. */
 export function torchPackageTuplesEqual(a: TorchStackPackages, b: TorchStackPackages): boolean {
   for (const pkg of ['torch', 'torchvision', 'torchaudio'] as const) {
     const av = a[pkg]
     const bv = b[pkg]
     if (!av !== !bv) return false
-    if (av && bv && publicVersion(av) !== publicVersion(bv)) return false
+    if (av && bv && !stackVersionMatches(av, bv)) return false
   }
   return true
 }
