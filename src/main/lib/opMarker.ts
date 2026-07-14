@@ -70,10 +70,8 @@ export function rollbackStatusMessage(
 }
 
 export async function writeOpMarker(installPath: string, marker: OpMarker): Promise<void> {
-  // Write atomically: a truncating write that's interrupted (hard kill) would
-  // leave empty/malformed JSON, which readOpMarker treats as "no marker" — that
-  // would drop the recovery marker in exactly the crash window it protects. Write
-  // to a temp file in the same directory, then rename over the marker.
+  // Write atomically (temp file + rename) so an interrupted write can't leave a
+  // truncated marker, which readOpMarker would treat as "no marker" and skip recovery.
   const target = markerPath(installPath)
   const tmp = `${target}.${crypto.randomUUID()}.tmp`
   try {

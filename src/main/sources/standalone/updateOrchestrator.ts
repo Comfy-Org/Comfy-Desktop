@@ -242,14 +242,11 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     }
   }
 
-  // Transactional guard for a failed or cancelled git step: the update script
-  // advances the branch ref before the working-tree checkout, so a mid-checkout
-  // failure (e.g. a symlink the user can't create on Windows) or a cancel that
-  // kills the process mid-checkout can leave the source moved. Roll it back so
-  // this session never launches new source against the old venv (crashes on
-  // import, e.g. `comfy_aimdo.vram_buffer`). The op marker is intentionally left
-  // in place so recoverInterruptedComfyOp retries on the next launch if this
-  // in-process rollback fails.
+  // A failed or cancelled git step can leave the source moved: the update script
+  // advances the branch ref before the working-tree checkout, so a checkout failure
+  // (e.g. a Windows symlink-privilege error) or a kill mid-checkout strands new
+  // source against the old venv (crashes on import). Roll it back. The marker is
+  // left in place so recoverInterruptedComfyOp retries next launch if this fails.
   let rollbackNote = ''
   if ((signal?.aborted || result.exitCode !== 0) && preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
     const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
