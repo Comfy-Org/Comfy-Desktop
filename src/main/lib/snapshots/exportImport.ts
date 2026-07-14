@@ -82,14 +82,9 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
 }
 
 /**
- * Commit an imported envelope into the install's live snapshot history.
- *
- * This MUST only be called once the snapshots it contains represent a state the
- * install has actually been in — i.e. after a restore from the envelope has
- * SUCCEEDED. Do not use this to make a snapshot available as a restore target;
- * stage it with `stageSnapshotEnvelope` instead, otherwise a never-applied
- * target lands at the top of the history claiming to be the current state (the
- * #1137 bug). See `AGENTS.md` in this directory.
+ * Commit an imported envelope into the install's live snapshot history. Only
+ * call after a restore from the envelope has succeeded; to make an envelope
+ * available as a restore target, stage it with `stageSnapshotEnvelope` instead.
  */
 export async function importSnapshots(
   installPath: string,
@@ -151,12 +146,9 @@ export async function importSnapshots(
 
 // --- Staged restore targets ---
 //
-// An imported envelope is a *restore target*, not history, until the restore
-// succeeds. We stage it to a temp file keyed by an opaque token; the restore
-// action loads it by token (never by a renderer-supplied path) and only commits
-// it to history via `importSnapshots` once the apply succeeds. On failure the
-// live history is left untouched, so the previous snapshot — which already
-// represents the rolled-back current state — stays on top.
+// An imported envelope is staged to a token-keyed temp file (never loaded by a
+// renderer-supplied path) and only committed to history via `importSnapshots`
+// once a restore from it succeeds; failed restores leave live history untouched.
 
 const STAGING_SUBDIR = 'comfyui-desktop-2-staged-restores'
 // Tokens are hex strings; the strict shape doubles as path-traversal defense
@@ -167,7 +159,13 @@ const STAGE_TOKEN_RE = /^[a-f0-9]{32}$/
 const STAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 function stagingDir(): string {
-  return path.join(os.tmpdir(), STAGING_SUBDIR)
+  // Per-user suffix so installs run by different OS users on a shared machine
+  // don't fight over ownership of one temp directory.
+  let user = 'default'
+  try {
+    user = os.userInfo().username.replace(/[^\w.-]/g, '_')
+  } catch {}
+  return path.join(os.tmpdir(), `${STAGING_SUBDIR}-${user}`)
 }
 
 function resolveStagedPath(token: string): string | null {

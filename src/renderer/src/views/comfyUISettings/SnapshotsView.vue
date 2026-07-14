@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Download, RotateCcw, Trash2, Upload } from 'lucide-vue-next'
 import { TID } from '../../../../shared/testIds'
+import { MSG_CANCELLED } from '../../../../shared/operationStatus'
 import { useDialogs } from '../../composables/useDialogs'
 import { useActionGuard } from '../../composables/useActionGuard'
 import { emitTelemetryAction, toCountBucket } from '../../lib/telemetry'
@@ -154,7 +155,7 @@ watch(restoreOp, (op, prev) => {
       emit('refresh-all')
       emit('op-dismiss')
     }, 1800)
-  } else if (op.error === 'Cancelled.' && !restoreOpIsImport.value) {
+  } else if (op.error === MSG_CANCELLED && !restoreOpIsImport.value) {
     clearRestoreTerminal()
     emit('op-dismiss')
   } else {

@@ -692,9 +692,8 @@ describe('importSnapshots', () => {
 // --- staged restore targets ---
 
 describe('staged snapshot envelopes', () => {
-  // Imported envelopes are restore *targets*, not history, until a restore from
-  // them succeeds (#1137). Staging keeps them out of history while still making
-  // them addressable by an opaque token.
+  // Staging keeps imported restore targets out of history — addressable only by
+  // an opaque token — until a restore from them succeeds.
   it('stages an envelope and loads it back by token without writing history', async () => {
     const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snapshot-stage-'))
     try {

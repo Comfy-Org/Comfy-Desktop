@@ -242,18 +242,15 @@ export async function restoreSnapshotIntoInstallation(
     // actually been in that state (#1137).
     if (restoreSucceeded) {
       await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
-    }
-
-    try {
-      // Make the newest snapshot reflect the real current state: on success this
-      // is a no-op (the just-committed target already matches and stays Latest);
-      // on a partial restore with no source rollback it captures the novel
-      // on-disk state so the top is never a never-applied target.
-      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, updatedInst)
-      const snapshotCount = await getSnapshotCount(freshInst.installPath)
-      await update({ lastSnapshot: filename ?? freshInst.lastSnapshot, snapshotCount })
-    } catch (err) {
-      console.warn('Failed to record restored snapshot state:', err)
+      try {
+        // Make the newest snapshot reflect the real current state — normally a
+        // no-op since the just-committed target already matches and stays Latest.
+        const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, updatedInst)
+        const snapshotCount = await getSnapshotCount(freshInst.installPath)
+        await update({ lastSnapshot: filename ?? freshInst.lastSnapshot, snapshotCount })
+      } catch (err) {
+        console.warn('Failed to record restored snapshot state:', err)
+      }
     }
 
     if (!restoreSucceeded) {

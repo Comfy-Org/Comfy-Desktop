@@ -12,6 +12,7 @@ import { withOutputTail } from '../../lib/logged-process'
 import { copyDirWithProgress } from '../../lib/copy'
 import { listCustomNodes, findComfyUIDir, backupDir, mergeDirFlat } from '../../lib/migrate'
 import { t } from '../../lib/i18n'
+import { MSG_CANCELLED } from '../../../shared/operationStatus'
 import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
@@ -115,7 +116,8 @@ export async function handleAction(
     if (signal?.aborted) {
       if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
       await ensureLiveStateOnTop()
-      return { ok: false, message: 'Cancelled; ComfyUI source was rolled back.' }
+      sendOutput('\nCancelled; ComfyUI source was rolled back.\n')
+      return { ok: false, cancelled: true, message: MSG_CANCELLED }
     }
 
     // Restore custom nodes before pip — node installs may add pip dependencies.
@@ -128,7 +130,8 @@ export async function handleAction(
     if (signal?.aborted) {
       if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
       await ensureLiveStateOnTop()
-      return { ok: false, message: 'Cancelled; ComfyUI source was rolled back. Custom node changes may be partial.' }
+      sendOutput('\nCancelled; ComfyUI source was rolled back. Custom node changes may be partial.\n')
+      return { ok: false, cancelled: true, message: MSG_CANCELLED }
     }
 
     let pipResult: snapshots.RestoreResult = {
@@ -179,6 +182,10 @@ export async function handleAction(
       // Leave the op marker so recoverInterruptedComfyOp retries on next launch
       // if the in-process rollback failed; a successful rollback makes it a no-op.
       await ensureLiveStateOnTop()
+      if (signal?.aborted) {
+        sendOutput(`\n${headline} ${tail}\n`)
+        return { ok: false, cancelled: true, message: MSG_CANCELLED }
+      }
       return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
     }
 
