@@ -217,36 +217,23 @@ export async function handleAction(
 
     // comfyResult.error and pip/abort failures already returned above; only
     // best-effort custom-node failures can reach here.
-    const totalFailures = nodeResult.failed.length
+    const totalFailures = nodeResult.failed.length + nodeResult.unreportable.length
 
     // Collect specific failures so the error surface explains WHY a restore
     // failed instead of a bare "N operation(s) failed".
     const failureDetails: string[] = []
     for (const f of nodeResult.failed) failureDetails.push(`Node ${f.id}: ${f.error}`)
+    for (const id of nodeResult.unreportable) failureDetails.push(`Standalone node ${id}: source file is unavailable`)
     for (const e of pipResult.errors) failureDetails.push(e)
     const failMessage = (headline: string): string =>
       failureDetails.length > 0 ? `${headline}\n\n${failureDetails.join('\n')}` : headline
 
-    if (summary.length === 0) {
+    const nothingToDo = summary.length === 0
+    if (nothingToDo) {
       sendOutput(`\n✓ ${t('standalone.snapshotRestoreNothingToDo')}\n`)
-      sendProgress('done', { percent: 100, status: t('standalone.snapshotRestoreNothingToDo') })
-      // Nothing changed because the live state already matches the target. For a
-      // staged import that still means the import succeeded: commit the envelope
-      // to history and drop the staged file. ensureLiveStateOnTop is then a
-      // no-op (the committed target already represents the current state).
-      if (stagedEnvelope) {
-        try {
-          await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
-          if (restoreToken) await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
-        } catch (err) {
-          console.warn('Committing imported snapshots failed:', err)
-        }
-        await ensureLiveStateOnTop()
-      }
-      return { ok: true, navigate: 'detail' }
+    } else {
+      sendOutput(`\n${totalFailures > 0 ? '⚠' : '✓'} ${t('standalone.snapshotRestoreComplete')}: ${summary.join('; ')}\n`)
     }
-
-    sendOutput(`\n${totalFailures > 0 ? '⚠' : '✓'} ${t('standalone.snapshotRestoreComplete')}: ${summary.join('; ')}\n`)
 
     // Restore channel + version/lastRollback state so the release cache sees
     // accurate state for the restored channel. (Package-restore failures already
@@ -274,18 +261,31 @@ export async function handleAction(
       ...installation,
       ...restoreState,
     }
+
+    if (stagedEnvelope && restoreSucceeded) {
+      try {
+        // Commit a staged import to history ONLY once the restore fully
+        // succeeded — the install has actually been in this state (#1137).
+        await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
+      } catch (err) {
+        console.warn('Committing imported snapshots failed:', err)
+        await ensureLiveStateOnTop()
+        return { ok: false, message: `Snapshot was restored, but its history could not be saved: ${(err as Error).message}` }
+      }
+
+      // Release only after the commit succeeds, so a failed commit keeps the
+      // staged file available for retry.
+      if (restoreToken) {
+        try {
+          await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
+        } catch (err) {
+          console.warn('Releasing staged snapshot failed:', err)
+        }
+      }
+    }
+
     try {
       if (stagedEnvelope) {
-        // Commit a staged import to history ONLY once the restore fully
-        // succeeded — the install has actually been in this state (#1137). On
-        // partial node failure we leave the staged token in place so a retry can
-        // reuse it, and don't pollute history with a never-fully-applied target.
-        if (restoreSucceeded) {
-          await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
-          // Release only after the commit succeeds, so a failed commit keeps the
-          // staged file for retry.
-          if (restoreToken) await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
-        }
         // Make the newest snapshot reflect the real current state. On success the
         // just-committed target already matches (no-op, stays Latest); otherwise
         // a fresh post-restore snapshot is written strictly on top — including
@@ -305,7 +305,10 @@ export async function handleAction(
       console.warn('Post-restore snapshot failed:', err)
     }
 
-    sendProgress('done', { percent: 100, status: t('standalone.snapshotRestoreComplete') })
+    sendProgress('done', {
+      percent: 100,
+      status: nothingToDo ? t('standalone.snapshotRestoreNothingToDo') : t('standalone.snapshotRestoreComplete')
+    })
     return { ok: totalFailures === 0, navigate: 'detail',
       ...(totalFailures > 0 ? { message: failMessage(`${totalFailures} operation(s) failed`) } : {}) }
   }

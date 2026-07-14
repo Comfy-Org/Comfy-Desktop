@@ -74,8 +74,7 @@ const snapshots = computed<SnapshotSummary[]>(() => listData.value?.snapshots ??
 const copyEvents = computed<CopyEvent[]>(() => listData.value?.copyEvents ?? [])
 
 // Restore feedback card in the "Save New Snapshot" slot at the top of the
-// rail: ok → success (auto-dismiss + reload), error → retry/dismiss,
-// cancelled → disappears.
+// rail: ok → success (auto-dismiss + reload), error → retry/dismiss.
 const restoreOp = computed<ActiveOperation | null>(() => {
   const op = props.activeOperation
   return op && op.actionId === 'snapshot-restore' ? op : null
@@ -155,14 +154,15 @@ watch(restoreOp, (op, prev) => {
       emit('refresh-all')
       emit('op-dismiss')
     }, 1800)
-  } else if (op.error === 'Cancelled.') {
+  } else if (op.error === 'Cancelled.' && !restoreOpIsImport.value) {
     clearRestoreTerminal()
+    emit('op-dismiss')
   } else {
     clearRestoreTerminal()
     restoreTerminal.value = 'error'
     restoreErrorMessage.value = op.error ?? ''
   }
-})
+}, { immediate: true })
 onUnmounted(() => {
   clearRestoreTerminal()
   unsubChanges?.()

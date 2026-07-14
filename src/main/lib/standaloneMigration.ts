@@ -152,9 +152,12 @@ export async function restoreSnapshotIntoInstallation(
 ): Promise<void> {
   const { sendProgress, sendOutput, signal } = tools
   const freshInst = await installations.get(entry.id)
-  if (!freshInst || !fs.existsSync(stagedFile)) return
+  if (!freshInst) throw new Error('Snapshot restore installation no longer exists.')
+  if (!fs.existsSync(stagedFile)) throw new Error('Staged snapshot restore file is missing.')
 
   const restoreContext = { installation_id: entry.id }
+  let completed = false
+  let currentForSnapshot = freshInst
   try {
     // Validate the envelope as a restore *target* only — do NOT commit it to
     // history yet. A snapshot in history must record a state the install has
@@ -229,15 +232,19 @@ export async function restoreSnapshotIntoInstallation(
       !comfyResult.error &&
       !signal.aborted &&
       nodeResult.failed.length === 0 &&
+      nodeResult.unreportable.length === 0 &&
       (pipResult?.failed.length ?? 0) === 0
 
     const updatedInst = { ...freshInst, ...restoreState }
+    currentForSnapshot = updatedInst
+
+    // Only commit the imported envelope to history once the install has
+    // actually been in that state (#1137).
+    if (restoreSucceeded) {
+      await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
+    }
+
     try {
-      // Only commit the imported envelope to history once the install has
-      // actually been in that state (#1137).
-      if (restoreSucceeded) {
-        await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
-      }
       // Make the newest snapshot reflect the real current state: on success this
       // is a no-op (the just-committed target already matches and stays Latest);
       // on a partial restore with no source rollback it captures the novel
@@ -245,7 +252,23 @@ export async function restoreSnapshotIntoInstallation(
       const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, updatedInst)
       const snapshotCount = await getSnapshotCount(freshInst.installPath)
       await update({ lastSnapshot: filename ?? freshInst.lastSnapshot, snapshotCount })
-    } catch {}
+    } catch (err) {
+      console.warn('Failed to record restored snapshot state:', err)
+    }
+
+    if (!restoreSucceeded) {
+      const failures = [
+        comfyResult.error ? `ComfyUI: ${comfyResult.error}` : '',
+        ...nodeResult.failed.map((failure) => `Node ${failure.id}: ${failure.error}`),
+        ...nodeResult.unreportable.map((id) => `Standalone node ${id}: source file is unavailable`),
+        ...(pipResult?.errors ?? []),
+      ].filter(Boolean)
+      throw new Error(signal.aborted
+        ? 'Snapshot restore cancelled.'
+        : `Snapshot restore did not reach the target state.${failures.length > 0 ? ` ${failures.join('; ')}` : ''}`)
+    }
+
+    completed = true
   } catch (restoreErr) {
     sendOutput(
       `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\n`
@@ -255,7 +278,7 @@ export async function restoreSnapshotIntoInstallation(
     // be a novel partial-restore state that no existing snapshot matches.
     // Capture it so the newest snapshot still reflects the real current state.
     try {
-      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, freshInst)
+      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, currentForSnapshot)
       if (filename) {
         const snapshotCount = await getSnapshotCount(freshInst.installPath)
         await update({ lastSnapshot: filename, snapshotCount })
@@ -263,9 +286,12 @@ export async function restoreSnapshotIntoInstallation(
     } catch (err) {
       console.warn('Failed to record rolled-back restore state:', err)
     }
+    throw restoreErr
   } finally {
-    if (ownsStagedFile) fs.promises.unlink(stagedFile).catch(() => {})
-    await update({ pendingSnapshotRestore: undefined })
+    if (completed) {
+      if (ownsStagedFile) await fs.promises.unlink(stagedFile).catch(() => {})
+      await update({ pendingSnapshotRestore: undefined })
+    }
   }
 }
 
@@ -384,65 +410,70 @@ export async function migrateToStandaloneFromSnapshot(
       : {})
   })
 
-  // 3. Install standalone (download + extract + setup env)
-  await fs.promises.mkdir(destPath, { recursive: true })
-  await fs.promises.writeFile(path.join(destPath, MARKER_FILE), entry.id)
-  const cache = createCache(
-    settings.get('cacheDir') as string,
-    settings.get('maxCachedDownloads') as number
-  )
-  const installRecord = { ...instData, installPath: destPath } as unknown as InstallationRecord
+  try {
+    // 3. Install standalone (download + extract + setup env)
+    await fs.promises.mkdir(destPath, { recursive: true })
+    await fs.promises.writeFile(path.join(destPath, MARKER_FILE), entry.id)
+    const cache = createCache(
+      settings.get('cacheDir') as string,
+      settings.get('maxCachedDownloads') as number
+    )
+    const installRecord = { ...instData, installPath: destPath } as unknown as InstallationRecord
 
-  const releaseTag = (instData['releaseTag'] as string | undefined) ?? null
-  const variantId = (instData['variantId'] as string | undefined) ?? null
-  const installContext = {
-    installation_id: entry.id,
-    release_tag: releaseTag,
-    variant_id: variantId
-  }
+    const releaseTag = (instData['releaseTag'] as string | undefined) ?? null
+    const variantId = (instData['variantId'] as string | undefined) ?? null
+    const installContext = {
+      installation_id: entry.id,
+      release_tag: releaseTag,
+      variant_id: variantId
+    }
 
-  await telemetry.trackedStep('comfy.desktop.install.standalone', installContext, async () => {
-    await standaloneSource.install!(installRecord, {
-      sendProgress,
-      download,
-      cache,
-      extract,
-      signal
+    await telemetry.trackedStep('comfy.desktop.install.standalone', installContext, async () => {
+      await standaloneSource.install!(installRecord, {
+        sendProgress,
+        download,
+        cache,
+        extract,
+        signal
+      })
     })
-  })
 
-  const update = (data: Record<string, unknown>): Promise<void> =>
-    installations.update(entry!.id, data).then(() => {})
-  await telemetry.trackedStep('comfy.desktop.install.post_install', installContext, async () => {
-    await standaloneSource.postInstall!(installRecord, { sendProgress, update })
-  })
+    const update = (data: Record<string, unknown>): Promise<void> =>
+      installations.update(entry.id, data).then(() => {})
+    await telemetry.trackedStep('comfy.desktop.install.post_install', installContext, async () => {
+      await standaloneSource.postInstall!(installRecord, { sendProgress, update })
+    })
 
-  // 4. Restore snapshot (custom nodes + pip packages)
-  await restoreSnapshotIntoInstallation(
-    entry,
-    stagedSnapshot.path,
-    stagedSnapshot.owned,
-    tools,
-    update
-  )
+    // 4. Restore snapshot (custom nodes + pip packages)
+    await restoreSnapshotIntoInstallation(
+      entry,
+      stagedSnapshot.path,
+      stagedSnapshot.owned,
+      tools,
+      update
+    )
 
-  // 5. Copy user data, input, output, models
-  const dstComfyUI = path.join(destPath, 'ComfyUI')
-  await copyMigrationData(sourcePaths, dstComfyUI, labels, sendProgress)
+    // 5. Copy user data, input, output, models
+    const dstComfyUI = path.join(destPath, 'ComfyUI')
+    await copyMigrationData(sourcePaths, dstComfyUI, labels, sendProgress)
 
-  await installations.update(entry.id, { status: 'installed' })
+    await installations.update(entry.id, { status: 'installed' })
 
-  // Fire the once-per-install funnel event for the snapshot-based migrate-to-
-  // standalone path (portable/git → standalone, and Desktop-1 snapshot
-  // migrations). Fired once here at completion, the moment the new install is
-  // ready to boot. This flow does NOT go through the `install-instance` IPC
-  // handler, so there is no double-fire with the express/manual path. Best-
-  // effort: `capture()` swallows its own errors and never aborts the migration.
-  telemetry.captureInstallCompleted({
-    installationId: entry.id,
-    method: 'migrate',
-    express: false
-  })
+    // Fire the once-per-install funnel event for the snapshot-based migrate-to-
+    // standalone path (portable/git → standalone, and Desktop-1 snapshot
+    // migrations). Fired once here at completion, the moment the new install is
+    // ready to boot. This flow does NOT go through the `install-instance` IPC
+    // handler, so there is no double-fire with the express/manual path. Best-
+    // effort: `capture()` swallows its own errors and never aborts the migration.
+    telemetry.captureInstallCompleted({
+      installationId: entry.id,
+      method: 'migrate',
+      express: false
+    })
 
-  return { entry, destPath }
+    return { entry, destPath }
+  } catch (err) {
+    await installations.update(entry.id, { status: 'failed' }).catch(() => {})
+    throw err
+  }
 }

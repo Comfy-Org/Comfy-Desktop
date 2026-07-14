@@ -712,7 +712,9 @@ export async function restoreCustomNodes(
               break
             }
             if (checkoutResult.exitCode !== 0) {
-              sendOutput(`⚠ git checkout to ${targetNode.commit} failed for ${targetNode.id}\n`)
+              const detail = (checkoutResult.stderr || checkoutResult.stdout).trim().split('\n').slice(-20).join('\n')
+              result.failed.push({ id: targetNode.id, error: detail ? `git checkout failed (exit ${checkoutResult.exitCode}):\n${detail}` : `git checkout failed (exit ${checkoutResult.exitCode})` })
+              continue
             }
           }
           result.installed.push(targetNode.id)
