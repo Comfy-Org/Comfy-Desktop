@@ -143,9 +143,14 @@ export async function hasNameConflict(id: string, name: string): Promise<boolean
 export function uniqueName(baseName: string, existing: InstallationRecord[], excludeId?: string): string {
   const names = new Set(existing.filter((i) => i.id !== excludeId).map((i) => i.name))
   if (!names.has(baseName)) return baseName
+  // On conflict, strip a trailing " (N)" so an already-suffixed name renumbers
+  // cleanly ("ComfyUI (1)" → "ComfyUI (2)") instead of compounding into
+  // "ComfyUI (1) (1)". A name with no conflict is returned untouched above, so
+  // an intentional " (N)" name is preserved when it's actually free.
+  const stem = baseName.replace(/ \(\d+\)$/, '')
   let suffix = 1
-  while (names.has(`${baseName} (${suffix})`)) suffix++
-  return `${baseName} (${suffix})`
+  while (names.has(`${stem} (${suffix})`)) suffix++
+  return `${stem} (${suffix})`
 }
 
 export async function add(installation: Record<string, unknown>): Promise<InstallationRecord> {

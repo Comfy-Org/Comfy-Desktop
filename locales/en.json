@@ -92,7 +92,7 @@
     "tabUpdate": "Update",
     "tabSnapshots": "Snapshots",
     "tabStorage": "Storage",
-    "tabConsole": "Console",
+    "tabTerminal": "Terminal",
     "relaunch": "Relaunch",
     "more": "More",
     "diskUsage": "Disk Usage",
@@ -107,7 +107,45 @@
     "extraModelPathsModalTitle": "Custom model paths",
     "extraModelPathsModalNote": "Read-only — ComfyUI searches these directories, but the launcher does not manage them. Edit extra_model_paths.yaml to change them.",
     "openBaseFolder": "Open base folder",
-    "revealYaml": "Show extra_model_paths.yaml"
+    "revealYaml": "Show extra_model_paths.yaml",
+    "argsTitle": "Startup Arguments",
+    "restartRequired": "Restart to apply",
+    "argsRawLabel": "Raw arguments",
+    "argsPlaceholder": "No arguments set",
+    "argsRawHint": "Edit directly, or toggle individual flags below.",
+    "argsSearchPlaceholder": "Search arguments…",
+    "argsNoMatches": "No arguments match your search.",
+    "argsExclusiveLabel": "Choose one",
+    "argsExclusiveNone": "None (default)",
+    "argsExclusiveNoneHint": "No flag from this group is set.",
+    "argsMultiPlaceholder": "space-separated values",
+    "argsValuePlaceholder": "value",
+    "argsOptionalPlaceholder": "optional",
+    "argsCategory": {
+      "active": "Active",
+      "network": "Network",
+      "launch": "Launch",
+      "gpuVram": "GPU & VRAM",
+      "precision": "Precision",
+      "performance": "Performance",
+      "cache": "Cache",
+      "preview": "Preview",
+      "manager": "Manager",
+      "frontend": "Frontend",
+      "features": "Features",
+      "paths": "Paths",
+      "logging": "Logging",
+      "advanced": "Advanced",
+      "other": "Other"
+    },
+    "configureArgs": "Configure arguments",
+    "argsSchemaUnavailable": "Argument schema unavailable for this install.",
+    "argsAutocompleteLabel": "Argument suggestions",
+    "argsAutocompleteHint": "↑↓ navigate · Tab/Enter select · Esc dismiss",
+    "argsAwaitingValue": "expects a value",
+    "argsUnsupported": "Unsupported:",
+    "argsMissingValue": "Missing value for:",
+    "argsUnexpected": "Unexpected:"
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",
@@ -225,7 +263,8 @@
     "tabSettings": "Settings",
     "loading": "Loading…",
     "envVars": "Environment Variables",
-    "copyError": "Copy error details"
+    "copyError": "Copy error details",
+    "clear": "Clear"
   },
   "list": {
     "loadSnapshot": "Load Snapshot",
@@ -410,7 +449,10 @@
     "processCrashed": "Process crashed (exit code {code})",
     "sessionEnded": "This console session ended. Restart it to keep using the shell.",
     "restartSession": "Restart console",
-    "shellLabel": "Shell"
+    "shellLabel": "Shell",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All"
   },
   "settingsModal": {
     "title": "Settings",
@@ -850,6 +892,7 @@
     "updateConfirmMessageLatest": "Update {installed} to the latest master commit ({latest})?",
     "updateConfirmMessageDowngrade": "Roll back from {installed} to stable {latest}? Newer commits will be removed.",
     "updateBreakingWarning": "⚠️ This may break your custom nodes and workflows.",
+    "updateSnapshotUndoHint": "💾 To undo, restore the snapshot saved before the update from the Snapshots tab.",
     "updateConfirmMessagePicked": "Update ComfyUI to **{tag}**?",
     "updatingTitle": "Updating to {version}",
     "downgradingTitle": "Downgrading to {version}",
@@ -1118,7 +1161,9 @@
     "cancelOperation": "Cancel Operation",
     "stopRequired": "This instance is currently running and must be stopped first.",
     "willStopRunning": "{name} is running and will be stopped first.",
-    "folderPermissionDenied": "macOS denied access to \"{path}\". Please open System Settings → Privacy & Security → Files and Folders, grant access to Comfy Desktop, then retry."
+    "folderPermissionDenied": "macOS denied access to \"{path}\". Please open System Settings → Privacy & Security → Files and Folders, grant access to Comfy Desktop, then retry.",
+    "recoveryFailed": "ComfyUI recovery failed: {message}",
+    "executableNotFound": "Executable not found: {cmd}"
   },
   "tooltips": {
     "instances": "A separate ComfyUI instance with its own version, models, and settings.",
@@ -1173,6 +1218,8 @@
   "contextMenu": {
     "openLinkInBrowser": "Open Link in Browser",
     "copyLinkAddress": "Copy Link Address",
+    "saveImage": "Save Image",
+    "copyImage": "Copy Image",
     "cut": "Cut",
     "copy": "Copy",
     "paste": "Paste",

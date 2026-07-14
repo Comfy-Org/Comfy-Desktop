@@ -14,7 +14,7 @@ import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { repairMacBinaries } from './macRepair'
 import { getActivePythonPath, getActiveUvPath, getMasterPythonPath } from './envPaths'
-import { writeOpMarker, completeOpMarker } from '../../lib/opMarker'
+import { writeOpMarker, completeOpMarker, readOpMarker, rollbackStatusMessage } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
 
 interface ScriptResult {
@@ -232,9 +232,30 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     result = await spawnUpdateScript(updaterPython, comfyuiDir, channelArgs, sendOutput, signal)
   }
 
+  // Record the local backup branch (created by the update script at the pre-op
+  // HEAD) in the op marker so a failed launch-time recovery can point the user at
+  // an offline restore point. Diagnostics only — the rollback target stays preHead.
+  if (result.markers.BACKUP_BRANCH && preOpHead) {
+    const existingMarker = readOpMarker(installPath)
+    if (existingMarker && !existingMarker.postHead) {
+      await writeOpMarker(installPath, { ...existingMarker, backupBranch: result.markers.BACKUP_BRANCH })
+    }
+  }
+
+  // A failed or cancelled git step can leave the source moved: the update script
+  // advances the branch ref before the working-tree checkout, so a checkout failure
+  // (e.g. a Windows symlink-privilege error) or a kill mid-checkout strands new
+  // source against the old venv (crashes on import). Roll it back. The marker is
+  // left in place so recoverInterruptedComfyOp retries next launch if this fails.
+  let rollbackNote = ''
+  if ((signal?.aborted || result.exitCode !== 0) && preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
+    const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
+    rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
+  }
+
   // Check cancellation before the exit code — aborted processes exit non-zero
   // and shouldn't surface an error.
-  if (signal?.aborted) return { ok: false, message: 'Cancelled', installation }
+  if (signal?.aborted) return { ok: false, message: `Cancelled${rollbackNote}`, installation }
 
   if (result.exitCode !== 0) {
     const detail = [result.stderrBuf, result.stdoutBuf].filter(Boolean).join('\n').trim().split('\n').slice(-20).join('\n')
@@ -247,9 +268,9 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       } else {
         message = `${t('standalone.updateFailed', { code: result.exitCode })}\n\nProcess produced no output.\npython: ${updaterPython}\nscript: ${getBundledScriptPath('update_comfyui.py')}`
       }
-      return { ok: false, message, installation }
+      return { ok: false, message: message + rollbackNote, installation }
     }
-    console.warn(`Auto-update script failed (exit ${result.exitCode}):\n${detail.split('\n').slice(-10).join('\n')}`)
+    console.warn(`Auto-update script failed (exit ${result.exitCode}):\n${detail.split('\n').slice(-10).join('\n')}${rollbackNote}`)
     return { ok: false, installation }
   }
 
@@ -383,9 +404,7 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     }
     const reason = signal?.aborted ? 'Cancelled' : depFailure!
     const message = sourceMoved
-      ? (rolledBack
-          ? `${reason}\n\nComfyUI source was rolled back to ${preHead!.slice(0, 7)}.`
-          : `${reason}\n\nComfyUI source rollback failed; installation may be inconsistent.`)
+      ? `${reason}\n\n${rollbackStatusMessage(rolledBack, preHead!, markers.BACKUP_BRANCH)}`
       : reason
     if (!sendOutput) console.warn(`ComfyUI update aborted: ${reason}`)
     // Leave the op marker: if the in-process rollback failed (rolledBack=false),

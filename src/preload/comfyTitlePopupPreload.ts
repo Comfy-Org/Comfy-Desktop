@@ -281,6 +281,7 @@ export interface ComfyTitlePopupBridge {
     selections: Record<string, unknown>,
   ): Promise<Record<string, unknown>[]>
   pickerSettingsGetStableTags(): Promise<string[]>
+  pickerSettingsGetUniqueName(baseName: string): Promise<string>
   pickerSettingsGetInstallations(): Promise<Record<string, unknown>[]>
   pickerSettingsGetInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   pickerSettingsStopComfyUI(installationId: string): Promise<void>
@@ -661,6 +662,7 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.getFieldOptions, { sourceId, fieldId, selections }),
   pickerSettingsGetInstallations: () => ipcRenderer.invoke(CH.getInstallations),
   pickerSettingsGetStableTags: () => ipcRenderer.invoke(CH.getStableTags),
+  pickerSettingsGetUniqueName: (baseName) => ipcRenderer.invoke(CH.getUniqueName, { baseName }),
   pickerSettingsGetInstallationSize: (installationId) =>
     ipcRenderer.invoke(CH.getInstallationSize, { installationId }),
   pickerSettingsStopComfyUI: (installationId) =>

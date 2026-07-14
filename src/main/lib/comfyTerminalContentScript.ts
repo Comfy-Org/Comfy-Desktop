@@ -21,6 +21,7 @@
 
 import { createRequire } from 'module'
 import { readFileSync } from 'fs'
+import { decideTerminalKeyAction } from '../../shared/terminalShortcuts'
 
 // The main bundle is CommonJS, so `__filename` is the right anchor for
 // require.resolve (import.meta.url is unavailable there).
@@ -46,6 +47,24 @@ function stripSourceMapComment(source: string): string {
 const TERMINAL_TAB_MAIN_JS = `
 var STATE = window.__comfyDesktopTerminalStopgap;
 var mounted = null;
+
+// Coarse OS bucket for the copy/paste shortcut matrix (mirrors the desktop
+// console's terminalShortcuts.ts). navigator.userAgent is reliable in Electron.
+var TERM_PLATFORM = (function () {
+  var ua = (navigator.userAgent || '').toLowerCase();
+  if (ua.indexOf('mac') !== -1) return 'mac';
+  if (ua.indexOf('win') !== -1) return 'windows';
+  return 'linux';
+})();
+
+// Single source of truth for the shortcut matrix: this injected terminal and
+// the desktop console (ConsoleTerminalPane.vue) both use
+// src/shared/terminalShortcuts.ts, embedded here verbatim via .toString() so
+// the two can't drift. decideTermKeyAction just binds the detected platform.
+var decideTerminalKeyAction = ${decideTerminalKeyAction.toString()};
+function decideTermKeyAction(e, hasSelection) {
+  return decideTerminalKeyAction(e, TERM_PLATFORM, hasSelection);
+}
 
 function destroyTerminal() {
   if (!mounted) return;
@@ -128,6 +147,25 @@ function renderTerminal(container) {
     updateBanner();
     window.requestAnimationFrame(function () { doFit(true); });
   }
+
+  // Copy/paste shortcuts: intercept before xterm forwards keys to the PTY so
+  // e.g. Ctrl+C can copy a selection instead of always sending SIGINT.
+  term.attachCustomKeyEventHandler(function (e) {
+    var action = decideTermKeyAction(e, term.hasSelection());
+    if (action === 'copy') {
+      var text = term.getSelection();
+      // writeText is async: also swallow promise rejections, not just sync throws.
+      if (text) { try { navigator.clipboard.writeText(text).catch(function () {}); } catch (err) {} }
+      return false;
+    }
+    if (action === 'paste') {
+      // xterm pastes natively via the browser's paste event; just swallow the
+      // keydown so no stray ^V is sent. A manual paste here would double-paste.
+      return false;
+    }
+    if (action === 'swallow') return false;
+    return true;
+  });
 
   m.onData = term.onData(function (d) { try { bridge.write(d); } catch (e) {} });
   m.offOutput = bridge.onOutput(function (msg) {

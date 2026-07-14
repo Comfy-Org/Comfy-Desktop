@@ -330,7 +330,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
-      await newInstallRef.value?.open(cameFromLocalBranch ? { cameFromLocalBranch } : undefined)
+      await newInstallRef.value?.open({ entrypoint, ...(cameFromLocalBranch ? { cameFromLocalBranch } : {}) })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
     else if (component === 'quick-install') await quickInstallRef.value?.open()

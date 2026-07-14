@@ -5,6 +5,7 @@ import { HardDrive } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import TakeoverBack from '../components/TakeoverBack.vue'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 
 import type { ProbeResult } from '../types/ipc'
@@ -77,7 +78,7 @@ function open(): void {
   probing.value = false
   isOpen.value = true
   void window.api
-    .getUniqueName('ComfyUI')
+    .getUniqueName(DEFAULT_INSTALL_NAME)
     .then((name) => {
       suggestedName.value = name
     })
@@ -90,6 +91,10 @@ async function handleBrowse(): Promise<void> {
     trackPath.value = dir
     await probe(dir)
   }
+}
+
+function handleOpenTrackPath(): void {
+  if (trackPath.value) void window.api.openPath(trackPath.value)
 }
 
 async function probe(dirPath: string): Promise<void> {
@@ -185,16 +190,20 @@ async function handleBrowseVenv(): Promise<void> {
 async function handleSave(): Promise<void> {
   if (!selectedProbe.value) return
 
-  const name = trackName.value.trim() || `ComfyUI (${selectedProbe.value.sourceLabel})`
+  const name = trackName.value.trim() || DEFAULT_INSTALL_NAME
 
   const rawProbe = JSON.parse(JSON.stringify(toRaw(selectedProbe.value))) as Record<string, unknown>
   if (venvOverride.value !== null) {
     rawProbe.venvPath = venvOverride.value
   }
+  // A probe may resolve the real install root when the user pointed at a nested
+  // folder (e.g. the `ComfyUI/` dir of a standalone/portable install). Prefer
+  // that over the raw picked path so runtime paths resolve correctly.
+  const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
   const data: Record<string, unknown> = {
     name,
-    installPath: trackPath.value,
-    ...rawProbe
+    ...rawProbe,
+    installPath
   }
 
   const result = await window.api.trackInstallation(data)
@@ -233,17 +242,21 @@ defineExpose({ open })
       >
         <div class="brand-card__body">
           <div class="track-field">
-            <label class="track-label" for="track-path">{{ $t('track.installDir') }}</label>
+            <label class="track-label">{{ $t('track.installDir') }}</label>
             <div class="track-path-row">
               <div class="brand-input track-path-input">
                 <HardDrive :size="14" aria-hidden="true" />
-                <input
-                  id="track-path"
-                  :value="trackPath"
-                  type="text"
-                  readonly
-                  :placeholder="$t('track.selectDir')"
-                />
+                <button
+                  v-if="trackPath"
+                  type="button"
+                  class="open-folder-link track-path-open"
+                  :title="$t('actions.openDirectory', 'Open Directory')"
+                  :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${trackPath}`"
+                  @click="handleOpenTrackPath"
+                >{{ trackPath }}</button>
+                <span v-else class="open-folder-link track-path-open track-path-placeholder">{{
+                  $t('track.selectDir')
+                }}</span>
               </div>
               <button class="brand-tertiary" type="button" @click="handleBrowse">
                 {{ $t('common.browse') }}
@@ -363,6 +376,22 @@ defineExpose({ open })
   flex: 1 1 auto;
   min-width: 0;
   padding-inline: 12px;
+}
+/* Path text replaces the old readonly <input>; clicking it opens the tracked
+ *  directory in the OS file manager. Inherits .open-folder-link; only the
+ *  row-specific sizing/inheritance differ. */
+.track-path-open {
+  flex: 0 1 auto;
+  color: inherit;
+  font: inherit;
+}
+.track-path-placeholder {
+  color: var(--neutral-400);
+  cursor: default;
+}
+.track-path-placeholder:hover {
+  color: var(--neutral-400);
+  text-decoration: none;
 }
 .track-path-row > button.brand-tertiary {
   padding-inline: 14px;

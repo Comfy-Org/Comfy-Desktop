@@ -440,6 +440,9 @@ function openArgsPage(): void {
   subPageTransition.value = 'subpage-push'
   subPage.value = 'args'
 }
+function handleOpenPath(path: string): void {
+  if (path) void window.api.openPath(path)
+}
 function closeSubPage(): void {
   subPageTransition.value = 'subpage-pop'
   subPage.value = null
@@ -1067,6 +1070,7 @@ defineExpose({
                     @update-field="updateField"
                     @run-action="runAction"
                     @open-args-page="openArgsPage"
+                    @open-path="handleOpenPath"
                   />
                 </div>
               </Transition>

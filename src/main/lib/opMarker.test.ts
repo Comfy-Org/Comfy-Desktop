@@ -139,6 +139,16 @@ describe('recoverInterruptedComfyOp', () => {
     expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', { op: 'update', attempts: 1, gave_up: false })
   })
 
+  it('names the local backup branch in the failure message when one was recorded', async () => {
+    await writeOpMarker(installPath, { op: 'update', preHead: 'OLD', startedAt: 1, backupBranch: 'backup_branch_2026-07-06_19_11_34' })
+    mockedReadGitHead.mockReturnValue('NEW') // never reaches OLD
+    mockedRollback.mockResolvedValue(false)
+
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(/backup_branch_2026-07-06_19_11_34/)
+    // The recorded branch survives a round-trip so the next launch can name it too.
+    expect(readOpMarker(installPath)!.backupBranch).toBe('backup_branch_2026-07-06_19_11_34')
+  })
+
   it('gives up and drops the marker after MAX_RECOVERY_ATTEMPTS so launch is never bricked', async () => {
     // Pre-seed the marker as if two prior launches already failed to roll back.
     await writeOpMarker(installPath, { op: 'update', preHead: 'OLD', startedAt: 1, recoveryAttempts: 2 })

@@ -12,6 +12,7 @@ import { fetchLatestRelease, truncateNotes } from '../lib/comfyui-releases'
 import { buildChannelCards, buildChannelLabelMap } from '../lib/channel-cards'
 import type { ChannelDef } from '../lib/channel-cards'
 import { buildLaunchSettingsFields, buildStorageFields } from './common/launchSettingsFields'
+import { resolveNestedComfyUIParent } from './common/nestedRoot'
 import type { InstallationRecord } from '../installations'
 import type {
   SourcePlugin,
@@ -55,6 +56,18 @@ function findPortableRoot(installPath: string): string | null {
     }
   }
   return null
+}
+
+/**
+ * Probe-only root resolution. Adds an upward check to {@link findPortableRoot}
+ * for when the user pointed at the nested `ComfyUI/` folder of a portable
+ * install. Kept separate so the runtime helper's resolution is unchanged.
+ */
+function findPortableProbeRoot(dirPath: string): string | null {
+  const root = findPortableRoot(dirPath)
+  if (root) return root
+  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
+  return resolveNestedComfyUIParent(dirPath, (parent) => fs.existsSync(path.join(parent, 'python_embeded')))
 }
 
 export const portable: SourcePlugin = {
@@ -257,8 +270,11 @@ export const portable: SourcePlugin = {
   },
 
   probeInstallation(dirPath: string): Record<string, unknown> | null {
-    if (findPortableRoot(dirPath)) return { version: 'unknown', asset: '', launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
-    return null
+    const root = findPortableProbeRoot(dirPath)
+    if (!root) return null
+    // Record the portable root, not whatever the user picked — they may have
+    // pointed at the nested `ComfyUI/` folder or the parent of the install.
+    return { version: 'unknown', asset: '', installPath: root, launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
   },
 
   async handleAction(
