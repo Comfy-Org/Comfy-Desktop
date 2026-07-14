@@ -8,8 +8,9 @@ const ORIGIN = 'https://cloud.comfy.org'
 const CREATE_REQUEST = {
   platform: 'darwin',
   app_version: '1.0.28',
-  code_challenge: 'challenge-value'
-}
+  code_challenge: 'challenge-value',
+  code_challenge_method: 'S256'
+} as const
 
 const EXCHANGE_REQUEST = { code: 'dlc_test-code', code_verifier: 'verifier-value' }
 
@@ -234,5 +235,88 @@ describe('exchangeDesktopLoginCode', () => {
     const err = await pending.catch((e: unknown) => e)
     expect(err).not.toBeInstanceOf(DesktopLoginCodeError)
     expect((err as Error).name).toBe('AbortError')
+  })
+})
+
+describe('grant timing validation', () => {
+  async function grantFrom(expires_in: unknown, poll_interval: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(201, { code: 'dlc_abc', expires_in, poll_interval }))
+    )
+    return await createDesktopLoginCode(ORIGIN, CREATE_REQUEST)
+  }
+
+  // `> 0` alone admits Infinity. The poll loop's only exit is the code
+  // deadline, so a non-finite expires_in makes it unreachable: the loop never
+  // terminates and its banner/listener cleanup never runs.
+  it.each([
+    ['expires_in', Number.POSITIVE_INFINITY, 3],
+    ['poll_interval', 300, Number.POSITIVE_INFINITY],
+    ['expires_in', Number.NaN, 3],
+    ['poll_interval', 300, Number.NaN]
+  ])('rejects a non-finite %s', async (_field, expires_in, poll_interval) => {
+    await expect(grantFrom(expires_in, poll_interval)).rejects.toBeInstanceOf(
+      DesktopLoginCodeError
+    )
+  })
+
+  it('clamps a seconds/milliseconds unit slip to the max code lifetime', async () => {
+    // 600_000 is `expires_in` sent in ms instead of seconds — without a ceiling
+    // this polls for ~7 days.
+    const grant = await grantFrom(600_000, 3)
+    expect(grant.expires_in).toBe(900)
+  })
+
+  it('floors a sub-second poll interval so the loop cannot run hot', async () => {
+    // Jitter is not a rate limiter: 0.001s would be ~4 req/s per desktop.
+    const grant = await grantFrom(300, 0.001)
+    expect(grant.poll_interval).toBe(1)
+  })
+
+  it('leaves a sane grant untouched', async () => {
+    const grant = await grantFrom(300, 3)
+    expect(grant).toEqual({ code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
+  })
+})
+
+describe('retryable status classification', () => {
+  // Each sign-in issues tens of exchange polls, so a rate limiter on the
+  // endpoint is expected. Treating 429 as terminal would kill a sign-in whose
+  // code and browser tab are both still valid.
+  it.each([408, 429, 500, 503])('treats %i as retryable', async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(status, { error: 'nope' }))
+    )
+    await expect(
+      exchangeDesktopLoginCode(ORIGIN, EXCHANGE_REQUEST)
+    ).rejects.toMatchObject({ retryable: true, status })
+  })
+
+  it.each([403, 404])('keeps %i terminal', async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(status, { error: 'nope' }))
+    )
+    await expect(
+      exchangeDesktopLoginCode(ORIGIN, EXCHANGE_REQUEST)
+    ).rejects.toMatchObject({ retryable: false, status })
+  })
+})
+
+describe('PKCE method on the wire', () => {
+  // RFC 7636 §4.3 defaults an omitted method to 'plain'. Send it explicitly so
+  // the challenge can never be compared as plaintext.
+  it('sends code_challenge_method=S256 on create', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(201, { code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createDesktopLoginCode(ORIGIN, CREATE_REQUEST)
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as Record<string, unknown>
+    expect(body.code_challenge_method).toBe('S256')
   })
 })

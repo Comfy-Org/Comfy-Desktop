@@ -2,7 +2,9 @@ import type { BrowserWindow, WebContents } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as ClientModule from './client'
+import type { CreateDesktopLoginCodeRequest } from './client'
 import type * as OrchestratorModule from './index'
+import { codeChallengeS256 } from './pkce'
 import type * as FlowSharedModule from '../firebaseBridge/flowShared'
 
 const h = vi.hoisted(() => ({
@@ -204,6 +206,23 @@ describe('signInViaDesktopLoginCode', () => {
       expect.anything()
     )
 
+    // The PKCE binding is the property that makes this flow safe, and it lives
+    // in the wiring between create and exchange — not in pkce.ts, which is
+    // tested in isolation. Assert it here: the verifier presented at exchange
+    // must be the preimage of the challenge presented at create. Without these
+    // four lines the suite still passes if the challenge is sent as plaintext,
+    // if an unrelated verifier is sent, or if code_challenge is dropped.
+    const createReq = h.createDesktopLoginCode.mock.calls[0]![1] as CreateDesktopLoginCodeRequest
+    const exchangeReq = h.exchangeDesktopLoginCode.mock.calls[0]![1] as {
+      code: string
+      code_verifier: string
+    }
+    expect(createReq.code_challenge_method).toBe('S256')
+    expect(exchangeReq.code).toBe(GRANT.code)
+    expect(codeChallengeS256(exchangeReq.code_verifier)).toBe(createReq.code_challenge)
+    // A plain-text downgrade would make these equal.
+    expect(exchangeReq.code_verifier).not.toBe(createReq.code_challenge)
+
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(2)
     expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'custom-token-value', {
       signal: expect.any(AbortSignal)
@@ -327,6 +346,32 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.emit).not.toHaveBeenCalled()
   })
 
+  it('does not inject the session if the view navigated off the Cloud origin', async () => {
+    // The inject script carries the Firebase refresh token into the page's main
+    // world. Minutes pass between flow start and injection (browser sign-in +
+    // hold), so a view that wandered off-origin must never receive it.
+    h.settingsGet.mockReturnValue(true)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    // The sign-in chain must succeed, otherwise the flow dies before the
+    // injection and this test would pass with the guard removed.
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+    const contents = fakeContents('https://evil.example.com/pwned')
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    // The token was minted and the user assembled — only the origin check
+    // stands between it and the foreign page.
+    expect(h.buildPersistedUserFromCustomToken).toHaveBeenCalled()
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+  })
+
   it('fails in place on a terminal exchange error — no legacy restart after the browser opened', async () => {
     const { DesktopLoginCodeError } = await import('./client')
     h.settingsGet.mockReturnValue(true)
@@ -341,21 +386,23 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
-    expect(h.emit).toHaveBeenCalledWith(
-      'comfy.desktop.auth.sign_in_failed',
-      {
-        provider: 'google.com',
-        error_class: 'DesktopLoginCodeError',
-        error_bucket: 'bucketed',
-        flow: 'desktop_login_code',
-        retried_poll_errors: 0
-      }
-    )
+    // error_status carries the HTTP status so a verifier mismatch (403) is
+    // distinguishable from an old backend (404) or a 5xx. Without it every
+    // failure collapses into the same error_class/error_bucket pair.
+    expect(h.emit).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_failed', {
+      provider: 'google.com',
+      error_class: 'DesktopLoginCodeError',
+      error_bucket: 'bucketed',
+      flow: 'desktop_login_code',
+      error_status: 403,
+      retried_poll_errors: 0
+    })
     expect(onError).toHaveBeenCalledWith({
       provider: 'google.com',
       error_class: 'DesktopLoginCodeError',
       error_bucket: 'bucketed',
       flow: 'desktop_login_code',
+      error_status: 403,
       retried_poll_errors: 0
     })
     expect(h.bindSignedInUser).not.toHaveBeenCalled()

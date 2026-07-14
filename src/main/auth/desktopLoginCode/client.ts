@@ -8,6 +8,26 @@
 const REQUEST_TIMEOUT_MS = 8000
 
 /**
+ * Bounds for the server-supplied grant timings. A floor on the poll interval
+ * keeps a malformed value from turning every desktop into a hot loop against
+ * the exchange endpoint (jitter is not a rate limiter); a ceiling on the code
+ * lifetime bounds both the poll loop and the window in which an unredeemed
+ * code stays usable.
+ */
+const MIN_POLL_INTERVAL_SEC = 1
+const MAX_POLL_INTERVAL_SEC = 30
+const MIN_EXPIRES_IN_SEC = 30
+const MAX_EXPIRES_IN_SEC = 900
+
+function isFinitePositive(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+/**
  * Classified failure from the desktop-login-code endpoints. `retryable`
  * drives the poll loop: 5xx / network / timeout may clear up within the
  * code's TTL, while 403 (verifier mismatch) and 404 (unknown or expired
@@ -33,6 +53,13 @@ export interface CreateDesktopLoginCodeRequest {
   app_version: string
   /** S256 challenge for the desktop-held code verifier. */
   code_challenge: string
+  /**
+   * Always 'S256'. RFC 7636 §4.3 defaults an omitted method to 'plain', so
+   * sending it explicitly keeps the challenge from ever being compared as
+   * plaintext. Ingest pins S256 server-side; this makes the contract visible
+   * on the wire rather than an implicit cross-repo convention.
+   */
+  code_challenge_method: 'S256'
 }
 
 /** 201 payload. Field names mirror the wire format. */
@@ -61,8 +88,11 @@ export interface JsonPostResponse {
   bodyText: string
 }
 
+// 408/429 are transient: each sign-in issues tens of exchange polls, so a rate
+// limiter on the endpoint is expected. Treating them as terminal would kill a
+// sign-in whose code and browser tab are both still valid. 403/404 stay final.
 function isRetryableStatus(status: number): boolean {
-  return status >= 500
+  return status >= 500 || status === 408 || status === 429
 }
 
 /**
@@ -145,17 +175,18 @@ export async function createDesktopLoginCode(
     expires_in?: unknown
     poll_interval?: unknown
   } | null
-  // Non-positive timings would spin the poll loop (interval) or expire the
-  // code before the user can sign in (deadline) — reject them here, where
-  // the caller can still fall back to the legacy bridge.
+  // Timings are server-controlled and drive the only exit from the poll loop,
+  // so they must be finite as well as positive. `> 0` alone admits Infinity,
+  // which makes the code deadline unreachable: the loop never terminates, its
+  // `finally` never runs, and the banner cleanup + console listener leak. A
+  // seconds/milliseconds unit slip is the realistic source, not a hostile
+  // server — so clamp to a sane band rather than trusting the wire.
   if (
     !data ||
     typeof data.code !== 'string' ||
     data.code.length === 0 ||
-    typeof data.expires_in !== 'number' ||
-    data.expires_in <= 0 ||
-    typeof data.poll_interval !== 'number' ||
-    data.poll_interval <= 0
+    !isFinitePositive(data.expires_in) ||
+    !isFinitePositive(data.poll_interval)
   ) {
     throw new DesktopLoginCodeError('desktop login code create returned an unexpected payload', {
       status: resp.status
@@ -163,8 +194,8 @@ export async function createDesktopLoginCode(
   }
   return {
     code: data.code,
-    expires_in: data.expires_in,
-    poll_interval: data.poll_interval
+    expires_in: clamp(data.expires_in, MIN_EXPIRES_IN_SEC, MAX_EXPIRES_IN_SEC),
+    poll_interval: clamp(data.poll_interval, MIN_POLL_INTERVAL_SEC, MAX_POLL_INTERVAL_SEC)
   }
 }
 

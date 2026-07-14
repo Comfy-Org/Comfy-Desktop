@@ -14,6 +14,8 @@ import {
   bindSignedInUser,
   emitSignInFailure,
   type HandleFirebasePopupOpts,
+  isOnOrigin,
+  originOf,
   POST_SIGNIN_HOLD_MS
 } from './flowShared'
 import { buildIndexedDbInjectScript } from './inject'
@@ -54,7 +56,14 @@ export async function handleFirebasePopup(
   // no loopback server. 'fallback' means the flow died before the browser
   // opened (e.g. backend without the endpoints), so the legacy bridge
   // below takes over transparently.
-  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts)
+  // This is the only await outside a try, and the call site is fire-and-forget
+  // (`void handleFirebasePopup(...)`). An unexpected throw here would leave the
+  // user with no login-code flow, no legacy fallback, no sign_in_failed, and an
+  // unhandled rejection — a Sign in button that silently does nothing. Degrade
+  // to the legacy bridge instead.
+  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts).catch(
+    () => 'fallback' as const
+  )
   if (outcome === 'handled') return
 
   const providerId = extractProviderId(url)
@@ -83,6 +92,11 @@ export async function handleFirebasePopup(
   runBannerCleanup()
 
   const { signal } = flow.controller
+  // Origin the embedded view sits on when the flow starts. The inject below
+  // writes the Firebase refresh token into whatever page is loaded, and the
+  // browser sign-in in between can take minutes — so pin it now and re-check
+  // before injecting rather than assuming the view stayed put.
+  const startOrigin = originOf(comfyContents.getURL())
   let handle: BridgeHandle | null = null
   try {
     const startingBridge = startBridgeServer({ env, providerId })
@@ -126,6 +140,7 @@ export async function handleFirebasePopup(
     // success before Desktop snatches focus.
     await abortableSleep(POST_SIGNIN_HOLD_MS, signal)
     if (signal.aborted || !isActiveBridgeFlow(flow) || comfyContents.isDestroyed()) return
+    if (startOrigin && !isOnOrigin(comfyContents, startOrigin)) return
     await abortable(
       comfyContents.executeJavaScript(buildIndexedDbInjectScript(user, apiKey), true),
       signal

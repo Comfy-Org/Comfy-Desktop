@@ -26,6 +26,7 @@ import {
   bindSignedInUser,
   emitSignInFailure,
   type HandleFirebasePopupOpts,
+  isOnOrigin,
   POST_SIGNIN_HOLD_MS
 } from '../firebaseBridge/flowShared'
 import { buildIndexedDbInjectScript } from '../firebaseBridge/inject'
@@ -116,7 +117,8 @@ export async function signInViaDesktopLoginCode(
   const request: CreateDesktopLoginCodeRequest = {
     platform: process.platform,
     app_version: app.getVersion(),
-    code_challenge: codeChallengeS256(codeVerifier)
+    code_challenge: codeChallengeS256(codeVerifier),
+    code_challenge_method: 'S256'
   }
   // installation_id enables the web->desktop identity stitch. Consent-gated
   // like every other telemetry write ('undecided' omits too); the auth
@@ -234,6 +236,11 @@ export async function signInViaDesktopLoginCode(
     // re-click during the hold rejects into the catch below as 'handled'.
     await abortableSleep(POST_SIGNIN_HOLD_MS, controller.signal)
     if (controller.signal.aborted || comfyContents.isDestroyed()) return 'handled'
+    // The inject script carries the refresh token into the page's main world,
+    // so it must only ever run on the Cloud origin. Minutes elapse between
+    // flow start and here (browser sign-in + hold), which is ample time for
+    // the view to have navigated elsewhere; re-check rather than assume.
+    if (!isOnOrigin(comfyContents, cloudOrigin)) return 'handled'
     await comfyContents.executeJavaScript(
       buildIndexedDbInjectScript(user, firebaseConfig.apiKey),
       true

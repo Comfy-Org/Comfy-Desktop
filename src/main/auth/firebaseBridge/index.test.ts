@@ -42,12 +42,14 @@ vi.mock('../../lib/telemetry', () => ({
 
 const AUTH_URL = 'https://dreamboothy.firebaseapp.com/__/auth/handler?providerId=google.com'
 
-function fakeContents(): WebContents & {
+function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   executeJavaScript: ReturnType<typeof vi.fn>
   off: ReturnType<typeof vi.fn>
+  getURL: ReturnType<typeof vi.fn>
 } {
   return {
     executeJavaScript: vi.fn(() => Promise.resolve()),
+    getURL: vi.fn(() => url),
     insertCSS: vi.fn(() => Promise.resolve('css-key')),
     isDestroyed: vi.fn(() => false),
     off: vi.fn(),
@@ -55,6 +57,7 @@ function fakeContents(): WebContents & {
   } as unknown as WebContents & {
     executeJavaScript: ReturnType<typeof vi.fn>
     off: ReturnType<typeof vi.fn>
+    getURL: ReturnType<typeof vi.fn>
   }
 }
 
