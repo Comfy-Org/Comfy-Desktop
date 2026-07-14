@@ -118,7 +118,7 @@ const restoreFromLabel = computed<string>(() => {
 })
 
 // Latched terminal state so the card keeps the right copy until dismissed.
-const restoreTerminal = ref<'ok' | 'error' | null>(null)
+const restoreTerminal = ref<'ok' | 'error' | 'cancelled' | null>(null)
 const restoreErrorMessage = ref<string>('')
 let restoreOkTimer: ReturnType<typeof setTimeout> | null = null
 function clearRestoreTerminal(): void {
@@ -155,9 +155,12 @@ watch(restoreOp, (op, prev) => {
       emit('refresh-all')
       emit('op-dismiss')
     }, 1800)
-  } else if (op.error === MSG_CANCELLED && !restoreOpIsImport.value) {
+  } else if (op.error === MSG_CANCELLED) {
     clearRestoreTerminal()
-    emit('op-dismiss')
+    // An import cancel keeps a card up (the staged target is still retryable),
+    // but as a neutral "cancelled" state — not a red failure.
+    if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
+    else emit('op-dismiss')
   } else {
     clearRestoreTerminal()
     restoreTerminal.value = 'error'
@@ -645,6 +648,9 @@ async function handleImport(): Promise<void> {
             <template v-else-if="restoreTerminal === 'error'">{{
               t('snapshots.restoreFailed', 'Restore failed')
             }}</template>
+            <template v-else-if="restoreTerminal === 'cancelled'">{{
+              t('snapshots.restoreCancelled', 'Restore cancelled')
+            }}</template>
             <template v-else>{{ t('snapshots.createLabel', 'Create Snapshot') }}</template>
           </span>
           <div
@@ -709,14 +715,22 @@ async function handleImport(): Promise<void> {
               </p>
             </div>
 
-            <!-- Error: persistent until user dismisses. -->
+            <!-- Error/cancelled: persistent until user dismisses. A cancelled
+                 import keeps the retry action but renders neutrally. -->
             <div
-              v-else-if="restoreTerminal === 'error'"
-              class="snapshots-op-card is-error"
-              role="alert"
+              v-else-if="restoreTerminal === 'error' || restoreTerminal === 'cancelled'"
+              class="snapshots-op-card"
+              :class="{ 'is-error': restoreTerminal === 'error' }"
+              :role="restoreTerminal === 'error' ? 'alert' : 'status'"
               :data-testid="TID.snapshotsOpCard"
             >
-              <OperationErrorDetail v-if="restoreErrorMessage" :error="restoreErrorMessage" />
+              <OperationErrorDetail
+                v-if="restoreTerminal === 'error' && restoreErrorMessage"
+                :error="restoreErrorMessage"
+              />
+              <p v-else-if="restoreTerminal === 'cancelled'" class="snapshots-op-card-target">
+                {{ t('snapshots.restoreCancelledBody', 'The imported snapshot was not applied.') }}
+              </p>
               <div class="snapshots-op-actions">
                 <button
                   type="button"

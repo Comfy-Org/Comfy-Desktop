@@ -177,25 +177,32 @@ export async function restoreSnapshotIntoInstallation(
       }
     )
 
-    sendOutput('\n── Restore Nodes ──\n')
-    const nodeResult = await telemetry.trackedStep(
-      'comfy.desktop.snapshot.restore_custom_nodes',
-      restoreContext,
-      async () => {
-        return restoreCustomNodes(
-          freshInst.installPath,
-          freshInst,
-          targetSnapshot,
-          sendProgress,
-          sendOutput,
-          signal,
-          settings.getMirrorConfig()
-        )
-      }
-    )
+    // Skip nodes/pip once the core checkout failed or the restore was
+    // cancelled — don't keep mutating the environment toward a target state
+    // that is already unreachable.
+    const coreOk = !comfyResult.error && !signal.aborted
+    let nodeResult: Awaited<ReturnType<typeof restoreCustomNodes>> | null = null
+    if (coreOk) {
+      sendOutput('\n── Restore Nodes ──\n')
+      nodeResult = await telemetry.trackedStep(
+        'comfy.desktop.snapshot.restore_custom_nodes',
+        restoreContext,
+        async () => {
+          return restoreCustomNodes(
+            freshInst.installPath,
+            freshInst,
+            targetSnapshot,
+            sendProgress,
+            sendOutput,
+            signal,
+            settings.getMirrorConfig()
+          )
+        }
+      )
+    }
 
     let pipResult: Awaited<ReturnType<typeof restorePipPackages>> | null = null
-    if (!signal.aborted && !targetSnapshot.skipPipSync) {
+    if (coreOk && !signal.aborted && !targetSnapshot.skipPipSync) {
       sendOutput('\n── Restore Packages ──\n')
       pipResult = await telemetry.trackedStep(
         'comfy.desktop.snapshot.restore_pip_packages',
@@ -231,6 +238,7 @@ export async function restoreSnapshotIntoInstallation(
     const restoreSucceeded =
       !comfyResult.error &&
       !signal.aborted &&
+      nodeResult !== null &&
       nodeResult.failed.length === 0 &&
       nodeResult.unreportable.length === 0 &&
       (pipResult?.failed.length ?? 0) === 0
@@ -256,8 +264,8 @@ export async function restoreSnapshotIntoInstallation(
     if (!restoreSucceeded) {
       const failures = [
         comfyResult.error ? `ComfyUI: ${comfyResult.error}` : '',
-        ...nodeResult.failed.map((failure) => `Node ${failure.id}: ${failure.error}`),
-        ...nodeResult.unreportable.map((id) => `Standalone node ${id}: source file is unavailable`),
+        ...(nodeResult?.failed.map((failure) => `Node ${failure.id}: ${failure.error}`) ?? []),
+        ...(nodeResult?.unreportable.map((id) => `Standalone node ${id}: source file is unavailable`) ?? []),
         ...(pipResult?.errors ?? []),
       ].filter(Boolean)
       throw new Error(signal.aborted
@@ -286,8 +294,10 @@ export async function restoreSnapshotIntoInstallation(
     throw restoreErr
   } finally {
     if (completed) {
-      if (ownsStagedFile) await fs.promises.unlink(stagedFile).catch(() => {})
+      // Clear the retry pointer before deleting the staged file so a crash
+      // between the two can't leave a pointer to a missing file.
       await update({ pendingSnapshotRestore: undefined })
+      if (ownsStagedFile) await fs.promises.unlink(stagedFile).catch(() => {})
     }
   }
 }

@@ -126,15 +126,18 @@ export async function handleAction(
     )
     sendProgress('restore-comfyui', { percent: 100, status: comfyResult.changed ? 'Restored' : 'Up to date' })
 
-    // If the source checkout itself failed, don't touch nodes/pip — nothing moved
-    // to roll back, just report the failure.
+    // Check cancellation before the error: an abort mid-checkout surfaces as a
+    // non-zero git result (comfyResult.error), and cancelledResult rolls the
+    // source back if the checkout got far enough to move HEAD.
+    if (signal?.aborted) {
+      return await cancelledResult()
+    }
+
+    // The source checkout itself failed (not cancelled): a failed checkout
+    // doesn't move HEAD and nodes/pip were never touched, so just report it.
     if (comfyResult.error) {
       await ensureLiveStateOnTop()
       return { ok: false, message: `ComfyUI restore failed: ${comfyResult.error}` }
-    }
-
-    if (signal?.aborted) {
-      return await cancelledResult()
     }
 
     // Restore custom nodes before pip — node installs may add pip dependencies.

@@ -327,7 +327,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(w.emitted('op-retry')).toBeUndefined()
   })
 
-  it('cancelled import: keeps Retry visible because the staged target is reusable', async () => {
+  it('cancelled import: keeps Retry visible (neutral card, not a red failure) because the staged target is reusable', async () => {
     const actionData = { restoreToken: '0123456789abcdef0123456789abcdef' }
     const w = await mountView({
       activeOperation: {
@@ -347,7 +347,11 @@ describe('comfyUISettings/SnapshotsView', () => {
     })
     await flushPromises()
 
-    expect(w.find('.snapshots-rail-save-box.is-op-error').exists()).toBe(true)
+    const card = w.find(`[data-testid="${TID.snapshotsOpCard}"]`)
+    expect(card.exists()).toBe(true)
+    expect(card.classes()).not.toContain('is-error')
+    expect(w.find('.snapshots-rail-save-box.is-op-error').exists()).toBe(false)
+    expect(w.emitted('op-dismiss')).toBeUndefined()
     await w.find(`[data-testid="${TID.snapshotsOpCardRetry}"]`).trigger('click')
     expect(w.emitted('op-retry')).toHaveLength(1)
   })
