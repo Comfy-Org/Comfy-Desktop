@@ -1112,6 +1112,7 @@ defineExpose({
           }"
           :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
           :title="isCloudCapacityBlocked ? $t('cloud.capacityDisabledHint') : undefined"
+          :data-testid="TID.pickerPrimaryCta"
           @click="handlePrimaryAction"
         >
           <component
@@ -1133,6 +1134,7 @@ defineExpose({
             :aria-expanded="caretMenuOpen"
             :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
             :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
+            :data-testid="TID.pickerNewWindow"
             @click="toggleCaretMenu"
           >
             <ChevronUp :size="14" />
@@ -1157,6 +1159,7 @@ defineExpose({
           :aria-expanded="moreMenuOpen"
           :aria-label="t('comfyUISettings.more', 'More')"
           :disabled="!installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh"
+          :data-testid="TID.pickerMoreTrigger"
           @click="toggleMoreMenu"
         >
           {{ t('comfyUISettings.more', 'More') }}

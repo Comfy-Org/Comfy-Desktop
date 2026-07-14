@@ -12,7 +12,13 @@ export function findWebContentsId(
   app: ElectronApplication,
   marker: string,
 ): Promise<number | null> {
-  return evalWithRetry(() => app.evaluate(({ webContents }, m) => {
+  return evalWithRetry(() => app.evaluate(({ BrowserWindow, WebContentsView, webContents }, m) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      for (const child of win.contentView.children) {
+        if (!(child instanceof WebContentsView) || !child.getVisible()) continue
+        if (child.webContents.getURL().includes(m)) return child.webContents.id
+      }
+    }
     for (const wc of webContents.getAllWebContents()) {
       if (wc.getURL().includes(m)) return wc.id
     }

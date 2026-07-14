@@ -34,7 +34,7 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { titlePopupPage } from './support/cdpPages'
+import { closeTitlePopupIfOpen, titlePopupPage } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -142,6 +142,9 @@ test.afterAll(async () => {
 })
 
 async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof titlePopupPage>> {
+  const expectedCount = await ctx.panel.evaluate<number>(
+    `window.api.getSnapshots(${JSON.stringify(installId)}).then(d => d.snapshots.length)`,
+  )
   await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({
@@ -153,6 +156,10 @@ async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof ti
   )
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.snapshotsImport), { timeout: 15_000 })
+  await popup.waitFor(() => popup.count('.snapshot-row').then((count) => count === expectedCount), {
+    timeout: 15_000,
+    message: `snapshots for ${installId} did not finish loading`,
+  })
   return popup
 }
 
@@ -193,6 +200,8 @@ test('Export All from A writes an envelope containing both seeded snapshots @lif
   const labels = envelope.snapshots?.map((s) => s.label) ?? []
   expect(labels).toContain(LABEL_FIRST)
   expect(labels).toContain(LABEL_SECOND)
+
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
 test('Import into B consumes the envelope and writes both snapshots @lifecycle', async () => {
@@ -205,12 +214,8 @@ test('Import into B consumes the envelope and writes both snapshots @lifecycle',
 
   expect(await popup.click(byTestId(TID.snapshotsImport))).toBe(true)
 
-  // Simple confirms route through BaseAlert (`base-alert-action`);
-  // rich confirms keep the legacy ModalDialog path (`modal-confirm-button`).
-  const confirmSelector =
-    `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
-  await popup.waitForVisible(confirmSelector, { timeout: 10_000 })
-  expect(await popup.click(confirmSelector)).toBe(true)
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   // importSnapshots writes one file per envelope entry, so the count
   // must advance from 0 to 2. The follow-on snapshot-restore op fires

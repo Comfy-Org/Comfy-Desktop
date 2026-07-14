@@ -9,6 +9,7 @@ import {
 } from '../composables/useReturnToDashboardConfirm'
 import { emitTelemetryAction } from '../lib/telemetry'
 import BrandFinishedSurface from '../components/BrandFinishedSurface.vue'
+import { TID } from '../../../shared/testIds'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
@@ -288,7 +289,12 @@ const placeholderTitle = computed<string>(() => {
           <ArrowLeft :size="14" />
           {{ $t('common.back') }}
         </button>
-        <button class="brand-primary brand-progress__footer-btn" type="button" @click="startLaunch">
+        <button
+          class="brand-primary brand-progress__footer-btn"
+          type="button"
+          :data-testid="TID.lifecycleRelaunch"
+          @click="startLaunch"
+        >
           <RefreshCcw :size="14" />
           {{ $t('comfyLifecycle.restart') }}
         </button>
@@ -313,7 +319,12 @@ const placeholderTitle = computed<string>(() => {
           <ArrowLeft :size="14" />
           {{ $t('dashboard.confirmStopLocal.confirmLabel', 'Return to Dashboard') }}
         </button>
-        <button class="brand-primary brand-progress__footer-btn" type="button" @click="startLaunch">
+        <button
+          class="brand-primary brand-progress__footer-btn"
+          type="button"
+          :data-testid="TID.lifecycleRelaunch"
+          @click="startLaunch"
+        >
           <RefreshCcw :size="14" />
           {{ $t('comfyLifecycle.relaunch') }}
         </button>

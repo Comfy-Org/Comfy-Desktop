@@ -4,9 +4,12 @@
 
 export const TID = {
   pickerRow: (installId: string) => `picker-row-${installId}`,
-  pickerRowOpen: (installId: string) => `picker-row-open-${installId}`,
-  pickerRowManage: (installId: string) => `picker-row-manage-${installId}`,
   pickerNewWindow: 'picker-new-window',
+  /** Pin-bottom primary CTA (Start / Restart / Switch per `decideNavigation`). */
+  pickerPrimaryCta: 'picker-primary-cta',
+  /** Footer "More" overflow-menu trigger (distinct from the CTA caret,
+   *  which shares the `data-more-trigger` attribute). */
+  pickerMoreTrigger: 'picker-more-trigger',
   pickerSettingsLoading: 'picker-settings-loading',
   pickerSettingsSections: 'picker-settings-sections',
   pickerOpErrorMessage: 'picker-op-error-message',
@@ -51,6 +54,10 @@ export const TID = {
   snapshotsOpCardCancel: 'snapshots-op-card-cancel',
   snapshotsOpCardRetry: 'snapshots-op-card-retry',
   snapshotsOpCardDismiss: 'snapshots-op-card-dismiss',
+
+  /** Primary action on the lifecycle stopped/crashed card (teleported to
+   *  body via `BrandTakeoverLayout`, so it is NOT under `.lifecycle-view`). */
+  lifecycleRelaunch: 'lifecycle-relaunch',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',
