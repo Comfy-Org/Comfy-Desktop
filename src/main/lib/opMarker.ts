@@ -79,7 +79,7 @@ export async function writeOpMarker(installPath: string, marker: OpMarker): Prom
     await fs.promises.rename(tmp, target)
   } catch (err) {
     console.warn('Failed to write op-in-progress marker:', err)
-    try { await fs.promises.unlink(tmp) } catch { /* nothing to clean up */ }
+    await fs.promises.rm(tmp, { force: true }).catch(() => { /* best-effort cleanup */ })
   }
 }
 
