@@ -72,7 +72,10 @@ export function getInstalledTorchTuple(installation: InstallationRecord): Instal
   try {
     for (const entry of fs.readdirSync(sitePackages)) {
       const match = entry.match(/^(torch|torchvision|torchaudio)-(.+?)\.dist-info$/i)
-      if (match) tuple[match[1]!.toLowerCase() as keyof InstalledTorchTuple] = match[2]!
+      if (match) {
+        const [, pkg, version] = match
+        tuple[pkg!.toLowerCase() as keyof InstalledTorchTuple] = version!
+      }
     }
   } catch {}
   return tuple

@@ -307,7 +307,7 @@ describe('captureSnapshotIfChanged telemetry', () => {
     // will produce (manifest read fails → ref:'unknown', commit comes from
     // mocked readGitHead, no nodes, no pip).
     const matching = {
-      version: 1,
+      version: 2,
       createdAt: '2026-01-01T00:00:00.000Z',
       trigger: 'boot' as const,
       label: null,
@@ -315,7 +315,10 @@ describe('captureSnapshotIfChanged telemetry', () => {
       customNodes: [],
       pipPackages: {},
       pythonVersion: undefined,
-      updateChannel: 'stable'
+      updateChannel: 'stable',
+      // Same stack identity as the mocked classifier but an older observedAt —
+      // dedupe must compare identity only, or every boot would re-snapshot.
+      torchStack: { kind: 'observed' as const, torchVersion: null, observedAt: '2026-01-01T00:00:00.000Z' }
     }
     const lastFilename = 'last.json'
     // loadSnapshot reads through `resolveSnapshotPath` which uses

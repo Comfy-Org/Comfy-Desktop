@@ -109,15 +109,20 @@ function formatGB(bytes: number): string {
  * Hard preflight gate: measured venv size (the whole-venv copy) + download +
  * extraction staging + margin, checked on the volume hosting the venv.
  * Measures the real venv (walk), never a metadata estimate.
+ *
+ * Pass `staged: true` for the re-check after the bundle is already downloaded
+ * and extracted: the staging space is then occupied, not pending, so charging
+ * it again would double-book the bundle and reject safe installs.
  */
 export async function preflightDiskSpace(
   installation: InstallationRecord,
   entry: TorchStackEntry,
   signal?: AbortSignal,
+  opts?: { staged?: boolean },
 ): Promise<{ requiredBytes: number; freeBytes: number }> {
   const venvDir = getActiveVenvDir(installation)
   const venvSize = await getDirectorySize(venvDir, signal)
-  const stagingBytes = entry.bundle.size * (1 + EXTRACT_FACTOR)
+  const stagingBytes = opts?.staged ? 0 : entry.bundle.size * (1 + EXTRACT_FACTOR)
   const requiredBytes = Math.ceil((venvSize + stagingBytes) * (1 + DISK_MARGIN))
   const { free } = await getDiskSpace(venvDir)
   if (free < requiredBytes) throw new DiskSpaceError(requiredBytes, free)
@@ -338,11 +343,17 @@ export async function applyTorchStackTransaction(
         // Undo the step-7 metadata persist if the failure came after it (e.g.
         // the commit rename itself failed) — a rolled-back venv with the NEW
         // stack ref persisted would hand repair a false acquisition source.
-        // Best-effort, as is the journal removal: only a failed venv rollback
-        // may propagate.
-        await tools.update({ lastVerifiedTorchStack: priorVerified, observedTorchStack: priorObserved }).catch(() => {})
+        // A failed undo is reported but does not propagate (only a failed
+        // venv rollback may): launch-time reconciliation clears the stale ref
+        // from the actual installed tuple, and repair is skipped until it does.
+        let metadataNote = ''
+        try {
+          await tools.update({ lastVerifiedTorchStack: priorVerified, observedTorchStack: priorObserved })
+        } catch (mdErr) {
+          metadataNote = ` (stack metadata could not be reset: ${(mdErr as Error).message}; it will be reconciled on next launch)`
+        }
         await fs.promises.rm(journalPath(installPath), { force: true }).catch(() => {})
-        return { ok: false, message: `${(err as Error).message} — the previous environment was restored` }
+        return { ok: false, message: `${(err as Error).message} — the previous environment was restored${metadataNote}` }
       } catch (rbErr) {
         // Leave the journal in place: launch-time recovery retries the rollback.
         return {

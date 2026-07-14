@@ -20,10 +20,12 @@ import { publicVersion, torchTupleMatches, torchPackageTuplesEqual } from './tor
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
+import type { TorchStackEntry } from './torchStackCatalog'
 import {
   preflightDiskSpace, prepareBundleStack, applyTorchStackTransaction,
   recoverTorchStackTransaction, DiskSpaceError,
 } from './torchStackTransaction'
+import type { PreparedStack, TorchStackTools } from './torchStackTransaction'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import type { InstallationRecord } from '../../installations'
 import type { ActionResult, ActionTools } from '../../types/sources'
@@ -32,6 +34,29 @@ import type { ActionResult, ActionTools } from '../../types/sources'
  *  that died mid-transaction — mutating a venv that recovery is about to roll
  *  back (or failing to roll back and mutating debris) would corrupt it. */
 const VENV_MUTATING_ACTIONS = new Set(['snapshot-restore', 'change-pytorch', 'update-comfyui', 'migrate-from'])
+
+/** Download + stage a torch bundle, then re-check disk (`staged: true` — the
+ *  bundle already occupies its staging space, only the venv copy still needs
+ *  room). Owns staging-dir cleanup on every failure path and maps errors to
+ *  action results, so the restore and change-pytorch flows cannot diverge. */
+async function acquireTorchBundle(
+  installation: InstallationRecord,
+  entry: TorchStackEntry,
+  tools: TorchStackTools,
+): Promise<{ prepared: PreparedStack; failure?: never } | { prepared?: never; failure: ActionResult }> {
+  let prepared: PreparedStack | undefined
+  try {
+    prepared = await prepareBundleStack(installation, entry, tools)
+    if (tools.signal?.aborted) throw new Error('Cancelled')
+    await preflightDiskSpace(installation, entry, tools.signal, { staged: true })
+    return { prepared }
+  } catch (err) {
+    if (prepared) await fs.promises.rm(prepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+    if (tools.signal?.aborted) return { failure: { ok: false, message: 'Cancelled' } }
+    if (err instanceof DiskSpaceError) return { failure: { ok: false, message: err.message } }
+    return { failure: { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) } }
+  }
+}
 
 export async function handleAction(
   actionId: string,
@@ -131,20 +156,12 @@ export async function handleAction(
         phase === 'download' || phase === 'extract' || phase === 'torch-swap' ? 'restore-torch' : phase,
         data
       )
-    let torchPrepared: Awaited<ReturnType<typeof prepareBundleStack>> | null = null
+    let torchPrepared: PreparedStack | null = null
     if (torchTarget) {
       sendOutput('\n── Download PyTorch Bundle ──\n')
-      try {
-        torchPrepared = await prepareBundleStack(installation, torchTarget, { sendProgress: torchProgress, sendOutput, update, signal })
-        if (signal?.aborted) throw new Error('Cancelled')
-        // The download consumed disk between preflight and now — re-check.
-        await preflightDiskSpace(installation, torchTarget, signal)
-      } catch (err) {
-        if (torchPrepared) await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
-        if (signal?.aborted) return { ok: false, message: 'Cancelled' }
-        if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
-        return { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) }
-      }
+      const acquired = await acquireTorchBundle(installation, torchTarget, { sendProgress: torchProgress, sendOutput, update, signal })
+      if (acquired.failure) return acquired.failure
+      torchPrepared = acquired.prepared
     }
     const cleanupTorchStaging = async (): Promise<void> => {
       if (torchPrepared) await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
@@ -344,8 +361,13 @@ export async function handleAction(
     await update(restoreState)
 
     try {
+      // Reload the record first: the torch transaction persisted
+      // `lastVerifiedTorchStack` through `update`, and classifying the
+      // post-restore snapshot from the stale local object would record the
+      // freshly applied managed stack as merely observed.
+      const freshInst = (await installations.get(installation.id)) || installation
       const updatedInstallation = {
-        ...installation,
+        ...freshInst,
         ...restoreState,
       }
       const filename = await snapshots.saveSnapshot(installation.installPath, updatedInstallation, 'post-restore')
@@ -484,19 +506,10 @@ export async function handleAction(
     // the declared 'torch-prepare' step so the stepper tracks them.
     const prepareProgress = (phase: string, data: Record<string, unknown>): void =>
       sendProgress(phase === 'download' || phase === 'extract' ? 'torch-prepare' : phase, data)
-    let prepared
-    try {
-      prepared = await prepareBundleStack(installation, entry, { sendProgress: prepareProgress, sendOutput, update, signal })
-      if (signal?.aborted) throw new Error('Cancelled')
-      await preflightDiskSpace(installation, entry, signal)
-    } catch (err) {
-      if (prepared) await fs.promises.rm(prepared.stagingDir, { recursive: true, force: true }).catch(() => {})
-      if (signal?.aborted) return { ok: false, message: 'Cancelled' }
-      if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
-      return { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) }
-    }
+    const acquired = await acquireTorchBundle(installation, entry, { sendProgress: prepareProgress, sendOutput, update, signal })
+    if (acquired.failure) return acquired.failure
 
-    const result = await applyTorchStackTransaction(installation, prepared, { sendProgress, sendOutput, update, signal })
+    const result = await applyTorchStackTransaction(installation, acquired.prepared, { sendProgress, sendOutput, update, signal })
     if (!result.ok) return { ok: false, message: result.message }
 
     try {

@@ -74,15 +74,17 @@ export interface InstalledTorchTuple {
   torchaudio: string | null
 }
 
-/** Full-tuple stack identity check: every package the stack declares must be
- *  installed at the same public version. Comparing torch alone is not enough —
- *  two stacks can share a torch version but differ in torchvision/torchaudio. */
+/** Full-tuple stack identity check, symmetric: every package the stack
+ *  declares must be installed at the same public version, and a torch-family
+ *  package installed but NOT declared by the stack is a mismatch too.
+ *  Comparing torch alone is not enough — two stacks can share a torch version
+ *  but differ in torchvision/torchaudio. */
 export function torchTupleMatches(expected: TorchStackPackages, installed: InstalledTorchTuple): boolean {
   for (const pkg of ['torch', 'torchvision', 'torchaudio'] as const) {
     const want = expected[pkg]
-    if (!want) continue
     const have = installed[pkg]
-    if (!have || publicVersion(have) !== publicVersion(want)) return false
+    if (!want !== !have) return false
+    if (want && have && publicVersion(have) !== publicVersion(want)) return false
   }
   return true
 }

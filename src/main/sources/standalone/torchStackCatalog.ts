@@ -172,11 +172,24 @@ export async function resolveTorchStack(
   return entryFromRelease(variant, release)
 }
 
-/** The persisted `lastVerifiedTorchStack`, when valid. */
+/** The persisted `lastVerifiedTorchStack`, validated in full — a partial
+ *  record (e.g. from an older build or corrupted store) must not reach
+ *  snapshot classification or the repair path with identity/acquisition
+ *  fields undefined. */
 export function getLastVerifiedTorchStack(installation: InstallationRecord): PersistedTorchStack | null {
   const ref = installation.lastVerifiedTorchStack as PersistedTorchStack | undefined
   if (!ref || typeof ref !== 'object') return null
-  if (typeof ref.stackId !== 'string' || !ref.packages || typeof ref.packages.torch !== 'string') return null
+  if (typeof ref.stackId !== 'string' || typeof ref.variant !== 'string' || typeof ref.pythonVersion !== 'string') return null
+  if (!ref.packages || typeof ref.packages !== 'object' || typeof ref.packages.torch !== 'string') return null
+  if (ref.packages.torchvision !== undefined && typeof ref.packages.torchvision !== 'string') return null
+  if (ref.packages.torchaudio !== undefined && typeof ref.packages.torchaudio !== 'string') return null
+  const src = ref.source
+  if (!src || typeof src !== 'object' || typeof src.kind !== 'string') return null
+  if (src.kind === 'comfy-bundle' && (typeof src.variant !== 'string' || typeof src.bundleTag !== 'string')) return null
+  const bundle = ref.bundle
+  if (!bundle || typeof bundle !== 'object') return null
+  if (typeof bundle.url !== 'string' || typeof bundle.filename !== 'string') return null
+  if (typeof bundle.size !== 'number' || !Number.isFinite(bundle.size) || bundle.size <= 0) return null
   return ref
 }
 

@@ -5,6 +5,8 @@ import { scanCustomNodes, nodeKey } from '../nodes'
 import { pipFreeze } from '../pip'
 import { getActiveUvPath, getActivePythonPath } from '../pythonEnv'
 import { classifyTorchStackForSnapshot } from '../../sources/standalone/torchStackCatalog'
+import { torchPackageTuplesEqual } from '../../sources/standalone/torchStackTypes'
+import type { SnapshotTorchStack } from '../../sources/standalone/torchStackTypes'
 import * as telemetry from '../telemetry'
 import type { Snapshot, SnapshotEntry } from './types'
 import type { InstallationRecord } from '../../installations'
@@ -156,7 +158,25 @@ export function statesMatch(
     if (a.pipPackages[key] !== b.pipPackages[key]) return false
   }
 
+  // PyTorch stack identity — a pure stack change must not be deduped away.
+  // Compared by identity (not observedAt, which changes on every capture and
+  // would defeat dedupe entirely for observed stacks).
+  if (!torchStacksMatch(a.torchStack, b.torchStack)) return false
+
   return true
+}
+
+function torchStacksMatch(a: SnapshotTorchStack | undefined, b: SnapshotTorchStack | undefined): boolean {
+  // v1 snapshots carry no stack record; only identical absence matches.
+  if (!a || !b) return !a && !b
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'managed' && b.kind === 'managed') {
+    return a.ref.stackId === b.ref.stackId && torchPackageTuplesEqual(a.ref.packages, b.ref.packages)
+  }
+  if (a.kind === 'observed' && b.kind === 'observed') {
+    return a.torchVersion === b.torchVersion
+  }
+  return false
 }
 
 async function writeSnapshot(
