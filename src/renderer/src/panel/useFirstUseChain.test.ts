@@ -5,11 +5,13 @@ import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { ActionResult, FieldOption, ShowProgressOpts, Source } from '../types/ipc'
 import { useProgressStore } from '../stores/progressStore'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { useFirstUseChain, type FirstUseChainApi } from './useFirstUseChain'
 
 // The stubbed `window` lacks dispatchEvent, so mock the telemetry emit out.
 vi.mock('../lib/telemetry', () => ({
-  emitTelemetryAction: vi.fn()
+  emitTelemetryAction: vi.fn(),
+  toVariantBucket: (id?: string) => (id ? id.replace(/^(win|mac|linux)-/, '') : 'unknown')
 }))
 
 const standaloneSource: Source = {
@@ -172,6 +174,23 @@ describe('useFirstUseChain — Express Install', () => {
       })
     )
     expect(chain.switchPanel).not.toHaveBeenCalled()
+  })
+
+  it('emits install.dispatched (express) when the express install is dispatched (#1224)', async () => {
+    const chain = mountChain()
+    await chain.api!.handleFirstUseChainLocal({ express: true })
+
+    expect(vi.mocked(emitTelemetryAction)).toHaveBeenCalledWith(
+      'comfy.desktop.install.dispatched',
+      expect.objectContaining({
+        installation_id: 'inst-express-1',
+        source_id: 'standalone',
+        variant: 'nvidia-cuda',
+        express: true,
+        entrypoint: 'first_use',
+        template_selected: false
+      })
+    )
   })
 
   it('picks the `recommended` option for each non-text field', async () => {

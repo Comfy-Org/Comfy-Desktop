@@ -5,7 +5,7 @@ import { useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useMigrateAction } from '../composables/useMigrateAction'
 import { useOverlay } from '../composables/useOverlay'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
-import { emitTelemetryAction } from '../lib/telemetry'
+import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 import type { FieldOption, Installation, ShowProgressOpts, Source } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
 import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
@@ -389,6 +389,19 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         })
         return false
       }
+
+      // Reliable "install actually began" gate that pairs 1:1 with
+      // first_use.completed (#1224). The express path skips the wizard, so it
+      // emits the dispatch marker itself rather than relying on the wizard.
+      const variantId = selections.variant?.data?.variantId as string | undefined
+      emitTelemetryAction('comfy.desktop.install.dispatched', {
+        installation_id: result.entry.id,
+        source_id: standalone.id,
+        variant: variantId ? toVariantBucket(variantId) : null,
+        express: true,
+        entrypoint: 'first_use',
+        template_selected: false
+      })
 
       // `onShowProgress` captures `pendingFirstUseAutoLaunchId` from this
       // call because `chainingFirstUseToNewInstall` is already true — the

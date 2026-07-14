@@ -276,6 +276,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
+  const headSha = (): string =>
+    execFileSync('git', ['rev-parse', 'HEAD'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()
+  const markerExists = (): boolean =>
+    fs.existsSync(path.join(installPath, '.comfyui-op-in-progress.json'))
+
   describe('PyTorch filtering', () => {
     it('excludes PyTorch packages from requirements before installing', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
@@ -348,11 +353,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
   })
 
   describe('dependency-sync rollback', () => {
-    const headSha = (): string =>
-      execFileSync('git', ['rev-parse', 'HEAD'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()
-    const markerExists = (): boolean =>
-      fs.existsSync(path.join(installPath, '.comfyui-op-in-progress.json'))
-
     it('rolls ComfyUI source back to PRE_UPDATE_HEAD when the requirements install fails', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
       spawnState.uvHandler = () => fakeProc({ exitCode: 1 })
@@ -418,6 +418,42 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
+  describe('git-script-failure rollback', () => {
+    it('rolls the source back when the update script exits non-zero after moving HEAD', async () => {
+      // Simulate update_comfyui.py advancing the branch ref, then failing the
+      // working-tree checkout (e.g. the Windows symlink-privilege error) and
+      // exiting 1 without emitting POST_UPDATE_HEAD.
+      spawnState.pythonHandler = (_args: string[]) => {
+        execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
+          cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
+        })
+        return fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`,
+            '[BACKUP_BRANCH] backup_branch_test\n',
+          ],
+          stderr: ['_pygit2.GitError: could not create symlink CLAUDE.md: A required privilege is not held by the client.\n'],
+          exitCode: 1,
+        })
+      }
+
+      expect(headSha()).toBe(repoShas.v1Sha) // pre-update state
+
+      const opts = makeBaseOpts(installPath)
+      const result = await runComfyUIUpdate(opts)
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toMatch(/rolled back/i)
+      // Source is restored to the pre-update commit, not the failed-update commit.
+      expect(headSha()).toBe(repoShas.v1Sha)
+      // Marker is left behind so a launch-time recovery re-runs if needed.
+      expect(markerExists()).toBe(true)
+      // The local backup branch is recorded for offline manual recovery.
+      const marker = JSON.parse(fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8'))
+      expect(marker.backupBranch).toBe('backup_branch_test')
+    })
+  })
+
   describe('cancellation', () => {
     it('returns cancelled when signal is already aborted', async () => {
       const controller = new AbortController()
@@ -430,6 +466,38 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       expect(result.ok).toBe(false)
       expect(result.message).toBe('Cancelled')
+    })
+
+    it('rolls the source back when cancelled after the script moved HEAD', async () => {
+      const controller = new AbortController()
+      // Abort during the update script, after it advanced HEAD — mimics a cancel
+      // that kills the process mid-checkout, leaving the source moved.
+      spawnState.pythonHandler = (_args: string[]) => {
+        execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
+          cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
+        })
+        controller.abort()
+        return fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`,
+            '[BACKUP_BRANCH] backup_branch_test\n',
+          ],
+          exitCode: 1,
+        })
+      }
+
+      expect(headSha()).toBe(repoShas.v1Sha) // pre-update state
+
+      const opts = makeBaseOpts(installPath, { signal: controller.signal })
+      const result = await runComfyUIUpdate(opts)
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toMatch(/^Cancelled/)
+      expect(result.message).toMatch(/rolled back/i)
+      // Source is restored to the pre-update commit despite the cancel.
+      expect(headSha()).toBe(repoShas.v1Sha)
+      // Marker is left behind so a launch-time recovery re-runs if needed.
+      expect(markerExists()).toBe(true)
     })
   })
 

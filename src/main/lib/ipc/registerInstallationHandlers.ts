@@ -270,6 +270,17 @@ export function registerInstallationHandlers(): void {
     const isComfyUpdate = priorComfyVersion != null
 
     if (source.install) {
+      // Durable per-person activation milestone (#1224). `$set_once` keeps the
+      // earliest FRESH local-install dispatch on the person profile, so the
+      // funnel can tell whether a user who onboarded ever actually started an
+      // install — regardless of the session it happened in. Gated on
+      // `!isComfyUpdate` so a post-release version update (which reuses this
+      // handler) can't masquerade as a first install for a returning user.
+      if (!isComfyUpdate) {
+        mainTelemetry.registerPersonPropertiesOnce({
+          first_local_install_dispatched_at: new Date().toISOString()
+        })
+      }
       fs.mkdirSync(inst.installPath, { recursive: true })
       fs.writeFileSync(path.join(inst.installPath, MARKER_FILE), installationId)
       if (source.installSteps) {

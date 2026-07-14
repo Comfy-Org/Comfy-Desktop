@@ -279,7 +279,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // closed; the marker is left in place so the next launch retries.
       console.warn('Interrupted-operation recovery failed:', err)
       const detail = recoveryLog.join('').trim()
-      const base = `ComfyUI recovery failed: ${(err as Error).message}`
+      const base = i18n.t('errors.recoveryFailed', { message: (err as Error).message })
       return { ok: false, message: detail ? `${base}\n\n${detail}` : base }
     }
     const updateFn = async (data: Record<string, unknown>): Promise<unknown> => installations.update(installationId, data)
@@ -620,7 +620,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // Local process launch
   if (!fs.existsSync(launchCmd.cmd!)) {
     _operationAborts.delete(installationId)
-    return { ok: false, message: `Executable not found: ${launchCmd.cmd}` }
+    return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
   // Skip port logic entirely

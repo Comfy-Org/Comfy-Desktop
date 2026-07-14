@@ -983,6 +983,12 @@ export function captureInstallCompleted(opts: {
     method: opts.method,
     express: opts.express
   })
+  // Durable per-person activation milestone (#1224). All four methods
+  // (express/manual/adopt/migrate) are local installs, so this stamps the
+  // person the first time they EVER complete a local install — even across
+  // quits, reinstalls, or a second machine. Lets the funnel distinguish
+  // "onboarded but never installed" from "abandoned then recovered later".
+  registerPersonPropertiesOnce({ first_local_install_completed_at: new Date().toISOString() })
 }
 
 export function captureException(error: unknown, properties: TelemetryContext = {}): void {

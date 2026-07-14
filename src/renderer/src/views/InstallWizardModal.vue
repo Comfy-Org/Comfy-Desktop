@@ -13,7 +13,7 @@ import type {
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
-import { emitTelemetryAction, toSizeBucket, toVariantBucket } from '../lib/telemetry'
+import { emitTelemetryAction, toSizeBucket, toVariantBucket, toErrorBucket } from '../lib/telemetry'
 import {
   trackGuardrailBlocked,
   createDiskSpaceChecker,
@@ -94,6 +94,27 @@ const estimatedInstallSize = computed(() => {
 
 const advancedOpen = ref(false)
 const advancedRef = ref<HTMLElement | null>(null)
+
+/** Entrypoint that opened this wizard, for the handoff funnel events (#1224). */
+const entrypoint = ref('unknown')
+/** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
+ *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
+ *  onBeforeUnmount `wizard_cancelled` emit so exactly one *terminal* event
+ *  fires per open. `add_installation_failed` is an attempt-level failure — it
+ *  intentionally leaves this false so a later retry (→ dispatched) or give-up
+ *  (→ wizard_cancelled) is still recorded as the true terminal outcome. */
+const resolved = ref(false)
+
+/** Shared context for the install-handoff funnel events (#1224). */
+function installHandoffProps(): Record<string, string | boolean | null> {
+  const variantId = selections.value.variant?.data?.variantId as string | undefined
+  return {
+    entrypoint: entrypoint.value,
+    source_id: currentSource.value?.id ?? null,
+    variant: variantId ? toVariantBucket(variantId) : null,
+    express: false
+  }
+}
 
 const NO_TEMPLATE_VALUE = 'none'
 
@@ -359,6 +380,18 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // Onboarding→install drop-off (#1224): the wizard is unmounting without a
+  // resolved handoff outcome, so the user left the install path without
+  // dispatching. `skipInstall` sources (Remote Connection) never install, so
+  // they're not part of this funnel. The happy-path dispatch, the defensive
+  // no-entry close, and the Back-to-onboarding navigation all set `resolved`
+  // first, so this only catches genuine abandonment (✕ / dismiss).
+  if (!resolved.value && !currentSource.value?.skipInstall) {
+    emitTelemetryAction('comfy.desktop.install.not_started', {
+      ...installHandoffProps(),
+      reason: 'wizard_cancelled'
+    })
+  }
   if (returnFocusTo && document.contains(returnFocusTo)) {
     returnFocusTo.focus()
   }
@@ -366,9 +399,23 @@ onBeforeUnmount(() => {
   clearTimeout(templateNudgeTimer)
 })
 
+/** Configure footer Back link (first-use chain only). Records that install
+ *  didn't start here and marks the outcome resolved so the unmount that
+ *  follows doesn't also report `wizard_cancelled`. */
+function handleBackToLocalBranch(): void {
+  resolved.value = true
+  emitTelemetryAction('comfy.desktop.install.not_started', {
+    ...installHandoffProps(),
+    reason: 'back_to_local_branch'
+  })
+  emit('back-to-local-branch')
+}
+
 interface OpenOpts {
   /** Set when opened via the first-use localBranch → Start Fresh path; surfaces a Back link that returns to localBranch instead of closing. */
   cameFromLocalBranch?: boolean
+  /** Where this wizard was opened from (`first_use`, `chooser`, `titlebar`, `url`); carried onto the install.dispatched / install.not_started funnel events. */
+  entrypoint?: string
 }
 
 const cameFromLocalBranch = ref(false)
@@ -378,6 +425,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   const gen = loadGeneration
   instName.value = ''
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
+  entrypoint.value = opts.entrypoint ?? 'unknown'
+  resolved.value = false
   suggestedName.value = ''
   void window.api
     .getUniqueName(DEFAULT_INSTALL_NAME)
@@ -775,6 +824,14 @@ async function handleSave(): Promise<void> {
     ...instData
   })
   if (!result.ok) {
+    // Onboarding→install drop-off (#1224): the user reached save but no install
+    // record could be created. Leave `resolved` false — the wizard stays open
+    // and a later retry / cancel is still the truthful terminal outcome.
+    emitTelemetryAction('comfy.desktop.install.not_started', {
+      ...installHandoffProps(),
+      reason: 'add_installation_failed',
+      error_bucket: toErrorBucket(result.message || '')
+    })
     await modal.alert({
       title: t('errors.cannotAdd'),
       message: result.message || ''
@@ -782,6 +839,14 @@ async function handleSave(): Promise<void> {
     return
   }
   if (result.entry) {
+    // Reliable "install actually began" gate that pairs 1:1 with
+    // first_use.completed (#1224).
+    resolved.value = true
+    emitTelemetryAction('comfy.desktop.install.dispatched', {
+      ...installHandoffProps(),
+      installation_id: result.entry.id,
+      template_selected: templateHasModels.value
+    })
     // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
     emit('show-progress', {
       installationId: result.entry.id,
@@ -794,6 +859,12 @@ async function handleSave(): Promise<void> {
   }
   // Defensive: addInstallation reported ok but produced no entry.
   // Dismiss the wizard so the user isn't stuck on it.
+  resolved.value = true
+  emitTelemetryAction('comfy.desktop.install.not_started', {
+    ...installHandoffProps(),
+    reason: 'dispatch_no_entry',
+    installation_id: null
+  })
   emit('close')
 }
 
@@ -1076,7 +1147,7 @@ defineExpose({ open })
             type="button"
             class="brand-ghost config-back"
             data-testid="config-back-to-local-branch"
-            @click="emit('back-to-local-branch')"
+            @click="handleBackToLocalBranch"
           >
             {{ $t('common.back') }}
           </button>
