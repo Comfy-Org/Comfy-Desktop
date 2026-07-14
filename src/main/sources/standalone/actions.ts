@@ -105,11 +105,13 @@ export async function handleAction(
     // packages) the user could launch straight into, so it surfaces as an error
     // instead of a quietly dismissed cancel. The op marker stays behind either
     // way, so recoverInterruptedComfyOp retries a failed rollback on next launch.
+    // rollbackComfySource no-ops (returns true) when HEAD is already at the
+    // pre-restore commit, so callers don't need their own moved-HEAD check.
+    const revertSourceIfMoved = async (): Promise<boolean> =>
+      preRestoreHead ? rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput) : true
+
     const cancelledResult = async (note?: string): Promise<ActionResult> => {
-      let rolledBack = true
-      if (preRestoreHead && readGitHead(comfyuiDir) !== preRestoreHead) {
-        rolledBack = await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
-      }
+      const rolledBack = await revertSourceIfMoved()
       await ensureLiveStateOnTop()
       if (rolledBack) {
         sendOutput(`\nCancelled; ComfyUI source was rolled back.${note ? ` ${note}` : ''}\n`)
@@ -183,10 +185,7 @@ export async function handleAction(
       if (signal?.aborted) {
         return await cancelledResult('Package changes were reverted where possible.')
       }
-      let rolledBack = true
-      if (preRestoreHead && readGitHead(comfyuiDir) !== preRestoreHead) {
-        rolledBack = await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
-      }
+      const rolledBack = await revertSourceIfMoved()
       const headline = pipError ? `Snapshot package restore failed: ${pipError}` : 'Snapshot package restore failed.'
       const tail = rolledBack
         ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
