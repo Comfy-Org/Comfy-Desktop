@@ -883,6 +883,7 @@ defineExpose({
             'is-active': activeTab === tab.key,
             'is-locked': opInflight && activeTab !== tab.key
           }"
+          :data-testid="TID.settingsTab(tab.key)"
           @click="selectTab(tab.key)"
           @keydown="handleTabKeydown($event, i)"
         >

@@ -34,10 +34,14 @@ export const TID = {
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
 
+  /** A tab button in the picker settings tab bar. `key` matches `TabDef.key`. */
+  settingsTab: (key: string) => `settings-tab-${key}`,
+
   /** An action item in the Settings footer "More" menu. `actionId`
    *  matches the source's `ActionDef.id` (with Launch→Restart as `restart`). */
   pinBottomAction: (actionId: string) => `pin-bottom-action-${actionId}`,
 
+  snapshotsSaveCta: 'snapshots-save-cta',
   snapshotRow: (filename: string) => `snapshot-row-${filename}`,
   snapshotRowRestore: (filename: string) => `snapshot-row-restore-${filename}`,
   snapshotRowExport: (filename: string) => `snapshot-row-export-${filename}`,

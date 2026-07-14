@@ -1,10 +1,11 @@
 /**
- * Lifecycle E2E: handleCopyUpdate post-copy update failure branch.
+ * Lifecycle E2E: picker-driven copy-and-update failure branch.
  *
  * `handleCopyUpdate` runs the copy first, then chains an
  * `update-comfyui` against the freshly-copied install. When the update
- * leg fails (here: the seeded source has no ComfyUI/.git so
- * `handleUpdateComfyUI` returns `{ ok: false, message: standalone.updateNoGit }`)
+ * leg fails (here: the seeded source has a real ComfyUI/.git — so the
+ * picker actually offers Copy & Update — but no standalone Python env,
+ * so `handleUpdateComfyUI` bails with "Master Python not found.")
  * the handler must NOT roll back the copy — the user already paid the
  * cost of duplicating the install, so we keep the new install and let
  * them retry the update from it. Pinned contract:
@@ -19,10 +20,13 @@
 
 import os from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let sourcePath: string
@@ -31,13 +35,6 @@ const SOURCE_ID = 'inst-copy-update-fail-source'
 const SOURCE_NAME = 'Copy-Update Fail Source'
 const COPY_NAME = 'Copy-Update Fail Destination'
 const MARKER_FILENAME = '.comfyui-desktop-2'
-
-interface CopyResult {
-  ok: boolean
-  message?: string
-  navigate?: string
-  newInstallationId?: string
-}
 
 interface InstallationLike {
   id: string
@@ -60,9 +57,16 @@ test.beforeAll(async () => {
   sourcePath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-copy-update-fail-e2e-'))
   await mkdir(sourcePath, { recursive: true })
   await writeFile(path.join(sourcePath, MARKER_FILENAME), SOURCE_ID)
-  // No ComfyUI/.git inside — that's exactly what makes handleUpdateComfyUI
-  // bail with `ok: false`. The copy itself still succeeds (performCopy is
-  // dumb-recursive over whatever's in the source dir).
+  // A real ComfyUI/.git so the Update tab's channel card gates
+  // (`updateAvailable && hasGit`) actually expose the Copy & Update
+  // button — without it the flow is unreachable through the UI. The
+  // update leg still fails for real: there is no standalone Python env
+  // in the fixture, so `handleUpdateComfyUI` bails with "Master Python
+  // not found." AFTER the copy succeeded (performCopy is dumb-recursive
+  // over whatever's in the source dir).
+  const comfyuiDir = path.join(sourcePath, 'ComfyUI')
+  await mkdir(comfyuiDir, { recursive: true })
+  execFileSync('git', ['init', '--quiet', comfyuiDir], { stdio: 'ignore' })
 
   ctx = await launchApp({
     settings: { firstUseCompleted: true, telemetryEnabled: false },
@@ -73,6 +77,11 @@ test.beforeAll(async () => {
         installPath: sourcePath,
         sourceId: 'standalone',
         status: 'installed',
+        updateChannel: 'stable',
+        comfyVersion: { commit: 'a'.repeat(40), baseTag: 'v0.1.0', commitsAhead: 0 },
+        releaseTag: 'v0.1.0',
+        variant: 'cpu',
+        pythonVersion: '3.12',
       },
     ],
   })
@@ -85,47 +94,55 @@ test.afterAll(async () => {
 })
 
 test('copy-update keeps the new install when the chained update fails @lifecycle', async () => {
-  // Start capturing comfy-output BEFORE firing the action — the handler
-  // emits the failure + retry hint via sendOutput during the update
-  // step, and we need to assert both lines reached the renderer.
-  await ctx.panel.evaluate<void>(
-    `(() => {
-      window.__copyUpdateOutput = []
-      window.__copyUpdateUnsubscribe = window.api.onComfyOutput((data) => {
-        if (data && data.installationId === ${JSON.stringify(SOURCE_ID)}) {
-          window.__copyUpdateOutput.push(data.text)
-        }
-      })
-    })()`,
-  )
-
-  const result = await ctx.panel.evaluate<CopyResult>(
-    `window.api.runAction(${JSON.stringify(SOURCE_ID)}, 'copy-update', { name: ${JSON.stringify(COPY_NAME)} })`,
-  )
+  test.setTimeout(120_000)
 
   await ctx.panel.evaluate<void>(
-    `(() => {
-      if (typeof window.__copyUpdateUnsubscribe === 'function') window.__copyUpdateUnsubscribe()
-    })()`,
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(SOURCE_ID)}, initialTab: 'update' })`,
   )
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
 
-  // Contract: copy-update reports overall success even when the update
-  // step failed, with the destination install id populated so the
-  // renderer-side handleDone can open the new install window.
-  expect(result.ok, `runAction('copy-update') failed: ${result.message ?? ''}`).toBe(true)
-  expect(result.navigate).toBe('list')
-  expect(typeof result.newInstallationId).toBe('string')
-  expect(result.newInstallationId).not.toBe(SOURCE_ID)
-  const newId = result.newInstallationId!
+  const copyUpdateButton = byTestId(TID.updateActionButton('copy-update'))
+  await popup.waitForVisible(copyUpdateButton, { timeout: 30_000 })
+  await popup.waitFor(
+    () => popup.evaluate<boolean>(
+      `(() => { const el = document.querySelector(${JSON.stringify(copyUpdateButton)}); return !!el && !el.disabled })()`,
+    ),
+    { timeout: 30_000, message: 'copy-update button never became enabled' },
+  )
+  expect(await popup.click(copyUpdateButton)).toBe(true)
+
+  const promptInput = byTestId(TID.basePromptInput)
+  await popup.waitForVisible(promptInput, { timeout: 10_000 })
+  await popup.evaluate<void>(`(() => {
+    const el = document.querySelector(${JSON.stringify(promptInput)})
+    el.value = ${JSON.stringify(COPY_NAME)}
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
+
+  const confirmSelector = `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
+  let confirmAppeared = false
+  try {
+    await popup.waitForVisible(confirmSelector, { timeout: 2_000 })
+    confirmAppeared = true
+  } catch {
+    // This action does not always require a confirmation.
+  }
+  if (confirmAppeared) expect(await popup.click(confirmSelector)).toBe(true)
+
+  let installations: InstallationLike[] = []
+  await expect.poll(async () => {
+    installations = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
+    return installations.some((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
+  }, { timeout: 60_000, intervals: [250, 500, 1_000] }).toBe(true)
 
   // Registry survives the update failure — new install is enumerated
   // alongside the source.
-  const installations = await ctx.panel.evaluate<InstallationLike[]>(
-    'window.api.getInstallations()',
-  )
-  const newEntry = installations.find((i) => i.id === newId)
+  const newEntry = installations.find((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
   expect(newEntry, 'new install id missing from registry after copy-update failure').toBeDefined()
   expect(newEntry?.installPath, 'new install must carry an installPath').toBeTruthy()
+  const newId = newEntry!.id
 
   const destPath = newEntry!.installPath!
   expect(await pathExists(destPath), `destination dir ${destPath} missing after copy-update`).toBe(true)
@@ -137,17 +154,28 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   const sourceMarker = await readFile(path.join(sourcePath, MARKER_FILENAME), 'utf8')
   expect(sourceMarker).toBe(SOURCE_ID)
 
-  // Output banner: the user must see BOTH the update failure (so they
-  // know something didn't go right) AND the retry hint pointing them at
-  // the new install (so they know the copy isn't garbage).
-  const outputLines = await ctx.panel.evaluate<string[]>('window.__copyUpdateOutput')
-  const joined = outputLines.join('')
-  expect(joined, `comfy-output never carried the update-failure marker: ${joined}`).toMatch(/Update/i)
-  expect(
-    joined,
-    `comfy-output missing the retry-from-new-install hint: ${joined}`,
-  ).toContain('retry the update from the new installation')
+  // Failure trail: picker-driven ops run as main-side background ops, so
+  // the handler's sendOutput text never reaches a renderer — it lands in
+  // the durable per-user app log (`appendLog` → app.log), which is where
+  // a user chasing "why did my update not apply?" ends up. Both the
+  // update-failure marker AND the retry hint must be on disk. The
+  // registry entry lands when the copy finishes — the update leg (and
+  // its failure output) completes after that, so poll.
+  const logsDir = await ctx.app.evaluate(({ app }) => app.getPath('logs'))
+  const appLogPath = path.join(logsDir, 'app.log')
+  await expect
+    .poll(async () => {
+      try {
+        return await readFile(appLogPath, 'utf8')
+      } catch {
+        return ''
+      }
+    }, { timeout: 30_000, intervals: [250, 500, 1_000] })
+    .toContain('retry the update from the new installation')
+  const logText = await readFile(appLogPath, 'utf8')
+  expect(logText, `app.log never carried the update-failure marker`).toMatch(/Update/)
 
   // Cleanup so reruns start clean.
   await rm(destPath, { recursive: true, force: true })
+  await closeTitlePopupIfOpen(ctx.app)
 })

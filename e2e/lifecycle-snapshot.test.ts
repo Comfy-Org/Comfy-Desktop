@@ -5,8 +5,8 @@
  *   opens the instance picker directly into the Snapshots tab and asserts
  *   the row renders the backend-formatted `comfyuiVersion` string verbatim
  *   (regression for the `formatComfyVersion` short-style path).
- * - Captures a fresh snapshot via `runAction('snapshot-save')` and asserts
- *   a new row appears at the top of the timeline.
+ * - Captures a fresh snapshot through the picker UI's Create Snapshot flow
+ *   and asserts the saved snapshot appears at the top of the timeline.
  *
  * Restore is intentionally out of scope here — the live op runs real git
  * checkout, custom-node clone, and pip ops, none of which the seeded
@@ -19,7 +19,12 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { titlePopupPage } from './support/cdpPages'
+import {
+  closeTitlePopupIfOpen,
+  titlePopupPage,
+  waitForWebContents,
+} from './support/cdpPages'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let stagedInstallPath = ''
@@ -55,7 +60,6 @@ test.beforeAll(async () => {
         snapshots: [
           {
             trigger: 'manual',
-            label: 'seeded',
             comfyui: {
               ref: SEEDED_COMMIT,
               commit: SEEDED_COMMIT,
@@ -91,20 +95,42 @@ test('seeded snapshot row renders the backend-formatted version @lifecycle', asy
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('.snapshot-row', { timeout: 15_000 })
 
-  const metaText = await popup.textOf('.snapshot-row-meta')
-  expect(metaText, 'snapshot meta line not rendered').not.toBeNull()
-  expect(metaText!).toContain(EXPECTED_VERSION)
+  const versionText = await popup.textOf('.snap-pill--version')
+  expect(versionText, 'snapshot version pill not rendered').not.toBeNull()
+  expect(versionText!).toContain(EXPECTED_VERSION)
+
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('captures a new snapshot via runAction and shows it at the top @lifecycle', async () => {
+test('captures a new snapshot through the picker UI and shows it at the top @lifecycle', async () => {
   const before = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
   )
   expect(before).toBe(1)
 
-  await ctx.panel.evaluate<unknown>(
-    `window.api.runAction(${JSON.stringify(INSTALL_ID)}, 'snapshot-save', { label: 'captured-by-test' })`,
+  await ctx.panel.evaluate<boolean>(
+    `(() => {
+      window.api.openInstancePicker({
+        installationId: ${JSON.stringify(INSTALL_ID)},
+        initialTab: 'snapshots',
+      })
+      return true
+    })()`,
   )
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+
+  await popup.waitForVisible(byTestId(TID.snapshotsSaveCta), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
+
+  await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
+  await popup.evaluate<void>(`(() => {
+    const el = document.querySelector(${JSON.stringify(byTestId(TID.basePromptInput))})
+    if (!(el instanceof HTMLInputElement)) throw new Error('snapshot label input not found')
+    el.value = 'captured-by-test'
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
 
   await expect
     .poll(
@@ -116,8 +142,11 @@ test('captures a new snapshot via runAction and shows it at the top @lifecycle',
     )
     .toBe(2)
 
-  const labels = await ctx.panel.evaluate<Array<string | null>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => s.label))`,
+  const snapshots = await ctx.panel.evaluate<Array<{ filename: string; label: string | null }>>(
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ filename: s.filename, label: s.label })))`,
   )
-  expect(labels[0]).toBe('captured-by-test')
+  expect(snapshots[0]?.label).toBe('captured-by-test')
+  await popup.waitForSelector(byTestId(TID.snapshotRow(snapshots[0]!.filename)), { timeout: 15_000 })
+
+  await closeTitlePopupIfOpen(ctx.app)
 })
