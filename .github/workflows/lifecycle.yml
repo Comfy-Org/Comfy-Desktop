@@ -3,7 +3,7 @@ name: Lifecycle Tests
 on:
   workflow_dispatch:
   schedule:
-    # Nightly at 09:00 UTC (01:00 PT)
+    # Nightly at 09:00 UTC
     - cron: '0 9 * * *'
 
 permissions:

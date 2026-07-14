@@ -46,6 +46,11 @@ faking the product's behavior:
 - Stubbing native OS file dialogs (`showOpenDialog` / `showSaveDialog`) with a
   predetermined path — Playwright cannot drive OS-native dialogs. The stub may only
   supply the path; it must never fake the operation's result
+- Triggering a flow through the public `window.api` surface from the renderer (e.g.
+  `runAction`, `probeInstallation`) when the UI control is a thin wrapper around that
+  call — the real main-process handler and all of its real side effects still run.
+  Synthesizing the app's *internal* IPC messages (e.g. a main→renderer `wc.send`) or
+  writing directly into renderer stores is **not** an acceptable trigger
 - Manipulating pre-conditions that only encode elapsed time (e.g. `ageReleaseCache`)
   before the flow under test
 - Observation-only hooks (`getIpcInvocations`, `getRunningSessionSnapshot`,
@@ -77,11 +82,11 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `lifecycle-cloud.test.ts` | `@lifecycle` | Yes | Real navigation to `https://cloud.comfy.org/`. |
 | `lifecycle-copy-update-fail.test.ts` | `@lifecycle` | Yes (light) | Real local copy; real update-failure branch on disk. |
 | `lifecycle-copy.test.ts` | `@lifecycle` | Yes (light) | Real local disk copy of a staged install. |
-| `lifecycle-deep-links.test.ts` | `@lifecycle` | **No — retag candidate** | Real `comfy://` deep links, but asserts IPC dispatch rather than end state. |
+| `lifecycle-deep-links.test.ts` | `@lifecycle` | **No — retag candidate** | Replays the internal `panel-trigger-overlay` IPC directly into the panel and asserts downstream IPC dispatch; never exercises real OS/app `comfy://` handling. |
 | `lifecycle-delete-untrack.test.ts` | `@lifecycle` | Yes (light) | Real directory preservation/removal on disk. |
 | `lifecycle-dismiss-error.test.ts` | `@lifecycle` | **No — retag candidate** | Injects the error into the renderer store at runtime (`__e2eRenderer.seedErrorInstance`). |
 | `lifecycle-first-use-migrate.test.ts` | `@lifecycle` | Strengthen or retag | Real first-use flow, but the R2 download action is asserted as dispatch only. |
-| `lifecycle-first-use-skip.test.ts` | `@lifecycle` | Strengthen or retag | Real skip flow, but triggered by sending the skip IPC directly instead of clicking the File-menu item. |
+| `lifecycle-first-use-skip.test.ts` | `@lifecycle` | Strengthen or retag | Real skip flow, but triggered by synthesizing the menu item's internal IPC message instead of clicking the File-menu item. |
 | `lifecycle-migrate.test.ts` | `@lifecycle` | Yes (light) | Staged legacy install tree (pre-launch scaffolding); real migration preview. |
 | `lifecycle-periodic-update-check.test.ts` | `@lifecycle` | Yes | Real background re-fetch of the release cache. |
 | `lifecycle-picker-cluster.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts IPC dispatch. |
@@ -112,9 +117,9 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 runtime state or assert dispatch instead of real side effects. Retagging them to the
 platform projects would add them to PR-blocking CI, so each needs a platform-stability
 check first — that migration is tracked separately from this document. "Strengthen or
-retag" specs exercise a mostly-real flow with one weak link (a direct IPC trigger or a
-dispatch-only assertion); fixing that link keeps them in `@lifecycle`, otherwise they
-should be retagged too.
+retag" specs exercise a mostly-real flow with one weak link (a synthesized internal
+IPC trigger or a dispatch-only assertion); fixing that link keeps them in
+`@lifecycle`, otherwise they should be retagged too.
 
 ## Running lifecycle tests
 
