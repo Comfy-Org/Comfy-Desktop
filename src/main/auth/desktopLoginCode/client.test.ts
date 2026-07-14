@@ -309,14 +309,14 @@ describe('PKCE method on the wire', () => {
   // RFC 7636 §4.3 defaults an omitted method to 'plain'. Send it explicitly so
   // the challenge can never be compared as plaintext.
   it('sends code_challenge_method=S256 on create', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
       jsonResponse(201, { code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
     )
     vi.stubGlobal('fetch', fetchMock)
 
     await createDesktopLoginCode(ORIGIN, CREATE_REQUEST)
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as Record<string, unknown>
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body)) as Record<string, unknown>
     expect(body.code_challenge_method).toBe('S256')
   })
 })
