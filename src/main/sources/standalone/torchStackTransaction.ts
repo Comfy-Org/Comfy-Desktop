@@ -353,7 +353,7 @@ function undeclaredFamilyPackages(packages: TorchStackPackages, site: string | n
 function runStreamed(cmd: string, args: string[], failMessage: string, tools: TorchStackTools): Promise<void> {
   tools.sendOutput?.(`\n$ ${path.basename(cmd)} ${args.join(' ')}\n`)
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { windowsHide: true })
+    const child = spawn(cmd, args, { windowsHide: true, signal: tools.signal })
     child.stdout.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
     child.stderr.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
     child.on('error', reject)
@@ -414,8 +414,9 @@ export interface TorchStackResult {
  * whole-venv transaction. On success persists `lastVerifiedTorchStack`.
  * On any failure the original venv is restored intact.
  *
- * Not cancellable once the venv rename has happened — the signal is only
- * honoured before mutation starts.
+ * The signal is honoured before mutation starts and during the pip install
+ * step (which kills the child and rolls back); the bundle graft and the
+ * commit rename are not cancellable.
  */
 export async function applyTorchStackTransaction(
   installation: InstallationRecord,

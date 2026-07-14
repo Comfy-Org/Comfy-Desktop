@@ -344,6 +344,17 @@ describe('validateExportEnvelope', () => {
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).not.toThrow()
   })
 
+  it('rejects observed torchStack with malformed torchVersion', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'observed', torchVersion: '2.4.1; rm -rf /', observedAt: '2026-03-01T12:00:00.000Z' } as unknown as Snapshot['torchStack']
+    }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
   it('rejects torchStack on a v1 snapshot', () => {
     const snap = { ...makeSnapshot(), torchStack: makeManagedTorchStack() }
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(

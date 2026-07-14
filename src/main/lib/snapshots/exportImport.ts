@@ -53,7 +53,7 @@ function isValidTorchStack(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false
   const obj = v as Record<string, unknown>
   if (obj.kind === 'observed') {
-    if (obj.torchVersion !== null && typeof obj.torchVersion !== 'string') return false
+    if (obj.torchVersion !== null && (typeof obj.torchVersion !== 'string' || !VALID_VERSION.test(obj.torchVersion))) return false
     // Full-tuple fields: undefined (pre-tuple record), null (recorded as
     // absent), or a valid version. A malformed value must not import — the
     // restore path pip-installs these versions verbatim.
