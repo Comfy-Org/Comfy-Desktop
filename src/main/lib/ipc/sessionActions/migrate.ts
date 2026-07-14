@@ -363,17 +363,6 @@ export async function handleMigrateToStandalone({
     destPath = result.destPath
 
     _operationAborts.delete(installationId)
-    // A failed snapshot restore leaves a working install with the wrong
-    // environment — report it instead of a clean success. The staged snapshot
-    // and pendingSnapshotRestore marker are retained for retry.
-    if (result.restoreError) {
-      sendProgress('done', { percent: 100, status: i18n.t('migrate.restoreFailedStatus') })
-      return {
-        ok: false,
-        navigate: 'list',
-        message: i18n.t('migrate.restoreFailedAfterInstall', { message: result.restoreError })
-      }
-    }
     sendProgress('done', { percent: 100, status: 'Complete' })
     return { ok: true, navigate: 'list' }
   } catch (err) {
@@ -388,7 +377,7 @@ export async function handleMigrateToStandalone({
         await fs.promises.rm(destPath, { recursive: true, force: true })
       } catch {}
     }
-    if (abort.signal.aborted) return { ok: true, navigate: 'detail' }
+    if (abort.signal.aborted) return { ok: false, cancelled: true, navigate: 'detail' }
     return { ok: false, message: (err as Error).message }
   }
 }

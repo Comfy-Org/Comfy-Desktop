@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
-import { readGitHead, isGitAvailable, gitClone, gitCheckoutCommit, gitFetchAndCheckout } from '../git'
+import { readGitHead, isGitAvailable, gitClone, gitCheckoutCommit, gitFetchAndCheckout, type ProcessResult } from '../git'
 import { rewriteCloneUrl } from '../github-mirror'
 import { scanCustomNodes, nodeKey } from '../nodes'
 import { pipFreeze, runUvPip as sharedRunUvPip, installFilteredRequirements, getPipIndexArgs, type PipMirrorConfig } from '../pip'
@@ -546,6 +546,14 @@ async function runPostInstallScripts(
   }
 }
 
+/** Failure message for a git subprocess: action, exit code, and the output tail. */
+function gitFailureMessage(action: string, result: ProcessResult): string {
+  const detail = (result.stderr || result.stdout).trim().split('\n').slice(-20).join('\n')
+  return detail
+    ? `${action} failed (exit ${result.exitCode}):\n${detail}`
+    : `${action} failed (exit ${result.exitCode})`
+}
+
 export async function restoreCustomNodes(
   installPath: string,
   installation: InstallationRecord,
@@ -701,8 +709,7 @@ export async function restoreCustomNodes(
             break
           }
           if (cloneResult.exitCode !== 0) {
-            const detail = (cloneResult.stderr || cloneResult.stdout).trim().split('\n').slice(-20).join('\n')
-            result.failed.push({ id: targetNode.id, error: detail ? `git clone failed (exit ${cloneResult.exitCode}):\n${detail}` : `git clone failed (exit ${cloneResult.exitCode})` })
+            result.failed.push({ id: targetNode.id, error: gitFailureMessage('git clone', cloneResult) })
             continue
           }
           if (targetNode.commit) {
@@ -712,7 +719,11 @@ export async function restoreCustomNodes(
               break
             }
             if (checkoutResult.exitCode !== 0) {
-              sendOutput(`⚠ git checkout to ${targetNode.commit} failed for ${targetNode.id}\n`)
+              // Remove the fresh clone so the failed restore doesn't leave a
+              // wrong-commit node behind to be scanned as installed on next boot.
+              await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
+              result.failed.push({ id: targetNode.id, error: gitFailureMessage('git checkout', checkoutResult) })
+              continue
             }
           }
           result.installed.push(targetNode.id)
@@ -779,8 +790,7 @@ export async function restoreCustomNodes(
             result.switched.push(targetNode.id)
             nodesNeedingPostInstall.push(nodePath)
           } else {
-            const detail = (checkoutResult.stderr || checkoutResult.stdout).trim().split('\n').slice(-20).join('\n')
-            result.failed.push({ id: targetNode.id, error: detail ? `git checkout failed (exit ${checkoutResult.exitCode}):\n${detail}` : `git checkout failed (exit ${checkoutResult.exitCode})` })
+            result.failed.push({ id: targetNode.id, error: gitFailureMessage('git checkout', checkoutResult) })
           }
         }
       } else {

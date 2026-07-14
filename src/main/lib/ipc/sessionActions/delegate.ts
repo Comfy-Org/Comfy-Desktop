@@ -2,6 +2,7 @@ import {
   installations, i18n,
   sourceMap,
   _operationAborts,
+  MSG_CANCELLED,
 } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
@@ -27,7 +28,7 @@ export async function handleDelegateToSource({ event, installationId, inst, acti
   try {
     return await source.handleAction(actionId, inst, actionData, { update, sendProgress, sendOutput, signal: abort.signal })
   } catch (err) {
-    if (abort.signal.aborted) return { ok: false, message: 'Cancelled' }
+    if (abort.signal.aborted) return { ok: false, cancelled: true, message: MSG_CANCELLED }
     return { ok: false, message: (err as Error).message }
   } finally {
     _operationAborts.delete(installationId)

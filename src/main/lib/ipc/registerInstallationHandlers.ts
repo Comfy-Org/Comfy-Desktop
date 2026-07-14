@@ -320,10 +320,6 @@ export function registerInstallationHandlers(): void {
         settings.get('cacheDir') as string,
         settings.get('maxCachedDownloads') as number
       )
-      // Set when the base install succeeded but the pending snapshot restore
-      // failed: the install is kept (status 'installed') but the handler
-      // reports the failure instead of a clean success.
-      let restoreFailure: string | null = null
       try {
         await source.install(inst, { sendProgress, download, cache, extract, signal: abort.signal })
         if (source.postInstall) {
@@ -335,7 +331,9 @@ export function registerInstallationHandlers(): void {
         // After postInstall, check for pending snapshot restore
         const freshInst = await installations.get(installationId)
         const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
-        if (freshInst && pendingFile && fs.existsSync(pendingFile)) {
+        // No existsSync gate: if the staged file is gone, restoreSnapshotIntoInstallation
+        // throws, failing the install explicitly instead of silently skipping the restore.
+        if (freshInst && pendingFile) {
           const sendOutput = (text: string): void => {
             try {
               if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
@@ -344,20 +342,16 @@ export function registerInstallationHandlers(): void {
           }
           const update = (data: Record<string, unknown>): Promise<void> =>
             installations.update(installationId, data).then(() => {})
-          const restoreResult = await restoreSnapshotIntoInstallation(
+          await restoreSnapshotIntoInstallation(
             freshInst,
             pendingFile,
             true,
             { sendProgress, sendOutput, signal: abort.signal },
             update
           )
-          if (!restoreResult.ok) restoreFailure = restoreResult.error ?? 'unknown error'
         }
 
-        sendProgress('done', {
-          percent: 100,
-          status: restoreFailure ? i18n.t('migrate.restoreFailedStatus') : 'Complete'
-        })
+        sendProgress('done', { percent: 100, status: 'Complete' })
       } catch (err) {
         _operationAborts.delete(installationId)
         // Install failed or was cancelled — tear down the background template
@@ -459,15 +453,6 @@ export function registerInstallationHandlers(): void {
           method: express ? 'express' : 'manual',
           express: !!express
         })
-      }
-      // The base install is good (status 'installed' stands), but a failed
-      // snapshot restore must not read as a clean success — the staged
-      // snapshot + pendingSnapshotRestore marker are retained for retry.
-      if (restoreFailure) {
-        return {
-          ok: false,
-          message: i18n.t('migrate.restoreFailedAfterInstall', { message: restoreFailure })
-        }
       }
       return { ok: true }
     }

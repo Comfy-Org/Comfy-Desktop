@@ -697,8 +697,6 @@
     "depsPhase": "Install Dependencies",
     "scanning": "Scanning source instance…",
     "nothingToMigrate": "Nothing to migrate from source.",
-    "restoreFailedStatus": "Snapshot restore failed",
-    "restoreFailedAfterInstall": "The installation was created, but the snapshot restore failed: {message}\n\nYou can retry the restore from the Snapshots tab.",
     "copyingNode": "Copying {name}… ({current}/{total})",
     "copyingSettings": "Copying user settings…",
     "mergingUserData": "Merging user data…",

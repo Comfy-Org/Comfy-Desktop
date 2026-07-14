@@ -1940,11 +1940,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           }
           _activeOperationStatus.set(installationId, result)
           triggerPickerSnapshotBroadcast()
-          // Auto-purge the done entry after 15s so a picker re-opened
-          // after the op completes shows the normal settings view again.
+          // Auto-purge successful entries; failed operations retain their action
+          // data so Retry remains functional until the user dismisses them.
           setTimeout(() => {
             const cur = _activeOperationStatus.get(installationId)
-            if (cur?.done) {
+            if (cur?.done && cur.ok) {
               _activeOperationStatus.delete(installationId)
               triggerPickerSnapshotBroadcast()
             }

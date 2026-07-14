@@ -21,11 +21,19 @@ export {
   loadSnapshot,
   saveSnapshot,
   statesMatch,
+  ensureCurrentSnapshotOnTop,
   deduplicatePreUpdateSnapshot,
   pruneAutoSnapshots,
 } from './store'
 
-export { buildExportEnvelope, validateExportEnvelope, importSnapshots } from './exportImport'
+export {
+  buildExportEnvelope,
+  validateExportEnvelope,
+  importSnapshots,
+  stageSnapshotEnvelope,
+  loadStagedSnapshotEnvelope,
+  releaseStagedSnapshotEnvelope
+} from './exportImport'
 
 export {
   restoreComfyUIVersion,

@@ -697,8 +697,6 @@
     "depsPhase": "安装依赖",
     "scanning": "正在扫描源实例…",
     "nothingToMigrate": "源实例中没有可迁移内容。",
-    "restoreFailedStatus": "快照恢复失败",
-    "restoreFailedAfterInstall": "安装已创建，但快照恢复失败：{message}\n\n您可以从“快照”标签页重试恢复。",
     "copyingNode": "正在复制 {name}…（{current}/{total}）",
     "copyingSettings": "正在复制用户设置…",
     "mergingUserData": "正在合并用户数据…",

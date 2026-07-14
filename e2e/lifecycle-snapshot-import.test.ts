@@ -1,25 +1,20 @@
 /**
- * Lifecycle E2E: snapshot import end-to-end through the Snapshots tab
- * UI (lifecycle audit gap #10).
+ * Lifecycle E2E: snapshot import handshake (lifecycle audit gap #10).
  *
- * Drives the production wiring from the Import button click down to a
- * new snapshot file landing on disk and showing in the registry:
- *   - toolbar Import button → `handleImport` →
- *     `window.api.importSnapshotsPreview` → `dialog.showOpenDialog`
- *     (stubbed to return the seeded envelope path) → returns the
- *     parsed envelope,
- *   - SnapshotsView's preview confirm modal → user clicks Continue
- *     (`modalConfirm` testid),
- *   - `importSnapshotsDiff` then `importSnapshotsConfirm` resolve
- *     against the install and the imported snapshot record lands
- *     under `<installPath>/.launcher/snapshots/`.
+ * Drives the production import wiring through the IPC API:
+ *   - `importSnapshotsPreview` → `dialog.showOpenDialog` (stubbed to
+ *     return the seeded envelope path) → returns the parsed envelope,
+ *   - `importSnapshotsDiff` resolves the diff against the empty install,
+ *   - `importSnapshotsConfirm` STAGES the envelope as a restore target
+ *     and returns an opaque `restoreToken`.
  *
- * The follow-on `snapshot-restore` runAction emitted by SnapshotsView
- * is out of scope here — it requires real git repos to drive (covered
- * by `lifecycle-snapshot-restore.test.ts`). We assert the import
- * succeeded by polling for the install's snapshot count to advance
- * before the restore op gets a chance to do anything that would
- * interfere with the assertion.
+ * Key invariant under test (#1137): importing does NOT commit the
+ * envelope to history. An imported snapshot is a restore *target*, not
+ * history, until a restore from it succeeds — so a never-applied import
+ * must never appear as "Latest". We assert the install's snapshot
+ * history stays empty after confirm. The actual restore (which commits
+ * the staged target on success) needs real git repos and is covered by
+ * `lifecycle-snapshot-restore.test.ts`.
  */
 
 import os from 'node:os'
@@ -27,8 +22,6 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { titlePopupPage } from './support/cdpPages'
-import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let installPath = ''
@@ -112,54 +105,44 @@ test.afterAll(async () => {
   if (envelopeDir) await rm(envelopeDir, { recursive: true, force: true })
 })
 
-test('Import preview → Continue writes the envelope snapshot into the install @lifecycle', async () => {
+test('Import confirm stages the target as a restoreToken without touching history @lifecycle', async () => {
   // Sanity: empty install starts with zero snapshots.
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
   )
   expect(initialCount).toBe(0)
 
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({
-        installationId: ${JSON.stringify(INSTALL_ID)},
-        initialTab: 'snapshots',
-      })
-      return true
-    })()`,
+  // Preview reads the (stubbed) open dialog and parses the seeded envelope.
+  const preview = await ctx.panel.evaluate<{ ok: boolean; message?: string }>(
+    `window.api.importSnapshotsPreview()`,
   )
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.snapshotsImport), { timeout: 15_000 })
+  expect(preview.ok, `preview failed: ${preview.message ?? ''}`).toBe(true)
 
-  expect(await popup.click(byTestId(TID.snapshotsImport))).toBe(true)
-
-  // The preview confirm modal mounts in the popup webContents. Simple
-  // confirms route through BaseAlert (test-id `base-alert-action`);
-  // rich confirms keep the legacy ModalDialog path (`modal-confirm-button`).
-  // Accept either so the test stays stable across the dialog refactors.
-  const confirmSelector =
-    `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
-  await popup.waitForVisible(confirmSelector, { timeout: 10_000 })
-  expect(await popup.click(confirmSelector)).toBe(true)
-
-  // Poll for the snapshot to land on disk + the registry refresh.
-  // The import path writes the JSON synchronously then calls
-  // installations.update(snapshotCount), so a single poll on
-  // `getSnapshots` covers both. Generous timeout because the import-
-  // confirm chains diffAgainstCurrent which reads the install dir.
-  await expect
-    .poll(
-      async () =>
-        ctx.panel.evaluate<number>(
-          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
-        ),
-      { timeout: 15_000, intervals: [250, 500] },
-    )
-    .toBe(1)
-
-  const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; comfyuiVersion?: string }>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label, comfyuiVersion: s.comfyuiVersion })))`,
+  // Diff against the empty install — every comfyui field mismatches so the diff
+  // is non-empty and confirm is allowed to proceed.
+  const diff = await ctx.panel.evaluate<{ ok: boolean; message?: string }>(
+    `window.api.importSnapshotsDiff(${JSON.stringify(INSTALL_ID)})`,
   )
-  expect(snapshots.length).toBe(1)
-  expect(snapshots[0]?.label).toBe(IMPORTED_LABEL)
+  expect(diff.ok, `diff failed: ${diff.message ?? ''}`).toBe(true)
+
+  // Confirm STAGES the envelope as a restore target and returns an opaque
+  // token. It must NOT commit anything to history (#1137).
+  const confirm = await ctx.panel.evaluate<{
+    ok: boolean
+    imported?: number
+    restoreToken?: string
+    message?: string
+  }>(`window.api.importSnapshotsConfirm(${JSON.stringify(INSTALL_ID)})`)
+  expect(confirm.ok, `confirm failed: ${confirm.message ?? ''}`).toBe(true)
+  expect(confirm.imported).toBe(1)
+  expect(confirm.restoreToken).toMatch(/^[a-f0-9]{32}$/)
+
+  // The crux of #1137: the install's snapshot history is untouched — the
+  // imported, not-yet-applied target never lands in history (and so can never
+  // show as "Latest"). It is only committed once a restore from it succeeds.
+  const afterConfirm = await ctx.panel.evaluate<Array<{ label: string | null }>>(
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label })))`,
+  )
+  expect(afterConfirm.length).toBe(0)
+  expect(afterConfirm.some((s) => s.label === IMPORTED_LABEL)).toBe(false)
 })
