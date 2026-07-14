@@ -72,27 +72,24 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 
 | Spec | Tags | Meets zero-mock bar | Evidence |
 | --- | --- | --- | --- |
+| `cancel-flow.test.ts` | platform | n/a | `seedRunningSession` injects a synthetic running session. |
 | `chooser.test.ts` | platform | n/a | Seeded settings only; UI assertions. |
-| `copy-update-destination.test.ts` | `@lifecycle` | **No — retag candidate** | Copy result is synthetic; the real copy handler is bypassed; asserts IPC dispatch. |
+| `copy-update-destination.test.ts` | platform | n/a | Copy result is synthetic; the real copy handler is bypassed; asserts IPC dispatch. |
 | `dashboard-delete-flow.test.ts` | `@lifecycle` | Yes (light) | Really deletes the seeded install directory. |
+| `deep-links.test.ts` | platform | n/a | Replays the internal `panel-trigger-overlay` IPC directly into the panel and asserts downstream IPC dispatch; never exercises real OS/app `comfy://` handling. |
 | `devhooks-smoke.test.ts` | platform | n/a | Exists to test the dev-hooks bridge itself. |
+| `dismiss-error.test.ts` | platform | n/a | Injects the error into the renderer store at runtime (`__e2eRenderer.seedErrorInstance`). |
 | `downloads-shelf.test.ts` | platform | n/a | Injects downloads-tray state via `seedDownloads`. |
 | `dropdowns.test.ts` | platform | n/a | UI regression tests. |
 | `lifecycle-add-existing.test.ts` | `@lifecycle` | Yes (light) | Real probe + tracking against a staged git repo, driven through the waffle menu → TrackModal → Browse → Track Install chain; native directory picker stubbed with the staged path. |
-| `lifecycle-cancel-flow.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession` injects a synthetic running session. |
 | `lifecycle-cloud.test.ts` | `@lifecycle` | Yes | Real navigation to `https://cloud.comfy.org/`. |
 | `lifecycle-copy-update-fail.test.ts` | `@lifecycle` | Yes | Real local copy chained into a real update failure, driven through the picker Update tab's Copy & Update button; failure text asserted from the durable app log. |
 | `lifecycle-copy.test.ts` | `@lifecycle` | Yes | Real local disk copy of a staged install, driven through the picker More → Copy flow and prompt UI. |
-| `lifecycle-deep-links.test.ts` | `@lifecycle` | **No — retag candidate** | Replays the internal `panel-trigger-overlay` IPC directly into the panel and asserts downstream IPC dispatch; never exercises real OS/app `comfy://` handling. |
 | `lifecycle-delete-untrack.test.ts` | `@lifecycle` | Yes (light) | Real directory preservation/removal on disk, driven through the dashboard kebab → menu → panel confirm chain. |
-| `lifecycle-dismiss-error.test.ts` | `@lifecycle` | **No — retag candidate** | Injects the error into the renderer store at runtime (`__e2eRenderer.seedErrorInstance`). |
 | `lifecycle-first-use-migrate.test.ts` | `@lifecycle` | Yes (light) | Real first-use flow into the migrate confirm; the adoption op really runs and its fixture-determined outcome (validate-venv failure on the stub `.venv`) renders in the progress error surface. A successful adoption needs a live legacy venv (python + torch), out of CI budget. |
 | `lifecycle-first-use-skip.test.ts` | `@lifecycle` | Yes | Real ToS → Local → Continue chain into post-consent, then the waffle menu's Skip Onboarding item clicked in the real popup. |
 | `lifecycle-migrate.test.ts` | `@lifecycle` | Yes (light) | Real auto-tracker detection on boot; kebab → Migrate → adoption confirm → Cancel driven through the real UI. The final test is a read-only `getFieldOptions` contract guard on the R2 release/variant feed the migrate flow's silent variant pick consumes. |
 | `lifecycle-periodic-update-check.test.ts` | `@lifecycle` | Yes | Real background re-fetch of the release cache. |
-| `lifecycle-picker-cluster.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts IPC dispatch. |
-| `lifecycle-port-conflict.test.ts` | `@lifecycle` | **No — retag candidate** | Synthetic `portConflict` operation state; no real port conflict. |
-| `lifecycle-progress-reboot.test.ts` | `@lifecycle` | **No — retag candidate** | `injectRetryableProgressError` fakes a failing operation and its retry outcome. |
 | `lifecycle-snapshot-export.test.ts` | `@lifecycle` | Yes (light) | Writes real snapshot envelope JSON to disk; native save dialog stubbed with a fixed path. |
 | `lifecycle-snapshot-import.test.ts` | `@lifecycle` | Yes (light) | Consumes a real envelope; writes a snapshot into the install; native open dialog stubbed with a fixed path. |
 | `lifecycle-snapshot-restore.test.ts` | `@lifecycle` | Yes | Live restore moves real HEADs; every test drives the real expanded-row Restore button and confirm. |
@@ -103,23 +100,26 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `lifecycle-update-check.test.ts` | `@lifecycle` | Yes | Live `git ls-remote --tags` against Comfy-Org/ComfyUI, triggered by the real Check for Update button and Update-tab clicks; `ageReleaseCache` is time scaffolding. |
 | `lifecycle.test.ts` | `@lifecycle` | Yes | Real ~500 MB install driven through the UI; update, cross-channel update, snapshot restore, restarts, copy, untrack, and delete all fire from real picker/chooser controls. Remaining direct `runAction` calls are fixture setup/cleanup between tests, not flows under test. |
 | `nav-matrix-cloud.test.ts` | `@lifecycle` | Yes (light) | Cloud install record staged via `SeedOptions`; window-spawn flow driven through the real picker window-options UI. No real cloud attach (that is `lifecycle-cloud.test.ts`). |
-| `nav-matrix-dashboard.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts window/IPC behavior. |
-| `nav-matrix-instance.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession`; asserts window/IPC behavior. |
-| `picker-settings-staleness.test.ts` | `@lifecycle` | **No — retag candidate** | Seeded-state UI regression test. |
-| `picker-stop-confirm.test.ts` | `@lifecycle` | **No — retag candidate** | `seedRunningSession` injects the running state under test. |
-| `progress-error-overflow.test.ts` | `@lifecycle` | **No — retag candidate** | Pure UI overflow regression test. |
+| `nav-matrix-dashboard.test.ts` | platform | n/a | `seedRunningSession`; asserts window/IPC behavior. |
+| `nav-matrix-instance.test.ts` | platform | n/a | `seedRunningSession`; asserts window/IPC behavior. |
+| `picker-cluster.test.ts` | platform | n/a | `seedRunningSession`; asserts IPC dispatch. |
+| `picker-settings-staleness.test.ts` | platform | n/a | Seeded-state UI regression test. |
+| `picker-stop-confirm.test.ts` | platform | n/a | `seedRunningSession` injects the running state under test. |
+| `port-conflict.test.ts` | platform | n/a | Synthetic `portConflict` operation state; no real port conflict. |
+| `progress-error-overflow.test.ts` | platform | n/a | Pure UI overflow regression test. |
+| `progress-reboot.test.ts` | platform | n/a | `injectRetryableProgressError` fakes a failing operation and its retry outcome. |
 | `quit-flow.spec.ts` | `@macos` | n/a | Tray-close quit behavior. |
 | `title-bar-hover-gate-comfy-window.test.ts` | platform | n/a | Hover-gate state machine (probes cloud.comfy.org for the host window). |
 | `title-bar-hover-gate.test.ts` | platform | n/a | Hover-gate state machine. |
 | `update-pills.test.ts` | platform | n/a | Injects update states via `setAppUpdateState` / `setInstallUpdate`. |
 | `window-visible.spec.ts` | platform | n/a | Launch smoke test. |
 
-"Retag candidate" specs are E2E tests by the definitions above: they inject synthetic
-runtime state or assert dispatch instead of real side effects. Retagging them to the
-platform projects would add them to PR-blocking CI, so each needs a platform-stability
-check first — that migration is tracked separately from this document. "Yes (light)"
-specs meet the bar with allowed scaffolding (staged fixtures, stubbed native OS
-dialogs, read-only queries); "Yes" specs need none.
+Twelve specs formerly tagged `@lifecycle` were retagged to the platform projects: they
+inject synthetic runtime state or assert dispatch instead of real side effects, which
+makes them E2E tests by the definitions above. The `lifecycle-` filename prefix was
+dropped where present so filenames match projects. "Yes (light)" specs meet the bar
+with allowed scaffolding (staged fixtures, stubbed native OS dialogs, read-only
+queries); "Yes" specs need none.
 
 ## Running lifecycle tests
 

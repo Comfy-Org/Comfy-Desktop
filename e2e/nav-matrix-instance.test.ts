@@ -79,7 +79,7 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('Instance B via "Open in new window": spawns a new window (no swap of the host) @lifecycle', async () => {
+test('Instance B via "Open in new window": spawns a new window (no swap of the host) @windows @macos @linux', async () => {
   // B has no window of its own, so the caret action spawns a fresh host for it
   // without touching the picker's host. Mirrors the passing dashboard→cloud case.
   const before = await liveWindowCount(ctx.app)
@@ -103,7 +103,7 @@ test('Instance B via "Open in new window": spawns a new window (no swap of the h
   })
 })
 
-test('Instance B (running elsewhere): focus its existing window @lifecycle', async () => {
+test('Instance B (running elsewhere): focus its existing window @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, { installationId: INSTALL_B_ID, installationName: INSTALL_B_NAME })
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
