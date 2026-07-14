@@ -125,6 +125,7 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 | `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
 | `pnpm run test:integration`      | Integration suite                                                     |
 | `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
+| `pnpm run test:e2e:lifecycle`    | Zero-mock lifecycle tests (real installs/downloads; see `e2e/README.md`) |
 | `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
 | `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
 | `pnpm run format`                | Format (Prettier)                                                     |

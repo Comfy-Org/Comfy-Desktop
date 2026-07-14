@@ -1,0 +1,53 @@
+name: Lifecycle Tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly at 09:00 UTC (01:00 PT)
+    - cron: '0 9 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifecycle-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lifecycle:
+    name: Lifecycle (windows)
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build app
+        run: pnpm run build
+
+      - name: Run lifecycle tests
+        run: pnpm run test:e2e:lifecycle
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-lifecycle-failure
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
