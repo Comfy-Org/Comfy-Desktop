@@ -467,6 +467,38 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect(result.ok).toBe(false)
       expect(result.message).toBe('Cancelled')
     })
+
+    it('rolls the source back when cancelled after the script moved HEAD', async () => {
+      const controller = new AbortController()
+      // Abort during the update script, after it advanced HEAD — mimics a cancel
+      // that kills the process mid-checkout, leaving the source moved.
+      spawnState.pythonHandler = (_args: string[]) => {
+        execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
+          cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
+        })
+        controller.abort()
+        return fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`,
+            '[BACKUP_BRANCH] backup_branch_test\n',
+          ],
+          exitCode: 1,
+        })
+      }
+
+      expect(headSha()).toBe(repoShas.v1Sha) // pre-update state
+
+      const opts = makeBaseOpts(installPath, { signal: controller.signal })
+      const result = await runComfyUIUpdate(opts)
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toMatch(/^Cancelled/)
+      expect(result.message).toMatch(/rolled back/i)
+      // Source is restored to the pre-update commit despite the cancel.
+      expect(headSha()).toBe(repoShas.v1Sha)
+      // Marker is left behind so a launch-time recovery re-runs if needed.
+      expect(markerExists()).toBe(true)
+    })
   })
 
   describe('version resolution', () => {

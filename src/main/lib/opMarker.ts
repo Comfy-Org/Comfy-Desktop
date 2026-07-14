@@ -69,10 +69,18 @@ export function rollbackStatusMessage(
 }
 
 export async function writeOpMarker(installPath: string, marker: OpMarker): Promise<void> {
+  // Write atomically: a truncating write that's interrupted (hard kill) would
+  // leave empty/malformed JSON, which readOpMarker treats as "no marker" — that
+  // would drop the recovery marker in exactly the crash window it protects. Write
+  // to a temp file in the same directory, then rename over the marker.
+  const target = markerPath(installPath)
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
   try {
-    await fs.promises.writeFile(markerPath(installPath), JSON.stringify(marker), 'utf-8')
+    await fs.promises.writeFile(tmp, JSON.stringify(marker), 'utf-8')
+    await fs.promises.rename(tmp, target)
   } catch (err) {
     console.warn('Failed to write op-in-progress marker:', err)
+    try { await fs.promises.unlink(tmp) } catch { /* nothing to clean up */ }
   }
 }
 

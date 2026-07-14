@@ -244,6 +244,9 @@ def main():
     # differs from the checked-out commit.
     pre_reset_head = repo.head.target
     was_detached = repo.head_is_detached
+    # Capture the exact symbolic ref so an attached HEAD is reattached to its
+    # original branch (not assumed to be master) on rollback.
+    pre_head_ref = None if was_detached else repo.head.name
     pre_master_target = branch.target if branch is not None else None
     try:
         if branch is None:
@@ -269,7 +272,7 @@ def main():
             if was_detached:
                 repo.set_head(pre_reset_head)
             else:
-                repo.set_head("refs/heads/master")
+                repo.set_head(pre_head_ref)
             repo.reset(pre_reset_head, pygit2.GIT_RESET_HARD)
             print("Restored ComfyUI source to pre-update commit %s"
                   % str(pre_reset_head)[:7])

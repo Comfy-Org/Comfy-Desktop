@@ -242,23 +242,25 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
     }
   }
 
+  // Transactional guard for a failed or cancelled git step: the update script
+  // advances the branch ref before the working-tree checkout, so a mid-checkout
+  // failure (e.g. a symlink the user can't create on Windows) or a cancel that
+  // kills the process mid-checkout can leave the source moved. Roll it back so
+  // this session never launches new source against the old venv (crashes on
+  // import, e.g. `comfy_aimdo.vram_buffer`). The op marker is intentionally left
+  // in place so recoverInterruptedComfyOp retries on the next launch if this
+  // in-process rollback fails.
+  let rollbackNote = ''
+  if ((signal?.aborted || result.exitCode !== 0) && preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
+    const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
+    rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
+  }
+
   // Check cancellation before the exit code — aborted processes exit non-zero
   // and shouldn't surface an error.
-  if (signal?.aborted) return { ok: false, message: 'Cancelled', installation }
+  if (signal?.aborted) return { ok: false, message: `Cancelled${rollbackNote}`, installation }
 
   if (result.exitCode !== 0) {
-    // Transactional guard for a failed git step: the update script advances the
-    // branch ref before the working-tree checkout, so a mid-checkout failure
-    // (e.g. a symlink the user can't create on Windows) can leave the source
-    // moved. Roll it back so this session never launches new source against the
-    // old venv (crashes on import, e.g. `comfy_aimdo.vram_buffer`). The op marker
-    // is intentionally left in place so recoverInterruptedComfyOp retries on the
-    // next launch if this in-process rollback fails.
-    let rollbackNote = ''
-    if (preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
-      const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
-      rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
-    }
     const detail = [result.stderrBuf, result.stdoutBuf].filter(Boolean).join('\n').trim().split('\n').slice(-20).join('\n')
     if (sendOutput) {
       let message: string
