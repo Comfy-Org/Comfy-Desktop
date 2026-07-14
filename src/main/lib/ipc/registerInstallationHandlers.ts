@@ -299,6 +299,10 @@ export function registerInstallationHandlers(): void {
       const abort = new AbortController()
       _operationAborts.set(installationId, abort)
 
+      // A pending snapshot restore that fails after a successful base install
+      // must not fail the install itself — the env is bootable (#1255).
+      let snapshotRestoreError: string | null = null
+
       // Kick off the starter-template model download in the BACKGROUND the
       // moment install begins, so the (multi-GB, slow) bytes overlap env
       // setup/extract/update instead of blocking. It's surfaced later as a
@@ -342,16 +346,29 @@ export function registerInstallationHandlers(): void {
           }
           const update = (data: Record<string, unknown>): Promise<void> =>
             installations.update(installationId, data).then(() => {})
-          await restoreSnapshotIntoInstallation(
-            freshInst,
-            pendingFile,
-            true,
-            { sendProgress, sendOutput, signal: abort.signal },
-            update
-          )
+          try {
+            await restoreSnapshotIntoInstallation(
+              freshInst,
+              pendingFile,
+              true,
+              { sendProgress, sendOutput, signal: abort.signal },
+              update
+            )
+          } catch (err) {
+            // Cancellation is handled by the outer catch's abort path.
+            if (abort.signal.aborted) throw err
+            // The base install completed and is bootable — only the snapshot
+            // could not be fully applied. Don't condemn the whole install
+            // (#1255): drop the retry pointer so a later re-install/update
+            // can't replay the failed restore, keep the install, and surface
+            // the failure to the user.
+            snapshotRestoreError = (err as Error).message
+            await installations.update(installationId, { pendingSnapshotRestore: undefined })
+            await fs.promises.unlink(pendingFile).catch(() => {})
+          }
         }
 
-        sendProgress('done', { percent: 100, status: 'Complete' })
+        if (!snapshotRestoreError) sendProgress('done', { percent: 100, status: 'Complete' })
       } catch (err) {
         _operationAborts.delete(installationId)
         // Install failed or was cancelled — tear down the background template
@@ -453,6 +470,16 @@ export function registerInstallationHandlers(): void {
           method: express ? 'express' : 'manual',
           express: !!express
         })
+      }
+      if (snapshotRestoreError) {
+        // The install itself succeeded (status 'installed' above) — report the
+        // snapshot failure so the progress UI shows it, and record it in the
+        // app log (#1250).
+        const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', {
+          message: snapshotRestoreError
+        })
+        appendLog(installationId, `\n${message}\n`)
+        return { ok: false, message }
       }
       return { ok: true }
     }

@@ -474,6 +474,101 @@ export async function restorePipPackages(
   return result
 }
 
+export interface RequirementsRepairResult {
+  /** Freeze diff of the repair pass: installs, version changes, and removals
+   *  (`to: '(removed)'`). */
+  changed: Array<{ name: string; from: string | null; to: string }>
+  /** Non-fatal per-file install failures, plus any (should-be-impossible)
+   *  protected-package drift the constraint pins failed to prevent. */
+  errors: string[]
+}
+
+/**
+ * Additive repair pass for compatible-mode restores, run AFTER the exact pip
+ * sync: re-install ComfyUI core requirements and every enabled custom node's
+ * requirements so the sync's remove-extras step can never leave the install
+ * missing dependencies (the snapshot's freeze may not contain packages this
+ * machine resolves differently). Only installs; never removes. The returned
+ * freeze diff tells the caller whether the live state drifted from the
+ * snapshot target.
+ */
+export async function repairNodeRequirements(
+  installPath: string,
+  installation: InstallationRecord,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal,
+  mirrors?: PipMirrorConfig
+): Promise<RequirementsRepairResult> {
+  const result: RequirementsRepairResult = { changed: [], errors: [] }
+  const uvPath = getActiveUvPath(installation)
+  const pythonPath = getActivePythonPath(installation)
+  if (!pythonPath || !fs.existsSync(uvPath)) return result
+
+  const comfyuiDir = path.join(installPath, 'ComfyUI')
+  const reqFiles: string[] = []
+  const coreReq = path.join(comfyuiDir, 'requirements.txt')
+  if (fs.existsSync(coreReq)) reqFiles.push(coreReq)
+  const mgrReq = path.join(comfyuiDir, 'manager_requirements.txt')
+  if (fs.existsSync(mgrReq)) reqFiles.push(mgrReq)
+  const nodes = await scanCustomNodes(comfyuiDir)
+  for (const node of nodes) {
+    if (!node.enabled || node.type === 'file') continue
+    const reqPath = path.join(comfyuiDir, 'custom_nodes', node.dirName, 'requirements.txt')
+    if (fs.existsSync(reqPath)) reqFiles.push(reqPath)
+  }
+  if (reqFiles.length === 0) return result
+
+  const before = await pipFreeze(uvPath, pythonPath)
+
+  // Pin every currently installed protected package (torch stack, core
+  // tooling) via a constraints file so a node requirement's transitive
+  // dependencies can never swap the PyTorch stack out from under the restore.
+  // A requirement that conflicts with the pins fails its install (recorded as
+  // a repair error) instead of changing the stack.
+  const constraintLines = Object.entries(before)
+    .filter(([name, version]) => isProtectedPackage(name) && !version.startsWith('-e '))
+    .map(([name, version]) => `${name}==${version}`)
+  const constraintPath = path.join(installPath, '.repair-constraints.txt')
+  await fs.promises.writeFile(constraintPath, constraintLines.join('\n'), 'utf-8')
+
+  try {
+    for (const reqPath of reqFiles) {
+      if (signal?.aborted) break
+      const label = path.relative(comfyuiDir, reqPath)
+      try {
+        const code = await installFilteredRequirements(
+          reqPath, uvPath, pythonPath, installPath,
+          `.repair-reqs-${normalizeDistInfoName(path.basename(path.dirname(reqPath)))}.txt`,
+          sendOutput, signal, mirrors,
+          constraintLines.length > 0 ? ['--constraint', constraintPath] : undefined
+        )
+        if (code !== 0) result.errors.push(`Requirements repair failed for ${label} (exit ${code})`)
+      } catch (err) {
+        result.errors.push(`Requirements repair failed for ${label}: ${(err as Error).message}`)
+      }
+    }
+  } finally {
+    await fs.promises.unlink(constraintPath).catch(() => {})
+  }
+
+  // Diff the freeze even when aborted mid-loop: callers must see any drift the
+  // completed installs already caused. Union of keys so removals count too.
+  const after = await pipFreeze(uvPath, pythonPath)
+  const names = new Set([...Object.keys(before), ...Object.keys(after)])
+  for (const name of names) {
+    const prev = before[name] ?? null
+    const next = after[name] ?? null
+    if (prev !== next) result.changed.push({ name, from: prev, to: next ?? '(removed)' })
+  }
+  const protectedChanged = result.changed.filter((c) => isProtectedPackage(c.name))
+  if (protectedChanged.length > 0) {
+    result.errors.push(
+      `Requirements repair unexpectedly altered protected package(s): ${protectedChanged.map((c) => c.name).join(', ')}`
+    )
+  }
+  return result
+}
+
 function isManagerNode(node: ScannedNode): boolean {
   return node.id.toLowerCase().includes('comfyui-manager')
 }
@@ -688,6 +783,14 @@ export async function restoreCustomNodes(
           result.failed.push({ id: targetNode.id, error: (err as Error).message })
         }
       } else if (targetNode.type === 'git') {
+        // Phantom entry from an older buggy scan (#1253): a directory recorded
+        // with no source at all cannot be restored and never could — skip it
+        // instead of failing the whole restore.
+        if (!targetNode.url && !targetNode.commit) {
+          result.skipped.push(targetNode.id)
+          sendOutput(`Skipped ${targetNode.id}: snapshot records no source for it\n`)
+          continue
+        }
         if (!gitAvailable) {
           result.failed.push({ id: targetNode.id, error: 'git not available' })
           continue

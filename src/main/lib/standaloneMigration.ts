@@ -15,8 +15,12 @@ import {
   restorePipPackages,
   restoreComfyUIVersion,
   buildPostRestoreState,
-  frozenSnapshotInstallOverrides
+  frozenSnapshotInstallOverrides,
+  repairNodeRequirements
 } from './snapshots'
+import type { Snapshot, RequirementsRepairResult } from './snapshots'
+import { getInstalledTorchTuple } from '../sources/standalone/envPaths'
+import { torchTupleMatches, publicVersion } from '../sources/standalone/torchStackTypes'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -140,8 +144,33 @@ async function resolveStandaloneInstallData(
 }
 
 /**
+ * Fresh installs get their PyTorch from the install bundle (pinned to the
+ * snapshot's stack when it is available for this machine), never from a
+ * post-install swap. When the resulting stack differs from what the snapshot
+ * recorded, the substitution is disclosed instead of failing the restore —
+ * but the imported envelope must then not be committed to history, since the
+ * install was never in exactly the recorded state.
+ */
+function torchSubstitutionNote(installation: InstallationRecord, targetSnapshot: Snapshot): string | null {
+  const snapTorch = targetSnapshot.torchStack
+  if (!snapTorch) return null
+  const installed = getInstalledTorchTuple(installation)
+  if (snapTorch.kind === 'managed') {
+    if (torchTupleMatches(snapTorch.ref.packages, installed)) return null
+    return i18n.t('standalone.pytorchSnapshotStackKeptLocal', { version: snapTorch.ref.packages.torch })
+  }
+  if (snapTorch.torchVersion) {
+    if (installed.torch && publicVersion(snapTorch.torchVersion) === publicVersion(installed.torch)) return null
+    return i18n.t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
+  }
+  return null
+}
+
+/**
  * Restore a snapshot (custom nodes + pip packages) into a freshly installed
- * standalone installation.
+ * standalone installation. Always applies the snapshot in compatible mode:
+ * a fresh install adapts to this machine (torch substitution disclosure,
+ * requirements repair) rather than failing on states it cannot reproduce.
  */
 export async function restoreSnapshotIntoInstallation(
   entry: InstallationRecord,
@@ -221,6 +250,28 @@ export async function restoreSnapshotIntoInstallation(
       )
     }
 
+    // Additive repair pass after the exact sync: the snapshot's freeze may not
+    // record packages this machine resolves differently, and the sync's
+    // remove-extras step must never leave core or nodes missing dependencies.
+    let repairResult: RequirementsRepairResult = { changed: [], errors: [] }
+    if (coreOk && !signal.aborted && !targetSnapshot.skipPipSync &&
+        pipResult && pipResult.failed.length === 0) {
+      sendOutput('\n── Repair Requirements ──\n')
+      sendProgress('restore-pip', { percent: -1, status: i18n.t('standalone.snapshotRepairPhase') })
+      repairResult = await repairNodeRequirements(
+        freshInst.installPath, freshInst, sendOutput, signal, settings.getMirrorConfig()
+      )
+      if (repairResult.changed.length > 0) {
+        sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
+      }
+    }
+
+    // Fresh installs never swap torch after install — the bundle choice was
+    // already pinned to the snapshot's stack when available. Disclose when the
+    // resulting stack differs from what the snapshot recorded.
+    const torchNote = coreOk ? torchSubstitutionNote(freshInst, targetSnapshot) : null
+    if (torchNote) sendOutput(`\n${torchNote}\n`)
+
     // Update installation state with restored version/channel metadata
     const restoreState = buildPostRestoreState(
       targetSnapshot,
@@ -243,20 +294,41 @@ export async function restoreSnapshotIntoInstallation(
       nodeResult.unreportable.length === 0 &&
       (pipResult?.failed.length ?? 0) === 0
 
+    // Compatible-mode adaptations (torch substitution, requirements repair
+    // drift or repair errors) don't fail the restore, but they do mean the
+    // install never reached exactly the recorded state — the envelope must not
+    // be committed.
+    const reachedTarget = restoreSucceeded && !torchNote &&
+      repairResult.changed.length === 0 && repairResult.errors.length === 0
+
     const updatedInst = { ...freshInst, ...restoreState }
     currentForSnapshot = updatedInst
 
     // Only commit the imported envelope to history once the install has
     // actually been in that state (#1137).
-    if (restoreSucceeded) {
+    if (reachedTarget) {
       await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
+    }
+    if (restoreSucceeded) {
       try {
-        // Make the newest snapshot reflect the real current state — normally a
-        // no-op since the just-committed target already matches and stays Latest.
+        // Make the newest snapshot reflect the real current state — a no-op
+        // when the just-committed target already matches and stays Latest;
+        // with compatible-mode adaptations (nothing committed) a fresh
+        // snapshot of the actual state is written instead.
         const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, updatedInst)
         const snapshotCount = await getSnapshotCount(freshInst.installPath)
         await update({ lastSnapshot: filename ?? freshInst.lastSnapshot, snapshotCount })
       } catch (err) {
+        if (!reachedTarget) {
+          // Adapted restore: nothing was committed, so this snapshot is the
+          // ONLY record of the state this restore produced. Failing to write
+          // it must fail the restore rather than report success with a stale
+          // "Latest".
+          throw new Error(
+            `Snapshot restore applied, but the resulting state could not be saved: ${(err as Error).message}`,
+            { cause: err }
+          )
+        }
         console.warn('Failed to record restored snapshot state:', err)
       }
     }
@@ -379,7 +451,7 @@ async function copyMigrationData(
 export async function migrateToStandaloneFromSnapshot(
   input: SharedMigrationInput,
   tools: MigrationTools
-): Promise<{ entry: InstallationRecord; destPath: string }> {
+): Promise<{ entry: InstallationRecord; destPath: string; restoreError?: string }> {
   const { sendProgress, signal, uniqueName } = tools
   const { stagedSnapshot, sourcePaths, labels, target } = input
 
@@ -451,14 +523,27 @@ export async function migrateToStandaloneFromSnapshot(
       await standaloneSource.postInstall!(installRecord, { sendProgress, update })
     })
 
-    // 4. Restore snapshot (custom nodes + pip packages)
-    await restoreSnapshotIntoInstallation(
-      entry,
-      stagedSnapshot.path,
-      stagedSnapshot.owned,
-      tools,
-      update
-    )
+    // 4. Restore snapshot (custom nodes + pip packages). A restore failure
+    // after the successful env install must not condemn the new install — it
+    // is bootable, and its newest snapshot already records the actual state
+    // (#1255). Finish the migration and report the failure to the caller.
+    let restoreError: string | undefined
+    try {
+      await restoreSnapshotIntoInstallation(
+        entry,
+        stagedSnapshot.path,
+        stagedSnapshot.owned,
+        tools,
+        update
+      )
+    } catch (err) {
+      if (signal.aborted) throw err
+      restoreError = (err as Error).message
+      // Drop the retry pointer so a later re-install can't replay the failed
+      // restore, and release the staged file if this migration owns it.
+      await update({ pendingSnapshotRestore: undefined })
+      if (stagedSnapshot.owned) await fs.promises.unlink(stagedSnapshot.path).catch(() => {})
+    }
 
     // 5. Copy user data, input, output, models
     const dstComfyUI = path.join(destPath, 'ComfyUI')
@@ -478,7 +563,7 @@ export async function migrateToStandaloneFromSnapshot(
       express: false
     })
 
-    return { entry, destPath }
+    return { entry, destPath, restoreError }
   } catch (err) {
     await installations.update(entry.id, { status: 'failed' }).catch(() => {})
     throw err

@@ -26,9 +26,17 @@ export async function handleDelegateToSource({ event, installationId, inst, acti
     return { ok: false, message: i18n.t('errors.unknownSource') }
   }
   try {
-    return await source.handleAction(actionId, inst, actionData, { update, sendProgress, sendOutput, signal: abort.signal })
+    const result = await source.handleAction(actionId, inst, actionData, { update, sendProgress, sendOutput, signal: abort.signal })
+    // Failures surfaced to the UI must also land in the app log (#1250) —
+    // sendOutput covers per-step output, but the final failure summary is
+    // otherwise only returned to the renderer.
+    if (!result.ok && result.message && !result.cancelled) {
+      appendLog(installationId, `\n⚠ ${actionId} failed: ${result.message}\n`)
+    }
+    return result
   } catch (err) {
     if (abort.signal.aborted) return { ok: false, cancelled: true, message: MSG_CANCELLED }
+    appendLog(installationId, `\n⚠ ${actionId} failed: ${(err as Error).message}\n`)
     return { ok: false, message: (err as Error).message }
   } finally {
     _operationAborts.delete(installationId)

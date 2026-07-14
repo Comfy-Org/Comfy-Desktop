@@ -117,6 +117,16 @@ export async function handleAction(
     const restoreToken = actionData?.restoreToken as string | undefined
     if (!file && !restoreToken) return { ok: false, message: t('standalone.snapshotNoFile') }
 
+    // Restore mode: in-history snapshots of THIS install default to exact
+    // reproduction; imported envelopes default to the closest working state
+    // on this machine (they may come from different hardware). Unknown values
+    // fall back to the default rather than being trusted.
+    const modeRaw = actionData?.mode
+    const mode: snapshots.RestoreMode =
+      modeRaw === 'exact' || modeRaw === 'compatible'
+        ? modeRaw
+        : restoreToken ? 'compatible' : 'exact'
+
     // Drop the shared shell + pop-outs first: on Windows a live shell holds a
     // handle on the install dir and any running python locks venv DLLs, which
     // breaks the site-packages removals/upgrades this restore performs.
@@ -150,7 +160,10 @@ export async function handleAction(
       try {
         torchTarget = await resolveTorchStack(installation, snapTorch.ref.stackId)
       } catch (err) {
-        return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+        if (mode === 'exact') {
+          return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+        }
+        torchTarget = null
       }
       // Metadata drift guard: the re-resolved catalog entry must still be
       // the exact tuple the snapshot recorded (symmetric — a package the
@@ -160,15 +173,23 @@ export async function handleAction(
         torchTarget = null
       }
       if (!torchTarget) {
-        return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
+        // Exact mode promises the recorded stack; compatible mode keeps the
+        // local stack and discloses the substitution instead of aborting
+        // (the snapshot may come from different hardware).
+        if (mode === 'exact') {
+          return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
+        }
+        torchNote = t('standalone.pytorchSnapshotStackKeptLocal', { version: snapTorch.ref.packages.torch })
       }
-      try {
-        // Adopted installs apply managed stacks via pip (no bundle download
-        // pending) — charge the pip staging estimate, not the bundle size.
-        await preflightDiskSpace(installation, adopted ? null : torchTarget, signal)
-      } catch (err) {
-        if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
-        throw err
+      if (torchTarget) {
+        try {
+          // Adopted installs apply managed stacks via pip (no bundle download
+          // pending) — charge the pip staging estimate, not the bundle size.
+          await preflightDiskSpace(installation, adopted ? null : torchTarget, signal)
+        } catch (err) {
+          if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+          throw err
+        }
       }
     } else if (snapTorch?.kind === 'observed' && snapTorch.torchVersion) {
       // Older snapshots record torch alone; only full-tuple records can be
@@ -373,6 +394,32 @@ export async function handleAction(
       // completed and clear it so the next launch doesn't roll a good restore back.
       await completeOpMarker(installation.installPath)
 
+      // Compatible mode: additive repair pass after the exact sync, so its
+      // remove-extras step can never leave core or nodes missing dependencies
+      // the snapshot's freeze didn't record (e.g. platform-specific transitive
+      // deps resolved differently on this machine). Runs before the torch swap
+      // so nothing can override the final stack.
+      let repairResult: snapshots.RequirementsRepairResult = { changed: [], errors: [] }
+      if (mode === 'compatible' && !targetSnapshot.skipPipSync && !signal?.aborted) {
+        sendOutput('\n── Repair Requirements ──\n')
+        sendProgress('restore-pip', { percent: -1, status: t('standalone.snapshotRepairPhase') })
+        repairResult = await snapshots.repairNodeRequirements(
+          installation.installPath, installation, sendOutput, signal, settings.getMirrorConfig()
+        )
+        if (repairResult.changed.length > 0) {
+          sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
+        }
+        if (signal?.aborted) {
+          // Cancelled mid-repair: the exact sync already completed and the op
+          // marker is cleared, so nothing rolls back — the live state is
+          // post-sync plus whatever repair installs finished. Record it on top
+          // and report cancelled; the staged envelope stays for a retry.
+          await ensureLiveStateOnTop()
+          sendOutput('\nCancelled during requirements repair; completed changes stand.\n')
+          return { ok: false, cancelled: true, message: MSG_CANCELLED }
+        }
+      }
+
       // Apply the PyTorch stack last so nothing later in the restore can
       // override it. Failure rolls back torch only (the transaction restores the
       // previous venv); the source/node/pip changes above stand and the restore
@@ -423,6 +470,8 @@ export async function handleAction(
       }
       if (pipResult.protectedSkipped.length > 0) summary.push(`${pipResult.protectedSkipped.length} protected (skipped)`)
       if (pipResult.failed.length > 0) summary.push(`${pipResult.failed.length} package(s) failed`)
+      if (repairResult.changed.length > 0) summary.push(`Requirements repair: ${repairResult.changed.length} package(s) adjusted`)
+      if (repairResult.errors.length > 0) summary.push(`${repairResult.errors.length} requirements repair warning(s)`)
 
       if (torchApplied) {
         const torchAfter = torchTarget?.packages.torch ?? torchObservedTuple?.torch
@@ -436,11 +485,12 @@ export async function handleAction(
 
       // comfyResult.error and pip/abort failures already returned above; only
       // best-effort custom-node failures and a rolled-back torch swap can reach
-      // here. For a staged import, a skipped observed torch stack also counts:
-      // the imported snapshot's stack was never reached, so the envelope must
-      // not be committed to history (#1137). An in-history restore keeps the
-      // skip note-only — the post-restore snapshot records the actual state.
-      const torchSkippedForImport = Boolean(stagedEnvelope && torchNote)
+      // here. In exact mode a staged import whose recorded torch stack was
+      // skipped did not reach its target, so it counts as a failure and the
+      // envelope must not be committed to history (#1137). In compatible mode
+      // a skipped/kept-local torch stack is a disclosed adaptation, not a
+      // failure — but it still disqualifies the envelope from being committed.
+      const torchSkippedForImport = Boolean(stagedEnvelope && torchNote && mode === 'exact')
       const totalFailures = nodeResult.failed.length + nodeResult.unreportable.length +
         (torchFailure ? 1 : 0) + (torchSkippedForImport ? 1 : 0)
 
@@ -483,7 +533,13 @@ export async function handleAction(
 
       // Best-effort node failures don't roll the source back, so the live state
       // is the (partially) restored one — it does NOT match the imported target.
-      const restoreSucceeded = totalFailures === 0
+      // Compatible-mode adaptations (kept-local torch, requirements repair
+      // drift or repair errors) also mean the target state was not literally
+      // reached, so the imported envelope must not be committed even though the
+      // restore is reported as successful; the post-restore snapshot records
+      // reality.
+      const reachedTarget = totalFailures === 0 && !torchNote &&
+        repairResult.changed.length === 0 && repairResult.errors.length === 0
       // Reload the record first: the torch transaction persisted
       // `lastVerifiedTorchStack` through `update`, and classifying the
       // post-restore snapshot from the stale local object would record the
@@ -494,7 +550,8 @@ export async function handleAction(
         ...restoreState,
       }
 
-      if (stagedEnvelope && restoreSucceeded) {
+      let adaptedStateRecorded = false
+      if (stagedEnvelope && reachedTarget) {
         try {
           // Commit a staged import to history ONLY once the restore fully
           // succeeded — the install has actually been in this state (#1137).
@@ -514,6 +571,26 @@ export async function handleAction(
             console.warn('Releasing staged snapshot failed:', err)
           }
         }
+      } else if (stagedEnvelope && restoreToken && totalFailures === 0) {
+        // Compatible-mode success with adaptations: the restore is done and the
+        // envelope is never committed (the install was never in exactly that
+        // state) — the post-restore snapshot of the ACTUAL state is what
+        // records this restore. Write it before dropping the staged file, so a
+        // failure keeps the target retryable instead of leaving "Latest" stale.
+        adaptedStateRecorded = true
+        try {
+          const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
+          const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+          if (filename) await update({ lastSnapshot: filename, snapshotCount })
+        } catch (err) {
+          console.warn('Post-restore snapshot failed:', err)
+          return { ok: false, message: `Snapshot was restored with adaptations, but the resulting state could not be saved: ${(err as Error).message}` }
+        }
+        try {
+          await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
+        } catch (err) {
+          console.warn('Releasing staged snapshot failed:', err)
+        }
       }
 
       try {
@@ -522,10 +599,12 @@ export async function handleAction(
           // just-committed target already matches (no-op, stays Latest); otherwise
           // a fresh post-restore snapshot is written strictly on top — including
           // above the future-dated imported entries, since ensureCurrentSnapshotOnTop
-          // stamps after the current top.
-          const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
-          const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
-          if (filename) await update({ lastSnapshot: filename, snapshotCount })
+          // stamps after the current top. The adapted path above already did this.
+          if (!adaptedStateRecorded) {
+            const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
+            const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+            if (filename) await update({ lastSnapshot: filename, snapshotCount })
+          }
         } else {
           // Restoring an existing in-history snapshot: it carries an older
           // timestamp, so a plain post-restore snapshot lands on top.
@@ -541,8 +620,16 @@ export async function handleAction(
         percent: 100,
         status: nothingToDo ? t('standalone.snapshotRestoreNothingToDo') : t('standalone.snapshotRestoreComplete')
       })
+      // Successful compatible-mode restores disclose their adaptations as a
+      // transient notice (ok + navigate:'detail' + message → flashNotice).
+      const adaptations: string[] = []
+      if (torchNote) adaptations.push(torchNote)
+      if (repairResult.changed.length > 0) adaptations.push(`Requirements repair adjusted ${repairResult.changed.length} package(s).`)
+      if (repairResult.errors.length > 0) adaptations.push(`${repairResult.errors.length} requirements repair warning(s) — see logs.`)
       return { ok: totalFailures === 0, navigate: 'detail',
-        ...(totalFailures > 0 ? { message: failMessage(`${totalFailures} operation(s) failed`) } : {}) }
+        ...(totalFailures > 0
+          ? { message: failMessage(`${totalFailures} operation(s) failed`) }
+          : adaptations.length > 0 ? { message: adaptations.join(' ') } : {}) }
     } finally {
       // Structural guarantee: staging is removed on every exit â€” early
       // returns, unexpected throws, and success (a no-op there: the apply

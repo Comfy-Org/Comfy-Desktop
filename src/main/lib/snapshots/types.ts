@@ -1,6 +1,17 @@
 import type { ScannedNode } from '../nodes'
 import type { SnapshotTorchStack } from '../../sources/standalone/torchStackTypes'
 
+/** How a snapshot is applied to an install.
+ *  - `exact`: reproduce the recorded state precisely. An unavailable PyTorch
+ *    stack aborts the restore; nothing is substituted.
+ *  - `compatible`: reach the closest working state on this machine. An
+ *    unavailable PyTorch stack keeps the local stack (disclosed in the result),
+ *    and node requirements are repaired after the exact pip sync so the sync
+ *    can never strip packages nodes need. A substituted/repaired result never
+ *    commits an imported envelope to history — the post-restore snapshot of
+ *    the actual state does. */
+export type RestoreMode = 'exact' | 'compatible'
+
 export interface Snapshot {
   /** 1 = legacy (no torch stack data); 2 = adds `torchStack`. New snapshots
    *  are written as v2; v1 snapshots remain readable. */
