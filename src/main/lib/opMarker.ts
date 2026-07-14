@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { readGitHead, rollbackComfySource } from './git'
@@ -74,7 +75,7 @@ export async function writeOpMarker(installPath: string, marker: OpMarker): Prom
   // would drop the recovery marker in exactly the crash window it protects. Write
   // to a temp file in the same directory, then rename over the marker.
   const target = markerPath(installPath)
-  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
+  const tmp = `${target}.${crypto.randomUUID()}.tmp`
   try {
     await fs.promises.writeFile(tmp, JSON.stringify(marker), 'utf-8')
     await fs.promises.rename(tmp, target)
