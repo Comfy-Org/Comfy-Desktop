@@ -156,7 +156,10 @@ describe('registerTelemetryHandlers', () => {
   it('leaves events untagged when the sender is not an attached comfyView', () => {
     mocks.findEntryByComfySender.mockReturnValue(null)
 
-    listener('telemetry:capture')({ sender: { id: 2 } }, { event: 'launcher.click', properties: {} })
+    listener('telemetry:capture')(
+      { sender: { id: 2 } },
+      { event: 'launcher.click', properties: {} }
+    )
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.deployment).toBeUndefined()
@@ -205,7 +208,10 @@ describe('registerTelemetryHandlers', () => {
   it('ignores unknown source categories rather than emitting a junk tag', () => {
     mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: null })
 
-    listener('telemetry:capture')({ sender: { id: 4 } }, { event: 'execution_start', properties: {} })
+    listener('telemetry:capture')(
+      { sender: { id: 4 } },
+      { event: 'execution_start', properties: {} }
+    )
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.deployment).toBeUndefined()
@@ -235,5 +241,17 @@ describe('registerTelemetryHandlers', () => {
     expect(err.message).toBe('boom')
     expect(sent.deployment).toBe('local')
     expect(sent.client).toBeUndefined()
+  })
+
+  it('scrubs exception properties before applying string limits', () => {
+    const secret = `password="${'private words '.repeat(200)}"`
+    listener('telemetry:captureException')(
+      { sender: { id: 8 } },
+      { message: 'boom', properties: { detail: secret, nested: { secret } } }
+    )
+
+    const [, sent] = mocks.captureException.mock.calls[0]! as [Error, Record<string, unknown>]
+    expect(sent.detail).toBe('password=[REDACTED]')
+    expect(sent.nested).toBeUndefined()
   })
 })

@@ -91,7 +91,10 @@ describe('executionTap', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest('\u001b[32m[INFO]\u001b[0m got prompt\n', 'stdout')
     tap.ingest('\u001b[32m[INFO]\u001b[0m Prompt executed in 7.78 seconds\n', 'stdout')
-    tap.ingest('\u001b[1m\u001b[31m[ERROR]\u001b[0m Failed to validate prompt for output 9:\n', 'stdout')
+    tap.ingest(
+      '\u001b[1m\u001b[31m[ERROR]\u001b[0m Failed to validate prompt for output 9:\n',
+      'stdout'
+    )
     // Deferred validation error flushes when the block ends.
     tap.flushSummary()
 
@@ -124,9 +127,7 @@ describe('executionTap', () => {
     expect(errs[0]!.ctx).toMatchObject({ error_class: 'RuntimeError' })
   })
 
-  it('emits one error per traceback in chained Python tracebacks', () => {
-    // We deliberately do NOT collapse chained tracebacks; the inner and the
-    // outer are real distinct errors and analytics needs both visible.
+  it('emits one error using the outer exception in chained Python tracebacks', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest(
       [
@@ -148,7 +149,97 @@ describe('executionTap', () => {
     )
     const errs = captured.filter((c) => c.event === 'comfy.desktop.execution.error')
     const classes = errs.map((e) => e.ctx['error_class'])
-    expect(classes).toEqual(['ValueError', 'RuntimeError'])
+    expect(classes).toEqual(['RuntimeError'])
+    expect(String(errs[0]!.ctx.error_traceback)).toContain('ValueError: inner')
+  })
+
+  it('does not emit an inner exception when a chain marker is split across chunks', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        '  File "a.py", line 1, in <module>',
+        'ValueError: inner',
+        ''
+      ].join('\n'),
+      'stderr'
+    )
+    tap.ingest('During handling of the above excep', 'stderr')
+    tap.ingest(
+      [
+        'tion, another exception occurred:',
+        '',
+        'Traceback (most recent call last):',
+        '  File "b.py", line 2, in <module>',
+        'RuntimeError: outer'
+      ].join('\n'),
+      'stderr'
+    )
+    tap.flushSummary()
+
+    const errors = captured.filter((entry) => entry.event === 'comfy.desktop.execution.error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.ctx.error_class).toBe('RuntimeError')
+  })
+
+  it('emits separate errors for independent tracebacks', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        '  File "a.py", line 1, in <module>',
+        'ValueError: first',
+        '',
+        'Traceback (most recent call last):',
+        '  File "b.py", line 2, in <module>',
+        'RuntimeError: second'
+      ].join('\n'),
+      'stderr'
+    )
+    tap.flushSummary()
+
+    const errors = captured.filter((entry) => entry.event === 'comfy.desktop.execution.error')
+    expect(errors.map((entry) => entry.ctx.error_class)).toEqual(['ValueError', 'RuntimeError'])
+  })
+
+  it('separates adjacent independent tracebacks without a blank line', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        'ValueError: first',
+        'Traceback (most recent call last):',
+        'RuntimeError: second'
+      ].join('\n'),
+      'stderr'
+    )
+    tap.flushSummary()
+
+    const errors = captured.filter((entry) => entry.event === 'comfy.desktop.execution.error')
+    expect(errors.map((entry) => entry.ctx.error_class)).toEqual(['ValueError', 'RuntimeError'])
+  })
+
+  it('ends a chain before a later independent traceback', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        'ValueError: inner',
+        '',
+        'During handling of the above exception, another exception occurred:',
+        '',
+        'Traceback (most recent call last):',
+        'RuntimeError: outer',
+        '',
+        'Traceback (most recent call last):',
+        'OSError: independent'
+      ].join('\n'),
+      'stderr'
+    )
+    tap.flushSummary()
+
+    const errors = captured.filter((entry) => entry.event === 'comfy.desktop.execution.error')
+    expect(errors.map((entry) => entry.ctx.error_class)).toEqual(['RuntimeError', 'OSError'])
   })
 
   it('scrubs PII (Windows user paths) from traceback error messages', () => {
@@ -189,6 +280,20 @@ describe('executionTap', () => {
     expect(
       captured.filter((c) => c.event === 'comfy.desktop.execution.session_summary')
     ).toHaveLength(1)
+  })
+
+  it('recognizes SystemExit and keeps a bounded traceback suffix', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    const frames = Array.from({ length: 300 }, (_, i) => `  File "frame${i}.py", line ${i}`)
+    tap.ingest(
+      ['Traceback (most recent call last):', ...frames, 'SystemExit: 2'].join('\n'),
+      'stderr'
+    )
+    tap.flushSummary()
+    const error = captured.find((entry) => entry.event === 'comfy.desktop.execution.error')
+    expect(error?.ctx.error_class).toBe('SystemExit')
+    expect(String(error?.ctx.error_traceback).length).toBeLessThanOrEqual(16 * 1024)
+    expect(String(error?.ctx.error_traceback)).toContain('SystemExit: 2')
   })
 
   it('flushSummary parses a final line written without a trailing newline', () => {

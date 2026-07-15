@@ -1,24 +1,53 @@
 import {
-  path, fs,
-  installations, settings, i18n,
+  path,
+  fs,
+  installations,
+  settings,
+  i18n,
   sourceMap,
-  spawnProcess, waitForPort, waitForUrl, killProcessTree,
-  findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
-  findAvailablePort, isPortListening, writePortLock, readPortLock,
-  COMFY_BOOT_TIMEOUT_MS, SENSITIVE_ARG_RE,
-  _onLaunch, _onComfyExited, _onComfyRestarted, _onModelFolderRelaunch,
-  _operationAborts, _runningSessions, _pendingPorts,
-  _reservePort, _releasePort,
-  _addSession, _removeSession,
-  _markLaunching, _clearLaunchingFailed,
+  spawnProcess,
+  waitForPort,
+  waitForUrl,
+  killProcessTree,
+  findPidsByPort,
+  getProcessInfo,
+  looksLikeComfyUI,
+  setPortArg,
+  findAvailablePort,
+  isPortListening,
+  writePortLock,
+  readPortLock,
+  COMFY_BOOT_TIMEOUT_MS,
+  SENSITIVE_ARG_RE,
+  _onLaunch,
+  _onComfyExited,
+  _onComfyRestarted,
+  _onModelFolderRelaunch,
+  _operationAborts,
+  _runningSessions,
+  _pendingPorts,
+  _reservePort,
+  _releasePort,
+  _addSession,
+  _removeSession,
+  _markLaunching,
+  _clearLaunchingFailed,
   installDirStateAsync,
-  captureSnapshotIfChanged, getSnapshotCount,
-  syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
-  createSessionPath, buildLaunchEnv, checkRebootMarker,
-  makeSendProgress, makeSendOutput,
-  getComfyArgsSchema, filterUnsupportedArgs,
+  captureSnapshotIfChanged,
+  getSnapshotCount,
+  syncCustomModelFolders,
+  discoverExtraModelFolders,
+  instanceModelPathsYaml,
+  isSamePath,
+  createSessionPath,
+  buildLaunchEnv,
+  checkRebootMarker,
+  makeSendProgress,
+  makeSendOutput,
+  getComfyArgsSchema,
+  filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
-  _broadcastToRenderer,
+  _broadcastToRenderer
 } from '../shared'
 import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import { randomUUID } from 'node:crypto'
@@ -37,7 +66,7 @@ import {
   getTemplateDownloadState,
   summarizeTemplateState,
   formatTemplateSubStatus,
-  awaitTemplateDownloadSettled,
+  awaitTemplateDownloadSettled
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import type { PreLaunchPhase } from '../../launchPhases'
@@ -51,7 +80,7 @@ import {
   startBootPhases,
   recordBootPhase,
   clearBootPhases,
-  flushBootPhasesOnFailure,
+  flushBootPhasesOnFailure
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
 import { ensureManagerMirrorConfig } from '../../managerConfig'
@@ -71,7 +100,7 @@ export function desktopFeatureFlags(
     // Advertises that an interactive terminal host is available, so the frontend
     // may surface its bottom-panel terminal. The actual transport is the
     // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
-    supports_terminal: 'true',
+    supports_terminal: 'true'
   }
   // Telemetry is opt-in (default off) and only signaled for managed standalone
   // installs — never for portable or user-managed git clones.
@@ -87,6 +116,31 @@ export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null
   return code !== 0 || signal !== null
 }
 
+const PROCESS_CLOSE_GRACE_MS = 1_000
+
+/** Prefer `close` so output pipes can drain, but do not hang on inherited pipes. */
+export function onProcessTerminated(
+  proc: ChildProcess,
+  callback: (code: number | null, signal: NodeJS.Signals | null) => void | Promise<void>
+): void {
+  let finished = false
+  let fallbackTimer: NodeJS.Timeout | undefined
+
+  const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+    if (finished) return
+    finished = true
+    if (fallbackTimer) clearTimeout(fallbackTimer)
+    void callback(code, signal)
+  }
+
+  proc.once('close', finish)
+  proc.once('exit', (code, signal) => {
+    if (finished) return
+    fallbackTimer = setTimeout(() => finish(code, signal), PROCESS_CLOSE_GRACE_MS)
+    fallbackTimer.unref()
+  })
+}
+
 /**
  * Diagnose a crash exit code into the extra fields the UI needs to show a
  * human-readable message. Returns `{}` for a plain application exit (the
@@ -96,13 +150,13 @@ export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null
  * actually missing.
  */
 async function diagnoseCrash(
-  code: number | null,
+  code: number | null
 ): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
   const decoded = decodeExitCode(code)
   if (!decoded) return {}
   const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
     exitCodeHex: decoded.hex,
-    crashKind: decoded.kind,
+    crashKind: decoded.kind
   }
   if (decoded.kind === 'access-violation') {
     // Never let an audit failure reject this helper: it runs inside an async
@@ -158,7 +212,12 @@ function writeLog(stream: WriteStream, text: string): void {
   if (!stream.writableEnded) stream.write(stripAnsi(text))
 }
 
-export async function handleLaunch({ event, installationId, inst: instArg, actionData }: ActionContext): Promise<ActionResult> {
+export async function handleLaunch({
+  event,
+  installationId,
+  inst: instArg,
+  actionData
+}: ActionContext): Promise<ActionResult> {
   let inst = instArg
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
@@ -242,7 +301,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // with `boot_failed`); a healthy boot discards them — `boot_started`
       // is already ~258k/14d and per-phase emits on every boot would be pure
       // volume. See `bootPhaseBuffer`.
-      onPhaseEnter: (phase) => recordBootPhase(installationId, phase),
+      onPhaseEnter: (phase) => recordBootPhase(installationId, phase)
     })
     launchTracker.start()
     return launchTracker
@@ -282,7 +341,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       const base = i18n.t('errors.recoveryFailed', { message: (err as Error).message })
       return { ok: false, message: detail ? `${base}\n\n${detail}` : base }
     }
-    const updateFn = async (data: Record<string, unknown>): Promise<unknown> => installations.update(installationId, data)
+    const updateFn = async (data: Record<string, unknown>): Promise<unknown> =>
+      installations.update(installationId, data)
     try {
       const migrated = await migrateEnvLayout(inst.installPath, updateFn)
       if (migrated) inst = (await installations.get(installationId)) || inst
@@ -297,9 +357,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const repairAbort = new AbortController()
     _operationAborts.set(installationId, repairAbort)
     try {
-      const { maybeRepairTorch, getTorchVendorMismatch } = await import(
-        '../../../sources/standalone/torchRepair'
-      )
+      const { maybeRepairTorch, getTorchVendorMismatch } =
+        await import('../../../sources/standalone/torchRepair')
       // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
       // live `torchRepair` step rather than flashing a flat status. Detection is
       // a cheap sync check; arming only when a repair will actually run.
@@ -311,17 +370,19 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         sendProgress,
         sendOutput: makeSendOutput(event.sender, installationId),
         update: updateFn,
-        signal: repairAbort.signal,
+        signal: repairAbort.signal
       })
       if (repaired) inst = (await installations.get(installationId)) || inst
     } catch (err) {
       if (repairAbort.signal.aborted) {
-        if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
+        if (_operationAborts.get(installationId) === repairAbort)
+          _operationAborts.delete(installationId)
         return { ok: false, cancelled: true }
       }
       console.warn('PyTorch vendor repair failed:', err)
     } finally {
-      if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(installationId) === repairAbort)
+        _operationAborts.delete(installationId)
     }
     await writeComfyEnvironment(path.join(inst.installPath, 'ComfyUI'))
   }
@@ -341,7 +402,13 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       const version = inst.version as string | undefined
       try {
-        const schema = await getComfyArgsSchema(launchCmd.cmd, mainPyAbs, launchCmd.cwd, installationId, version)
+        const schema = await getComfyArgsSchema(
+          launchCmd.cmd,
+          mainPyAbs,
+          launchCmd.cwd,
+          installationId,
+          version
+        )
         const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
         const userArgs = launchCmd.args.slice(sIdx + 2)
         const filtered = filterUnsupportedArgs(userArgs, schema)
@@ -349,7 +416,13 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
-          const registry = await getComfyFeatureFlagRegistry(launchCmd.cmd, mainPyAbs, launchCmd.cwd, installationId, version)
+          const registry = await getComfyFeatureFlagRegistry(
+            launchCmd.cmd,
+            mainPyAbs,
+            launchCmd.cwd,
+            installationId,
+            version
+          )
           const flagEntries = Object.entries(
             desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
           )
@@ -373,7 +446,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     } catch (err) {
       console.warn('Failed to seed ComfyUI-Manager mirror config:', err)
       telemetry.capture('comfy.desktop.manager.mirror_seed_failed', {
-        ...buildErrorFields(err),
+        ...buildErrorFields(err)
       })
     }
   }
@@ -381,7 +454,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
   const useSharedModels = argsAvailable && (inst.useSharedModels as boolean | undefined) !== false
-  const useSharedInputOutput = argsAvailable && (inst.useSharedInputOutput as boolean | undefined) !== false
+  const useSharedInputOutput =
+    argsAvailable && (inst.useSharedInputOutput as boolean | undefined) !== false
   let preLaunchExtras: string[] = []
   // Model dirs whose extra-folder changes drive auto-relaunch, plus the sync
   // options (target YAML + which dir is `is_default`). Sourced from the global
@@ -410,7 +484,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     }
   }
   if (manageModelFolders) {
-    const { config } = syncCustomModelFolders(inst.installPath, modelDirsForLaunch, [], modelSyncOptions)
+    const { config } = syncCustomModelFolders(
+      inst.installPath,
+      modelDirsForLaunch,
+      [],
+      modelSyncOptions
+    )
     if (config) {
       launchCmd.args!.push('--extra-model-paths-config', config.yamlPath)
     }
@@ -420,7 +499,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   }
   if (useSharedInputOutput) {
     const inputDir = (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
-    const outputDir = (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+    const outputDir =
+      (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
     fs.mkdirSync(inputDir, { recursive: true })
     fs.mkdirSync(outputDir, { recursive: true })
     launchCmd.args!.push('--input-directory', inputDir)
@@ -465,7 +545,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // Strip ANSI once for both the tail buffer and the launch tracker.
       const clean = stripAnsi(text)
       stderrBuf += clean
-      if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-4096)
+      if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-(16 * 1024))
       writeLog(logStream, text)
       sendOutput(text)
       execTap.ingest(text, 'stderr')
@@ -499,18 +579,20 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         if (!state) return true
         const summary = summarizeTemplateState(state)
         const terminal =
-          summary.status === 'done' ||
-          summary.status === 'error' ||
-          summary.status === 'cancelled'
+          summary.status === 'done' || summary.status === 'error' || summary.status === 'cancelled'
         if (firstEmittedTick) {
           firstEmittedTick = false
           preCompleted = terminal
         }
-        const percent = preCompleted ? -1 : terminal ? -1 : Math.min(99, Math.max(0, summary.percent))
+        const percent = preCompleted
+          ? -1
+          : terminal
+            ? -1
+            : Math.min(99, Math.max(0, summary.percent))
         sendProgress('template-models', {
           percent,
           status: formatTemplateSubStatus(summary),
-          error: summary.status === 'error',
+          error: summary.status === 'error'
         })
         return terminal
       }
@@ -521,7 +603,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
             abort.signal.removeEventListener('abort', onAbort)
             resolve(false)
           }, 500)
-          const onAbort = (): void => { clearTimeout(timer); resolve(true) }
+          const onAbort = (): void => {
+            clearTimeout(timer)
+            resolve(true)
+          }
           abort.signal.addEventListener('abort', onAbort, { once: true })
         })
         if (done) return
@@ -536,7 +621,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         abort.signal.removeEventListener('abort', onAbort)
         resolve()
       }, ms)
-      const onAbort = (): void => { clearTimeout(timer); resolve() }
+      const onAbort = (): void => {
+        clearTimeout(timer)
+        resolve()
+      }
       abort.signal.addEventListener('abort', onAbort, { once: true })
     })
   }
@@ -580,7 +668,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       sendProgress('template-models', {
         percent: -1,
         error: true,
-        status: i18n.t('standalone.templateModelsFailedCountdown', { secs }),
+        status: i18n.t('standalone.templateModelsFailedCountdown', { secs })
       })
       await delay(1000)
     }
@@ -592,15 +680,21 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // desktop_device_id (see `withCloudDistributionUtm`) that mustn't leak
     // into the user-facing status. `waitForUrl` below still gets the real URL.
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
-    sendProgress('launch', { percent: -1, status: i18n.t('launch.connecting', { url: displayUrl }) })
+    sendProgress('launch', {
+      percent: -1,
+      status: i18n.t('launch.connecting', { url: displayUrl })
+    })
     try {
       await waitForUrl(launchCmd.url!, {
         timeoutMs: 15000,
         signal: abort.signal,
         onPoll: ({ elapsedMs }) => {
           const secs = Math.round(elapsedMs / 1000)
-          sendProgress('launch', { percent: -1, status: i18n.t('launch.connectingTime', { url: displayUrl, secs }) })
-        },
+          sendProgress('launch', {
+            percent: -1,
+            status: i18n.t('launch.connectingTime', { url: displayUrl, secs })
+          })
+        }
       })
     } catch (_err) {
       _operationAborts.delete(installationId)
@@ -610,9 +704,19 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
 
     _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
-    _addSession(installationId, { proc: null, port: launchCmd.port!, url: launchCmd.url, mode, installationName: inst.name }, Date.now() - launchStartedAt)
+    _addSession(
+      installationId,
+      { proc: null, port: launchCmd.port!, url: launchCmd.url, mode, installationName: inst.name },
+      Date.now() - launchStartedAt
+    )
     if (_onLaunch) {
-      _onLaunch({ port: launchCmd.port!, url: launchCmd.url, process: null, installation: inst, mode })
+      _onLaunch({
+        port: launchCmd.port!,
+        url: launchCmd.url,
+        process: null,
+        installation: inst,
+        mode
+      })
     }
     return { ok: true, mode, port: launchCmd.port, url: launchCmd.url }
   }
@@ -633,24 +737,30 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const execTap = createExecutionTap({
       installationId,
       variant: (inst.variant as string | undefined) ?? null,
-      release: (inst.release as string | undefined) ?? null,
+      release: (inst.release as string | undefined) ?? null
     })
     const hwTap = createHardwareTap({
       installationId,
       variant: (inst.variant as string | undefined) ?? null,
-      release: (inst.release as string | undefined) ?? null,
+      release: (inst.release as string | undefined) ?? null
     })
     const tracker = await armLaunchTracker()
 
     hwTap.beginBoot()
-    const proc = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
+    const proc = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
+      showWindow: launchCmd.showWindow
+    })
     const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, hwTap, tracker)
 
     _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
-    _addSession(installationId, { proc, port: 0, mode, installationName: inst.name }, Date.now() - launchStartedAt)
+    _addSession(
+      installationId,
+      { proc, port: 0, mode, installationName: inst.name },
+      Date.now() - launchStartedAt
+    )
 
-    proc.on('exit', async (code, signal) => {
+    onProcessTerminated(proc, async (code, signal) => {
       logStream.end()
       const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
@@ -671,7 +781,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
-        ...crashDiagnosis,
+        ...crashDiagnosis
       }
       // Emit from main so it survives the Desktop 2 panel teardown on exit.
       // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
@@ -679,7 +789,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null,
+        last_stderr: lastStderr ?? null
       })
       if (crashed) {
         recordCrash(exitedPayload)
@@ -706,35 +816,52 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // isPortListening (bind test) is the primary check; findPidsByPort's lsof
   // only sees same-user processes on Linux.
   const pendingPortOwner = _pendingPorts.get(launchCmd.port!)
-  const portBusy = !pendingPortOwner && await isPortListening(launchCmd.port!)
-  const existingPids = (pendingPortOwner || !portBusy) ? [] : await findPidsByPort(launchCmd.port!)
+  const portBusy = !pendingPortOwner && (await isPortListening(launchCmd.port!))
+  const existingPids = pendingPortOwner || !portBusy ? [] : await findPidsByPort(launchCmd.port!)
   const portOccupied = !!pendingPortOwner || portBusy
 
   if (portOccupied) {
     const defaults = source.getDefaults ? source.getDefaults() : {}
-    const portConflictMode = (inst.portConflict as string | undefined) || (defaults.portConflict as string | undefined) || 'auto'
+    const portConflictMode =
+      (inst.portConflict as string | undefined) ||
+      (defaults.portConflict as string | undefined) ||
+      'auto'
     const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
     const portIsExplicit = /(?:^|\s)--port\b/.test(userArgs)
 
     const reservedPorts = new Set(_pendingPorts.keys())
     let nextPort: number | null = null
     try {
-      nextPort = await findAvailablePort('127.0.0.1', launchCmd.port! + 1, launchCmd.port! + 1000, reservedPorts)
-    } catch { }
+      nextPort = await findAvailablePort(
+        '127.0.0.1',
+        launchCmd.port! + 1,
+        launchCmd.port! + 1000,
+        reservedPorts
+      )
+    } catch {}
 
     if (portConflictMode === 'auto' && nextPort && !portIsExplicit) {
-      sendProgress('launch', { percent: -1, status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort }) })
+      sendProgress('launch', {
+        percent: -1,
+        status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort })
+      })
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
       let message: string
       let isComfy: boolean
       if (pendingPortOwner) {
-        message = i18n.t('errors.portConflictLauncher', { port: launchCmd.port!, name: pendingPortOwner })
+        message = i18n.t('errors.portConflictLauncher', {
+          port: launchCmd.port!,
+          name: pendingPortOwner
+        })
         isComfy = true
       } else {
         const lock = readPortLock(launchCmd.port!)
         if (lock) {
-          message = i18n.t('errors.portConflictLauncher', { port: launchCmd.port!, name: lock.installationName })
+          message = i18n.t('errors.portConflictLauncher', {
+            port: launchCmd.port!,
+            name: lock.installationName
+          })
           isComfy = true
         } else if (existingPids.length > 0) {
           const info = await getProcessInfo(existingPids[0]!)
@@ -746,11 +873,18 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         } else {
           // Busy but the owner is unidentifiable (e.g. other-user process on Linux).
           isComfy = false
-          message = i18n.t('errors.portConflictOther', { port: launchCmd.port!, process: i18n.t('errors.unknownProcess') })
+          message = i18n.t('errors.portConflictOther', {
+            port: launchCmd.port!,
+            process: i18n.t('errors.unknownProcess')
+          })
         }
       }
       _operationAborts.delete(installationId)
-      return { ok: false, message, portConflict: { port: launchCmd.port, pids: existingPids, isComfy, nextPort } }
+      return {
+        ok: false,
+        message,
+        portConflict: { port: launchCmd.port, pids: existingPids, isComfy, nextPort }
+      }
     }
   }
 
@@ -758,25 +892,39 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
     const defaults = source.getDefaults ? source.getDefaults() : {}
-    const portConflictMode = (inst.portConflict as string | undefined) || (defaults.portConflict as string | undefined) || 'auto'
+    const portConflictMode =
+      (inst.portConflict as string | undefined) ||
+      (defaults.portConflict as string | undefined) ||
+      'auto'
     const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
     const portIsExplicit = /(?:^|\s)--port\b/.test(userArgs)
 
     const reservedPorts = new Set(_pendingPorts.keys())
     let nextPort: number | null = null
     try {
-      nextPort = await findAvailablePort('127.0.0.1', launchCmd.port! + 1, launchCmd.port! + 1000, reservedPorts)
-    } catch { }
+      nextPort = await findAvailablePort(
+        '127.0.0.1',
+        launchCmd.port! + 1,
+        launchCmd.port! + 1000,
+        reservedPorts
+      )
+    } catch {}
 
     if (portConflictMode === 'auto' && nextPort && !portIsExplicit) {
-      sendProgress('launch', { percent: -1, status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort }) })
+      sendProgress('launch', {
+        percent: -1,
+        status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort })
+      })
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
       _operationAborts.delete(installationId)
       return {
         ok: false,
-        message: i18n.t('errors.portConflictLauncher', { port: launchCmd.port!, name: lateConflictOwner }),
-        portConflict: { port: launchCmd.port, pids: [], isComfy: true, nextPort },
+        message: i18n.t('errors.portConflictLauncher', {
+          port: launchCmd.port!,
+          name: lateConflictOwner
+        }),
+        portConflict: { port: launchCmd.port, pids: [], isComfy: true, nextPort }
       }
     }
   }
@@ -793,12 +941,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const execTap = createExecutionTap({
     installationId,
     variant: (inst.variant as string | undefined) ?? null,
-    release: (inst.release as string | undefined) ?? null,
+    release: (inst.release as string | undefined) ?? null
   })
   const hwTap = createHardwareTap({
     installationId,
     variant: (inst.variant as string | undefined) ?? null,
-    release: (inst.release as string | undefined) ?? null,
+    release: (inst.release as string | undefined) ?? null
   })
 
   // Arm the log-driven tracker once, here (a pre-launch repair may already have
@@ -810,7 +958,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected; model-usage counts persist across the launch.
     hwTap.beginBoot()
-    const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
+    const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
+      showWindow: launchCmd.showWindow
+    })
     return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
   }
 
@@ -822,11 +972,23 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
   const bootId = randomUUID()
 
-  const tryLaunch = async (): Promise<{ ok: true; proc: ChildProcess; getStderr: () => string } | { ok: false; message: string; cancelled?: boolean; stderr?: string; exitCode?: number | null; signal?: string | null }> => {
-    const cmdLine = [launchCmd.cmd!, ...launchCmd.args!].map((a, ci, ca) => {
-      if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
-      return /\s/.test(a) ? `"${a}"` : a
-    }).join(' ')
+  const tryLaunch = async (): Promise<
+    | { ok: true; proc: ChildProcess; getStderr: () => string }
+    | {
+        ok: false
+        message: string
+        cancelled?: boolean
+        stderr?: string
+        exitCode?: number | null
+        signal?: string | null
+      }
+  > => {
+    const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
+      .map((a, ci, ca) => {
+        if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
+        return /\s/.test(a) ? `"${a}"` : a
+      })
+      .join(' ')
     sendProgress('launch', { percent: -1, status: i18n.t('launch.starting') })
     if (!sender.isDestroyed()) {
       sender.send('comfy-output', { installationId, text: `> ${cmdLine}\n\n` })
@@ -859,11 +1021,13 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     let exitSignal: string | null = null
     const earlyExitPromise = new Promise<void>((_resolve, reject) => {
       spawned.proc.on('error', (err: Error) => {
-        const code = (err as NodeJS.ErrnoException).code ? ` (${(err as NodeJS.ErrnoException).code})` : ''
+        const code = (err as NodeJS.ErrnoException).code
+          ? ` (${(err as NodeJS.ErrnoException).code})`
+          : ''
         earlyExit = err.message
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
-      spawned.proc.on('exit', async (code, signal) => {
+      onProcessTerminated(spawned.proc, async (code, signal) => {
         exitCode = code
         exitSignal = signal
         if (!earlyExit) {
@@ -886,9 +1050,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       await Promise.race([
         waitForPort(launchCmd.port!, '127.0.0.1', {
           timeoutMs: COMFY_BOOT_TIMEOUT_MS,
-          signal: abort.signal,
+          signal: abort.signal
         }),
-        earlyExitPromise,
+        earlyExitPromise
       ])
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
@@ -899,25 +1063,46 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         return tryLaunch()
       }
       const stderr = spawned.getStderr().toLowerCase()
-      const isPortConflict = stderr.includes('address already in use') || (stderr.includes('port') && stderr.includes('in use'))
+      const isPortConflict =
+        stderr.includes('address already in use') ||
+        (stderr.includes('port') && stderr.includes('in use'))
       if (isPortConflict && portRetries < PORT_RETRY_MAX) {
         portRetries++
         try {
           const reservedPorts = new Set(_pendingPorts.keys())
-          const retryPort = await findAvailablePort('127.0.0.1', launchCmd.port! + 1, launchCmd.port! + 1000, reservedPorts)
+          const retryPort = await findAvailablePort(
+            '127.0.0.1',
+            launchCmd.port! + 1,
+            launchCmd.port! + 1000,
+            reservedPorts
+          )
           sendOutput(`\nPort ${launchCmd.port} in use, retrying on port ${retryPort}…\n`)
           _releasePort(launchCmd.port!)
           setPortArg(launchCmd as LaunchCmd, retryPort)
           _reservePort(launchCmd.port!, inst.name)
           return tryLaunch()
-        } catch { }
+        } catch {}
       }
       // Carry the in-memory stderr tail + exit info out so `boot_failed` can
       // report the actual error. The buffer lives in main (survives a hard
       // child crash) but was previously discarded on the failure path.
       const failureStderr = spawned.getStderr()
-      if (abort.signal.aborted) return { ok: false, message: (err as Error).message, cancelled: true, stderr: failureStderr, exitCode, signal: exitSignal }
-      return { ok: false, message: (err as Error).message, stderr: failureStderr, exitCode, signal: exitSignal }
+      if (abort.signal.aborted)
+        return {
+          ok: false,
+          message: (err as Error).message,
+          cancelled: true,
+          stderr: failureStderr,
+          exitCode,
+          signal: exitSignal
+        }
+      return {
+        ok: false,
+        message: (err as Error).message,
+        stderr: failureStderr,
+        exitCode,
+        signal: exitSignal
+      }
     }
   }
 
@@ -967,7 +1152,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       signal: launchResult.signal ?? null,
       retry_count: portRetries + rebootRetries,
       port_retry_count: portRetries,
-      reboot_retry_count: rebootRetries,
+      reboot_retry_count: rebootRetries
     })
     return { ok: false, message: launchResult.message }
   }
@@ -984,7 +1169,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     installationId,
     { proc, port: launchCmd.port!, mode, installationName: inst.name },
     bootTimeMs,
-    { portRetries, rebootRetries },
+    { portRetries, rebootRetries }
   )
   // Paired success terminal for boot_started: server up + session registered.
   // Same boot_id as this launch's boot_started(s), so the boot-success rate is
@@ -1020,11 +1205,16 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // Check if custom nodes created new model folders during startup
   let site1Relaunched = false
   if (manageModelFolders) {
-    const { newFolders } = syncCustomModelFolders(inst.installPath, modelDirsForLaunch, preLaunchExtras, modelSyncOptions)
+    const { newFolders } = syncCustomModelFolders(
+      inst.installPath,
+      modelDirsForLaunch,
+      preLaunchExtras,
+      modelSyncOptions
+    )
     if (newFolders.length > 0) {
       sendOutput(`\n--- Restarting: new model folders detected (${newFolders.join(', ')}) ---\n\n`)
       if (_onModelFolderRelaunch) {
-        await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => { })
+        await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => {})
       }
       await killProcessTree(proc)
       const respawned = spawnComfy()
@@ -1034,7 +1224,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
       const relaunchEarlyExit = new Promise<void>((_resolve, reject) => {
         proc.on('error', (err: Error) => reject(err))
-        proc.on('exit', (code) => reject(new Error(`Process exited with code ${code}`)))
+        onProcessTerminated(proc, (code, signal) => {
+          const rendered = signal ? `signal ${signal}` : `code ${code}`
+          reject(new Error(`Process exited with ${rendered}`))
+        })
       })
       try {
         // Re-armed tracker re-emits stepped phases during this relaunch wait;
@@ -1042,9 +1235,9 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         await Promise.race([
           waitForPort(launchCmd.port!, '127.0.0.1', {
             timeoutMs: COMFY_BOOT_TIMEOUT_MS,
-            signal: abort.signal,
+            signal: abort.signal
           }),
-          relaunchEarlyExit,
+          relaunchEarlyExit
         ])
       } catch (err) {
         logStream.end()
@@ -1064,14 +1257,14 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   }
 
   const knownExtras = new Set(
-    site1Relaunched ? discoverExtraModelFolders(inst.installPath) : preLaunchExtras,
+    site1Relaunched ? discoverExtraModelFolders(inst.installPath) : preLaunchExtras
   )
   let pendingModelFolderRelaunch = false
   let rebootModelCheckAbort: AbortController | null = null
   let currentGetStderr = launchResult.getStderr
 
   function attachExitHandler(p: ChildProcess): void {
-    p.on('exit', async (code, signal) => {
+    onProcessTerminated(p, async (code, signal) => {
       if (rebootModelCheckAbort) {
         rebootModelCheckAbort.abort()
         rebootModelCheckAbort = null
@@ -1084,7 +1277,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
           sendOutput('\n--- ComfyUI restarting ---\n\n')
         }
         if (manageModelFolders) {
-          const { config } = syncCustomModelFolders(inst.installPath, modelDirsForLaunch, [], modelSyncOptions)
+          const { config } = syncCustomModelFolders(
+            inst.installPath,
+            modelDirsForLaunch,
+            [],
+            modelSyncOptions
+          )
           if (config) {
             for (const f of config.extraFolders) knownExtras.add(f)
           }
@@ -1108,7 +1306,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         if (manageModelFolders) {
           rebootModelCheckAbort = new AbortController()
           const checkSignal = rebootModelCheckAbort.signal
-          waitForPort(launchCmd.port!, '127.0.0.1', { timeoutMs: COMFY_BOOT_TIMEOUT_MS, signal: checkSignal })
+          waitForPort(launchCmd.port!, '127.0.0.1', {
+            timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+            signal: checkSignal
+          })
             .then(async () => {
               if (checkSignal.aborted) return
               const currentSession = _runningSessions.get(installationId)
@@ -1116,20 +1317,27 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
               const currentExtras = discoverExtraModelFolders(inst.installPath)
               const newFolders = currentExtras.filter((f) => !knownExtras.has(f))
               if (newFolders.length > 0) {
-                const { config } = syncCustomModelFolders(inst.installPath, modelDirsForLaunch, [], modelSyncOptions)
+                const { config } = syncCustomModelFolders(
+                  inst.installPath,
+                  modelDirsForLaunch,
+                  [],
+                  modelSyncOptions
+                )
                 if (config) {
                   for (const f of config.extraFolders) knownExtras.add(f)
                 }
                 for (const f of newFolders) knownExtras.add(f)
-                sendOutput(`\n--- Restarting: new model folders detected (${newFolders.join(', ')}) ---\n\n`)
+                sendOutput(
+                  `\n--- Restarting: new model folders detected (${newFolders.join(', ')}) ---\n\n`
+                )
                 pendingModelFolderRelaunch = true
                 if (_onModelFolderRelaunch) {
-                  await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => { })
+                  await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => {})
                 }
                 killProcessTree(proc)
               }
             })
-            .catch(() => { })
+            .catch(() => {})
         }
         // Capture snapshot after Manager-triggered restart
         if (inst.sourceId === 'standalone') {
@@ -1165,7 +1373,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         signal: signal ?? undefined,
         installationName: inst.name,
         lastStderr,
-        ...crashDiagnosis,
+        ...crashDiagnosis
       }
       // Emit from main so it survives the Desktop 2 panel teardown on exit.
       // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
@@ -1173,7 +1381,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null,
+        last_stderr: lastStderr ?? null
       })
       if (crashed) {
         recordCrash(exitedPayload)

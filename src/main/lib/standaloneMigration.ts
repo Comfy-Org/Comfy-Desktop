@@ -105,7 +105,11 @@ async function resolveStandaloneInstallData(
     // (see `standalone/index.ts:328`). Without it the source returns an
     // empty array and the legacy-desktop migration silently bails with
     // "No releases available." instead of progressing.
-    const releaseOptions = await standaloneSource.getFieldOptions!('release', {}, { includeLatestStable: true })
+    const releaseOptions = await standaloneSource.getFieldOptions!(
+      'release',
+      {},
+      { includeLatestStable: true }
+    )
     if (releaseOptions.length === 0) {
       cleanupOnError()
       throw new Error('No releases available.')
@@ -265,25 +269,30 @@ export async function restoreSnapshotIntoInstallation(
       const failures = [
         comfyResult.error ? `ComfyUI: ${comfyResult.error}` : '',
         ...(nodeResult?.failed.map((failure) => `Node ${failure.id}: ${failure.error}`) ?? []),
-        ...(nodeResult?.unreportable.map((id) => `Standalone node ${id}: source file is unavailable`) ?? []),
-        ...(pipResult?.errors ?? []),
+        ...(nodeResult?.unreportable.map(
+          (id) => `Standalone node ${id}: source file is unavailable`
+        ) ?? []),
+        ...(pipResult?.errors ?? [])
       ].filter(Boolean)
-      throw new Error(signal.aborted
-        ? 'Snapshot restore cancelled.'
-        : `Snapshot restore did not reach the target state.${failures.length > 0 ? ` ${failures.join('; ')}` : ''}`)
+      throw new Error(
+        signal.aborted
+          ? 'Snapshot restore cancelled.'
+          : `Snapshot restore did not reach the target state.${failures.length > 0 ? ` ${failures.join('; ')}` : ''}`
+      )
     }
 
     completed = true
   } catch (restoreErr) {
-    sendOutput(
-      `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\n`
-    )
+    sendOutput(`\nWarning: Snapshot restore failed: ${(restoreErr as Error).message}\n`)
     // The target was never committed to history (restore failed), but this
     // fresh-install migration has no source rollback, so the on-disk state can
     // be a novel partial-restore state that no existing snapshot matches.
     // Capture it so the newest snapshot still reflects the real current state.
     try {
-      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, currentForSnapshot)
+      const { filename } = await ensureCurrentSnapshotOnTop(
+        freshInst.installPath,
+        currentForSnapshot
+      )
       if (filename) {
         const snapshotCount = await getSnapshotCount(freshInst.installPath)
         await update({ lastSnapshot: filename, snapshotCount })
@@ -309,21 +318,24 @@ async function copyMigrationData(
   sourcePaths: SharedMigrationInput['sourcePaths'],
   destComfyUIDir: string,
   labels: SharedMigrationInput['labels'],
-  sendProgress: MigrationTools['sendProgress']
+  sendProgress: MigrationTools['sendProgress'],
+  context: telemetry.TelemetryContext
 ): Promise<void> {
   // Verify read access to source directories before copying (macOS TCC may block)
-  for (const dir of [
-    sourcePaths.userDir,
-    sourcePaths.inputDir,
-    sourcePaths.outputDir,
-    sourcePaths.modelsDir
-  ]) {
-    if (dir && fs.existsSync(dir)) assertReadable(dir)
-  }
+  await telemetry.trackedStep('comfy.desktop.migrate.source_preflight', context, async () => {
+    for (const dir of [
+      sourcePaths.userDir,
+      sourcePaths.inputDir,
+      sourcePaths.outputDir,
+      sourcePaths.modelsDir
+    ]) {
+      if (dir && fs.existsSync(dir)) assertReadable(dir)
+    }
+  })
 
   // User data
   if (sourcePaths.userDir && fs.existsSync(sourcePaths.userDir)) {
-    await telemetry.trackedStep('comfy.desktop.migrate.user_files', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.user_files', context, async () => {
       sendProgress('migrate', { percent: 0, status: labels.userData })
       const dstUserDir = path.join(destComfyUIDir, 'user')
       await mergeDirFlat(sourcePaths.userDir!, dstUserDir, (copied, skipped, fileTotal) => {
@@ -335,7 +347,7 @@ async function copyMigrationData(
 
   // Input
   if (sourcePaths.inputDir && fs.existsSync(sourcePaths.inputDir)) {
-    await telemetry.trackedStep('comfy.desktop.migrate.input', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.input', context, async () => {
       const dstInput =
         (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
       sendProgress('migrate', { percent: 40, status: labels.input })
@@ -345,7 +357,7 @@ async function copyMigrationData(
 
   // Output
   if (sourcePaths.outputDir && fs.existsSync(sourcePaths.outputDir)) {
-    await telemetry.trackedStep('comfy.desktop.migrate.output', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.output', context, async () => {
       const dstOutput =
         (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
       sendProgress('migrate', { percent: 60, status: labels.output })
@@ -355,7 +367,7 @@ async function copyMigrationData(
 
   // Models — add to shared paths, no copy
   if (sourcePaths.modelsDir) {
-    await telemetry.trackedStep('comfy.desktop.migrate.models', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.models', context, async () => {
       sendProgress('migrate', { percent: 90, status: labels.models })
       const resolved = path.resolve(sourcePaths.modelsDir!)
       const currentModelsDirs = (settings.get('modelsDirs') as string[] | undefined) || [
@@ -388,45 +400,43 @@ export async function migrateToStandaloneFromSnapshot(
   }
 
   // 1. Resolve release/variant
-  const { instData, standaloneSource } = await resolveStandaloneInstallData(
-    target,
-    tools.sourceMap,
-    cleanupStagedFile
+  const { instData, standaloneSource } = await telemetry.trackedStep(
+    'comfy.desktop.migrate.resolve_target',
+    {},
+    async () => resolveStandaloneInstallData(target, tools.sourceMap, cleanupStagedFile)
   )
 
   // 2. Create new standalone installation record
-  const name = await uniqueName(input.installNameBase)
-  const dirName = sanitizeDirName(name)
-  const installDir = defaultInstallDir()
-  const destPath = allocateUniqueDir(installDir, dirName)
-
-  const entry = await installations.add({
-    name,
-    installPath: destPath,
-    pendingSnapshotRestore: stagedSnapshot.path,
-    ...instData,
-    status: 'installing',
-    seen: false,
-    ...(input.sourceInstallationId
-      ? {
-          copiedFrom: input.sourceInstallationId,
-          copiedFromName: input.sourceInstallationName,
-          copiedAt: new Date().toISOString(),
-          copyReason: 'standalone-migration'
-        }
-      : {})
-  })
+  const { entry, destPath } = await telemetry.trackedStep(
+    'comfy.desktop.migrate.allocate',
+    {},
+    async () => {
+      const name = await uniqueName(input.installNameBase)
+      const dirName = sanitizeDirName(name)
+      const installDir = defaultInstallDir()
+      const allocatedPath = allocateUniqueDir(installDir, dirName)
+      const createdEntry = await installations.add({
+        name,
+        installPath: allocatedPath,
+        pendingSnapshotRestore: stagedSnapshot.path,
+        ...instData,
+        status: 'installing',
+        seen: false,
+        ...(input.sourceInstallationId
+          ? {
+              copiedFrom: input.sourceInstallationId,
+              copiedFromName: input.sourceInstallationName,
+              copiedAt: new Date().toISOString(),
+              copyReason: 'standalone-migration'
+            }
+          : {})
+      })
+      return { entry: createdEntry, destPath: allocatedPath }
+    }
+  )
 
   try {
     // 3. Install standalone (download + extract + setup env)
-    await fs.promises.mkdir(destPath, { recursive: true })
-    await fs.promises.writeFile(path.join(destPath, MARKER_FILE), entry.id)
-    const cache = createCache(
-      settings.get('cacheDir') as string,
-      settings.get('maxCachedDownloads') as number
-    )
-    const installRecord = { ...instData, installPath: destPath } as unknown as InstallationRecord
-
     const releaseTag = (instData['releaseTag'] as string | undefined) ?? null
     const variantId = (instData['variantId'] as string | undefined) ?? null
     const installContext = {
@@ -434,6 +444,20 @@ export async function migrateToStandaloneFromSnapshot(
       release_tag: releaseTag,
       variant_id: variantId
     }
+
+    await telemetry.trackedStep(
+      'comfy.desktop.migrate.prepare_target',
+      installContext,
+      async () => {
+        await fs.promises.mkdir(destPath, { recursive: true })
+        await fs.promises.writeFile(path.join(destPath, MARKER_FILE), entry.id)
+      }
+    )
+    const cache = createCache(
+      settings.get('cacheDir') as string,
+      settings.get('maxCachedDownloads') as number
+    )
+    const installRecord = { ...instData, installPath: destPath } as unknown as InstallationRecord
 
     await telemetry.trackedStep('comfy.desktop.install.standalone', installContext, async () => {
       await standaloneSource.install!(installRecord, {
@@ -452,19 +476,27 @@ export async function migrateToStandaloneFromSnapshot(
     })
 
     // 4. Restore snapshot (custom nodes + pip packages)
-    await restoreSnapshotIntoInstallation(
-      entry,
-      stagedSnapshot.path,
-      stagedSnapshot.owned,
-      tools,
-      update
+    await telemetry.trackedStep(
+      'comfy.desktop.migrate.restore_snapshot',
+      installContext,
+      async () => {
+        await restoreSnapshotIntoInstallation(
+          entry,
+          stagedSnapshot.path,
+          stagedSnapshot.owned,
+          tools,
+          update
+        )
+      }
     )
 
     // 5. Copy user data, input, output, models
     const dstComfyUI = path.join(destPath, 'ComfyUI')
-    await copyMigrationData(sourcePaths, dstComfyUI, labels, sendProgress)
+    await copyMigrationData(sourcePaths, dstComfyUI, labels, sendProgress, installContext)
 
-    await installations.update(entry.id, { status: 'installed' })
+    await telemetry.trackedStep('comfy.desktop.migrate.finalize', installContext, async () => {
+      await installations.update(entry.id, { status: 'installed' })
+    })
 
     // Fire the once-per-install funnel event for the snapshot-based migrate-to-
     // standalone path (portable/git → standalone, and Desktop-1 snapshot

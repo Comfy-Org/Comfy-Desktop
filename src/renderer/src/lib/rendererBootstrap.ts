@@ -40,8 +40,12 @@ import {
 // one place. Datadog RUM stays renderer-only (the SDK is browser-only)
 // and is gated to the failure-event allow-list in
 // `src/shared/datadogMirroredEvents.ts`.
-import { scrubAll } from '../../../shared/piiScrub'
-import { isDatadogMirroredEvent, stripDatadogDroppedKeys } from '../../../shared/datadogMirroredEvents'
+import { normalizeExceptionContext, scrubAll } from '../../../shared/piiScrub'
+import { ERROR_MESSAGE_MAX } from '../../../shared/errorEvent'
+import {
+  isDatadogMirroredEvent,
+  stripDatadogDroppedKeys
+} from '../../../shared/datadogMirroredEvents'
 
 function serializeUnknownError(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
@@ -160,6 +164,14 @@ let resolvedTelemetryEnabled: boolean | undefined = undefined
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'comfy.desktop.first_use.consent_decision'
 ])
+const RENDERER_TELEMETRY_EVENT_CAP = 5_000
+let rendererTelemetryEventsEmitted = 0
+
+function claimRendererTelemetryBudget(): boolean {
+  if (rendererTelemetryEventsEmitted >= RENDERER_TELEMETRY_EVENT_CAP) return false
+  rendererTelemetryEventsEmitted++
+  return true
+}
 
 function isTelemetryEmitAllowed(actionName: string): boolean {
   // Three-state: only `true` grants. `false` (explicit deny) AND
@@ -214,6 +226,7 @@ function trackTelemetryAction(
   options: { skipPostHog?: boolean } = {}
 ): void {
   if (!isTelemetryEmitAllowed(actionName)) return
+  if (!claimRendererTelemetryBudget()) return
   const scrubbed = scrubTelemetryContext(context)
   // Provider split: Datadog only mirrors the failure-event
   // allow-list. Product / funnel events are PostHog-only — Datadog is for
@@ -446,10 +459,7 @@ async function initializeProviders(): Promise<void> {
       const gpuVramMb = info.gpu_vram_mb
       const gpuVramGb = gpuVramMb != null ? Math.round(gpuVramMb / 1024) : null
       const gpuDriverVersion =
-        info.nvidia_driver_version ??
-        info.amd_driver_version ??
-        info.intel_driver_version ??
-        null
+        info.nvidia_driver_version ?? info.amd_driver_version ?? info.intel_driver_version ?? null
       const gpuTier = deriveGpuTier({ vendor: info.gpu_vendor, vramGb: gpuVramGb })
       // `gpus` / `installations` are arrays of objects. The telemetry IPC
       // bridge only accepts scalars and arrays of scalars, so a native array
@@ -520,20 +530,20 @@ function reportRendererError(payload: {
    */
   skipPostHog?: boolean
 }): void {
-  const error = new Error(payload.message || 'Unknown error')
+  if (!isTelemetryEmitAllowed('comfy.desktop.exception.error')) return
+  if (!claimRendererTelemetryBudget()) return
+  const error = new Error(scrubAll(payload.message || 'Unknown error').slice(0, ERROR_MESSAGE_MAX))
   if (payload.stack) {
-    error.stack = payload.stack
+    error.stack = scrubAll(payload.stack).slice(0, 16 * 1024)
   }
+  const context = normalizeExceptionContext({
+    origin: 'renderer',
+    forwarded_source: payload.source,
+    ...(payload.context || {})
+  }) as TelemetryContext
   if (isDatadogInitialized) {
     try {
-      datadogRum.addError(error, {
-        source: 'custom',
-        context: {
-          origin: 'renderer',
-          forwarded_source: payload.source,
-          ...(payload.context || {})
-        }
-      })
+      datadogRum.addError(error, context)
     } catch {}
   }
   if (!payload.skipPostHog) {
@@ -541,11 +551,7 @@ function reportRendererError(payload: {
       window.api.captureExceptionTelemetry({
         message: error.message,
         stack: error.stack,
-        properties: {
-          origin: 'renderer',
-          forwarded_source: payload.source,
-          ...(payload.context || {})
-        }
+        properties: context
       })
     } catch {
       // ignore — telemetry must never break the renderer

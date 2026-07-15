@@ -76,9 +76,35 @@ describe('errorEvent', () => {
       const b = normalizeSignature('Process exited with code 1')
       expect(a).toBe(b)
     })
+
+    it('preserves safe missing-module identifiers while redacting arbitrary strings', () => {
+      expect(normalizeSignature("No module named 'triton'")).not.toBe(
+        normalizeSignature("No module named 'torch'")
+      )
+      expect(normalizeSignature('No module named "triton"')).toContain('triton')
+      expect(normalizeSignature("failed for 'private value'")).toContain('<str>')
+    })
   })
 
   describe('buildErrorFields', () => {
+    it('uses stable Chromium codes from string-only errors', () => {
+      expect(buildErrorFields('net::ERR_CONNECTION_RESET')).toMatchObject({
+        error_class: 'ERR_CONNECTION_RESET',
+        error_bucket: 'network'
+      })
+    })
+
+    it('does not classify ordinary JavaScript errors as Python errors', () => {
+      expect(buildErrorFields(new Error('boom')).error_bucket).toBe('other')
+      expect(buildErrorFields(new TypeError('boom')).error_bucket).toBe('other')
+    })
+
+    it('ignores unbounded free-form structured codes', () => {
+      expect(extractErrorClass(Object.assign(new Error('boom'), { code: 'private value' }))).toBe(
+        'unknown'
+      )
+    })
+
     it('returns all four standard fields', () => {
       const fields = buildErrorFields("ModuleNotFoundError: No module named 'torch'")
       expect(fields).toMatchObject({
@@ -103,9 +129,7 @@ describe('errorEvent', () => {
     })
 
     it('scrubs PII from the message', () => {
-      const fields = buildErrorFields(
-        "FileNotFoundError: No such file 'C:\\Users\\alice\\wf.json'"
-      )
+      const fields = buildErrorFields("FileNotFoundError: No such file 'C:\\Users\\alice\\wf.json'")
       expect(fields.error_message).not.toContain('alice')
       expect(fields.error_message).toContain('[REDACTED]')
     })
@@ -132,10 +156,10 @@ describe('errorEvent', () => {
   })
 
   describe('errorTail', () => {
-    it('returns the LAST N lines, scrubbed', () => {
+    it('keeps more than 40 short lines under the byte cap', () => {
       const lines = Array.from({ length: 100 }, (_, i) => `line ${i}`)
-      const tail = errorTail(lines.join('\n'), { lines: 5 })
-      expect(tail).toBe(['line 95', 'line 96', 'line 97', 'line 98', 'line 99'].join('\n'))
+      const tail = errorTail(lines.join('\n'))
+      expect(tail).toBe(lines.join('\n'))
     })
 
     it('scrubs user paths in the tail', () => {
@@ -145,7 +169,7 @@ describe('errorEvent', () => {
     })
 
     it('bounds the tail to maxChars', () => {
-      const tail = errorTail('a'.repeat(9000), { lines: 40, maxChars: 100 })
+      const tail = errorTail('a'.repeat(9000), { maxChars: 100 })
       expect(tail!.length).toBe(100)
     })
 

@@ -105,6 +105,7 @@
  */
 import { app } from 'electron'
 import { PostHog } from 'posthog-node'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
 // re-exported by `posthog-node`. Inlining the shape we actually use.
@@ -116,8 +117,8 @@ import {
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
-import { buildErrorFields } from '../../shared/errorEvent'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields, ERROR_MESSAGE_MAX } from '../../shared/errorEvent'
+import { normalizeExceptionContext, scrubAll } from '../../shared/piiScrub'
 
 export type TelemetryValue = boolean | number | string | null | undefined
 export type TelemetryContext = Record<string, TelemetryValue | TelemetryValue[]>
@@ -858,15 +859,17 @@ function capturePersonProperties(
     ;(properties as Record<string, unknown>).$set = scrubProperties(set as TelemetryContext)
   }
   if (setOnce && Object.keys(setOnce).length > 0) {
-    ;(properties as Record<string, unknown>).$set_once = scrubProperties(setOnce as TelemetryContext)
+    ;(properties as Record<string, unknown>).$set_once = scrubProperties(
+      setOnce as TelemetryContext
+    )
   }
   capture('comfy.desktop.person.set', properties)
 }
 
-export function capture(event: string, properties: TelemetryContext = {}): void {
-  if (!canEmit() || !distinctId) return
-  if (!isAllowedToFire(event)) return
-  if (!_checkRateLimit(event)) return
+function captureAccepted(event: string, properties: TelemetryContext = {}): boolean {
+  if (!canEmit() || !distinctId) return false
+  if (!isAllowedToFire(event)) return false
+  if (!_checkRateLimit(event)) return false
   _eventsCapturedThisProcess++
   try {
     // Per-call properties override defaults on key collision — callers
@@ -882,9 +885,15 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
       event,
       properties: scrubProperties(merged)
     })
+    return true
   } catch {
-    // ignore – telemetry must never break the app
+    // ignore - telemetry must never break the app
+    return false
   }
+}
+
+export function capture(event: string, properties: TelemetryContext = {}): void {
+  captureAccepted(event, properties)
 }
 
 /**
@@ -991,16 +1000,34 @@ export function captureInstallCompleted(opts: {
   registerPersonPropertiesOnce({ first_local_install_completed_at: new Date().toISOString() })
 }
 
-export function captureException(error: unknown, properties: TelemetryContext = {}): void {
-  if (!canEmit() || !distinctId) return
+export function captureException(error: unknown, properties: TelemetryContext = {}): boolean {
+  if (!canEmit() || !distinctId) return false
   // Exceptions are reliability data; suppress them outside `'granted'`.
-  if (consentState !== 'granted') return
+  if (consentState !== 'granted') return false
+  if (!_checkRateLimit('comfy.desktop.exception.error')) return false
+  _eventsCapturedThisProcess++
   try {
     // Same default merge as capture() so exception events stay filterable by
     // the shared axes (app_version, client, ...) instead of arriving bare.
-    client!.captureException(error, distinctId, { ...defaultEventProperties, ...properties })
+    const source = error instanceof Error ? error : new Error(String(error))
+    const safeError = new Error(scrubAll(source.message || source.name).slice(0, ERROR_MESSAGE_MAX))
+    safeError.name = scrubAll(source.name || 'Error').slice(0, 128)
+    if (source.stack) safeError.stack = scrubAll(source.stack).slice(0, 16 * 1024)
+    const safeErrorRecord = safeError as Error & Record<string, unknown>
+    for (const [key, value] of Object.entries(source).slice(0, 32)) {
+      if (typeof value === 'string' && !['message', 'name', 'stack'].includes(key)) {
+        safeErrorRecord[scrubAll(key).slice(0, 128)] = scrubAll(value).slice(0, ERROR_MESSAGE_MAX)
+      }
+    }
+    client!.captureException(
+      safeError,
+      distinctId,
+      normalizeExceptionContext({ ...defaultEventProperties, ...properties }) as TelemetryContext
+    )
+    return true
   } catch {
     // ignore
+    return false
   }
 }
 
@@ -1110,28 +1137,51 @@ export async function getOpsFlag(
  * desktop's `@trackEvent` decorator. Errors are re-thrown so callers can
  * continue normal control flow.
  */
+interface TrackedStepScope {
+  failedStage?: string
+  failureContext?: TelemetryContext
+}
+
+const trackedStepScope = new AsyncLocalStorage<TrackedStepScope>()
+
 export async function trackedStep<T>(
   step: string,
   context: TelemetryContext,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  options: { emitError?: boolean; canonicalError?: boolean } = {}
 ): Promise<T> {
   capture(`${step}.start`, context)
   const t0 = Date.now()
+  const canonicalScope: TrackedStepScope | undefined = options.canonicalError ? {} : undefined
   try {
-    const result = await fn()
+    const result = options.canonicalError
+      ? await trackedStepScope.run(canonicalScope!, fn)
+      : await fn()
     capture(`${step}.end`, { ...context, duration_ms: Date.now() - t0 })
     return result
   } catch (err) {
+    const scope = canonicalScope ?? trackedStepScope.getStore()
+    if (scope && !options.canonicalError && !scope.failedStage) {
+      scope.failedStage = step
+      scope.failureContext = context
+    }
     // Standard error schema (class / message / bucket / signature) so every
     // `${step}.error` (adopt.register, migrate.*, snapshot.restore_*) is
     // diagnosable and groups by class regardless of locale or user paths.
     // `emit` (not `capture`) so allow-listed step errors also mirror to Datadog
     // for alerting; the `.start` / `.end` funnel events stay PostHog-only.
-    emit(`${step}.error`, {
-      ...context,
-      duration_ms: Date.now() - t0,
-      ...buildErrorFields(err)
-    })
+    const shouldEmitError =
+      options.emitError === true ||
+      (options.emitError !== false && (!scope || options.canonicalError))
+    if (shouldEmitError) {
+      emit(`${step}.error`, {
+        ...context,
+        ...(scope?.failureContext || {}),
+        ...(scope?.failedStage ? { failed_stage: scope.failedStage } : {}),
+        duration_ms: Date.now() - t0,
+        ...buildErrorFields(err)
+      })
+    }
     throw err
   }
 }
@@ -1179,8 +1229,7 @@ export function forwardToRenderer(event: string, context: TelemetryContext = {})
  * Capture an event and forward it to the renderer in one call.
  */
 export function emit(event: string, context: TelemetryContext = {}): void {
-  capture(event, context)
-  forwardToRenderer(event, context)
+  if (captureAccepted(event, context)) forwardToRenderer(event, context)
 }
 
 /**

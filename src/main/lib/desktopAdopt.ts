@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 
-
 import {
   detectDesktopInstall,
   captureDesktopSnapshot,
@@ -27,14 +26,13 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
-import { buildErrorFields } from '../../shared/errorEvent'
 import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
   KNOWN_MODEL_FOLDERS,
   parseExtraModelsSections,
   parseExtraModelsYaml,
-  type ExtraModelsSection,
+  type ExtraModelsSection
 } from './models'
 
 // Re-exported from ./models for back-compat with existing importers and tests.
@@ -211,7 +209,6 @@ export async function cloneSourceFromGitDefault(
   }
   return { ok: true }
 }
-
 
 /**
  * Keys legacy desktop wrote into `Comfy.Server.LaunchArgs` that v2 owns
@@ -508,9 +505,10 @@ export function computeModelsDirsToCarry(
       if (!isDir(resolvedOverride)) continue
       // A type-named leaf (e.g. `.../checkpoints`) means the models root is
       // its parent; carrying the parent lets buildYaml discover the subfolder.
-      const root = KNOWN_MODEL_FOLDERS.has(type) && path.basename(resolvedOverride) === type
-        ? path.dirname(resolvedOverride)
-        : resolvedOverride
+      const root =
+        KNOWN_MODEL_FOLDERS.has(type) && path.basename(resolvedOverride) === type
+          ? path.dirname(resolvedOverride)
+          : resolvedOverride
       if (carry(root)) carriedRoots.push(path.resolve(root))
     }
   }
@@ -938,7 +936,8 @@ async function reconcileAdoptedRequirements(
           basePath,
           tools
         )
-      }
+      },
+      { emitError: true }
     )
   } catch (err) {
     tools.sendOutput(`Warning: requirements reconcile threw: ${(err as Error).message}\n`)
@@ -964,14 +963,11 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     now: opts.deps?.now ?? (() => new Date())
   }
 
-  const info = deps.detectDesktopInstall()
-  if (!info) {
-    telemetry.capture('comfy.desktop.adopt.failed', {
-      stage: 'detect',
-      error_bucket: 'no-legacy-install'
-    })
-    throw new Error('no-legacy-install')
-  }
+  const info = await telemetry.trackedStep('comfy.desktop.adopt.detect', {}, async () => {
+    const detected = deps.detectDesktopInstall()
+    if (!detected) throw new Error('no-legacy-install')
+    return detected
+  })
 
   // Idempotent re-run when the marker already names a recorded installation.
   // We still reconcile ComfyUI's requirements.txt against the legacy venv so
@@ -979,7 +975,9 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
   // installs whose deps drifted after a manual ComfyUI source update can
   // self-heal by re-running migrate-to-standalone. installFilteredRequirements
   // is idempotent — repeating it on an up-to-date venv is a uv no-op.
-  const existing = await findExistingAdoption(info.basePath)
+  const existing = await telemetry.trackedStep('comfy.desktop.adopt.find_existing', {}, async () =>
+    findExistingAdoption(info.basePath)
+  )
   if (existing) {
     tools.sendOutput(`Already adopted as installation ${existing.id}; reconciling requirements…\n`)
     // Backfill: older adoptions only wrote the marker under
@@ -1002,32 +1000,7 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
 
   telemetry.capture('comfy.desktop.adopt.started', {})
 
-  // Track the most recently entered phase so adopt.failed can report
-  // *which* step blew up. Without this, every failure surfaces with
-  // stage=null and the only debug signal is the free-text
-  // `error_message`. sendProgress is called at the start of each
-  // runAdoption phase, so the wrapped delegate updates this before the
-  // phase begins running. `init` covers everything that happens before
-  // runAdoption's first sendProgress (`backup`).
-  let currentPhase = 'init'
-  const phaseAwareTools: AdoptTools = {
-    ...tools,
-    sendProgress: (phase, detail) => {
-      currentPhase = phase
-      tools.sendProgress(phase, detail)
-    }
-  }
-
-  try {
-    const result = await runAdoption(info, phaseAwareTools, deps)
-    return result
-  } catch (err) {
-    telemetry.capture('comfy.desktop.adopt.failed', {
-      stage: currentPhase,
-      ...buildErrorFields(err)
-    })
-    throw err
-  }
+  return runAdoption(info, tools, deps)
 }
 
 async function runAdoption(
@@ -1119,8 +1092,11 @@ async function runAdoption(
   })
 
   sendProgress('allocate', { percent: 0 })
-  const installPath = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(ADOPT_INSTALL_NAME))
-  await fs.promises.mkdir(installPath, { recursive: true })
+  const installPath = await telemetry.trackedStep('comfy.desktop.adopt.allocate', {}, async () => {
+    const allocated = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(ADOPT_INSTALL_NAME))
+    await fs.promises.mkdir(allocated, { recursive: true })
+    return allocated
+  })
 
   sendProgress('source', { percent: 0 })
   const destSource = path.join(installPath, 'ComfyUI')
@@ -1128,30 +1104,20 @@ async function runAdoption(
   let sourceAttempts = 0
   while (sourceMode === null) {
     sourceAttempts++
-    const sourceResult = await telemetry.trackedStep(
+    sourceMode = await telemetry.trackedStep(
       'comfy.desktop.adopt.source',
       { attempt: sourceAttempts },
       async () => {
-        return sourceComfyUI(info, destSource, tools, deps)
+        const sourceResult = await sourceComfyUI(info, destSource, tools, deps)
+        if (sourceResult.mode !== 'failed') return sourceResult.mode
+        const choice = await tools.promptUser('source-missing', {
+          message: sourceResult.message,
+          attempts: sourceAttempts
+        })
+        if (choice.kind === 'source-missing' && choice.choice === 'retry') return null
+        throw new Error(`source-missing: ${sourceResult.message}`)
       }
     )
-    if (sourceResult.mode !== 'failed') {
-      sourceMode = sourceResult.mode
-      break
-    }
-    const choice = await tools.promptUser('source-missing', {
-      message: sourceResult.message,
-      attempts: sourceAttempts
-    })
-    // Only an explicit retry loops. Anything else (cancel, or an
-    // unexpected choice) is a hard failure: adoption cannot continue
-    // without the ComfyUI source. Throw a clear error the dispatcher
-    // surfaces to the user — with a suggestion to do a fresh install —
-    // rather than silently leaving `sourceMode` null.
-    if (!(choice.kind === 'source-missing' && choice.choice === 'retry')) {
-      throw new Error(`source-missing: ${sourceResult.message}`)
-    }
-    // 'retry' loops.
   }
 
   // Adoption preserves the user's existing ComfyUI checkout as-is — it is
@@ -1182,9 +1148,7 @@ async function runAdoption(
         )
       }
     } catch (err) {
-      sendOutput(
-        `Warning: could not resolve adopted ComfyUI version: ${(err as Error).message}\n`
-      )
+      sendOutput(`Warning: could not resolve adopted ComfyUI version: ${(err as Error).message}\n`)
     }
   }
 

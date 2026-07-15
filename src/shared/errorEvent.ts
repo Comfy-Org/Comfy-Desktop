@@ -39,10 +39,8 @@ import { scrubAll } from './piiScrub'
 export const ERROR_MESSAGE_MAX = 2048
 /** Normalized signature cap. */
 export const ERROR_SIGNATURE_MAX = 200
-/** stderr tail cap: last N lines (tracebacks + fatal line live at the tail). */
-export const ERROR_TAIL_LINES = 40
-/** stderr tail hard character cap (~4 KB) as a belt-and-braces bound. */
-export const ERROR_TAIL_MAX = 4096
+/** stderr tail hard character cap. */
+export const ERROR_TAIL_MAX = 16 * 1024
 
 export interface ErrorFields {
   error_class: string
@@ -56,7 +54,8 @@ export interface ErrorFields {
  * `ModuleNotFoundError: No module named 'torch'`. Anchored so the class is
  * the leading token. Matches the shape `executionTap` uses.
  */
-const EXCEPTION_LINE = /^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Interrupt))\b\s*:?/
+const EXCEPTION_LINE =
+  /^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Interrupt)\b|SystemExit\b)\s*:?/
 
 /**
  * Fixed, English, locale-independent signatures that are NOT a Python class
@@ -71,7 +70,7 @@ const SIGNATURE_CLASSES: [needle: string, className: string][] = [
   ['device-side assert', 'CUDADeviceAssert'],
   ['cuda error', 'CUDAError'],
   ['cuda runtime error', 'CUDAError'],
-  ['cuda not available', 'CUDANotAvailable'],
+  ['cuda not available', 'CUDANotAvailable']
 ]
 
 function messageOf(input: unknown): string {
@@ -79,6 +78,29 @@ function messageOf(input: unknown): string {
   if (typeof input === 'string') return input
   if (input == null) return ''
   return String(input)
+}
+
+function structuredCode(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null
+  const record = input as Record<string, unknown>
+  if (typeof record.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(record.code)) {
+    return record.code
+  }
+  const cause = record.cause
+  if (cause && typeof cause === 'object') {
+    const code = (cause as Record<string, unknown>).code
+    if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(code)) return code
+  }
+  return null
+}
+
+function embeddedCode(message: string): string | null {
+  const chromium = message.match(/\bnet::(ERR_[A-Z0-9_]+)\b/i)
+  if (chromium) return chromium[1]!.toUpperCase()
+  const node = message.match(
+    /\b(E(?:AI_AGAIN|CONNREFUSED|CONNRESET|NOTFOUND|NETUNREACH|TIMEDOUT|ACCES|PERM|ROFS|NOENT|NOTDIR|ISDIR|NOSPC))\b/i
+  )
+  return node ? node[1]!.toUpperCase() : null
 }
 
 /**
@@ -109,6 +131,8 @@ function findExceptionLine(text: string): string | null {
  * same failure groups across locales.
  */
 export function extractErrorClass(input: unknown): string {
+  const code = structuredCode(input)
+  if (code) return code
   const text = messageOf(input)
 
   // (1) Python exception class from the final exception line.
@@ -118,13 +142,17 @@ export function extractErrorClass(input: unknown): string {
     if (m) return m[1]!
   }
 
-  // (2) Fixed English signatures.
+  // (2) Stable Node/Chromium codes embedded in string-only errors.
+  const codeFromMessage = embeddedCode(text)
+  if (codeFromMessage) return codeFromMessage
+
+  // (3) Fixed English signatures.
   const lower = text.toLowerCase()
   for (const [needle, className] of SIGNATURE_CLASSES) {
     if (lower.includes(needle)) return className
   }
 
-  // (3) Meaningful JS Error subclass name.
+  // (4) Meaningful JS Error subclass name.
   if (input instanceof Error && input.name && input.name !== 'Error') {
     return input.name
   }
@@ -145,6 +173,7 @@ export function normalizeSignature(message: string): string {
       .toLowerCase()
       // Quoted strings collapse first so their contents don't leak into the
       // other rules (e.g. a quoted path or number).
+      .replace(/(no module named\s+)["']([a-z_][a-z0-9_.]*)["']/g, '$1$2')
       .replace(/'[^']*'/g, '<str>')
       .replace(/"[^"]*"/g, '<str>')
       // File paths (windows drive or unix, at least one separator).
@@ -189,8 +218,8 @@ export function buildErrorFields(
     error_message: scrubbedMessage,
     // Bucket on raw text: its patterns don't care about user paths and would
     // otherwise miss matches hidden inside a `[REDACTED]` substitution.
-    error_bucket: bucketError(raw),
-    error_signature: `${errorClass}|${normalizeSignature(scrubbedMessage)}`,
+    error_bucket: bucketError(input),
+    error_signature: `${errorClass}|${normalizeSignature(scrubbedMessage)}`
   }
 }
 
@@ -202,14 +231,12 @@ export function buildErrorFields(
  */
 export function errorTail(
   stderr: string | null | undefined,
-  opts: { lines?: number; maxChars?: number } = {}
+  opts: { maxChars?: number } = {}
 ): string | null {
   if (!stderr) return null
-  const lines = opts.lines ?? ERROR_TAIL_LINES
   const maxChars = opts.maxChars ?? ERROR_TAIL_MAX
   const scrubbed = scrubAll(stderr)
-  const tail = scrubbed.split('\n').slice(-lines).join('\n')
-  const bounded = tail.length > maxChars ? tail.slice(-maxChars) : tail
+  const bounded = scrubbed.length > maxChars ? scrubbed.slice(-maxChars) : scrubbed
   const trimmed = bounded.trim()
   return trimmed.length > 0 ? trimmed : null
 }

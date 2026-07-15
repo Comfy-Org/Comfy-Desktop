@@ -27,6 +27,7 @@ import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import { buildErrorFields } from '../../shared/errorEvent'
+import { scrubAll } from '../../shared/piiScrub'
 
 /**
  * Traceback collection state. We collect until a blank line follows an
@@ -55,13 +56,30 @@ interface TapState {
   // header — otherwise every validation_failed groups into one opaque bucket.
   validationBuffer: string[]
   validationNodeId: string | null
+  summaryFlushed: boolean
+  tracebackAwaitingChainHeader: boolean
 }
 
 const TRACEBACK_START = /^Traceback \(most recent call last\):/
+const TRACEBACK_HEADER = 'Traceback (most recent call last):'
 const PROMPT_GOT = /^got prompt/i
 const PROMPT_DONE = /^Prompt executed in (?<seconds>\d+(?:\.\d+)?)\s*seconds?\s*$/i
 const VALIDATION_FAIL = /^Failed to validate prompt for output (?<nodeId>\S+):/i
-const EXCEPTION_LINE = /^[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Interrupt)\b/
+const EXCEPTION_LINE =
+  /^(?:[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Interrupt)\b|SystemExit\b)/
+const CHAIN_MARKERS = [
+  'During handling of the above exception',
+  'The above exception was the direct cause'
+] as const
+const CHAIN_MARKER = new RegExp(`^(?:${CHAIN_MARKERS.join('|')})`)
+
+function isChainMarkerOrPrefix(line: string): boolean {
+  return CHAIN_MARKERS.some((marker) => marker.startsWith(line) || line.startsWith(marker))
+}
+
+function isTracebackHeaderOrPrefix(line: string): boolean {
+  return TRACEBACK_HEADER.startsWith(line) || line.startsWith(TRACEBACK_HEADER)
+}
 
 const MAX_PENDING_PROMPTS = 256
 const MAX_TRACEBACK_LINES = 200
@@ -91,7 +109,9 @@ export function createExecutionTap(opts: {
     tracebackChars: 0,
     tracebackPhase: 'none',
     validationBuffer: [],
-    validationNodeId: null
+    validationNodeId: null,
+    summaryFlushed: false,
+    tracebackAwaitingChainHeader: false
   }
 
   const baseContext = {
@@ -168,12 +188,14 @@ export function createExecutionTap(opts: {
     telemetry.emit('comfy.desktop.execution.error', {
       ...baseContext,
       ...buildErrorFields(exceptionLine),
+      error_traceback: scrubAll(state.tracebackBuffer.join('\n')).slice(-MAX_TRACEBACK_CHARS),
       error_count: state.errorCount,
       wall_clock_ms: wallMs
     })
     state.tracebackPhase = 'none'
     state.tracebackBuffer = []
     state.tracebackChars = 0
+    state.tracebackAwaitingChainHeader = false
   }
 
   /**
@@ -202,15 +224,21 @@ export function createExecutionTap(opts: {
   }
 
   function appendTracebackLine(line: string): void {
-    state.tracebackBuffer.push(line)
-    state.tracebackChars += line.length + 1
-    // Bounded buffer: if the traceback is pathologically long, force-emit
-    // and reset so we never accumulate forever.
-    if (
-      state.tracebackBuffer.length >= MAX_TRACEBACK_LINES ||
-      state.tracebackChars >= MAX_TRACEBACK_CHARS
+    const marker = '...[truncated]...'
+    const boundedLine =
+      line.length + 1 > MAX_TRACEBACK_CHARS
+        ? `${line.slice(0, 512)}${marker}${line.slice(-(MAX_TRACEBACK_CHARS - 513 - marker.length))}`
+        : line
+    state.tracebackBuffer.push(boundedLine)
+    state.tracebackChars += boundedLine.length + 1
+    // Keep the newest suffix without emitting before the final exception.
+    while (
+      state.tracebackBuffer.length > 1 &&
+      (state.tracebackBuffer.length > MAX_TRACEBACK_LINES ||
+        state.tracebackChars > MAX_TRACEBACK_CHARS)
     ) {
-      emitTracebackError()
+      const removed = state.tracebackBuffer.shift()
+      if (removed !== undefined) state.tracebackChars -= removed.length + 1
     }
   }
 
@@ -287,29 +315,31 @@ export function createExecutionTap(opts: {
       return
     }
 
-    // Blank lines inside a traceback terminate the current frame ONLY if we
-    // already have an exception line. A chained traceback's `During handling
-    // of the above exception, …` marker arrives AFTER the blank line; it
-    // re-enters collection on the very next non-blank line below.
     if (trimmed.length === 0) {
-      const hasExceptionLine = state.tracebackBuffer.some((l) => EXCEPTION_LINE.test(l))
-      if (hasExceptionLine) {
-        emitTracebackError()
-        return
-      }
-      // Blank line before any exception line — keep collecting.
       appendTracebackLine(trimmed)
       return
     }
 
-    // A chain marker (or a fresh `Traceback (most recent call last):`)
-    // following a just-emitted error re-opens collection — but only if we
-    // are still considered inside a traceback. With blank-line emit above,
-    // by the time we see the chain marker we've already emitted, so it
-    // arrives in `phase === 'none'` and starts a brand-new collection if
-    // it's a TRACEBACK_START. Plain chain markers without a fresh
-    // `Traceback:` header are ignored.
+    const hasExceptionLine = state.tracebackBuffer.some((l) => EXCEPTION_LINE.test(l))
+    if (hasExceptionLine && TRACEBACK_START.test(trimmed) && !state.tracebackAwaitingChainHeader) {
+      emitTracebackError()
+      handleNewLine(line, source)
+      return
+    }
+    const continuesChain =
+      CHAIN_MARKER.test(trimmed) ||
+      (state.tracebackAwaitingChainHeader && TRACEBACK_START.test(trimmed))
+    if (hasExceptionLine && state.tracebackBuffer.at(-1) === '' && !continuesChain) {
+      emitTracebackError()
+      handleNewLine(line, source)
+      return
+    }
 
+    if (CHAIN_MARKER.test(trimmed)) {
+      state.tracebackAwaitingChainHeader = true
+    } else if (state.tracebackAwaitingChainHeader && TRACEBACK_START.test(trimmed)) {
+      state.tracebackAwaitingChainHeader = false
+    }
     appendTracebackLine(trimmed)
     state.tracebackPhase = 'collecting'
   }
@@ -322,8 +352,20 @@ export function createExecutionTap(opts: {
       const lines = pending[source].split(/\r?\n/)
       pending[source] = lines.pop() ?? ''
       for (const line of lines) handleLine(line, source)
+      if (
+        state.tracebackPhase === 'collecting' &&
+        pending[source].length > 0 &&
+        state.tracebackBuffer.at(-1) === '' &&
+        state.tracebackBuffer.some((line) => EXCEPTION_LINE.test(line)) &&
+        !isChainMarkerOrPrefix(pending[source]) &&
+        !(state.tracebackAwaitingChainHeader && isTracebackHeaderOrPrefix(pending[source]))
+      ) {
+        emitTracebackError()
+      }
     },
     flushSummary(): void {
+      if (state.summaryFlushed) return
+      state.summaryFlushed = true
       // Flush any buffered partial line (a final line written without a
       // trailing newline when the process exited) through the parser first —
       // that trailing line is often the fatal exception / validation reason we

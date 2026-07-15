@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 
 // Stub the electron surface ../shared touches so the test needs no runtime.
@@ -6,18 +7,18 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-import { desktopFeatureFlags, isCrashedExit } from './launch'
-import type { InstallationRecord } from '../shared'
+import { desktopFeatureFlags, isCrashedExit, onProcessTerminated } from './launch'
+import type { ChildProcess, InstallationRecord } from '../shared'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -39,9 +40,7 @@ describe('desktopFeatureFlags', () => {
   })
 
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
-    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty(
-      'enable_telemetry'
-    )
+    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
     expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
   })
 })
@@ -70,5 +69,38 @@ describe('isCrashedExit', () => {
     // Windows force-kill reports a large unsigned code; signal is always null.
     expect(isCrashedExit(4294967295, null)).toBe(true)
     expect(isCrashedExit(0xc0000005, null)).toBe(true)
+  })
+})
+
+describe('onProcessTerminated', () => {
+  it('prefers close and invokes the callback once', () => {
+    const proc = new EventEmitter() as unknown as ChildProcess
+    const callback = vi.fn()
+    onProcessTerminated(proc, callback)
+
+    proc.emit('exit', 1, null)
+    proc.emit('close', 1, null)
+    proc.emit('close', 2, null)
+
+    expect(callback).toHaveBeenCalledOnce()
+    expect(callback).toHaveBeenCalledWith(1, null)
+  })
+
+  it('falls back to exit when inherited pipes prevent close', () => {
+    vi.useFakeTimers()
+    try {
+      const proc = new EventEmitter() as unknown as ChildProcess
+      const callback = vi.fn()
+      onProcessTerminated(proc, callback)
+
+      proc.emit('exit', null, 'SIGKILL')
+      expect(callback).not.toHaveBeenCalled()
+      vi.runAllTimers()
+
+      expect(callback).toHaveBeenCalledOnce()
+      expect(callback).toHaveBeenCalledWith(null, 'SIGKILL')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
