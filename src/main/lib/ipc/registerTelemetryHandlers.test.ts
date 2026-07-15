@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  bindUserId: vi.fn(),
   capture: vi.fn(),
   captureException: vi.fn(),
   findEntryByComfySender: vi.fn(),
@@ -9,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   on: vi.fn(),
   recordExposure: vi.fn(),
+  reportFirebaseAuthState: vi.fn(),
   registerPersonProperties: vi.fn()
 }))
 
@@ -27,10 +27,13 @@ vi.mock('../telemetry', () => ({
   // Real (pure) narrowing logic, mirrored here because importOriginal would
   // pull in telemetry.ts's electron/posthog-node imports under the stub mock.
   asDeployment: (v: unknown) => (v === 'local' || v === 'cloud' || v === 'remote' ? v : null),
-  bindUserId: mocks.bindUserId,
   capture: mocks.capture,
   captureException: mocks.captureException,
   registerPersonProperties: mocks.registerPersonProperties
+}))
+
+vi.mock('../firebaseAuthIdentity', () => ({
+  reportFirebaseAuthState: mocks.reportFirebaseAuthState
 }))
 
 vi.mock('../experiments', () => ({
@@ -46,6 +49,15 @@ function listener(channel: string): IpcListener {
   const call = mocks.on.mock.calls.find(([name]) => name === channel)
   expect(call).toBeDefined()
   return call![1] as IpcListener
+}
+
+function identityEvent(url: string, mainFrame: boolean = true): unknown {
+  const senderMainFrame = { url, processId: 100, routingId: 200 }
+  const sender = { mainFrame: senderMainFrame }
+  return {
+    sender,
+    senderFrame: mainFrame ? senderMainFrame : { url, processId: 101, routingId: 201 }
+  }
 }
 
 describe('registerTelemetryHandlers', () => {
@@ -142,6 +154,51 @@ describe('registerTelemetryHandlers', () => {
     expect(sent.key_125).toBeUndefined()
   })
 
+  it('accepts declarative auth state only from trusted Cloud main frames', () => {
+    const signedInEvent = identityEvent('https://cloud.comfy.org/workspaces/abc')
+    const signedOutEvent = identityEvent('https://pr-123.testingcloud.comfy.org/workspaces/abc')
+    listener('telemetry:firebaseAuthState')(signedInEvent, {
+      status: 'signed_in',
+      userId: ' firebase-uid-123 '
+    })
+    listener('telemetry:firebaseAuthState')(signedOutEvent, { status: 'signed_out' })
+
+    expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
+      1,
+      (signedInEvent as { sender: unknown }).sender,
+      { processId: 100, routingId: 200 },
+      { status: 'signed_in', userId: 'firebase-uid-123' }
+    )
+    expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
+      2,
+      (signedOutEvent as { sender: unknown }).sender,
+      { processId: 100, routingId: 200 },
+      { status: 'signed_out' }
+    )
+  })
+
+  it('rejects auth state from local pages, other origins, subframes, and malformed payloads', () => {
+    listener('telemetry:firebaseAuthState')(identityEvent('file:///launcher/index.html'), {
+      status: 'signed_in',
+      userId: 'local-user'
+    })
+    listener('telemetry:firebaseAuthState')(identityEvent('https://attacker.example/'), {
+      status: 'signed_out'
+    })
+    listener('telemetry:firebaseAuthState')(identityEvent('https://cloud.comfy.org/', false), {
+      status: 'pending'
+    })
+    listener('telemetry:firebaseAuthState')(identityEvent('https://cloud.comfy.org/'), {
+      status: 'signed_in',
+      userId: '\u0000invalid'
+    })
+    listener('telemetry:firebaseAuthState')(identityEvent('https://cloud.comfy.org/'), {
+      status: 'unknown'
+    })
+
+    expect(mocks.reportFirebaseAuthState).not.toHaveBeenCalled()
+  })
+
   it('tags relayed events with the deployment of the sender comfyView install', () => {
     const sender = { id: 1 }
     mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
@@ -156,7 +213,10 @@ describe('registerTelemetryHandlers', () => {
   it('leaves events untagged when the sender is not an attached comfyView', () => {
     mocks.findEntryByComfySender.mockReturnValue(null)
 
-    listener('telemetry:capture')({ sender: { id: 2 } }, { event: 'launcher.click', properties: {} })
+    listener('telemetry:capture')(
+      { sender: { id: 2 } },
+      { event: 'launcher.click', properties: {} }
+    )
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.deployment).toBeUndefined()
@@ -205,7 +265,10 @@ describe('registerTelemetryHandlers', () => {
   it('ignores unknown source categories rather than emitting a junk tag', () => {
     mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: null })
 
-    listener('telemetry:capture')({ sender: { id: 4 } }, { event: 'execution_start', properties: {} })
+    listener('telemetry:capture')(
+      { sender: { id: 4 } },
+      { event: 'execution_start', properties: {} }
+    )
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.deployment).toBeUndefined()

@@ -113,9 +113,9 @@ export async function handleFirebasePopup(
     showCopyLinkBanner(comfyContents, loginUrl)
     const { user, apiKey } = await abortable(handle.signInPromise, signal)
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
-    // Bind PostHog identity as soon as we have the user — independent of
-    // the embedded-view reload below, so the merge happens even if the
-    // window is torn down before the reload completes.
+    // Bind PostHog identity as soon as main verifies the user — hosted
+    // bundles without the consensus bridge never report auth state, and
+    // consensus supersedes this bind afterward (same-UID rebinds are no-ops).
     bindSignedInUser(user)
     if (comfyContents.isDestroyed()) return
     // Hold for a beat so the user actually sees the "You're signed in"

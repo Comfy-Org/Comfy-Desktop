@@ -242,7 +242,7 @@
   Pop $1
 !macroend
 
-!macro persistDownloadTokenFromInstallerName
+!macro persistWebsiteAnonymousIdFromInstallerName
   Push $R0
   Push $R1
   Push $R2
@@ -250,52 +250,53 @@
   Push $R4
   Push $R5
 
-  ; Windows MVP for GTM-104: the website/download proxy can serve the same
-  ; signed installer binary with a tokenized Content-Disposition filename, e.g.
-  ; Comfy-Desktop-dt_AbC123xYz789.exe. Persist only the 12-char opaque token;
-  ; the app validates the exact token shape before sending anything to telemetry.
+  ; GTM-277 direct website identity carrier. The Router serves the signed
+  ; installer as:
   ;
-  ; The "dt_" search is done inline with StrCpy rather than StrFunc's ${StrStr}:
-  ; StrFunc emits a standalone install function at include time, and electron-
-  ; builder compiles this script a second time for the uninstaller (where the
-  ; customInstall call site is not emitted). In that pass StrStr is unreferenced,
-  ; which trips NSIS warning 6010 — fatal under the release builder's -WX.
-  ${GetBaseName} "$EXEPATH" $R0
-  StrLen $R5 "$R0"
+  ;   Comfy-Desktop-Setup-phid1_<payload>.exe
+  ;
+  ; where payload is unpadded RFC 4648 base64url of the website PostHog
+  ; $device_id's exact UTF-8 bytes (1..160 bytes, therefore 2..214 chars).
+  ; Persist only the filename-safe payload. Desktop performs strict alphabet,
+  ; length, canonical base64url, and UTF-8 validation before adopting it.
+  ; Renamed/malformed installers simply have no carrier.
+  SetShellVarContext current
+  StrCpy $R2 "$APPDATA\Comfy Desktop"
+  ; The current installer filename is authoritative. A plain or malformed
+  ; installer must not leave a valid carrier from an earlier unlaunched setup.
+  Delete "$R2\pending-website-anonymous-id.txt"
 
-  StrCpy $R1 0
+  ${GetFileName} "$EXEPATH" $R0
+  StrLen $R5 "$R0"
   StrCpy $R4 ""
-  ${Do}
-    IntOp $R3 $R1 + 3
-    ${If} $R3 > $R5
-      ${ExitDo}
+
+  ; Exact case-sensitive grammar. Prefix is 26 chars and extension is 4;
+  ; complete filenames are 32..244 chars inclusive.
+  ${If} $R5 >= 32
+  ${AndIf} $R5 <= 244
+    StrCpy $R1 "$R0" 26
+    StrCpy $R3 "$R0" 4 -4
+    ${If} $R1 S== "Comfy-Desktop-Setup-phid1_"
+    ${AndIf} $R3 S== ".exe"
+      IntOp $R3 $R5 - 30
+      StrCpy $R4 "$R0" $R3 26
     ${EndIf}
-    StrCpy $R3 "$R0" 3 $R1
-    ; S== is case-sensitive (LogicLib == is case-insensitive StrCmp); the proxy
-    ; emits a lowercase "dt_" marker, matching StrFunc's case-sensitive StrStr.
-    ${If} $R3 S== "dt_"
-      IntOp $R3 $R1 + 3
-      StrCpy $R4 "$R0" 12 $R3
-      ${ExitDo}
-    ${EndIf}
-    IntOp $R1 $R1 + 1
-  ${Loop}
+  ${EndIf}
 
   StrLen $R3 "$R4"
-  ${If} $R3 == 12
+  ${If} $R3 >= 2
+  ${AndIf} $R3 <= 214
     ; Matches Electron's packaged userData path documented in README:
     ; %APPDATA%\Comfy Desktop.
-    SetShellVarContext current
-    StrCpy $R2 "$APPDATA\Comfy Desktop"
     CreateDirectory "$R2"
     ClearErrors
-    FileOpen $R3 "$R2\pending-download-token.txt" w
+    FileOpen $R3 "$R2\pending-website-anonymous-id.txt" w
     ${IfNot} ${Errors}
       FileWrite $R3 "$R4$\r$\n"
       FileClose $R3
-      DetailPrint "  Download attribution token stored."
+      DetailPrint "  Website attribution identity stored."
     ${Else}
-      DetailPrint "  Download attribution token could not be stored."
+      DetailPrint "  Website attribution identity could not be stored."
     ${EndIf}
   ${EndIf}
 
@@ -322,7 +323,7 @@
   ; like an install log instead of jumping from "Step 2 — Extracting…"
   ; straight to the Finish page.
   SetDetailsPrint both
-  !insertmacro persistDownloadTokenFromInstallerName
+  !insertmacro persistWebsiteAnonymousIdFromInstallerName
   DetailPrint "  Application files installed to: $INSTDIR"
   DetailPrint "  Registered with Add or Remove Programs"
   DetailPrint "  Start Menu shortcut created"

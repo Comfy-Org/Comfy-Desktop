@@ -4,8 +4,8 @@
  * Reads the `desktop-cloud-capacity` PostHog flag at boot via `getOpsFlag`, which
  * deliberately BYPASSES the consent gate: this is server config pushed TO the client to
  * protect service availability, not analytics collected FROM the user, so a user who
- * declined telemetry still benefits when GPUs are saturated. Only the anonymous distinct id
- * and flag key leave the device.
+ * declined telemetry still benefits when GPUs are saturated. Only the installation-stable
+ * evaluation key and flag key leave the device; implicit flag events are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so a
  * kill-switch isn't accidentally consent-gated. Fetched once at boot; running apps pick up

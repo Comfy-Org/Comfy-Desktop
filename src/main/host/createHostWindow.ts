@@ -33,6 +33,7 @@ import {
 } from '../lib/ipc/shared'
 import * as mainTelemetry from '../lib/telemetry'
 import { getUserTier } from '../lib/userTier'
+import { trackFirebaseAuthReporter } from '../lib/firebaseAuthIdentity'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSession'
 import * as settings from '../settings'
@@ -1156,6 +1157,7 @@ export function buildComfyView(
   comfyView.setBackgroundColor(COMFY_BG)
 
   const comfyContents = comfyView.webContents
+  trackFirebaseAuthReporter(comfyContents)
   // Eagerly attach the will-download handler to the comfy view's
   // session so any `session.downloadURL(...)` call below — or a server-
   // initiated `Content-Disposition: attachment` response — flows
