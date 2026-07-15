@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import {
   publicVersion, torchLocalTag, stackVersionMatches, torchIndexUrlFor,
   torchTupleReacquirable, accelBaseForTag, torchTupleMatches, torchPackageTuplesEqual,
-  observedTuple, hasFullObservedTuple,
+  observedTuple, hasFullObservedTuple, parseIndexStackId, makeIndexStackId, stackAppliesViaPip,
 } from './torchStackTypes'
 import type { ObservedTorchStack } from './torchStackTypes'
 
@@ -67,6 +67,35 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
     setPlatform('win32')
     expect(torchIndexUrlFor({ torch: '2.9.1+rocm7.2.1' })).toBeNull()
     expect(torchTupleReacquirable({ torch: '2.9.1+rocm7.2.1' })).toBe(false)
+  })
+})
+
+describe('parseIndexStackId / makeIndexStackId', () => {
+  it('round-trips and strips the local tag from the version key', () => {
+    expect(makeIndexStackId('cu128', '2.11.0+cu128')).toBe('pytorch-index:cu128:2.11.0')
+    expect(parseIndexStackId('pytorch-index:cu128:2.11.0')).toEqual({ indexTag: 'cu128', version: '2.11.0' })
+  })
+
+  it('rejects malformed and foreign ids', () => {
+    expect(parseIndexStackId('comfy-bundle:win-nvidia:v1.0')).toBeNull()
+    expect(parseIndexStackId('pytorch-index:cu128')).toBeNull()
+    expect(parseIndexStackId('pytorch-index:cu 128:2.11.0')).toBeNull()
+  })
+})
+
+describe('stackAppliesViaPip', () => {
+  const bundleSrc = { kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v1.0' } as const
+  const indexSrc = { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' } as const
+
+  it('bundle stacks graft on managed installs but pip-apply on adopted ones', () => {
+    expect(stackAppliesViaPip(bundleSrc, false)).toBe(false)
+    expect(stackAppliesViaPip(bundleSrc, true)).toBe(true)
+  })
+
+  it('index-served stacks pip-apply on every install type', () => {
+    expect(stackAppliesViaPip(indexSrc, false)).toBe(true)
+    expect(stackAppliesViaPip(indexSrc, true)).toBe(true)
+    expect(stackAppliesViaPip({ kind: 'pypi', backend: 'mps' }, false)).toBe(true)
   })
 })
 

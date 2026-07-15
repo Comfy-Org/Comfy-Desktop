@@ -158,12 +158,12 @@ const PIP_FALLBACK_STAGING_BYTES = 8 * 1024 ** 3
  * extraction staging + margin, checked on the volume hosting the venv.
  * Measures the real venv (walk), never a metadata estimate.
  *
- * `entry` sizes the pending payload; pass null when there is no catalog
- * entry (observed-tuple pip restores), which charges a conservative fixed
- * estimate instead. Pass `staged: true` for the re-check after a bundle is
- * already downloaded and extracted: the staging space is then occupied, not
- * pending, so charging it again would double-book the bundle and reject safe
- * installs.
+ * `entry` sizes the pending payload; pass null for pip applies (observed-
+ * tuple restores, adopted installs, index-served stacks) or an entry without
+ * a bundle — both charge a conservative fixed estimate instead. Pass
+ * `staged: true` for the re-check after a bundle is already downloaded and
+ * extracted: the staging space is then occupied, not pending, so charging it
+ * again would double-book the bundle and reject safe installs.
  */
 export async function preflightDiskSpace(
   installation: InstallationRecord,
@@ -173,7 +173,7 @@ export async function preflightDiskSpace(
 ): Promise<{ requiredBytes: number; freeBytes: number }> {
   const venvDir = getActiveVenvDir(installation)
   const venvSize = await getDirectorySize(venvDir, signal)
-  const pendingBytes = entry ? entry.bundle.size * (1 + EXTRACT_FACTOR) : PIP_FALLBACK_STAGING_BYTES
+  const pendingBytes = entry?.bundle ? entry.bundle.size * (1 + EXTRACT_FACTOR) : PIP_FALLBACK_STAGING_BYTES
   const stagingBytes = opts?.staged ? 0 : pendingBytes
   const requiredBytes = Math.ceil((venvSize + stagingBytes) * (1 + DISK_MARGIN))
   const { free } = await getDiskSpace(venvDir)
@@ -191,6 +191,8 @@ export async function prepareBundleStack(
   entry: TorchStackEntry,
   tools: TorchStackTools,
 ): Promise<PreparedBundleStack> {
+  const bundle = entry.bundle
+  if (!bundle) throw new Error(`stack ${entry.stackId} has no bundle artifact to download`)
   const stagingDir = path.join(installation.installPath, STAGING_DIR)
   await fs.promises.rm(stagingDir, { recursive: true, force: true })
   await fs.promises.mkdir(stagingDir, { recursive: true })
@@ -203,11 +205,11 @@ export async function prepareBundleStack(
     const ctx = { sendProgress: tools.sendProgress, download, cache, extract, signal: tools.signal }
     const bundleTag = entry.source.kind === 'comfy-bundle' ? entry.source.bundleTag : entry.stackId
 
-    const files = [{ url: entry.bundle.url, filename: entry.bundle.filename, size: entry.bundle.size }]
+    const files = [{ url: bundle.url, filename: bundle.filename, size: bundle.size }]
     if (files[0]!.filename) {
       await downloadAndExtractMulti(files, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
     } else {
-      await downloadAndExtract(entry.bundle.url, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
+      await downloadAndExtract(bundle.url, stagingDir, `${bundleTag}_${entry.variant}`, ctx)
     }
 
     const srcSite = findSitePackages(path.join(stagingDir, 'standalone-env'))

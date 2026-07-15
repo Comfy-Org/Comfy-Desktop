@@ -18,18 +18,25 @@ import { getInstalledTorchTuple, PLATFORM_PREFIX } from './envPaths'
 import { fetchR2VendorReleases, r2BundleUrl } from './r2Catalog'
 import type { R2Variant } from './r2Catalog'
 import {
-  makeBundleStackId, parseBundleStackId, pythonAbiCompatible, torchTupleMatches,
-  torchLocalTag, accelBaseForTag, torchTupleReacquirable,
+  makeBundleStackId, parseBundleStackId, parseIndexStackId, pythonAbiCompatible,
+  torchTupleMatches, torchLocalTag, accelBaseForTag, torchTupleReacquirable,
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
+import { indexStacksForVariant, refreshComputeCaps } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 
-/** A resolvable catalog entry: managed ref + acquisition info. */
+/** A resolvable catalog entry: managed ref + acquisition info. Bundle
+ *  entries carry the R2 download; index entries carry no bundle and are
+ *  pip-applied from the trusted index their local tag names. */
 export type TorchStackEntry = PersistedTorchStack & {
-  /** Bundle release date (ISO), for display ordering. */
+  /** Release date (ISO), for display ordering. */
   date: string
-  /** ComfyUI version the bundle shipped with (display only). */
+  /** ComfyUI version the bundle shipped with (display only; empty for
+   *  index-served entries, which are not tied to a ComfyUI release). */
   comfyuiVersion: string
+  /** i18n key suffix under `standalone.` describing an index-served entry
+   *  (e.g. which GPU generations its kernels cover). */
+  noteKey?: string
 }
 
 const CACHE_FILE = path.join(dataDir(), 'torch-stack-cache.json')
@@ -161,13 +168,25 @@ function installPython(installation: InstallationRecord): string | undefined {
  *  the bundle's interpreter payload, so its Python must match; adopted
  *  installs are pip-applied against their own Python, but only tuples a
  *  trusted index can serve are switchable (e.g. Windows ROCm builds have no
- *  pip source). Deduplication runs after filtering so an entry dropped here
- *  can't shadow a compatible duplicate. */
+ *  pip source). Index-served entries pip-apply on every install type and
+ *  are pre-filtered by the manifest (platform, index, GPU), so no per-
+ *  install constraint applies. Deduplication runs after filtering so an
+ *  entry dropped here can't shadow a compatible duplicate. */
 function filterStacksForInstall(installation: InstallationRecord, stacks: TorchStackEntry[]): TorchStackEntry[] {
-  const filtered = installation.adopted === true
-    ? stacks.filter((e) => torchTupleReacquirable(e.packages))
-    : stacks.filter((e) => pythonAbiCompatible(installPython(installation), e.pythonVersion))
+  const filtered = stacks.filter((e) => {
+    if (e.source.kind !== 'comfy-bundle') return true
+    return installation.adopted === true
+      ? torchTupleReacquirable(e.packages)
+      : pythonAbiCompatible(installPython(installation), e.pythonVersion)
+  })
   return dedupeByTuple(filtered)
+}
+
+/** Bundle entries (cached from R2) plus the manifest's index-served entries
+ *  for the variant. Bundles come first so a tuple served both ways
+ *  deduplicates to the bundle (atomic swap beats pip mutation). */
+function withIndexStacks(variant: string, bundleStacks: TorchStackEntry[]): TorchStackEntry[] {
+  return [...bundleStacks, ...indexStacksForVariant(variant)]
 }
 
 /** Fetch + filter the switchable stacks for an installation and refresh the
@@ -178,21 +197,25 @@ function filterStacksForInstall(installation: InstallationRecord, stacks: TorchS
 export async function refreshTorchStackCatalog(installation: InstallationRecord): Promise<TorchStackEntry[]> {
   const variant = installVariant(installation)
   if (!variant) return []
+  // GPU probe first (best-effort, local): the R2 fetch below may throw, and
+  // index-entry filtering should still have fresh capabilities.
+  await refreshComputeCaps()
   const releases = await fetchR2VendorReleases(variant)
   const stacks = filterCompatibleStacks(variant, undefined, releases, { requirePythonAbi: false })
   _ensureLoaded()
   _cache[variant] = stacks
   _persist()
-  return filterStacksForInstall(installation, stacks)
+  return filterStacksForInstall(installation, withIndexStacks(variant, stacks))
 }
 
-/** Synchronous cached read for `getDetailSections`. Empty until the first
- *  refresh (triggered by check-update) lands. */
+/** Synchronous cached read for `getDetailSections`. Bundle entries are empty
+ *  until the first refresh (triggered by check-update) lands; manifest index
+ *  entries are always available. */
 export function getCachedTorchStacks(installation: InstallationRecord): TorchStackEntry[] {
   const variant = installVariant(installation)
   if (!variant) return []
   _ensureLoaded()
-  return filterStacksForInstall(installation, _cache[variant] ?? [])
+  return filterStacksForInstall(installation, withIndexStacks(variant, _cache[variant] ?? []))
 }
 
 /**
@@ -205,10 +228,18 @@ export async function resolveTorchStack(
   installation: InstallationRecord,
   stackId: string,
 ): Promise<TorchStackEntry | null> {
+  const variant = installVariant(installation)
+  if (!variant) return null
+
+  // Index-served stacks resolve against the in-app manifest (already trusted
+  // and machine-filtered) — no remote fetch involved.
+  if (parseIndexStackId(stackId)) {
+    return indexStacksForVariant(variant).find((e) => e.stackId === stackId) ?? null
+  }
+
   const parsed = parseBundleStackId(stackId)
   if (!parsed) return null
-  const variant = installVariant(installation)
-  if (!variant || parsed.variant !== variant) return null
+  if (parsed.variant !== variant) return null
   const releases = await fetchR2VendorReleases(variant)
   const release = releases.find((r) => r.tag === parsed.bundleTag)
   if (!release || !release.torch_version) return null
@@ -237,11 +268,20 @@ export function getLastVerifiedTorchStack(installation: InstallationRecord): Per
   if (ref.packages.torchaudio !== undefined && typeof ref.packages.torchaudio !== 'string') return null
   const src = ref.source
   if (!src || typeof src !== 'object' || typeof src.kind !== 'string') return null
-  if (src.kind === 'comfy-bundle' && (typeof src.variant !== 'string' || typeof src.bundleTag !== 'string')) return null
-  const bundle = ref.bundle
-  if (!bundle || typeof bundle !== 'object') return null
-  if (typeof bundle.url !== 'string' || typeof bundle.filename !== 'string') return null
-  if (typeof bundle.size !== 'number' || !Number.isFinite(bundle.size) || bundle.size <= 0) return null
+  if (src.kind === 'comfy-bundle') {
+    if (typeof src.variant !== 'string' || typeof src.bundleTag !== 'string') return null
+    // Bundle stacks re-acquire from the persisted download info — required.
+    const bundle = ref.bundle
+    if (!bundle || typeof bundle !== 'object') return null
+    if (typeof bundle.url !== 'string' || typeof bundle.filename !== 'string') return null
+    if (typeof bundle.size !== 'number' || !Number.isFinite(bundle.size) || bundle.size <= 0) return null
+  } else if (src.kind === 'pytorch-index') {
+    if (typeof src.indexTag !== 'string' || typeof src.backend !== 'string') return null
+  } else if (src.kind === 'pypi') {
+    if (typeof src.backend !== 'string') return null
+  } else {
+    return null
+  }
   return ref
 }
 

@@ -28,8 +28,13 @@ vi.mock('../../lib/release-cache', () => ({
 vi.mock('../../lib/git', () => ({
   hasGitDir: vi.fn(() => true),
 }))
+vi.mock('./torchStackCatalog', () => ({
+  getCachedTorchStacks: vi.fn(() => []),
+}))
 
 import * as releaseCache from '../../lib/release-cache'
+import { getCachedTorchStacks } from './torchStackCatalog'
+import type { TorchStackEntry } from './torchStackCatalog'
 import { getDetailSections, getEffectiveChannel } from './updateSections'
 
 interface UpdateAction {
@@ -231,5 +236,44 @@ describe('updateSections — copy (duplicate) prompt default', () => {
     expect(copyUpdate!.prompt?.defaultValue).toBe('My Comfy')
     // Flagged so the renderer shows the numbered name it will actually be saved as.
     expect(copyUpdate!.prompt?.uniquifyDefault).toBe(true)
+  })
+})
+
+describe('updateSections — PyTorch picker', () => {
+  interface PytorchOption {
+    value: string
+    description?: string
+    data?: { actions?: UpdateAction[] }
+  }
+
+  function getPytorchOptions(installation: InstallationRecord): PytorchOption[] {
+    const sections = getDetailSections(installation) as unknown as UpdateSection[]
+    const field = sections
+      .filter((s) => s.tab === 'update')
+      .flatMap((s) => s.fields ?? [])
+      .find((f) => f.id === 'pytorchStack')
+    return (field?.options ?? []) as unknown as PytorchOption[]
+  }
+
+  it('renders an index-served entry as a pip apply: note shown, no bundle size, pip confirm copy', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([{
+      stackId: 'pytorch-index:cu128:2.11.0',
+      variant: 'win-nvidia',
+      pythonVersion: '',
+      packages: { torch: '2.11.0+cu128', torchvision: '0.26.0+cu128', torchaudio: '2.11.0+cu128' },
+      source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' },
+      date: '2026-03-25',
+      comfyuiVersion: '',
+      noteKey: 'pytorchIndexNoteCu128',
+    } satisfies TorchStackEntry])
+    const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
+    const option = options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+    expect(option).toBeDefined()
+    // t() returns bare keys here, so assert on the keys the copy is built from.
+    expect(option!.description).toContain('standalone.pytorchIndexNoteCu128')
+    expect(option!.description).not.toContain('pytorchDownloadSize')
+    const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
+    expect(action).toBeDefined()
+    expect(action!.confirm?.message).toContain('standalone.pytorchConfirmMessagePip')
   })
 })

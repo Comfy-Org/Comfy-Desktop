@@ -17,7 +17,7 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { publicVersion, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple } from './torchStackTypes'
+import { publicVersion, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseIndexStackId } from './torchStackTypes'
 import type { TorchStackPackages } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
@@ -48,9 +48,11 @@ async function acquireTorchBundle(
   entry: TorchStackEntry,
   tools: TorchStackTools,
 ): Promise<{ prepared: PreparedStack; failure?: never } | { prepared?: never; failure: ActionResult }> {
-  // Adopted (pip-managed) installs skip bundle staging entirely: the exact
-  // tuple is pip-installed from the derived index inside the transaction.
-  if (installation.adopted === true) {
+  // Pip-applied stacks skip bundle staging entirely: adopted (pip-managed)
+  // installs always pip-apply, and index-served entries have no bundle
+  // artifact on any install type — the exact tuple is pip-installed from
+  // the trusted index inside the transaction.
+  if (stackAppliesViaPip(entry.source, installation.adopted === true)) {
     return { prepared: preparePipStack(entry.packages, entry) }
   }
   let prepared: PreparedStack | undefined
@@ -167,9 +169,10 @@ export async function handleAction(
       }
       if (torchTarget) {
         try {
-          // Adopted installs apply managed stacks via pip (no bundle download
-          // pending) — charge the pip staging estimate, not the bundle size.
-          await preflightDiskSpace(installation, adopted ? null : torchTarget, signal)
+          // Pip-applied stacks (adopted installs, index-served entries) have
+          // no bundle download pending — charge the pip staging estimate,
+          // not the bundle size.
+          await preflightDiskSpace(installation, stackAppliesViaPip(torchTarget.source, adopted) ? null : torchTarget, signal)
         } catch (err) {
           if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
           throw err
@@ -184,12 +187,12 @@ export async function handleAction(
         ? !torchTupleMatches(tuple, installedTorch)
         : (!torchBefore || publicVersion(snapTorch.torchVersion) !== publicVersion(torchBefore))
       if (differs) {
-        // Adopted (pip-managed) venvs can re-acquire an observed tuple from
-        // the index its local tag names — the snapshot IS the recipe.
-        // Requires the full-tuple record: restoring torch without its
-        // matching torchvision/torchaudio would break the stack.
-        // Bundle-managed installs never auto-restore observed stacks.
-        if (adopted && full && torchTupleReacquirable(tuple)) {
+        // An observed tuple can be re-acquired from the index its local tag
+        // names — the snapshot IS the recipe — on any install type: the
+        // journaled whole-venv transaction backs up and restores the venv
+        // either way. Requires the full-tuple record: restoring torch
+        // without its matching torchvision/torchaudio would break the stack.
+        if (full && torchTupleReacquirable(tuple)) {
           torchObservedTuple = tuple
           try {
             await preflightDiskSpace(installation, null, signal)
@@ -223,8 +226,8 @@ export async function handleAction(
       )
     let torchPrepared: PreparedStack | null = null
     if (torchTarget) {
-      // Adopted installs prepare a pip payload — nothing downloads here.
-      if (!adopted) sendOutput('\n── Download PyTorch Bundle ──\n')
+      // Pip-applied stacks prepare a pip payload — nothing downloads here.
+      if (!stackAppliesViaPip(torchTarget.source, adopted)) sendOutput('\n── Download PyTorch Bundle ──\n')
       const acquired = await acquireTorchBundle(installation, torchTarget, { sendProgress: torchProgress, sendOutput, update, signal })
       if (acquired.failure) return acquired.failure
       torchPrepared = acquired.prepared
@@ -701,9 +704,12 @@ export async function handleAction(
     const stackId = actionData?.stackId as string | undefined
     if (!stackId) return { ok: false, message: t('standalone.pytorchNoStack') }
 
-    // Adopted installs prepare a pip payload instead of downloading a bundle.
+    // Pip-applied changes (adopted installs, index-served stacks) prepare a
+    // pip payload instead of downloading a bundle. Judged from the stackId
+    // shape here (the entry isn't resolved yet); index ids always pip-apply.
+    const viaPip = installation.adopted === true || parseIndexStackId(stackId) !== null
     sendProgress('steps', { steps: [
-      { phase: 'torch-prepare', label: t(installation.adopted === true ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
+      { phase: 'torch-prepare', label: t(viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
       { phase: 'torch-swap', label: t('standalone.pytorchSwapPhase') },
     ] })
 
@@ -723,10 +729,11 @@ export async function handleAction(
       return { ok: true, navigate: 'detail', message: t('standalone.pytorchAlreadyInstalled', { version: currentTuple.torch }) }
     }
 
-    // Hard gate before anything is downloaded or touched. Adopted installs
-    // have no bundle download pending — charge the pip staging estimate.
+    // Hard gate before anything is downloaded or touched. Pip-applied
+    // changes have no bundle download pending — charge the pip staging
+    // estimate. Judged from the resolved entry's source (authoritative).
     try {
-      await preflightDiskSpace(installation, installation.adopted === true ? null : entry, signal)
+      await preflightDiskSpace(installation, stackAppliesViaPip(entry.source, installation.adopted === true) ? null : entry, signal)
     } catch (err) {
       if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
       throw err

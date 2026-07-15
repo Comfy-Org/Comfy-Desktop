@@ -1,7 +1,11 @@
 import fs from 'fs'
 import path from 'path'
+import { spawn } from 'child_process'
 import { stripPlatform, findSitePackages, getTorchVersion } from './envPaths'
-import { getActiveVenvDir } from '../../lib/pythonEnv'
+import { getActiveVenvDir, getActivePythonPath, getActiveUvPath } from '../../lib/pythonEnv'
+import { stackVersionMatches, torchIndexUrlFor, torchTupleReacquirable } from './torchStackTypes'
+import { getLastVerifiedTorchStack } from './torchStackCatalog'
+import type { TorchStackPackages } from './torchStackTypes'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
 import { copyDirWithProgress } from '../../lib/copy'
 import { createCache } from '../../lib/cache'
@@ -195,12 +199,67 @@ export async function copyTorchFamily(srcSite: string, dstSite: string, signal?:
   }
 }
 
+function streamPip(cmd: string, args: string[], tools: TorchRepairTools): Promise<void> {
+  tools.sendOutput?.(`\n$ ${path.basename(cmd)} ${args.join(' ')}\n`)
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { windowsHide: true, signal: tools.signal })
+    child.stdout.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
+    child.stderr.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`PyTorch package install failed (exit code ${code})`))
+    })
+  })
+}
+
 /**
- * Restore the correct accelerated torch by re-acquiring the install's original
- * bundle (reusing the on-disk download cache — `maxCachedDownloads` defaults to
- * 1, so the bundle is typically still cached) and copying its torch-family
- * packages over the install's venv. Never touches ComfyUI source, .git, models,
- * or non-torch packages.
+ * Re-acquire a verified index-served stack via pip: install the exact tuple
+ * from the trusted index its local tag names, directly into the live venv
+ * (pip replaces the damaged CPU packages in place — same blast radius as the
+ * bundle path's torch-family copy).
+ */
+async function repairTorchViaPip(
+  installation: InstallationRecord,
+  packages: TorchStackPackages,
+  tools: TorchRepairTools,
+): Promise<{ ok: boolean; message: string }> {
+  if (!torchTupleReacquirable(packages)) {
+    return { ok: false, message: `no trusted index serves torch ${packages.torch}` }
+  }
+  const python = getActivePythonPath(installation)
+  if (!python || !fs.existsSync(python)) {
+    return { ok: false, message: 'could not locate the installation python' }
+  }
+  const specs = [`torch==${packages.torch}`]
+  if (packages.torchvision) specs.push(`torchvision==${packages.torchvision}`)
+  if (packages.torchaudio) specs.push(`torchaudio==${packages.torchaudio}`)
+  const indexUrl = torchIndexUrlFor(packages)
+  const indexArgs = indexUrl ? ['--index-url', indexUrl] : []
+
+  tools.sendProgress('torchRepair', { percent: -1 })
+  const uv = getActiveUvPath(installation)
+  const [cmd, args] = fs.existsSync(uv)
+    ? [uv, ['pip', 'install', '--python', python, ...indexArgs, ...specs]] as const
+    : [python, ['-m', 'pip', 'install', ...indexArgs, ...specs]] as const
+  await streamPip(cmd, [...args], tools)
+
+  const dstSite = findSitePackages(getActiveVenvDir(installation))
+  const after = dstSite ? readTorchVersionFromSite(dstSite) : null
+  if (!after || !stackVersionMatches(after, packages.torch)) {
+    return { ok: false, message: `PyTorch is "${after ?? 'absent'}" after install, expected "${packages.torch}"` }
+  }
+  return { ok: true, message: `restored PyTorch ${after}` }
+}
+
+/**
+ * Restore the correct accelerated torch. A verified index-served stack (set
+ * by a completed pip-applied PyTorch change) is re-acquired via pip from its
+ * trusted index; otherwise the install's bundle is re-acquired (reusing the
+ * on-disk download cache — `maxCachedDownloads` defaults to 1, so the bundle
+ * is typically still cached) and its torch-family packages are copied over
+ * the install's venv. Never touches ComfyUI source, .git, models, or
+ * non-torch packages.
  */
 export async function repairTorch(
   installation: InstallationRecord,
@@ -209,6 +268,15 @@ export async function repairTorch(
   const installPath = installation.installPath
   const tmpDir = path.join(installPath, '.torch-repair-tmp')
 
+  // Prefer the last *verified* stack (set by a completed PyTorch change) over
+  // the install-time bundle, so repair restores the stack the user actually
+  // chose instead of reverting a deliberate switch to the original bundle.
+  // Index-served stacks have no bundle at all — pip is their only source.
+  const verifiedRef = getLastVerifiedTorchStack(installation)
+  if (verifiedRef && verifiedRef.source.kind !== 'comfy-bundle') {
+    return repairTorchViaPip(installation, verifiedRef.packages, tools)
+  }
+
   try {
     const cache = createCache(settings.get('cacheDir') as string, settings.get('maxCachedDownloads') as number)
     const ctx = { sendProgress: tools.sendProgress, download, cache, extract, signal: tools.signal }
@@ -216,14 +284,10 @@ export async function repairTorch(
     await fs.promises.rm(tmpDir, { recursive: true, force: true })
     await fs.promises.mkdir(tmpDir, { recursive: true })
 
-    // Prefer the last *verified* stack (set by a completed PyTorch change) over
-    // the install-time bundle, so repair restores the stack the user actually
-    // chose instead of reverting a deliberate switch to the original bundle.
-    const verified = installation.lastVerifiedTorchStack as
-      | { bundle?: { url: string; filename: string; size: number }; source?: { kind?: string; bundleTag?: string } }
-      | undefined
-    const verifiedBundle = verified?.bundle?.url ? verified.bundle : undefined
-    const verifiedTag = verified?.source?.kind === 'comfy-bundle' ? verified.source.bundleTag : undefined
+    // A verified comfy-bundle stack carries its own download info — restore
+    // the stack the user actually chose, not the install-time bundle.
+    const verifiedBundle = verifiedRef?.bundle
+    const verifiedTag = verifiedRef?.source.kind === 'comfy-bundle' ? verifiedRef.source.bundleTag : undefined
 
     const files = verifiedBundle
       ? [verifiedBundle]

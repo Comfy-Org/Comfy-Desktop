@@ -873,6 +873,8 @@
     "pytorchStackUnavailable": "This PyTorch version is no longer available for this installation.",
     "pytorchAlreadyInstalled": "PyTorch {version} is already installed.",
     "pytorchDownloadFailed": "PyTorch download failed: {message}",
+    "pytorchIndexNoteCu126": "CUDA 12.6 — installed from the official PyTorch index; supports older GPUs (GTX 900/10-series and newer)",
+    "pytorchIndexNoteCu128": "CUDA 12.8 — installed from the official PyTorch index; for RTX 20-series and newer on CUDA 12.x drivers",
     "snapshotRestoreTorchPhase": "Restore PyTorch",
     "pytorchSnapshotStackUnavailable": "This snapshot's PyTorch build ({version}) is no longer available for this installation. Nothing was changed.",
     "pytorchSnapshotStackKeptLocal": "The snapshot's PyTorch build ({version}) is not available for this machine; the current PyTorch was kept.",

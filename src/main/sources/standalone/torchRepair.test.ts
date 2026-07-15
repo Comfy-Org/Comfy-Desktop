@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => '' },
 }))
 
-import { getTorchVendorMismatch, copyTorchFamily } from './torchRepair'
+import { getTorchVendorMismatch, copyTorchFamily, repairTorch } from './torchRepair'
 import type { InstallationRecord } from '../../installations'
 
 let tmpDir: string
@@ -197,5 +197,38 @@ describe('copyTorchFamily', () => {
     expect(fs.existsSync(path.join(dst, 'torchmetrics-1.4.0.dist-info'))).toBe(true)
     // No staging leftovers.
     expect(fs.readdirSync(dst).some((e) => e.startsWith('.torchrepair-'))).toBe(false)
+  })
+})
+
+describe('repairTorch dispatch', () => {
+  const tools = {
+    sendProgress: (): void => {},
+    update: async (): Promise<void> => {},
+  }
+
+  it('routes a verified index-served stack to the pip path, not the bundle', async () => {
+    const inst = install({
+      variant: 'win-nvidia',
+      lastVerifiedTorchStack: {
+        stackId: 'pytorch-index:cu128:2.11.0',
+        variant: 'win-nvidia',
+        pythonVersion: '',
+        packages: { torch: '2.11.0+cu128', torchvision: '0.26.0+cu128', torchaudio: '2.11.0+cu128' },
+        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' },
+      },
+    })
+    // No venv exists in tmpDir, so the pip path fails at its python lookup —
+    // proving dispatch reached pip instead of the bundle re-download (whose
+    // failure message names missing bundle download info).
+    const result = await repairTorch(inst, tools)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('could not locate the installation python')
+  })
+
+  it('falls through to the bundle path when no verified index stack exists', async () => {
+    const inst = install({ variant: 'win-nvidia' })
+    const result = await repairTorch(inst, tools)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('no bundle download info')
   })
 })

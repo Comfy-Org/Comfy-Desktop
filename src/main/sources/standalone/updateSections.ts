@@ -10,7 +10,7 @@ import { deleteAction, untrackAction, launchAction, openFolderAction, renameActi
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
 import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
-import { torchTupleMatches } from './torchStackTypes'
+import { torchTupleMatches, stackAppliesViaPip } from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
@@ -94,13 +94,17 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   }
   for (const s of stacks) {
     const isCurrent = s.stackId === current?.stackId
+    // Pip-applied entries (adopted installs, index-served stacks) download
+    // wheels via pip — the bundle size is not what downloads (index entries
+    // have no bundle at all).
+    const viaPip = stackAppliesViaPip(s.source, adopted)
     const parts: string[] = []
     if (s.packages.torchvision) parts.push(`torchvision ${s.packages.torchvision}`)
     if (s.packages.torchaudio) parts.push(`torchaudio ${s.packages.torchaudio}`)
-    const sizeGB = (s.bundle.size / 1024 ** 3).toFixed(1)
-    // Adopted installs apply via pip — the bundle size is not what downloads.
-    if (!adopted) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
-    const confirmMessage = adopted
+    if (s.noteKey) parts.push(t(`standalone.${s.noteKey}`))
+    const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
+    if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
+    const confirmMessage = viaPip
       ? t('standalone.pytorchConfirmMessagePip', {
           from: `**${currentTorch ?? '—'}**`,
           to: `**${s.packages.torch}**`,

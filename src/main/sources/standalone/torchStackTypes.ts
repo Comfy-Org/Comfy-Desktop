@@ -8,9 +8,10 @@
  */
 
 /** Where a managed stack can be re-acquired. Only trusted, typed sources —
- *  never a raw URL from the renderer or a snapshot. `pytorch-index` / `pypi`
- *  are reserved for the index-recipe follow-up; the catalog currently only
- *  produces `comfy-bundle` entries. */
+ *  never a raw URL from the renderer or a snapshot. `comfy-bundle` entries
+ *  come from the R2 release catalog; `pytorch-index` / `pypi` entries come
+ *  from the curated in-app manifest (see `torchIndexManifest.ts`) and are
+ *  pip-applied from the trusted index the tuple's local tag names. */
 export type TorchStackSource =
   | { kind: 'comfy-bundle'; variant: string; bundleTag: string }
   | { kind: 'pytorch-index'; backend: 'cuda' | 'xpu' | 'rocm' | 'cpu'; indexTag: string }
@@ -71,10 +72,12 @@ export function hasFullObservedTuple(s: ObservedTorchStack): boolean {
 }
 
 /** `lastVerifiedTorchStack` as persisted on the installation record: the
- *  managed ref plus the bundle download info needed to re-acquire it without
- *  a catalog fetch (repair path, offline restores). */
+ *  managed ref plus, for `comfy-bundle` stacks, the bundle download info
+ *  needed to re-acquire it without a catalog fetch (repair path, offline
+ *  restores). Index-served stacks (`pytorch-index` / `pypi`) carry no bundle
+ *  — they re-acquire via pip from the index their local tag names. */
 export interface PersistedTorchStack extends ManagedTorchStackRef {
-  bundle: {
+  bundle?: {
     url: string
     filename: string
     size: number
@@ -192,6 +195,30 @@ export function parseBundleStackId(stackId: string): { variant: string; bundleTa
 
 export function makeBundleStackId(variant: string, bundleTag: string): string {
   return `comfy-bundle:${variant}:${bundleTag}`
+}
+
+const INDEX_STACK_ID_RE = /^pytorch-index:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/
+
+/** Parse a `pytorch-index` stackId into its index tag and public torch
+ *  version; null when malformed. `pypi` is the tag for untagged (default
+ *  PyPI) tuples. The character allowlist keeps IDs safe for path/URL use. */
+export function parseIndexStackId(stackId: string): { indexTag: string; version: string } | null {
+  const m = stackId.match(INDEX_STACK_ID_RE)
+  if (!m) return null
+  return { indexTag: m[1]!, version: m[2]! }
+}
+
+/** stackId for an index-served stack, keyed by index tag + public torch
+ *  version (one build per version per index, so the pair is unique). */
+export function makeIndexStackId(indexTag: string, torchVersion: string): string {
+  return `pytorch-index:${indexTag}:${publicVersion(torchVersion)}`
+}
+
+/** Whether a stack is applied via pip rather than a bundle graft. Bundle
+ *  stacks still pip-apply on adopted installs; index stacks pip-apply
+ *  everywhere (they have no bundle artifact at all). */
+export function stackAppliesViaPip(source: TorchStackSource, adopted: boolean): boolean {
+  return adopted || source.kind !== 'comfy-bundle'
 }
 
 /** Python compatibility for in-place stack switching: same major.minor.
