@@ -199,6 +199,15 @@ const _launchingInstances = new Map<string, { installationName: string }>()
  */
 export const sessionLifecycleEvents = new EventEmitter()
 
+/** A snapshot restore failed after the install itself succeeded (#1255): the
+ *  install is bootable, so surface the failure to the caller and record it in
+ *  the app log (#1250) instead of condemning the install. */
+export function snapshotRestoreFailureResult(installationId: string, restoreError: string): { ok: false; message: string } {
+  const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', { message: restoreError })
+  appendLog(installationId, `\n${message}\n`)
+  return { ok: false, message }
+}
+
 export function _getLaunchingInstallationIds(): string[] {
   return Array.from(_launchingInstances.keys())
 }

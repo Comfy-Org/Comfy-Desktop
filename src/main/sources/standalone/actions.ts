@@ -615,8 +615,8 @@ export async function handleAction(
       // transient notice (ok + navigate:'detail' + message → flashNotice).
       const adaptations: string[] = []
       if (torchNote) adaptations.push(torchNote)
-      if (repairResult.changed.length > 0) adaptations.push(`Requirements repair adjusted ${repairResult.changed.length} package(s).`)
-      if (repairResult.errors.length > 0) adaptations.push(`${repairResult.errors.length} requirements repair warning(s) — see logs.`)
+      if (repairResult.changed.length > 0) adaptations.push(t('standalone.snapshotRepairAdjusted', { count: repairResult.changed.length }))
+      if (repairResult.errors.length > 0) adaptations.push(t('standalone.snapshotRepairWarnings', { count: repairResult.errors.length }))
       return { ok: totalFailures === 0, navigate: 'detail',
         ...(totalFailures > 0
           ? { message: failMessage(`${totalFailures} operation(s) failed`) }

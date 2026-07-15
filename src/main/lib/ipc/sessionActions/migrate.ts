@@ -9,11 +9,11 @@ import {
   sourceMap,
   uniqueName,
   makeSendProgress,
-  makeSendOutput
+  makeSendOutput,
+  snapshotRestoreFailureResult
 } from '../shared'
 import type { InstallationRecord } from '../shared'
 import { adoptDesktopInstall, type AdoptPromptKind, type UserChoice } from '../../desktopAdopt'
-import { appendLog } from '../../logsBroadcast'
 import type { ActionContext, ActionResult } from './types'
 import type { AdoptPromptAck, AdoptPromptResponse } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
@@ -366,13 +366,8 @@ export async function handleMigrateToStandalone({
     _operationAborts.delete(installationId)
     if (result.restoreError) {
       // The new install exists and is bootable; only the snapshot could not be
-      // fully applied (#1255). Report the failure without deleting the install,
-      // and record it in the app log (#1250).
-      const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', {
-        message: result.restoreError
-      })
-      appendLog(installationId, `\n${message}\n`)
-      return { ok: false, message }
+      // fully applied. Report the failure without deleting the install.
+      return snapshotRestoreFailureResult(installationId, result.restoreError)
     }
     sendProgress('done', { percent: 100, status: 'Complete' })
     return { ok: true, navigate: 'list' }

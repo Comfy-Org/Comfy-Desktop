@@ -30,7 +30,8 @@ import {
   _runningSessions,
   sanitizeEnvVars,
   getComfyArgsSchema,
-  COMFYUI_REPO
+  COMFYUI_REPO,
+  snapshotRestoreFailureResult
 } from './shared'
 import type { ComfyVersion, ComfyArgDef, InstallationRecord } from './shared'
 import * as releaseCache from '../release-cache'
@@ -473,13 +474,8 @@ export function registerInstallationHandlers(): void {
       }
       if (snapshotRestoreError) {
         // The install itself succeeded (status 'installed' above) — report the
-        // snapshot failure so the progress UI shows it, and record it in the
-        // app log (#1250).
-        const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', {
-          message: snapshotRestoreError
-        })
-        appendLog(installationId, `\n${message}\n`)
-        return { ok: false, message }
+        // snapshot failure so the progress UI shows it.
+        return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
       }
       return { ok: true }
     }
