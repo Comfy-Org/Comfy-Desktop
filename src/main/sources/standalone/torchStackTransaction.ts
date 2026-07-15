@@ -26,7 +26,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile, spawn } from 'child_process'
-import { getActiveVenvDir } from '../../lib/pythonEnv'
+import { getActiveVenvDir, getActiveUvPath } from '../../lib/pythonEnv'
 import { getDiskSpace, getDirectorySize } from '../../lib/disk'
 import { copyDirWithProgress } from '../../lib/copy'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
@@ -369,18 +369,23 @@ function runStreamed(cmd: string, args: string[], failMessage: string, tools: To
 /**
  * Mutate the candidate venv to the exact torch tuple: uninstall family
  * packages the tuple omits, then install the declared versions from the
- * derived index. Runs the pristine backup's uv (never the candidate's own —
- * its binary must not be locked/replaced mid-mutation), falling back to the
- * candidate's `python -m pip`. Streams output to the logs panel.
+ * derived index. Runs a uv OUTSIDE the candidate venv (never the
+ * candidate's own — its binary must not be locked/replaced mid-mutation):
+ * the pristine backup's uv on adopted installs (Legacy Desktop pip-installs
+ * uv into its venv), the standalone-env uv on managed installs (their bare
+ * venvs carry no uv). Falls back to the candidate's `python -m pip`.
+ * Streams output to the logs panel.
  */
 async function runPipTorchInstall(
+  installation: InstallationRecord,
   prepared: PreparedPipStack,
   candidateVenv: string,
   backupVenv: string,
   tools: TorchStackTools,
 ): Promise<void> {
   const python = venvPython(candidateVenv)
-  const uv = venvUv(backupVenv)
+  const activeUv = getActiveUvPath(installation)
+  const uv = venvUv(backupVenv) ?? (fs.existsSync(activeUv) ? activeUv : null)
   const pipCmd = (verb: string, args: string[]): [string, string[]] => uv
     ? [uv, ['pip', verb, '--python', python, ...args]]
     : [python, ['-m', 'pip', verb, ...(verb === 'uninstall' ? ['-y'] : []), ...args]]
@@ -479,7 +484,7 @@ export async function applyTorchStackTransaction(
         if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
         await copyTorchFamily(prepared.srcSite, dstSite)
       } else {
-        await runPipTorchInstall(prepared, venvPath, backupPath, tools)
+        await runPipTorchInstall(installation, prepared, venvPath, backupPath, tools)
       }
 
       // 6. Verify before committing. The pip path also asserts that family

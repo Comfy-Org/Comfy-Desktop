@@ -231,4 +231,20 @@ describe('repairTorch dispatch', () => {
     expect(result.ok).toBe(false)
     expect(result.message).toContain('no bundle download info')
   })
+
+  it('honours a caller-supplied verified ref over the (reconciliation-cleared) record', async () => {
+    // Launch reconciliation clears lastVerifiedTorchStack when it sees the
+    // damaged tuple; the launch path re-supplies the pre-reconciliation ref so
+    // repair still targets the stack the user chose.
+    const inst = install({ variant: 'win-nvidia' }) // record carries no ref
+    const result = await repairTorch(inst, tools, {
+      stackId: 'pytorch-index:cu126:2.11.0',
+      variant: 'win-nvidia',
+      pythonVersion: '',
+      packages: { torch: '2.11.0+cu126', torchvision: '0.26.0+cu126', torchaudio: '2.11.0+cu126' },
+      source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu126' },
+    })
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('could not locate the installation python')
+  })
 })

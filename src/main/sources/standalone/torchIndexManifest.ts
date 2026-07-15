@@ -85,29 +85,52 @@ export function _setComputeCapsForTest(caps: number[] | null | undefined): void 
   _computeCaps = caps
 }
 
-/**
- * Probe GPU compute capabilities via nvidia-smi, caching the result for the
- * synchronous catalog reads. Best-effort: any failure leaves filtering off.
- * Called from `refreshTorchStackCatalog` alongside the R2 fetch.
- */
-export function refreshComputeCaps(): Promise<void> {
+/** Test-only: replace the nvidia-smi probe (child_process can't be mocked
+ *  under the vitest setup). Pass undefined to restore the real probe. */
+export function _setComputeCapProbeForTest(probe: (() => Promise<number[] | null>) | undefined): void {
+  _probeFn = probe ?? probeComputeCaps
+}
+
+let _probe: Promise<void> | null = null
+
+/** Probe the GPU only if it has never been probed. Awaited by resolve paths
+ *  (snapshot restore, change-pytorch) so an exact restore of an index stack
+ *  isn't rejected just because no check-update ran since app start; shares
+ *  one in-flight probe across concurrent callers. */
+export function ensureComputeCaps(): Promise<void> {
+  if (_computeCaps !== undefined) return Promise.resolve()
+  _probe ??= refreshComputeCaps().finally(() => {
+    _probe = null
+  })
+  return _probe
+}
+
+/** The real nvidia-smi probe: caps on success, null on any failure. */
+function probeComputeCaps(): Promise<number[] | null> {
   return new Promise((resolve) => {
     execFile(
       'nvidia-smi', ['--query-gpu=compute_cap', '--format=csv,noheader'],
       { windowsHide: true, timeout: 10_000, maxBuffer: 64 * 1024 },
       (err, stdout) => {
-        if (err) {
-          _computeCaps = null
-          return resolve()
-        }
+        if (err) return resolve(null)
         const caps = stdout.split('\n')
           .map((line) => Number.parseFloat(line.trim()))
           .filter((n) => Number.isFinite(n) && n > 0)
-        _computeCaps = caps.length > 0 ? caps : null
-        resolve()
+        resolve(caps.length > 0 ? caps : null)
       }
     )
   })
+}
+
+let _probeFn: () => Promise<number[] | null> = probeComputeCaps
+
+/**
+ * Probe GPU compute capabilities via nvidia-smi, caching the result for the
+ * synchronous catalog reads. Best-effort: any failure leaves filtering off.
+ * Called from `refreshTorchStackCatalog` alongside the R2 fetch.
+ */
+export async function refreshComputeCaps(): Promise<void> {
+  _computeCaps = await _probeFn()
 }
 
 /** Whether any detected GPU falls inside the entry's kernel range. With

@@ -58,6 +58,7 @@ import { ensureManagerMirrorConfig } from '../../managerConfig'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
+import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -310,10 +311,16 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // let it trust that ref as an acquisition source. Repair is optional;
     // launching the un-repaired venv is safer than repairing on bad metadata.
     let stackStateTrusted = true
+    // Captured BEFORE reconciliation: on a damaged venv reconciliation clears
+    // the verified ref (the installed tuple no longer matches it), but repair
+    // needs that ref to restore the stack the user actually chose instead of
+    // reverting to the install-time bundle.
+    let preReconcileVerified: PersistedTorchStack | null = null
     try {
-      const { reconcileTorchStack } = await import(
+      const { reconcileTorchStack, getLastVerifiedTorchStack } = await import(
         '../../../sources/standalone/torchStackCatalog'
       )
+      preReconcileVerified = getLastVerifiedTorchStack(inst)
       await reconcileTorchStack(inst, updateFn)
       inst = (await installations.get(installationId)) || inst
     } catch (err) {
@@ -344,7 +351,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
           sendOutput: makeSendOutput(event.sender, installationId),
           update: updateFn,
           signal: repairAbort.signal,
-        })
+        }, { preReconcileVerified })
         if (repaired) inst = (await installations.get(installationId)) || inst
       } catch (err) {
         if (repairAbort.signal.aborted) {

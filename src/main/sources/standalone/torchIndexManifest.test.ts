@@ -3,8 +3,9 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
 }))
-
-import { indexStacksForVariant, _setComputeCapsForTest } from './torchIndexManifest'
+import {
+  indexStacksForVariant, ensureComputeCaps, _setComputeCapsForTest, _setComputeCapProbeForTest,
+} from './torchIndexManifest'
 
 const realPlatform = process.platform
 function setPlatform(platform: NodeJS.Platform): void {
@@ -13,6 +14,7 @@ function setPlatform(platform: NodeJS.Platform): void {
 afterEach(() => {
   setPlatform(realPlatform)
   _setComputeCapsForTest(undefined)
+  _setComputeCapProbeForTest(undefined)
 })
 
 describe('indexStacksForVariant', () => {
@@ -66,6 +68,25 @@ describe('indexStacksForVariant', () => {
     expect(indexStacksForVariant('win-cpu')).toEqual([])
     setPlatform('darwin')
     expect(indexStacksForVariant('mac')).toEqual([])
+  })
+
+  it('ensureComputeCaps unhides entries after a failed probe (never-probed → probed-failed)', async () => {
+    setPlatform('win32')
+    _setComputeCapsForTest(undefined)
+    _setComputeCapProbeForTest(async () => null) // deterministic probe failure
+    expect(indexStacksForVariant('win-nvidia')).toEqual([])
+    await ensureComputeCaps()
+    expect(indexStacksForVariant('win-nvidia').length).toBeGreaterThan(0)
+  })
+
+  it('ensureComputeCaps never overwrites an existing probe result', async () => {
+    setPlatform('win32')
+    _setComputeCapsForTest([6.1])
+    _setComputeCapProbeForTest(async () => null) // a re-probe would clear the caps → unfiltered
+    await ensureComputeCaps() // must be a no-op
+    const tags = indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
+    expect(tags).toContain('cu126')
+    expect(tags).not.toContain('cu128')
   })
 
   it('produces resolvable pip-applied entries with no bundle', () => {

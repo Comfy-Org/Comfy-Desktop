@@ -5,7 +5,7 @@ import { stripPlatform, findSitePackages, getTorchVersion } from './envPaths'
 import { getActiveVenvDir, getActivePythonPath, getActiveUvPath } from '../../lib/pythonEnv'
 import { stackVersionMatches, torchIndexUrlFor, torchTupleReacquirable } from './torchStackTypes'
 import { getLastVerifiedTorchStack } from './torchStackCatalog'
-import type { TorchStackPackages } from './torchStackTypes'
+import type { TorchStackPackages, PersistedTorchStack } from './torchStackTypes'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
 import { copyDirWithProgress } from '../../lib/copy'
 import { createCache } from '../../lib/cache'
@@ -252,29 +252,41 @@ async function repairTorchViaPip(
   return { ok: true, message: `restored PyTorch ${after}` }
 }
 
+export interface TorchRepairResult {
+  ok: boolean
+  message: string
+  /** The verified stack ref repair restored, when it targeted one — the
+   *  caller re-persists it (reconciliation cleared it when it saw the
+   *  damaged tuple). Absent when the install-time bundle was used. */
+  restoredRef?: PersistedTorchStack
+}
+
 /**
- * Restore the correct accelerated torch. A verified index-served stack (set
- * by a completed pip-applied PyTorch change) is re-acquired via pip from its
- * trusted index; otherwise the install's bundle is re-acquired (reusing the
- * on-disk download cache — `maxCachedDownloads` defaults to 1, so the bundle
- * is typically still cached) and its torch-family packages are copied over
- * the install's venv. Never touches ComfyUI source, .git, models, or
- * non-torch packages.
+ * Restore the correct accelerated torch. Prefers the last *verified* stack
+ * (set by a completed PyTorch change) over the install-time bundle, so
+ * repair restores the stack the user actually chose instead of reverting a
+ * deliberate switch. `verifiedRef` lets the launch path pass the ref it
+ * captured BEFORE reconciliation (which clears a verified ref the moment it
+ * sees the damaged tuple); defaults to the ref on the record. An
+ * index-served ref is re-acquired via pip from its trusted index; bundle
+ * refs and the install-time fallback re-download the bundle (reusing the
+ * on-disk download cache — `maxCachedDownloads` defaults to 1, so it is
+ * typically still cached) and copy its torch-family packages over the
+ * install's venv. Never touches ComfyUI source, .git, models, or non-torch
+ * packages.
  */
 export async function repairTorch(
   installation: InstallationRecord,
   tools: TorchRepairTools,
-): Promise<{ ok: boolean; message: string }> {
+  verifiedRef: PersistedTorchStack | null = getLastVerifiedTorchStack(installation),
+): Promise<TorchRepairResult> {
   const installPath = installation.installPath
   const tmpDir = path.join(installPath, '.torch-repair-tmp')
 
-  // Prefer the last *verified* stack (set by a completed PyTorch change) over
-  // the install-time bundle, so repair restores the stack the user actually
-  // chose instead of reverting a deliberate switch to the original bundle.
   // Index-served stacks have no bundle at all — pip is their only source.
-  const verifiedRef = getLastVerifiedTorchStack(installation)
   if (verifiedRef && verifiedRef.source.kind !== 'comfy-bundle') {
-    return repairTorchViaPip(installation, verifiedRef.packages, tools)
+    const result = await repairTorchViaPip(installation, verifiedRef.packages, tools)
+    return result.ok ? { ...result, restoredRef: verifiedRef } : result
   }
 
   try {
@@ -339,7 +351,11 @@ export async function repairTorch(
       return { ok: false, message: `PyTorch is "${after ?? 'absent'}" after copy, expected "${srcVersion}"` }
     }
 
-    return { ok: true, message: `restored PyTorch ${after}` }
+    return {
+      ok: true,
+      message: `restored PyTorch ${after}`,
+      ...(verifiedBundle && verifiedRef ? { restoredRef: verifiedRef } : {}),
+    }
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
   }
@@ -361,10 +377,16 @@ interface TorchRepairState {
  * we let the launch proceed rather than block it. Cancellation propagates to the
  * caller and is not counted as a failed attempt. Returns true when a repair
  * succeeded (caller should refresh the installation record).
+ *
+ * `opts.preReconcileVerified` is the verified stack ref captured BEFORE
+ * launch reconciliation ran: reconciliation clears a verified ref the moment
+ * it sees the damaged tuple, so reading the record here would lose the stack
+ * the user actually chose and revert to the install-time bundle.
  */
 export async function maybeRepairTorch(
   installation: InstallationRecord,
   tools: TorchRepairTools,
+  opts?: { preReconcileVerified?: PersistedTorchStack | null },
 ): Promise<boolean> {
   // Best-effort sweep of a multi-GB temp extraction orphaned by a hard kill.
   const orphan = path.join(installation.installPath, '.torch-repair-tmp')
@@ -387,9 +409,9 @@ export async function maybeRepairTorch(
   })
   tools.sendOutput?.(`\nDetected CPU PyTorch on a ${mismatch.variantBase.toUpperCase()} install; restoring the GPU build…\n`)
 
-  let result: { ok: boolean; message: string }
+  let result: TorchRepairResult
   try {
-    result = await repairTorch(installation, tools)
+    result = await repairTorch(installation, tools, opts?.preReconcileVerified ?? getLastVerifiedTorchStack(installation))
   } catch (err) {
     if (tools.signal?.aborted) throw err // cancellation — let launch handle it, don't count
     result = { ok: false, message: (err as Error).message }
@@ -397,7 +419,13 @@ export async function maybeRepairTorch(
 
   const attempts = priorAttempts + 1
   if (result.ok) {
-    await tools.update({ torchRepair: { status: 'done', attempts, at: Date.now() } })
+    await tools.update({
+      torchRepair: { status: 'done', attempts, at: Date.now() },
+      // Re-persist the ref repair restored: reconciliation cleared it when it
+      // saw the damaged tuple, and the cached catalog may not re-adopt it
+      // (index entries are hidden until a GPU probe runs).
+      ...(result.restoredRef ? { lastVerifiedTorchStack: result.restoredRef, observedTorchStack: null } : {}),
+    })
     telemetry.emit('comfy.desktop.torch_repair.succeeded', { variant: mismatch.variantBase })
     tools.sendOutput?.('GPU PyTorch restored.\n')
     return true

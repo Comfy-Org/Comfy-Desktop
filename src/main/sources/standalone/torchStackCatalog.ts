@@ -22,7 +22,7 @@ import {
   torchTupleMatches, torchLocalTag, accelBaseForTag, torchTupleReacquirable,
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
-import { indexStacksForVariant, refreshComputeCaps } from './torchIndexManifest'
+import { indexStacksForVariant, refreshComputeCaps, ensureComputeCaps } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 
 /** A resolvable catalog entry: managed ref + acquisition info. Bundle
@@ -232,8 +232,11 @@ export async function resolveTorchStack(
   if (!variant) return null
 
   // Index-served stacks resolve against the in-app manifest (already trusted
-  // and machine-filtered) — no remote fetch involved.
+  // and machine-filtered) — no remote fetch involved. Probe the GPU first if
+  // it never ran: cap-constrained entries are hidden pre-probe, and an exact
+  // restore must not be rejected just because no check-update ran yet.
   if (parseIndexStackId(stackId)) {
+    await ensureComputeCaps()
     return indexStacksForVariant(variant).find((e) => e.stackId === stackId) ?? null
   }
 
