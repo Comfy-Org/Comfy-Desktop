@@ -2,7 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest'
 import {
   publicVersion, torchLocalTag, stackVersionMatches, torchIndexUrlFor,
   torchTupleReacquirable, accelBaseForTag, torchTupleMatches, torchPackageTuplesEqual,
+  observedTuple, hasFullObservedTuple,
 } from './torchStackTypes'
+import type { ObservedTorchStack } from './torchStackTypes'
 
 const realPlatform = process.platform
 function setPlatform(platform: NodeJS.Platform): void {
@@ -103,5 +105,22 @@ describe('torchPackageTuplesEqual (tag-aware)', () => {
   it('distinguishes local tags when both sides carry them', () => {
     expect(torchPackageTuplesEqual({ torch: '2.10.0+cu128' }, { torch: '2.10.0+cu130' })).toBe(false)
     expect(torchPackageTuplesEqual({ torch: '2.10.0+cu130' }, { torch: '2.10.0' })).toBe(true)
+  })
+})
+
+describe('observedTuple / hasFullObservedTuple', () => {
+  const base = { kind: 'observed', observedAt: '2026-01-01T00:00:00Z' } as const
+
+  it('requires both tuple fields to be present (null counts as present)', () => {
+    expect(hasFullObservedTuple({ ...base, torchVersion: '2.4.1' })).toBe(false)
+    expect(hasFullObservedTuple({ ...base, torchVersion: '2.4.1', torchvisionVersion: '0.19.1' })).toBe(false)
+    expect(hasFullObservedTuple({ ...base, torchVersion: '2.4.1', torchvisionVersion: '0.19.1', torchaudioVersion: null })).toBe(true)
+  })
+
+  it('builds a tuple with only the recorded packages', () => {
+    const record: ObservedTorchStack = {
+      ...base, torchVersion: '2.4.1+cu121', torchvisionVersion: '0.19.1+cu121', torchaudioVersion: null,
+    }
+    expect(observedTuple(record)).toEqual({ torch: '2.4.1+cu121', torchvision: '0.19.1+cu121' })
   })
 })

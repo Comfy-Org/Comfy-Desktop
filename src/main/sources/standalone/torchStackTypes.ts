@@ -54,6 +54,22 @@ export type SnapshotTorchStack =
   | { kind: 'managed'; ref: ManagedTorchStackRef }
   | ObservedTorchStack
 
+/** Exact-version tuple of an observed snapshot record (local tags kept). */
+export function observedTuple(s: ObservedTorchStack): TorchStackPackages {
+  return {
+    torch: s.torchVersion ?? '',
+    ...(s.torchvisionVersion ? { torchvision: s.torchvisionVersion } : {}),
+    ...(s.torchaudioVersion ? { torchaudio: s.torchaudioVersion } : {}),
+  }
+}
+
+/** Whether the observed record was written with the full-tuple fields (null
+ *  means "recorded as absent"; missing means a pre-tuple or partial record,
+ *  which stays note-only — both fields must be present to restore). */
+export function hasFullObservedTuple(s: ObservedTorchStack): boolean {
+  return s.torchvisionVersion !== undefined && s.torchaudioVersion !== undefined
+}
+
 /** `lastVerifiedTorchStack` as persisted on the installation record: the
  *  managed ref plus the bundle download info needed to re-acquire it without
  *  a catalog fetch (repair path, offline restores). */

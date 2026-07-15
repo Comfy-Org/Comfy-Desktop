@@ -20,7 +20,7 @@ import {
 } from './snapshots'
 import type { Snapshot, RequirementsRepairResult } from './snapshots'
 import { getInstalledTorchTuple } from '../sources/standalone/envPaths'
-import { torchTupleMatches, publicVersion } from '../sources/standalone/torchStackTypes'
+import { torchTupleMatches, publicVersion, observedTuple, hasFullObservedTuple } from '../sources/standalone/torchStackTypes'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -160,7 +160,13 @@ function torchSubstitutionNote(installation: InstallationRecord, targetSnapshot:
     return i18n.t('standalone.pytorchSnapshotStackKeptLocal', { version: snapTorch.ref.packages.torch })
   }
   if (snapTorch.torchVersion) {
-    if (installed.torch && publicVersion(snapTorch.torchVersion) === publicVersion(installed.torch)) return null
+    // Full-tuple observed records compare as a stack: matching torch alone is
+    // not "reached" when torchvision/torchaudio differ. Partial (legacy)
+    // records can only compare torch.
+    const matches = hasFullObservedTuple(snapTorch)
+      ? torchTupleMatches(observedTuple(snapTorch), installed)
+      : Boolean(installed.torch && publicVersion(snapTorch.torchVersion) === publicVersion(installed.torch))
+    if (matches) return null
     return i18n.t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
   }
   return null
@@ -258,9 +264,16 @@ export async function restoreSnapshotIntoInstallation(
         pipResult && pipResult.failed.length === 0) {
       sendOutput('\n── Repair Requirements ──\n')
       sendProgress('restore-pip', { percent: -1, status: i18n.t('standalone.snapshotRepairPhase') })
-      repairResult = await repairNodeRequirements(
-        freshInst.installPath, freshInst, sendOutput, signal, settings.getMirrorConfig()
-      )
+      try {
+        repairResult = await repairNodeRequirements(
+          freshInst.installPath, freshInst, sendOutput, signal, settings.getMirrorConfig()
+        )
+      } catch (err) {
+        // A rejected repair pass (freeze/constraints IO failure) leaves the
+        // drift unknown; record it as a repair error so the envelope is not
+        // committed, instead of failing the whole restore.
+        repairResult = { changed: [], errors: [`Requirements repair failed: ${(err as Error).message}`] }
+      }
       if (repairResult.changed.length > 0) {
         sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
       }
@@ -305,9 +318,11 @@ export async function restoreSnapshotIntoInstallation(
     currentForSnapshot = updatedInst
 
     // Only commit the imported envelope to history once the install has
-    // actually been in that state (#1137).
+    // actually been in that state (#1137), and commit only the restored
+    // snapshot: the envelope may carry the source install's older history,
+    // states this install has never been in.
     if (reachedTarget) {
-      await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
+      await importSnapshots(freshInst.installPath, { ...importEnvelope, snapshots: [targetSnapshot] }, entry.id)
     }
     if (restoreSucceeded) {
       try {
@@ -565,7 +580,16 @@ export async function migrateToStandaloneFromSnapshot(
 
     return { entry, destPath, restoreError }
   } catch (err) {
-    await installations.update(entry.id, { status: 'failed' }).catch(() => {})
+    if (signal.aborted) {
+      // Cancelled: the caller never received entry/destPath, so it cannot
+      // clean up — remove the partial install record, its directory, and the
+      // owned staged file here.
+      await installations.remove(entry.id).catch(() => {})
+      await fs.promises.rm(destPath, { recursive: true, force: true }).catch(() => {})
+      cleanupStagedFile()
+    } else {
+      await installations.update(entry.id, { status: 'failed' }).catch(() => {})
+    }
     throw err
   }
 }

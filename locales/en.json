@@ -1077,8 +1077,7 @@
     "importSuccess": "Imported {imported} snapshot(s).",
     "importAlreadyCurrent": "This snapshot already matches the current state.",
     "importInvalidFile": "Invalid snapshot file.",
-    "exportSuccess": "Snapshot exported.",
-    "torchBundleUnavailable": "The environment bundle for this snapshot's PyTorch {torch} ({tag}) is no longer available, so the exact environment cannot be recreated."
+    "exportSuccess": "Snapshot exported."
   },
   "portable": {
     "label": "Portable",

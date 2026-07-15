@@ -17,8 +17,8 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { publicVersion, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable } from './torchStackTypes'
-import type { TorchStackPackages, ObservedTorchStack } from './torchStackTypes'
+import { publicVersion, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple } from './torchStackTypes'
+import type { TorchStackPackages } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
@@ -67,22 +67,6 @@ async function acquireTorchBundle(
     if (err instanceof DiskSpaceError) return { failure: { ok: false, message: err.message } }
     return { failure: { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) } }
   }
-}
-
-/** Exact-version tuple of an observed snapshot record (local tags kept). */
-function observedTuple(s: ObservedTorchStack): TorchStackPackages {
-  return {
-    torch: s.torchVersion ?? '',
-    ...(s.torchvisionVersion ? { torchvision: s.torchvisionVersion } : {}),
-    ...(s.torchaudioVersion ? { torchaudio: s.torchaudioVersion } : {}),
-  }
-}
-
-/** Whether the observed record was written with the full-tuple fields (null
- *  means "recorded as absent"; missing means a pre-tuple or partial record,
- *  which stays note-only — both fields must be present to restore). */
-function hasFullObservedTuple(s: ObservedTorchStack): boolean {
-  return s.torchvisionVersion !== undefined && s.torchaudioVersion !== undefined
 }
 
 export async function handleAction(
@@ -403,9 +387,16 @@ export async function handleAction(
       if (mode === 'compatible' && !targetSnapshot.skipPipSync && !signal?.aborted) {
         sendOutput('\n── Repair Requirements ──\n')
         sendProgress('restore-pip', { percent: -1, status: t('standalone.snapshotRepairPhase') })
-        repairResult = await snapshots.repairNodeRequirements(
-          installation.installPath, installation, sendOutput, signal, settings.getMirrorConfig()
-        )
+        try {
+          repairResult = await snapshots.repairNodeRequirements(
+            installation.installPath, installation, sendOutput, signal, settings.getMirrorConfig()
+          )
+        } catch (err) {
+          // A rejected repair pass (freeze/constraints IO failure) must flow
+          // into the normal partial-restore reporting and history
+          // reconciliation below, not escape past them.
+          repairResult = { changed: [], errors: [`Requirements repair failed: ${(err as Error).message}`] }
+        }
         if (repairResult.changed.length > 0) {
           sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
         }

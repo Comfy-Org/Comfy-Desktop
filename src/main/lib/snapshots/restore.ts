@@ -18,12 +18,25 @@ import * as settings from '../../settings'
 
 /** Packages never modified during snapshot restore (Manager's skip list plus core tooling). */
 const PROTECTED_EXACT = new Set(['pip', 'setuptools', 'wheel', 'uv'])
+// Plain prefixes: 'torch' must also cover torchvision/torchaudio/torchsde,
+// 'nvidia' covers nvidia-cublas-cu12 etc., 'triton' covers triton-windows,
+// 'cuda' covers cuda-bindings.
 const PROTECTED_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
 
-function isProtectedPackage(name: string): boolean {
+export function isProtectedPackage(name: string): boolean {
   const lower = name.toLowerCase()
   if (PROTECTED_EXACT.has(lower)) return true
-  return PROTECTED_PREFIXES.some((prefix) => lower === prefix || lower.startsWith(prefix + '-') || lower.startsWith(prefix + '_'))
+  return PROTECTED_PREFIXES.some((prefix) => lower.startsWith(prefix))
+}
+
+/** Constraint pins for the currently installed protected packages. Only plain
+ *  `name==version` pins are valid in a constraints file: editable installs
+ *  (`-e ...`) and PEP 508 direct references (bare URL values from pipFreeze)
+ *  are skipped — the post-repair freeze diff still flags any drift on them. */
+export function buildProtectedConstraints(freeze: Record<string, string>): string[] {
+  return Object.entries(freeze)
+    .filter(([name, version]) => isProtectedPackage(name) && /^\d/.test(version) && !version.includes('://'))
+    .map(([name, version]) => `${name}==${version}`)
 }
 
 /** Normalize a package name for dist-info directory matching (PEP 503). */
@@ -525,9 +538,7 @@ export async function repairNodeRequirements(
   // dependencies can never swap the PyTorch stack out from under the restore.
   // A requirement that conflicts with the pins fails its install (recorded as
   // a repair error) instead of changing the stack.
-  const constraintLines = Object.entries(before)
-    .filter(([name, version]) => isProtectedPackage(name) && !version.startsWith('-e '))
-    .map(([name, version]) => `${name}==${version}`)
+  const constraintLines = buildProtectedConstraints(before)
   const constraintPath = path.join(installPath, '.repair-constraints.txt')
   await fs.promises.writeFile(constraintPath, constraintLines.join('\n'), 'utf-8')
 

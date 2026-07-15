@@ -1077,8 +1077,7 @@
     "importSuccess": "已导入 {imported} 个快照。",
     "importAlreadyCurrent": "此快照已与当前状态匹配。",
     "importInvalidFile": "无效的快照文件。",
-    "exportSuccess": "快照已导出。",
-    "torchBundleUnavailable": "此快照对应的 PyTorch {torch}（{tag}）环境包已不可用，无法完整重建该环境。"
+    "exportSuccess": "快照已导出。"
   },
   "portable": {
     "label": "便携版",

@@ -561,30 +561,23 @@ export function registerSnapshotHandlers(): void {
       // v2 snapshots with a managed torch stack make the stack's bundle tag
       // authoritative: it is the artifact whose torch family matches the
       // snapshot exactly (it can differ from comfyui.releaseTag after an
-      // in-place PyTorch change), and if it has been pruned from R2 the
-      // create fails with the reason rather than silently building a
-      // different-stack install. v1 snapshots (no torch identity) keep the
-      // legacy behavior: pin when possible, else newest bundle.
+      // in-place PyTorch change). If that bundle has been pruned from R2,
+      // fall back to this machine's matched variant (compatible mode): the
+      // restore discloses the torch substitution and skips committing the
+      // imported envelope, so history stays truthful. v1 snapshots (no torch
+      // identity) keep the legacy behavior: pin when possible, else newest
+      // bundle.
       const managedTorch =
         targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
       let installVariant: FieldOption
       if (managedTorch && managedTorch.source.kind === 'comfy-bundle') {
-        const pinned = buildPinnedVariant(
-          selectedRelease,
-          matched.data?.variantId as string,
-          managedTorch.source.bundleTag,
-          gpu?.id
-        )
-        if (!pinned) {
-          return {
-            ok: false,
-            message: i18n.t('snapshots.torchBundleUnavailable', {
-              torch: managedTorch.packages.torch,
-              tag: managedTorch.source.bundleTag
-            })
-          }
-        }
-        installVariant = pinned
+        installVariant =
+          buildPinnedVariant(
+            selectedRelease,
+            matched.data?.variantId as string,
+            managedTorch.source.bundleTag,
+            gpu?.id
+          ) ?? matched
       } else {
         installVariant =
           buildPinnedVariant(
