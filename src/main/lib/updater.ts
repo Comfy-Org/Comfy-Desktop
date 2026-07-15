@@ -288,6 +288,19 @@ function updaterErrorMessage(args: unknown[]): string {
 
 type DesktopUpdateOperation = 'check' | 'download' | 'apply_restart'
 let _lastUpdateError: { key: string; at: number } | null = null
+interface ActiveUpdateOperation {
+  operation: DesktopUpdateOperation
+  source: string
+  targetVersion: string | null
+  userInitiated: boolean
+  startedAt: number
+}
+let _activeUpdateOperation: ActiveUpdateOperation | null = null
+
+function currentUpdateOperation(): ActiveUpdateOperation | null {
+  if (!_activeUpdateOperation) return null
+  return Date.now() - _activeUpdateOperation.startedAt < 60_000 ? _activeUpdateOperation : null
+}
 
 function emitDesktopUpdateError(
   operation: DesktopUpdateOperation,
@@ -295,7 +308,9 @@ function emitDesktopUpdateError(
   options: { userInitiated: boolean; targetVersion?: string | null; source: string }
 ): void {
   const message = Array.isArray(error) ? updaterErrorMessage(error) : updaterErrorMessage([error])
-  const key = `${operation}|${options.targetVersion ?? _appUpdateState.version}|${message}`
+  const targetVersion =
+    options.targetVersion === undefined ? _appUpdateState.version : options.targetVersion
+  const key = `${operation}|${targetVersion}|${message}`
   const now = Date.now()
   if (_lastUpdateError?.key === key && now - _lastUpdateError.at < 1_000) return
   _lastUpdateError = { key, at: now }
@@ -309,7 +324,7 @@ function emitDesktopUpdateError(
     operation,
     stage: operation === 'apply_restart' ? 'install' : operation,
     running_version: app.getVersion(),
-    target_version: options.targetVersion ?? _appUpdateState.version,
+    target_version: targetVersion,
     updater_provider: 'todesktop',
     error_source: options.source,
     setting_use_chinese_mirrors: settings.get('useChineseMirrors') === true,
@@ -342,6 +357,12 @@ function bindUpdaterEvents(): void {
       })
     }
     if (autoInstall) {
+      const active = currentUpdateOperation()
+      if (active?.operation === 'check') {
+        active.operation = 'download'
+        active.targetVersion = version
+        active.startedAt = Date.now()
+      }
       // Auto-install ON suppresses the 'available' pill entirely.
       // electron-updater's default `autoDownload: true` already starts
       // the download in the background; we only need to mark the
@@ -395,27 +416,20 @@ function bindUpdaterEvents(): void {
 
   updater.on('error', (...args: unknown[]) => {
     const wasUserInitiated = _userInitiatedDownload
-    // Three buckets so dashboards can route by failure mode:
-    //   - `install`: Squirrel / restartAndInstall failed AFTER a
-    //     successful download (kind === 'ready'). Usually filesystem
-    //     permissions / antivirus / OS code-signing.
-    //   - `download`: failed mid-download OR a user-initiated download
-    //     attempt failed before the first progress tick (state still
-    //     reads `'available'`, but the user's intent was clearly
-    //     "download"). Usually network / disk.
-    //   - `check`: failed before any download step. Usually network /
-    //     GitHub release feed.
-    const stage: 'install' | 'download' | 'check' =
-      _appUpdateState.kind === 'ready'
-        ? 'install'
-        : _appUpdateState.kind === 'downloading' || _autoDownloadTriggeredFor || wasUserInitiated
-          ? 'download'
-          : 'check'
-    emitDesktopUpdateError(stage === 'install' ? 'apply_restart' : stage, args, {
-      userInitiated: wasUserInitiated,
-      targetVersion: _appUpdateState.version,
-      source: 'updater_event'
+    const active = currentUpdateOperation()
+    const operation =
+      active?.operation ??
+      (_appUpdateState.kind === 'downloading' || _autoDownloadTriggeredFor || wasUserInitiated
+        ? 'download'
+        : 'check')
+    emitDesktopUpdateError(operation, args, {
+      userInitiated: active?.userInitiated ?? wasUserInitiated,
+      targetVersion:
+        active?.targetVersion ??
+        (operation === 'download' ? (_autoDownloadTriggeredFor ?? _appUpdateState.version) : null),
+      source: active ? `updater_event:${active.source}` : 'updater_event'
     })
+    _activeUpdateOperation = null
     clearQuitReason()
     _autoDownloadTriggeredFor = null
     _userInitiatedDownload = false
@@ -496,34 +510,55 @@ const USER_INITIATED_CHECK_TRIGGERS = new Set(['manual-check', 'download-button'
 async function checkForUpdate(
   source: string
 ): Promise<{ available: boolean; version?: string; error?: string }> {
-  const updater = getAutoUpdater()
-  if (!updater) {
-    if (USER_INITIATED_CHECK_TRIGGERS.has(source)) {
-      emitTelemetry('comfy.desktop.app_update.checked', {
-        trigger: source,
-        result: 'updater_unavailable'
-      })
-    }
-    return { available: false, error: UPDATER_UNAVAILABLE_MESSAGE }
-  }
-  bindUpdaterEvents()
-  const result = await updater.checkForUpdates({
+  const operation: DesktopUpdateOperation =
+    source === 'download-button' || source === 'auto-download' ? 'download' : 'check'
+  const activeOperation: ActiveUpdateOperation = {
+    operation,
     source,
-    disableUpdateReadyAction: true
-  })
-  const version = versionFromPayload(result)
-  // A non-newer surfaced version is not an available update.
-  if (version && shouldIgnoreNonNewerVersion(version, 'check')) {
-    return { available: false }
+    targetVersion: operation === 'download' ? _appUpdateState.version : null,
+    userInitiated: USER_INITIATED_CHECK_TRIGGERS.has(source),
+    startedAt: Date.now()
   }
-  if (
-    version &&
-    USER_INITIATED_CHECK_TRIGGERS.has(source) &&
-    _shouldEmitAppUpdateOnce('comfy.desktop.app_update.checked', version)
-  ) {
-    emitTelemetry('comfy.desktop.app_update.checked', { trigger: source, result: 'available' })
+  _activeUpdateOperation = activeOperation
+  try {
+    const updater = getAutoUpdater()
+    if (!updater) {
+      if (USER_INITIATED_CHECK_TRIGGERS.has(source)) {
+        emitTelemetry('comfy.desktop.app_update.checked', {
+          trigger: source,
+          result: 'updater_unavailable'
+        })
+      }
+      return { available: false, error: UPDATER_UNAVAILABLE_MESSAGE }
+    }
+    bindUpdaterEvents()
+    const result = await updater.checkForUpdates({
+      source,
+      disableUpdateReadyAction: true
+    })
+    const version = versionFromPayload(result)
+    // A non-newer surfaced version is not an available update.
+    if (version && shouldIgnoreNonNewerVersion(version, 'check')) {
+      return { available: false }
+    }
+    if (
+      version &&
+      USER_INITIATED_CHECK_TRIGGERS.has(source) &&
+      _shouldEmitAppUpdateOnce('comfy.desktop.app_update.checked', version)
+    ) {
+      emitTelemetry('comfy.desktop.app_update.checked', { trigger: source, result: 'available' })
+    }
+    return version ? { available: true, version } : { available: false }
+  } catch (err) {
+    emitDesktopUpdateError(activeOperation.operation, err, {
+      userInitiated: activeOperation.userInitiated,
+      targetVersion: activeOperation.targetVersion,
+      source
+    })
+    throw err
+  } finally {
+    if (_activeUpdateOperation === activeOperation) _activeUpdateOperation = null
   }
-  return version ? { available: true, version } : { available: false }
 }
 
 /**
@@ -606,10 +641,6 @@ export async function downloadUpdate(): Promise<void> {
     }
   } catch (err) {
     _userInitiatedDownload = false
-    emitDesktopUpdateError('download', err, {
-      userInitiated: true,
-      source: 'download_call'
-    })
     _broadcastToRenderer('app-update:user-action-failed', {
       message: err instanceof Error ? err.message : String(err)
     })
@@ -623,7 +654,7 @@ export async function downloadUpdate(): Promise<void> {
  * `install-update` IPC handler and main-process callers (e.g. the
  * system-modal "Restart" confirm) share a single implementation.
  */
-export function installUpdate(): void {
+export function installUpdate(userInitiated = true): void {
   if (isSessionEnding()) {
     // The OS is shutting down / logging off. Spawning the installer now risks
     // it being force-killed mid-write, corrupting the install — the exact
@@ -634,8 +665,8 @@ export function installUpdate(): void {
   const updater = getAutoUpdater()
   if (!updater) {
     emitDesktopUpdateError('apply_restart', UPDATER_UNAVAILABLE_MESSAGE, {
-      userInitiated: true,
-      source: 'install_call'
+      userInitiated,
+      source: userInitiated ? 'install_call' : 'startup_install'
     })
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
@@ -645,6 +676,13 @@ export function installUpdate(): void {
     auto_update_setting: isAutoInstallEnabled() ? 'on' : 'off'
   })
   try {
+    _activeUpdateOperation = {
+      operation: 'apply_restart',
+      source: userInitiated ? 'install_call' : 'startup_install',
+      targetVersion: _appUpdateState.version,
+      userInitiated,
+      startedAt: Date.now()
+    }
     setQuitReason('update-install')
     // macOS Squirrel quirk: if requestSingleInstanceLock is still held by
     // the quitting process, ShipIt swaps the .app bundle correctly but
@@ -663,10 +701,11 @@ export function installUpdate(): void {
     // macOS/Linux, where `isSilent` has no effect anyway.
     updater.restartAndInstall({ isSilent: !isInstallerUIEnabled() })
   } catch (err) {
+    _activeUpdateOperation = null
     clearQuitReason()
     emitDesktopUpdateError('apply_restart', err, {
-      userInitiated: true,
-      source: 'install_call'
+      userInitiated,
+      source: userInitiated ? 'install_call' : 'startup_install'
     })
     _broadcastToRenderer('app-update:user-action-failed', {
       message: err instanceof Error ? err.message : String(err)
@@ -874,7 +913,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   // the old version) trips the loop-breaker next boot instead of looping.
   settings.set('lastStartupUpdateAttemptVersion', state.version)
   emitTelemetry('comfy.desktop.app_update.startup_install', { version: state.version })
-  installUpdate()
+  installUpdate(false)
   return true
 }
 

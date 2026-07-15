@@ -1386,6 +1386,35 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     })
   })
 
+  it('forwards exceptions to Datadog without message, stack, or arbitrary context', () => {
+    const target = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(target.wc)
+
+    telemetry.forwardExceptionToRenderer({
+      origin: 'renderer',
+      source: 'renderer-window-error',
+      reason: 'crashed',
+      error_message: 'private failure text',
+      error_stack: 'private stack'
+    })
+
+    expect(target.sends).toHaveLength(1)
+    expect(target.sends[0]).toMatchObject({
+      channel: 'dd-error',
+      data: {
+        source: 'renderer-window-error',
+        message: 'Desktop application exception',
+        context: { origin: 'renderer', source: 'renderer-window-error', reason: 'crashed' },
+        skipPostHog: true
+      }
+    })
+    const forwarded = target.sends[0]!.data as Record<string, unknown>
+    const forwardedContext = forwarded['context'] as Record<string, unknown>
+    expect(forwarded).not.toHaveProperty('stack')
+    expect(forwardedContext).not.toHaveProperty('error_message')
+    expect(forwardedContext).not.toHaveProperty('error_stack')
+  })
+
   it('emit() captures via PostHog Node AND forwards to relay targets', () => {
     const a = makeStubWebContents()
     telemetry.registerTelemetryRelayTarget(a.wc)
@@ -1408,7 +1437,7 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     })
   })
 
-  it('does not forward to Datadog after the shared session cap is reached', () => {
+  it('only forwards the one-shot warning after the shared session cap is reached', () => {
     const target = makeStubWebContents()
     telemetry.registerTelemetryRelayTarget(target.wc)
     telemetry._test_resetVolumeGuards()
@@ -1418,7 +1447,10 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
 
     telemetry.emit('comfy.desktop.execution.error', { i: 5001 })
 
-    expect(target.sends).toHaveLength(0)
+    expect(target.sends).toHaveLength(1)
+    expect(target.sends[0]).toMatchObject({
+      data: { event: 'comfy.desktop.telemetry.session_cap_hit', mainAlreadyCaptured: true }
+    })
   })
 
   it('forwards with no relay targets is a no-op (event still captured by PostHog Node)', () => {

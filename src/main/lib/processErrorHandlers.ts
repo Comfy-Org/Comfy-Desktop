@@ -1,6 +1,5 @@
 import { app } from 'electron'
 import * as mainTelemetry from './telemetry'
-import { _broadcastToRenderer } from './ipc/shared'
 import type { DatadogForwardedError } from '../../types/ipc'
 import { scrubAll } from '../../shared/piiScrub'
 import { writeAppLogSync, flushOperationOutput } from './appLog'
@@ -50,7 +49,14 @@ export function forwardDatadogError(payload: DatadogForwardedError): void {
       source: scrubbed.source,
       level: scrubbed.level ?? null
     })
-    if (accepted) _broadcastToRenderer('dd-error', scrubbed)
+    if (accepted) {
+      mainTelemetry.forwardExceptionToRenderer({
+        origin: 'main-process',
+        source: scrubbed.source,
+        level: scrubbed.level ?? null,
+        ...(scrubbed.context || {})
+      })
+    }
   } catch {}
 }
 

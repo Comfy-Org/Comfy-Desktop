@@ -167,7 +167,12 @@ const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
 const RENDERER_TELEMETRY_EVENT_CAP = 5_000
 let rendererTelemetryEventsEmitted = 0
 
-function claimRendererTelemetryBudget(): boolean {
+function claimRendererTelemetryBudget(event: string): boolean {
+  if (
+    event === 'comfy.desktop.telemetry.rate_limited' ||
+    event === 'comfy.desktop.telemetry.session_cap_hit'
+  )
+    return true
   if (rendererTelemetryEventsEmitted >= RENDERER_TELEMETRY_EVENT_CAP) return false
   rendererTelemetryEventsEmitted++
   return true
@@ -226,8 +231,16 @@ function trackTelemetryAction(
   options: { skipPostHog?: boolean } = {}
 ): void {
   if (!isTelemetryEmitAllowed(actionName)) return
-  if (!claimRendererTelemetryBudget()) return
   const scrubbed = scrubTelemetryContext(context)
+  if (!options.skipPostHog) {
+    try {
+      window.api.captureTelemetry(actionName, scrubbed)
+    } catch {
+      // ignore - telemetry must never break the renderer
+    }
+    return
+  }
+  if (!claimRendererTelemetryBudget(actionName)) return
   // Provider split: Datadog only mirrors the failure-event
   // allow-list. Product / funnel events are PostHog-only — Datadog is for
   // alerting, not analysis.
@@ -237,17 +250,6 @@ function trackTelemetryAction(
       // drop the large free-text diagnostics (they stay in PostHog for triage).
       datadogRum.addAction(actionName, stripDatadogDroppedKeys(scrubbed))
     } catch {}
-  }
-  // Renderer routes capture through main's posthog-node via IPC. The
-  // skipPostHog gate stays for events that originated in main (via
-  // `telemetry-action-from-main`): main already captured those and a
-  // round-trip IPC re-capture would double-count.
-  if (!options.skipPostHog) {
-    try {
-      window.api.captureTelemetry(actionName, scrubbed)
-    } catch {
-      // ignore — telemetry must never break the renderer
-    }
   }
 }
 
@@ -531,7 +533,6 @@ function reportRendererError(payload: {
   skipPostHog?: boolean
 }): void {
   if (!isTelemetryEmitAllowed('comfy.desktop.exception.error')) return
-  if (!claimRendererTelemetryBudget()) return
   const error = new Error(scrubAll(payload.message || 'Unknown error').slice(0, ERROR_MESSAGE_MAX))
   if (payload.stack) {
     error.stack = scrubAll(payload.stack).slice(0, 16 * 1024)
@@ -541,11 +542,6 @@ function reportRendererError(payload: {
     forwarded_source: payload.source,
     ...(payload.context || {})
   }) as TelemetryContext
-  if (isDatadogInitialized) {
-    try {
-      datadogRum.addError(error, context)
-    } catch {}
-  }
   if (!payload.skipPostHog) {
     try {
       window.api.captureExceptionTelemetry({
@@ -554,8 +550,27 @@ function reportRendererError(payload: {
         properties: context
       })
     } catch {
-      // ignore — telemetry must never break the renderer
+      // ignore - telemetry must never break the renderer
     }
+    return
+  }
+  if (!claimRendererTelemetryBudget('comfy.desktop.exception.error')) return
+  if (isDatadogInitialized) {
+    try {
+      const datadogError = new Error('Desktop application exception')
+      datadogError.name = 'DesktopTelemetryError'
+      datadogError.stack = undefined
+      datadogRum.addError(datadogError, {
+        origin: context['origin'],
+        source: context['source'],
+        forwarded_source: context['forwarded_source'],
+        level: context['level'],
+        reason: context['reason'],
+        exitCode: context['exitCode'],
+        exit_code: context['exit_code'],
+        type: context['type']
+      })
+    } catch {}
   }
 }
 

@@ -451,28 +451,103 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalled()
   })
 
-  it('labels updater failures with the Desktop operation and versions', async () => {
+  it('does not mislabel a later check failure as applying the staged update', async () => {
     await bootUpdater()
     for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
-    for (const cb of listeners.error || []) cb(new Error('installer apply failed'))
+    for (const cb of listeners.error || []) cb(new Error('release feed unavailable'))
 
     const errors = findEmitCalls('comfy.desktop.app_update.error')
     expect(errors).toHaveLength(1)
     expect(errors[0]?.[1]).toMatchObject({
       component: 'desktop_application',
-      operation: 'apply_restart',
-      stage: 'install',
+      operation: 'check',
+      stage: 'check',
       running_version: '1.0.0',
-      target_version: '1.0.1',
+      target_version: null,
       updater_provider: 'todesktop',
       error_source: 'updater_event',
       setting_use_chinese_mirrors: false,
-      error_message: 'installer apply failed',
+      error_message: 'release feed unavailable',
       user_initiated: false
     })
-    expect((errors[0]?.[1] as Record<string, unknown>).error_stack).toContain(
-      'installer apply failed'
-    )
+  })
+
+  it('attributes an updater error after restartAndInstall to apply_restart', async () => {
+    const updater = await bootUpdater()
+    for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
+    updater.installUpdate()
+    for (const cb of listeners.error || []) cb(new Error('installer apply failed'))
+
+    const errors = findEmitCalls('comfy.desktop.app_update.error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.[1]).toMatchObject({
+      operation: 'apply_restart',
+      stage: 'install',
+      target_version: '1.0.1',
+      error_source: 'updater_event:install_call',
+      error_message: 'installer apply failed',
+      user_initiated: true
+    })
+  })
+
+  it('reports rejected periodic checks even without an updater error event', async () => {
+    const updater = await bootUpdater()
+    fakeUpdater.checkForUpdates.mockRejectedValueOnce(new Error('request timed out'))
+
+    await expect(updater.runCheck('periodic')).rejects.toThrow('request timed out')
+
+    const errors = findEmitCalls('comfy.desktop.app_update.error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.[1]).toMatchObject({
+      operation: 'check',
+      stage: 'check',
+      target_version: null,
+      error_source: 'periodic',
+      error_message: 'request timed out',
+      user_initiated: false
+    })
+  })
+
+  it('transitions an automatic check error to download after update-available', async () => {
+    const updater = await bootUpdater()
+    const failure = new Error('download connection reset')
+    fakeUpdater.checkForUpdates.mockImplementationOnce(async () => {
+      for (const cb of listeners['update-available'] || []) cb({ version: '1.0.1' })
+      for (const cb of listeners.error || []) cb(failure)
+      throw failure
+    })
+
+    await expect(updater.runCheck('auto-check')).rejects.toThrow('download connection reset')
+
+    const errors = findEmitCalls('comfy.desktop.app_update.error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.[1]).toMatchObject({
+      operation: 'download',
+      stage: 'download',
+      target_version: '1.0.1',
+      error_source: 'updater_event:auto-check',
+      user_initiated: false
+    })
+  })
+
+  it('attributes a promise-only automatic download rejection to download', async () => {
+    const updater = await bootUpdater()
+    fakeUpdater.checkForUpdates.mockImplementationOnce(async () => {
+      for (const cb of listeners['update-available'] || []) cb({ version: '1.0.1' })
+      throw new Error('download timed out')
+    })
+
+    await expect(updater.runCheck('auto-check')).rejects.toThrow('download timed out')
+
+    const errors = findEmitCalls('comfy.desktop.app_update.error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.[1]).toMatchObject({
+      operation: 'download',
+      stage: 'download',
+      target_version: '1.0.1',
+      error_source: 'auto-check',
+      user_initiated: false
+    })
   })
 
   it('toggling auto-install re-arms / disarms install-on-quit without a restart', async () => {

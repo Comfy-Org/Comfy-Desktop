@@ -1124,6 +1124,7 @@ export async function handleLaunch({
       clearBootPhases(installationId)
       return { ok: false, cancelled: true }
     }
+    execTap.flushSummary()
     // Terminal boot failure (waitForPort timeout or early process exit, after
     // any port/reboot retries were exhausted). Flush the buffered phase
     // timings — they're the breakdown explaining where the boot stalled — then

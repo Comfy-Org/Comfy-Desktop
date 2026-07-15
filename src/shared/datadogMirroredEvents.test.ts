@@ -44,6 +44,8 @@ describe('stripDatadogDroppedKeys', () => {
       error_message: 'boom',
       error_signature: 'RuntimeError|boom',
       error_tail: 'line1\nline2',
+      error_traceback: 'traceback',
+      error_stack: 'stack',
       last_stderr: 'noise'
     }
     const out = stripDatadogDroppedKeys(context)
@@ -67,6 +69,7 @@ describe('stripDatadogDroppedKeys', () => {
     expect([...DATADOG_DROPPED_CONTEXT_KEYS].sort()).toEqual([
       'error_message',
       'error_signature',
+      'error_stack',
       'error_tail',
       'error_traceback',
       'last_stderr'

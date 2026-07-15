@@ -172,7 +172,7 @@ export function registerTelemetryHandlers(): void {
   ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
-    mainTelemetry.capture(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
+    mainTelemetry.emit(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
   })
 
   ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
@@ -180,10 +180,9 @@ export function registerTelemetryHandlers(): void {
     const stackStr = asString(payload?.stack)
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
-    mainTelemetry.captureException(
-      err,
-      withPlatformAxes(asExceptionProps(payload?.properties), event?.sender)
-    )
+    const properties = withPlatformAxes(asExceptionProps(payload?.properties), event?.sender)
+    const accepted = mainTelemetry.captureException(err, properties)
+    if (accepted) mainTelemetry.forwardExceptionToRenderer(properties)
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {

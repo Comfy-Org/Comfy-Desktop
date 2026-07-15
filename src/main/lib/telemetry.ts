@@ -366,6 +366,7 @@ function _emitWarning(event: string, properties: TelemetryContext): void {
       event,
       properties: { ...defaultEventProperties, ...properties }
     })
+    forwardToRenderer(event, properties)
   } catch {
     // ignore – the warning is best-effort
   }
@@ -1220,6 +1221,42 @@ export function forwardToRenderer(event: string, context: TelemetryContext = {})
         wc.send('telemetry-action-from-main', payload)
       } catch {
         // ignore – telemetry must never break the app
+      }
+    }
+  }
+}
+
+/** Forward an accepted exception to the renderer-only Datadog SDK without diagnostics. */
+export function forwardExceptionToRenderer(context: TelemetryContext = {}): void {
+  const allowedKeys = [
+    'origin',
+    'source',
+    'forwarded_source',
+    'level',
+    'reason',
+    'exitCode',
+    'exit_code',
+    'type'
+  ]
+  const safeContext: TelemetryContext = {}
+  for (const key of allowedKeys) {
+    const value = context[key]
+    if (!Array.isArray(value)) safeContext[key] = value
+  }
+  const payload = {
+    source: String(
+      safeContext['source'] ?? safeContext['forwarded_source'] ?? 'captured-exception'
+    ),
+    message: 'Desktop application exception',
+    context: safeContext,
+    skipPostHog: true
+  }
+  for (const wc of _telemetryRelayTargets) {
+    if (!wc.isDestroyed()) {
+      try {
+        wc.send('dd-error', payload)
+      } catch {
+        // ignore - telemetry must never break the app
       }
     }
   }
