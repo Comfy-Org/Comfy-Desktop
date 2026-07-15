@@ -28,8 +28,14 @@ export async function handleDelegateToSource({ event, installationId, inst, acti
   // Failures surfaced to the UI must also land in the app log (#1250) —
   // sendOutput covers per-step output, but the final failure summary is
   // otherwise only returned to the renderer.
-  const logFailure = (message: string): void =>
-    appendLog(installationId, `\n⚠ ${actionId} failed: ${message}\n`)
+  const logFailure = (message: string): void => {
+    // Best-effort: a diagnostic write must never mask the original failure.
+    try {
+      appendLog(installationId, `\n⚠ ${actionId} failed: ${message}\n`)
+    } catch (logErr) {
+      console.warn('Failed to append action failure to app log:', logErr)
+    }
+  }
   try {
     const result = await source.handleAction(actionId, inst, actionData, { update, sendProgress, sendOutput, signal: abort.signal })
     if (!result.ok && result.message && !result.cancelled) {
