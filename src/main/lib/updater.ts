@@ -6,7 +6,7 @@ import * as settings from '../settings'
 import { clearQuitReason, isSessionEnding, setQuitReason } from './quit-state'
 import { _broadcastToRenderer } from './ipc/shared'
 import { emit as emitTelemetry } from './telemetry'
-import { buildErrorFields } from '../../shared/errorEvent'
+import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
 /**
  * Title-bar status pills consume the current app-update state via
@@ -286,6 +286,39 @@ function updaterErrorMessage(args: unknown[]): string {
   return 'Update check failed.'
 }
 
+type DesktopUpdateOperation = 'check' | 'download' | 'apply_restart'
+let _lastUpdateError: { key: string; at: number } | null = null
+
+function emitDesktopUpdateError(
+  operation: DesktopUpdateOperation,
+  error: unknown,
+  options: { userInitiated: boolean; targetVersion?: string | null; source: string }
+): void {
+  const message = Array.isArray(error) ? updaterErrorMessage(error) : updaterErrorMessage([error])
+  const key = `${operation}|${options.targetVersion ?? _appUpdateState.version}|${message}`
+  const now = Date.now()
+  if (_lastUpdateError?.key === key && now - _lastUpdateError.at < 1_000) return
+  _lastUpdateError = { key, at: now }
+  const errorObject = Array.isArray(error)
+    ? error.find((value): value is Error => value instanceof Error)
+    : error instanceof Error
+      ? error
+      : null
+  emitTelemetry('comfy.desktop.app_update.error', {
+    component: 'desktop_application',
+    operation,
+    stage: operation === 'apply_restart' ? 'install' : operation,
+    running_version: app.getVersion(),
+    target_version: options.targetVersion ?? _appUpdateState.version,
+    updater_provider: 'todesktop',
+    error_source: options.source,
+    setting_use_chinese_mirrors: settings.get('useChineseMirrors') === true,
+    ...buildErrorFields(message),
+    ...(errorObject?.stack ? { error_stack: errorTail(errorObject.stack) } : {}),
+    user_initiated: options.userInitiated
+  })
+}
+
 function getAutoUpdater() {
   return todesktop.autoUpdater
 }
@@ -378,11 +411,10 @@ function bindUpdaterEvents(): void {
         : _appUpdateState.kind === 'downloading' || _autoDownloadTriggeredFor || wasUserInitiated
           ? 'download'
           : 'check'
-    emitTelemetry('comfy.desktop.app_update.error', {
-      stage,
-      // Standard error schema: class / message / bucket / signature.
-      ...buildErrorFields(updaterErrorMessage(args)),
-      user_initiated: wasUserInitiated
+    emitDesktopUpdateError(stage === 'install' ? 'apply_restart' : stage, args, {
+      userInitiated: wasUserInitiated,
+      targetVersion: _appUpdateState.version,
+      source: 'updater_event'
     })
     clearQuitReason()
     _autoDownloadTriggeredFor = null
@@ -562,12 +594,22 @@ export async function downloadUpdate(): Promise<void> {
     const result = await runCheck('download-button')
     if (!result.available && _appUpdateState.kind !== 'ready') {
       _userInitiatedDownload = false
+      if (result.error) {
+        emitDesktopUpdateError('download', result.error, {
+          userInitiated: true,
+          source: 'download_check'
+        })
+      }
       _broadcastToRenderer('app-update:user-action-failed', {
         message: result.error || NO_UPDATE_AVAILABLE_MESSAGE
       })
     }
   } catch (err) {
     _userInitiatedDownload = false
+    emitDesktopUpdateError('download', err, {
+      userInitiated: true,
+      source: 'download_call'
+    })
     _broadcastToRenderer('app-update:user-action-failed', {
       message: err instanceof Error ? err.message : String(err)
     })
@@ -591,6 +633,10 @@ export function installUpdate(): void {
   }
   const updater = getAutoUpdater()
   if (!updater) {
+    emitDesktopUpdateError('apply_restart', UPDATER_UNAVAILABLE_MESSAGE, {
+      userInitiated: true,
+      source: 'install_call'
+    })
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
   }
@@ -618,6 +664,10 @@ export function installUpdate(): void {
     updater.restartAndInstall({ isSilent: !isInstallerUIEnabled() })
   } catch (err) {
     clearQuitReason()
+    emitDesktopUpdateError('apply_restart', err, {
+      userInitiated: true,
+      source: 'install_call'
+    })
     _broadcastToRenderer('app-update:user-action-failed', {
       message: err instanceof Error ? err.message : String(err)
     })

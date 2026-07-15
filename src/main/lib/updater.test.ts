@@ -451,6 +451,30 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalled()
   })
 
+  it('labels updater failures with the Desktop operation and versions', async () => {
+    await bootUpdater()
+    for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
+    for (const cb of listeners.error || []) cb(new Error('installer apply failed'))
+
+    const errors = findEmitCalls('comfy.desktop.app_update.error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.[1]).toMatchObject({
+      component: 'desktop_application',
+      operation: 'apply_restart',
+      stage: 'install',
+      running_version: '1.0.0',
+      target_version: '1.0.1',
+      updater_provider: 'todesktop',
+      error_source: 'updater_event',
+      setting_use_chinese_mirrors: false,
+      error_message: 'installer apply failed',
+      user_initiated: false
+    })
+    expect((errors[0]?.[1] as Record<string, unknown>).error_stack).toContain(
+      'installer apply failed'
+    )
+  })
+
   it('toggling auto-install re-arms / disarms install-on-quit without a restart', async () => {
     // Opt out of startup install so install-on-quit is the live gate.
     settingsStore['installUpdatesOnStartup'] = false
