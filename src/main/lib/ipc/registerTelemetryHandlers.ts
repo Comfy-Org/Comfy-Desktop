@@ -31,7 +31,9 @@ function asString(value: unknown): string | null {
 
 function firebaseAuthReporterFrame(event: IpcMainEvent): WebFrameMain | null {
   const frame = event.senderFrame
-  if (!frame || frame !== event.sender.mainFrame) return null
+  const mainFrame = event.sender.mainFrame
+  if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId)
+    return null
   return parseTrustedCloudUrl(frame.url) === null ? null : frame
 }
 

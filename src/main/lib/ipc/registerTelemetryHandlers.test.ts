@@ -51,12 +51,20 @@ function listener(channel: string): IpcListener {
   return call![1] as IpcListener
 }
 
-function identityEvent(url: string, mainFrame: boolean = true): unknown {
+function identityEvent(
+  url: string,
+  mainFrame: boolean = true,
+  equivalentWrapper: boolean = false
+): unknown {
   const senderMainFrame = { url, processId: 100, routingId: 200 }
   const sender = { mainFrame: senderMainFrame }
   return {
     sender,
-    senderFrame: mainFrame ? senderMainFrame : { url, processId: 101, routingId: 201 }
+    senderFrame: mainFrame
+      ? equivalentWrapper
+        ? { ...senderMainFrame }
+        : senderMainFrame
+      : { url, processId: 101, routingId: 201 }
   }
 }
 
@@ -172,6 +180,22 @@ describe('registerTelemetryHandlers', () => {
     expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
       2,
       (signedOutEvent as { sender: unknown }).sender,
+      { processId: 100, routingId: 200 },
+      { status: 'signed_out' }
+    )
+  })
+
+  it('accepts an equivalent main-frame wrapper and rejects a different frame identity', () => {
+    const equivalentMainFrame = identityEvent('https://cloud.comfy.org/workspaces/abc', true, true)
+    listener('telemetry:firebaseAuthState')(equivalentMainFrame, { status: 'signed_out' })
+    listener('telemetry:firebaseAuthState')(
+      identityEvent('https://cloud.comfy.org/workspaces/abc', false),
+      { status: 'signed_out' }
+    )
+
+    expect(mocks.reportFirebaseAuthState).toHaveBeenCalledTimes(1)
+    expect(mocks.reportFirebaseAuthState).toHaveBeenCalledWith(
+      (equivalentMainFrame as { sender: unknown }).sender,
       { processId: 100, routingId: 200 },
       { status: 'signed_out' }
     )

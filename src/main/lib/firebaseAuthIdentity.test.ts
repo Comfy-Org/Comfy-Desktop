@@ -104,6 +104,23 @@ class FakeWebContents extends EventEmitter {
     )
   }
 
+  failNavigation(
+    url: string,
+    errorCode: number = -105,
+    error: string = 'ERR_NAME_NOT_RESOLVED'
+  ): void {
+    this.emit(
+      'did-fail-load',
+      {},
+      errorCode,
+      error,
+      url,
+      true,
+      this.currentMainFrame.processId,
+      this.currentMainFrame.routingId
+    )
+  }
+
   stopLoading(): void {
     this.loadingMainFrame = false
     this.emit('did-stop-loading')
@@ -198,6 +215,24 @@ describe('firebaseAuthIdentity consensus', () => {
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F1')
   })
 
+  it('keeps the committed trusted reporter pending before an untrusted destination commits', () => {
+    const first = new FakeWebContents(cloudUrl)
+    const second = new FakeWebContents(cloudUrl)
+    activate(first)
+    activate(second)
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F1' })
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F1' })
+    vi.clearAllMocks()
+
+    first.startNavigation('https://attacker.example/')
+    expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
+    vi.clearAllMocks()
+
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F2' })
+    expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
+    expect(telemetry.markAnonymousEpochUnmergeable).not.toHaveBeenCalled()
+  })
+
   it('accepts the committed document while its main frame is still loading', () => {
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
@@ -253,6 +288,24 @@ describe('firebaseAuthIdentity consensus', () => {
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F1')
   })
 
+  it('keeps a trusted committed candidate pending while a newer untrusted load is in flight', () => {
+    const first = new FakeWebContents(cloudUrl)
+    const second = new FakeWebContents(cloudUrl)
+    activate(first)
+    activate(second)
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F1' })
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F1' })
+
+    first.startNavigation('https://cloud.comfy.org/workspaces/commits')
+    first.startNavigation('https://attacker.example/')
+    first.commitNavigation('https://cloud.comfy.org/workspaces/commits', true)
+    vi.clearAllMocks()
+
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F2' })
+    expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
+    expect(telemetry.markAnonymousEpochUnmergeable).not.toHaveBeenCalled()
+  })
+
   it('settles a canceled older navigation before the newer document commits', () => {
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
@@ -262,6 +315,7 @@ describe('firebaseAuthIdentity consensus', () => {
     vi.clearAllMocks()
 
     reporter.failProvisionalNavigation('https://cloud.comfy.org/workspaces/old')
+    reporter.failNavigation('https://cloud.comfy.org/workspaces/old', -3, 'ERR_ABORTED')
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F1' })
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
 
@@ -270,6 +324,44 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F1' })
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F1')
+  })
+
+  it('ignores a canceled load ordinary-failure duplicate after a retry starts', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    const canceledUrl = 'https://cloud.comfy.org/workspaces/canceled'
+    const retryUrl = 'https://cloud.comfy.org/workspaces/retry'
+    reporter.startNavigation(canceledUrl)
+    reporter.failProvisionalNavigation(canceledUrl)
+    reporter.startNavigation(retryUrl)
+    reporter.failNavigation(canceledUrl, -3, 'ERR_ABORTED')
+    reporter.commitNavigation(retryUrl, true)
+    vi.clearAllMocks()
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'pending' })
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
+  })
+
+  it('settles an ordinary failed load so a successful retry can report', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    const retryUrl = 'https://cloud.comfy.org/workspaces/retry'
+    reporter.startNavigation(retryUrl)
+    reporter.failNavigation(retryUrl)
+    reporter.startNavigation(retryUrl)
+    reporter.commitNavigation(retryUrl, true)
+    vi.clearAllMocks()
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'pending' })
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
   })
 
   it('restores the exact retained document state when its navigation is canceled', () => {

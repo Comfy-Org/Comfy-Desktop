@@ -8,6 +8,7 @@ interface Reporter {
   active: boolean
   awaitingCommittedFrame: boolean
   mainFrameNavigationsInFlight: number
+  provisionalFailureTerminals: Map<string, number>
   committedFrame: FirebaseAuthFrameIdentity | null
   recoverableState: ReporterFrameState | null
   committedCandidate: ReporterFrameState | null
@@ -25,6 +26,15 @@ interface Reporter {
     frameRoutingId: number
   ) => void
   onDidFailProvisionalLoad: (
+    event: Electron.Event,
+    errorCode: number,
+    errorDescription: string,
+    validatedURL: string,
+    isMainFrame: boolean,
+    frameProcessId: number,
+    frameRoutingId: number
+  ) => void
+  onDidFailLoad: (
     event: Electron.Event,
     errorCode: number,
     errorDescription: string,
@@ -69,6 +79,15 @@ function currentMainFrame(webContents: WebContents): FirebaseAuthFrameIdentity {
     processId: webContents.mainFrame.processId,
     routingId: webContents.mainFrame.routingId
   }
+}
+
+function failureTerminalKey(
+  errorCode: number,
+  validatedURL: string,
+  frameProcessId: number,
+  frameRoutingId: number
+): string {
+  return `${errorCode}\u0000${validatedURL}\u0000${frameProcessId}\u0000${frameRoutingId}`
 }
 
 function requestAnonymousIdentity(): void {
@@ -137,6 +156,40 @@ function reconcile(): void {
   mainTelemetry.applyFirebaseUserConsensus(userId)
 }
 
+function settleFailedNavigation(webContents: WebContents, reporter: Reporter): void {
+  if (reporter.mainFrameNavigationsInFlight === 0) return
+  reporter.mainFrameNavigationsInFlight -= 1
+  if (reporter.mainFrameNavigationsInFlight > 0) {
+    reporter.state = { status: 'pending' }
+    reconcile()
+    return
+  }
+
+  const currentFrame = currentMainFrame(webContents)
+  const retainedState = isSameFrame(reporter.committedCandidate?.frame ?? null, currentFrame)
+    ? reporter.committedCandidate
+    : isSameFrame(reporter.recoverableState?.frame ?? null, currentFrame)
+      ? reporter.recoverableState
+      : null
+  if (retainedState) {
+    reporter.awaitingCommittedFrame = false
+    reporter.committedFrame = retainedState.frame
+    reporter.active = reporter.eligible && retainedState.active
+    reporter.state = retainedState.state
+  } else {
+    // A terminal without an attributable retained frame must not reopen stale
+    // IPC. Keep a trusted current document in consensus as pending until a
+    // later commit supplies an exact frame identity.
+    reporter.awaitingCommittedFrame = true
+    reporter.committedFrame = null
+    reporter.active = reporter.eligible && isTrustedCloudUrl(webContents.getURL())
+    reporter.state = { status: 'pending' }
+  }
+  reporter.committedCandidate = null
+  reporter.recoverableState = null
+  reconcile()
+}
+
 /** Track a hosted view before its first navigation so unresolved views count as pending. */
 export function trackFirebaseAuthReporter(webContents: WebContents): void {
   if (reporters.has(webContents) || webContents.isDestroyed()) return
@@ -146,6 +199,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
     active: false,
     awaitingCommittedFrame: true,
     mainFrameNavigationsInFlight: 0,
+    provisionalFailureTerminals: new Map(),
     committedFrame: null,
     recoverableState: null,
     committedCandidate: null,
@@ -166,8 +220,8 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
       }
       reporter.mainFrameNavigationsInFlight += 1
       reporter.awaitingCommittedFrame = true
-      reporter.committedFrame = null
-      reporter.active = reporter.eligible && isTrustedCloudUrl(details.url)
+      // The requested destination is not the current document until commit.
+      // Keep current-frame trust active, but gate consensus as pending.
       reporter.state = { status: 'pending' }
       reconcile()
     },
@@ -192,54 +246,51 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
         active: reporter.eligible && isTrustedCloudUrl(url),
         state: { status: 'pending' }
       }
+      reporter.committedFrame = reporter.committedCandidate.frame
+      reporter.active = reporter.committedCandidate.active
+      reporter.state = { status: 'pending' }
+      reporter.recoverableState = null
       if (reporter.mainFrameNavigationsInFlight > 0) {
-        reporter.state = { status: 'pending' }
         reconcile()
         return
       }
       reporter.awaitingCommittedFrame = false
-      reporter.committedFrame = reporter.committedCandidate.frame
-      reporter.active = reporter.committedCandidate.active
-      reporter.state = reporter.committedCandidate.state
       reporter.committedCandidate = null
-      reporter.recoverableState = null
       reconcile()
     },
     onDidFailProvisionalLoad: (
       _event,
-      _errorCode,
+      errorCode,
       _errorDescription,
-      _validatedURL,
-      isMainFrame
+      validatedURL,
+      isMainFrame,
+      frameProcessId,
+      frameRoutingId
     ) => {
       if (!isMainFrame) return
-      if (reporter.mainFrameNavigationsInFlight === 0) return
-      reporter.mainFrameNavigationsInFlight -= 1
-      if (reporter.mainFrameNavigationsInFlight > 0) {
-        reporter.state = { status: 'pending' }
-        reconcile()
+      const key = failureTerminalKey(errorCode, validatedURL, frameProcessId, frameRoutingId)
+      const existing = reporter.provisionalFailureTerminals.get(key) ?? 0
+      reporter.provisionalFailureTerminals.set(key, existing + 1)
+      settleFailedNavigation(webContents, reporter)
+    },
+    onDidFailLoad: (
+      _event,
+      errorCode,
+      _errorDescription,
+      validatedURL,
+      isMainFrame,
+      frameProcessId,
+      frameRoutingId
+    ) => {
+      if (!isMainFrame) return
+      const key = failureTerminalKey(errorCode, validatedURL, frameProcessId, frameRoutingId)
+      const provisional = reporter.provisionalFailureTerminals.get(key)
+      if (provisional !== undefined) {
+        if (provisional === 1) reporter.provisionalFailureTerminals.delete(key)
+        else reporter.provisionalFailureTerminals.set(key, provisional - 1)
         return
       }
-
-      const currentFrame = currentMainFrame(webContents)
-      const retainedState = isSameFrame(reporter.committedCandidate?.frame ?? null, currentFrame)
-        ? reporter.committedCandidate
-        : isSameFrame(reporter.recoverableState?.frame ?? null, currentFrame)
-          ? reporter.recoverableState
-          : null
-      if (retainedState) {
-        reporter.awaitingCommittedFrame = false
-        reporter.committedFrame = retainedState.frame
-        reporter.active = reporter.eligible && retainedState.active
-        reporter.state = retainedState.state
-      } else {
-        // A failure may otherwise leave no safely attributable frame. Keep that
-        // reporter pending until a later commit instead of accepting stale IPC.
-        reporter.state = { status: 'pending' }
-      }
-      reporter.committedCandidate = null
-      reporter.recoverableState = null
-      reconcile()
+      settleFailedNavigation(webContents, reporter)
     },
     onDestroyed: () => {
       reporters.delete(webContents)
@@ -251,6 +302,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
   webContents.on('did-start-navigation', reporter.onDidStartNavigation)
   webContents.on('did-frame-navigate', reporter.onDidFrameNavigate)
   webContents.on('did-fail-provisional-load', reporter.onDidFailProvisionalLoad)
+  webContents.on('did-fail-load', reporter.onDidFailLoad)
   webContents.once('destroyed', reporter.onDestroyed)
   reconcile()
 }
@@ -322,6 +374,7 @@ export function _resetForTest(): void {
       webContents.off('did-start-navigation', reporter.onDidStartNavigation)
       webContents.off('did-frame-navigate', reporter.onDidFrameNavigate)
       webContents.off('did-fail-provisional-load', reporter.onDidFailProvisionalLoad)
+      webContents.off('did-fail-load', reporter.onDidFailLoad)
       webContents.off('destroyed', reporter.onDestroyed)
     }
   }
