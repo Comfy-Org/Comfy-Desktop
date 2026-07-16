@@ -242,6 +242,11 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
       frameRoutingId
     ) => {
       if (!isMainFrame) return
+      // Electron emits a provisional failure's paired `did-fail-load` before
+      // the next main-frame commit (canceled loads never emit it at all), so
+      // entries still recorded here are unpairable; drop them rather than let
+      // canceled loads accumulate for the view's lifetime.
+      reporter.provisionalFailureTerminals.clear()
       if (reporter.mainFrameNavigationsInFlight > 0) {
         reporter.mainFrameNavigationsInFlight -= 1
       }

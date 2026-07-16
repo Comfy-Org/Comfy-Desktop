@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 import {
+  anonymousDistinctIdPath,
   getOrCreateAnonymousDistinctId,
   persistAnonymousDistinctId,
   readPersistedAnonymousDistinctId
@@ -69,12 +71,28 @@ export function getInitialAnonymousDistinctId(): string {
     return persisted
   }
 
-  const websiteAnonymousId = readPendingWebsiteAnonymousId()
-  if (websiteAnonymousId && persistAnonymousDistinctId(websiteAnonymousId)) {
+  // An identity file that exists but cannot be decoded still proves this is
+  // not a fresh install: fail closed, drop the carrier, and regenerate D.
+  // The app's own writer is atomic (tmp + rename), so a corrupt-but-present
+  // file always means external interference.
+  if (fs.existsSync(anonymousDistinctIdPath())) {
     clearPendingWebsiteAnonymousId()
-    return websiteAnonymousId
+    return getOrCreateAnonymousDistinctId()
   }
 
-  if (!websiteAnonymousId) clearPendingWebsiteAnonymousId()
+  const websiteAnonymousId = readPendingWebsiteAnonymousId()
+  if (websiteAnonymousId) {
+    if (persistAnonymousDistinctId(websiteAnonymousId)) {
+      clearPendingWebsiteAnonymousId()
+      return websiteAnonymousId
+    }
+    // W is valid but could not be durably adopted. Fall back to an ephemeral
+    // ID for this process — matching getOrCreateAnonymousDistinctId's own
+    // failed-persist behavior — instead of letting a competing random D reach
+    // disk and permanently outrank the retained carrier on the next startup.
+    return randomUUID()
+  }
+
+  clearPendingWebsiteAnonymousId()
   return getOrCreateAnonymousDistinctId()
 }

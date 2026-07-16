@@ -5,7 +5,7 @@ import path from 'path'
 import type * as SafeFile from './safe-file'
 
 let testUserData = ''
-const safeFileMock = vi.hoisted(() => ({ failWrites: false }))
+const safeFileMock = vi.hoisted(() => ({ failWrites: false, failNextWrites: 0 }))
 
 vi.mock('./paths', () => ({
   configDir: () => testUserData
@@ -17,6 +17,10 @@ vi.mock('./safe-file', async (importOriginal) => {
     ...actual,
     writeFileSafe: (...args: Parameters<typeof actual.writeFileSafe>) => {
       if (safeFileMock.failWrites) throw new Error('disk unavailable')
+      if (safeFileMock.failNextWrites > 0) {
+        safeFileMock.failNextWrites -= 1
+        throw new Error('transient rename lock')
+      }
       return actual.writeFileSafe(...args)
     }
   }
@@ -41,6 +45,7 @@ import {
 beforeEach(() => {
   testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'anonymous-identity-test-'))
   safeFileMock.failWrites = false
+  safeFileMock.failNextWrites = 0
 })
 
 afterEach(() => {
@@ -193,5 +198,32 @@ describe('websiteAnonymousIdentity', () => {
     expect(getInitialAnonymousDistinctId()).not.toBe(websiteAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBeNull()
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(true)
+  })
+
+  it('retries W after a transient persist failure instead of racing a random D to disk', () => {
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), websiteAnonymousId)
+    // Only the W write fails (e.g. a transient Windows rename lock); a random
+    // D minted in the same boot must not reach disk and outrank the carrier.
+    safeFileMock.failNextWrites = 1
+
+    const ephemeral = getInitialAnonymousDistinctId()
+    expect(ephemeral).not.toBe(websiteAnonymousId)
+    expect(readPersistedAnonymousDistinctId()).toBeNull()
+    expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(true)
+
+    // Next startup: writes are healthy again, so the retained carrier wins.
+    expect(getInitialAnonymousDistinctId()).toBe(websiteAnonymousId)
+    expect(readPersistedAnonymousDistinctId()).toBe(websiteAnonymousId)
+    expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
+  })
+
+  it('never adopts W over a corrupt Desktop D file', () => {
+    fs.writeFileSync(anonymousDistinctIdPath(), 'b64id1_!!!', 'utf-8')
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), websiteAnonymousId)
+
+    const regenerated = getInitialAnonymousDistinctId()
+    expect(regenerated).not.toBe(websiteAnonymousId)
+    expect(readPersistedAnonymousDistinctId()).toBe(regenerated)
+    expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
   })
 })

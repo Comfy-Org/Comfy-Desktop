@@ -346,6 +346,44 @@ describe('firebaseAuthIdentity consensus', () => {
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
   })
 
+  it('drops unpairable canceled-load entries at commit so a later identical terminal still settles', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    // A canceled load leaves a suppression entry with no did-fail-load echo
+    // (Electron never emits one for ERR_ABORTED); the cancel itself re-binds
+    // the retained document state.
+    const flakyUrl = 'https://cloud.comfy.org/workspaces/flaky'
+    const frame = reporter.mainFrame
+    reporter.startNavigation(flakyUrl)
+    reporter.failProvisionalNavigation(flakyUrl)
+
+    // Commit a later navigation without changing the main-frame identity, as
+    // same-process navigations do (the FakeWebContents helper always rotates
+    // routing ids, so emit the commit directly). This must flush the entry.
+    reporter.startNavigation(cloudUrl)
+    reporter.emit(
+      'did-frame-navigate',
+      {},
+      cloudUrl,
+      200,
+      'OK',
+      true,
+      frame.processId,
+      frame.routingId
+    )
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    vi.clearAllMocks()
+
+    // A genuine terminal for the same URL, frame, and error code must settle
+    // (re-binding the retained state) instead of being swallowed as an echo.
+    reporter.startNavigation(flakyUrl)
+    reporter.failNavigation(flakyUrl, -3, 'ERR_ABORTED')
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
+  })
+
   it('settles an ordinary failed load so a successful retry can report', () => {
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)

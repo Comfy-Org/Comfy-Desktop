@@ -45,6 +45,10 @@
  *     write uses W/D and forces `$process_person_profile: false`.
  *   - `installation_id` = `SHA-256(machine_id + salt)`, from `deviceId.ts`.
  *     It is only an event/person property; it is never a PostHog identity.
+ *     Caveat: many call sites still override this key per-call with the
+ *     per-install record id (`inst-<ms>`, `installations.ts`), so the value
+ *     is not yet uniformly machine-scoped; #1159 redirects those overrides
+ *     to `install_id`.
  *   - Firebase UID (`F`) is set only after every live hosted Cloud view reports
  *     the same resolved user. This is the only `client.identify()` call and
  *     carries W/D as `$anon_distinct_id`, merging the anonymous history without
@@ -228,8 +232,10 @@ function canEmit(): boolean {
  * point-in-time as of write — releasing a new app version while the user
  * still has events from the old one would mis-attribute without this).
  * `installation_id` is added by `bindAnonymousId()` once installation metadata is known
- * at boot, so renderer events (routed in over IPC) and main events share a
- * single join key instead of splitting across person_id / installation_id.
+ * at boot, so renderer events (routed in over IPC) and main events share the
+ * machine hash as the default join key. Call sites that override it per-call
+ * with a per-install record id still split that key — #1159 moves those
+ * overrides to `install_id`.
  *
  * Per-call properties take precedence on key collision.
  */
@@ -730,10 +736,7 @@ export function applyFirebaseUserConsensus(userId: string): void {
  * report auth state, so this is the only bind path for them; when consensus
  * does arrive it supersedes this call, and same-UID rebinds are no-ops.
  */
-export function bindUserId(
-  userId: string,
-  properties: Record<string, TelemetryValue> = {}
-): void {
+export function bindUserId(userId: string, properties: Record<string, TelemetryValue> = {}): void {
   applyFirebaseUserConsensus(userId)
   if (Object.keys(properties).length === 0) return
   registerPersonProperties(properties)
