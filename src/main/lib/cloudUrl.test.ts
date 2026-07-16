@@ -37,7 +37,8 @@ describe('withCloudDistributionUtm', () => {
 
   it('returns invalid URLs unchanged', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(withCloudDistributionUtm('not a url')).toBe('not a url')
+    const input = 'not a url'
+    expect(withCloudDistributionUtm(input)).toBe(input)
     expect(warn).toHaveBeenCalledTimes(1)
   })
 

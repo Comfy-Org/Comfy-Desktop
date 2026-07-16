@@ -1413,8 +1413,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // Initialize installation metadata, then bind a separate persisted random
     // PostHog anonymous id. installation_id is never used as an identity.
     const { legacyId } = await initDeviceId()
-    // Desktop no longer performs legacy PostHog aliases. Remove any retry
-    // marker left by an older build, including when its migration guard exists.
+    // Legacy alias retry markers are never consumed; startup removes any
+    // existing marker regardless of the migration guard's state.
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
     // A fresh Windows install can inherit the exact anonymous PostHog

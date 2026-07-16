@@ -87,8 +87,8 @@ export function consumeFirstLaunch(): boolean {
 }
 
 /**
- * Compatibility path for a retry marker written by older Desktop versions.
- * New versions never create this file; boot removes any existing marker.
+ * Path of a legacy alias retry marker some installs still carry. Nothing
+ * writes it; boot unconditionally removes it.
  */
 function legacyIdentityRetryPath(): string {
   return path.join(configDir(), 'pending-identity-alias.txt')
