@@ -529,20 +529,41 @@ describe('firebaseAuthIdentity consensus', () => {
 
   it('does not bind if conflict taint cannot be made restart-safe', () => {
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(false)
+    telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(false)
     const first = new FakeWebContents(cloudUrl)
     const second = new FakeWebContents(cloudUrl)
     activate(first)
     activate(second)
     reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F' })
     reportFirebaseAuthState(second.asWebContents(), { status: 'signed_out' })
+    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(1)
 
     reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F' })
-    expect(telemetry.discardUnmergeableAnonymousEpoch).not.toHaveBeenCalled()
+    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(1)
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
 
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
+    telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(true)
     reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F' })
-    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(1)
+    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(2)
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
+  })
+
+  it('replaces the epoch durably when the taint marker cannot persist', () => {
+    telemetry.markAnonymousEpochUnmergeable.mockReturnValue(false)
+    const first = new FakeWebContents(cloudUrl)
+    const second = new FakeWebContents(cloudUrl)
+    activate(first)
+    activate(second)
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F1' })
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F2' })
+    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(1)
+
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F1' })
+    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(1)
+
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F2' })
+    expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(2)
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F2')
   })
 })

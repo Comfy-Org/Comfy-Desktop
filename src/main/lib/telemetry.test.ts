@@ -1088,11 +1088,33 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(anonymousIdentityMock.unmergeable).toBe(false)
   })
 
-  it('keeps imperative compatibility bind and unbind calls inert', () => {
-    telemetry.bindUserId('legacy-user', { plan: 'pro' })
+  it('binds a main-verified interactive sign-in through the consensus path', () => {
+    telemetry.bindUserId('bridge-user', { plan: 'pro' })
+
+    expect(identifies).toHaveLength(1)
+    expect(identifies.at(-1)).toMatchObject({
+      distinctId: 'bridge-user',
+      properties: expect.objectContaining({ $anon_distinct_id: 'anonymous-start' })
+    })
+    expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toMatchObject({
+      distinctId: 'bridge-user'
+    })
+
+    telemetry.bindUserId('bridge-user', { plan: 'pro' })
+    expect(identifies).toHaveLength(1)
+
     telemetry.unbindUserId()
+    telemetry.capture('after.unbind')
+    expect(captured.at(-1)?.distinctId).toBe('bridge-user')
+  })
+
+  it('rejects PostHog-illegal Firebase UIDs without burning the anonymous ID', () => {
+    const rotationsBefore = anonymousIdentityMock.index
+    telemetry.applyFirebaseUserConsensus('anonymous')
+    telemetry.applyFirebaseUserConsensus('0')
 
     expect(identifies).toHaveLength(0)
+    expect(anonymousIdentityMock.index).toBe(rotationsBefore)
     telemetry.capture('still.anonymous')
     expect(captured.at(-1)?.distinctId).toBe('anonymous-start')
   })

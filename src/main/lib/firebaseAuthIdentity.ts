@@ -145,6 +145,13 @@ function reconcile(): void {
     anonymousEpochIsUnmergeable = true
     if (!wasAlreadyTainted || !epochTaintIsDurable) {
       epochTaintIsDurable = mainTelemetry.markAnonymousEpochUnmergeable()
+      if (!epochTaintIsDurable && !wasAlreadyTainted) {
+        // The taint marker could not persist, so a restart would resurrect
+        // the conflicted anonymous ID untainted. Durably replace the epoch
+        // instead; attempted once per conflict episode to avoid rotation
+        // churn while the views still disagree.
+        epochTaintIsDurable = mainTelemetry.discardUnmergeableAnonymousEpoch()
+      }
     }
     return
   }

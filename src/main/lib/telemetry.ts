@@ -120,7 +120,7 @@ import {
   persistUnmergeableAnonymousEpoch,
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
-import { normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
 
 export type TelemetryValue = boolean | number | string | null | undefined
 export type TelemetryContext = Record<string, TelemetryValue | TelemetryValue[]>
@@ -634,7 +634,10 @@ export function bindAnonymousId(
  */
 export function applyFirebaseUserConsensus(userId: string): void {
   const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
-  if (!normalizedUserId) return
+  // An illegal UID would be refused by PostHog's merge pipeline; rejecting it
+  // here keeps the current anonymous ID intact instead of burning a rotation
+  // on an identify that can never merge.
+  if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
     pendingUserBinding = normalizedUserId
@@ -723,14 +726,18 @@ export function applyFirebaseUserConsensus(userId: string): void {
 }
 
 /**
- * @deprecated Imperative auth calls cannot establish process-wide identity.
- * Hosted renderers must report declarative state through the consensus bridge.
+ * Bind a main-process-verified interactive sign-in (OAuth loopback bridge or
+ * desktop login code). Hosted bundles without the consensus bridge never
+ * report auth state, so this is the only bind path for them; when consensus
+ * does arrive it supersedes this call, and same-UID rebinds are no-ops.
  */
 export function bindUserId(
-  _userId: string,
-  _properties: Record<string, TelemetryValue> = {}
+  userId: string,
+  properties: Record<string, TelemetryValue> = {}
 ): void {
-  // Compatibility surface only; consensus is required for a real bind.
+  applyFirebaseUserConsensus(userId)
+  if (Object.keys(properties).length === 0) return
+  registerPersonProperties(properties)
 }
 
 /**

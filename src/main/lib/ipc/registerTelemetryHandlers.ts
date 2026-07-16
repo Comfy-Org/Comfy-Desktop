@@ -12,7 +12,7 @@ import {
 import { parseTrustedCloudUrl } from '../trustedCloudUrl'
 import { reportFirebaseAuthState } from '../firebaseAuthIdentity'
 import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
-import { normalizeOpaqueIdentifier } from '../opaqueIdentifier'
+import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from '../opaqueIdentifier'
 
 interface CapturePayload {
   event?: unknown
@@ -45,7 +45,8 @@ function asFirebaseAuthState(value: unknown): ComfyDesktop2FirebaseAuthState | n
   }
   if (source.status !== 'signed_in') return null
   const userId = normalizeOpaqueIdentifier(source.userId, 256)
-  return userId ? { status: 'signed_in', userId } : null
+  if (!userId || isIllegalPostHogDistinctId(userId)) return null
+  return { status: 'signed_in', userId }
 }
 
 function isTelemetryValue(v: unknown): v is mainTelemetry.TelemetryValue {

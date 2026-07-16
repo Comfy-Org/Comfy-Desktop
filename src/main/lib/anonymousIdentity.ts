@@ -2,48 +2,13 @@ import { randomUUID } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 import { configDir } from './paths'
-import { normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
 import { writeFileSafe } from './safe-file'
 
 const ANONYMOUS_DISTINCT_ID_FILE = 'posthog-anonymous-distinct-id.txt'
 const UNMERGEABLE_EPOCH_FILE = 'posthog-anonymous-epoch-unmergeable'
 const MAX_ANONYMOUS_DISTINCT_ID_LENGTH = 256
 const ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX = 'phid1_'
-
-const CASE_INSENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set([
-  'anonymous',
-  'guest',
-  'distinctid',
-  'distinct_id',
-  'id',
-  'not_authenticated',
-  'email',
-  'undefined',
-  'true',
-  'false'
-])
-const CASE_SENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set([
-  '[object Object]',
-  'NaN',
-  'None',
-  'none',
-  'null',
-  '0'
-])
-
-/**
- * PostHog ingestion refuses to merge these distinct IDs. Adopting one as the
- * pre-login identity would pool unrelated installs into a shared bucket and
- * leave the identify(`$anon_distinct_id`) merge silently rejected — the
- * pre-login history would never join the Firebase person.
- */
-export function isIllegalPostHogDistinctId(value: string): boolean {
-  return (
-    value.trim().length === 0 ||
-    CASE_INSENSITIVE_ILLEGAL_DISTINCT_IDS.has(value.toLowerCase()) ||
-    CASE_SENSITIVE_ILLEGAL_DISTINCT_IDS.has(value)
-  )
-}
 
 function decodePersistedAnonymousDistinctId(raw: string): string | null {
   if (!raw.startsWith(ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX)) {

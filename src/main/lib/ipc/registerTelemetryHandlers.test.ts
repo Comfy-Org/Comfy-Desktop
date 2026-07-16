@@ -201,6 +201,15 @@ describe('registerTelemetryHandlers', () => {
     )
   })
 
+  it('rejects PostHog-illegal Firebase UIDs at the IPC boundary', () => {
+    listener('telemetry:firebaseAuthState')(
+      identityEvent('https://cloud.comfy.org/workspaces/abc'),
+      { status: 'signed_in', userId: 'anonymous' }
+    )
+
+    expect(mocks.reportFirebaseAuthState).not.toHaveBeenCalled()
+  })
+
   it('rejects auth state from local pages, other origins, subframes, and malformed payloads', () => {
     listener('telemetry:firebaseAuthState')(identityEvent('file:///launcher/index.html'), {
       status: 'signed_in',

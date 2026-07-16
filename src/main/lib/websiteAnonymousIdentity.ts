@@ -2,10 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import {
   getOrCreateAnonymousDistinctId,
-  isIllegalPostHogDistinctId,
   persistAnonymousDistinctId,
   readPersistedAnonymousDistinctId
 } from './anonymousIdentity'
+import { isIllegalPostHogDistinctId } from './opaqueIdentifier'
 import { configDir } from './paths'
 
 export const PENDING_WEBSITE_ANONYMOUS_ID_FILE = 'pending-website-anonymous-id.txt'
