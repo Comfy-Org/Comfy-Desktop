@@ -72,9 +72,15 @@ const featureFlagCalls: Array<{
   options?: { sendFeatureFlagEvents?: boolean }
 }> = []
 
+const posthogClientMock = vi.hoisted(() => ({ failNextCaptures: 0 }))
+
 vi.mock('posthog-node', () => ({
   PostHog: class {
     capture(call: CapturedCall): void {
+      if (posthogClientMock.failNextCaptures > 0) {
+        posthogClientMock.failNextCaptures--
+        throw new Error('sdk rejected capture')
+      }
       captured.push(call)
     }
     identify(call: IdentifyCall): void {
@@ -137,6 +143,7 @@ afterEach(() => {
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
   anonymousIdentityMock.unmergeable = false
+  posthogClientMock.failNextCaptures = 0
 })
 
 describe('telemetry.bucketError', () => {
@@ -1327,5 +1334,87 @@ describe('telemetry SDK-level volume guards', () => {
     expect(productEvents).toHaveLength(5000)
     expect(sessionCapWarnings).toHaveLength(1)
     expect(sessionCapWarnings[0]?.properties).toMatchObject({ cap: 5000 })
+  })
+})
+
+describe('telemetry deferred one-shot retention on dropped captures', () => {
+  beforeEach(() => {
+    captured.length = 0
+    identifies.length = 0
+    posthogClientMock.failNextCaptures = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry._test_resetVolumeGuards()
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry.setConsentState('granted')
+  })
+
+  it('retains session.started and first_launch across a dropped flush, then emits each exactly once', () => {
+    telemetry.setConsentState('undecided')
+    bindTestAnonymous('install-id')
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    expect(captured).toHaveLength(0)
+
+    posthogClientMock.failNextCaptures = 2
+    telemetry.setConsentState('granted')
+
+    expect(captured.filter((c) => c.event === 'comfy.desktop.session.started')).toHaveLength(0)
+    expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(0)
+
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+
+    expect(captured.filter((c) => c.event === 'comfy.desktop.session.started')).toHaveLength(1)
+    expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(1)
+
+    // Buffers were consumed by the successful flush — no double emit later.
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+
+    expect(captured.filter((c) => c.event === 'comfy.desktop.session.started')).toHaveLength(1)
+    expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(1)
+  })
+
+  it('requeues first_launch when the immediate capture is dropped (guard already burned)', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    captured.length = 0
+
+    posthogClientMock.failNextCaptures = 1
+    telemetry.captureFirstLaunch({ id_class: 'random_uuid' })
+    expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(0)
+
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+
+    const events = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(events).toHaveLength(1)
+    expect(events[0]?.properties).toMatchObject({ id_class: 'random_uuid' })
+  })
+
+  it('retains queued person props across a dropped person.set flush, then applies them exactly once', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('anon-1')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.setConsentState('denied')
+    telemetry.registerPersonProperties({ plan: 'pro' })
+
+    posthogClientMock.failNextCaptures = 1
+    telemetry.setConsentState('granted')
+    expect(captured.filter((c) => c.event === 'comfy.desktop.person.set')).toHaveLength(0)
+
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+
+    const personSets = captured.filter((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSets).toHaveLength(1)
+    expect(personSets[0]?.distinctId).toBe('user-123')
+    expect(personSets[0]?.properties).toMatchObject({ $set: { plan: 'pro' } })
   })
 })

@@ -577,20 +577,24 @@ let nextAnonymousDistinctId: string | null = null
 let boundUserId: string | null = null
 let installationIdProperty: string | null = null
 
+/**
+ * Ship deferred one-shot state. Each buffer is cleared only when its capture
+ * was actually admitted — a silent drop (SDK throw, volume guard) keeps the
+ * payload queued for the next flush trigger instead of losing it forever.
+ */
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
   if (consentState !== 'granted') return
   if (boundUserId && (pendingPersonSet || pendingPersonSetOnce)) {
-    capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
-    pendingPersonSet = null
-    pendingPersonSetOnce = null
+    if (capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)) {
+      pendingPersonSet = null
+      pendingPersonSetOnce = null
+    }
   }
-  if (pendingSessionStart) {
-    capture('comfy.desktop.session.started', pendingSessionStart)
+  if (pendingSessionStart && capture('comfy.desktop.session.started', pendingSessionStart)) {
     pendingSessionStart = null
   }
-  if (pendingFirstLaunch) {
-    capture('comfy.desktop.app.first_launch', pendingFirstLaunch)
+  if (pendingFirstLaunch && capture('comfy.desktop.app.first_launch', pendingFirstLaunch)) {
     pendingFirstLaunch = null
   }
   if (pendingUserBinding) {
@@ -809,15 +813,19 @@ function scrubProperties(properties: TelemetryContext): TelemetryContext {
   return mutated ?? properties
 }
 
-/** Update the already-identified Firebase person via an explicit event. */
+/**
+ * Update the already-identified Firebase person via an explicit event.
+ * Returns whether the write was admitted, so deferred-buffer flushes can
+ * retain their payload on a drop. Empty input is trivially admitted.
+ */
 function capturePersonProperties(
   set: Record<string, TelemetryValue> | null,
   setOnce: Record<string, TelemetryValue> | null
-): void {
-  if (!canEmit() || !distinctId || !boundUserId) return
-  if (consentState !== 'granted') return
+): boolean {
+  if (!canEmit() || !distinctId || !boundUserId) return false
+  if (consentState !== 'granted') return false
   if ((!set || Object.keys(set).length === 0) && (!setOnce || Object.keys(setOnce).length === 0)) {
-    return
+    return true
   }
   const properties: TelemetryContext = {}
   if (set && Object.keys(set).length > 0) {
@@ -828,13 +836,18 @@ function capturePersonProperties(
       setOnce as TelemetryContext
     )
   }
-  capture('comfy.desktop.person.set', properties)
+  return capture('comfy.desktop.person.set', properties)
 }
 
-export function capture(event: string, properties: TelemetryContext = {}): void {
-  if (!canEmit() || !distinctId) return
-  if (!isAllowedToFire(event)) return
-  if (!_checkRateLimit(event)) return
+/**
+ * Returns whether the event was admitted to the SDK. A `false` means it was
+ * dropped (consent gate, volume guard, or SDK failure); one-shot callers use
+ * this to keep their deferred payload instead of losing it.
+ */
+export function capture(event: string, properties: TelemetryContext = {}): boolean {
+  if (!canEmit() || !distinctId) return false
+  if (!isAllowedToFire(event)) return false
+  if (!_checkRateLimit(event)) return false
   _eventsCapturedThisProcess++
   try {
     // Per-call properties override defaults on key collision — callers
@@ -850,8 +863,10 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
       event,
       properties: scrubProperties(merged)
     })
+    return true
   } catch {
-    // ignore – telemetry must never break the app
+    // swallow – telemetry must never break the app
+    return false
   }
 }
 
@@ -870,15 +885,16 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
  * in, or the rare migrator), it captures immediately.
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
-  if (!canEmit() || !distinctId) {
+  if (
+    !canEmit() ||
+    !distinctId ||
+    consentState !== 'granted' ||
+    !capture('comfy.desktop.app.first_launch', properties)
+  ) {
+    // Not admitted (deferred or dropped): the on-disk guard is already
+    // burned, so keep the payload queued for the next flush trigger.
     pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
-    return
   }
-  if (consentState !== 'granted') {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
-    return
-  }
-  capture('comfy.desktop.app.first_launch', properties)
 }
 
 /**
