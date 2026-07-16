@@ -328,7 +328,7 @@ function emitDesktopUpdateError(
     updater_provider: 'todesktop',
     error_source: options.source,
     setting_use_chinese_mirrors: settings.get('useChineseMirrors') === true,
-    ...buildErrorFields(message),
+    ...buildErrorFields(errorObject ?? message),
     ...(errorObject?.stack ? { error_stack: errorTail(errorObject.stack) } : {}),
     user_initiated: options.userInitiated
   })
@@ -655,6 +655,7 @@ export async function downloadUpdate(): Promise<void> {
  * system-modal "Restart" confirm) share a single implementation.
  */
 export function installUpdate(userInitiated = true): void {
+  const updateSource = userInitiated ? 'install_call' : 'startup_install'
   if (isSessionEnding()) {
     // The OS is shutting down / logging off. Spawning the installer now risks
     // it being force-killed mid-write, corrupting the install — the exact
@@ -666,7 +667,7 @@ export function installUpdate(userInitiated = true): void {
   if (!updater) {
     emitDesktopUpdateError('apply_restart', UPDATER_UNAVAILABLE_MESSAGE, {
       userInitiated,
-      source: userInitiated ? 'install_call' : 'startup_install'
+      source: updateSource
     })
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
@@ -678,7 +679,7 @@ export function installUpdate(userInitiated = true): void {
   try {
     _activeUpdateOperation = {
       operation: 'apply_restart',
-      source: userInitiated ? 'install_call' : 'startup_install',
+      source: updateSource,
       targetVersion: _appUpdateState.version,
       userInitiated,
       startedAt: Date.now()
@@ -705,7 +706,7 @@ export function installUpdate(userInitiated = true): void {
     clearQuitReason()
     emitDesktopUpdateError('apply_restart', err, {
       userInitiated,
-      source: userInitiated ? 'install_call' : 'startup_install'
+      source: updateSource
     })
     _broadcastToRenderer('app-update:user-action-failed', {
       message: err instanceof Error ? err.message : String(err)

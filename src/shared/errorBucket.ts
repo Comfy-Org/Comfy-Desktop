@@ -36,7 +36,14 @@ export function bucketError(input: unknown): ErrorBucket {
         : ''
   const name =
     input instanceof Error ? input.name : typeof record?.name === 'string' ? record.name : ''
-  const detail = input instanceof Error ? input.message : typeof input === 'string' ? input : ''
+  const detail =
+    input instanceof Error
+      ? input.message
+      : typeof input === 'string'
+        ? input
+        : typeof record?.message === 'string'
+          ? record.message
+          : ''
   const raw = [code, name, detail].filter(Boolean).join(' ')
   if (!raw) return 'unknown'
   const message = raw.toLowerCase()

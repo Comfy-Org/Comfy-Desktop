@@ -66,7 +66,7 @@ const PROMPT_GOT = /^got prompt/i
 const PROMPT_DONE = /^Prompt executed in (?<seconds>\d+(?:\.\d+)?)\s*seconds?\s*$/i
 const VALIDATION_FAIL = /^Failed to validate prompt for output (?<nodeId>\S+):/i
 const EXCEPTION_LINE =
-  /^(?:[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Interrupt)\b|SystemExit\b)/
+  /^(?:[A-Z_][A-Za-z0-9_]*|(?:[a-z_][A-Za-z0-9_]*\.)+[A-Z_][A-Za-z0-9_]*)(?::(?:\s|$)|$)/
 const CHAIN_MARKERS = [
   'During handling of the above exception',
   'The above exception was the direct cause'

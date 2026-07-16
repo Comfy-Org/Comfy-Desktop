@@ -117,7 +117,7 @@ import {
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
-import { buildErrorFields, ERROR_MESSAGE_MAX } from '../../shared/errorEvent'
+import { buildErrorFields, ERROR_MESSAGE_MAX, ERROR_STACK_MAX } from '../../shared/errorEvent'
 import { normalizeExceptionContext, scrubAll } from '../../shared/piiScrub'
 
 export type TelemetryValue = boolean | number | string | null | undefined
@@ -1013,7 +1013,7 @@ export function captureException(error: unknown, properties: TelemetryContext = 
     const source = error instanceof Error ? error : new Error(String(error))
     const safeError = new Error(scrubAll(source.message || source.name).slice(0, ERROR_MESSAGE_MAX))
     safeError.name = scrubAll(source.name || 'Error').slice(0, 128)
-    if (source.stack) safeError.stack = scrubAll(source.stack).slice(0, 16 * 1024)
+    if (source.stack) safeError.stack = scrubAll(source.stack).slice(0, ERROR_STACK_MAX)
     const safeErrorRecord = safeError as Error & Record<string, unknown>
     for (const [key, value] of Object.entries(source).slice(0, 32)) {
       if (typeof value === 'string' && !['message', 'name', 'stack'].includes(key)) {

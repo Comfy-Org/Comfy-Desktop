@@ -37,6 +37,8 @@ import { scrubAll } from './piiScrub'
 
 /** Human-readable message cap (~2 KB). */
 export const ERROR_MESSAGE_MAX = 2048
+/** Exception stack cap (~16 KB). */
+export const ERROR_STACK_MAX = 16 * 1024
 /** Normalized signature cap. */
 export const ERROR_SIGNATURE_MAX = 200
 /** stderr tail hard character cap. */
@@ -83,16 +85,114 @@ function messageOf(input: unknown): string {
 function structuredCode(input: unknown): string | null {
   if (!input || typeof input !== 'object') return null
   const record = input as Record<string, unknown>
-  if (typeof record.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(record.code)) {
+  if (typeof record.code === 'string' && isRecognizedErrorCode(record.code)) {
     return record.code
   }
   const cause = record.cause
   if (cause && typeof cause === 'object') {
     const code = (cause as Record<string, unknown>).code
-    if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(code)) return code
+    if (typeof code === 'string' && isRecognizedErrorCode(code)) return code
   }
   return null
 }
+
+const RECOGNIZED_NODE_CODES = new Set([
+  'E2BIG',
+  'EACCES',
+  'EADDRINUSE',
+  'EADDRNOTAVAIL',
+  'EAFNOSUPPORT',
+  'EAGAIN',
+  'EAI_AGAIN',
+  'EBADF',
+  'EBUSY',
+  'ECANCELED',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EEXIST',
+  'EFAULT',
+  'EHOSTUNREACH',
+  'EINTR',
+  'EINVAL',
+  'EIO',
+  'EISDIR',
+  'ELOOP',
+  'EMFILE',
+  'ENAMETOOLONG',
+  'ENETDOWN',
+  'ENETRESET',
+  'ENETUNREACH',
+  'ENFILE',
+  'ENOBUFS',
+  'ENODEV',
+  'ENOENT',
+  'ENOMEM',
+  'ENOSPC',
+  'ENOSYS',
+  'ENOTCONN',
+  'ENOTDIR',
+  'ENOTEMPTY',
+  'ENOTFOUND',
+  'ENOTSUP',
+  'EPERM',
+  'EPIPE',
+  'EPROTO',
+  'EPROTONOSUPPORT',
+  'EROFS',
+  'ETIMEDOUT',
+  'ETXTBSY',
+  'EXDEV'
+])
+
+const RECOGNIZED_CHROMIUM_CODES = new Set([
+  'ERR_ABORTED',
+  'ERR_ACCESS_DENIED',
+  'ERR_ADDRESS_UNREACHABLE',
+  'ERR_BLOCKED_BY_CLIENT',
+  'ERR_CERT_AUTHORITY_INVALID',
+  'ERR_CERT_COMMON_NAME_INVALID',
+  'ERR_CERT_DATE_INVALID',
+  'ERR_CONNECTION_CLOSED',
+  'ERR_CONNECTION_REFUSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_CONNECTION_TIMED_OUT',
+  'ERR_FAILED',
+  'ERR_FILE_NOT_FOUND',
+  'ERR_HTTP2_PROTOCOL_ERROR',
+  'ERR_INTERNET_DISCONNECTED',
+  'ERR_NAME_NOT_RESOLVED',
+  'ERR_NETWORK_CHANGED',
+  'ERR_PROXY_CONNECTION_FAILED',
+  'ERR_TIMED_OUT',
+  'ERR_TOO_MANY_REDIRECTS',
+  'ERR_UNSAFE_PORT'
+])
+
+function isRecognizedErrorCode(code: string): boolean {
+  return RECOGNIZED_NODE_CODES.has(code) || RECOGNIZED_CHROMIUM_CODES.has(code)
+}
+
+const SAFE_MISSING_MODULES = new Set([
+  'aiohttp',
+  'comfy',
+  'cv2',
+  'einops',
+  'folder_paths',
+  'nodes',
+  'numpy',
+  'pil',
+  'requests',
+  'safetensors',
+  'scipy',
+  'server',
+  'torch',
+  'torchaudio',
+  'torchvision',
+  'transformers',
+  'triton',
+  'yaml'
+])
 
 function embeddedCode(message: string): string | null {
   const chromium = message.match(/\bnet::(ERR_[A-Z0-9_]+)\b/i)
@@ -173,7 +273,11 @@ export function normalizeSignature(message: string): string {
       .toLowerCase()
       // Quoted strings collapse first so their contents don't leak into the
       // other rules (e.g. a quoted path or number).
-      .replace(/(no module named\s+)["']([a-z_][a-z0-9_.]*)["']/g, '$1$2')
+      .replace(
+        /(no module named\s+)["']([a-z_][a-z0-9_.]*)["']/g,
+        (_match, prefix: string, moduleName: string) =>
+          `${prefix}${SAFE_MISSING_MODULES.has(moduleName) ? moduleName : '<str>'}`
+      )
       .replace(/'[^']*'/g, '<str>')
       .replace(/"[^"]*"/g, '<str>')
       // File paths (windows drive or unix, at least one separator).

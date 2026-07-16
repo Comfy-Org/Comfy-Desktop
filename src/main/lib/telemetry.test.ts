@@ -140,6 +140,9 @@ describe('telemetry.bucketError', () => {
   it('accepts Error instances', () => {
     expect(telemetry.bucketError(new Error('connection timeout'))).toBe('timeout')
   })
+  it('uses messages from serialized error objects', () => {
+    expect(telemetry.bucketError({ message: 'ECONNRESET' })).toBe('network')
+  })
   // extended vocabulary
   it('classifies CUDA / system / Linux OOM-killer as oom', () => {
     expect(telemetry.bucketError('CUDA out of memory')).toBe('oom')

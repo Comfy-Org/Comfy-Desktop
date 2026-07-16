@@ -476,7 +476,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     const updater = await bootUpdater()
     for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
     updater.installUpdate()
-    for (const cb of listeners.error || []) cb(new Error('installer apply failed'))
+    for (const cb of listeners.error || []) cb(new TypeError('installer apply failed'))
 
     const errors = findEmitCalls('comfy.desktop.app_update.error')
     expect(errors).toHaveLength(1)
@@ -485,6 +485,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       stage: 'install',
       target_version: '1.0.1',
       error_source: 'updater_event:install_call',
+      error_class: 'TypeError',
       error_message: 'installer apply failed',
       user_initiated: true
     })

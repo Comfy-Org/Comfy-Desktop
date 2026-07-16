@@ -130,7 +130,13 @@ export function onProcessTerminated(
     if (finished) return
     finished = true
     if (fallbackTimer) clearTimeout(fallbackTimer)
-    void callback(code, signal)
+    try {
+      void Promise.resolve(callback(code, signal)).catch((err) => {
+        console.error('Process termination callback failed:', err)
+      })
+    } catch (err) {
+      console.error('Process termination callback failed:', err)
+    }
   }
 
   proc.once('close', finish)
@@ -809,9 +815,18 @@ export async function handleLaunch({
     return { ok: true, mode }
   }
 
-  if (actionData && actionData.portOverride) {
+  if (actionData?.portOverride != null) {
     setPortArg(launchCmd as LaunchCmd, actionData.portOverride as number)
   }
+
+  const defaults = source.getDefaults ? source.getDefaults() : {}
+  const portConflictMode =
+    (inst.portConflict as string | undefined) ||
+    (defaults.portConflict as string | undefined) ||
+    'auto'
+  const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
+  const portIsExplicit =
+    actionData?.portOverride != null || /(?:^|\s)--port(?:\s|=|$)/.test(userArgs)
 
   // isPortListening (bind test) is the primary check; findPidsByPort's lsof
   // only sees same-user processes on Linux.
@@ -821,14 +836,6 @@ export async function handleLaunch({
   const portOccupied = !!pendingPortOwner || portBusy
 
   if (portOccupied) {
-    const defaults = source.getDefaults ? source.getDefaults() : {}
-    const portConflictMode =
-      (inst.portConflict as string | undefined) ||
-      (defaults.portConflict as string | undefined) ||
-      'auto'
-    const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
-    const portIsExplicit = /(?:^|\s)--port\b/.test(userArgs)
-
     const reservedPorts = new Set(_pendingPorts.keys())
     let nextPort: number | null = null
     try {
@@ -891,14 +898,6 @@ export async function handleLaunch({
   // Synchronous re-check: TOCTOU gap
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
-    const defaults = source.getDefaults ? source.getDefaults() : {}
-    const portConflictMode =
-      (inst.portConflict as string | undefined) ||
-      (defaults.portConflict as string | undefined) ||
-      'auto'
-    const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
-    const portIsExplicit = /(?:^|\s)--port\b/.test(userArgs)
-
     const reservedPorts = new Set(_pendingPorts.keys())
     let nextPort: number | null = null
     try {
@@ -1056,7 +1055,7 @@ export async function handleLaunch({
       ])
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
-      killProcessTree(spawned.proc)
+      await killProcessTree(spawned.proc)
       if (checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
         rebootRetries++
         sendOutput('\n--- Manager requested restart during startup, respawning… ---\n\n')

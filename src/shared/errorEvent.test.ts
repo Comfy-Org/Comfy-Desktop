@@ -82,6 +82,10 @@ describe('errorEvent', () => {
         normalizeSignature("No module named 'torch'")
       )
       expect(normalizeSignature('No module named "triton"')).toContain('triton')
+      expect(normalizeSignature("No module named 'company.private_plugin'")).toContain('<str>')
+      expect(normalizeSignature("No module named 'company.private_plugin'")).not.toContain(
+        'private_plugin'
+      )
       expect(normalizeSignature("failed for 'private value'")).toContain('<str>')
     })
   })
@@ -102,6 +106,12 @@ describe('errorEvent', () => {
     it('ignores unbounded free-form structured codes', () => {
       expect(extractErrorClass(Object.assign(new Error('boom'), { code: 'private value' }))).toBe(
         'unknown'
+      )
+      expect(
+        extractErrorClass(Object.assign(new Error('boom'), { code: 'PRIVATE_CUSTOMER_12345' }))
+      ).toBe('unknown')
+      expect(extractErrorClass(Object.assign(new Error('boom'), { code: 'ECONNRESET' }))).toBe(
+        'ECONNRESET'
       )
     })
 

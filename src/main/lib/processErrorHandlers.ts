@@ -45,6 +45,7 @@ export function forwardDatadogError(payload: DatadogForwardedError): void {
     const err = new Error(scrubbed.message)
     if (scrubbed.stack) err.stack = scrubbed.stack
     const accepted = mainTelemetry.captureException(err, {
+      ...(scrubbed.context || {}),
       origin: 'main-process',
       source: scrubbed.source,
       level: scrubbed.level ?? null
@@ -53,8 +54,7 @@ export function forwardDatadogError(payload: DatadogForwardedError): void {
       mainTelemetry.forwardExceptionToRenderer({
         origin: 'main-process',
         source: scrubbed.source,
-        level: scrubbed.level ?? null,
-        ...(scrubbed.context || {})
+        level: scrubbed.level ?? null
       })
     }
   } catch {}

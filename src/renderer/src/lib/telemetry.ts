@@ -1,6 +1,7 @@
 import type { ModelDownloadStatus } from '../../../types/ipc'
 
-export type TelemetryValue = boolean | number | string | null | undefined
+export type TelemetryScalar = boolean | number | string | null | undefined
+export type TelemetryValue = TelemetryScalar | TelemetryScalar[]
 export type TelemetryContext = Record<string, TelemetryValue>
 
 export const TELEMETRY_ACTION_EVENT_NAME = 'launcher-telemetry-action'

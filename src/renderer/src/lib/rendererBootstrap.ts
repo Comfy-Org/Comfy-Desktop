@@ -41,7 +41,7 @@ import {
 // and is gated to the failure-event allow-list in
 // `src/shared/datadogMirroredEvents.ts`.
 import { normalizeExceptionContext, scrubAll } from '../../../shared/piiScrub'
-import { ERROR_MESSAGE_MAX } from '../../../shared/errorEvent'
+import { ERROR_MESSAGE_MAX, ERROR_STACK_MAX } from '../../../shared/errorEvent'
 import {
   isDatadogMirroredEvent,
   stripDatadogDroppedKeys
@@ -202,11 +202,17 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
   let mutated: TelemetryContext | null = null
   for (const key of Object.keys(context)) {
     const value = context[key]
-    if (typeof value !== 'string') continue
-    const cleaned = scrubAll(value)
-    if (cleaned === value) continue
-    if (!mutated) mutated = { ...context }
-    mutated[key] = cleaned
+    if (typeof value === 'string') {
+      const cleaned = scrubAll(value)
+      if (cleaned === value) continue
+      if (!mutated) mutated = { ...context }
+      mutated[key] = cleaned
+    } else if (Array.isArray(value)) {
+      const cleaned = value.map((entry) => (typeof entry === 'string' ? scrubAll(entry) : entry))
+      if (cleaned.every((entry, index) => entry === value[index])) continue
+      if (!mutated) mutated = { ...context }
+      mutated[key] = cleaned
+    }
   }
   return mutated ?? context
 }
@@ -535,7 +541,7 @@ function reportRendererError(payload: {
   if (!isTelemetryEmitAllowed('comfy.desktop.exception.error')) return
   const error = new Error(scrubAll(payload.message || 'Unknown error').slice(0, ERROR_MESSAGE_MAX))
   if (payload.stack) {
-    error.stack = scrubAll(payload.stack).slice(0, 16 * 1024)
+    error.stack = scrubAll(payload.stack).slice(0, ERROR_STACK_MAX)
   }
   const context = normalizeExceptionContext({
     origin: 'renderer',

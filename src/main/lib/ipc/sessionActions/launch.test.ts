@@ -79,11 +79,29 @@ describe('onProcessTerminated', () => {
     onProcessTerminated(proc, callback)
 
     proc.emit('exit', 1, null)
-    proc.emit('close', 1, null)
-    proc.emit('close', 2, null)
+    proc.emit('close', 2, 'SIGTERM')
+    proc.emit('close', 3, null)
 
     expect(callback).toHaveBeenCalledOnce()
-    expect(callback).toHaveBeenCalledWith(1, null)
+    expect(callback).toHaveBeenCalledWith(2, 'SIGTERM')
+  })
+
+  it('handles rejected async termination callbacks', async () => {
+    const proc = new EventEmitter() as unknown as ChildProcess
+    const failure = new Error('callback failed')
+    const callback = vi.fn(async () => Promise.reject(failure))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      onProcessTerminated(proc, callback)
+      proc.emit('close', 1, null)
+
+      expect(callback).toHaveBeenCalledOnce()
+      await vi.waitFor(() =>
+        expect(consoleError).toHaveBeenCalledWith('Process termination callback failed:', failure)
+      )
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('falls back to exit when inherited pipes prevent close', () => {

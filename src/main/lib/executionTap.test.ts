@@ -296,6 +296,18 @@ describe('executionTap', () => {
     expect(String(error?.ctx.error_traceback)).toContain('SystemExit: 2')
   })
 
+  it('recognizes traceback exceptions without a conventional class suffix', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest(
+      ['Traceback (most recent call last):', '  File "node.py", line 1', 'Boom: failed'].join('\n'),
+      'stderr'
+    )
+    tap.flushSummary()
+
+    const error = captured.find((entry) => entry.event === 'comfy.desktop.execution.error')
+    expect(error?.ctx.error_message).toBe('Boom: failed')
+  })
+
   it('flushSummary parses a final line written without a trailing newline', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // The fatal exception line is the LAST thing written and has no trailing
