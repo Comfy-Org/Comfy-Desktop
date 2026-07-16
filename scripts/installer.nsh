@@ -260,6 +260,14 @@
   ; Persist only the filename-safe payload. Desktop performs strict alphabet,
   ; length, canonical base64url, and UTF-8 validation before adopting it.
   ; Renamed/malformed installers simply have no carrier.
+  ;
+  ; Per-machine installs run this section in an elevated process that may be
+  ; a different Windows account (over-the-shoulder UAC, or SYSTEM for silent
+  ; IT deploys), so per-user shell folders resolve to that account's profile,
+  ; not the interactive user's. Skip the carrier entirely there — Desktop
+  ; falls back to its generated anonymous ID — and never touch a profile the
+  ; installer cannot attribute.
+  ${If} $installMode != "all"
   SetShellVarContext current
   StrCpy $R2 "$APPDATA\Comfy Desktop"
   ; The current installer filename is authoritative. A plain or malformed
@@ -298,6 +306,7 @@
     ${Else}
       DetailPrint "  Website attribution identity could not be stored."
     ${EndIf}
+  ${EndIf}
   ${EndIf}
 
   Pop $R5
