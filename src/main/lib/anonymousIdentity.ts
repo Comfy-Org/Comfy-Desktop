@@ -70,9 +70,9 @@ export function persistAnonymousDistinctId(anonymousDistinctId: string): boolean
     writeFileSafe(anonymousDistinctIdPath(), `${ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX}${payload}`)
     return true
   } catch {
-    // Binding fails closed on any write error. Do not synchronously retry a
-    // Windows rename lock here: this runs on Electron's main thread, where a
-    // sleep would freeze the app. A later login or process can retry safely.
+    // Fail closed on any write error. Do not synchronously retry a Windows
+    // rename lock here: this runs on Electron's main thread, where a sleep
+    // would freeze the app. A later caller can retry safely.
     return false
   }
 }
@@ -81,8 +81,7 @@ export function getOrCreateAnonymousDistinctId(): string {
   const persisted = readPersistedAnonymousDistinctId()
   if (persisted) return persisted
   const created = randomUUID()
-  // A failed first write must not prevent telemetry for this process. Binding
-  // later still fails closed unless a fresh post-bind identity can be persisted.
+  // A failed first write must not prevent telemetry for this process.
   persistAnonymousDistinctId(created)
   return created
 }

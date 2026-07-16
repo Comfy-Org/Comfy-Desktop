@@ -46,8 +46,6 @@ export function decodeWebsiteAnonymousIdPayload(payload: unknown): string | null
       ignoreBOM: true
     }).decode(bytes)
     if (Buffer.from(websiteAnonymousId, 'utf-8').toString('base64url') !== payload) return null
-    // PostHog ingestion refuses to merge these IDs, so adopting one would
-    // strand the pre-login history at identify time. Treat as no carrier.
     if (isIllegalPostHogDistinctId(websiteAnonymousId)) return null
     return websiteAnonymousId
   } catch {
@@ -78,12 +76,9 @@ function readPendingWebsiteAnonymousId(): string | null {
 }
 
 /**
- * Resolve the pre-login PostHog distinct ID before the first capture.
- *
- * Existing Desktop state always wins. The website W only seeds a fresh
- * installation with no persisted anonymous ID, and is durably stored before
- * it is returned. Missing, malformed, or unpersistable carriers fall back to
- * the normal persisted/generated Desktop D.
+ * Resolve the pre-login PostHog distinct ID before the first capture. An
+ * existing persisted ID always wins; a website carrier only seeds a fresh
+ * install, and only once it has been durably persisted.
  */
 export function getInitialAnonymousDistinctId(): string {
   const persisted = readPersistedAnonymousDistinctId()

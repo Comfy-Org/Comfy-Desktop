@@ -257,9 +257,8 @@
   ;
   ; where payload is unpadded RFC 4648 base64url of the website PostHog
   ; $device_id's exact UTF-8 bytes (1..160 bytes, therefore 2..214 chars).
-  ; Persist only the filename-safe payload. Desktop performs strict alphabet,
-  ; length, canonical base64url, and UTF-8 validation before adopting it.
-  ; Renamed/malformed installers simply have no carrier.
+  ; Persist only the filename-safe payload; Desktop fully re-validates it
+  ; before adopting it. Renamed/malformed installers simply have no carrier.
   ;
   ; Per-machine installs run this section in an elevated process that may be
   ; a different Windows account (over-the-shoulder UAC, or SYSTEM for silent

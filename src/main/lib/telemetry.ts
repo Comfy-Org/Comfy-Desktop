@@ -634,9 +634,8 @@ export function bindAnonymousId(
  */
 export function applyFirebaseUserConsensus(userId: string): void {
   const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
-  // An illegal UID would be refused by PostHog's merge pipeline; rejecting it
-  // here keeps the current anonymous ID intact instead of burning a rotation
-  // on an identify that can never merge.
+  // Reject early rather than burn an anonymous rotation on an identify that
+  // can never merge.
   if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {

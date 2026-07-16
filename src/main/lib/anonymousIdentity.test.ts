@@ -43,14 +43,14 @@ describe('anonymousIdentity', () => {
     fs.rmSync(testUserData, { recursive: true, force: true })
   })
 
-  it('creates one persisted D and reuses it across startups', () => {
+  it('creates one persisted anonymous ID and reuses it across startups', () => {
     const created = getOrCreateAnonymousDistinctId()
     expect(created).toBeTruthy()
     expect(readPersistedAnonymousDistinctId()).toBe(created)
     expect(getOrCreateAnonymousDistinctId()).toBe(created)
   })
 
-  it('rotates to a fresh persisted D', () => {
+  it('rotates to a fresh persisted anonymous ID', () => {
     expect(persistAnonymousDistinctId('previous-anon-id')).toBe(true)
     const rotated = rotatePersistedAnonymousDistinctId()
     expect(rotated).not.toBe('previous-anon-id')
@@ -118,7 +118,7 @@ describe('anonymousIdentity', () => {
     expect(persistAnonymousDistinctId('\ud800')).toBe(false)
   })
 
-  it('rejects PostHog-illegal identities so boot regenerates a mergeable D', () => {
+  it('rejects PostHog-illegal identities so boot regenerates a mergeable ID', () => {
     expect(persistAnonymousDistinctId('anonymous')).toBe(false)
     expect(persistAnonymousDistinctId('[object Object]')).toBe(false)
 

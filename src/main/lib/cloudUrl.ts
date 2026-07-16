@@ -32,7 +32,6 @@ export function withCloudDistributionUtm(rawUrl: string): string {
   }
 
   // Installation identifiers are properties, never URL-carried identities.
-  // Strip both accepted parameter spellings if a caller supplies either one.
   url.searchParams.delete('desktop_device_id')
   url.searchParams.delete('installation_id')
 

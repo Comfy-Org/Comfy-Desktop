@@ -345,7 +345,7 @@ describe('telemetry default event properties', () => {
     expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
   })
 
-  it('does not identify installation_id or anonymous D at boot', () => {
+  it('does not identify installation_id or the anonymous ID at boot', () => {
     identifies.length = 0
     telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
     bindTestAnonymous('install-abc123')
@@ -615,7 +615,7 @@ describe('telemetry consent state (3-state)', () => {
     // Reset module state so each test starts with fresh pendingSessionStart etc.
     telemetry._resetForTest()
     telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    // Bind D after state changes per test so the deferral path is exercised.
+    // Bind the anonymous ID after state changes per test so the deferral path is exercised.
   })
 
   afterEach(() => {
@@ -902,7 +902,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     delete process.env['POSTHOG_ENABLED']
   })
 
-  it('identifies Firebase UID with the active W/D and deferred person properties', () => {
+  it('identifies Firebase UID with the active anonymous ID and deferred person properties', () => {
     identifies.length = 0
     captured.length = 0
     telemetry.registerPersonProperties({ gpu_tier: 'high' })
@@ -954,7 +954,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
   })
 
-  it('anonymous consensus adopts the fresh D reserved before bind', () => {
+  it('anonymous consensus adopts the fresh ID reserved before bind', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
     identifies.length = 0
     captured.length = 0
@@ -976,7 +976,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
   })
 
-  it('uses a different anonymous D for an account switch', () => {
+  it('uses a different anonymous ID for an account switch', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
     captured.length = 0
 
@@ -1119,7 +1119,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.at(-1)?.distinctId).toBe('anonymous-start')
   })
 
-  it('fails closed without identifying when the next D cannot be persisted', () => {
+  it('fails closed without identifying when the next anonymous ID cannot be persisted', () => {
     anonymousIdentityMock.fail = true
     identifies.length = 0
 

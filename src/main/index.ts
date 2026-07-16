@@ -1410,18 +1410,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
 
-    // Initialize installation metadata, then bind a separate persisted random
-    // PostHog anonymous id. installation_id is never used as an identity.
+    // installation_id is an event/person property, never a PostHog identity.
     const { legacyId } = await initDeviceId()
-    // Legacy alias retry markers are never consumed; startup removes any
-    // existing marker regardless of the migration guard's state.
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
-    // A fresh Windows install can inherit the exact anonymous PostHog
-    // $device_id W carried in the Router's Content-Disposition filename. The
-    // installer stores only its filename-safe payload; this resolves and
-    // durably persists W before any capture. Existing Desktop state wins, and
-    // missing/invalid carriers fall back to a persisted/generated random D.
+    // A fresh Windows install may adopt the website anonymous ID carried in
+    // the installer filename; see websiteAnonymousIdentity.ts.
     const anonymousDistinctId = getInitialAnonymousDistinctId()
 
     mainTelemetry.bindAnonymousId(anonymousDistinctId, installationId, {
@@ -1447,9 +1441,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // Boot the experiments cache. Synchronously loads the on-disk flag
     // values for `getFlag()`, then kicks off a background refresh whose
     // result lands on disk for the NEXT boot. Does not block boot.
-    // Flag evaluation uses the installation-stable property key only. It never
-    // captures or identifies this value, so W/D rotation cannot change an
-    // experiment arm or create a PostHog person.
     void initExperiments({
       distinctId: installationId,
       personProperties: {

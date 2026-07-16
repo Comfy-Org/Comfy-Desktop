@@ -43,7 +43,7 @@ describe('websiteAnonymousIdentity', () => {
     fs.rmSync(testUserData, { recursive: true, force: true })
   })
 
-  it('decodes exact canonical UTF-8/base64url payloads without trimming W', () => {
+  it('decodes exact canonical UTF-8/base64url payloads without trimming the ID', () => {
     const websiteAnonymousId = '\ufeff  web-device-🚀  '
 
     expect(decodeWebsiteAnonymousIdPayload(encode(websiteAnonymousId))).toBe(websiteAnonymousId)
@@ -70,7 +70,7 @@ describe('websiteAnonymousIdentity', () => {
     expect(decodeWebsiteAnonymousIdPayload(encode('NONE'))).toBe('NONE')
   })
 
-  it('clears a PostHog-illegal carrier and falls back to a persisted random D', () => {
+  it('clears a PostHog-illegal carrier and falls back to a persisted random ID', () => {
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), `${encode('undefined')}\r\n`)
 
     const desktopAnonymousId = getInitialAnonymousDistinctId()
@@ -79,7 +79,7 @@ describe('websiteAnonymousIdentity', () => {
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
   })
 
-  it('seeds a fresh install with website W before the first capture', () => {
+  it('seeds a fresh install with the website ID before the first capture', () => {
     const websiteAnonymousId = '019abcde-website-device'
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), `${encode(websiteAnonymousId)}\r\n`)
 
@@ -88,7 +88,7 @@ describe('websiteAnonymousIdentity', () => {
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
   })
 
-  it('keeps an existing Desktop D and consumes a later website carrier', () => {
+  it('keeps an existing Desktop ID and consumes a later website carrier', () => {
     const desktopAnonymousId = 'existing-desktop-anonymous-id'
     expect(persistAnonymousDistinctId(desktopAnonymousId)).toBe(true)
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), encode('later-website-device'))
@@ -98,7 +98,7 @@ describe('websiteAnonymousIdentity', () => {
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
   })
 
-  it('clears an invalid carrier and falls back to a persisted random D', () => {
+  it('clears an invalid carrier and falls back to a persisted random ID', () => {
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), 'not+base64url')
 
     const desktopAnonymousId = getInitialAnonymousDistinctId()
@@ -107,7 +107,7 @@ describe('websiteAnonymousIdentity', () => {
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
   })
 
-  it('does not use W unless it can be durably persisted', () => {
+  it('does not use the website ID unless it can be durably persisted', () => {
     const websiteAnonymousId = 'website-device'
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), encode(websiteAnonymousId))
     safeFileMock.failWrites = true
