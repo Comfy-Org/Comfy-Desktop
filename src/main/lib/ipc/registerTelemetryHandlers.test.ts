@@ -232,54 +232,55 @@ describe('registerTelemetryHandlers', () => {
     expect(mocks.reportFirebaseAuthState).not.toHaveBeenCalled()
   })
 
-  it('tags relayed events with the deployment of the sender comfyView install', () => {
+  it.each([
+    // [case, attached comfyView entry, payload properties, expected capture properties]
+    // Main's attachment lookup is the ground truth for which install actually
+    // emitted an event — a hosted frontend may forward stale posthog-js super
+    // properties (e.g. a cloud bundle's deployment=cloud).
+    [
+      'tags relayed events with the deployment of the sender comfyView install',
+      { sourceCategory: 'cloud' },
+      { a: 1 },
+      { deployment: 'cloud', a: 1 }
+    ],
+    [
+      'leaves events untagged when the sender is not an attached comfyView',
+      null,
+      { a: 1 },
+      { a: 1 }
+    ],
+    [
+      'overwrites a payload deployment with the sender-derived value',
+      { sourceCategory: 'local' },
+      { deployment: 'cloud' },
+      { deployment: 'local' }
+    ],
+    [
+      'keeps a payload deployment when the sender is not an attached comfyView',
+      null,
+      { deployment: 'local' },
+      { deployment: 'local' }
+    ],
+    [
+      'ignores unknown source categories rather than emitting a junk tag',
+      { sourceCategory: null },
+      {},
+      {}
+    ],
+    [
+      'strips an invalid payload deployment even from non-comfyView senders',
+      null,
+      { deployment: 'banana' },
+      {}
+    ]
+  ])('%s', (_case, entry, properties, expectedSent) => {
     const sender = { id: 1 }
-    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'cloud' })
+    mocks.findEntryByComfySender.mockReturnValue(entry)
 
-    listener('telemetry:capture')({ sender }, { event: 'execution_start', properties: { a: 1 } })
+    listener('telemetry:capture')({ sender }, { event: 'execution_start', properties })
 
     expect(mocks.findEntryByComfySender).toHaveBeenCalledWith(sender)
-    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent).toEqual({ deployment: 'cloud', a: 1 })
-  })
-
-  it('leaves events untagged when the sender is not an attached comfyView', () => {
-    mocks.findEntryByComfySender.mockReturnValue(null)
-
-    listener('telemetry:capture')(
-      { sender: { id: 2 } },
-      { event: 'launcher.click', properties: {} }
-    )
-
-    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent.deployment).toBeUndefined()
-  })
-
-  it('overwrites a payload deployment with the sender-derived value', () => {
-    // A hosted frontend may forward stale posthog-js super properties (e.g. a
-    // cloud bundle's deployment=cloud) — main's attachment lookup is the
-    // ground truth for which install actually emitted the event.
-    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
-
-    listener('telemetry:capture')(
-      { sender: { id: 3 } },
-      { event: 'execution_start', properties: { deployment: 'cloud' } }
-    )
-
-    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent.deployment).toBe('local')
-  })
-
-  it('keeps a payload deployment when the sender is not an attached comfyView', () => {
-    mocks.findEntryByComfySender.mockReturnValue(null)
-
-    listener('telemetry:capture')(
-      { sender: { id: 5 } },
-      { event: 'popout.event', properties: { deployment: 'local' } }
-    )
-
-    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent.deployment).toBe('local')
+    expect(mocks.capture.mock.calls[0]![1]).toEqual(expectedSent)
   })
 
   it('strips a payload client so the SDK default (desktop) applies', () => {
@@ -293,30 +294,6 @@ describe('registerTelemetryHandlers', () => {
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.client).toBeUndefined()
     expect(sent.a).toBe(1)
-  })
-
-  it('ignores unknown source categories rather than emitting a junk tag', () => {
-    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: null })
-
-    listener('telemetry:capture')(
-      { sender: { id: 4 } },
-      { event: 'execution_start', properties: {} }
-    )
-
-    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent.deployment).toBeUndefined()
-  })
-
-  it('strips an invalid payload deployment even from non-comfyView senders', () => {
-    mocks.findEntryByComfySender.mockReturnValue(null)
-
-    listener('telemetry:capture')(
-      { sender: { id: 7 } },
-      { event: 'popout.event', properties: { deployment: 'banana' } }
-    )
-
-    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
-    expect(sent.deployment).toBeUndefined()
   })
 
   it('applies the same platform-axes handling to relayed exceptions', () => {

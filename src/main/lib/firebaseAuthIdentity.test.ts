@@ -364,31 +364,28 @@ describe('firebaseAuthIdentity consensus', () => {
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
   })
 
-  it('restores the exact retained document state when its navigation is canceled', () => {
+  it('restores the retained document state, including in-flight updates, when a load is canceled', () => {
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
+    // Canceling with no in-flight report re-binds the retained signed-in state.
     reporter.startNavigation('https://cloud.comfy.org/workspaces/canceled')
     vi.clearAllMocks()
     reporter.failProvisionalNavigation('https://cloud.comfy.org/workspaces/canceled')
-
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledTimes(1)
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
-  })
 
-  it('restores the retained document latest auth state after a canceled load', () => {
-    const reporter = new FakeWebContents(cloudUrl)
-    activate(reporter)
-    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
-
-    reporter.startNavigation('https://cloud.comfy.org/workspaces/canceled')
+    // A report from the retained document during a later in-flight load
+    // updates its latest auth state without applying it yet…
+    reporter.startNavigation('https://cloud.comfy.org/workspaces/canceled-again')
     vi.clearAllMocks()
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
     expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
 
-    reporter.failProvisionalNavigation('https://cloud.comfy.org/workspaces/canceled')
+    // …so this cancel settles to that latest state, not the old signed-in bind.
+    reporter.failProvisionalNavigation('https://cloud.comfy.org/workspaces/canceled-again')
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
   })
 

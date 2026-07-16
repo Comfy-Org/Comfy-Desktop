@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
@@ -139,128 +139,121 @@ function bindTestAnonymous(id: string, properties: Record<string, TelemetryValue
   telemetry.bindAnonymousId(id, id, properties)
 }
 
+interface SetupTelemetryOptions {
+  /** Consent state to apply after init; `null` leaves the post-reset 'undecided'. */
+  consent?: 'granted' | 'denied' | 'undecided' | null
+  /** Anonymous D to bind after the consent transition; `null` skips binding. */
+  bind?: string | null
+  appVersion?: string
+  appEnv?: string
+}
+
+/**
+ * Reset module state and the capture buffers, then run the standard boot
+ * sequence: init → consent → bind D. Volume guards are reset LAST so the
+ * `session.started` flushed by a granted-consent bind never counts toward a
+ * test's rate-limit or session-cap totals. Buffers are cleared at the start
+ * only — tests that measure from a later point clear `captured` themselves.
+ */
+function setupTelemetry(options: SetupTelemetryOptions = {}): void {
+  const {
+    consent = 'granted',
+    bind = 'test-distinct-id',
+    appVersion = '0.0.0',
+    appEnv = 'test'
+  } = options
+  captured.length = 0
+  identifies.length = 0
+  exceptions.length = 0
+  featureFlagCalls.length = 0
+  process.env['POSTHOG_API_KEY'] = 'test-key'
+  process.env['POSTHOG_ENABLED'] = '1'
+  telemetry._resetForTest()
+  telemetry._resetTelemetryRelayTargets()
+  telemetry.initTelemetry({ appVersion, appEnv, isPackaged: true })
+  if (consent) telemetry.setConsentState(consent)
+  if (bind) bindTestAnonymous(bind)
+  telemetry._test_resetVolumeGuards()
+}
+
 afterEach(() => {
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
   anonymousIdentityMock.unmergeable = false
   posthogClientMock.failNextCaptures = 0
+  delete process.env['POSTHOG_API_KEY']
+  delete process.env['POSTHOG_ENABLED']
+  telemetry._resetForTest()
+  telemetry._resetTelemetryRelayTargets()
 })
 
 describe('telemetry.bucketError', () => {
-  it('classifies cancellation messages', () => {
-    expect(telemetry.bucketError('Operation cancelled by user')).toBe('cancelled')
-  })
-  it('classifies timeouts', () => {
-    expect(telemetry.bucketError('request timeout after 30s')).toBe('timeout')
-  })
-  it('classifies network errors', () => {
-    expect(telemetry.bucketError('fetch failed: network unreachable')).toBe('network')
-  })
-  it('classifies disk-space errors', () => {
-    expect(telemetry.bucketError('No space left on disk')).toBe('disk')
-  })
-  it('classifies permission errors', () => {
-    expect(telemetry.bucketError('permission denied: /var/log')).toBe('permissions')
-  })
-  it('falls back to "other" for unknown messages', () => {
-    expect(telemetry.bucketError('something blew up')).toBe('other')
-  })
-  it('returns "unknown" for empty input', () => {
-    expect(telemetry.bucketError('')).toBe('unknown')
-  })
-  it('accepts Error instances', () => {
-    expect(telemetry.bucketError(new Error('connection timeout'))).toBe('timeout')
-  })
-  // extended vocabulary
-  it('classifies CUDA / system / Linux OOM-killer as oom', () => {
-    expect(telemetry.bucketError('CUDA out of memory')).toBe('oom')
-    expect(telemetry.bucketError('torch.cuda.OutOfMemoryError: blah')).toBe('oom')
-    expect(telemetry.bucketError('Killed: process exceeded memory')).toBe('oom')
-  })
-  it('classifies CUDA init failures', () => {
-    expect(telemetry.bucketError('CUDA not available')).toBe('cuda_init')
-    expect(telemetry.bucketError('no CUDA-capable device is detected')).toBe('cuda_init')
-  })
-  it('classifies ImportError / ModuleNotFoundError', () => {
-    expect(telemetry.bucketError('ImportError: cannot import name xformers')).toBe('import_error')
-    expect(telemetry.bucketError('ModuleNotFoundError: No module named foo')).toBe('import_error')
-  })
-  it('classifies custom-node-missing', () => {
-    expect(telemetry.bucketError('node not found: SomeCustomNode')).toBe('node_missing')
-    expect(telemetry.bucketError('Unknown node type FooNode')).toBe('node_missing')
-  })
-  it('falls back to "python" for generic <Class>Error messages', () => {
-    expect(telemetry.bucketError('RuntimeError: something broke')).toBe('python')
-    expect(telemetry.bucketError('ValueError: bad input')).toBe('python')
-  })
-  it('falls back to "python" even when the class is mid-message (no ^ anchor)', () => {
+  it.each([
+    ['Operation cancelled by user', 'cancelled'],
+    ['request timeout after 30s', 'timeout'],
+    ['fetch failed: network unreachable', 'network'],
+    ['No space left on disk', 'disk'],
+    ['permission denied: /var/log', 'permissions'],
+    // CUDA / system / Linux OOM-killer
+    ['CUDA out of memory', 'oom'],
+    ['torch.cuda.OutOfMemoryError: blah', 'oom'],
+    ['Killed: process exceeded memory', 'oom'],
+    ['CUDA not available', 'cuda_init'],
+    ['no CUDA-capable device is detected', 'cuda_init'],
+    ['ImportError: cannot import name xformers', 'import_error'],
+    ['ModuleNotFoundError: No module named foo', 'import_error'],
+    ['node not found: SomeCustomNode', 'node_missing'],
+    ['Unknown node type FooNode', 'node_missing'],
+    // Generic <Class>Error messages fall back to "python".
+    ['RuntimeError: something broke', 'python'],
+    ['ValueError: bad input', 'python'],
     // scrubAll can strip a leading path and leave the class name in the
     // middle; previously the `^`-anchored regex would miss this and the
     // event landed in `other`.
-    expect(telemetry.bucketError('execution failed -> RuntimeError: bad input')).toBe('python')
-    expect(telemetry.bucketError('Got AttributeError while computing')).toBe('python')
-  })
-  it('does NOT false-positive on lowercase noise like "module.error"', () => {
+    ['execution failed -> RuntimeError: bad input', 'python'],
+    ['Got AttributeError while computing', 'python'],
     // The python regex requires an uppercase first letter on the class
-    // name — without that, "user.error: oops" or "config.exception in foo"
-    // would slide into the python bucket and pollute the dashboard.
-    expect(telemetry.bucketError('see module.error somewhere in foo.py')).toBe('other')
-    expect(telemetry.bucketError('the user.exception field is set')).toBe('other')
+    // name — without that, lowercase noise like "user.error: oops" or
+    // "config.exception in foo" would slide into the python bucket and
+    // pollute the dashboard.
+    ['see module.error somewhere in foo.py', 'other'],
+    ['the user.exception field is set', 'other'],
+    // Tensor / shape mismatches
+    ['size mismatch for transformer.h.0.weight', 'shape_mismatch'],
+    ["shape '[1, 4, 64, 64]' is invalid for input of size 16384", 'shape_mismatch'],
+    ['expected 4 dimensions but got 3', 'shape_mismatch'],
+    // Model-load failures
+    ['Error while deserializing header: invalid byte 0x12', 'model_load'],
+    ['Missing key(s) in state_dict: "transformer.h.0.weight"', 'model_load'],
+    ['safetensors_rust.SafetensorError: corrupted', 'model_load'],
+    // Workflow-validation failures
+    ['Prompt outputs failed validation', 'validation'],
+    ['validation_failed for node 5', 'validation'],
+    // Migration source-missing failures, observed at launch: gitcode mirror
+    // clones that stall mid-stream, and Desktop 1 trees that lost their
+    // ComfyUI source path so the adopter has neither a staged copy nor a
+    // working clone to source.
+    [
+      'source-missing: Downloading ComfyUI source from https://gitcode.com/gh_mirrors/co/ComfyUI.git',
+      'source_missing'
+    ],
+    ['source_missing', 'source_missing'],
+    // No known signal
+    ['something blew up', 'other'],
+    ['this is just a sentence', 'other'],
+    ['', 'unknown']
+  ])('buckets %j as %s', (message, bucket) => {
+    expect(telemetry.bucketError(message)).toBe(bucket)
   })
-  it('classifies tensor / shape mismatches', () => {
-    expect(telemetry.bucketError('size mismatch for transformer.h.0.weight')).toBe('shape_mismatch')
-    expect(telemetry.bucketError("shape '[1, 4, 64, 64]' is invalid for input of size 16384")).toBe(
-      'shape_mismatch'
-    )
-    expect(telemetry.bucketError('expected 4 dimensions but got 3')).toBe('shape_mismatch')
-  })
-  it('classifies model-load failures', () => {
-    expect(telemetry.bucketError('Error while deserializing header: invalid byte 0x12')).toBe(
-      'model_load'
-    )
-    expect(telemetry.bucketError('Missing key(s) in state_dict: "transformer.h.0.weight"')).toBe(
-      'model_load'
-    )
-    expect(telemetry.bucketError('safetensors_rust.SafetensorError: corrupted')).toBe('model_load')
-  })
-  it('classifies workflow-validation failures', () => {
-    expect(telemetry.bucketError('Prompt outputs failed validation')).toBe('validation')
-    expect(telemetry.bucketError('validation_failed for node 5')).toBe('validation')
-  })
-  it('classifies migration source-missing failures', () => {
-    // Observed at launch: gitcode mirror clones that stall mid-stream,
-    // and Desktop 1 trees that lost their ComfyUI source path so the
-    // adopter has neither a staged copy nor a working clone to source.
-    expect(
-      telemetry.bucketError(
-        'source-missing: Downloading ComfyUI source from https://gitcode.com/gh_mirrors/co/ComfyUI.git'
-      )
-    ).toBe('source_missing')
-    expect(telemetry.bucketError('source_missing')).toBe('source_missing')
-  })
-  it('keeps "other" for messages with no known signal', () => {
-    expect(telemetry.bucketError('this is just a sentence')).toBe('other')
+
+  it('accepts Error instances', () => {
+    expect(telemetry.bucketError(new Error('connection timeout'))).toBe('timeout')
   })
 })
 
 describe('telemetry default event properties', () => {
-  beforeEach(() => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry._resetForTest()
-  })
-
   it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
-    telemetry.initTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', bind: 'id' })
     captured.length = 0
 
     telemetry.capture('comfy.desktop.test.event', { foo: 'bar' })
@@ -280,26 +273,19 @@ describe('telemetry default event properties', () => {
   })
 
   it('derives stable channel for a clean semver and unknown for an unfamiliar suffix', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     captured.length = 0
     telemetry.capture('any.event')
     expect(captured[0]!.properties).toMatchObject({ app_channel: 'stable' })
 
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '1.0.0-rc.1', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0-rc.1', appEnv: 'prod', bind: 'id' })
     captured.length = 0
     telemetry.capture('any.event')
     expect(captured[0]!.properties).toMatchObject({ app_channel: 'unknown' })
   })
 
   it('per-call properties override defaults on key collision', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     captured.length = 0
 
     telemetry.capture('any.event', {
@@ -313,9 +299,7 @@ describe('telemetry default event properties', () => {
   })
 
   it('merges the same defaults into captureException payloads', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     exceptions.length = 0
 
     telemetry.captureException(new Error('boom'), { foo: 'bar' })
@@ -330,9 +314,7 @@ describe('telemetry default event properties', () => {
   })
 
   it('stamps installation_id (the bound device id) on every captured event', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('install-abc123')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'install-abc123' })
     captured.length = 0
 
     // A main-process event and a renderer-routed event both go through
@@ -345,11 +327,8 @@ describe('telemetry default event properties', () => {
     expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
   })
 
-  it('does not identify installation_id or the anonymous ID at boot', () => {
-    identifies.length = 0
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('install-abc123')
-    telemetry.setConsentState('granted')
+  it('does not identify installation_id or anonymous D at boot', () => {
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'install-abc123' })
 
     // bindAnonymousId stamps installation_id only as a property. Only the
     // Firebase UID login path may call the SDK's identify.
@@ -359,10 +338,7 @@ describe('telemetry default event properties', () => {
 
 describe('telemetry anonymous flag reads', () => {
   it('disables PostHog implicit feature-flag capture', async () => {
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    setupTelemetry({ consent: null, bind: null })
     telemetry.bindAnonymousId('anonymous-flag-id', 'installation-id')
     featureFlagCalls.length = 0
 
@@ -375,28 +351,13 @@ describe('telemetry anonymous flag reads', () => {
         options: { sendFeatureFlagEvents: false }
       }
     ])
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry._resetForTest()
   })
 })
 
 describe('telemetry.captureInstallCompleted', () => {
   beforeEach(() => {
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'install-xyz' })
     captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    bindTestAnonymous('install-xyz')
-    telemetry.setConsentState('granted')
-    captured.length = 0
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry._resetForTest()
   })
 
   it('fires comfy.desktop.install.completed exactly once with method + express + installation_id', () => {
@@ -477,19 +438,8 @@ describe('telemetry.captureInstallCompleted', () => {
 })
 
 describe('telemetry.trackedStep', () => {
-  beforeEach(async () => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await bindTestAnonymous('test-distinct-id')
-    telemetry.setConsent(true)
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    vi.restoreAllMocks()
+  beforeEach(() => {
+    setupTelemetry()
   })
 
   it('emits .start and .end with duration_ms on success', async () => {
@@ -525,7 +475,6 @@ describe('telemetry.trackedStep', () => {
     captured.length = 0
     await telemetry.trackedStep('test.step', {}, async () => 'ok')
     expect(captured).toHaveLength(0)
-    telemetry.setConsent(true)
   })
 
   it('scrubs error_message before emit so user paths never leave the process', async () => {
@@ -543,18 +492,8 @@ describe('telemetry.trackedStep', () => {
 })
 
 describe('telemetry SDK-level privacy safety nets', () => {
-  beforeEach(async () => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await bindTestAnonymous('test-distinct-id')
-    telemetry.setConsent(true)
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+  beforeEach(() => {
+    setupTelemetry()
   })
 
   it('does not strip $ip: PostHog needs it to derive country (GeoIP enabled)', () => {
@@ -608,24 +547,12 @@ describe('telemetry SDK-level privacy safety nets', () => {
 })
 
 describe('telemetry consent state (3-state)', () => {
-  beforeEach(async () => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    // Reset module state so each test starts with fresh pendingSessionStart etc.
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    // Bind the anonymous ID after state changes per test so the deferral path is exercised.
+  beforeEach(() => {
+    // Bind D after state changes per test so the deferral path is exercised.
+    setupTelemetry({ consent: null, bind: null })
   })
 
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    // Reset to granted so other test blocks behave like the legacy default.
-    telemetry.setConsentState('granted')
-  })
-
-  it('undecided suppresses regular events but allows the consent_decision event', async () => {
+  it('undecided suppresses regular events but allows the consent_decision event', () => {
     telemetry.setConsentState('undecided')
     bindTestAnonymous('test-distinct-id')
     captured.length = 0
@@ -637,7 +564,7 @@ describe('telemetry consent state (3-state)', () => {
     expect(events).toEqual(['comfy.desktop.first_use.consent_decision'])
   })
 
-  it('denied suppresses everything EXCEPT the consent_decision allow-list entry', async () => {
+  it('denied suppresses everything EXCEPT the consent_decision allow-list entry', () => {
     // Regression for the 2026-06-03 finding: 232 accepts and 0 declines in
     // 30 days, traced to the renderer's "Continue" handler awaiting the
     // setting write (which flips state to 'denied') BEFORE emitting the
@@ -661,7 +588,7 @@ describe('telemetry consent state (3-state)', () => {
     })
   })
 
-  it('defers session.started while consent is undecided', async () => {
+  it('defers session.started while consent is undecided', () => {
     telemetry.setConsentState('undecided')
     bindTestAnonymous('deferred-id', { app_version: '1.2.3' })
 
@@ -712,18 +639,7 @@ describe('telemetry consent state (3-state)', () => {
 
 describe('telemetry.registerPersonProperties pre-consent merge', () => {
   beforeEach(() => {
-    captured.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
+    setupTelemetry({ consent: null, bind: null })
   })
 
   it('merges pre-auth property writes into Firebase UID identify (latest wins)', () => {
@@ -756,18 +672,7 @@ describe('telemetry.registerPersonProperties pre-consent merge', () => {
 
 describe('telemetry.registerPersonPropertiesOnce ($set_once)', () => {
   beforeEach(() => {
-    captured.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
+    setupTelemetry({ consent: null, bind: null })
   })
 
   it('holds $set_once until Firebase UID exists even when consent is granted', () => {
@@ -830,17 +735,7 @@ describe('telemetry.registerPersonPropertiesOnce ($set_once)', () => {
 
 describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
   beforeEach(() => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
+    setupTelemetry({ consent: null, bind: null })
   })
 
   it('queues on a fresh install (undecided) and ships on the grant transition', () => {
@@ -885,24 +780,11 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
 
 describe('telemetry Firebase consensus identity lifecycle', () => {
   beforeEach(() => {
-    captured.length = 0
-    identifies.length = 0
-    anonymousIdentityMock.index = 0
-    anonymousIdentityMock.fail = false
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    telemetry.setConsentState('granted')
+    setupTelemetry({ bind: null })
     telemetry.bindAnonymousId('anonymous-start', 'installation-id-fake')
   })
 
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-  })
-
-  it('identifies Firebase UID with the active anonymous ID and deferred person properties', () => {
+  it('identifies Firebase UID with the active W/D and deferred person properties', () => {
     identifies.length = 0
     captured.length = 0
     telemetry.registerPersonProperties({ gpu_tier: 'high' })
@@ -954,7 +836,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
   })
 
-  it('anonymous consensus adopts the fresh ID reserved before bind', () => {
+  it('anonymous consensus adopts the fresh D reserved before bind', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
     identifies.length = 0
     captured.length = 0
@@ -976,7 +858,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
   })
 
-  it('uses a different anonymous ID for an account switch', () => {
+  it('uses a different anonymous D for an account switch', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
     captured.length = 0
 
@@ -1108,10 +990,11 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.at(-1)?.distinctId).toBe('bridge-user')
   })
 
-  it('rejects PostHog-illegal Firebase UIDs without burning the anonymous ID', () => {
+  it('rejects a PostHog-illegal Firebase UID without burning the anonymous ID', () => {
+    // The full illegal-ID vocabulary is covered by opaqueIdentifier.test.ts;
+    // this proves the consensus path consults the shared check.
     const rotationsBefore = anonymousIdentityMock.index
     telemetry.applyFirebaseUserConsensus('anonymous')
-    telemetry.applyFirebaseUserConsensus('0')
 
     expect(identifies).toHaveLength(0)
     expect(anonymousIdentityMock.index).toBe(rotationsBefore)
@@ -1119,7 +1002,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.at(-1)?.distinctId).toBe('anonymous-start')
   })
 
-  it('fails closed without identifying when the next anonymous ID cannot be persisted', () => {
+  it('fails closed without identifying when the next D cannot be persisted', () => {
     anonymousIdentityMock.fail = true
     identifies.length = 0
 
@@ -1135,20 +1018,9 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
 })
 
 describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
-  beforeEach(async () => {
-    telemetry._resetTelemetryRelayTargets()
+  beforeEach(() => {
+    setupTelemetry()
     captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await bindTestAnonymous('test-distinct-id')
-    telemetry.setConsent(true)
-  })
-
-  afterEach(() => {
-    telemetry._resetTelemetryRelayTargets()
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
   })
 
   it('forwards to every registered relay target with mainAlreadyCaptured=true', () => {
@@ -1224,7 +1096,6 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     telemetry.setConsent(false)
     telemetry.forwardToRenderer('comfy.desktop.execution.error', {})
     expect(a.sends).toHaveLength(0)
-    telemetry.setConsent(true)
   })
 
   it('skips destroyed relay targets', () => {
@@ -1263,24 +1134,14 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
 })
 
 describe('telemetry SDK-level volume guards', () => {
-  beforeEach(async () => {
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await bindTestAnonymous('test-distinct-id')
-    telemetry.setConsent(true)
-    telemetry._test_resetVolumeGuards()
-    // Clear AFTER setConsent — granting consent flushes the deferred
+  beforeEach(() => {
+    setupTelemetry()
+    // Clear AFTER the boot sequence — granting consent flushes the deferred
     // `comfy.desktop.session.started` event into `captured`, which would
     // otherwise count toward each test's product-event totals and
     // throw the per-process cap assertions off by one (and make the
     // 5000-cap test loop runaway-guard out, eating the 5s timeout).
     captured.length = 0
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
   })
 
   it('per-event sliding window caps at 60/window and emits exactly one rate_limited warning', () => {
@@ -1361,20 +1222,7 @@ describe('telemetry SDK-level volume guards', () => {
 
 describe('telemetry deferred one-shot retention on dropped captures', () => {
   beforeEach(() => {
-    captured.length = 0
-    identifies.length = 0
-    posthogClientMock.failNextCaptures = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry._test_resetVolumeGuards()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
+    setupTelemetry({ consent: null, bind: null })
   })
 
   it('retains session.started and first_launch across a dropped flush, then emits each exactly once', () => {
