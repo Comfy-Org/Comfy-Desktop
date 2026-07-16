@@ -8,7 +8,10 @@ import { writeFileSafe } from './safe-file'
 const ANONYMOUS_DISTINCT_ID_FILE = 'posthog-anonymous-distinct-id.txt'
 const UNMERGEABLE_EPOCH_FILE = 'posthog-anonymous-epoch-unmergeable'
 const MAX_ANONYMOUS_DISTINCT_ID_LENGTH = 256
-const ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX = 'phid1_'
+// Local persisted-file envelope (unpadded base64url of the exact UTF-8 ID).
+// Deliberately NOT 'phid1_': that tag is the installer-filename carrier's
+// version marker and carries a raw UUID, a different grammar.
+const ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX = 'b64id1_'
 
 function decodePersistedAnonymousDistinctId(raw: string): string | null {
   if (!raw.startsWith(ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX)) {

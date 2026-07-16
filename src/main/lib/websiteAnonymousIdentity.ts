@@ -5,52 +5,34 @@ import {
   persistAnonymousDistinctId,
   readPersistedAnonymousDistinctId
 } from './anonymousIdentity'
-import { isIllegalPostHogDistinctId } from './opaqueIdentifier'
 import { configDir } from './paths'
 
 export const PENDING_WEBSITE_ANONYMOUS_ID_FILE = 'pending-website-anonymous-id.txt'
-export const MAX_WEBSITE_ANONYMOUS_ID_BYTES = 160
-const MIN_WEBSITE_ANONYMOUS_ID_PAYLOAD_LENGTH = 2
-const MAX_WEBSITE_ANONYMOUS_ID_PAYLOAD_LENGTH = 214
+
+// posthog-js generates $device_id as a lowercase hyphenated UUID, and the
+// Router only emits the filename carrier for cookie values of exactly that
+// shape. The version and variant nibbles are deliberately not pinned:
+// posthog-js has changed UUID versions before (v4 -> v7), and a pinned
+// pattern would silently drop attribution on the next change.
+const WEBSITE_ANONYMOUS_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function pendingWebsiteAnonymousIdPath(): string {
   return path.join(configDir(), PENDING_WEBSITE_ANONYMOUS_ID_FILE)
 }
 
 /**
- * Decode the Router's exact filename carrier:
- * `phid1_<unpadded RFC 4648 base64url(UTF-8 website $device_id)>`.
+ * Validate the Router's exact filename carrier:
+ * `phid1_<website PostHog $device_id>`, where the ID is carried raw.
  *
- * Node's base64 decoder is intentionally permissive, so every constraint is
- * checked explicitly and the payload must round-trip canonically. This keeps a
- * renamed or hand-crafted installer from injecting a different identity than
- * the filename actually encodes.
+ * The payload IS the identity — there is no decoding step — so a renamed or
+ * hand-crafted installer can only ever inject a well-formed UUID, never an
+ * arbitrary distinct ID (which also rules out PostHog's unmergeable illegal
+ * IDs by shape).
  */
-export function decodeWebsiteAnonymousIdPayload(payload: unknown): string | null {
+export function parseWebsiteAnonymousIdPayload(payload: unknown): string | null {
   if (typeof payload !== 'string') return null
-  if (
-    payload.length < MIN_WEBSITE_ANONYMOUS_ID_PAYLOAD_LENGTH ||
-    payload.length > MAX_WEBSITE_ANONYMOUS_ID_PAYLOAD_LENGTH ||
-    payload.length % 4 === 1 ||
-    !/^[A-Za-z0-9_-]+$/.test(payload)
-  ) {
-    return null
-  }
-
-  try {
-    const bytes = Buffer.from(payload, 'base64url')
-    if (bytes.length === 0 || bytes.length > MAX_WEBSITE_ANONYMOUS_ID_BYTES) return null
-    if (bytes.toString('base64url') !== payload) return null
-    const websiteAnonymousId = new TextDecoder('utf-8', {
-      fatal: true,
-      ignoreBOM: true
-    }).decode(bytes)
-    if (Buffer.from(websiteAnonymousId, 'utf-8').toString('base64url') !== payload) return null
-    if (isIllegalPostHogDistinctId(websiteAnonymousId)) return null
-    return websiteAnonymousId
-  } catch {
-    return null
-  }
+  return WEBSITE_ANONYMOUS_ID_PATTERN.test(payload) ? payload : null
 }
 
 function clearPendingWebsiteAnonymousId(): void {
@@ -69,7 +51,7 @@ function readPendingWebsiteAnonymousId(): string | null {
     // contract is exact, and accepting any other surrounding bytes would make
     // the on-disk grammar looser than the Router filename grammar.
     const payload = raw.endsWith('\r\n') ? raw.slice(0, -2) : raw
-    return decodeWebsiteAnonymousIdPayload(payload)
+    return parseWebsiteAnonymousIdPayload(payload)
   } catch {
     return null
   }

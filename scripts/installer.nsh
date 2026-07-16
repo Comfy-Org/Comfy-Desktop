@@ -253,12 +253,14 @@
   ; GTM-277 direct website identity carrier. The Router serves the signed
   ; installer as:
   ;
-  ;   Comfy-Desktop-Setup-phid1_<payload>.exe
+  ;   Comfy-Desktop-Setup-phid1_<website PostHog $device_id>.exe
   ;
-  ; where payload is unpadded RFC 4648 base64url of the website PostHog
-  ; $device_id's exact UTF-8 bytes (1..160 bytes, therefore 2..214 chars).
-  ; Persist only the filename-safe payload; Desktop fully re-validates it
-  ; before adopting it. Renamed/malformed installers simply have no carrier.
+  ; where the payload is the raw $device_id — a 36-char lowercase hyphenated
+  ; UUID (posthog-js's format), already filename-safe, carried without any
+  ; encoding. The Router only emits the carrier for cookie values of exactly
+  ; that shape. Persist only the fixed-length payload; Desktop re-validates
+  ; the exact UUID shape before adopting it. Renamed/malformed installers
+  ; simply have no carrier.
   ;
   ; Per-machine installs run this section in an elevated process that may be
   ; a different Windows account (over-the-shoulder UAC, or SYSTEM for silent
@@ -277,22 +279,19 @@
   StrLen $R5 "$R0"
   StrCpy $R4 ""
 
-  ; Exact case-sensitive grammar. Prefix is 26 chars and extension is 4;
-  ; complete filenames are 32..244 chars inclusive.
-  ${If} $R5 >= 32
-  ${AndIf} $R5 <= 244
+  ; Case-sensitive grammar: 26-char prefix + 36-char UUID = 62 chars, then
+  ; the extension. Everything after the UUID — extension included — is
+  ; deliberately ignored: the payload is fixed-length, so browser duplicate-
+  ; download names ("… (1).exe") and other appended tails keep their carrier.
+  ${If} $R5 >= 62
     StrCpy $R1 "$R0" 26
-    StrCpy $R3 "$R0" 4 -4
     ${If} $R1 S== "Comfy-Desktop-Setup-phid1_"
-    ${AndIf} $R3 S== ".exe"
-      IntOp $R3 $R5 - 30
-      StrCpy $R4 "$R0" $R3 26
+      StrCpy $R4 "$R0" 36 26
     ${EndIf}
   ${EndIf}
 
   StrLen $R3 "$R4"
-  ${If} $R3 >= 2
-  ${AndIf} $R3 <= 214
+  ${If} $R3 == 36
     ; Matches Electron's packaged userData path documented in README:
     ; %APPDATA%\Comfy Desktop.
     CreateDirectory "$R2"

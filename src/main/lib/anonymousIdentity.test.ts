@@ -33,8 +33,8 @@ import {
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import {
-  decodeWebsiteAnonymousIdPayload,
   getInitialAnonymousDistinctId,
+  parseWebsiteAnonymousIdPayload,
   pendingWebsiteAnonymousIdPath
 } from './websiteAnonymousIdentity'
 
@@ -137,31 +137,30 @@ describe('anonymousIdentity', () => {
 })
 
 describe('websiteAnonymousIdentity', () => {
-  function encode(value: string): string {
-    return Buffer.from(value, 'utf-8').toString('base64url')
-  }
+  const websiteAnonymousId = '019810a3-1d3c-7bde-9c7a-3f2b6f2a4e11'
 
-  it('decodes exact canonical UTF-8/base64url payloads without trimming W', () => {
-    const websiteAnonymousId = '\ufeff  web-device-🚀  '
-
-    expect(decodeWebsiteAnonymousIdPayload(encode(websiteAnonymousId))).toBe(websiteAnonymousId)
-    expect(decodeWebsiteAnonymousIdPayload(encode('a'.repeat(160)))).toBe('a'.repeat(160))
+  it('accepts the raw lowercase UUID payload exactly as carried', () => {
+    expect(parseWebsiteAnonymousIdPayload(websiteAnonymousId)).toBe(websiteAnonymousId)
+    // Version/variant nibbles are not pinned (posthog-js moved v4 -> v7).
+    expect(parseWebsiteAnonymousIdPayload('00000000-0000-0000-0000-000000000000')).toBe(
+      '00000000-0000-0000-0000-000000000000'
+    )
   })
 
-  it('rejects malformed, non-canonical, invalid UTF-8, oversized, and PostHog-illegal payloads', () => {
-    expect(decodeWebsiteAnonymousIdPayload('')).toBeNull()
-    expect(decodeWebsiteAnonymousIdPayload('YQ==')).toBeNull()
-    expect(decodeWebsiteAnonymousIdPayload('YQ+')).toBeNull()
-    expect(decodeWebsiteAnonymousIdPayload('_w')).toBeNull()
-    expect(decodeWebsiteAnonymousIdPayload('a')).toBeNull()
-    expect(decodeWebsiteAnonymousIdPayload(encode('a'.repeat(161)))).toBeNull()
-    // The full illegal-ID vocabulary is covered by opaqueIdentifier.test.ts.
-    expect(decodeWebsiteAnonymousIdPayload(encode('undefined'))).toBeNull()
+  it('rejects anything that is not a lowercase hyphenated UUID', () => {
+    expect(parseWebsiteAnonymousIdPayload('')).toBeNull()
+    expect(parseWebsiteAnonymousIdPayload(websiteAnonymousId.toUpperCase())).toBeNull()
+    expect(parseWebsiteAnonymousIdPayload(websiteAnonymousId.slice(1))).toBeNull()
+    expect(parseWebsiteAnonymousIdPayload(`${websiteAnonymousId}a`)).toBeNull()
+    expect(parseWebsiteAnonymousIdPayload(websiteAnonymousId.replace('-', '_'))).toBeNull()
+    expect(parseWebsiteAnonymousIdPayload('web-anon-123')).toBeNull()
+    // NSIS extracts a fixed 36 chars, so a browser dedup tail never reaches
+    // this validator; if one does (hand-edited file), it must be rejected.
+    expect(parseWebsiteAnonymousIdPayload(`${websiteAnonymousId} (1)`)).toBeNull()
   })
 
   it('seeds a fresh install with website W before the first capture', () => {
-    const websiteAnonymousId = '019abcde-website-device'
-    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), `${encode(websiteAnonymousId)}\r\n`)
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), `${websiteAnonymousId}\r\n`)
 
     expect(getInitialAnonymousDistinctId()).toBe(websiteAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBe(websiteAnonymousId)
@@ -171,7 +170,7 @@ describe('websiteAnonymousIdentity', () => {
   it('keeps an existing Desktop D and consumes a later website carrier', () => {
     const desktopAnonymousId = 'existing-desktop-anonymous-id'
     expect(persistAnonymousDistinctId(desktopAnonymousId)).toBe(true)
-    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), encode('later-website-device'))
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), '02f611c7-88a8-7dd1-b57e-032ea3e9b3aa')
 
     expect(getInitialAnonymousDistinctId()).toBe(desktopAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBe(desktopAnonymousId)
@@ -179,7 +178,7 @@ describe('websiteAnonymousIdentity', () => {
   })
 
   it('clears an invalid carrier and falls back to a persisted random D', () => {
-    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), 'not+base64url')
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), 'web-anon-123')
 
     const desktopAnonymousId = getInitialAnonymousDistinctId()
     expect(desktopAnonymousId).toBeTruthy()
@@ -188,8 +187,7 @@ describe('websiteAnonymousIdentity', () => {
   })
 
   it('does not use W unless it can be durably persisted', () => {
-    const websiteAnonymousId = 'website-device'
-    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), encode(websiteAnonymousId))
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), websiteAnonymousId)
     safeFileMock.failWrites = true
 
     expect(getInitialAnonymousDistinctId()).not.toBe(websiteAnonymousId)
