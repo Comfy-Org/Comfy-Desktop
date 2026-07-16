@@ -27,6 +27,9 @@ import {
   buildExportEnvelope,
   validateExportEnvelope,
   importSnapshots,
+  stageSnapshotEnvelope,
+  loadStagedSnapshotEnvelope,
+  releaseStagedSnapshotEnvelope,
   diffSnapshots,
   listSnapshots,
   restoreComfyUIVersion,
@@ -683,6 +686,52 @@ describe('importSnapshots', () => {
       batch_size: 2,
       batch_index: 1
     })
+  })
+})
+
+// --- staged restore targets ---
+
+describe('staged snapshot envelopes', () => {
+  // Staging keeps imported restore targets out of history — addressable only by
+  // an opaque token — until a restore from them succeeds.
+  it('stages an envelope and loads it back by token without writing history', async () => {
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snapshot-stage-'))
+    try {
+      const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
+      const token = await stageSnapshotEnvelope(envelope)
+      // Token is an opaque 32-char hex string (the shape doubles as
+      // path-traversal defense when resolving the staged file back).
+      expect(token).toMatch(/^[a-f0-9]{32}$/)
+
+      // Staging must not touch any install's snapshot history.
+      const history = await listSnapshots(tmpDir)
+      expect(history).toHaveLength(0)
+
+      const loaded = await loadStagedSnapshotEnvelope(token)
+      expect(loaded.snapshots).toHaveLength(1)
+      expect(loaded.snapshots[0]!.label).toBe('staged-target')
+
+      await releaseStagedSnapshotEnvelope(token)
+      await expect(loadStagedSnapshotEnvelope(token)).rejects.toThrow()
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an invalid/traversal token', async () => {
+    await expect(loadStagedSnapshotEnvelope('not-a-token')).rejects.toThrow(
+      /invalid staged snapshot token/i
+    )
+    await expect(loadStagedSnapshotEnvelope('../../etc/passwd')).rejects.toThrow(
+      /invalid staged snapshot token/i
+    )
+  })
+
+  it('release is a no-op for unknown/invalid tokens', async () => {
+    await expect(releaseStagedSnapshotEnvelope('deadbeef')).resolves.toBeUndefined()
+    await expect(
+      releaseStagedSnapshotEnvelope('0'.repeat(32))
+    ).resolves.toBeUndefined()
   })
 })
 

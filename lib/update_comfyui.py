@@ -27,7 +27,7 @@ import re
 from datetime import datetime
 import sys
 
-from pygit2_compat import harden_pygit2_config
+from pygit2_compat import harden_pygit2_config, disable_symlinks
 
 
 def is_auth_error(exc):
@@ -151,6 +151,10 @@ def main():
         print(".git contents: %s" % os.listdir(git_dir))
         sys.exit(1)
 
+    # Force core.symlinks=false on Windows so the checkout below can't fail on a
+    # symlink the user lacks the privilege to create (see disable_symlinks).
+    disable_symlinks(repo)
+
     # Emit pre-update HEAD
     pre_head = str(repo.head.target)
     print("[PRE_UPDATE_HEAD] %s" % pre_head)
@@ -231,13 +235,50 @@ def main():
     remote_ref = repo.lookup_reference("refs/remotes/origin/master")
     remote_id = remote_ref.target
     branch = repo.lookup_branch("master")
-    if branch is None:
-        repo.create_branch("master", repo.get(remote_id))
-    else:
-        branch.set_target(remote_id)
-    ref = repo.lookup_reference("refs/heads/master")
-    repo.checkout(ref, strategy=pygit2.GIT_CHECKOUT_FORCE)
-    repo.reset(remote_id, pygit2.GIT_RESET_HARD)
+    # Snapshot the pre-update state so a failed checkout/reset can be undone. The
+    # branch ref is advanced *before* the working-tree checkout below, so without
+    # this a mid-checkout failure would leave the source pointing at the new
+    # commit with a half-updated tree - new source paired with the old venv,
+    # which crashes ComfyUI on import (issue #1233). Capture the actual HEAD (not
+    # master's tip): launcher installs often run detached at a tag, where master
+    # differs from the checked-out commit.
+    pre_reset_head = repo.head.target
+    was_detached = repo.head_is_detached
+    # Capture the exact symbolic ref so an attached HEAD is reattached to its
+    # original branch (not assumed to be master) on rollback.
+    pre_head_ref = None if was_detached else repo.head.name
+    pre_master_target = branch.target if branch is not None else None
+    try:
+        if branch is None:
+            repo.create_branch("master", repo.get(remote_id))
+        else:
+            branch.set_target(remote_id)
+        ref = repo.lookup_reference("refs/heads/master")
+        repo.checkout(ref, strategy=pygit2.GIT_CHECKOUT_FORCE)
+        repo.reset(remote_id, pygit2.GIT_RESET_HARD)
+    except Exception as exc:
+        # Roll the source back to the pre-update commit so a failed update never
+        # leaves the installation in an inconsistent (new-code/old-deps) state.
+        # Restore master to its original tip and HEAD to its original position
+        # and attachment, then hard-reset the working tree to the pre-update HEAD.
+        print("[ERROR] Update checkout failed: %s" % exc)
+        try:
+            restore_branch = repo.lookup_branch("master")
+            if pre_master_target is not None:
+                if restore_branch is None:
+                    repo.create_branch("master", repo.get(pre_master_target))
+                else:
+                    restore_branch.set_target(pre_master_target)
+            if was_detached:
+                repo.set_head(pre_reset_head)
+            else:
+                repo.set_head(pre_head_ref)
+            repo.reset(pre_reset_head, pygit2.GIT_RESET_HARD)
+            print("Restored ComfyUI source to pre-update commit %s"
+                  % str(pre_reset_head)[:7])
+        except Exception as restore_exc:
+            print("[ERROR] Failed to restore pre-update state: %s" % restore_exc)
+        sys.exit(1)
 
     # Checkout stable tag if requested
     if stable:

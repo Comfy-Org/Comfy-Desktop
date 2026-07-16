@@ -92,7 +92,7 @@
     "tabUpdate": "更新",
     "tabSnapshots": "快照",
     "tabStorage": "存储",
-    "tabConsole": "控制台",
+    "tabTerminal": "终端",
     "relaunch": "重新启动",
     "more": "更多",
     "diskUsage": "磁盘占用",
@@ -107,7 +107,45 @@
     "extraModelPathsModalTitle": "自定义模型路径",
     "extraModelPathsModalNote": "只读 —— ComfyUI 会搜索这些目录，但启动器不会管理它们。请编辑 extra_model_paths.yaml 以更改它们。",
     "openBaseFolder": "打开基础文件夹",
-    "revealYaml": "在文件夹中显示 extra_model_paths.yaml"
+    "revealYaml": "在文件夹中显示 extra_model_paths.yaml",
+    "argsTitle": "启动参数",
+    "restartRequired": "重启后生效",
+    "argsRawLabel": "原始参数",
+    "argsPlaceholder": "未设置参数",
+    "argsRawHint": "可直接编辑，或在下方逐项切换。",
+    "argsSearchPlaceholder": "搜索参数…",
+    "argsNoMatches": "没有匹配的参数。",
+    "argsExclusiveLabel": "选择一项",
+    "argsExclusiveNone": "无（默认）",
+    "argsExclusiveNoneHint": "该组未设置任何标志。",
+    "argsMultiPlaceholder": "空格分隔的多个值",
+    "argsValuePlaceholder": "值",
+    "argsOptionalPlaceholder": "可选",
+    "argsCategory": {
+      "active": "已启用",
+      "network": "网络",
+      "launch": "启动",
+      "gpuVram": "GPU 与显存",
+      "precision": "精度",
+      "performance": "性能",
+      "cache": "缓存",
+      "preview": "预览",
+      "manager": "管理器",
+      "frontend": "前端",
+      "features": "功能",
+      "paths": "路径",
+      "logging": "日志",
+      "advanced": "高级",
+      "other": "其他"
+    },
+    "configureArgs": "配置参数",
+    "argsSchemaUnavailable": "此安装的参数信息不可用。",
+    "argsAutocompleteLabel": "参数建议",
+    "argsAutocompleteHint": "↑↓ 导航 · Tab/Enter 选择 · Esc 关闭",
+    "argsAwaitingValue": "需要一个值",
+    "argsUnsupported": "不支持：",
+    "argsMissingValue": "缺少值：",
+    "argsUnexpected": "意外的参数："
   },
   "comfyLifecycle": {
     "preparingTitle": "正在准备…",
@@ -225,7 +263,8 @@
     "tabSettings": "设置",
     "loading": "正在加载…",
     "envVars": "环境变量",
-    "copyError": "复制错误详情"
+    "copyError": "复制错误详情",
+    "clear": "清除"
   },
   "list": {
     "loadSnapshot": "加载快照",
@@ -1122,7 +1161,9 @@
     "cancelOperation": "取消操作",
     "stopRequired": "此实例当前正在运行，必须先停止。",
     "willStopRunning": "{name} 正在运行，将先被停止。",
-    "folderPermissionDenied": "macOS 拒绝访问“{path}”。请打开系统设置 → 隐私与安全性 → 文件和文件夹，授予 Comfy Desktop 访问权限，然后重试。"
+    "folderPermissionDenied": "macOS 拒绝访问“{path}”。请打开系统设置 → 隐私与安全性 → 文件和文件夹，授予 Comfy Desktop 访问权限，然后重试。",
+    "recoveryFailed": "ComfyUI 恢复失败：{message}",
+    "executableNotFound": "找不到可执行文件：{cmd}"
   },
   "tooltips": {
     "instances": "一个独立的 ComfyUI 实例，拥有自己的版本、模型和设置。",

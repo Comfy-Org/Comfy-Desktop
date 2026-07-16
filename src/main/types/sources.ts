@@ -64,6 +64,9 @@ export interface ActionResult {
   ok: boolean
   navigate?: string
   message?: string
+  /** True when the action ended due to user cancellation, so the operation
+   *  surface shows a "Cancelled" state instead of an error. */
+  cancelled?: boolean
 }
 
 export interface StatusTag {

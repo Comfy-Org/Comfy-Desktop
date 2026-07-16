@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
+import { en } from '../../lib/i18nMessages'
 import type { ComfyArgDef } from '../../types/ipc'
 
 // Pins the deselectable "Choose one" contract: the exclusive group renders as
@@ -11,7 +12,7 @@ import type { ComfyArgDef } from '../../types/ipc'
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
-  messages: { en: {} },
+  messages: { en },
   missingWarn: false,
   fallbackWarn: false,
 })
@@ -23,7 +24,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Run on CPU only.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpuVram',
   },
   {
     name: 'gpu-only',
@@ -31,7 +32,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Force GPU usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpuVram',
   },
   {
     name: 'lowvram',
@@ -39,7 +40,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Reduce VRAM usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpuVram',
   },
   {
     name: 'port',
@@ -47,7 +48,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Server port.',
     type: 'value',
     metavar: 'PORT',
-    category: 'Network',
+    category: 'network',
   },
 ]
 

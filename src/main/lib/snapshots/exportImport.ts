@@ -1,4 +1,6 @@
 import fs from 'fs'
+import os from 'os'
+import crypto from 'crypto'
 import path from 'path'
 import { isSafePathComponent } from '../cnr'
 import { snapshotsDir, formatTimestamp } from './store'
@@ -79,6 +81,11 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
   return obj as unknown as SnapshotExportEnvelope
 }
 
+/**
+ * Commit an imported envelope into the install's live snapshot history. Only
+ * call after a restore from the envelope has succeeded; to make an envelope
+ * available as a restore target, stage it with `stageSnapshotEnvelope` instead.
+ */
 export async function importSnapshots(
   installPath: string,
   envelope: SnapshotExportEnvelope,
@@ -135,4 +142,80 @@ export async function importSnapshots(
   }
 
   return { imported: filenames.length, filenames }
+}
+
+// --- Staged restore targets ---
+//
+// An imported envelope is staged to a token-keyed temp file (never loaded by a
+// renderer-supplied path) and only committed to history via `importSnapshots`
+// once a restore from it succeeds; failed restores leave live history untouched.
+
+const STAGING_SUBDIR = 'comfyui-desktop-2-staged-restores'
+// Tokens are hex strings; the strict shape doubles as path-traversal defense
+// when resolving the staged file back from a token.
+const STAGE_TOKEN_RE = /^[a-f0-9]{32}$/
+// Bound the temp leak from failed-then-dismissed imports (no dismiss IPC):
+// prune staged files older than this whenever a new one is staged.
+const STAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+function stagingDir(): string {
+  // Per-user suffix so installs run by different OS users on a shared machine
+  // don't fight over ownership of one temp directory.
+  let user = 'default'
+  try {
+    user = os.userInfo().username.replace(/[^\w.-]/g, '_')
+  } catch {}
+  return path.join(os.tmpdir(), `${STAGING_SUBDIR}-${user}`)
+}
+
+function resolveStagedPath(token: string): string | null {
+  if (!STAGE_TOKEN_RE.test(token)) return null
+  return path.join(stagingDir(), `${token}.json`)
+}
+
+async function pruneStaleStaged(dir: string): Promise<void> {
+  try {
+    const files = await fs.promises.readdir(dir)
+    const cutoff = Date.now() - STAGE_MAX_AGE_MS
+    await Promise.all(
+      files
+        .filter((f) => f.endsWith('.json'))
+        .map(async (f) => {
+          try {
+            const stat = await fs.promises.stat(path.join(dir, f))
+            if (stat.mtimeMs < cutoff) await fs.promises.unlink(path.join(dir, f))
+          } catch {}
+        })
+    )
+  } catch {}
+}
+
+/** Stage an envelope as a restore target and return its opaque token. */
+export async function stageSnapshotEnvelope(envelope: SnapshotExportEnvelope): Promise<string> {
+  const dir = stagingDir()
+  await fs.promises.mkdir(dir, { recursive: true })
+  await pruneStaleStaged(dir)
+  const token = crypto.randomBytes(16).toString('hex')
+  const filePath = path.join(dir, `${token}.json`)
+  const tmpPath = `${filePath}.tmp`
+  await fs.promises.writeFile(tmpPath, JSON.stringify(envelope))
+  await fs.promises.rename(tmpPath, filePath)
+  return token
+}
+
+/** Load a previously staged envelope by token. Throws if the token is invalid. */
+export async function loadStagedSnapshotEnvelope(
+  token: string
+): Promise<SnapshotExportEnvelope> {
+  const filePath = resolveStagedPath(token)
+  if (!filePath) throw new Error('Invalid staged snapshot token')
+  const content = await fs.promises.readFile(filePath, 'utf-8')
+  return validateExportEnvelope(JSON.parse(content))
+}
+
+/** Delete a staged envelope. Safe to call with an unknown/invalid token. */
+export async function releaseStagedSnapshotEnvelope(token: string): Promise<void> {
+  const filePath = resolveStagedPath(token)
+  if (!filePath) return
+  await fs.promises.unlink(filePath).catch(() => {})
 }

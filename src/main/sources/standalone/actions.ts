@@ -12,6 +12,7 @@ import { withOutputTail } from '../../lib/logged-process'
 import { copyDirWithProgress } from '../../lib/copy'
 import { listCustomNodes, findComfyUIDir, backupDir, mergeDirFlat } from '../../lib/migrate'
 import { t } from '../../lib/i18n'
+import { MSG_CANCELLED } from '../../../shared/operationStatus'
 import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
@@ -37,8 +38,13 @@ export async function handleAction(
   }
 
   if (actionId === 'snapshot-restore') {
+    // Restore target is either a snapshot already in this install's history
+    // (`file`) or a freshly imported envelope staged outside history
+    // (`restoreToken`). A staged import is only committed to history once the
+    // restore succeeds, so a failed restore leaves the timeline untouched.
     const file = actionData?.file as string | undefined
-    if (!file) return { ok: false, message: t('standalone.snapshotNoFile') }
+    const restoreToken = actionData?.restoreToken as string | undefined
+    if (!file && !restoreToken) return { ok: false, message: t('standalone.snapshotNoFile') }
 
     // Drop the shared shell + pop-outs first: on Windows a live shell holds a
     // handle on the install dir and any running python locks venv DLLs, which
@@ -53,7 +59,12 @@ export async function handleAction(
     sendProgress('restore-comfyui', { percent: 0, status: 'Loading snapshot…' })
     sendOutput('Loading snapshot…\n')
 
-    const targetSnapshot = await snapshots.loadSnapshot(installation.installPath, file)
+    const stagedEnvelope = restoreToken
+      ? await snapshots.loadStagedSnapshotEnvelope(restoreToken)
+      : undefined
+    const targetSnapshot = stagedEnvelope
+      ? stagedEnvelope.snapshots[0]!
+      : await snapshots.loadSnapshot(installation.installPath, file!)
 
     // Capture HEAD before the git checkout so a failed/cancelled restore can roll
     // the source back, keeping source + packages consistent (all-or-nothing).
@@ -67,21 +78,68 @@ export async function handleAction(
       await writeOpMarker(installation.installPath, { op: 'restore', preHead: preRestoreHead, startedAt: Date.now() })
     }
 
+    // Safety net for failed/cancelled+rolled-back exits below. A staged import
+    // is not committed to history on failure, so the previous snapshot is
+    // normally already the newest and represents the live state (no-op here).
+    // This only writes a fresh current-state snapshot in the genuine edge cases
+    // — no previous snapshot at all, or a partial rollback the previous snapshot
+    // no longer matches. Best-effort: it must never turn a restore failure into
+    // a different failure.
+    const ensureLiveStateOnTop = async (): Promise<void> => {
+      try {
+        const currentInstallation = (await installations.get(installation.id)) || installation
+        const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
+          installation.installPath, currentInstallation
+        )
+        if (filename) {
+          const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+          await update({ lastSnapshot: filename, snapshotCount })
+        }
+      } catch (err) {
+        console.warn('Failed to record rolled-back restore state:', err)
+      }
+    }
+
+    // A cancel is only "clean" if the source is back at the pre-restore commit.
+    // A failed rollback leaves a hybrid state (snapshot source + reverted
+    // packages) the user could launch straight into, so it surfaces as an error
+    // instead of a quietly dismissed cancel. The op marker stays behind either
+    // way, so recoverInterruptedComfyOp retries a failed rollback on next launch.
+    // rollbackComfySource no-ops (returns true) when HEAD is already at the
+    // pre-restore commit, so callers don't need their own moved-HEAD check.
+    const revertSourceIfMoved = async (): Promise<boolean> =>
+      preRestoreHead ? rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput) : true
+
+    const cancelledResult = async (note?: string): Promise<ActionResult> => {
+      const rolledBack = await revertSourceIfMoved()
+      await ensureLiveStateOnTop()
+      if (rolledBack) {
+        sendOutput(`\nCancelled; ComfyUI source was rolled back.${note ? ` ${note}` : ''}\n`)
+        return { ok: false, cancelled: true, message: MSG_CANCELLED }
+      }
+      const message = `Cancelled, but ComfyUI source rollback failed — it will be retried on the next launch.${note ? ` ${note}` : ''}`
+      sendOutput(`\n${message}\n`)
+      return { ok: false, message }
+    }
+
     sendOutput('\n── Restore ComfyUI Version ──\n')
     const comfyResult = await snapshots.restoreComfyUIVersion(
       installation.installPath, targetSnapshot, sendOutput, signal
     )
     sendProgress('restore-comfyui', { percent: 100, status: comfyResult.changed ? 'Restored' : 'Up to date' })
 
-    // If the source checkout itself failed, don't touch nodes/pip — nothing moved
-    // to roll back, just report the failure.
-    if (comfyResult.error) {
-      return { ok: false, message: `ComfyUI restore failed: ${comfyResult.error}` }
+    // Check cancellation before the error: an abort mid-checkout surfaces as a
+    // non-zero git result (comfyResult.error), and cancelledResult rolls the
+    // source back if the checkout got far enough to move HEAD.
+    if (signal?.aborted) {
+      return await cancelledResult()
     }
 
-    if (signal?.aborted) {
-      if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
-      return { ok: false, message: 'Cancelled; ComfyUI source was rolled back.' }
+    // The source checkout itself failed (not cancelled): a failed checkout
+    // doesn't move HEAD and nodes/pip were never touched, so just report it.
+    if (comfyResult.error) {
+      await ensureLiveStateOnTop()
+      return { ok: false, message: `ComfyUI restore failed: ${comfyResult.error}` }
     }
 
     // Restore custom nodes before pip — node installs may add pip dependencies.
@@ -92,8 +150,7 @@ export async function handleAction(
     )
 
     if (signal?.aborted) {
-      if (preRestoreHead) await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
-      return { ok: false, message: 'Cancelled; ComfyUI source was rolled back. Custom node changes may be partial.' }
+      return await cancelledResult('Custom node changes may be partial.')
     }
 
     let pipResult: snapshots.RestoreResult = {
@@ -123,13 +180,13 @@ export async function handleAction(
     // commit so we land on the consistent pre-restore state instead of
     // snapshot-source + original-packages.
     if (pipError || pipResult.failed.length > 0 || signal?.aborted) {
-      let rolledBack = true
-      if (preRestoreHead && readGitHead(comfyuiDir) !== preRestoreHead) {
-        rolledBack = await rollbackComfySource(comfyuiDir, preRestoreHead, sendOutput)
+      // Leave the op marker so recoverInterruptedComfyOp retries on next launch
+      // if the in-process rollback failed; a successful rollback makes it a no-op.
+      if (signal?.aborted) {
+        return await cancelledResult('Package changes were reverted where possible.')
       }
-      const headline = signal?.aborted
-        ? 'Snapshot restore cancelled.'
-        : (pipError ? `Snapshot package restore failed: ${pipError}` : 'Snapshot package restore failed.')
+      const rolledBack = await revertSourceIfMoved()
+      const headline = pipError ? `Snapshot package restore failed: ${pipError}` : 'Snapshot package restore failed.'
       const tail = rolledBack
         ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
         : 'Package changes were reverted where possible, but ComfyUI source rollback failed.'
@@ -138,11 +195,10 @@ export async function handleAction(
       // a large restore can't produce a wall-of-text dialog.
       const shownErrors = pipResult.errors.slice(0, 20)
       const omittedErrors = pipResult.errors.length - shownErrors.length
-      const pkgDetail = !signal?.aborted && shownErrors.length > 0
+      const pkgDetail = shownErrors.length > 0
         ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
         : ''
-      // Leave the op marker so recoverInterruptedComfyOp retries on next launch
-      // if the in-process rollback failed; a successful rollback makes it a no-op.
+      await ensureLiveStateOnTop()
       return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
     }
 
@@ -181,23 +237,23 @@ export async function handleAction(
 
     // comfyResult.error and pip/abort failures already returned above; only
     // best-effort custom-node failures can reach here.
-    const totalFailures = nodeResult.failed.length
+    const totalFailures = nodeResult.failed.length + nodeResult.unreportable.length
 
     // Collect specific failures so the error surface explains WHY a restore
     // failed instead of a bare "N operation(s) failed".
     const failureDetails: string[] = []
     for (const f of nodeResult.failed) failureDetails.push(`Node ${f.id}: ${f.error}`)
+    for (const id of nodeResult.unreportable) failureDetails.push(`Standalone node ${id}: source file is unavailable`)
     for (const e of pipResult.errors) failureDetails.push(e)
     const failMessage = (headline: string): string =>
       failureDetails.length > 0 ? `${headline}\n\n${failureDetails.join('\n')}` : headline
 
-    if (summary.length === 0) {
+    const nothingToDo = summary.length === 0
+    if (nothingToDo) {
       sendOutput(`\n✓ ${t('standalone.snapshotRestoreNothingToDo')}\n`)
-      sendProgress('done', { percent: 100, status: t('standalone.snapshotRestoreNothingToDo') })
-      return { ok: true, navigate: 'detail' }
+    } else {
+      sendOutput(`\n${totalFailures > 0 ? '⚠' : '✓'} ${t('standalone.snapshotRestoreComplete')}: ${summary.join('; ')}\n`)
     }
-
-    sendOutput(`\n${totalFailures > 0 ? '⚠' : '✓'} ${t('standalone.snapshotRestoreComplete')}: ${summary.join('; ')}\n`)
 
     // Restore channel + version/lastRollback state so the release cache sees
     // accurate state for the restored channel. (Package-restore failures already
@@ -218,19 +274,61 @@ export async function handleAction(
     }
     await update(restoreState)
 
-    try {
-      const updatedInstallation = {
-        ...installation,
-        ...restoreState,
+    // Best-effort node failures don't roll the source back, so the live state
+    // is the (partially) restored one — it does NOT match the imported target.
+    const restoreSucceeded = totalFailures === 0
+    const updatedInstallation = {
+      ...installation,
+      ...restoreState,
+    }
+
+    if (stagedEnvelope && restoreSucceeded) {
+      try {
+        // Commit a staged import to history ONLY once the restore fully
+        // succeeded — the install has actually been in this state (#1137).
+        await snapshots.importSnapshots(installation.installPath, stagedEnvelope, installation.id)
+      } catch (err) {
+        console.warn('Committing imported snapshots failed:', err)
+        await ensureLiveStateOnTop()
+        return { ok: false, message: `Snapshot was restored, but its history could not be saved: ${(err as Error).message}` }
       }
-      const filename = await snapshots.saveSnapshot(installation.installPath, updatedInstallation, 'post-restore')
-      const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
-      await update({ lastSnapshot: filename, snapshotCount })
+
+      // Release only after the commit succeeds, so a failed commit keeps the
+      // staged file available for retry.
+      if (restoreToken) {
+        try {
+          await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
+        } catch (err) {
+          console.warn('Releasing staged snapshot failed:', err)
+        }
+      }
+    }
+
+    try {
+      if (stagedEnvelope) {
+        // Make the newest snapshot reflect the real current state. On success the
+        // just-committed target already matches (no-op, stays Latest); otherwise
+        // a fresh post-restore snapshot is written strictly on top — including
+        // above the future-dated imported entries, since ensureCurrentSnapshotOnTop
+        // stamps after the current top.
+        const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
+        const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+        if (filename) await update({ lastSnapshot: filename, snapshotCount })
+      } else {
+        // Restoring an existing in-history snapshot: it carries an older
+        // timestamp, so a plain post-restore snapshot lands on top.
+        const filename = await snapshots.saveSnapshot(installation.installPath, updatedInstallation, 'post-restore')
+        const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
+        await update({ lastSnapshot: filename, snapshotCount })
+      }
     } catch (err) {
       console.warn('Post-restore snapshot failed:', err)
     }
 
-    sendProgress('done', { percent: 100, status: t('standalone.snapshotRestoreComplete') })
+    sendProgress('done', {
+      percent: 100,
+      status: nothingToDo ? t('standalone.snapshotRestoreNothingToDo') : t('standalone.snapshotRestoreComplete')
+    })
     return { ok: totalFailures === 0, navigate: 'detail',
       ...(totalFailures > 0 ? { message: failMessage(`${totalFailures} operation(s) failed`) } : {}) }
   }
