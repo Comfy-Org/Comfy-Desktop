@@ -59,6 +59,26 @@ describe('websiteAnonymousIdentity', () => {
     expect(decodeWebsiteAnonymousIdPayload(encode('a'.repeat(161)))).toBeNull()
   })
 
+  it('rejects PostHog-illegal identities the ingestion side refuses to merge', () => {
+    expect(decodeWebsiteAnonymousIdPayload(encode('undefined'))).toBeNull()
+    expect(decodeWebsiteAnonymousIdPayload(encode('ANONYMOUS'))).toBeNull()
+    expect(decodeWebsiteAnonymousIdPayload(encode('distinct_id'))).toBeNull()
+    expect(decodeWebsiteAnonymousIdPayload(encode('[object Object]'))).toBeNull()
+    expect(decodeWebsiteAnonymousIdPayload(encode('0'))).toBeNull()
+    expect(decodeWebsiteAnonymousIdPayload(encode('   '))).toBeNull()
+    // Case-sensitive entries stay legal in other casings.
+    expect(decodeWebsiteAnonymousIdPayload(encode('NONE'))).toBe('NONE')
+  })
+
+  it('clears a PostHog-illegal carrier and falls back to a persisted random D', () => {
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), `${encode('undefined')}\r\n`)
+
+    const desktopAnonymousId = getInitialAnonymousDistinctId()
+    expect(desktopAnonymousId).not.toBe('undefined')
+    expect(readPersistedAnonymousDistinctId()).toBe(desktopAnonymousId)
+    expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
+  })
+
   it('seeds a fresh install with website W before the first capture', () => {
     const websiteAnonymousId = '019abcde-website-device'
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), `${encode(websiteAnonymousId)}\r\n`)

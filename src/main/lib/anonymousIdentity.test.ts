@@ -117,4 +117,15 @@ describe('anonymousIdentity', () => {
     expect(persistAnonymousDistinctId('')).toBe(false)
     expect(persistAnonymousDistinctId('\ud800')).toBe(false)
   })
+
+  it('rejects PostHog-illegal identities so boot regenerates a mergeable D', () => {
+    expect(persistAnonymousDistinctId('anonymous')).toBe(false)
+    expect(persistAnonymousDistinctId('[object Object]')).toBe(false)
+
+    fs.writeFileSync(anonymousDistinctIdPath(), 'undefined', 'utf-8')
+    expect(readPersistedAnonymousDistinctId()).toBeNull()
+    const regenerated = getOrCreateAnonymousDistinctId()
+    expect(regenerated).not.toBe('undefined')
+    expect(readPersistedAnonymousDistinctId()).toBe(regenerated)
+  })
 })

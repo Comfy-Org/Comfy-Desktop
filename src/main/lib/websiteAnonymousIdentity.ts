@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   getOrCreateAnonymousDistinctId,
+  isIllegalPostHogDistinctId,
   persistAnonymousDistinctId,
   readPersistedAnonymousDistinctId
 } from './anonymousIdentity'
@@ -45,6 +46,9 @@ export function decodeWebsiteAnonymousIdPayload(payload: unknown): string | null
       ignoreBOM: true
     }).decode(bytes)
     if (Buffer.from(websiteAnonymousId, 'utf-8').toString('base64url') !== payload) return null
+    // PostHog ingestion refuses to merge these IDs, so adopting one would
+    // strand the pre-login history at identify time. Treat as no carrier.
+    if (isIllegalPostHogDistinctId(websiteAnonymousId)) return null
     return websiteAnonymousId
   } catch {
     return null
