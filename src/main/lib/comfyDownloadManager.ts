@@ -396,10 +396,27 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
   return safe
 }
 
+export function resolveAssetSavePath(
+  currentSavePath: string,
+  serverName: string,
+  outputDir: string,
+): string | null {
+  if (!isPathContained(currentSavePath, outputDir)) return null
+
+  const currentDirectory = path.dirname(path.relative(outputDir, currentSavePath))
+  const serverPath =
+    currentDirectory === '.' ? serverName : path.basename(serverName.replace(/\\/g, '/'))
+  const relativePath =
+    currentDirectory === '.' ? serverPath : path.join(currentDirectory, serverPath)
+  const safeRelativePath = sanitizeAssetFilename(relativePath, outputDir)
+  return safeRelativePath ? path.join(outputDir, safeRelativePath) : null
+}
+
 export function isPathContained(filePath: string, baseDir: string): boolean {
   const resolved = path.resolve(filePath)
   const resolvedBase = path.resolve(baseDir)
-  return resolved.startsWith(resolvedBase + path.sep)
+  const relative = path.relative(resolvedBase, resolved)
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
 }
 
 export function hasValidExtension(filename: string): boolean {
@@ -668,7 +685,7 @@ export async function startAssetDownload(
 
   retryParamsByUrl.set(url, {
     kind: 'asset',
-    filename: savedFilename,
+    filename: path.relative(outputDir, savePath),
     outputDir,
     authToken,
     window: win,
@@ -862,11 +879,9 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       if (pending.tempPath && pending.outputDir) {
         const serverName = resolveServerFilename(item)
         if (serverName) {
-          // Use the output dir root so the server name lands directly there.
           const baseDir = pending.outputDir
-          const safeServer = sanitizeAssetFilename(serverName, baseDir)
-          if (safeServer) {
-            const newSavePath = path.join(baseDir, safeServer)
+          const newSavePath = resolveAssetSavePath(pending.savePath, serverName, baseDir)
+          if (newSavePath) {
             if (newSavePath !== pending.savePath) {
               // Synchronous dedup since will-download must be handled synchronously.
               const saveDir = path.dirname(newSavePath)
@@ -884,6 +899,10 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
               pending.filename = path.basename(candidate)
               pending.tempPath = path.join(path.dirname(pending.tempPath), `${Date.now()}-${pending.filename}.tmp`)
               pending.lastProgress = { ...pending.lastProgress, filename: pending.filename }
+              const retryParams = retryParamsByUrl.get(pending.url)
+              if (retryParams?.kind === 'asset') {
+                retryParams.filename = path.relative(baseDir, candidate)
+              }
             }
           }
         }
@@ -1216,5 +1235,4 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
   }
   downloadEvents.emit('tray-state-changed')
 }
-
 

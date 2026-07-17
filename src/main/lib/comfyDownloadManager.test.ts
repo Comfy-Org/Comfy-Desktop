@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { buildExistenceCandidates as BuildExistenceCandidates } from './comfyDownloadManager'
@@ -21,6 +22,11 @@ let ALLOWED_EXTENSIONS: string[]
 let hasValidExtension: (filename: string) => boolean
 let isPathContained: (filePath: string, baseDir: string) => boolean
 let sanitizeAssetFilename: (filename: string, outputDir: string) => string | null
+let resolveAssetSavePath: (
+  currentSavePath: string,
+  serverName: string,
+  outputDir: string,
+) => string | null
 let parseContentDispositionFilename: (header: string | null) => string | null
 let buildSaveDialogFilters: (suggestedName: string) => Electron.FileFilter[]
 let buildExistenceCandidates: typeof BuildExistenceCandidates
@@ -32,6 +38,7 @@ beforeAll(async () => {
   hasValidExtension = mod.hasValidExtension
   isPathContained = mod.isPathContained
   sanitizeAssetFilename = mod.sanitizeAssetFilename
+  resolveAssetSavePath = mod.resolveAssetSavePath
   parseContentDispositionFilename = mod.parseContentDispositionFilename
   buildSaveDialogFilters = mod.buildSaveDialogFilters
   buildExistenceCandidates = mod.buildExistenceCandidates
@@ -143,8 +150,18 @@ describe('isPathContained', () => {
     expect(isPathContained('/models/stable-diffusion/model.sft', '/models')).toBe(true)
   })
 
+  it('returns true when file is inside a filesystem root', () => {
+    const root = path.parse(path.resolve('/output')).root
+    expect(isPathContained(path.join(root, 'output', 'image.png'), root)).toBe(true)
+  })
+
   it('returns false when file is outside base directory', () => {
     expect(isPathContained('/other/model.sft', '/models')).toBe(false)
+  })
+
+  it('returns false for the base directory itself and sibling prefixes', () => {
+    expect(isPathContained('/models', '/models')).toBe(false)
+    expect(isPathContained('/models-other/model.sft', '/models')).toBe(false)
   })
 })
 
@@ -189,6 +206,135 @@ describe('sanitizeAssetFilename', () => {
     expect(sanitizeAssetFilename('..', outputDir)).toBeNull()
     expect(sanitizeAssetFilename('../..', outputDir)).toBeNull()
     expect(sanitizeAssetFilename('.', outputDir)).toBeNull()
+  })
+})
+
+describe('resolveAssetSavePath', () => {
+  const outputDir = path.resolve('/output')
+
+  it('preserves the requested subfolder when the server supplies a basename', () => {
+    expect(
+      resolveAssetSavePath(
+        path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
+        'display-name.mp4',
+        outputDir,
+      ),
+    ).toBe(path.join(outputDir, 'video', 'ltx', 'display-name.mp4'))
+  })
+
+  it('does not duplicate a requested subfolder included in the server name', () => {
+    expect(
+      resolveAssetSavePath(
+        path.join(outputDir, 'images', 'remote-name.png'),
+        'images/display-name.png',
+        outputDir,
+      ),
+    ).toBe(path.join(outputDir, 'images', 'display-name.png'))
+  })
+
+  it('preserves a server-provided subfolder when none was requested', () => {
+    expect(
+      resolveAssetSavePath(
+        path.join(outputDir, 'remote-name.png'),
+        'images/display-name.png',
+        outputDir,
+      ),
+    ).toBe(path.join(outputDir, 'images', 'display-name.png'))
+  })
+
+  it('keeps server path traversal attempts inside the requested subfolder', () => {
+    expect(
+      resolveAssetSavePath(
+        path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
+        '../../../../outside.mp4',
+        outputDir,
+      ),
+    ).toBe(path.join(outputDir, 'video', 'ltx', 'outside.mp4'))
+  })
+
+  it('rejects a current save path outside the output directory', () => {
+    expect(
+      resolveAssetSavePath(
+        path.resolve(outputDir, '..', 'outside', 'remote-name.mp4'),
+        'display-name.mp4',
+        outputDir,
+      ),
+    ).toBeNull()
+  })
+})
+
+describe('asset download retries', () => {
+  it('preserves a deduplicated nested path resolved from Content-Disposition', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://remote.example/api/view?filename=hash.mp4'
+    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn(),
+    } as unknown as Electron.Session
+    const webContents = {
+      session,
+      send: vi.fn(),
+      isDestroyed: () => false,
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents,
+    } as unknown as Electron.BrowserWindow
+
+    function createItem(contentDisposition: string | null) {
+      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      const setSavePath = vi.fn<(savePath: string) => void>()
+      const item = {
+        getURLChain: () => [url],
+        getURL: () => url,
+        getContentDisposition: () => contentDisposition,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn((event: string, handler: typeof done) => {
+          if (event === 'done') done = handler
+        }),
+        getTotalBytes: () => 1,
+        getReceivedBytes: () => 1,
+        isPaused: () => false,
+      } as unknown as Electron.DownloadItem
+      return { item, setSavePath, getDone: () => done }
+    }
+
+    try {
+      const nestedDir = path.join(outputDir, 'video', 'ltx')
+      await fs.promises.mkdir(nestedDir, { recursive: true })
+      await fs.promises.writeFile(path.join(nestedDir, 'display.mp4'), 'existing')
+
+      await mod.startAssetDownload(win, url, 'video/ltx/hash.mp4', outputDir)
+      expect(willDownload).toBeTypeOf('function')
+
+      const first = createItem('attachment; filename="display.mp4"')
+      willDownload!({}, first.item, null)
+      const firstTempPath = first.setSavePath.mock.calls[0]?.[0]
+      expect(firstTempPath).toBeTypeOf('string')
+      if (!firstTempPath) throw new Error('First download did not receive a temporary path')
+      await fs.promises.writeFile(firstTempPath, 'partial')
+      first.getDone()!({}, 'interrupted')
+
+      expect(mod.retryDownload(url)).toBe(true)
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledTimes(2))
+
+      const retry = createItem(null)
+      willDownload!({}, retry.item, null)
+      const retryTempPath = retry.setSavePath.mock.calls[0]?.[0]
+      expect(retryTempPath).toBeTypeOf('string')
+      if (!retryTempPath) throw new Error('Retry did not receive a temporary path')
+      await fs.promises.writeFile(retryTempPath, 'complete')
+      retry.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(path.join(nestedDir, 'display (1).mp4'), 'utf8')).resolves.toBe('complete')
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
   })
 })
 
