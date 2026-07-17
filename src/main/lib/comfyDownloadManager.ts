@@ -374,7 +374,7 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
   // Verify the resolved path stays inside outputDir
   const resolved = path.resolve(outputDir, safe)
   const resolvedBase = path.resolve(outputDir)
-  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+  if (!isPathContained(resolved, resolvedBase)) {
     return null
   }
 
@@ -404,8 +404,10 @@ export function resolveAssetSavePath(
   if (!isPathContained(currentSavePath, outputDir)) return null
 
   const currentDirectory = path.dirname(path.relative(outputDir, currentSavePath))
+  const normalizedServerName = serverName.replace(/\\/g, '/')
   const serverPath =
-    currentDirectory === '.' ? serverName : path.basename(serverName.replace(/\\/g, '/'))
+    currentDirectory === '.' ? normalizedServerName : path.basename(normalizedServerName)
+  if (!serverPath || serverPath === '.' || serverPath === '..') return null
   const relativePath =
     currentDirectory === '.' ? serverPath : path.join(currentDirectory, serverPath)
   const safeRelativePath = sanitizeAssetFilename(relativePath, outputDir)

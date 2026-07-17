@@ -176,6 +176,11 @@ describe('sanitizeAssetFilename', () => {
     expect(sanitizeAssetFilename('myimages/output.png', outputDir)).toBe('myimages/output.png')
   })
 
+  it('allows paths inside a filesystem-root output directory', () => {
+    const root = path.parse(path.resolve('/output')).root
+    expect(sanitizeAssetFilename('output/image.png', root)).toBe('output/image.png')
+  })
+
   it('strips path traversal components', () => {
     expect(sanitizeAssetFilename('../../etc/passwd', outputDir)).toBe('etc/passwd')
     expect(sanitizeAssetFilename('../secret.txt', outputDir)).toBe('secret.txt')
@@ -261,6 +266,27 @@ describe('resolveAssetSavePath', () => {
       ),
     ).toBeNull()
   })
+
+  it.each(['', '.', '..', '/', '\\'])('rejects an invalid nested server basename %j', (serverName) => {
+    expect(
+      resolveAssetSavePath(
+        path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
+        serverName,
+        outputDir,
+      ),
+    ).toBeNull()
+  })
+
+  it('resolves a nested path inside a filesystem-root output directory', () => {
+    const root = path.parse(outputDir).root
+    expect(
+      resolveAssetSavePath(
+        path.join(root, 'video', 'ltx', 'remote-name.mp4'),
+        'display-name.mp4',
+        root,
+      ),
+    ).toBe(path.join(root, 'video', 'ltx', 'display-name.mp4'))
+  })
 })
 
 describe('asset download retries', () => {
@@ -323,7 +349,7 @@ describe('asset download retries', () => {
       expect(mod.retryDownload(url)).toBe(true)
       await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledTimes(2))
 
-      const retry = createItem(null)
+      const retry = createItem('attachment; filename="display.mp4"')
       willDownload!({}, retry.item, null)
       const retryTempPath = retry.setSavePath.mock.calls[0]?.[0]
       expect(retryTempPath).toBeTypeOf('string')
