@@ -189,10 +189,22 @@ describe('sanitizeAssetFilename', () => {
     },
   )
 
-  it('strips path traversal components', () => {
-    expect(sanitizeAssetFilename('../../etc/passwd', outputDir)).toBe('etc/passwd')
-    expect(sanitizeAssetFilename('../secret.txt', outputDir)).toBe('secret.txt')
-    expect(sanitizeAssetFilename('a/../../b/file.png', outputDir)).toBe('a/b/file.png')
+  it.each(['../../etc/passwd', '../secret.txt', 'a/../../b/file.png'])(
+    'rejects path traversal in %s',
+    (filename) => {
+      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+    },
+  )
+
+  it.each(['/absolute/path.png', '///triple.png', '\\root-relative.png', '\\\\server\\file.png'])(
+    'rejects absolute path %s',
+    (filename) => {
+      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+    },
+  )
+
+  it('rejects traversal with backslash separators', () => {
+    expect(sanitizeAssetFilename('..\\..\\etc\\passwd', outputDir)).toBeNull()
   })
 
   it('strips dot segments', () => {
@@ -202,12 +214,6 @@ describe('sanitizeAssetFilename', () => {
 
   it('normalises backslashes', () => {
     expect(sanitizeAssetFilename('sub\\dir\\file.png', outputDir)).toBe('sub/dir/file.png')
-    expect(sanitizeAssetFilename('..\\..\\etc\\passwd', outputDir)).toBe('etc/passwd')
-  })
-
-  it('strips leading slashes', () => {
-    expect(sanitizeAssetFilename('/absolute/path.png', outputDir)).toBe('absolute/path.png')
-    expect(sanitizeAssetFilename('///triple.png', outputDir)).toBe('triple.png')
   })
 
   it('returns null for empty or whitespace filenames', () => {
@@ -255,14 +261,23 @@ describe('resolveAssetSavePath', () => {
     ).toBe(path.join(outputDir, 'images', 'display-name.png'))
   })
 
-  it('keeps server path traversal attempts inside the requested subfolder', () => {
+  it.each([
+    '../../../../outside.mp4',
+    '/outside.mp4',
+    '\\outside.mp4',
+    'C:\\outside.mp4',
+    'C:outside.mp4',
+    '\\\\server\\share\\outside.mp4',
+    '\\\\?\\C:\\outside.mp4',
+    '\\\\.\\C:\\outside.mp4',
+  ])('rejects unsafe nested server path %s', (serverName) => {
     expect(
       resolveAssetSavePath(
         path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
-        '../../../../outside.mp4',
+        serverName,
         outputDir,
       ),
-    ).toBe(path.join(outputDir, 'video', 'ltx', 'outside.mp4'))
+    ).toBeNull()
   })
 
   it('rejects a current save path outside the output directory', () => {
@@ -363,12 +378,14 @@ describe('asset download retries', () => {
       expect(firstTempPath).toBeTypeOf('string')
       if (!firstTempPath) throw new Error('First download did not receive a temporary path')
       await fs.promises.writeFile(firstTempPath, 'partial')
+
+      await mod.startAssetDownload(win, url, 'duplicate/hash.mp4', outputDir)
       first.getDone()!({}, 'interrupted')
 
       expect(mod.retryDownload(url)).toBe(true)
       await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledTimes(2))
 
-      const retry = createItem('attachment; filename="display.mp4"')
+      const retry = createItem(null)
       willDownload!({}, retry.item, null)
       const retryTempPath = retry.setSavePath.mock.calls[0]?.[0]
       expect(retryTempPath).toBeTypeOf('string')

@@ -363,14 +363,12 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
   // Normalise separators and collapse sequences
   let safe = filename.replace(/\\/g, '/')
 
-  // Reject Windows drive-qualified and device paths before treating the name as relative.
-  if (/^[a-z]:/i.test(safe) || /^\/\/[?.]\//.test(safe)) return null
+  // Reject absolute paths and traversal before treating the name as relative.
+  if (safe.startsWith('/') || /^[a-z]:/i.test(safe) || safe.split('/').includes('..')) {
+    return null
+  }
 
-  // Strip path traversal components
-  safe = safe.split('/').filter((seg) => seg !== '..' && seg !== '.').join('/')
-
-  // Remove leading slashes (absolute path attempt)
-  safe = safe.replace(/^\/+/, '')
+  safe = safe.split('/').filter((seg) => seg !== '.').join('/')
 
   if (safe === '') return null
 
@@ -408,9 +406,10 @@ export function resolveAssetSavePath(
 
   const currentDirectory = path.dirname(path.relative(outputDir, currentSavePath))
   const normalizedServerName = serverName.replace(/\\/g, '/')
+  const safeServerName = sanitizeAssetFilename(normalizedServerName, outputDir)
+  if (!safeServerName) return null
   const serverPath =
-    currentDirectory === '.' ? normalizedServerName : path.basename(normalizedServerName)
-  if (!serverPath || serverPath === '.' || serverPath === '..') return null
+    currentDirectory === '.' ? safeServerName : path.basename(safeServerName)
   const relativePath =
     currentDirectory === '.' ? serverPath : path.join(currentDirectory, serverPath)
   const safeRelativePath = sanitizeAssetFilename(relativePath, outputDir)
@@ -688,15 +687,6 @@ export async function startAssetDownload(
   const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
   const tempPath = path.join(tempDir, `${Date.now()}-${savedFilename}.tmp`)
 
-  retryParamsByUrl.set(url, {
-    kind: 'asset',
-    filename: path.relative(outputDir, savePath),
-    outputDir,
-    authToken,
-    window: win,
-    senderContents,
-  })
-
   const makeProgress = (
     overrides: Partial<DownloadProgress>,
   ): DownloadProgress => ({
@@ -718,6 +708,15 @@ export async function startAssetDownload(
     }
     return true
   }
+
+  retryParamsByUrl.set(url, {
+    kind: 'asset',
+    filename: path.relative(outputDir, savePath),
+    outputDir,
+    authToken,
+    window: win,
+    senderContents,
+  })
 
   await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
   await fs.promises.mkdir(tempDir, { recursive: true })
@@ -1240,4 +1239,3 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
   }
   downloadEvents.emit('tray-state-changed')
 }
-
