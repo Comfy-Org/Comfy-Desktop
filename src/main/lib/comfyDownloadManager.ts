@@ -363,6 +363,9 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
   // Normalise separators and collapse sequences
   let safe = filename.replace(/\\/g, '/')
 
+  // Reject Windows drive-qualified and device paths before treating the name as relative.
+  if (/^[a-z]:/i.test(safe) || /^\/\/[?.]\//.test(safe)) return null
+
   // Strip path traversal components
   safe = safe.split('/').filter((seg) => seg !== '..' && seg !== '.').join('/')
 

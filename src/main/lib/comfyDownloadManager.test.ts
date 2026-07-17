@@ -181,6 +181,14 @@ describe('sanitizeAssetFilename', () => {
     expect(sanitizeAssetFilename('output/image.png', root)).toBe('output/image.png')
   })
 
+  it.each(['C:/outside.png', 'C:outside.png', '//?/C:/outside.png', '//./C:/outside.png'])(
+    'rejects Windows drive-qualified and device path %s',
+    (filename) => {
+      const root = path.parse(path.resolve('/output')).root
+      expect(sanitizeAssetFilename(filename, root)).toBeNull()
+    },
+  )
+
   it('strips path traversal components', () => {
     expect(sanitizeAssetFilename('../../etc/passwd', outputDir)).toBe('etc/passwd')
     expect(sanitizeAssetFilename('../secret.txt', outputDir)).toBe('secret.txt')
@@ -286,6 +294,17 @@ describe('resolveAssetSavePath', () => {
         root,
       ),
     ).toBe(path.join(root, 'video', 'ltx', 'display-name.mp4'))
+  })
+
+  it('rejects a drive-qualified server path at the output root', () => {
+    const root = path.parse(outputDir).root
+    expect(
+      resolveAssetSavePath(
+        path.join(root, 'remote-name.mp4'),
+        'C:\\outside.mp4',
+        root,
+      ),
+    ).toBeNull()
   })
 })
 
