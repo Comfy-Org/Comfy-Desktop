@@ -47,9 +47,8 @@ export function openModelAccessPageWindow(sender: WebContents, url: unknown): bo
   accessWindow.once('ready-to-show', () => {
     if (!accessWindow.isDestroyed()) accessWindow.show()
   })
-  void accessWindow.loadURL(url).catch(() => {
-    if (!accessWindow.isDestroyed()) accessWindow.close()
-  })
+  // User navigation can supersede the initial load with ERR_ABORTED; keep the replacement page.
+  void accessWindow.loadURL(url).catch(() => {})
 
   return true
 }

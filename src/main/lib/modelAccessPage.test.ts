@@ -67,6 +67,20 @@ describe('openModelAccessPageWindow', () => {
     expect(accessWindow.loadURL).toHaveBeenCalledWith(url)
   })
 
+  it('keeps the access window open when the initial navigation is superseded', async () => {
+    accessWindow.loadURL.mockRejectedValueOnce(new Error('ERR_ABORTED'))
+
+    expect(
+      openModelAccessPageWindow(
+        { session: {} } as unknown as WebContents,
+        'https://huggingface.co/black-forest-labs/FLUX.1-dev'
+      )
+    ).toBe(true)
+    await Promise.resolve()
+
+    expect(accessWindow.close).not.toHaveBeenCalled()
+  })
+
   it('rejects untrusted URLs before creating a window', () => {
     expect(
       openModelAccessPageWindow(
