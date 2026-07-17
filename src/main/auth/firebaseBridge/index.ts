@@ -1,103 +1,214 @@
-import type { WebContents } from 'electron'
+import { shell, type BrowserWindow, type WebContents } from 'electron'
 
 import { detectFirebaseEnv } from './config'
 import {
-  beginActiveBridgeFlow,
-  isActiveBridgeFlow,
-  openExternalSafely,
-  releaseActiveBridgeFlow,
-  runBannerCleanup,
-  showCopyLinkBanner
-} from './flowState'
-import { abortable, abortableSleep } from './flowControl'
-import {
-  bindSignedInUser,
-  emitSignInFailure,
-  type HandleFirebasePopupOpts,
-  POST_SIGNIN_HOLD_MS
-} from './flowShared'
+  buildCopyLinkBannerScript,
+  buildRemoveCopyLinkBannerScript,
+  COPY_LINK_BANNER_CSS,
+  OPEN_LINK_SENTINEL
+} from './copyLinkBanner'
 import { buildIndexedDbInjectScript } from './inject'
 import { extractProviderId, type SupportedProvider } from './intercept'
-import { restoreParentWindow } from './restoreParentWindow'
-import { startBridgeServer, type BridgeHandle } from './server'
-import { signInViaDesktopLoginCode } from '../desktopLoginCode'
+import { startBridgeServer } from './server'
+import * as i18n from '../../lib/i18n'
 import * as mainTelemetry from '../../lib/telemetry'
+import { extractErrorClass } from '../../../shared/errorEvent'
 
-const LEGACY_AUTH_FLOW = 'loopback_bridge'
+/**
+ * Tie the anonymous `installation_id` to the signed-in user so PostHog
+ * merges the two identities. Both auth paths (Google server-side,
+ * GitHub popup) converge on the resolved Firebase `user` record, so this
+ * is the single hook that covers every sign-in.
+ *
+ * Person properties shipped:
+ *   - `email` — raw address. Industry-standard for product analytics
+ *     and the only practical way to support "what did <person> do"
+ *     lookups for support / debugging without a two-system round-trip
+ *     through Firebase Admin. PostHog's `$email` field also lights up
+ *     the person card with an avatar + email so persons-view search
+ *     by email works as expected.
+ *   - `email_domain` — cohort filter (e.g. comfy.org A/B targeting).
+ *     Kept alongside the raw email so existing filters / experiments
+ *     don't have to derive it at query time.
+ *   - `signed_in_via: 'desktop_2'` — every event from this person from
+ *     here on inherits this, so cloud-side events (when the user later
+ *     interacts with the embedded cloud workspace) are attributable to
+ *     a desktop-originated sign-in. Covers the case where the OAuth
+ *     flow itself runs in the system browser (no cloud.comfy.org
+ *     pageview during auth, so utm_source alone can't carry it).
+ *   - `signed_in_at_ms` — epoch-ms of the most recent sign-in. Useful
+ *     for "users who signed in within the last N days" cohorts.
+ *
+ * `bindUserId` is consent-gated downstream — a user who declined
+ * telemetry binds nothing. Wrapped so a telemetry failure can never
+ * break the auth flow.
+ */
+function bindSignedInUser(user: Record<string, unknown>): void {
+  try {
+    const uid = typeof user.uid === 'string' && user.uid.length > 0 ? user.uid : null
+    if (!uid) return
+    const email = typeof user.email === 'string' && user.email.length > 0 ? user.email : null
+    const at = email ? email.lastIndexOf('@') : -1
+    const emailDomain = at >= 0 ? email!.slice(at + 1).toLowerCase() : null
+    const properties: Record<string, string | number> = {
+      signed_in_via: 'desktop_2',
+      signed_in_at_ms: Date.now()
+    }
+    if (email) properties.email = email
+    if (emailDomain) properties.email_domain = emailDomain
+    mainTelemetry.bindUserId(uid, properties)
+  } catch {
+    // telemetry must never break the auth flow
+  }
+}
 
 export { extractProviderId, isFirebaseAuthHandlerUrl } from './intercept'
-export { bindSignedInUser, POST_SIGNIN_HOLD_MS } from './flowShared'
-export type { HandleFirebasePopupOpts, SignInFailureContext } from './flowShared'
-export { closeActiveBridge, runBannerCleanup, showCopyLinkBanner } from './flowState'
+
+export interface HandleFirebasePopupOpts {
+  /**
+   * Optional handle to the BrowserWindow that owns `comfyContents`.
+   * When provided, we restore + focus it after the bridge completes so
+   * the user returns to Comfy Desktop instead of staying parked on
+   * the now-finished browser tab.
+   */
+  parentWindow?: BrowserWindow
+  onError?: (err: Error) => void
+}
 
 /**
  * Orchestrate the system-browser sign-in for a Firebase auth-handler
  * URL that the embedded cloud-workspace view tried to open via
  * `window.open()`.
  *
- * The Cloud login-code path runs first. If it cannot create a code before
- * opening the browser, the legacy loopback bridge takes over. Both paths
- * converge on the same IndexedDB user injection and parent-window restore.
+ * Flow:
+ *   1. Detect prod/dev project + IdP from the intercepted URL.
+ *   2. Spin up a loopback HTTP server with a bridge page that runs
+ *      `signInWithPopup` in the user's system browser (passkeys +
+ *      saved-passwords + existing IdP sessions all work there).
+ *   3. Await the bridge's `/callback` carrying `auth.currentUser.toJSON()`.
+ *   4. Inject the serialized user into the embedded view's
+ *      `firebaseLocalStorageDb` IndexedDB and reload — Firebase's SDK
+ *      rehydrates from persistence on init, fires `onAuthStateChanged`,
+ *      and the existing `/auth/session` post handles the rest.
+ *   5. Focus the Desktop window so the user is yanked back into the
+ *      app without needing to alt-tab from their browser.
  *
  * Errors are reported via the optional `onError` callback (the caller
  * forwards them to Datadog without taking down the embedded view).
- * Once either path opens the browser, errors are surfaced instead of starting
- * a competing sign-in mechanism underneath the active tab.
+ * On error we deliberately do NOT try to fall back to opening the
+ * Firebase popup as an Electron window — the user has already lost
+ * trust at that point, and silently restoring the old (passkey-less)
+ * popup flow is more confusing than asking them to retry sign-in.
  */
+/**
+ * Singleton handle for the in-flight bridge. We bind to a fixed loopback
+ * port (so the Google OAuth client's exact-match `redirect_uri`
+ * allowlist works), which means only ONE bridge can run at a time. If
+ * the user clicks Sign in while a previous attempt is still parked on
+ * an open browser tab, we close the stale bridge (freeing the port)
+ * before spinning up the new one.
+ */
+let activeBridge: Awaited<ReturnType<typeof startBridgeServer>> | null = null
+
+/**
+ * Teardown for the in-flight "copy login link" card: removes the injected
+ * DOM node and detaches the `console-message` listener bound to it. Held
+ * at module scope (like `activeBridge`) so a fresh sign-in attempt can
+ * clear a prior attempt's card before showing its own.
+ */
+let activeBannerCleanup: (() => void) | null = null
+
+/** Run + clear the in-flight card teardown, if any. Safe to call twice. */
+function runBannerCleanup(): void {
+  const cleanup = activeBannerCleanup
+  activeBannerCleanup = null
+  cleanup?.()
+}
+
+/**
+ * Inject the "we opened your browser" card into the Cloud view. Same
+ * `loginUrl` we just opened, so the copied link matches the open tab.
+ * Copy stays in-page; only "Open again" reaches main, via a top-frame
+ * `OPEN_LINK_SENTINEL` console message that re-opens our own URL.
+ */
+function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void {
+  if (comfyContents.isDestroyed()) return
+
+  const labels = {
+    message: i18n.t('cloud.signInBanner.message'),
+    copy: i18n.t('cloud.signInBanner.copy'),
+    copied: i18n.t('cloud.signInBanner.copied'),
+    openAgain: i18n.t('cloud.signInBanner.openAgain'),
+    dismiss: i18n.t('cloud.signInBanner.dismiss')
+  }
+
+  void comfyContents
+    .insertCSS(COPY_LINK_BANNER_CSS)
+    .then(() => comfyContents.executeJavaScript(buildCopyLinkBannerScript(loginUrl, labels), true))
+    .catch(() => {})
+
+  const onConsoleMessage = (
+    details: Electron.Event<Electron.WebContentsConsoleMessageEventParams>
+  ): void => {
+    // Top-frame only: ignore the sentinel if an iframe logs it.
+    if (details.frame?.parent != null) return
+    if (details.message !== OPEN_LINK_SENTINEL) return
+    void shell.openExternal(loginUrl).catch(() => {})
+  }
+  comfyContents.on('console-message', onConsoleMessage)
+
+  activeBannerCleanup = () => {
+    comfyContents.off('console-message', onConsoleMessage)
+    if (!comfyContents.isDestroyed()) {
+      void comfyContents.executeJavaScript(buildRemoveCopyLinkBannerScript(), true).catch(() => {})
+    }
+  }
+}
+
+/**
+ * Time we hold on the "You're signed in" browser page before injecting
+ * the user into the embedded view and pulling focus to Desktop. The
+ * bridge HTML renders a synchronised countdown — keep these in lockstep.
+ */
+const POST_SIGNIN_HOLD_MS = 3000
+
 export async function handleFirebasePopup(
   url: string,
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
 ): Promise<void> {
-  // Prefer the cloud login-code flow (GTM-93): sign-in happens on the
-  // real Cloud login page and Desktop polls for a one-time custom token —
-  // no loopback server. 'fallback' means the flow died before the browser
-  // opened (e.g. backend without the endpoints), so the legacy bridge
-  // below takes over transparently.
-  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts)
-  if (outcome === 'handled') return
-
   const providerId = extractProviderId(url)
   if (!providerId) {
-    const error = new Error(`Firebase popup URL missing providerId: ${url}`)
-    const failure = emitSignInFailure('cloud', LEGACY_AUTH_FLOW, error)
-    opts.onError?.(failure)
+    opts.onError?.(new Error(`Firebase popup URL missing providerId: ${url}`))
     return
   }
   // Sign-in funnel: started -> (app:user_logged_in | auth.sign_in_failed).
   // `provider` splits Google vs GitHub conversion + failure rates. The
   // success leg is emitted by bindSignedInUser's app:user_logged_in.
-  mainTelemetry.capture('comfy.desktop.auth.sign_in_started', {
-    provider: providerId,
-    flow: LEGACY_AUTH_FLOW
-  })
+  mainTelemetry.capture('comfy.desktop.auth.sign_in_started', { provider: providerId })
   const env = detectFirebaseEnv(url)
 
-  // Kill any stale bridge from a prior sign-in attempt the user didn't
-  // complete — otherwise the user sees an unhelpful auth/popup-blocked
-  // error from the embedded view (we denied the popup but couldn't open
-  // the replacement bridge on the taken port).
-  const flow = beginActiveBridgeFlow()
+  // Kill any stale bridge from a prior sign-in attempt the user
+  // didn't complete. Without this, the second Sign-in click hits an
+  // EADDRINUSE on the fixed loopback port and the user sees an
+  // unhelpful auth/popup-blocked error from the embedded view (we
+  // denied the popup but couldn't open the replacement bridge).
+  if (activeBridge) {
+    try {
+      activeBridge.close()
+    } catch {
+      // best-effort
+    }
+    activeBridge = null
+  }
   // Clear a prior attempt's "copy link" card + its console listener so a
   // new attempt doesn't stack a second card or leak a stale listener.
   runBannerCleanup()
 
-  const { signal } = flow.controller
-  let handle: BridgeHandle | null = null
+  let handle: Awaited<ReturnType<typeof startBridgeServer>> | null = null
   try {
-    const startingBridge = startBridgeServer({ env, providerId })
-    void startingBridge.then(
-      (candidate) => {
-        if (signal.aborted || !isActiveBridgeFlow(flow)) candidate.close()
-      },
-      () => {}
-    )
-    handle = await abortable(startingBridge, signal)
-    if (signal.aborted || !isActiveBridgeFlow(flow)) {
-      handle.close()
-      return
-    }
-    flow.handle = handle
+    handle = await startBridgeServer({ env, providerId })
+    activeBridge = handle
     // Append a per-attempt nonce so browsers don't focus an existing
     // stale tab from a previous (perhaps wrong-provider) sign-in
     // attempt. macOS Chrome / Safari treat shell.openExternal of an
@@ -107,12 +218,11 @@ export async function handleFirebasePopup(
     // Capture the full nonce'd URL once so the auto-opened tab, the
     // "Copy link" button, and "Open again" all hand out the same link.
     const loginUrl = `${handle.url}?n=${Date.now().toString(36)}`
-    openExternalSafely(loginUrl)
+    void shell.openExternal(loginUrl)
     // Surface a Notion/Claude-style "didn't open? copy the link" card in
     // the Cloud view so users can finish sign-in in a non-default browser.
     showCopyLinkBanner(comfyContents, loginUrl)
-    const { user, apiKey } = await abortable(handle.signInPromise, signal)
-    if (signal.aborted || !isActiveBridgeFlow(flow)) return
+    const { user, apiKey } = await handle.signInPromise
     // Bind PostHog identity as soon as we have the user — independent of
     // the embedded-view reload below, so the merge happens even if the
     // window is torn down before the reload completes.
@@ -124,32 +234,37 @@ export async function handleFirebasePopup(
     // grab happens essentially instantly after the OAuth callback
     // lands, which feels jarring — they barely see the bridge confirm
     // success before Desktop snatches focus.
-    await abortableSleep(POST_SIGNIN_HOLD_MS, signal)
-    if (signal.aborted || !isActiveBridgeFlow(flow) || comfyContents.isDestroyed()) return
-    await abortable(
-      comfyContents.executeJavaScript(buildIndexedDbInjectScript(user, apiKey), true),
-      signal
-    )
-    if (signal.aborted || !isActiveBridgeFlow(flow)) return
-    // Pull the user back into the app after the browser completes sign-in.
-    restoreParentWindow(opts.parentWindow)
+    await new Promise<void>((resolve) => setTimeout(resolve, POST_SIGNIN_HOLD_MS))
+    if (comfyContents.isDestroyed()) return
+    await comfyContents.executeJavaScript(buildIndexedDbInjectScript(user, apiKey), true)
+    // Pull the user back into the app. `show()` un-minimises on
+    // platforms that need it; `focus()` lifts the OS-level focus from
+    // the browser. Best-effort — a destroyed window is a no-op.
+    const { parentWindow } = opts
+    if (parentWindow && !parentWindow.isDestroyed()) {
+      if (parentWindow.isMinimized()) parentWindow.restore()
+      parentWindow.show()
+      parentWindow.focus()
+    }
   } catch (err) {
-    if (signal.aborted || !isActiveBridgeFlow(flow)) return
     const error = err instanceof Error ? err : new Error(String(err))
     // Mirrored to Datadog (allow-list) so ops can alert if sign-in
     // breaks for a provider. error_bucket keeps the dashboard low-
     // cardinality; error_class adds a locale-independent type for grouping.
     // The raw message stays out by design (may carry tokens / URLs), so we
     // deliberately do NOT ship `error_message` / `error_signature` here.
-    const failure = emitSignInFailure(providerId, LEGACY_AUTH_FLOW, error)
-    opts.onError?.(failure)
+    mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
+      provider: providerId,
+      error_class: extractErrorClass(error),
+      error_bucket: mainTelemetry.bucketError(error.message)
+    })
+    opts.onError?.(error)
   } finally {
     handle?.close()
-    if (releaseActiveBridgeFlow(flow)) {
-      // Tear down the card only if this attempt still owns it; a superseded
-      // flow must not remove the newer attempt's banner.
-      runBannerCleanup()
-    }
+    if (activeBridge === handle) activeBridge = null
+    // Tear down the "copy link" card on success (the post-sign-in reload
+    // also drops it — cleanup is idempotent) and on cancel/error.
+    runBannerCleanup()
   }
 }
 

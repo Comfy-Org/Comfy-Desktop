@@ -1,6 +1,5 @@
 import { BrowserWindow, WebContentsView, ipcMain, screen, shell } from 'electron'
 import path from 'path'
-import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
 import { attachContextMenu } from '../lib/contextMenu'
@@ -9,11 +8,7 @@ import {
   detachWindowDownloads,
   getDownloadsTrayState,
 } from '../lib/comfyDownloadManager'
-import {
-  handleFirebasePopup,
-  isFirebaseAuthHandlerUrl,
-  type SignInFailureContext,
-} from '../auth/firebaseBridge'
+import { handleFirebasePopup, isFirebaseAuthHandlerUrl } from '../auth/firebaseBridge'
 import {
   isCheckoutReturnUrl,
   isCheckoutUrl,
@@ -77,21 +72,6 @@ export type CloseConsultResult = 'cleared' | 'aborted' | 'defer'
  *  Returning to the dashboard is no longer a close-time choice: it's a
  *  deliberate user action via the title pill's "Open Dashboard" / New Window. */
 export type CloseWindowChoice = 'close' | 'cancel'
-
-export function buildFirebaseAuthForwardedError(
-  failure: SignInFailureContext
-): DatadogForwardedError {
-  const source =
-    failure.flow === 'desktop_login_code'
-      ? 'firebase-desktop-login-code-failed'
-      : 'firebase-loopback-bridge-failed'
-  return {
-    source,
-    message: 'Firebase sign-in failed',
-    level: 'warn',
-    context: { origin: 'main-process', ...failure },
-  }
-}
 
 /** Should the close handler bail after the renderer consult?
  *
@@ -1183,14 +1163,21 @@ export function buildComfyView(
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     // Intercept Firebase auth popups (`<authDomain>/__/auth/handler?...`)
-    // and reroute sign-in through the user's system browser. The Cloud desktop
-    // login-code flow runs first; failures before opening the browser fall
-    // back to the provider-specific loopback bridge.
+    // and reroute sign-in through the user's system browser so passkeys
+    // and saved-password autofill work. The bridge picks a per-provider
+    // flow: Google takes a server-side raw-OAuth path (zero clicks),
+    // GitHub takes a client-side popup-bridge path (1-2 clicks) because
+    // its OAuth App allows only a single Authorization Callback URL.
     if (isFirebaseAuthHandlerUrl(childUrl)) {
       void handleFirebasePopup(childUrl, comfyContents, {
         parentWindow: comfyWindow,
-        onError: (failure) => {
-          forwardDatadogError(buildFirebaseAuthForwardedError(failure))
+        onError: (err) => {
+          forwardDatadogError({
+            source: 'firebase-bridge-failed',
+            message: 'Firebase loopback bridge sign-in failed',
+            level: 'warn',
+            context: { origin: 'main-process', error: err.message },
+          })
         },
       })
       return { action: 'deny' }
