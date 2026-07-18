@@ -4,6 +4,28 @@ import { findEntryByComfySender } from '../host/registry'
 
 const HUGGING_FACE_HOST = 'huggingface.co'
 const HUGGING_FACE_AUTH_PATHS = ['/login', '/join', '/password_reset']
+const HUGGING_FACE_RESERVED_ROUTES = new Set([
+  'api',
+  'chat',
+  'collections',
+  'datasets',
+  'docs',
+  'enterprise',
+  'inference',
+  'join',
+  'login',
+  'models',
+  'new',
+  'notifications',
+  'organizations',
+  'password_reset',
+  'pricing',
+  'settings',
+  'spaces',
+  'storage',
+  'support',
+  'tasks'
+])
 const accessWindowsBySender = new WeakMap<WebContents, Map<string, BrowserWindow>>()
 const securedSessions = new WeakSet<Session>()
 const accessPageContents = new WeakSet<WebContents>()
@@ -25,8 +47,10 @@ function parseHuggingFaceUrl(url: string): URL | null {
 }
 
 function modelRepositoryPath(url: URL): string | null {
-  const [owner, repository] = url.pathname.split('/').filter(Boolean)
-  if (!owner || !repository || owner === 'spaces') return null
+  const segments = url.pathname.split('/').filter(Boolean)
+  if (segments.length !== 2) return null
+  const [owner, repository] = segments
+  if (!owner || !repository || HUGGING_FACE_RESERVED_ROUTES.has(owner)) return null
   return `/${owner}/${repository}`
 }
 

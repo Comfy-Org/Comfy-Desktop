@@ -41,6 +41,10 @@ describe('isModelAccessPageUrl', () => {
     'https://huggingface.co@evil.com/model',
     'https://huggingface.co:8443/model',
     'https://huggingface.co/spaces/attacker/app',
+    'https://huggingface.co/datasets/organization/repository',
+    'https://huggingface.co/login/callback',
+    'https://huggingface.co/settings/tokens',
+    'https://huggingface.co/owner/repository/resolve/main/model.safetensors',
     'not a url'
   ])('rejects unsafe model access URL %s', (url) => {
     expect(isModelAccessPageUrl(url)).toBe(false)
