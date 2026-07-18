@@ -3,7 +3,6 @@ import type { Event, Session, WebContents } from 'electron'
 import { findEntryByComfySender } from '../host/registry'
 
 const HUGGING_FACE_HOST = 'huggingface.co'
-const HUGGING_FACE_AUTH_PATHS = ['/login', '/join', '/password_reset']
 const HUGGING_FACE_RESERVED_ROUTES = new Set([
   'api',
   'chat',
@@ -74,17 +73,8 @@ function isHuggingFaceOrigin(origin: string | undefined): boolean {
   return parsed?.origin === `https://${HUGGING_FACE_HOST}`
 }
 
-function isAllowedNavigation(url: string, repositoryPath: string): boolean {
-  const parsed = parseHuggingFaceUrl(url)
-  if (!parsed) return false
-
-  const path = parsed.pathname
-  return (
-    path === '/' ||
-    path === repositoryPath ||
-    path.startsWith(`${repositoryPath}/`) ||
-    HUGGING_FACE_AUTH_PATHS.some((authPath) => path === authPath || path.startsWith(`${authPath}/`))
-  )
+function isAllowedNavigation(url: string): boolean {
+  return parseHuggingFaceUrl(url) !== null
 }
 
 function secureSession(session: Session, contents: WebContents): void {
@@ -103,17 +93,13 @@ function secureSession(session: Session, contents: WebContents): void {
   securedSessions.add(session)
 }
 
-function guardNavigation(event: Event, url: string, repositoryPath: string): void {
-  if (isAllowedNavigation(url, repositoryPath)) return
+function guardNavigation(event: Event, url: string): void {
+  if (isAllowedNavigation(url)) return
   event.preventDefault()
 }
 
-function secureAccessWindow(
-  accessWindow: BrowserWindow,
-  session: Session,
-  repositoryPath: string
-): void {
-  const guard = (event: Event, url: string) => guardNavigation(event, url, repositoryPath)
+function secureAccessWindow(accessWindow: BrowserWindow, session: Session): void {
+  const guard = (event: Event, url: string) => guardNavigation(event, url)
   accessWindow.webContents.on('will-navigate', guard)
   accessWindow.webContents.on('will-redirect', guard)
   accessWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -171,7 +157,7 @@ export async function openModelAccessPageWindow(
   })
 
   accessWindows.set(repositoryPath, accessWindow)
-  secureAccessWindow(accessWindow, sender.session, repositoryPath)
+  secureAccessWindow(accessWindow, sender.session)
 
   const destroyWithParent = () => {
     if (!accessWindow.isDestroyed()) accessWindow.destroy()

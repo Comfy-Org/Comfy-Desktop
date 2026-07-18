@@ -196,23 +196,29 @@ describe('openModelAccessPageWindow', () => {
     expect(accessWindow.destroy).toHaveBeenCalledOnce()
   })
 
-  it('blocks untrusted navigation inside the embedded access window', async () => {
+  it('allows Hugging Face navigation and blocks other origins', async () => {
     await openModelAccessPageWindow({ session } as unknown as WebContents, url)
     const externalUrl = 'https://example.com/phishing'
     const externalEvent = { preventDefault: vi.fn() }
     const spaceEvent = { preventDefault: vi.fn() }
-    const trustedEvent = { preventDefault: vi.fn() }
+    const settingsEvent = { preventDefault: vi.fn() }
+    const logoutEvent = { preventDefault: vi.fn() }
 
     webContentsListeners.get('will-navigate')?.(externalEvent, externalUrl)
     webContentsListeners.get('will-navigate')?.(
       spaceEvent,
       'https://huggingface.co/spaces/attacker/app'
     )
-    webContentsListeners.get('will-redirect')?.(trustedEvent, 'https://huggingface.co/login')
+    webContentsListeners.get('will-navigate')?.(
+      settingsEvent,
+      'https://huggingface.co/settings/profile'
+    )
+    webContentsListeners.get('will-redirect')?.(logoutEvent, 'https://huggingface.co/logout')
 
     expect(externalEvent.preventDefault).toHaveBeenCalledOnce()
-    expect(spaceEvent.preventDefault).toHaveBeenCalledOnce()
-    expect(trustedEvent.preventDefault).not.toHaveBeenCalled()
+    expect(spaceEvent.preventDefault).not.toHaveBeenCalled()
+    expect(settingsEvent.preventDefault).not.toHaveBeenCalled()
+    expect(logoutEvent.preventDefault).not.toHaveBeenCalled()
   })
 
   it('denies new Electron windows', async () => {
