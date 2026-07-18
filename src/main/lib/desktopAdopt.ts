@@ -957,18 +957,18 @@ export async function reconcileAdoptedSettings(): Promise<number> {
       // Only generated defaults are safe to replace; preserve launch args edited in v2.
       if (existing.launchArgs === generatedDefaultArgs) {
         patch.launchArgs = derived.launchArgs
-        if (
-          derived.pathOverrides.inputDir &&
-          existing.inputDir === path.join(basePath, 'input')
-        ) {
-          patch.inputDir = derived.pathOverrides.inputDir
-        }
-        if (
-          derived.pathOverrides.outputDir &&
-          existing.outputDir === path.join(basePath, 'output')
-        ) {
-          patch.outputDir = derived.pathOverrides.outputDir
-        }
+      }
+      if (
+        derived.pathOverrides.inputDir &&
+        existing.inputDir === path.join(basePath, 'input')
+      ) {
+        patch.inputDir = derived.pathOverrides.inputDir
+      }
+      if (
+        derived.pathOverrides.outputDir &&
+        existing.outputDir === path.join(basePath, 'output')
+      ) {
+        patch.outputDir = derived.pathOverrides.outputDir
       }
 
       if (await installations.update(existing.id, patch)) repaired += 1

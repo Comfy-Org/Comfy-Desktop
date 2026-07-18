@@ -859,7 +859,13 @@ describe('adoptDesktopInstall', () => {
   it('does not replace launch args edited after adoption', async () => {
     const legacy = buildFakeLegacy({
       configFiles: {
-        'comfy.settings.json': JSON.stringify({ 'Comfy.Server.LaunchArgs': { cpu: '' } })
+        'comfy.settings.json': JSON.stringify({
+          'Comfy.Server.LaunchArgs': {
+            cpu: '',
+            'input-directory': 'D:\\legacy-input',
+            'output-directory': 'D:\\legacy-output'
+          }
+        })
       }
     })
     try {
@@ -872,12 +878,16 @@ describe('adoptDesktopInstall', () => {
         adopted: true,
         adoptedBaseDir: legacy.basePath,
         adoptedSelectedDevice: 'cpu',
-        launchArgs: '--port 9000 --enable-manager'
+        launchArgs: '--port 9000 --enable-manager',
+        inputDir: path.join(legacy.basePath, 'input'),
+        outputDir: path.join(legacy.basePath, 'output')
       })
 
       expect(await reconcileAdoptedSettings()).toBe(1)
       const [record] = installationsMock.__records
       expect(record!.launchArgs).toBe('--port 9000 --enable-manager')
+      expect(record!.inputDir).toBe('D:\\legacy-input')
+      expect(record!.outputDir).toBe('D:\\legacy-output')
       expect(record!.adoptedSettingsVersion).toBe(1)
     } finally {
       legacy.cleanup()
