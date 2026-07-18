@@ -145,6 +145,7 @@ import {
   parseExtraModelsSections,
   deriveLaunchArgs,
   computeModelsDirsToCarry,
+  preserveInstallExtraModelPaths,
   getLegacyVenvUvPath,
   type AdoptTools,
   type AdoptDeps,
@@ -677,6 +678,63 @@ describe('computeModelsDirsToCarry', () => {
     const result = computeModelsDirsToCarry(basePath, yaml, [])
     expect(result).not.toContain(path.resolve(path.join(yamlBase, 'models')))
     expect(result).toContain(path.resolve(yamlBase))
+  })
+
+  it('does NOT carry extra_model_paths.yaml dirs into the global list (install-scoped)', () => {
+    // Only extra_models_config.yaml feeds the global modelsDirs; an
+    // extra_model_paths.yaml is handled install-locally elsewhere.
+    const basePath = path.join(tmpRoot, 'primary')
+    fs.mkdirSync(path.join(basePath, 'models'), { recursive: true })
+    const result = computeModelsDirsToCarry(basePath, null, [])
+    expect(result).toEqual([path.resolve(path.join(basePath, 'models'))])
+  })
+})
+
+describe('preserveInstallExtraModelPaths', () => {
+  let tmpRoot: string
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'preserveExtra-'))
+  })
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  it('keeps the source tree file as-is (pre-swap copy) and never clobbers it', () => {
+    const basePath = path.join(tmpRoot, 'base')
+    const destSource = path.join(tmpRoot, 'install', 'ComfyUI')
+    fs.mkdirSync(destSource, { recursive: true })
+    fs.mkdirSync(basePath, { recursive: true })
+    fs.writeFileSync(path.join(destSource, 'extra_model_paths.yaml'), 'from_source: {}\n')
+    // A different basePath copy must NOT overwrite the authoritative source one.
+    fs.writeFileSync(path.join(basePath, 'extra_model_paths.yaml'), 'from_base: {}\n')
+    const ok = preserveInstallExtraModelPaths(basePath, destSource, () => {})
+    expect(ok).toBe(true)
+    expect(fs.readFileSync(path.join(destSource, 'extra_model_paths.yaml'), 'utf-8')).toContain(
+      'from_source'
+    )
+  })
+
+  it('recovers the file from basePath when the sourced tree lacks one (clone fallback)', () => {
+    const basePath = path.join(tmpRoot, 'base')
+    const destSource = path.join(tmpRoot, 'install', 'ComfyUI')
+    fs.mkdirSync(destSource, { recursive: true })
+    fs.mkdirSync(basePath, { recursive: true })
+    fs.writeFileSync(path.join(basePath, 'extra_model_paths.yaml'), 'from_base: {}\n')
+    const ok = preserveInstallExtraModelPaths(basePath, destSource, () => {})
+    expect(ok).toBe(true)
+    expect(fs.readFileSync(path.join(destSource, 'extra_model_paths.yaml'), 'utf-8')).toContain(
+      'from_base'
+    )
+  })
+
+  it('is a no-op (returns false) when no legacy extra_model_paths.yaml exists', () => {
+    const basePath = path.join(tmpRoot, 'base')
+    const destSource = path.join(tmpRoot, 'install', 'ComfyUI')
+    fs.mkdirSync(destSource, { recursive: true })
+    fs.mkdirSync(basePath, { recursive: true })
+    const ok = preserveInstallExtraModelPaths(basePath, destSource, () => {})
+    expect(ok).toBe(false)
+    expect(fs.existsSync(path.join(destSource, 'extra_model_paths.yaml'))).toBe(false)
   })
 })
 

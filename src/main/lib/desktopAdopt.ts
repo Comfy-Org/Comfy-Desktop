@@ -55,6 +55,11 @@ const ADOPT_INSTALL_NAME = DEFAULT_INSTALL_NAME
 const COMFY_SETTINGS_FILE = 'comfy.settings.json'
 const DESKTOP_CONFIG_FILE = 'config.json'
 const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
+// The other model-paths file: ComfyUI auto-loads it from the source dir and
+// the launcher displays it read-only. Carried alongside EXTRA_MODELS_YAML so
+// its dirs survive into v2's modelsDirs (not just the adopted ComfyUI's own
+// search), including in the git-clone source fallback where it isn't copied.
+const EXTRA_MODEL_PATHS_YAML = 'extra_model_paths.yaml'
 const WINDOW_FILE = 'window.json'
 const VENV_VALIDATE_TIMEOUT_MS = 30_000
 
@@ -430,9 +435,15 @@ function isDangerousRoot(resolved: string): boolean {
 
 /**
  * Cross-install model dirs to register in `settings.modelsDirs` for the
- * adopted record. The goal for migrations is to carry EVERY real model
- * directory the legacy `extra_models_config.yaml` referenced so nothing
+ * adopted record. The goal for migrations is to carry the real model
+ * directories the legacy `extra_models_config.yaml` referenced so nothing
  * shows as "missing" after adoption.
+ *
+ * Only the desktop-managed `extra_models_config.yaml` feeds the GLOBAL
+ * shared list here. Any `extra_model_paths.yaml` is deliberately NOT carried
+ * globally — its (often install-specific / external) paths stay scoped to the
+ * adopted install via `preserveInstallExtraModelPaths`, so they don't leak
+ * into every other install. See that function for the install-local handling.
  *
  * For each section we register a models ROOT (a dir whose type subfolders
  * `buildYaml` scans):
@@ -522,6 +533,43 @@ export function computeModelsDirsToCarry(
 function isUnderRoot(child: string, root: string): boolean {
   const rel = path.relative(root, child)
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+/**
+ * Keep the legacy `extra_model_paths.yaml` as an INSTALL-LOCAL file in the
+ * adopted source tree, so ComfyUI auto-loads it for this install only (it reads
+ * `<sourceDir>/extra_model_paths.yaml` from `dirname(main.py)`) and the Storage
+ * tab reports it via `buildExtraModelPathsView`. Deliberately install-scoped —
+ * its arbitrary/external paths are never merged into the global shared model
+ * dirs, so they can't leak into other installs; users who want them elsewhere
+ * can open the file and copy paths out manually.
+ *
+ * No-op when the sourced tree already has one (a pre-swap copy carries the
+ * legacy file verbatim — never clobber it). Otherwise (e.g. the git-clone
+ * fallback, whose fresh checkout ships only `extra_model_paths.yaml.example`)
+ * recover a copy from the reused legacy `basePath` when present. Best-effort:
+ * a missing source or copy failure is logged and swallowed.
+ *
+ * Returns true when a file is present in the install afterward (carried or
+ * recovered), for telemetry/visibility.
+ */
+export function preserveInstallExtraModelPaths(
+  basePath: string,
+  destSource: string,
+  sendOutput: (t: string) => void
+): boolean {
+  const dest = path.join(destSource, EXTRA_MODEL_PATHS_YAML)
+  if (fs.existsSync(dest)) return true // pre-swap copy already carried it
+  const legacy = path.join(basePath, EXTRA_MODEL_PATHS_YAML)
+  try {
+    if (!fs.existsSync(legacy)) return false
+    fs.copyFileSync(legacy, dest)
+    sendOutput('Preserved legacy extra_model_paths.yaml as an install-local config.\n')
+    return true
+  } catch (err) {
+    sendOutput(`Warning: could not preserve extra_model_paths.yaml: ${(err as Error).message}\n`)
+    return false
+  }
 }
 
 /**
@@ -1154,6 +1202,15 @@ async function runAdoption(
     // 'retry' loops.
   }
 
+  // Keep the legacy extra_model_paths.yaml as an install-local config (loaded
+  // by this install's ComfyUI and shown read-only in the Storage tab). Scoped
+  // to this install — never merged into the global shared model dirs.
+  const hasInstallExtraModelPaths = preserveInstallExtraModelPaths(
+    info.basePath,
+    destSource,
+    sendOutput
+  )
+
   // Adoption preserves the user's existing ComfyUI checkout as-is — it is
   // not auto-updated to latest stable. A "frozen" install must stay on
   // whatever version the user was running; ComfyUI updates are opt-in per
@@ -1335,6 +1392,7 @@ async function runAdoption(
     adopted_source_mode: sourceMode,
     has_venv: info.hasVenv,
     has_extra_models_yaml: fs.existsSync(path.join(info.configDir, EXTRA_MODELS_YAML)),
+    has_install_extra_model_paths_yaml: hasInstallExtraModelPaths,
     models_dir_count: carry.addedModelsDirs.length,
     carried_keys: carry.carriedKeys,
     carry_skipped_keys: carry.carrySkippedKeys,
