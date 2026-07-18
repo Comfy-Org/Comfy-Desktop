@@ -61,6 +61,7 @@ export type {
   ErrorDetailData,
   AppUpdateState,
   AppUpdateDownloadProgress,
+  SurveyIdentity,
   CloudCapacityStatus,
   CloudUserTier,
   ElectronApi,

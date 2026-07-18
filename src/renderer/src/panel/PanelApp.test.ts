@@ -183,6 +183,7 @@ interface MockApiState {
   getInstallations: ReturnType<typeof vi.fn>
   openExternal: ReturnType<typeof vi.fn>
   getAppVersion: ReturnType<typeof vi.fn>
+  getSurveyIdentity: ReturnType<typeof vi.fn>
   /** Per-key getSetting values. Tests that need first-use takeover to
    *  auto-mount can flip `firstUseCompleted` to false here. Default is
    *  `true` so existing tests don't trip the takeover. */
@@ -209,6 +210,11 @@ function installMockApi(initial?: {
     getInstallations: vi.fn(async () => state.installations),
     openExternal: vi.fn(async () => {}),
     getAppVersion: vi.fn(async () => '0.5.0'),
+    getSurveyIdentity: vi.fn(async () => ({
+      anon_id: 'install-1',
+      distinct_id: 'user-1',
+      comfy_id: 'user-1'
+    })),
     settings: { firstUseCompleted: true, ...initial?.settings },
     installUpdate: vi.fn(async () => {}),
     downloadUpdate: vi.fn(async () => {})
@@ -247,6 +253,7 @@ function installMockApi(initial?: {
     }),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
+    getSurveyIdentity: state.getSurveyIdentity,
     onSettingsChanged: vi.fn(() => () => {}),
     // Main consults the panel renderer before tearing down the host
     // window. PanelApp subscribes on mount; tests can fire the consult
@@ -709,10 +716,16 @@ describe('PanelApp', () => {
     // through `openFeedback`.
     const frame = document.body.querySelector<HTMLIFrameElement>('iframe.feedback-modal-frame')
     expect(frame).not.toBeNull()
-    const url = frame?.getAttribute('src') ?? ''
-    expect(url).toContain('form.typeform.com/to/VhOXmuaL')
-    expect(url).toContain('ver=0.5.0')
-    expect(url).toMatch(/[?&]platform=/)
+    const url = new URL(frame?.getAttribute('src') ?? '')
+    expect(url.href).toContain('form.typeform.com/to/VhOXmuaL')
+    expect(url.searchParams.get('ver')).toBe('0.5.0')
+    expect(url.searchParams.get('platform')).toBeTruthy()
+    const hiddenFields = new URLSearchParams(url.hash.slice(1))
+    expect(hiddenFields.get('ver')).toBe('0.5.0')
+    expect(hiddenFields.get('platform')).toBeTruthy()
+    expect(hiddenFields.get('anon_id')).toBe('install-1')
+    expect(hiddenFields.get('distinct_id')).toBe('user-1')
+    expect(hiddenFields.get('comfy_id')).toBe('user-1')
   })
 
   // The first-use takeover has no in-app ✕ close button (first-use

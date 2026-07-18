@@ -943,6 +943,12 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
+export interface SurveyIdentity {
+  anon_id: string
+  distinct_id?: string
+  comfy_id?: string
+}
+
 // --- IPC API interface ---
 export interface ElectronApi {
   /** Host OS — set synchronously by the preload from `process.platform`.
@@ -1465,6 +1471,11 @@ export interface ElectronApi {
    * refresh; see `src/main/lib/experiments.ts`.
    */
   telemetryGetExperimentFlag(key: string): Promise<string | boolean | null>
+  /**
+   * Returns the Desktop-owned survey identity tags when analytics consent is
+   * granted. Null means the renderer should keep the form anonymous.
+   */
+  getSurveyIdentity(): Promise<SurveyIdentity | null>
   /**
    * Record an A/B experiment exposure. Per-session dedup is enforced
    * main-side, so it's safe to call this on every render of an

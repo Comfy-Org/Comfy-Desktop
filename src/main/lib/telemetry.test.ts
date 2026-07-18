@@ -318,6 +318,61 @@ describe('telemetry default event properties', () => {
   })
 })
 
+describe('telemetry.getSurveyIdentity', () => {
+  beforeEach(() => {
+    captured.length = 0
+    aliases.length = 0
+    identifies.length = 0
+    process.env['POSTHOG_API_KEY'] = 'test-key'
+    process.env['POSTHOG_ENABLED'] = '1'
+    telemetry._resetForTest()
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+  })
+
+  afterEach(() => {
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
+    telemetry._resetForTest()
+  })
+
+  it('returns null until consent is granted', () => {
+    telemetry.identify('install-abc123')
+
+    expect(telemetry.getSurveyIdentity()).toBeNull()
+  })
+
+  it('returns the Desktop-owned anonymous identity after consent', () => {
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+
+    expect(telemetry.getSurveyIdentity()).toEqual({
+      anon_id: 'install-abc123',
+      distinct_id: 'install-abc123'
+    })
+  })
+
+  it('returns the active user id after the renderer binds login identity', () => {
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+
+    telemetry.bindUserId('user-42')
+
+    expect(telemetry.getSurveyIdentity()).toEqual({
+      anon_id: 'install-abc123',
+      distinct_id: 'user-42',
+      comfy_id: 'user-42'
+    })
+  })
+
+  it('returns null again if consent is revoked', () => {
+    telemetry.identify('install-abc123')
+    telemetry.setConsentState('granted')
+    telemetry.setConsentState('denied')
+
+    expect(telemetry.getSurveyIdentity()).toBeNull()
+  })
+})
+
 describe('telemetry.captureInstallCompleted', () => {
   beforeEach(() => {
     captured.length = 0

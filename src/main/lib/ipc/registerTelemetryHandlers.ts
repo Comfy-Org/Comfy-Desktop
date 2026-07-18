@@ -200,6 +200,8 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.unbindUserId()
   })
 
+  ipcMain.handle('surveys:get-identity', () => mainTelemetry.getSurveyIdentity())
+
   // Flag lookup for renderer A/B branches; awaits the boot fetch so a query
   // landing before it settles still gets the real variant. null → control.
   ipcMain.handle('telemetry:getExperimentFlag', async (_event, key: unknown) => {
