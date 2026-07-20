@@ -136,12 +136,14 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       // version-diff / rollback copy.
       // Every in-place update path carries the breakage warning — custom
       // nodes / saved workflows can pin to specific ComfyUI internals that
-      // shift across releases. Lives in the confirm copy itself (not the
-      // collapsible details) so the user can't dismiss past it accidentally.
+      // shift across releases. Pair it with the snapshot-undo hint so the
+      // user knows the update is reversible. Both live in the confirm copy
+      // itself (not the collapsible details) so the user can't dismiss past
+      // them accidentally.
       const baseConfirmMessage = isSwitching
         ? t('channelCards.movingTo', { channel: `**${card.label}**` })
         : t(msgKey, { installed: boldInstalled, latest: boldLatest })
-      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateBreakingWarning')}`
+      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateBreakingWarning')}\n${t('standalone.updateSnapshotUndoHint')}`
       actions.push({
         id: 'update-comfyui', label: t('standalone.updateNow'), style: 'primary', enabled: installed,
         tooltip: t('tooltips.updateNow'),
@@ -174,7 +176,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           title: t('standalone.copyAndUpdateTitle'),
           message: (isSwitching ? switchPrefix : '') + t('standalone.copyAndUpdateMessage', { installed: boldInstalled, latest: boldLatest }),
           placeholder: t('standalone.copyAndUpdatePlaceholder'),
-          defaultValue: `${installation.name} (${latestDisplay})`,
+          // Default to the source name (never the target version, which goes
+          // stale the moment the copy is updated again). `uniquifyDefault` shows
+          // the numbered name it will actually get on save (e.g. "ComfyUI (8)").
+          defaultValue: installation.name,
+          uniquifyDefault: true,
           confirmLabel: t('standalone.copyAndUpdateConfirm'),
           required: true,
           field: 'name',
@@ -225,7 +231,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           prompt: {
             title: t('actions.copyInstallationTitle'),
             message: t('actions.copyInstallationMessage'),
-            defaultValue: `${installation.name} (Copy)`,
+            // Pre-fill with the numbered name the duplicate will actually get on
+            // save ("ComfyUI" → "ComfyUI (1)"), via uniqueName(), instead of a
+            // "(Copy)" label or a stale suggestion that differs from the result.
+            defaultValue: installation.name,
+            uniquifyDefault: true,
             confirmLabel: t('actions.copyInstallationConfirm'),
             required: true,
             field: 'name',

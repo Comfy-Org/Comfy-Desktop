@@ -53,7 +53,13 @@ import { readGitHead } from '../git'
 import { scanCustomNodes } from '../nodes'
 import { pipFreeze } from '../pip'
 import { getActiveUvPath, getActivePythonPath } from '../pythonEnv'
-import { captureState, saveSnapshot, captureSnapshotIfChanged } from './store'
+import {
+  captureState,
+  saveSnapshot,
+  captureSnapshotIfChanged,
+  ensureCurrentSnapshotOnTop,
+  listSnapshots
+} from './store'
 import * as telemetry from '../telemetry'
 import type { InstallationRecord } from '../../installations'
 
@@ -379,5 +385,145 @@ describe('captureSnapshotIfChanged telemetry', () => {
       has_label: false,
       deduplicated_previous: true
     })
+  })
+})
+
+describe('ensureCurrentSnapshotOnTop', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockedScanCustomNodes.mockResolvedValue([])
+    mockedReadGitHead.mockReturnValue('abc1234')
+  })
+
+  const installation = {
+    id: 'install-1',
+    name: 'Test',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    installPath: '/test/install',
+    sourceId: 'test'
+  } as InstallationRecord
+
+  // The live state `captureState` produces here: ref 'unknown' (manifest read
+  // fails), commit from mocked readGitHead, no nodes, no pip, channel 'stable'.
+  const liveStateSnapshot = {
+    version: 1,
+    createdAt: '2025-01-01T00:00:00.000Z',
+    trigger: 'boot' as const,
+    label: null,
+    comfyui: { ref: 'unknown', commit: 'abc1234', releaseTag: '', variant: '' },
+    customNodes: [],
+    pipPackages: {},
+    pythonVersion: undefined,
+    updateChannel: 'stable'
+  }
+
+  function seedTopSnapshot(memory: Map<string, string>, snapshot: object, filename: string): void {
+    memory.set(
+      path.join('/test/install', '.launcher', 'snapshots', filename),
+      JSON.stringify(snapshot)
+    )
+  }
+
+  it('writes a post-restore snapshot of the live state when the top snapshot does not match', async () => {
+    const memory = installFsMemory()
+    // Imported-but-never-applied snapshot on top: different commit than live.
+    seedTopSnapshot(
+      memory,
+      { ...liveStateSnapshot, comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' } },
+      '20250101_000000_000-manual-imported.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    expect(result.saved).toBe(true)
+    expect(result.filename).toMatch(/-post-restore-/)
+    // The imported snapshot is kept (retry can still use it).
+    expect(
+      memory.has(
+        path.join('/test/install', '.launcher', 'snapshots', '20250101_000000_000-manual-imported.json')
+      )
+    ).toBe(true)
+    // The written snapshot records the live commit.
+    const written = JSON.parse(
+      memory.get(path.join('/test/install', '.launcher', 'snapshots', result.filename!))!
+    )
+    expect(written.comfyui.commit).toBe('abc1234')
+    expect(written.trigger).toBe('post-restore')
+    expect(mockedTelemetryEmit).toHaveBeenCalledWith(
+      'comfy.desktop.snapshot.created',
+      expect.objectContaining({ trigger: 'post-restore' })
+    )
+  })
+
+  it('is a no-op when the top snapshot already matches the live state', async () => {
+    const memory = installFsMemory()
+    seedTopSnapshot(memory, liveStateSnapshot, '20250101_000000_000-boot-match.json')
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    expect(result.saved).toBe(false)
+    expect(result.filename).toBe('20250101_000000_000-boot-match.json')
+    expect(mockedTelemetryEmit).not.toHaveBeenCalled()
+    // No new file written — only the seeded one remains.
+    const files = [...memory.keys()].filter((k) => k.endsWith('.json'))
+    expect(files).toHaveLength(1)
+  })
+
+  it('writes a snapshot that sorts above an imported top with a future timestamp', async () => {
+    const memory = installFsMemory()
+    // A multi-snapshot import (or a same-ms import) can leave the newest entry
+    // with a timestamp at/after `now`; the correction snapshot must still win.
+    seedTopSnapshot(
+      memory,
+      {
+        ...liveStateSnapshot,
+        createdAt: new Date(Date.now() + 60_000).toISOString(),
+        comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' }
+      },
+      '29991231_000000_000-manual-imported.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    expect(result.saved).toBe(true)
+    const entries = await listSnapshots('/test/install')
+    expect(entries[0]!.filename).toBe(result.filename)
+  })
+
+  it('writes a new snapshot when only updateChannel or pythonVersion differ (stricter than statesMatch)', async () => {
+    const memory = installFsMemory()
+    // Same comfyui/nodes/pips as live (so `statesMatch` is true) but a different
+    // updateChannel — `snapshotRepresentsCurrentState` must treat this as stale.
+    seedTopSnapshot(
+      memory,
+      { ...liveStateSnapshot, updateChannel: 'nightly' },
+      '20250101_000000_000-boot-channel.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    expect(result.saved).toBe(true)
+    expect(result.filename).toMatch(/-post-restore-/)
+  })
+
+  it('does not pile up duplicates across repeated failed restores (retry)', async () => {
+    const memory = installFsMemory()
+    seedTopSnapshot(
+      memory,
+      { ...liveStateSnapshot, comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' } },
+      '20250101_000000_000-manual-imported.json'
+    )
+
+    const first = await ensureCurrentSnapshotOnTop('/test/install', installation)
+    expect(first.saved).toBe(true)
+
+    // A second failed attempt (retry) now sees a live-state snapshot on top and
+    // must not write another.
+    const second = await ensureCurrentSnapshotOnTop('/test/install', installation)
+    expect(second.saved).toBe(false)
+    expect(second.filename).toBe(first.filename)
+
+    const files = [...memory.keys()].filter((k) => k.endsWith('.json'))
+    expect(files).toHaveLength(2) // imported + one post-restore
   })
 })

@@ -34,6 +34,7 @@ import { setTerminalEnvResolver } from '../terminal'
 import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
+import { reconcileAdoptedSettings } from '../desktopAdopt'
 
 export {
   getAppVersion,
@@ -56,7 +57,7 @@ function wireReleaseCacheBroadcast(): void {
   })
 }
 
-export function register(callbacks: RegisterCallbacks = {}): void {
+export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   setCallbacks(callbacks)
   wireReleaseCacheBroadcast()
 
@@ -97,7 +98,13 @@ export function register(callbacks: RegisterCallbacks = {}): void {
     }
   }
 
-  migrateDefaults()
+  const startupMaintenance = migrateDefaults()
+    .then(async () => {
+      await reconcileAdoptedSettings()
+    })
+    .catch((err) => {
+      console.warn('[ipc] Failed to migrate startup defaults or adopted settings:', err)
+    })
 
   // Sweep leftover empty local install dirs (aborted installs) on startup.
   // Only reclaim dirs that exist but are effectively empty — never a missing
@@ -260,4 +267,5 @@ export function register(callbacks: RegisterCallbacks = {}): void {
   registerLogsHandlers()
   registerCrashHandlers()
   registerTelemetryHandlers()
+  return startupMaintenance
 }

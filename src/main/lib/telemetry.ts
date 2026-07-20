@@ -116,6 +116,7 @@ import {
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
+import { buildErrorFields } from '../../shared/errorEvent'
 import { scrubAll } from '../../shared/piiScrub'
 
 export type TelemetryValue = boolean | number | string | null | undefined
@@ -216,7 +217,8 @@ function canEmit(): boolean {
 /**
  * Default properties merged into every `capture()` payload. Seeded at
  * `initTelemetry()` time from `InitOptions` with `app_version`,
- * `app_channel`, `app_env`, `platform`, `arch`, and `is_packaged` so
+ * `app_channel`, `app_env`, `platform`, `arch`, `is_packaged`, and
+ * `client` so
  * per-event filters / breakdowns work without a join against the person
  * profile (PostHog person properties are joined at query time and are
  * point-in-time as of write — releasing a new app version while the user
@@ -228,6 +230,20 @@ function canEmit(): boolean {
  * Per-call properties take precedence on key collision.
  */
 let defaultEventProperties: Record<string, TelemetryValue> = {}
+
+/**
+ * The `deployment` analytics axis: which backend ran the work. Paired with
+ * the `client` default event property (desktop | web | cli) to identify the
+ * product surface (MAR-51). Shared by every site that tags `deployment` so
+ * the enum can't drift.
+ */
+export type Deployment = 'local' | 'cloud' | 'remote'
+
+/** Narrow an untrusted value (payload property, source-plugin category) to a
+ *  valid `Deployment`, or `null` — never let junk reach the shared axis. */
+export function asDeployment(value: unknown): Deployment | null {
+  return value === 'local' || value === 'cloud' || value === 'remote' ? value : null
+}
 
 /**
  * Coarse release-channel classification derived from a semver-ish
@@ -464,7 +480,10 @@ export function initTelemetry(opts: InitOptions): void {
     app_env: opts.appEnv,
     is_packaged: opts.isPackaged,
     platform: process.platform,
-    arch: process.arch
+    arch: process.arch,
+    // Cross-surface analytics axis (MAR-51); this pipe is always the desktop
+    // app. `deployment` (see the `Deployment` type) is its per-event pair.
+    client: 'desktop'
   }
 
   // Suppress event capture on unpackaged (developer / `pnpm dev`) runs.
@@ -964,6 +983,12 @@ export function captureInstallCompleted(opts: {
     method: opts.method,
     express: opts.express
   })
+  // Durable per-person activation milestone (#1224). All four methods
+  // (express/manual/adopt/migrate) are local installs, so this stamps the
+  // person the first time they EVER complete a local install — even across
+  // quits, reinstalls, or a second machine. Lets the funnel distinguish
+  // "onboarded but never installed" from "abandoned then recovered later".
+  registerPersonPropertiesOnce({ first_local_install_completed_at: new Date().toISOString() })
 }
 
 export function captureException(error: unknown, properties: TelemetryContext = {}): void {
@@ -971,7 +996,9 @@ export function captureException(error: unknown, properties: TelemetryContext = 
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return
   try {
-    client!.captureException(error, distinctId, properties)
+    // Same default merge as capture() so exception events stay filterable by
+    // the shared axes (app_version, client, ...) instead of arriving bare.
+    client!.captureException(error, distinctId, { ...defaultEventProperties, ...properties })
   } catch {
     // ignore
   }
@@ -1095,17 +1122,15 @@ export async function trackedStep<T>(
     capture(`${step}.end`, { ...context, duration_ms: Date.now() - t0 })
     return result
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Bucket runs on raw text — its regexes don't care about user paths
-    // and would otherwise miss legitimate matches hidden inside a
-    // `[REDACTED]` substitution. The wire-bound field gets scrubbed
-    // before the 500-char slice so the redaction prefix can't get
-    // truncated mid-token.
-    capture(`${step}.error`, {
+    // Standard error schema (class / message / bucket / signature) so every
+    // `${step}.error` (adopt.register, migrate.*, snapshot.restore_*) is
+    // diagnosable and groups by class regardless of locale or user paths.
+    // `emit` (not `capture`) so allow-listed step errors also mirror to Datadog
+    // for alerting; the `.start` / `.end` funnel events stay PostHog-only.
+    emit(`${step}.error`, {
       ...context,
       duration_ms: Date.now() - t0,
-      error_bucket: bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }

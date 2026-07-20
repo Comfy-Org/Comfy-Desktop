@@ -12,6 +12,7 @@ import { extractProviderId, type SupportedProvider } from './intercept'
 import { startBridgeServer } from './server'
 import * as i18n from '../../lib/i18n'
 import * as mainTelemetry from '../../lib/telemetry'
+import { extractErrorClass } from '../../../shared/errorEvent'
 
 /**
  * Tie the anonymous `installation_id` to the signed-in user so PostHog
@@ -249,9 +250,12 @@ export async function handleFirebasePopup(
     const error = err instanceof Error ? err : new Error(String(err))
     // Mirrored to Datadog (allow-list) so ops can alert if sign-in
     // breaks for a provider. error_bucket keeps the dashboard low-
-    // cardinality; the raw message stays out (may carry tokens / URLs).
+    // cardinality; error_class adds a locale-independent type for grouping.
+    // The raw message stays out by design (may carry tokens / URLs), so we
+    // deliberately do NOT ship `error_message` / `error_signature` here.
     mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', {
       provider: providerId,
+      error_class: extractErrorClass(error),
       error_bucket: mainTelemetry.bucketError(error.message)
     })
     opts.onError?.(error)

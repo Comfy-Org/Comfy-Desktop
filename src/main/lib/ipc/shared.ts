@@ -45,7 +45,7 @@ import { syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYa
 import { copyDirWithProgress } from '../copy'
 import { fetchJSON } from '../fetch'
 import { fetchLatestRelease, getLatestStableTag, getStableTags } from '../comfyui-releases'
-import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
+import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, stageSnapshotEnvelope, loadStagedSnapshotEnvelope, releaseStagedSnapshotEnvelope, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
 import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
@@ -80,7 +80,7 @@ export {
   copyDirWithProgress, fetchJSON, fetchLatestRelease, getLatestStableTag, getStableTags,
   captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData,
   getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, diffSnapshots,
-  buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, deleteSnapshot,
+  buildExportEnvelope, validateExportEnvelope, importSnapshots, stageSnapshotEnvelope, loadStagedSnapshotEnvelope, releaseStagedSnapshotEnvelope, saveSnapshot, statesMatch, deleteSnapshot,
   restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion,
   getVariantLabel, buildPinnedVariant, REQUIRES_STOPPED, findLockingProcesses,
   getComfyArgsSchema, filterUnsupportedArgs,
@@ -1075,12 +1075,9 @@ export async function migrateDefaults(): Promise<void> {
   }
 }
 
-const VALID_THEMES: readonly string[] = ['system', 'dark', 'light'] satisfies readonly Theme[]
-
 export function resolveTheme(): ResolvedTheme {
-  const raw = settings.get('theme') as string | undefined
-  const theme: Theme = raw && VALID_THEMES.includes(raw) ? (raw as Theme) : 'system'
-  return theme === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : theme
+  // App is dark-only — ignore the `theme` setting and OS appearance.
+  return 'dark'
 }
 
 // Single-flight: overlapping calls (boot, periodic timer, manual refresh) share one run

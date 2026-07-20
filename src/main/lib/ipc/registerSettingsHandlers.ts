@@ -281,6 +281,12 @@ export function applySettingSet(key: string, value: unknown): void {
     // Re-broadcast so a pending 'ready' immediately reads as auto-on/off.
     updater.notifyAutoUpdateChanged()
   }
+  // Keep the durable per-setting person properties current on toggle (issues
+  // #1220/#1223) instead of waiting for the next boot. No-op for 'omit' keys.
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties([key])
+  if (Object.keys(trackedProps).length > 0) {
+    mainTelemetry.registerPersonProperties(trackedProps)
+  }
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')
 }

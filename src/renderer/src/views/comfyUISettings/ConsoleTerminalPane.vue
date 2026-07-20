@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { FitAddon } from '@xterm/addon-fit'
@@ -7,6 +7,10 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalRestore } from '../../../../types/ipc'
 import { TID } from '../../../../shared/testIds'
+import { normalizePlatform } from '../../composables/usePlatform'
+import { decideTerminalKeyAction } from '../../../../shared/terminalShortcuts'
+import ContextMenu from '../../components/ContextMenu.vue'
+import type { ContextMenuItem } from '../../types/context-menu'
 
 /** Interactive per-install console. The shell lives in main (one PTY per
  *  installation, shared across windows) and survives ComfyUI being stopped,
@@ -25,6 +29,8 @@ const api = window.api
 const paneRef = ref<HTMLDivElement | null>(null)
 const hostRef = ref<HTMLDivElement | null>(null)
 const exited = ref(false)
+
+const platform = normalizePlatform(api.platform)
 
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -83,6 +89,68 @@ function cssVar(name: string, fallback: string): string {
   return v || fallback
 }
 
+/** Copy the current xterm selection to the clipboard (no-op when empty). */
+async function copySelection(): Promise<void> {
+  const text = terminal?.getSelection()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Clipboard can reject (permissions / non-secure context); the selection
+    // stays highlighted for a manual copy, so swallowing is least surprising.
+  }
+}
+
+/** Paste the clipboard into the terminal. Used by the right-click menu; the
+ *  keyboard paste shortcut is handled natively by xterm (see the key handler).
+ *  `terminal.paste()` routes through onData and honors bracketed-paste mode. */
+async function pasteClipboard(): Promise<void> {
+  const term = terminal
+  if (!term) return
+  try {
+    const text = await navigator.clipboard.readText()
+    // Ignore if this view was torn down / swapped to another install during
+    // the async clipboard read.
+    if (text && term === terminal) term.paste(text)
+  } catch {
+    // See copySelection: clipboard access can fail; nothing else to do.
+  }
+}
+
+// --- Right-click menu --------------------------------------------------------
+const menuOpen = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
+const menuHasSelection = ref(false)
+
+const menuItems = computed<ContextMenuItem[]>(() => [
+  { id: 'copy', label: t('console.copy'), disabled: !menuHasSelection.value },
+  { id: 'paste', label: t('console.paste') },
+  { id: 'selectAll', label: t('console.selectAll'), separator: true },
+])
+
+function openContextMenu(e: MouseEvent): void {
+  if (!terminal) return
+  menuHasSelection.value = terminal.hasSelection()
+  menuX.value = e.clientX
+  menuY.value = e.clientY
+  menuOpen.value = true
+}
+
+function onMenuSelect(id: string): void {
+  switch (id) {
+    case 'copy':
+      void copySelection()
+      break
+    case 'paste':
+      void pasteClipboard()
+      break
+    case 'selectAll':
+      terminal?.selectAll()
+      break
+  }
+}
+
 async function attach(id: string): Promise<void> {
   if (!hostRef.value) return
   currentId = id
@@ -121,6 +189,28 @@ async function attach(id: string): Promise<void> {
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(hostRef.value)
+
+  // Intercept copy/paste shortcuts before they reach the PTY so e.g. Ctrl+C
+  // can copy a selection instead of always sending SIGINT. Returning false
+  // tells xterm to swallow the key. See decideTerminalKeyAction for the
+  // per-OS matrix.
+  terminal.attachCustomKeyEventHandler((e) => {
+    const action = decideTerminalKeyAction(e, platform, terminal?.hasSelection() ?? false)
+    switch (action) {
+      case 'copy':
+        void copySelection()
+        return false
+      case 'paste':
+        // xterm pastes natively via the browser's paste event; returning false
+        // only swallows the keydown so no stray ^V reaches the PTY. Pasting
+        // manually here too would double-paste.
+        return false
+      case 'swallow':
+        return false
+      default:
+        return true
+    }
+  })
 
   disposers.push(terminal.onData((data) => void api.terminalWrite(id, data)).dispose)
   disposers.push(
@@ -187,7 +277,12 @@ onBeforeUnmount(teardown)
       <span class="console-header-title">{{ t('console.shellLabel') }}</span>
     </header>
     <div class="console-viewport">
-      <div ref="hostRef" class="console-host" :data-testid="TID.consoleTerminal" />
+      <div
+        ref="hostRef"
+        class="console-host"
+        :data-testid="TID.consoleTerminal"
+        @contextmenu.prevent="openContextMenu"
+      />
       <div
         v-if="exited"
         class="console-ended"
@@ -205,6 +300,14 @@ onBeforeUnmount(teardown)
         </button>
       </div>
     </div>
+    <ContextMenu
+      :open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="menuItems"
+      @select="onMenuSelect"
+      @close="menuOpen = false"
+    />
   </div>
 </template>
 

@@ -131,11 +131,22 @@ export async function runPromptChain(
 ): Promise<ActionDef | null> {
   if (!action.prompt) return action
   const showPrompt = pickPrompt(driver)
+  // For create-a-new-install prompts, resolve the default to the name that
+  // would actually be assigned right now (e.g. "ComfyUI (2)" → "ComfyUI (8)"
+  // when the lower numbers are taken) so the suggestion matches reality.
+  let defaultValue = action.prompt.defaultValue
+  if (action.prompt.uniquifyDefault && defaultValue) {
+    try {
+      defaultValue = await window.api.getUniqueName(defaultValue)
+    } catch {
+      // Fall back to the raw default; save-time dedup still guarantees uniqueness.
+    }
+  }
   const value = await showPrompt({
     title: action.prompt.title || action.label,
     message: action.prompt.message || '',
     placeholder: action.prompt.placeholder,
-    defaultValue: action.prompt.defaultValue,
+    defaultValue,
     confirmLabel: action.prompt.confirmLabel || action.label,
     required: action.prompt.required,
     messageDetails: action.prompt.messageDetails,

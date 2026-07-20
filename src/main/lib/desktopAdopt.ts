@@ -27,7 +27,8 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields } from '../../shared/errorEvent'
+import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
   KNOWN_MODEL_FOLDERS,
@@ -50,12 +51,22 @@ const SNAPSHOTS_REL = '.snapshots'
 // Keeping the name plain — instead of "Adopted from Legacy Desktop" —
 // matches user expectation that the picker shows their app, not the
 // provenance story.
-const ADOPT_INSTALL_NAME = 'ComfyUI'
+const ADOPT_INSTALL_NAME = DEFAULT_INSTALL_NAME
 const COMFY_SETTINGS_FILE = 'comfy.settings.json'
 const DESKTOP_CONFIG_FILE = 'config.json'
 const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
 const WINDOW_FILE = 'window.json'
 const VENV_VALIDATE_TIMEOUT_MS = 30_000
+const ADOPTED_SETTINGS_VERSION = 1
+
+function legacyComfySettingsPath(basePath: string): string {
+  return path.join(basePath, 'user', 'default', COMFY_SETTINGS_FILE)
+}
+
+interface LegacyComfySettingsRead {
+  settings: Record<string, unknown>
+  status: 'ok' | 'missing' | 'error'
+}
 
 export type AdoptPromptKind = 'tcc' | 'venv-broken' | 'source-missing' | 'confirm-adopt'
 
@@ -303,7 +314,10 @@ function normalizeLaunchValue(value: unknown): string | null {
  * the string and returned in `pathOverrides` so the caller can promote
  * them into the per-install `inputDir` / `outputDir` fields.
  */
-export function deriveLaunchArgs(comfySettings: Record<string, unknown>): DerivedLaunchArgs {
+export function deriveLaunchArgs(
+  comfySettings: Record<string, unknown>,
+  selectedDevice?: string | null
+): DerivedLaunchArgs {
   const asMap = (raw: unknown): Record<string, unknown> =>
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
 
@@ -312,6 +326,8 @@ export function deriveLaunchArgs(comfySettings: Record<string, unknown>): Derive
 
   // ServerConfigValues is the base; LaunchArgs overrides on key conflicts.
   const mergedMap: Record<string, unknown> = { ...serverConfigValues, ...launchArgsMap }
+  // selectedDevice is persisted separately and survives missing or damaged settings files.
+  if (selectedDevice === 'cpu' && !('cpu' in mergedMap)) mergedMap.cpu = true
 
   const parts: string[] = []
   const pathOverrides: DerivedLaunchArgs['pathOverrides'] = {}
@@ -353,15 +369,18 @@ export function deriveLaunchArgs(comfySettings: Record<string, unknown>): Derive
  * Read & coerce the subset of legacy front-end settings the orchestrator
  * actually uses. Missing values fall back to legacy defaults.
  */
-function readLegacyComfySettings(configDir: string): Record<string, unknown> {
+function readLegacyComfySettings(basePath: string): LegacyComfySettingsRead {
   try {
-    const raw = fs.readFileSync(path.join(configDir, COMFY_SETTINGS_FILE), 'utf-8')
+    const raw = fs.readFileSync(legacyComfySettingsPath(basePath), 'utf-8')
     const parsed: unknown = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
+      return { settings: parsed as Record<string, unknown>, status: 'ok' }
     }
-  } catch {}
-  return {}
+    return { settings: {}, status: 'error' }
+  } catch (err) {
+    const status = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'error'
+    return { settings: {}, status }
+  }
 }
 
 function readLegacyComfyPrefs(raw: Record<string, unknown>): LegacyComfySettings {
@@ -524,11 +543,12 @@ function isUnderRoot(child: string, root: string): boolean {
 }
 
 /**
- * Best-effort copy of legacy userData files into a timestamped backup folder.
+ * Best-effort copy of legacy state files into a timestamped backup folder.
  * Logged on failure but never throws so adoption can continue.
  */
 async function backupLegacyState(
   configDir: string,
+  basePath: string,
   timestamp: string,
   sendOutput: (t: string) => void
 ): Promise<void> {
@@ -539,9 +559,13 @@ async function backupLegacyState(
     sendOutput(`Warning: could not create backup dir: ${(err as Error).message}\n`)
     return
   }
-  const files = [DESKTOP_CONFIG_FILE, COMFY_SETTINGS_FILE, EXTRA_MODELS_YAML, WINDOW_FILE]
-  for (const file of files) {
-    const src = path.join(configDir, file)
+  const files = [
+    { file: DESKTOP_CONFIG_FILE, src: path.join(configDir, DESKTOP_CONFIG_FILE) },
+    { file: COMFY_SETTINGS_FILE, src: legacyComfySettingsPath(basePath) },
+    { file: EXTRA_MODELS_YAML, src: path.join(configDir, EXTRA_MODELS_YAML) },
+    { file: WINDOW_FILE, src: path.join(configDir, WINDOW_FILE) }
+  ]
+  for (const { file, src } of files) {
     const dst = path.join(destDir, file)
     try {
       if (fs.existsSync(src)) await fs.promises.copyFile(src, dst)
@@ -821,14 +845,16 @@ interface CarryReport {
  */
 function carryLegacySettings(
   basePath: string,
-  configDir: string,
+  configDir: string | null,
   legacy: LegacyComfySettings,
   sendOutput: (t: string) => void
 ): CarryReport {
   let extraYamlContent: string | null = null
-  try {
-    extraYamlContent = fs.readFileSync(path.join(configDir, EXTRA_MODELS_YAML), 'utf-8')
-  } catch {}
+  if (configDir) {
+    try {
+      extraYamlContent = fs.readFileSync(path.join(configDir, EXTRA_MODELS_YAML), 'utf-8')
+    } catch {}
+  }
 
   const currentModelsDirs = (settings.get('modelsDirs') as string[] | undefined) ?? [
     ...settings.defaults.modelsDirs
@@ -892,7 +918,66 @@ function carryLegacySettings(
   tryCarry('inputDir', path.join(basePath, 'input'))
   tryCarry('outputDir', path.join(basePath, 'output'))
 
+  // This flow writes settings.json directly (not via applySettingSet), so refresh
+  // the durable per-setting person properties for what we just changed instead of
+  // waiting for the next boot (issues #1220/#1223). Consent-gated + queued.
+  const changedKeys = additions.length > 0 ? [...carriedKeys, 'modelsDirs'] : carriedKeys
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties(changedKeys)
+  if (Object.keys(trackedProps).length > 0) {
+    telemetry.registerPersonProperties(trackedProps)
+  }
+
   return { addedModelsDirs: additions, carriedKeys, carrySkippedKeys }
+}
+
+/** Restore legacy settings on adopted records that still contain generated defaults. */
+export async function reconcileAdoptedSettings(): Promise<number> {
+  const all = await installations.list()
+  let repaired = 0
+  const generatedDefaultArgs = deriveLaunchArgs({}).launchArgs
+
+  for (const existing of all) {
+    if (existing.adopted !== true || existing.sourceId !== 'standalone') continue
+    if (existing.adoptedSettingsVersion === ADOPTED_SETTINGS_VERSION) continue
+
+    try {
+      const basePath = existing.adoptedBaseDir as string | undefined
+      if (!basePath) continue
+      const selectedDevice = existing.adoptedSelectedDevice as string | undefined
+      const settingsRead = readLegacyComfySettings(basePath)
+      if (settingsRead.status === 'error') continue
+      const rawComfySettings = settingsRead.settings
+      const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
+
+      carryLegacySettings(basePath, null, readLegacyComfyPrefs(rawComfySettings), () => {})
+
+      const patch: Record<string, unknown> = {
+        adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION
+      }
+      // Only generated defaults are safe to replace; preserve launch args edited in v2.
+      if (existing.launchArgs === generatedDefaultArgs) {
+        patch.launchArgs = derived.launchArgs
+      }
+      if (
+        derived.pathOverrides.inputDir &&
+        existing.inputDir === path.join(basePath, 'input')
+      ) {
+        patch.inputDir = derived.pathOverrides.inputDir
+      }
+      if (
+        derived.pathOverrides.outputDir &&
+        existing.outputDir === path.join(basePath, 'output')
+      ) {
+        patch.outputDir = derived.pathOverrides.outputDir
+      }
+
+      if (await installations.update(existing.id, patch)) repaired += 1
+    } catch (err) {
+      console.warn(`Failed to reconcile adopted settings for ${existing.id}:`, err)
+    }
+  }
+
+  return repaired
 }
 
 /**
@@ -1012,15 +1097,9 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     const result = await runAdoption(info, phaseAwareTools, deps)
     return result
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Scrub before slice so the redacted prefix doesn't get truncated
-    // mid-token. The bucket runs on raw text because its regexes don't
-    // care about user paths and would otherwise miss a legitimate match
-    // hidden inside a `[REDACTED]` substitution.
     telemetry.capture('comfy.desktop.adopt.failed', {
       stage: currentPhase,
-      error_bucket: telemetry.bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }
@@ -1055,7 +1134,7 @@ async function runAdoption(
 
   sendProgress('backup', { percent: 0 })
   await telemetry.trackedStep('comfy.desktop.adopt.backup', {}, async () => {
-    await backupLegacyState(info.configDir, timestamp, sendOutput)
+    await backupLegacyState(info.configDir, info.basePath, timestamp, sendOutput)
   })
 
   if (process.platform === 'darwin') {
@@ -1209,9 +1288,9 @@ async function runAdoption(
     }
   )
 
-  const rawComfySettings = readLegacyComfySettings(info.configDir)
+  const settingsRead = readLegacyComfySettings(info.basePath)
+  const rawComfySettings = settingsRead.settings
   const prefs = readLegacyComfyPrefs(rawComfySettings)
-  const derived = deriveLaunchArgs(rawComfySettings)
   const legacyDesktopConfig = readLegacyDesktopConfig(info.configDir)
   const legacyAppVersion = readLegacyAppVersion(info.executablePath)
   const detectedGpu =
@@ -1222,6 +1301,7 @@ async function runAdoption(
     typeof legacyDesktopConfig['selectedDevice'] === 'string'
       ? (legacyDesktopConfig['selectedDevice'] as string)
       : null
+  const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
 
   sendProgress('settings', { percent: 0 })
   const carry = await telemetry.trackedStep('comfy.desktop.adopt.carry_settings', {}, async () => {
@@ -1248,6 +1328,9 @@ async function runAdoption(
       adoptedBaseDir: info.basePath,
       adoptedPythonPath: pythonPath,
       adoptedSourceMode: sourceMode!,
+      ...(settingsRead.status !== 'error'
+        ? { adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION }
+        : {}),
       ...(legacyAppVersion ? { adoptedFromLegacyVersion: legacyAppVersion } : {}),
       // Hardware hints stashed for a future "rebuild as managed standalone"
       // flow that needs to preselect the right variant — no v2 consumer

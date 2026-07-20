@@ -15,10 +15,10 @@ const i18n = createI18n({
 })
 
 const SCHEMA: ComfyArgDef[] = [
-  { name: 'cpu', flag: '--cpu', help: 'Run on CPU only.', type: 'boolean', category: 'GPU & VRAM' },
-  { name: 'lowvram', flag: '--lowvram', help: 'Reduce VRAM.', type: 'boolean', category: 'GPU & VRAM' },
-  { name: 'novram', flag: '--novram', help: 'No VRAM.', type: 'boolean', category: 'GPU & VRAM' },
-  { name: 'port', flag: '--port', help: 'Server port.', type: 'value', metavar: 'PORT', category: 'Network' },
+  { name: 'cpu', flag: '--cpu', help: 'Run on CPU only.', type: 'boolean', category: 'gpuVram' },
+  { name: 'lowvram', flag: '--lowvram', help: 'Reduce VRAM.', type: 'boolean', category: 'gpuVram' },
+  { name: 'novram', flag: '--novram', help: 'No VRAM.', type: 'boolean', category: 'gpuVram' },
+  { name: 'port', flag: '--port', help: 'Server port.', type: 'value', metavar: 'PORT', category: 'network' },
 ]
 
 const FIELD: DetailField = {

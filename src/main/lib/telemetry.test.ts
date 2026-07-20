@@ -226,7 +226,7 @@ describe('telemetry default event properties', () => {
     telemetry._resetForTest()
   })
 
-  it('injects app_version, app_channel, app_env, platform, arch on every capture', () => {
+  it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
     telemetry.initTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', isPackaged: true })
     telemetry.identify('id')
     telemetry.setConsentState('granted')
@@ -242,7 +242,8 @@ describe('telemetry default event properties', () => {
       app_env: 'prod',
       is_packaged: true,
       platform: process.platform,
-      arch: process.arch
+      arch: process.arch,
+      client: 'desktop'
     })
   })
 
@@ -271,6 +272,22 @@ describe('telemetry default event properties', () => {
 
     telemetry.capture('any.event', { app_version: 'override-value' })
     expect(captured[0]!.properties).toMatchObject({ app_version: 'override-value' })
+  })
+
+  it('merges the same defaults into captureException payloads', () => {
+    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
+    telemetry.identify('id')
+    telemetry.setConsentState('granted')
+    exceptions.length = 0
+
+    telemetry.captureException(new Error('boom'), { foo: 'bar' })
+
+    expect(exceptions).toHaveLength(1)
+    expect(exceptions[0]!.properties).toMatchObject({
+      foo: 'bar',
+      app_version: '1.0.0',
+      client: 'desktop'
+    })
   })
 
   it('stamps installation_id (the bound device id) on every captured event', () => {
@@ -326,13 +343,28 @@ describe('telemetry.captureInstallCompleted', () => {
       express: true
     })
 
-    expect(captured).toHaveLength(1)
-    expect(captured[0]!.event).toBe('comfy.desktop.install.completed')
-    expect(captured[0]!.properties).toMatchObject({
+    const completed = captured.filter((c) => c.event === 'comfy.desktop.install.completed')
+    expect(completed).toHaveLength(1)
+    expect(completed[0]!.properties).toMatchObject({
       installation_id: 'install-xyz',
       method: 'express',
       express: true
     })
+  })
+
+  it('stamps the durable first_local_install_completed_at $set_once person marker (#1224)', () => {
+    telemetry.captureInstallCompleted({
+      installationId: 'install-xyz',
+      method: 'manual',
+      express: false
+    })
+
+    const personSet = captured.find(
+      (c) => c.event === 'comfy.desktop.person.set' && c.properties?.$set_once
+    )
+    expect(
+      (personSet?.properties as { $set_once?: Record<string, unknown> })?.$set_once
+    ).toHaveProperty('first_local_install_completed_at')
   })
 
   it.each([
@@ -342,8 +374,9 @@ describe('telemetry.captureInstallCompleted', () => {
     ['migrate', false]
   ] as const)('carries method=%s / express=%s for each install path', (method, express) => {
     telemetry.captureInstallCompleted({ installationId: 'i1', method, express })
-    expect(captured).toHaveLength(1)
-    expect(captured[0]!.properties).toMatchObject({ method, express })
+    const completed = captured.filter((c) => c.event === 'comfy.desktop.install.completed')
+    expect(completed).toHaveLength(1)
+    expect(completed[0]!.properties).toMatchObject({ method, express })
   })
 
   it('boot_completed is a distinct success event carrying the boot_id join key', () => {

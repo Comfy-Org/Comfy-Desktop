@@ -191,7 +191,35 @@ function byModalityOrder(a: HydratedTemplate, b: HydratedTemplate): number {
  * So renaming/removing a template upstream, or fat-fingering the manifest, can
  * only ever shrink the offering — it can't crash the picker.
  */
-export async function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
+/** Coalesces the wizard's field-options read and the thumbnail warm-up — which
+ *  fire together at picker open — into one index fetch; a later open refetches. */
+const CATALOG_TTL_MS = 60_000
+let catalogInFlight: Promise<HydratedTemplate[]> | null = null
+let catalogCache: { at: number; value: HydratedTemplate[] } | null = null
+
+export function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
+  if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
+    return Promise.resolve(catalogCache.value)
+  }
+  if (catalogInFlight) return catalogInFlight
+  catalogInFlight = loadTemplateCatalogUncached()
+    .then((value) => {
+      catalogCache = { at: Date.now(), value }
+      return value
+    })
+    .finally(() => {
+      catalogInFlight = null
+    })
+  return catalogInFlight
+}
+
+/** Drops the memoized catalog so the next read refetches. Test-only. */
+export function resetTemplateCatalogCache(): void {
+  catalogInFlight = null
+  catalogCache = null
+}
+
+async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
   let byId: Map<string, IndexLocation>
   try {
     byId = indexById(await fetchJSON(INDEX_URL))

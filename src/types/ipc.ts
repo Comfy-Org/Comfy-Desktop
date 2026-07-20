@@ -244,6 +244,11 @@ export interface PromptDef {
   field: string
   required?: boolean | string
   messageDetails?: ModalDetailGroup[]
+  /** When true, the shown `defaultValue` is first run through
+   *  `getUniqueName()` so the pre-filled name matches what will actually be
+   *  assigned on save. Set on flows that create a NEW install (copy /
+   *  copy-update); never on rename, where keeping the current name is valid. */
+  uniquifyDefault?: boolean
 }
 
 export interface ModalDetailGroup {
@@ -423,6 +428,10 @@ export interface ProbeResult {
   version?: string
   repo?: string
   branch?: string
+  /** Resolved install root. Set when the probe corrected the user-picked path
+   *  (e.g. they pointed at the nested `ComfyUI/` folder of a standalone or
+   *  portable install). When present, it should be recorded as the installPath. */
+  installPath?: string
   [key: string]: unknown
 }
 
@@ -1230,7 +1239,7 @@ export interface ElectronApi {
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
   importSnapshotsConfirm(
     installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreFile?: string; message?: string }>
+  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewDesktopMigration(): Promise<{
     ok: boolean
@@ -1608,5 +1617,6 @@ export const PICKER_SETTINGS_CHANNELS = {
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
   getLocale: 'comfy-titlepopup:picker-settings-get-locale',
-  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags'
+  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags',
+  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name'
 } as const

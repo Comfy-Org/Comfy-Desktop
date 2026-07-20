@@ -98,35 +98,163 @@ const dataPath = path.join(configDir(), "settings.json")
 
 const SHARED_ROOT = path.join(defaultDataRoot(), "ComfyUI-Shared")
 
+/** Scalar shapes allowed as a telemetry property value. Arrays/objects are
+ *  never emitted (they'd leak paths/PII and blow up cardinality). */
+export type SettingTelemetryValue = boolean | number | string | null
+
+/** Runtime context passed to per-setting telemetry transforms so they can be
+ *  platform-aware (e.g. Windows-only gates report `null` off-Windows). */
+type SettingTelemetryCtx = { platform: NodeJS.Platform }
+
+/** A `value` telemetry transform. Returning `null` means "not applicable /
+ *  default"; NEVER return an array/object. Settings whose default is applied at
+ *  runtime (not via the `defaults` object) MUST coalesce `undefined` to their
+ *  effective default here, so emitted values stay self-describing if a default
+ *  changes over time. */
+type SettingTelemetryTransform<K extends keyof KnownSettings> = (
+  raw: KnownSettings[K] | undefined,
+  ctx: SettingTelemetryCtx
+) => SettingTelemetryValue
+
+/** A single emitted property. `value` emits the (optionally transformed) value;
+ *  `presence` emits `settings.has(key)` — used both for PII-safe path settings
+ *  and as an "explicitly set?" companion to a `value` emitter. */
+type SettingEmitter<K extends keyof KnownSettings> =
+  | { kind: 'value'; prop: string; toTelemetry?: SettingTelemetryTransform<K> }
+  | { kind: 'presence'; prop: string }
+
+/**
+ * Per-setting tracking policy (issue #1223). Every `SETTINGS_SCHEMA` entry MUST
+ * declare one, so a new setting can't silently ship untracked:
+ *  - `'value'`   — emit the setting's value. Use `toTelemetry` to coalesce
+ *                  default-on/off booleans and platform-gate Windows-only keys;
+ *                  without it the raw scalar (or `null`) is emitted.
+ *  - `'presence'`— emit only a boolean (`settings.has(key)` = user-set / differs
+ *                  from default). For path / URL / PII-bearing settings whose raw
+ *                  value must never leave the machine.
+ *  - `'multi'`   — emit several props for one setting (e.g. a raw "selected"
+ *                  value plus a resolved "effective" value, or a `value` plus an
+ *                  "explicitly set?" `presence` companion). Each emitter names its
+ *                  own `prop`.
+ *  - `'omit'`    — internal bookkeeping / dead settings; never emitted.
+ * For `value`/`presence`, `prop` overrides the default `setting_<snake_case_key>`.
+ */
+type SettingTelemetryPolicy<K extends keyof KnownSettings> =
+  | { policy: 'omit' }
+  | { policy: 'presence'; prop?: string }
+  | {
+      policy: 'value'
+      prop?: string
+      toTelemetry?: SettingTelemetryTransform<K>
+    }
+  | { policy: 'multi'; emitters: SettingEmitter<K>[] }
+
+type SettingSchemaEntry<K extends keyof KnownSettings> = {
+  nullable: boolean
+  telemetry: SettingTelemetryPolicy<K>
+}
+
 const SETTINGS_SCHEMA = {
-  cacheDir: { nullable: false },
-  maxCachedDownloads: { nullable: false },
-  onAppClose: { nullable: false },
-  modelsDirs: { nullable: false },
-  inputDir: { nullable: false },
-  outputDir: { nullable: false },
-  installDir: { nullable: false },
-  language: { nullable: false },
-  theme: { nullable: false },
-  autoUpdate: { nullable: false },
-  autoInstallUpdates: { nullable: false },
-  autoLaunchOnStartup: { nullable: false },
-  confirmBeforeClosingWindow: { nullable: false },
-  pypiMirror: { nullable: false },
-  useChineseMirrors: { nullable: false },
-  chineseMirrorsPrompted: { nullable: false },
-  telemetryEnabled: { nullable: false },
-  firstUseCompleted: { nullable: false },
-  hideCloudFromPicker: { nullable: false },
-  oemManagedModelDirs: { nullable: false },
-  oemWorkflowImportVersion: { nullable: false },
-  lastSaveDialogDir: { nullable: true },
-  skipTemplatePickerStep: { nullable: false },
-  pendingDownloadedUpdateVersion: { nullable: true },
-  lastStartupUpdateAttemptVersion: { nullable: true },
-  installUpdatesOnStartup: { nullable: false },
-  showInstallerUI: { nullable: false },
-} as const satisfies Record<keyof KnownSettings, { nullable: boolean }>
+  cacheDir: { nullable: false, telemetry: { policy: 'presence' } },
+  // Validate the scalar type so a hand-edited settings.json can't leak a
+  // free-form string; fall back to null ("not a real value") otherwise.
+  maxCachedDownloads: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => (typeof raw === 'number' ? raw : null) },
+  },
+  onAppClose: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw) => (raw === 'quit' || raw === 'tray' ? raw : null),
+    },
+  },
+  modelsDirs: { nullable: false, telemetry: { policy: 'presence' } },
+  inputDir: { nullable: false, telemetry: { policy: 'presence' } },
+  outputDir: { nullable: false, telemetry: { policy: 'presence' } },
+  installDir: { nullable: false, telemetry: { policy: 'presence' } },
+  // What the user actually selected (null = following the OS default). The
+  // *effective* locale the app resolves to is emitted on the
+  // `app.language_resolved` event instead, where it's known post-i18n-init.
+  language: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      prop: 'setting_language_selected',
+      toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null),
+    },
+  },
+  // App is dark-only; the theme setting is inert (see resolveTheme), so tracking
+  // it carries no signal.
+  theme: { nullable: false, telemetry: { policy: 'omit' } },
+  // Legacy toggle no longer gated on a setting (see KnownSettings), so its value
+  // has no effective meaning — don't emit it as if it did.
+  autoUpdate: { nullable: false, telemetry: { policy: 'omit' } },
+  autoInstallUpdates: {
+    // Default-on: any non-`false` value (incl. missing) is enabled. Mirrors
+    // `isAutoInstallEnabled()` in updater.ts. Exact prop name required by #1220.
+    // `auto_install_updates_explicit` separates users who explicitly chose a value
+    // from the default-on majority (the opt-in/out cohort from #1220).
+    nullable: false,
+    telemetry: {
+      policy: 'multi',
+      emitters: [
+        { kind: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
+        { kind: 'presence', prop: 'auto_install_updates_explicit' },
+      ],
+    },
+  },
+  // Emit "auto-launch configured?" as a boolean; the raw value can be an
+  // installation id (potentially identifying).
+  autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  confirmBeforeClosingWindow: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  // Mirror URL can be a private/identifying endpoint — presence only.
+  pypiMirror: { nullable: false, telemetry: { policy: 'presence' } },
+  useChineseMirrors: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  chineseMirrorsPrompted: { nullable: false, telemetry: { policy: 'omit' } },
+  // Consent gate, not a durable trackable setting: once disabled we can't emit a
+  // fresh `false` without violating the consent gate, so the value would go stale.
+  telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
+  firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
+  hideCloudFromPicker: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  oemManagedModelDirs: { nullable: false, telemetry: { policy: 'presence' } },
+  oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
+  lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
+  skipTemplatePickerStep: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+  },
+  pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  installUpdatesOnStartup: {
+    // Windows-only, default-on. Off-Windows the gate is inert, so report `null`
+    // ("not applicable") to keep it distinct from an explicit opt-out. Exact
+    // prop name required by #1220.
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      prop: 'install_updates_on_startup',
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null),
+    },
+  },
+  showInstallerUI: {
+    // Windows-only, default-on — same `null`-off-Windows convention.
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null),
+    },
+  },
+} as const satisfies { [K in keyof KnownSettings]: SettingSchemaEntry<K> }
 
 export type KnownSettingKey = keyof typeof SETTINGS_SCHEMA
 export type NullableKnownSettingKey = {
@@ -479,13 +607,64 @@ export function getAll(): Settings {
   return load()
 }
 
+function camelToSnake(s: string): string {
+  // Handle acronym runs so `showInstallerUI` -> `show_installer_ui`, not
+  // `show_installer_u_i`.
+  return s
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase()
+}
+
+function toScalarOrNull(v: unknown): SettingTelemetryValue {
+  return typeof v === 'boolean' || typeof v === 'number' || typeof v === 'string' ? v : null
+}
+
+/**
+ * Build the durable telemetry snapshot of the tracked global settings, driven by
+ * each `SETTINGS_SCHEMA` entry's `telemetry` policy (issue #1223). Returned as a
+ * flat `prop -> scalar` map suitable for PostHog person properties or as event
+ * properties. `'omit'` keys are dropped, `'presence'` keys emit a boolean,
+ * `'value'` keys emit their (optionally transformed) scalar, and `'multi'` keys
+ * emit one entry per declared emitter. Pass `keys` to snapshot a subset (e.g. a
+ * single changed key).
+ */
+export function getTrackedSettingsTelemetryProperties(
+  keys: readonly string[] = KNOWN_SETTING_KEYS
+): Record<string, SettingTelemetryValue> {
+  const ctx: SettingTelemetryCtx = { platform: process.platform }
+  const out: Record<string, SettingTelemetryValue> = {}
+  const emitValue = (raw: unknown, transform?: SettingTelemetryTransform<KnownSettingKey>): SettingTelemetryValue =>
+    transform ? transform(raw as never, ctx) : toScalarOrNull(raw)
+  for (const key of keys) {
+    if (!isKnownSettingKey(key)) continue
+    const tel = (SETTINGS_SCHEMA[key] as SettingSchemaEntry<KnownSettingKey>).telemetry
+    if (tel.policy === 'omit') continue
+    if (tel.policy === 'presence') {
+      out[tel.prop ?? `setting_${camelToSnake(key)}`] = has(key)
+      continue
+    }
+    if (tel.policy === 'multi') {
+      for (const em of tel.emitters) {
+        out[em.prop] = em.kind === 'presence' ? has(key) : emitValue(get(key), em.toTelemetry)
+      }
+      continue
+    }
+    out[tel.prop ?? `setting_${camelToSnake(key)}`] = emitValue(get(key), tel.toTelemetry)
+  }
+  return out
+}
+
 /**
  * `true` iff `key` looks user-chosen: persisted in settings.json as non-null
  * AND, for defaulted keys, differing from the built-in default. The
  * default-comparison guards against `load()`'s merged write persisting defaults
  * as a side effect, which would otherwise fool the legacy-adopt carry. A user
  * who explicitly picks the default value is misclassified as "not set"
- * (accepted). Returns `false` on parse errors or a missing file.
+ * (accepted). Sentinel values `set()` treats as unset (`autoLaunchOnStartup:
+ * 'none'`, whitespace-only `pypiMirror`) are also treated as absent, so a
+ * stale/hand-edited file can't masquerade as a user choice. Returns `false` on
+ * parse errors or a missing file.
  */
 export function has(key: string): boolean {
   const raw = readFileSafe(dataPath)
@@ -495,6 +674,15 @@ export function has(key: string): boolean {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
     const value = (parsed as Record<string, unknown>)[key]
     if (value === undefined || value === null) return false
+    // Honor the same "means unset" sentinels `set()` drops, so a stale/manually
+    // edited settings.json can't report a sentinel (e.g. `autoLaunchOnStartup:
+    // 'none'`, a whitespace-only `pypiMirror`) as a user choice.
+    if (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key)) {
+      return false
+    }
+    if (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) {
+      return false
+    }
     if (key in defaults) {
       const def = (defaults as Record<string, unknown>)[key]
       if (typeof def === 'string' && typeof value === 'string') {
