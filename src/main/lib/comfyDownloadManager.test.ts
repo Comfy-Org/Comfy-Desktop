@@ -367,7 +367,10 @@ describe('areModelsPresent', () => {
     )
   })
 
-  afterAll(() => vi.restoreAllMocks())
+  afterAll(async () => {
+    vi.restoreAllMocks()
+    await fs.promises.rm(base, { recursive: true, force: true })
+  })
 
   it('returns false for an empty model list', async () => {
     expect(await mod.areModelsPresent(null, [])).toBe(false)
