@@ -59,6 +59,9 @@ function sizeLabelOf(option: FieldOption): string {
   const bytes = sizeBytesOf(option)
   return bytes > 0 ? `~${formatBytesCoarse(bytes)}` : ''
 }
+function modelsPresentOf(option: FieldOption): boolean {
+  return option.data?.modelsPresent === true
+}
 /** Short model name (falls back to the full label). */
 function nameOf(option: FieldOption): string {
   const name = option.data?.name
@@ -176,6 +179,11 @@ defineExpose({ shownDiskError })
             @error="thumbFailed[opt.value] = true"
           />
 
+          <span v-if="modelsPresentOf(opt)" class="tps__downloaded">
+            <Check :size="12" :stroke-width="3" />
+            {{ t('standalone.templateModelsDownloaded') }}
+          </span>
+
           <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
             <Check :size="13" :stroke-width="3" />
           </span>
@@ -188,6 +196,9 @@ defineExpose({ shownDiskError })
           <span class="tps__card-text">
             <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
             <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
+            <span v-if="modelsPresentOf(opt)" class="sr-only">
+              {{ t('standalone.templateModelsDownloaded') }}
+            </span>
           </span>
           <span v-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
         </span>
@@ -337,6 +348,24 @@ defineExpose({ shownDiskError })
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--neutral-300);
+}
+
+.tps__downloaded {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px 4px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--neutral-50);
+  background: color-mix(in oklab, var(--neutral-950) 88%, transparent);
+  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
 .tps__check {

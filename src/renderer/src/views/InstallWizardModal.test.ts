@@ -59,3 +59,39 @@ describe('InstallWizardModal install-location field', () => {
     expect(window.api.openPath).not.toHaveBeenCalled()
   })
 })
+
+describe('InstallWizardModal onboarding→install handoff telemetry (#1224)', () => {
+  interface HandoffEvent {
+    actionName: string
+    context?: Record<string, unknown>
+  }
+
+  function captureTelemetry(): { events: HandoffEvent[]; stop: () => void } {
+    const events: HandoffEvent[] = []
+    const listener = (e: Event): void => {
+      events.push((e as CustomEvent<HandoffEvent>).detail)
+    }
+    window.addEventListener('launcher-telemetry-action', listener)
+    return { events, stop: () => window.removeEventListener('launcher-telemetry-action', listener) }
+  }
+
+  it('emits install.not_started(wizard_cancelled) when the wizard unmounts without dispatching', async () => {
+    const { events, stop } = captureTelemetry()
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: (o?: { entrypoint?: string }) => Promise<void> }).open({
+      entrypoint: 'first_use'
+    })
+    await flushPromises()
+
+    wrapper.unmount()
+    stop()
+
+    const notStarted = events.filter((e) => e.actionName === 'comfy.desktop.install.not_started')
+    expect(notStarted).toHaveLength(1)
+    expect(notStarted[0]!.context).toMatchObject({
+      reason: 'wizard_cancelled',
+      entrypoint: 'first_use',
+      express: false
+    })
+  })
+})

@@ -41,7 +41,7 @@ import {
 // and is gated to the failure-event allow-list in
 // `src/shared/datadogMirroredEvents.ts`.
 import { scrubAll } from '../../../shared/piiScrub'
-import { isDatadogMirroredEvent } from '../../../shared/datadogMirroredEvents'
+import { isDatadogMirroredEvent, stripDatadogDroppedKeys } from '../../../shared/datadogMirroredEvents'
 
 function serializeUnknownError(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
@@ -220,7 +220,9 @@ function trackTelemetryAction(
   // alerting, not analysis.
   if (isDatadogInitialized && isDatadogMirroredEvent(actionName)) {
     try {
-      datadogRum.addAction(actionName, scrubbed)
+      // Datadog is the alerting surface: keep the low-cardinality facets and
+      // drop the large free-text diagnostics (they stay in PostHog for triage).
+      datadogRum.addAction(actionName, stripDatadogDroppedKeys(scrubbed))
     } catch {}
   }
   // Renderer routes capture through main's posthog-node via IPC. The

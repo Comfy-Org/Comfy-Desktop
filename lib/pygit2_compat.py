@@ -9,7 +9,29 @@ set"). The bundled pygit2 has no SSH transport, so an SSH rewrite can never
 succeed; blanking the config search path keeps operations on anonymous HTTPS.
 """
 
+import os
+
 import pygit2
+
+
+def disable_symlinks(repo):
+    """Force `core.symlinks = false` so libgit2 writes symlinks as plain files
+    (their target path as text) instead of attempting real symlink creation.
+
+    On Windows, creating a symlink needs SeCreateSymbolicLinkPrivilege
+    (Developer Mode or an elevated process); without it a checkout of a tree
+    that contains a symlink (e.g. ComfyUI's `CLAUDE.md`) fails with
+    "A required privilege is not held by the client". That can leave the source
+    half-updated (new code paired with the old venv) which crashes ComfyUI on
+    import. Forcing symlinks off matches git-for-Windows' default and keeps the
+    checkout reliable. No-op off Windows so symlinks keep working on macOS/Linux.
+    """
+    if os.name != "nt":
+        return
+    try:
+        repo.config["core.symlinks"] = False
+    except Exception:
+        pass
 
 
 def read_global_http_proxy():

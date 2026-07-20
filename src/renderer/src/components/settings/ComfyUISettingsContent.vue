@@ -886,7 +886,7 @@ defineExpose({
       </Tooltip>
     </nav>
 
-    <section class="settings-v2-body">
+    <section class="settings-v2-body scroll-visible">
       <p v-if="!installation" class="empty">
         {{ t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.') }}
       </p>
@@ -1297,13 +1297,6 @@ defineExpose({
   display: flex;
   flex-direction: column;
   position: relative;
-  scrollbar-width: none;
-}
-
-.settings-v2-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 .settings-v2-body-root {

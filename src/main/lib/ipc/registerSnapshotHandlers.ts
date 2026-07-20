@@ -16,7 +16,6 @@ import {
   detectDesktopInstall,
   stageDesktopSnapshot,
   stageLocalSnapshot,
-  getSnapshotCount,
   getSnapshotListData,
   getSnapshotDetailData,
   getSnapshotDiffVsPrevious,
@@ -25,7 +24,7 @@ import {
   listSnapshots,
   buildExportEnvelope,
   validateExportEnvelope,
-  importSnapshots,
+  stageSnapshotEnvelope,
   frozenSnapshotInstallOverrides,
   resolveSnapshotVersion,
   getVariantLabel,
@@ -38,6 +37,7 @@ import {
 import type { LatestTagOverride, SnapshotExportEnvelope, FieldOption, Snapshot } from './shared'
 import type { CopyEvent } from '../../../types/ipc'
 import * as telemetry from '../telemetry'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 
 async function _findReferenceRepo(): Promise<{
   comfyuiDir: string
@@ -338,10 +338,12 @@ export function registerSnapshotHandlers(): void {
       const inst = await installations.get(installationId)
       if (!inst || !inst.installPath) return { ok: false, message: 'Installation not found.' }
 
-      const result = await importSnapshots(inst.installPath, pending.envelope, installationId)
-      const snapshotCount = await getSnapshotCount(inst.installPath)
-      await installations.update(installationId, { snapshotCount })
-      return { ok: true, imported: result.imported, restoreFile: result.filenames[0]! }
+      // Stage the envelope as a restore target instead of committing it to the
+      // live history. It only becomes history if/when the restore succeeds (see
+      // the `snapshot-restore` action), so a failed restore can't leave a
+      // never-applied snapshot at the top of the timeline (#1137).
+      const restoreToken = await stageSnapshotEnvelope(pending.envelope)
+      return { ok: true, imported: pending.envelope.snapshots.length, restoreToken }
     } catch (err) {
       return { ok: false, message: (err as Error)?.message ?? 'Failed to import snapshots.' }
     }
@@ -566,7 +568,7 @@ export function registerSnapshotHandlers(): void {
         // core commit; updateChannel mirrors the snapshot as the manual pref.
         ...frozenSnapshotInstallOverrides(targetSnapshot.updateChannel)
       }
-      const baseName = customName || envelope.installationName || 'ComfyUI'
+      const baseName = customName || envelope.installationName || DEFAULT_INSTALL_NAME
       const name = await uniqueName(baseName)
       const dirName = sanitizeDirName(name)
       const installDir = defaultInstallDir()

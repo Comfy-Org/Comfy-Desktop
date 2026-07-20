@@ -56,10 +56,10 @@ const TEMPLATE_PACKAGE_DIRS = [
 ]
 
 export async function loadTemplateJson(
-  installation: InstallationRecord,
+  installation: InstallationRecord | null,
   templateId: string,
 ): Promise<unknown | null> {
-  const sitePackages = findSitePackages(getActiveVenvDir(installation))
+  const sitePackages = installation ? findSitePackages(getActiveVenvDir(installation)) : null
   if (sitePackages) {
     for (const pkg of TEMPLATE_PACKAGE_DIRS) {
       const local = path.join(sitePackages, pkg, 'templates', `${templateId}.json`)
@@ -164,7 +164,7 @@ function walkNodes(nodes: unknown, out: RawModel[]): void {
  * can't be resolved (caller treats both as "nothing to download").
  */
 export async function resolveTemplateModels(
-  installation: InstallationRecord,
+  installation: InstallationRecord | null,
   templateId: string,
 ): Promise<TemplateModelDownload[]> {
   const json = await loadTemplateJson(installation, templateId)

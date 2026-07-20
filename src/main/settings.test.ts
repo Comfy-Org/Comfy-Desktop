@@ -32,6 +32,9 @@ let settings: {
   get: (key: string) => unknown
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
+  getTrackedSettingsTelemetryProperties: (
+    keys?: readonly string[]
+  ) => Record<string, boolean | number | string | null>
 }
 
 const settingsPath = process.platform === 'linux'
@@ -352,6 +355,20 @@ describe('settings.has (persisted-only check)', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ theme: null }), 'utf-8')
     expect(settings.has('theme')).toBe(false)
   })
+
+  it('treats a stale sentinel value as unset (autoLaunchOnStartup: none)', () => {
+    // A manually edited / migrated file may still carry the 'none' sentinel that
+    // set() would have dropped; has() must not report it as a user choice.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ autoLaunchOnStartup: 'none' }), 'utf-8')
+    expect(settings.has('autoLaunchOnStartup')).toBe(false)
+  })
+
+  it('treats a whitespace-only pypiMirror as unset', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: '   ' }), 'utf-8')
+    expect(settings.has('pypiMirror')).toBe(false)
+  })
 })
 
 describe('modelsDirs user ordering', () => {
@@ -470,5 +487,173 @@ describe('modelsDirs user ordering', () => {
     const dirs = settings.get('modelsDirs') as string[]
     expect(dirs.length).toBe(1)
     expect(path.resolve(dirs[0]!)).toBe(path.join(homePath, 'ComfyUI-Shared', 'models'))
+  })
+})
+
+describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
+  const realPlatform = process.platform
+
+  function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    try {
+      return fn()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+    }
+  }
+
+  it('autoInstallUpdates: effective value plus an explicit-set companion', () => {
+    // Unset => default-on and not explicit.
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: true,
+      auto_install_updates_explicit: false,
+    })
+    // Explicit false => off and explicit.
+    settings.set('autoInstallUpdates', false)
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: false,
+      auto_install_updates_explicit: true,
+    })
+    // Explicit true => on and explicit (distinct from the default-on majority).
+    settings.set('autoInstallUpdates', true)
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: true,
+      auto_install_updates_explicit: true,
+    })
+  })
+
+  it('language: emits only the selected value (null when following the OS default)', () => {
+    // Effective locale lives on the app.language_resolved event, not here.
+    expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
+      setting_language_selected: null,
+    })
+    settings.set('language', 'zh')
+    expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
+      setting_language_selected: 'zh',
+    })
+  })
+
+  it('omits the legacy autoUpdate setting entirely', () => {
+    settings.set('autoUpdate', false)
+    expect(settings.getTrackedSettingsTelemetryProperties()).not.toHaveProperty('setting_auto_update')
+  })
+
+  it('scalar value settings emit their typed value, never a hand-edited string', () => {
+    // onAppClose enum + maxCachedDownloads number pass through when valid
+    // (onAppClose resolves to its 'quit' default while tray docking is disabled).
+    settings.set('maxCachedDownloads', 5)
+    expect(
+      settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
+    ).toEqual({
+      setting_on_app_close: 'quit',
+      setting_max_cached_downloads: 5,
+    })
+    // A corrupt/hand-edited settings.json can't leak a free-form string.
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ onAppClose: '/Users/me/secret', maxCachedDownloads: 'lots' }),
+      'utf-8'
+    )
+    expect(
+      settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
+    ).toEqual({
+      setting_on_app_close: null,
+      setting_max_cached_downloads: null,
+    })
+  })
+
+  it('omits the dark-only theme setting entirely', () => {
+    settings.set('theme', 'light')
+    const props = settings.getTrackedSettingsTelemetryProperties()
+    expect(props).not.toHaveProperty('setting_theme')
+    expect(props).not.toHaveProperty('setting_theme_selected')
+  })
+
+  it('default-off useChineseMirrors: unset reports false, explicit true reports true', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
+      setting_use_chinese_mirrors: false,
+    })
+    settings.set('useChineseMirrors', true)
+    expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
+      setting_use_chinese_mirrors: true,
+    })
+  })
+
+  it('Windows-only installUpdatesOnStartup: default-on true on win32, false when opted out', () => {
+    withPlatform('win32', () => {
+      expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
+        install_updates_on_startup: true,
+      })
+    })
+    settings.set('installUpdatesOnStartup', false)
+    withPlatform('win32', () => {
+      expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
+        install_updates_on_startup: false,
+      })
+    })
+  })
+
+  it('Windows-only gates report null off-Windows (not applicable, not opted out)', () => {
+    withPlatform('darwin', () => {
+      expect(
+        settings.getTrackedSettingsTelemetryProperties([
+          'installUpdatesOnStartup',
+          'showInstallerUI',
+        ])
+      ).toEqual({
+        install_updates_on_startup: null,
+        setting_show_installer_ui: null,
+      })
+    })
+  })
+
+  it('path settings emit presence booleans, never the raw path', () => {
+    const before = settings.getTrackedSettingsTelemetryProperties([
+      'installDir',
+      'modelsDirs',
+      'cacheDir',
+    ])
+    expect(before).toEqual({
+      setting_install_dir: false,
+      setting_models_dirs: false,
+      setting_cache_dir: false,
+    })
+    settings.set('installDir', path.join(homePath, 'Custom', 'Installs'))
+    const after = settings.getTrackedSettingsTelemetryProperties(['installDir'])
+    expect(after.setting_install_dir).toBe(true)
+    expect(Object.values(after).every((v) => typeof v !== 'string')).toBe(true)
+  })
+
+  it('autoLaunchOnStartup emits presence (bool-ified), never the install id', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
+      setting_auto_launch_on_startup: false,
+    })
+    settings.set('autoLaunchOnStartup', 'some-install-id')
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
+      setting_auto_launch_on_startup: true,
+    })
+  })
+
+  it('omits internal bookkeeping and consent keys', () => {
+    settings.set('firstUseCompleted', true)
+    settings.set('telemetryEnabled', true)
+    settings.set('chineseMirrorsPrompted', true)
+    const props = settings.getTrackedSettingsTelemetryProperties()
+    expect(props).not.toHaveProperty('setting_first_use_completed')
+    expect(props).not.toHaveProperty('setting_telemetry_enabled')
+    expect(props).not.toHaveProperty('setting_chinese_mirrors_prompted')
+  })
+
+  it('full snapshot includes both #1220 exact names and never emits arrays/objects', () => {
+    const props = withPlatform('win32', () =>
+      settings.getTrackedSettingsTelemetryProperties()
+    )
+    expect(props).toHaveProperty('auto_install_updates')
+    expect(props).toHaveProperty('install_updates_on_startup')
+    for (const value of Object.values(props)) {
+      expect(['boolean', 'number', 'string']).toContain(
+        value === null ? 'boolean' : typeof value
+      )
+    }
   })
 })

@@ -302,7 +302,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(w.emitted('op-dismiss')).toHaveLength(1)
   })
 
-  it('cancelled: silently clears — no terminal card, Save CTA restored, no events emitted', async () => {
+  it('cancelled: silently clears the card and dismisses the retained operation', async () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
@@ -323,8 +323,51 @@ describe('comfyUISettings/SnapshotsView', () => {
 
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
     expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
-    expect(w.emitted('op-dismiss')).toBeUndefined()
+    expect(w.emitted('op-dismiss')).toHaveLength(1)
     expect(w.emitted('op-retry')).toBeUndefined()
+  })
+
+  it('cancelled import: keeps Retry visible (neutral card, not a red failure) because the staged target is reusable', async () => {
+    const actionData = { restoreToken: '0123456789abcdef0123456789abcdef' }
+    const w = await mountView({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: false, ok: null, error: null,
+        percent: 30, status: 'Loading snapshot…',
+        actionData,
+      },
+    })
+    await w.setProps({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: true, ok: false, error: 'Cancelled.',
+        percent: 30, status: '',
+        actionData,
+      },
+    })
+    await flushPromises()
+
+    const card = w.find(`[data-testid="${TID.snapshotsOpCard}"]`)
+    expect(card.exists()).toBe(true)
+    expect(card.classes()).not.toContain('is-error')
+    expect(w.find('.snapshots-rail-save-box.is-op-error').exists()).toBe(false)
+    expect(w.emitted('op-dismiss')).toBeUndefined()
+    await w.find(`[data-testid="${TID.snapshotsOpCardRetry}"]`).trigger('click')
+    expect(w.emitted('op-retry')).toHaveLength(1)
+  })
+
+  it('remounts an already-failed import with its Retry action visible', async () => {
+    const w = await mountView({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: true, ok: false, error: 'Package install failed',
+        percent: 30, status: '',
+        actionData: { restoreToken: '0123456789abcdef0123456789abcdef' },
+      },
+    })
+
+    expect(w.find('.snapshots-rail-save-box.is-op-error').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsOpCardRetry}"]`).exists()).toBe(true)
   })
 
   it('non-restore op is ignored — update-comfyui does not hijack the snapshots tab', async () => {

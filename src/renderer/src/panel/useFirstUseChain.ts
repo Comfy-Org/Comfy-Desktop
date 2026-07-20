@@ -4,7 +4,8 @@ import { useProgressStore } from '../stores/progressStore'
 import { useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useMigrateAction } from '../composables/useMigrateAction'
 import { useOverlay } from '../composables/useOverlay'
-import { emitTelemetryAction } from '../lib/telemetry'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 import type { FieldOption, Installation, ShowProgressOpts, Source } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
 import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
@@ -373,7 +374,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
 
       const instData = await window.api.buildInstallation(standalone.id, selections)
-      const name = await window.api.getUniqueName('ComfyUI')
+      const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
       const installPath = installDir ?? ''
 
       const result = await window.api.addInstallation({
@@ -389,13 +390,26 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         return false
       }
 
+      // Reliable "install actually began" gate that pairs 1:1 with
+      // first_use.completed (#1224). The express path skips the wizard, so it
+      // emits the dispatch marker itself rather than relying on the wizard.
+      const variantId = selections.variant?.data?.variantId as string | undefined
+      emitTelemetryAction('comfy.desktop.install.dispatched', {
+        installation_id: result.entry.id,
+        source_id: standalone.id,
+        variant: variantId ? toVariantBucket(variantId) : null,
+        express: true,
+        entrypoint: 'first_use',
+        template_selected: false
+      })
+
       // `onShowProgress` captures `pendingFirstUseAutoLaunchId` from this
       // call because `chainingFirstUseToNewInstall` is already true — the
       // auto-launch watcher takes the install through to a running ComfyUI
       // window the same way the Configure handoff does.
       await opts.handleShowProgress({
         installationId: result.entry.id,
-        title: `Installing — ${name}`,
+        title: `Installing — ${result.entry.name}`,
         apiCall: () => window.api.installInstance(result.entry!.id, true),
         autoLaunchOnFinish: true,
         opKind: 'install'
