@@ -156,6 +156,7 @@ export async function openModelAccessPageWindow(
     }
   })
 
+  const accessContents = accessWindow.webContents
   accessWindows.set(repositoryPath, accessWindow)
   secureAccessWindow(accessWindow, sender.session)
 
@@ -164,7 +165,7 @@ export async function openModelAccessPageWindow(
   }
   parent.once('closed', destroyWithParent)
   accessWindow.once('closed', () => {
-    accessPageContents.delete(accessWindow.webContents)
+    accessPageContents.delete(accessContents)
     if (accessWindows.get(repositoryPath) === accessWindow) {
       accessWindows.delete(repositoryPath)
       if (accessWindows.size === 0) accessWindowsBySender.delete(sender)

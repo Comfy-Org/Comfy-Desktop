@@ -167,6 +167,19 @@ describe('openModelAccessPageWindow', () => {
     expect(accessWindow.destroy).toHaveBeenCalledOnce()
   })
 
+  it('cleans up after Electron destroys the access window web contents', async () => {
+    await openModelAccessPageWindow({ session } as unknown as WebContents, url)
+    Object.defineProperty(accessWindow, 'webContents', {
+      configurable: true,
+      get: () => {
+        throw new TypeError('Object has been destroyed')
+      }
+    })
+
+    expect(() => accessWindowListeners.get('closed')?.()).not.toThrow()
+    expect(parent.removeListener).toHaveBeenCalledWith('closed', expect.any(Function))
+  })
+
   it('keeps the access window when the initial navigation is superseded', async () => {
     accessWindow.loadURL.mockRejectedValueOnce(new Error('ERR_ABORTED (-3)'))
 
