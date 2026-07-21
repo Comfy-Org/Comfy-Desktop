@@ -191,7 +191,11 @@ defineExpose({ shownDiskError })
           <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
             <Check :size="13" :stroke-width="3" />
           </span>
-          <span v-else-if="opt.recommended" class="tps__recommended">
+          <!-- Shown alongside the check, not instead of it: the host pre-selects
+               the recommended template, so a `v-else-if` here hid the badge in
+               exactly the state the user lands on. The two sit in opposite
+               corners and never collide. -->
+          <span v-if="opt.recommended" class="tps__recommended">
             {{ t('newInstall.recommended') }}
           </span>
         </span>
@@ -394,20 +398,24 @@ defineExpose({ shownDiskError })
   box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
+/* A translucent chip matching the frontend's overlay Tag, rather than a hard
+   black uppercase pill. Top-left because it's the first thing scanned, which is
+   where a recommendation belongs; that corner freed up when the downloaded
+   state moved to the footer, and it pairs with the selection check at the
+   opposite end of the same line. */
 .tps__recommended {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
+  top: 10px;
+  left: 10px;
   z-index: 1;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--neutral-100);
-  background: var(--neutral-900);
-  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #fff;
+  background: color-mix(in oklab, var(--neutral-300) 38%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 @media (prefers-reduced-motion: reduce) {
