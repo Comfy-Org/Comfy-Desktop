@@ -83,8 +83,13 @@ describe('handleLaunch - adopted CPU-only PyTorch', () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'adopted-launch-'))
     const installPath = path.join(tmpRoot, 'wrapper')
     const adoptedBaseDir = path.join(tmpRoot, 'legacy')
-    const pythonPath = path.join(adoptedBaseDir, '.venv', 'Scripts', 'python.exe')
-    const sitePackages = path.join(adoptedBaseDir, '.venv', 'Lib', 'site-packages')
+    const venvDir = path.join(adoptedBaseDir, '.venv')
+    const pythonPath = process.platform === 'win32'
+      ? path.join(venvDir, 'Scripts', 'python.exe')
+      : path.join(venvDir, 'bin', 'python')
+    const sitePackages = process.platform === 'win32'
+      ? path.join(venvDir, 'Lib', 'site-packages')
+      : path.join(venvDir, 'lib', 'python3.12', 'site-packages')
     fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
     fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), '')
     fs.mkdirSync(path.dirname(pythonPath), { recursive: true })
