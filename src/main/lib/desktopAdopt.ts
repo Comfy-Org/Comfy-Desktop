@@ -30,7 +30,10 @@ import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
 import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
-import { getLegacyTorchVendorMismatch } from '../sources/standalone/torchRepair'
+import {
+  getLegacyTorchVendorMismatch,
+  hasCpuLaunchArg,
+} from '../sources/standalone/torchRepair'
 import {
   KNOWN_MODEL_FOLDERS,
   parseExtraModelsSections,
@@ -1172,6 +1175,10 @@ async function runAdoption(
     typeof legacyDesktopConfig['selectedDevice'] === 'string'
       ? (legacyDesktopConfig['selectedDevice'] as string)
       : null
+  const settingsRead = readLegacyComfySettings(info.basePath)
+  const rawComfySettings = settingsRead.settings
+  const prefs = readLegacyComfyPrefs(rawComfySettings)
+  const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
   let adoptedCpuFallback = false
 
   sendProgress('venv', { percent: 0 })
@@ -1195,9 +1202,12 @@ async function runAdoption(
       })
       if (choice.kind === 'venv-broken' && choice.choice === 'cancel')
         throw new Error('venv-broken-cancelled')
+      return
     }
 
-    const mismatch = deps.getLegacyTorchVendorMismatch(info.basePath, selectedDevice)
+    const mismatch = hasCpuLaunchArg(derived.launchArgs)
+      ? null
+      : deps.getLegacyTorchVendorMismatch(info.basePath, selectedDevice)
     if (mismatch) {
       telemetry.capture('comfy.desktop.adopt.torch_mismatch', {
         selected_device: selectedDevice,
@@ -1326,11 +1336,7 @@ async function runAdoption(
     }
   )
 
-  const settingsRead = readLegacyComfySettings(info.basePath)
-  const rawComfySettings = settingsRead.settings
-  const prefs = readLegacyComfyPrefs(rawComfySettings)
   const legacyAppVersion = readLegacyAppVersion(info.executablePath)
-  const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
 
   sendProgress('settings', { percent: 0 })
   const carry = await telemetry.trackedStep('comfy.desktop.adopt.carry_settings', {}, async () => {
