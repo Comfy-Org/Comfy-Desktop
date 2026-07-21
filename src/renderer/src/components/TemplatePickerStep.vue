@@ -63,6 +63,14 @@ function sizeLabelOf(option: FieldOption): string {
 function modelsPresentOf(option: FieldOption): boolean {
   return option.data?.modelsPresent === true
 }
+/** Hover/AT text for a present template. The footprint moves here rather than
+ *  onto the card, so it stays available without a number competing with the
+ *  glyph in a slot only wide enough for one of them. */
+function presentLabelOf(option: FieldOption): string {
+  const downloaded = t('standalone.templateModelsDownloaded')
+  const size = sizeLabelOf(option)
+  return size ? `${downloaded} · ${size}` : downloaded
+}
 /** Short model name (falls back to the full label). */
 function nameOf(option: FieldOption): string {
   const name = option.data?.name
@@ -193,20 +201,19 @@ defineExpose({ shownDiskError })
             <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
             <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
           </span>
-          <!-- The size is a download-cost signal, so once the models are on
-               disk it has nothing left to say and the glyph takes the slot.
-               A glyph also costs far less width than a word, so the title
-               keeps its room; the tooltip carries the wording. -->
+          <!-- Once the models are on disk the glyph takes the slot, and the
+               footprint moves into its tooltip. The number isn't lost, it just
+               stops competing for a slot only wide enough for one of them. -->
           <Tooltip
             v-if="modelsPresentOf(opt)"
-            :text="t('standalone.templateModelsDownloaded')"
+            :text="presentLabelOf(opt)"
             class="tps__card-present"
           >
             <HardDriveDownload
               :size="14"
               :stroke-width="2"
               role="img"
-              :aria-label="t('standalone.templateModelsDownloaded')"
+              :aria-label="presentLabelOf(opt)"
             />
           </Tooltip>
           <span v-else-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
