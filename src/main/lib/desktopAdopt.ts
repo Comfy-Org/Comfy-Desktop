@@ -30,6 +30,7 @@ import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
 import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
+import { getLegacyTorchVendorMismatch } from '../sources/standalone/torchRepair'
 import {
   KNOWN_MODEL_FOLDERS,
   parseExtraModelsSections,
@@ -68,11 +69,17 @@ interface LegacyComfySettingsRead {
   status: 'ok' | 'missing' | 'error'
 }
 
-export type AdoptPromptKind = 'tcc' | 'venv-broken' | 'source-missing' | 'confirm-adopt'
+export type AdoptPromptKind =
+  | 'tcc'
+  | 'venv-broken'
+  | 'torch-mismatch'
+  | 'source-missing'
+  | 'confirm-adopt'
 
 export type UserChoice =
   | { kind: 'tcc'; choice: 'continue' | 'denied' }
   | { kind: 'venv-broken'; choice: 'use-anyway' | 'cancel' }
+  | { kind: 'torch-mismatch'; choice: 'use-cpu' | 'cancel' }
   | { kind: 'source-missing'; choice: 'retry' | 'cancel' }
   | { kind: 'confirm-adopt'; choice: 'yes' | 'no' }
 
@@ -90,6 +97,7 @@ export interface AdoptDeps {
     pythonPath: string,
     signal: AbortSignal
   ) => Promise<{ ok: true } | { ok: false; message: string }>
+  getLegacyTorchVendorMismatch: typeof getLegacyTorchVendorMismatch
   copyStagedSource: (src: string, dest: string) => Promise<void>
   cloneSourceFromGit: (
     url: string,
@@ -1034,6 +1042,8 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     detectDesktopInstall: opts.deps?.detectDesktopInstall ?? detectDesktopInstall,
     captureDesktopSnapshot: opts.deps?.captureDesktopSnapshot ?? captureDesktopSnapshot,
     validateLegacyVenv: opts.deps?.validateLegacyVenv ?? validateLegacyVenvDefault,
+    getLegacyTorchVendorMismatch:
+      opts.deps?.getLegacyTorchVendorMismatch ?? getLegacyTorchVendorMismatch,
     copyStagedSource: opts.deps?.copyStagedSource ?? copyStagedSourceDefault,
     cloneSourceFromGit: opts.deps?.cloneSourceFromGit ?? cloneSourceFromGitDefault,
     now: opts.deps?.now ?? (() => new Date())
@@ -1153,6 +1163,17 @@ async function runAdoption(
     })
   }
 
+  const legacyDesktopConfig = readLegacyDesktopConfig(info.configDir)
+  const detectedGpu =
+    typeof legacyDesktopConfig['detectedGpu'] === 'string'
+      ? (legacyDesktopConfig['detectedGpu'] as string)
+      : null
+  const selectedDevice =
+    typeof legacyDesktopConfig['selectedDevice'] === 'string'
+      ? (legacyDesktopConfig['selectedDevice'] as string)
+      : null
+  let adoptedCpuFallback = false
+
   sendProgress('venv', { percent: 0 })
   const pythonPath =
     process.platform === 'win32'
@@ -1174,6 +1195,23 @@ async function runAdoption(
       })
       if (choice.kind === 'venv-broken' && choice.choice === 'cancel')
         throw new Error('venv-broken-cancelled')
+    }
+
+    const mismatch = deps.getLegacyTorchVendorMismatch(info.basePath, selectedDevice)
+    if (mismatch) {
+      telemetry.capture('comfy.desktop.adopt.torch_mismatch', {
+        selected_device: selectedDevice,
+        installed_version: mismatch.installedVersion,
+      })
+      const choice = await tools.promptUser('torch-mismatch', {
+        selectedDevice,
+        installedVersion: mismatch.installedVersion,
+      })
+      if (!(choice.kind === 'torch-mismatch' && choice.choice === 'use-cpu')) {
+        throw new Error('torch-mismatch-cancelled')
+      }
+      adoptedCpuFallback = true
+      sendOutput('GPU support is unavailable in the adopted PyTorch build; launches will use CPU mode.\n')
     }
   })
 
@@ -1291,16 +1329,7 @@ async function runAdoption(
   const settingsRead = readLegacyComfySettings(info.basePath)
   const rawComfySettings = settingsRead.settings
   const prefs = readLegacyComfyPrefs(rawComfySettings)
-  const legacyDesktopConfig = readLegacyDesktopConfig(info.configDir)
   const legacyAppVersion = readLegacyAppVersion(info.executablePath)
-  const detectedGpu =
-    typeof legacyDesktopConfig['detectedGpu'] === 'string'
-      ? (legacyDesktopConfig['detectedGpu'] as string)
-      : null
-  const selectedDevice =
-    typeof legacyDesktopConfig['selectedDevice'] === 'string'
-      ? (legacyDesktopConfig['selectedDevice'] as string)
-      : null
   const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
 
   sendProgress('settings', { percent: 0 })
@@ -1332,11 +1361,10 @@ async function runAdoption(
         ? { adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION }
         : {}),
       ...(legacyAppVersion ? { adoptedFromLegacyVersion: legacyAppVersion } : {}),
-      // Hardware hints stashed for a future "rebuild as managed standalone"
-      // flow that needs to preselect the right variant — no v2 consumer
-      // today, but cheap to capture while we have the legacy config open.
+      // Hardware hints also drive adopted-environment compatibility checks.
       ...(detectedGpu ? { adoptedFromGpu: detectedGpu } : {}),
       ...(selectedDevice ? { adoptedSelectedDevice: selectedDevice } : {}),
+      ...(adoptedCpuFallback ? { adoptedCpuFallback: true } : {}),
       releaseTag: 'legacy-adopted',
       variant: 'legacy-uv-py312',
       pythonVersion: '3.12',

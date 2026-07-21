@@ -58,6 +58,14 @@ import { ensureManagerMirrorConfig } from '../../managerConfig'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
+import {
+  getAdoptedTorchVendorMismatch,
+  getTorchVendorMismatch,
+  hasCpuLaunchArg,
+  maybeRepairTorch,
+  withCpuLaunchArg,
+} from '../../../sources/standalone/torchRepair'
+import type { TorchMismatch } from '../../../sources/standalone/torchRepair'
 import type { WriteStream } from 'fs'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -163,6 +171,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
+  let adoptedTorchMismatch: TorchMismatch | null = null
   if (_runningSessions.has(installationId)) {
     return { ok: false, message: i18n.t('errors.alreadyRunning') }
   }
@@ -297,9 +306,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     const repairAbort = new AbortController()
     _operationAborts.set(installationId, repairAbort)
     try {
-      const { maybeRepairTorch, getTorchVendorMismatch } = await import(
-        '../../../sources/standalone/torchRepair'
-      )
+      adoptedTorchMismatch = getAdoptedTorchVendorMismatch(inst)
       // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
       // live `torchRepair` step rather than flashing a flat status. Detection is
       // a cheap sync check; arming only when a repair will actually run.
@@ -332,6 +339,30 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
+
+  if (adoptedTorchMismatch && !hasCpuLaunchArg(launchCmd.args)) {
+    const fallbackAllowed =
+      inst.adoptedCpuFallback === true || actionData?.adoptedCpuFallback === true
+    if (!fallbackAllowed) {
+      return {
+        ok: false,
+        message: i18n.t('desktop.adoptedTorchMismatchBlocked', {
+          device: adoptedTorchMismatch.variantBase.toUpperCase(),
+          version: adoptedTorchMismatch.installedVersion,
+        }),
+      }
+    }
+
+    launchCmd.args = withCpuLaunchArg(launchCmd.args ?? [])
+    if (inst.adoptedCpuFallback !== true) {
+      await installations.update(installationId, { adoptedCpuFallback: true })
+      inst = { ...inst, adoptedCpuFallback: true }
+      telemetry.capture('comfy.desktop.adopt.cpu_fallback_enabled', {
+        selected_device: adoptedTorchMismatch.variantBase,
+        installed_version: adoptedTorchMismatch.installedVersion,
+      })
+    }
+  }
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {

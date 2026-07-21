@@ -86,6 +86,7 @@ vi.mock('../../../lib/pip', () => ({
 import { handleReleaseUpdate } from './copy'
 import { standalone } from '../../../sources/standalone'
 import * as settingsMock from '../../../settings'
+import { performCopy } from '../shared'
 
 // Fake WebContents that satisfies `makeSendProgress` / `makeSendOutput`.
 function makeSender(): Electron.WebContents {
@@ -227,5 +228,24 @@ describe('handleReleaseUpdate (release-update success path)', () => {
       .toBe(MODEL_BODY)
     expect(fs.readFileSync(path.join(sharedInputDir, INPUT_FILE), 'utf-8')).toBe(INPUT_BODY)
     expect(fs.readFileSync(path.join(sharedOutputDir, OUTPUT_FILE), 'utf-8')).toBe(OUTPUT_BODY)
+  })
+
+  it('preserves the selected device and CPU fallback when copying an adopted environment', async () => {
+    const legacyRoot = path.join(tmpRoot, 'legacy')
+    fs.mkdirSync(path.join(legacyRoot, '.venv'), { recursive: true })
+    fs.writeFileSync(path.join(legacyRoot, '.venv', 'pyvenv.cfg'), `home = ${legacyRoot}\n`)
+    src = {
+      ...src,
+      adopted: true,
+      adoptedBaseDir: legacyRoot,
+      adoptedSelectedDevice: 'nvidia',
+      adoptedCpuFallback: true,
+    }
+    installationsStore.set(src.id, src)
+
+    const { entry } = await performCopy(src, 'adopted-copy', vi.fn())
+
+    expect(entry.adoptedSelectedDevice).toBe('nvidia')
+    expect(entry.adoptedCpuFallback).toBe(true)
   })
 })

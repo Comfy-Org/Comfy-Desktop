@@ -10,6 +10,7 @@ import { deleteAction, untrackAction, launchAction, openFolderAction, renameActi
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
 import { getVariantLabel, getTorchVersion, DEFAULT_LAUNCH_ARGS } from './envPaths'
+import { getAdoptedTorchVendorMismatch, hasCpuLaunchArg } from './torchRepair'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
 
@@ -55,6 +56,35 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
     return { label: t('standalone.updateAvailableTag', { version }), style: 'update', version }
   }
   return undefined
+}
+
+export function getStandaloneLaunchAction(
+  installation: InstallationRecord,
+  enabled: boolean,
+  disabledMessage?: string
+): Record<string, unknown> {
+  const action = launchAction(enabled, disabledMessage)
+  const mismatch = getAdoptedTorchVendorMismatch(installation)
+  if (
+    !mismatch ||
+    installation.adoptedCpuFallback === true ||
+    hasCpuLaunchArg(installation.launchArgs as string | undefined)
+  ) {
+    return action
+  }
+
+  const device = mismatch.variantBase.toUpperCase()
+  return {
+    ...action,
+    data: { adoptedCpuFallback: true },
+    confirm: {
+      title: t('desktop.adoptedTorchMismatchTitle'),
+      message: t('desktop.adoptedTorchMismatchMessage', {
+        device,
+        version: mismatch.installedVersion,
+      }),
+    },
+  }
 }
 
 export function getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
@@ -224,7 +254,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       title: 'Actions',
       pinBottom: true,
       actions: [
-        launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
+        getStandaloneLaunchAction(
+          installation,
+          installed,
+          !installed ? t('errors.installNotReady') : undefined
+        ),
         renameAction(installation.name),
         { id: 'copy', label: t('actions.copyInstallation'), style: 'default', enabled: installed,
           showProgress: true, progressTitle: t('actions.copyingInstallation'), cancellable: true,

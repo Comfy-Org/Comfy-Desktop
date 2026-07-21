@@ -126,6 +126,28 @@ describe('useListAction — desktop launch interceptor', () => {
     expect(mockRunAction).toHaveBeenCalledWith('inst-1', 'launch')
   })
 
+  it('forwards confirmed list-action data to the backend', async () => {
+    mockModalConfirm.mockResolvedValueOnce(true)
+    mockRunAction.mockResolvedValueOnce({ ok: true })
+    const showProgress = vi.fn()
+    const { executeAction } = useListAction('chooser', { showProgress })
+
+    await executeAction(makeInstall({ sourceId: 'standalone', adopted: true }), {
+      ...launchAction,
+      showProgress: true,
+      data: { adoptedCpuFallback: true },
+      confirm: { title: 'CPU mode', message: 'Launch using CPU?' },
+    })
+
+    const opts = showProgress.mock.calls[0]![0] as { apiCall: () => Promise<unknown> }
+    await opts.apiCall()
+    expect(mockRunAction).toHaveBeenCalledWith(
+      'inst-1',
+      'launch',
+      { adoptedCpuFallback: true },
+    )
+  })
+
   it('skips the interceptor for non-desktop sources', async () => {
     const showProgress = vi.fn()
     const { executeAction } = useListAction('chooser', { showProgress })

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 // Stub the electron surface ../shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
@@ -16,8 +19,10 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
 }))
 
-import { desktopFeatureFlags, isCrashedExit } from './launch'
+import { desktopFeatureFlags, handleLaunch, isCrashedExit } from './launch'
+import { sourceMap } from '../shared'
 import type { InstallationRecord } from '../shared'
+import type { LaunchCommand } from '../../../types/sources'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -70,5 +75,89 @@ describe('isCrashedExit', () => {
     // Windows force-kill reports a large unsigned code; signal is always null.
     expect(isCrashedExit(4294967295, null)).toBe(true)
     expect(isCrashedExit(0xc0000005, null)).toBe(true)
+  })
+})
+
+describe('handleLaunch - adopted CPU-only PyTorch', () => {
+  function makeAdoptedMismatch(): { inst: InstallationRecord; cleanup: () => void } {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'adopted-launch-'))
+    const installPath = path.join(tmpRoot, 'wrapper')
+    const adoptedBaseDir = path.join(tmpRoot, 'legacy')
+    const pythonPath = path.join(adoptedBaseDir, '.venv', 'Scripts', 'python.exe')
+    const sitePackages = path.join(adoptedBaseDir, '.venv', 'Lib', 'site-packages')
+    fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
+    fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), '')
+    fs.mkdirSync(path.dirname(pythonPath), { recursive: true })
+    fs.writeFileSync(pythonPath, '')
+    fs.mkdirSync(path.join(sitePackages, 'torch-2.12.0.dist-info'), { recursive: true })
+    fs.mkdirSync(path.join(sitePackages, 'torch'), { recursive: true })
+    fs.writeFileSync(
+      path.join(sitePackages, 'torch', 'version.py'),
+      "cuda = None\nhip = None\nrocm = None\nxpu = None\n",
+    )
+    return {
+      inst: {
+        id: `adopted-mismatch-${path.basename(tmpRoot)}`,
+        name: 'Adopted mismatch',
+        createdAt: new Date(0).toISOString(),
+        sourceId: 'standalone',
+        installPath,
+        status: 'installed',
+        adopted: true,
+        adoptedBaseDir,
+        adoptedPythonPath: pythonPath,
+        adoptedSelectedDevice: 'nvidia',
+        launchArgs: '--enable-manager',
+      },
+      cleanup: () => fs.rmSync(tmpRoot, { recursive: true, force: true }),
+    }
+  }
+
+  const event = {
+    sender: { isDestroyed: () => false, send: vi.fn() },
+  } as unknown as Electron.IpcMainInvokeEvent
+
+  it('blocks an unconfirmed GPU launch before spawning the mismatched environment', async () => {
+    const { inst, cleanup } = makeAdoptedMismatch()
+    try {
+      const result = await handleLaunch({
+        event,
+        installationId: inst.id,
+        inst,
+        actionData: undefined,
+      })
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toBe('desktop.adoptedTorchMismatchBlocked')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('adds --cpu after the user has accepted the fallback', async () => {
+    const { inst, cleanup } = makeAdoptedMismatch()
+    const source = sourceMap['standalone']!
+    const originalGetLaunchCommand = source.getLaunchCommand
+    const launchCmd: LaunchCommand = {
+      cmd: path.join(inst.installPath, 'missing-python.exe'),
+      args: ['-s', path.join('ComfyUI', 'main.py'), '--enable-manager', '--lowvram'],
+      cwd: inst.installPath,
+      port: 8000,
+    }
+    source.getLaunchCommand = () => launchCmd
+    try {
+      await handleLaunch({
+        event,
+        installationId: inst.id,
+        inst: { ...inst, adoptedCpuFallback: true },
+        actionData: undefined,
+      })
+
+      expect(launchCmd.args).toContain('--cpu')
+      expect(launchCmd.args).not.toContain('--lowvram')
+    } finally {
+      source.getLaunchCommand = originalGetLaunchCommand
+      cleanup()
+    }
   })
 })

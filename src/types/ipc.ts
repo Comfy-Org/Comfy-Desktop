@@ -267,6 +267,7 @@ export interface ListAction {
   showProgress?: boolean
   progressTitle?: string
   cancellable?: boolean
+  data?: Record<string, unknown>
 }
 
 /** Payload carried by every component's `show-progress` emit. The host
