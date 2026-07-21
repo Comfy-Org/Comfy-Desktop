@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check } from 'lucide-vue-next'
+import { Check, HardDriveDownload } from 'lucide-vue-next'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
 import { templateDiskRequiredBytes, isTemplateDiskBlocked } from '../lib/installHelpers'
 import { useTemplateTabs } from '../composables/useTemplateTabs'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import TruncatedText from './TruncatedText.vue'
+import Tooltip from './ui/Tooltip.vue'
 
 /**
  * Starter-template picker — modality tabs (Image / Video / 3D / Audio) over a
@@ -179,11 +180,6 @@ defineExpose({ shownDiskError })
             @error="thumbFailed[opt.value] = true"
           />
 
-          <span v-if="modelsPresentOf(opt)" class="tps__downloaded">
-            <Check :size="12" :stroke-width="3" />
-            {{ t('standalone.templateModelsDownloaded') }}
-          </span>
-
           <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
             <Check :size="13" :stroke-width="3" />
           </span>
@@ -196,11 +192,24 @@ defineExpose({ shownDiskError })
           <span class="tps__card-text">
             <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
             <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
-            <span v-if="modelsPresentOf(opt)" class="sr-only">
-              {{ t('standalone.templateModelsDownloaded') }}
-            </span>
           </span>
-          <span v-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
+          <!-- The size is a download-cost signal, so once the models are on
+               disk it has nothing left to say and the glyph takes the slot.
+               A glyph also costs far less width than a word, so the title
+               keeps its room; the tooltip carries the wording. -->
+          <Tooltip
+            v-if="modelsPresentOf(opt)"
+            :text="t('standalone.templateModelsDownloaded')"
+            class="tps__card-present"
+          >
+            <HardDriveDownload
+              :size="14"
+              :stroke-width="2"
+              role="img"
+              :aria-label="t('standalone.templateModelsDownloaded')"
+            />
+          </Tooltip>
+          <span v-else-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
         </span>
       </button>
     </div>
@@ -349,23 +358,13 @@ defineExpose({ shownDiskError })
   letter-spacing: 0.01em;
   color: var(--neutral-300);
 }
-
-.tps__downloaded {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 1;
+/* Same colour as the size label it replaces — this is card metadata, not an
+   alert, and a coloured glyph here would compete with the Install CTA. */
+.tps__card-present {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 9px 4px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--neutral-50);
-  background: color-mix(in oklab, var(--neutral-950) 88%, transparent);
-  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
+  color: var(--neutral-300);
 }
 
 .tps__check {
