@@ -76,9 +76,8 @@ describe('TemplatePickerStep', () => {
     expect(rows[0]!.text()).toContain('Wan Video')
   })
 
-  it('shows the recommended badge on the recommended card when it is not selected', () => {
-    // Select the non-recommended alt so the recommended card shows its badge
-    // (the check replaces it when the recommended card is itself selected).
+  it('shows the recommended badge only on the recommended card', () => {
+    // Select the non-recommended alt, so only one card can carry the badge.
     const wrapper = mountPicker({ selectedValue: IMAGE_ALT.value })
     const tags = wrapper.findAll('.tps__recommended')
     expect(tags).toHaveLength(1)
@@ -86,11 +85,34 @@ describe('TemplatePickerStep', () => {
     expect(wrapper.findAll('button[role="radio"]')[1]!.text()).not.toContain('Recommended')
   })
 
-  it('hides the recommended badge on the selected card (check takes its place)', () => {
-    // Default selection is the recommended card → only the check shows, no badge.
+  it('keeps the recommended badge on the card once it is selected', () => {
+    // The host pre-selects the recommended template, so this is the state the
+    // user lands on. Hiding the badge here left the recommendation invisible
+    // until they clicked away, by which point it was no longer guidance —
+    // hence badge and check together, in opposite corners.
     const wrapper = mountPicker()
-    expect(wrapper.findAll('.tps__recommended')).toHaveLength(0)
+    expect(wrapper.findAll('.tps__recommended')).toHaveLength(1)
     expect(wrapper.findAll('.tps__check')).toHaveLength(1)
+  })
+
+  it('swaps the size for a glyph when the models are already on disk', () => {
+    const present: FieldOption = {
+      ...IMAGE_ALT,
+      data: { ...IMAGE_ALT.data, modelsPresent: true },
+    }
+    const rows = mountPicker({ options: [NONE, IMAGE_REC, present] }).findAll(
+      'button[role="radio"]'
+    )
+
+    // Nothing local → the size stays inline, no glyph.
+    expect(rows[0]!.find('.tps__card-size').text()).toBe('~7 GB')
+    expect(rows[0]!.find('.tps__card-present').exists()).toBe(false)
+
+    // Present → the glyph takes the slot and carries the footprint in its label,
+    // so the number is still reachable rather than dropped.
+    expect(rows[1]!.find('.tps__card-size').exists()).toBe(false)
+    expect(rows[1]!.find('.tps__card-present').exists()).toBe(true)
+    expect(rows[1]!.find('[role="img"]').attributes('aria-label')).toBe('Downloaded · ~17 GB')
   })
 
   it('marks the selected row via aria-checked', () => {
