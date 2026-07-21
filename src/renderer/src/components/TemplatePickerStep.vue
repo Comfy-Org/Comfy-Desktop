@@ -398,24 +398,24 @@ defineExpose({ shownDiskError })
   box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
-/* A translucent chip matching the frontend's overlay Tag, rather than a hard
-   black uppercase pill. Top-left because it's the first thing scanned, which is
-   where a recommendation belongs; that corner freed up when the downloaded
-   state moved to the footer, and it pairs with the selection check at the
-   opposite end of the same line. */
+/* Type tag from the Templates Dialog spec (Figma 2422:21611): a dark glass
+   chip, top-left. Top-left is also where a recommendation wants to be — first
+   thing scanned — and that corner freed up when the downloaded state moved
+   into the footer, so it no longer competes with the selection check. */
 .tps__recommended {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 8px;
+  left: 8px;
   z-index: 1;
-  padding: 3px 10px;
+  padding: 4px 8px;
   border-radius: 6px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: normal;
   letter-spacing: 0;
   color: #fff;
-  background: color-mix(in oklab, var(--neutral-300) 38%, transparent);
-  backdrop-filter: blur(8px);
+  background: rgb(0 0 0 / 0.3);
+  backdrop-filter: blur(20px);
 }
 
 @media (prefers-reduced-motion: reduce) {
