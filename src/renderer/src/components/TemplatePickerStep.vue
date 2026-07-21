@@ -259,8 +259,10 @@ defineExpose({ shownDiskError })
 .tps__card:hover {
   border-color: var(--brand-surface-border-hover);
 }
+/* Zoom rather than fade: fading the image let the branded placeholder behind
+   it show through, which read as a stray watermark over the thumbnail. */
 .tps__card:hover .tps__card-img--ready {
-  opacity: 0.88;
+  transform: scale(1.05);
 }
 .tps__card:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -285,7 +287,9 @@ defineExpose({ shownDiskError })
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 200ms ease;
+  transition:
+    opacity 200ms ease,
+    transform 260ms ease;
 }
 .tps__card-img--ready {
   opacity: 1;
@@ -402,6 +406,9 @@ defineExpose({ shownDiskError })
 @media (prefers-reduced-motion: reduce) {
   .tps__card-img {
     transition: none;
+  }
+  .tps__card:hover .tps__card-img--ready {
+    transform: none;
   }
   .tps__card-fallback--loading {
     animation: none;
