@@ -35,6 +35,7 @@ import { getDeviceId } from '../deviceId'
 import { getCloudCapacityStatusAsync } from '../cloudCapacity'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
+import { deriveGpuTier } from '../../../shared/gpuTier'
 
 export function registerAppHandlers(): void {
   // App version
@@ -261,6 +262,8 @@ export function registerAppHandlers(): void {
     const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
     const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
     const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
+    const primaryGpuVramGb = primaryGpuVramMb != null ? Math.round(primaryGpuVramMb / 1024) : null
+    const gpuTier = deriveGpuTier({ vendor: gpu?.id, vramGb: primaryGpuVramGb })
     // Only trust the primary controller's driver string when it actually
     // matches the detected compute vendor; selectPrimaryGpu may fall back to a
     // non-matching controller, which would otherwise mislabel the driver.
@@ -281,6 +284,8 @@ export function registerAppHandlers(): void {
       gpu_label: gpu?.label ?? null,
       gpu_model: primaryGpuModel,
       gpu_vram_mb: primaryGpuVramMb,
+      gpu_vram_gb: primaryGpuVramGb,
+      gpu_tier: gpuTier,
       gpus: allGpus,
       nvidia_driver_version: nvidiaCheck?.driverVersion ?? null,
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,

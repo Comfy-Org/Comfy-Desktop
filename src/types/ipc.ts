@@ -2,6 +2,7 @@
 // This file is the single source of truth — do not duplicate these types elsewhere.
 
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
 // Unsubscribe function returned by event listeners
@@ -625,6 +626,9 @@ export interface SystemInfo {
   gpu_model: string | null
   /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
   gpu_vram_mb: number | null
+  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  gpu_vram_gb: number | null
+  gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
