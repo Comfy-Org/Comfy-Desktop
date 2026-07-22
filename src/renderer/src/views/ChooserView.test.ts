@@ -168,17 +168,17 @@ describe('ChooserView', () => {
     // All five fixtures render — none are backed by a local install.
     expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(5)
     // Blocked fixtures are shown with their reason tag, never hidden.
-    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-lighting-lookdev"]').text()).toContain(
+    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-audio-lab"]').text()).toContain(
       'No build yet'
     )
   })
 
   it('deduplicates a distribution whose name matches an existing install', async () => {
     window.localStorage.setItem('comfy.devplatform.mockSession', '1')
-    installMockApi([makeInstall({ id: 'inst-previz', name: 'Previz Turntable' })])
+    installMockApi([makeInstall({ id: 'inst-sdxl', name: 'ComfyUI — SDXL Essentials' })])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-previz-turntable"]').exists()).toBe(
+    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-sdxl-essentials"]').exists()).toBe(
       false
     )
     expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(4)
@@ -189,10 +189,10 @@ describe('ChooserView', () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find('[data-testid="chooser-dist-tile-dist-toy-story-9"]').trigger('click')
+    await wrapper.find('[data-testid="chooser-dist-tile-dist-image-baseline"]').trigger('click')
     const events = wrapper.emitted('install-distribution')
     expect(events).toBeDefined()
-    expect((events![0]![0] as { id: string }).id).toBe('dist-toy-story-9')
+    expect((events![0]![0] as { id: string }).id).toBe('dist-image-baseline')
   })
 
   it('a blocked distribution tile does not emit on activation', async () => {
@@ -200,7 +200,7 @@ describe('ChooserView', () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find('[data-testid="chooser-dist-tile-dist-lighting-lookdev"]').trigger('click')
+    await wrapper.find('[data-testid="chooser-dist-tile-dist-audio-lab"]').trigger('click')
     expect(wrapper.emitted('install-distribution')).toBeUndefined()
   })
 
