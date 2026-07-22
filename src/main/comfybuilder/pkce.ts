@@ -3,16 +3,8 @@ import { createHash, randomBytes } from 'crypto'
 const CODE_VERIFIER_BYTES = 32
 const STATE_BYTES = 32
 
-function base64url(bytes: Buffer): string {
-  return bytes
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
-}
-
 export function generateCodeVerifier(): string {
-  return base64url(randomBytes(CODE_VERIFIER_BYTES))
+  return randomBytes(CODE_VERIFIER_BYTES).toString('base64url')
 }
 
 export function codeChallengeFromVerifier(verifier: string): string {
@@ -20,7 +12,7 @@ export function codeChallengeFromVerifier(verifier: string): string {
 }
 
 export function generateState(): string {
-  return base64url(randomBytes(STATE_BYTES))
+  return randomBytes(STATE_BYTES).toString('base64url')
 }
 
 export interface BuildAuthorizeUrlParams {

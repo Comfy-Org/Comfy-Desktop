@@ -11,6 +11,7 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
+import { statusFromAccessToken } from './claims'
 import type { AuthStatus, AuthTokens } from './types'
 
 const AUTH_FILENAME = 'comfybuilder-auth.bin'
@@ -55,7 +56,8 @@ export function saveTokens(tokens: AuthTokens): void {
 /** Return cached tokens, hydrating once from the encrypted file. Null when absent or unreadable. */
 export function loadTokens(): AuthTokens | null {
   if (cachedTokens) return cachedTokens
-  if (!encryptionAvailable()) return cachedTokens
+  // No secure backend: nothing was ever written to disk, so there is nothing to hydrate.
+  if (!encryptionAvailable()) return null
   try {
     const encrypted = fs.readFileSync(getAuthFilePath())
     const decrypted = safeStorage.decryptString(encrypted)
@@ -77,39 +79,10 @@ export function clearTokens(): void {
   }
 }
 
-interface JwtClaims {
-  email?: string
-  workspace_id?: string
-  workspace_type?: string
-  role?: string
-}
-
-/** Decode a JWT payload (the base64url middle segment). Null on any malformed input. */
-function decodeJwtPayload(token: string): JwtClaims | null {
-  const payloadSegment = token.split('.')[1]
-  if (!payloadSegment) return null
-  try {
-    const json = Buffer.from(payloadSegment, 'base64url').toString('utf-8')
-    const parsed: unknown = JSON.parse(json)
-    if (!parsed || typeof parsed !== 'object') return null
-    return parsed as JwtClaims
-  } catch {
-    return null
-  }
-}
-
 /** Renderer-safe auth status derived from the stored access-token claims. Never exposes tokens. */
 export function getAuthStatus(): AuthStatus {
   const tokens = loadTokens()
-  if (!tokens) return { signedIn: false }
-  const claims = decodeJwtPayload(tokens.accessToken)
-  return {
-    signedIn: true,
-    email: claims?.email,
-    workspaceId: claims?.workspace_id,
-    workspaceType: claims?.workspace_type,
-    role: claims?.role,
-  }
+  return tokens ? statusFromAccessToken(tokens.accessToken) : { signedIn: false }
 }
 
 /** @internal — reset module state between unit tests. */
