@@ -354,7 +354,9 @@ describe('comfybuilder artifactDownload', () => {
       expect(broadcastAuthChanged).toHaveBeenCalledTimes(1)
       expect(broadcastAuthChanged).toHaveBeenCalledWith({ signedIn: false })
 
-      // No token could be minted, so nothing was written to disk.
+      // The tokenless flow never tried the direct Bearer route, no token could
+      // be minted, and nothing was written to disk.
+      expect(server.counters.direct).toBe(0)
       expect(server.minted).toHaveLength(0)
       expect(() => statSync(destPath)).toThrow()
     } finally {

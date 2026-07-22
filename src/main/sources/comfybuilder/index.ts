@@ -19,7 +19,7 @@ import { getActivePythonPath } from '../../lib/pythonEnv'
 import { DEFAULT_LAUNCH_ARGS, MANIFEST_FILE } from '../standalone/envPaths'
 import { install } from './install'
 import { postInstall, probeInstallation } from '../standalone/install'
-import { listDeployments, listPipelines } from '../../comfybuilder/apiClient'
+import { ComfyBuilderApiError, listDeployments, listPipelines } from '../../comfybuilder/apiClient'
 import type { ApiClientOptions } from '../../comfybuilder/apiClient'
 import { pipelineInstallState, resolveLatestArtifact } from '../../comfybuilder/latestArtifact'
 import type { PipelineInstallReason } from '../../comfybuilder/latestArtifact'
@@ -185,16 +185,29 @@ export const comfybuilder: SourcePlugin = {
     // Signed out: surface the sign-in sentinel and make zero network calls.
     if (loadTokens() === null) return [requiresAuthOption()]
 
+    // A 401 whose refresh also failed has already cleared the tokens and
+    // broadcast signed-out — the sign-in sentinel is now the truthful card.
+    // Any other failure keeps surfacing as a field error.
+    const pipelines = await listPipelines(apiClientOptions).catch((err: unknown) => {
+      if (err instanceof ComfyBuilderApiError && err.kind === 'unauthorized') return null
+      throw err
+    })
+    if (pipelines === null) return [requiresAuthOption()]
+
     // ALL pipelines are returned — un-installable ones carry a reason and are
     // blocked at install, never hidden. Resolve their states in parallel;
     // one pipeline's deployments call failing drops that card for this open
     // of the wizard rather than failing the whole list.
-    const pipelines = await listPipelines(apiClientOptions)
     const results = await Promise.allSettled(
       pipelines.map((p) => buildPipelineOption(p.id, p.name, p.org_id)),
     )
     return results
-      .filter((r): r is PromiseFulfilledResult<FieldOption> => r.status === 'fulfilled')
+      .filter((r): r is PromiseFulfilledResult<FieldOption> => {
+        if (r.status === 'rejected') {
+          console.error('[comfybuilder] failed to resolve pipeline option:', r.reason)
+        }
+        return r.status === 'fulfilled'
+      })
       .map((r) => r.value)
   },
 
