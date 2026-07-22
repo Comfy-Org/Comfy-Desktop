@@ -1343,6 +1343,27 @@
     "workspace": {
       "personalLabel": "Personal"
     },
+    "distribution": {
+      "states": {
+        "noBuild": "No build yet",
+        "platformMismatch": "Not available for this computer",
+        "needsDesktopUpdate": "Needs a newer Comfy Desktop",
+        "installed": "Installed",
+        "updateAvailable": "Update available"
+      },
+      "blockedReason": {
+        "noBuild": "This distribution hasn’t finished building yet. It becomes installable as soon as a build succeeds.",
+        "buildFailed": "The most recent build failed, so there’s nothing to install yet. Ask whoever published it to rebuild.",
+        "platformMismatch": "This distribution wasn’t built for this computer’s operating system or graphics hardware.",
+        "noArtifactForMachine": "This distribution wasn’t built for this computer’s operating system or graphics hardware.",
+        "needsDesktopUpdate": "This distribution needs Comfy Desktop {version} or newer. Update Comfy Desktop to install it.",
+        "desktopTooOld": "This distribution needs Comfy Desktop {version} or newer. Update Comfy Desktop to install it."
+      },
+      "availablePill": "Available",
+      "installTileMeta": "Not installed yet",
+      "updatedLabel": "Updated",
+      "emptyTitle": "No distributions yet"
+    },
     "account": {
       "signedInAs": "Signed in as {email}",
       "signOut": "Sign out",

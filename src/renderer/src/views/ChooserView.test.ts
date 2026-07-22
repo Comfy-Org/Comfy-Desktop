@@ -63,6 +63,23 @@ const messages = {
         signOutConfirmBody: 'Installed distributions are kept.',
         signOutConfirmCta: 'Sign out',
       },
+      distribution: {
+        states: {
+          noBuild: 'No build yet',
+          platformMismatch: 'Not available for this computer',
+          needsDesktopUpdate: 'Needs a newer Comfy Desktop',
+          installed: 'Installed',
+          updateAvailable: 'Update available',
+        },
+        blockedReason: {
+          buildFailed: 'The most recent build failed.',
+          noArtifactForMachine: 'Not built for this machine.',
+        },
+        availablePill: 'Available',
+        installTileMeta: 'Not installed yet',
+        updatedLabel: 'Updated',
+        emptyTitle: 'No distributions yet',
+      },
       workspace: {
         personalLabel: 'Personal',
       },
@@ -143,12 +160,27 @@ describe('ChooserView', () => {
     mockModal.alert.mockClear()
   })
 
-  it('shows the log-in button top-right when signed out, no chip', async () => {
+  it('shows the log-in button top-right when signed out, and no distribution tiles', async () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
     expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(0)
+  })
+
+  it('signed in: shows the account chip and one tile per not-installed distribution', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('willie@comfy.org')
+    // All five fixtures render — none are backed by a local install.
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(5)
+    // Blocked fixtures are shown with their reason tag, never hidden.
+    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-audio-lab"]').text()).toContain(
+      'No build yet'
+    )
   })
 
   it('chip face names the account and the token workspace; the menu offers sign out', async () => {
@@ -162,6 +194,34 @@ describe('ChooserView', () => {
 
     await face.trigger('click')
     expect(wrapper.find('[data-testid="devplatform-account-signout"]').exists()).toBe(true)
+  })
+
+  it('deduplicates a distribution whose name matches an existing install', async () => {
+    installMockApi([makeInstall({ id: 'inst-sdxl', name: 'ComfyUI — SDXL Essentials' })], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-sdxl-essentials"]').exists()).toBe(
+      false
+    )
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(4)
+  })
+
+  it('activating an installable distribution tile emits install-distribution', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find('[data-testid="chooser-dist-tile-dist-image-baseline"]').trigger('click')
+    const events = wrapper.emitted('install-distribution')
+    expect(events).toBeDefined()
+    expect((events![0]![0] as { id: string }).id).toBe('dist-image-baseline')
+  })
+
+  it('a blocked distribution tile does not emit on activation', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find('[data-testid="chooser-dist-tile-dist-audio-lab"]').trigger('click')
+    expect(wrapper.emitted('install-distribution')).toBeUndefined()
   })
 
   it('renders the New Instance tile when the user has zero installs', async () => {

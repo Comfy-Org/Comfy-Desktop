@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef } from 'vue'
+import { computed, onMounted, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -14,8 +14,10 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserInstallTile from './chooser/ChooserInstallTile.vue'
+import DevPlatformDistributionCard from './devplatform/DevPlatformDistributionCard.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
+import type { Distribution } from '../devplatform/types'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
@@ -30,9 +32,13 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
  *   - Top-left: "New Install" (always present).
  *   - Following: every install (local / cloud / remote) ordered by
  *     `lastLaunchedAt` desc, never-launched at the end.
+ *   - Then, when signed in, one tile per distribution published to the
+ *     workspace that isn't installed yet — installing a distribution is the
+ *     SAME GESTURE as launching an existing install: one tile, one click.
  *   - Filter chips above the grid narrow by source category.
  *
- * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`.
+ * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`;
+ * per-distribution tiles in `devplatform/DevPlatformDistributionCard.vue`.
  */
 
 const props = withDefaults(
@@ -55,14 +61,16 @@ const emit = defineEmits<{
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
   'show-progress': [opts: ShowProgressOpts]
+  /** User activated a distribution tile — the host starts the install flow.
+   *  Not consumed yet: wiring the id into the comfybuilder install chain is
+   *  the next slice. */
+  'install-distribution': [distribution: Distribution]
 }>()
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
-// Mounting the store here (not just in the chip) keeps the auth session
-// hydrating with the page, ready for the distribution surface to follow.
-useAuthStore()
+const authStore = useAuthStore()
 const modal = useModal()
 
 onMounted(() => {
@@ -70,6 +78,16 @@ onMounted(() => {
     void installationStore.fetchInstallations()
   }
 })
+
+// Sign-in can happen ON this page (the chip's log-in button), so the
+// distribution list follows the session rather than mount timing.
+watch(
+  () => authStore.isSignedIn,
+  (signedIn) => {
+    if (signedIn && authStore.distributions.length === 0) void authStore.fetchDistributions()
+  },
+  { immediate: true }
+)
 
 // Filter / search / recency logic is shared with the title-bar
 // instance picker popover via `useInstallList` so the two surfaces
@@ -89,6 +107,7 @@ const {
   activeFilter,
   visibleInstalls,
   showEmptyHint,
+  matchesQuery,
   lastLaunchedLabel
 } = useInstallList({ installations: installationsRef })
 
@@ -98,12 +117,67 @@ const {
 // doesn't reference the ref directly (chips are TODO(brand-cleanup)).
 defineExpose({ activeFilter })
 
+// --- Comfy Builder distributions ---
+//
+// ORDERING: New install → existing installs → distributions. Existing installs
+// are what the user returns to and their position is muscle memory, so the
+// "things I could add" family goes last — which is also the read the
+// "Available" pill reinforces.
+//
+// DE-DUPLICATION: an already-installed distribution is an ordinary
+// installation and must not be listed twice. There is no reliable link field
+// yet, so: `installation.distributionId` when a future backend populates it
+// (the index signature carries unknown fields through), else case-insensitive
+// name equality — names are what the user picks by, and an install created
+// from a distribution inherits its name. A distribution whose own state is
+// installed but which matches no local installation is still shown: hiding it
+// would leave the user no route to it at all.
+function installationBacksDistribution(inst: Installation, dist: Distribution): boolean {
+  const linked = inst.distributionId
+  if (typeof linked === 'string' && linked.length > 0) return linked === dist.id
+  return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
+}
+
+/** Every distribution that earns a tile, before search. Empty when signed out. */
+const chooserDistributions = computed<Distribution[]>(() => {
+  if (!authStore.isSignedIn) return []
+  return authStore.distributions.filter(
+    (dist) =>
+      !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
+  )
+})
+
+/** Search filters distributions through the SAME query as the install tiles —
+ *  a search that silently ignored half the grid would be a lie. */
+const visibleDistributions = computed<Distribution[]>(() =>
+  chooserDistributions.value.filter((dist) => matchesQuery(dist.name))
+)
+
+/** The no-matches hint may only fire when NOTHING in the grid matches. */
+const showNoMatches = computed(() => showEmptyHint.value && visibleDistributions.value.length === 0)
+
+/** One quiet line under the grid when the signed-in workspace has nothing
+ *  published. Never a panel — this page already has content. */
+const distributionNote = computed(() => {
+  if (!authStore.isSignedIn) return ''
+  if (searchQuery.value.trim()) return ''
+  if (authStore.loadingDistributions) return ''
+  if (authStore.distributions.length === 0) return t('devPlatform.distribution.emptyTitle')
+  return ''
+})
+
+function handleDistributionActivate(dist: Distribution): void {
+  emit('install-distribution', dist)
+}
+
 // --- Cluster top offset ---
 
-/** Unfiltered tile count: New Install + every install (cloud included).
- *  Reads the raw list, not `visibleInstalls`, so search never shifts the
- *  cluster. */
-const baseTileCount = computed(() => 1 + installationStore.installations.length)
+/** Unfiltered tile count: New Install + every install (cloud included) +
+ *  every distribution. Reads the raw lists, not the `visible*` ones, so search
+ *  never shifts the cluster. */
+const baseTileCount = computed(
+  () => 1 + installationStore.installations.length + chooserDistributions.value.length
+)
 
 const TILES_PER_ROW = 4
 
@@ -268,7 +342,7 @@ function handleNewInstallClick(): void {
         {{ t('common.loading') }}
       </div>
 
-      <div v-else-if="showEmptyHint" class="chooser-empty">
+      <div v-else-if="showNoMatches" class="chooser-empty">
         {{ t('chooser.noMatches') }}
       </div>
 
@@ -303,7 +377,20 @@ function handleNewInstallClick(): void {
           @view-error="viewError"
           @view-danger="viewDanger"
         />
+
+        <!-- Distributions: siblings of the install tiles, same box, same
+             TransitionGroup, so installing one is the same gesture as
+             launching an install. Blocked states render WITH their reason and
+             are never filtered out — the card owns that treatment. -->
+        <DevPlatformDistributionCard
+          v-for="dist in visibleDistributions"
+          :key="`dist:${dist.id}`"
+          :distribution="dist"
+          @select="handleDistributionActivate(dist)"
+        />
       </TransitionGroup>
+
+      <p v-if="distributionNote" class="chooser-dist-note">{{ distributionNote }}</p>
 
       <ContextMenu
         :open="ctxMenu.open"
@@ -382,6 +469,19 @@ function handleNewInstallClick(): void {
   display: flex;
   justify-content: flex-end;
   max-width: min(340px, 45%);
+}
+
+/* Quiet one-liner for the distribution family's empty story. Lives in the
+ * bottom spacer row so it costs the centered cluster no layout; on a short
+ * window the spacer collapses and this caption is the first thing to go. */
+.chooser-dist-note {
+  grid-row: 5;
+  align-self: start;
+  margin: 0;
+  padding-top: 4px;
+  font-size: var(--takeover-fs-caption);
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .chooser-wordmark {

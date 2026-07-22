@@ -1343,6 +1343,27 @@
     "workspace": {
       "personalLabel": "个人"
     },
+    "distribution": {
+      "states": {
+        "noBuild": "尚无构建",
+        "platformMismatch": "不适用于此电脑",
+        "needsDesktopUpdate": "需要更新版本的 Comfy Desktop",
+        "installed": "已安装",
+        "updateAvailable": "有可用更新"
+      },
+      "blockedReason": {
+        "noBuild": "该分发版尚未完成构建。构建成功后即可安装。",
+        "buildFailed": "最近一次构建失败，因此暂时无法安装。请联系发布者重新构建。",
+        "platformMismatch": "该分发版没有针对此电脑的操作系统或显卡硬件进行构建。",
+        "noArtifactForMachine": "该分发版没有针对此电脑的操作系统或显卡硬件进行构建。",
+        "needsDesktopUpdate": "该分发版需要 Comfy Desktop {version} 或更高版本。请更新 Comfy Desktop 后再安装。",
+        "desktopTooOld": "该分发版需要 Comfy Desktop {version} 或更高版本。请更新 Comfy Desktop 后再安装。"
+      },
+      "availablePill": "可安装",
+      "installTileMeta": "尚未安装",
+      "updatedLabel": "更新于",
+      "emptyTitle": "还没有分发版"
+    },
     "account": {
       "signedInAs": "已登录为 {email}",
       "signOut": "退出登录",

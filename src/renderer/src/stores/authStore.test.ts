@@ -99,4 +99,28 @@ describe('useAuthStore', () => {
 
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
+
+  it('fetchDistributions serves the fixtures when signed in and nothing when signed out', async () => {
+    await expect(store.fetchDistributions()).resolves.toEqual([])
+
+    authListener?.(signedIn)
+    const fetched = await store.fetchDistributions()
+    expect(fetched.length).toBeGreaterThan(0)
+    expect(store.distributions).toEqual(fetched)
+  })
+
+  it('signOut and a signed-out broadcast both clear the distribution list', async () => {
+    authListener?.(signedIn)
+    await store.fetchDistributions()
+    expect(store.distributions.length).toBeGreaterThan(0)
+
+    authListener?.(signedOut)
+    expect(store.distributions).toEqual([])
+
+    authListener?.(signedIn)
+    await store.fetchDistributions()
+    vi.mocked(api.comfybuilder.signOut).mockResolvedValue(signedOut)
+    await store.signOut()
+    expect(store.distributions).toEqual([])
+  })
 })

@@ -30,7 +30,9 @@ import BrandVariantList from '../components/BrandVariantList.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
+import ComfyBuilderReauth from '../components/ComfyBuilderReauth.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
+import { useAuthStore } from '../stores/authStore'
 
 const emit = defineEmits<{
   close: []
@@ -214,6 +216,17 @@ function selectTemplate(option: FieldOption): void {
  *  when the picker is gated off (non-standalone source, no template options,
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
+  // ComfyBuilder: block an un-installable pipeline here so the selection shows a
+  // specific error and never starts an install — no record is created and no
+  // artifact download begins.
+  if (currentSource.value?.id === 'comfybuilder') {
+    const selected = cbSelectedPipeline()
+    if (selected && !cbPipelineInstallable(selected)) {
+      cbInstallError.value = cbInstallErrorText(selected)
+      return
+    }
+    cbInstallError.value = ''
+  }
   if (shouldShowPickerStep.value) {
     // Lead with a real template rather than the "None" sentinel — prefer the
     // recommended pick (the lightest "wow"), falling back to the first real one.
@@ -446,6 +459,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   detectedGpu.value = t('newInstall.detectingGpu')
   resetDiskSpace()
   sourceError.value = ''
+  cbInstallError.value = ''
   initializing.value = true
   step.value = 'configure'
   dontShowTemplatePicker.value = false
@@ -533,6 +547,7 @@ async function selectSource(source: Source): Promise<void> {
   textFieldValues.value.clear()
   saveDisabled.value = true
   sourceError.value = ''
+  cbInstallError.value = ''
 
   for (const f of source.fields) {
     if (f.type === 'text') {
@@ -651,6 +666,99 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
   }
 }
 
+/** Re-auth recovered mid-flow: reload the current source's first loadable field
+ *  (the ComfyBuilder pipeline list) now that the session is valid again. */
+async function onReauthRecovered(): Promise<void> {
+  const source = currentSource.value
+  if (!source) return
+  const firstLoadable = source.fields.findIndex((f) => f.type !== 'text')
+  if (firstLoadable >= 0) {
+    await loadFieldOptions(firstLoadable)
+  }
+}
+
+// --- ComfyBuilder pipeline field: auth-gated rendering ---------------------
+const authStore = useAuthStore()
+const cbSigningIn = ref(false)
+/** Inline install error for a ComfyBuilder pipeline: a blocked selection (no
+ *  successful build / platform mismatch) caught before install, or a
+ *  download/manifest failure surfaced from the install call. */
+const cbInstallError = ref('')
+
+/** True when the field belongs to the ComfyBuilder source (the pipeline picker). */
+function isComfyBuilderField(field: SourceField): boolean {
+  return currentSource.value?.id === 'comfybuilder' && field.renderAs === 'cards'
+}
+
+/** The sole `requiresAuth` sentinel is returned when no one is signed in. */
+function cbRequiresAuth(field: SourceField): boolean {
+  const options = fieldOptions.value.get(field.id)
+  if (!options || options.length === 0) return false
+  return options.some((o) => (o.data as { requiresAuth?: boolean } | undefined)?.requiresAuth === true)
+}
+
+/** Real pipeline options (the sentinel filtered out). */
+function cbPipelineOptions(field: SourceField): FieldOption[] {
+  const options = fieldOptions.value.get(field.id) ?? []
+  return options.filter(
+    (o) => (o.data as { requiresAuth?: boolean } | undefined)?.requiresAuth !== true
+  )
+}
+
+function cbPipelineInstallable(option: FieldOption): boolean {
+  const meta = (option.data as { meta?: { installable?: boolean } } | undefined)?.meta
+  return meta?.installable !== false
+}
+
+function cbPipelineReason(option: FieldOption): string | null {
+  const meta = (option.data as { meta?: { installable?: boolean; reason?: string } } | undefined)
+    ?.meta
+  if (!meta || meta.installable !== false) return null
+  return meta.reason === 'platform-mismatch'
+    ? 'No artifact for your platform'
+    : 'No successful build yet'
+}
+
+/** The currently-selected ComfyBuilder pipeline option, if the comfybuilder
+ *  source is active and a card is chosen. */
+function cbSelectedPipeline(): FieldOption | null {
+  const field = currentSource.value?.fields.find((f) => isComfyBuilderField(f))
+  if (!field) return null
+  return selections.value[field.id] ?? null
+}
+
+/** Install-time error text for a blocked pipeline (distinct wording from the
+ *  card's inline reason). */
+function cbInstallErrorText(option: FieldOption): string {
+  const meta = (option.data as { meta?: { reason?: string } } | undefined)?.meta
+  return meta?.reason === 'platform-mismatch'
+    ? 'No artifact for your platform.'
+    : 'This pipeline has no successful build yet.'
+}
+
+/** Signed in but the account has no pipelines at all. */
+function cbEmpty(field: SourceField): boolean {
+  if (!fieldOptions.value.has(field.id)) return false
+  if (cbRequiresAuth(field)) return false
+  return cbPipelineOptions(field).length === 0
+}
+
+/** Sign in from the pipeline gate, then reload the pipeline list on success. */
+async function cbSignIn(fieldIndex: number): Promise<void> {
+  if (cbSigningIn.value) return
+  cbSigningIn.value = true
+  try {
+    const status = await authStore.signIn()
+    if (status.signedIn) {
+      await loadFieldOptions(fieldIndex)
+    }
+  } catch {
+    // Sign-in was cancelled or failed; leave the gate in place.
+  } finally {
+    cbSigningIn.value = false
+  }
+}
+
 function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: string): void {
   const source = currentSource.value
   if (!source) return
@@ -671,6 +779,7 @@ function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: 
 
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
   selections.value[field.id] = option
+  if (isComfyBuilderField(field)) cbInstallError.value = ''
   if (field.id === 'variant') {
     emitTelemetryAction('comfy.desktop.install.variant.selected', {
       variant_bucket: toVariantBucket(
@@ -839,19 +948,35 @@ async function handleSave(): Promise<void> {
     return
   }
   if (result.entry) {
+    const entryId = result.entry.id
+    const isComfyBuilder = source.id === 'comfybuilder'
     // Reliable "install actually began" gate that pairs 1:1 with
     // first_use.completed (#1224).
     resolved.value = true
     emitTelemetryAction('comfy.desktop.install.dispatched', {
       ...installHandoffProps(),
-      installation_id: result.entry.id,
+      installation_id: entryId,
       template_selected: templateHasModels.value
     })
     // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
     emit('show-progress', {
-      installationId: result.entry.id,
+      installationId: entryId,
       title: `${t('newInstall.installing')} — ${result.entry.name}`,
-      apiCall: () => window.api.installInstance(result.entry!.id),
+      // For ComfyBuilder, also mirror a download/manifest failure into the
+      // wizard's inline error (the progress overlay shows it too).
+      apiCall: async () => {
+        try {
+          return await window.api.installInstance(entryId)
+        } catch (err) {
+          if (isComfyBuilder) {
+            cbInstallError.value =
+              err instanceof Error && err.message
+                ? err.message
+                : 'ComfyBuilder install failed.'
+          }
+          throw err
+        }
+      },
       autoLaunchOnFinish: true,
       opKind: 'install'
     })
@@ -918,6 +1043,10 @@ defineExpose({ open })
       <p class="brand-lead">{{ $t('newInstall.configureLead') }}</p>
       <div class="config-card">
         <div class="config-card__body">
+          <ComfyBuilderReauth
+            v-if="currentSource?.id === 'comfybuilder'"
+            @recovered="onReauthRecovered"
+          />
           <div class="config-field">
             <label class="config-label" for="inst-name-standalone">{{ $t('common.name') }}</label>
             <div class="brand-input" :class="{ 'brand-input--invalid': nameError }">
@@ -1097,6 +1226,64 @@ defineExpose({ open })
                       </div>
                     </template>
 
+                    <template v-else-if="isComfyBuilderField(field)">
+                      <div v-if="fieldLoading.get(field.id)" class="wizard-loading with-spinner">
+                        {{ $t('newInstall.loading') }}
+                      </div>
+                      <!-- Signed out: sign-in gate -->
+                      <div
+                        v-else-if="cbRequiresAuth(field)"
+                        class="cb-signin-gate"
+                        data-testid="cb-source-signin"
+                      >
+                        <p class="cb-signin-gate__msg">Sign in to view your pipelines</p>
+                        <button
+                          type="button"
+                          class="brand-primary"
+                          :disabled="cbSigningIn"
+                          @click="cbSignIn(fieldIndex)"
+                        >
+                          {{ cbSigningIn ? 'Signing in…' : 'Sign in to ComfyBuilder' }}
+                        </button>
+                      </div>
+                      <!-- Signed in, no pipelines -->
+                      <div v-else-if="cbEmpty(field)" class="wizard-loading" data-testid="cb-empty">
+                        No pipelines in this account
+                      </div>
+                      <!-- Signed in with pipelines: one card each (all selectable) -->
+                      <div v-else-if="fieldOptions.has(field.id)" class="cb-pipeline-list">
+                        <button
+                          v-for="opt in cbPipelineOptions(field)"
+                          :key="opt.value"
+                          type="button"
+                          class="cb-pipeline-card"
+                          :class="{
+                            'cb-pipeline-card--selected': selections[field.id]?.value === opt.value,
+                            'cb-pipeline-card--blocked': !cbPipelineInstallable(opt)
+                          }"
+                          :data-testid="`cb-pipeline-card-${opt.value}`"
+                          @click="selectCardOption(field, fieldIndex, opt)"
+                        >
+                          <span class="cb-pipeline-card__name">{{ opt.label }}</span>
+                          <span
+                            v-if="cbPipelineReason(opt)"
+                            class="cb-pipeline-card__reason"
+                            :data-testid="`cb-pipeline-reason-${opt.value}`"
+                          >
+                            {{ cbPipelineReason(opt) }}
+                          </span>
+                        </button>
+                      </div>
+                      <div
+                        v-if="cbInstallError"
+                        class="cb-install-error"
+                        data-testid="cb-install-error"
+                        role="alert"
+                      >
+                        {{ cbInstallError }}
+                      </div>
+                    </template>
+
                     <template v-else-if="field.renderAs === 'cards'">
                       <div v-if="fieldLoading.get(field.id)" class="wizard-loading with-spinner">
                         {{ $t('newInstall.loading') }}
@@ -1154,6 +1341,7 @@ defineExpose({ open })
           <button
             class="brand-primary config-continue"
             :disabled="!canContinue"
+            :data-testid="currentSource?.id === 'comfybuilder' ? 'cb-install-btn' : undefined"
             @click="handleConfigureContinue"
           >
             {{ $t('common.continue') }}
@@ -1599,5 +1787,69 @@ defineExpose({ open })
 
 .config-continue {
   min-width: 120px;
+}
+
+/* --- ComfyBuilder pipeline field ---------------------------------------- */
+.cb-signin-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 8px;
+  background: var(--brand-surface-bg);
+}
+.cb-signin-gate__msg {
+  margin: 0;
+  color: var(--neutral-200);
+}
+.cb-pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cb-pipeline-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 8px;
+  background: var(--brand-surface-bg);
+  color: var(--neutral-200);
+  cursor: pointer;
+}
+.cb-pipeline-card:hover {
+  border-color: var(--brand-surface-border-hover);
+  color: var(--neutral-100);
+}
+.cb-pipeline-card--selected {
+  border-color: var(--comfy-blue, var(--brand-surface-border-hover));
+  color: var(--neutral-100);
+}
+.cb-pipeline-card--blocked {
+  opacity: 0.7;
+}
+.cb-pipeline-card__name {
+  font-weight: 500;
+}
+.cb-pipeline-card__reason {
+  font-size: var(--takeover-fs-caption);
+  color: var(--neutral-400);
+}
+.cb-install-error {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: var(--takeover-fs-caption);
+  line-height: 1.4;
+  text-align: left;
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 28%, transparent);
 }
 </style>

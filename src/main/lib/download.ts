@@ -25,6 +25,10 @@ export interface DownloadMeta {
 interface DownloadOptions {
   signal?: AbortSignal
   expectedSize?: number
+  /** Extra request headers (e.g. `Authorization: Bearer …`). Dropped when a
+   *  redirect crosses to a different host so a bearer token is never leaked to
+   *  an unexpected origin (e.g. a presigned CDN URL). */
+  headers?: Record<string, string>
   /** Abort the request when no bytes arrive for this long (ms), turning a
    *  silently stalled connection into a fast, retryable error instead of a hang.
    *  Defaults to `DEFAULT_IDLE_TIMEOUT_MS`. */
@@ -77,7 +81,7 @@ export function download(
   options?: DownloadOptions | number
 ): Promise<string> {
   const opts: DownloadOptions = typeof options === 'number' ? { _maxRedirects: options } : options ?? {}
-  const { signal, expectedSize, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS, _maxRedirects = 5, _skipMirror = false } = opts
+  const { signal, expectedSize, headers, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS, _maxRedirects = 5, _skipMirror = false } = opts
 
   // Mirror retry is gated on useChineseMirrors to avoid a thundering-herd
   // tens-of-TB GCS egress event if R2 ever hiccups for the global user base.
@@ -135,6 +139,11 @@ export function download(
 
     const request = net.request(url)
     request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
+    if (headers) {
+      for (const [name, value] of Object.entries(headers)) {
+        request.setHeader(name, value)
+      }
+    }
     if (resumeFrom > 0 && existingMeta?.etag) {
       request.setHeader('Range', `bytes=${resumeFrom}-`)
       request.setHeader('If-Range', existingMeta.etag)
@@ -200,7 +209,15 @@ export function download(
           safeReject(new Error('Download failed: empty redirect location'))
           return
         }
-        download(loc, destPath, onProgress, { signal, expectedSize, _maxRedirects: _maxRedirects - 1 }).then(safeResolve, safeReject)
+        let redirectHeaders: Record<string, string> | undefined
+        if (headers) {
+          try {
+            redirectHeaders = new URL(loc, url).host === new URL(url).host ? headers : undefined
+          } catch {
+            redirectHeaders = undefined
+          }
+        }
+        download(loc, destPath, onProgress, { signal, expectedSize, headers: redirectHeaders, _maxRedirects: _maxRedirects - 1 }).then(safeResolve, safeReject)
         return
       }
 

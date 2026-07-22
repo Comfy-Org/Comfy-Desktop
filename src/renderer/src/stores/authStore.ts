@@ -3,9 +3,13 @@ import { defineStore } from 'pinia'
 
 import type { ElectronApi } from '../../../types/ipc'
 import type { AuthStatus } from '../../../main/comfybuilder/types'
+import type { Distribution } from '../devplatform/types'
+import { MOCK_DISTRIBUTIONS } from '../devplatform/mocks'
 
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
+  const distributions = ref<Distribution[]>([])
+  const loadingDistributions = ref(false)
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
   async function fetchStatus(): Promise<AuthStatus> {
@@ -24,6 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function signOut(): Promise<AuthStatus> {
     await comfybuilderApi.signOut()
     status.value = { signedIn: false }
+    distributions.value = []
     return status.value
   }
 
@@ -34,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
   const unsubscribe = comfybuilderApi.onAuthChanged((nextStatus) => {
     pushed = true
     status.value = nextStatus
+    if (!nextStatus.signedIn) distributions.value = []
   })
 
   // Hydrate from the persisted session once at creation — main only pushes
@@ -50,11 +56,30 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isSignedIn = computed(() => status.value.signedIn)
 
+  /** TEMP: served from fixtures until the builder pipeline list is exposed
+   *  over IPC — see `devplatform/mocks.ts`. */
+  async function fetchDistributions(): Promise<Distribution[]> {
+    if (!isSignedIn.value) {
+      distributions.value = []
+      return distributions.value
+    }
+    loadingDistributions.value = true
+    try {
+      distributions.value = MOCK_DISTRIBUTIONS
+      return distributions.value
+    } finally {
+      loadingDistributions.value = false
+    }
+  }
+
   return {
     status,
+    distributions,
+    loadingDistributions,
     isSignedIn,
     fetchStatus,
     signIn,
     signOut,
+    fetchDistributions,
   }
 })
