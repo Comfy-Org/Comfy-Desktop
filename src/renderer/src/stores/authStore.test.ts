@@ -99,4 +99,22 @@ describe('useAuthStore', () => {
 
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
+
+  it('a delayed status pull cannot overwrite a newer pushed status', async () => {
+    let resolvePull!: (s: AuthStatus) => void
+    vi.mocked(api.comfybuilder.getAuthStatus).mockReturnValue(
+      new Promise((res) => {
+        resolvePull = res
+      }),
+    )
+
+    const pending = store.fetchStatus()
+    // A push lands while the pull is still in flight…
+    authListener?.(signedIn)
+    // …so the stale pull result must not win.
+    resolvePull(signedOut)
+    await pending
+
+    expect(store.isSignedIn).toBe(true)
+  })
 })

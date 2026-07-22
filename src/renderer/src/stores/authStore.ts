@@ -8,41 +8,42 @@ export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
+  /** Bumped on every authoritative status change (push, sign-in, sign-out) so
+   *  a slower in-flight pull can never overwrite a newer status. */
+  let revision = 0
+
   async function fetchStatus(): Promise<AuthStatus> {
-    status.value = await comfybuilderApi.getAuthStatus()
-    return status.value
+    const seen = revision
+    const next = await comfybuilderApi.getAuthStatus()
+    if (revision === seen && next) status.value = next
+    return next
   }
 
   /** Run the PKCE browser handoff. Rethrows failures so callers own the
    *  feedback; a completed sign-in also lands via `onAuthChanged`. */
   async function signIn(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signIn()
+    revision += 1
     status.value = next
     return next
   }
 
   async function signOut(): Promise<AuthStatus> {
     await comfybuilderApi.signOut()
+    revision += 1
     status.value = { signedIn: false }
     return status.value
   }
 
-  /** True once a pushed status has landed — a slower boot-time pull must
-   *  never overwrite it. */
-  let pushed = false
-
   const unsubscribe = comfybuilderApi.onAuthChanged((nextStatus) => {
-    pushed = true
+    revision += 1
     status.value = nextStatus
   })
 
   // Hydrate from the persisted session once at creation — main only pushes
-  // CHANGES, so the boot state has to be pulled.
-  void Promise.resolve(comfybuilderApi.getAuthStatus())
-    .then((next) => {
-      if (!pushed && next) status.value = next
-    })
-    .catch(() => {})
+  // CHANGES, so the boot state has to be pulled. The revision guard keeps
+  // this pull from overwriting anything newer.
+  void fetchStatus().catch(() => {})
 
   onScopeDispose(() => {
     unsubscribe?.()

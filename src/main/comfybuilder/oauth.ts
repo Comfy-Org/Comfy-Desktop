@@ -14,6 +14,9 @@ import type { AuthStatus, AuthTokens } from './types'
 /** Default browser-callback wait: long enough for a real user to complete sign-in. */
 const DEFAULT_SIGN_IN_TIMEOUT_MS = 120_000
 
+/** Bound on the token-endpoint exchange so a stalled request can't hang sign-in forever. */
+const TOKEN_REQUEST_TIMEOUT_MS = 15_000
+
 /**
  * OAuth endpoint / parameter overrides. Production leaves these unset and
  * inherits {@link OAUTH_CONFIG}; tests point them at a mock issuer and shorten
@@ -65,11 +68,19 @@ function toAuthTokens(response: TokenResponse): AuthTokens {
 }
 
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
-  const resp = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
+  let resp: Response
+  try {
+    resp = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
   if (!resp.ok) {
     const detail = await resp.text().catch(() => '')
     throw new Error(`OAuth token request failed: ${resp.status} ${detail || resp.statusText}`)
