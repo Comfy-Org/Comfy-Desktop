@@ -16,7 +16,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check } from 'lucide-vue-next'
 import DevPlatformWorkspaceAvatar from './DevPlatformWorkspaceAvatar.vue'
-import { useAuthStore, type Workspace } from '../../stores/authStore'
+import { useAuthStore } from '../../stores/authStore'
+import type { Workspace } from '../../devplatform/types'
 
 const emit = defineEmits<{
   selected: [workspaceId: string]

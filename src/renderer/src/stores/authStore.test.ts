@@ -146,8 +146,10 @@ describe('useAuthStore', () => {
       role: 'member',
     })
 
+    // Team workspaces surface their id (no human name in the claims);
+    // personal ones fall back to the account email.
     expect(store.workspaces).toEqual([
-      { id: 'workspace-1', name: 'user@example.com', type: 'team', role: 'member' },
+      { id: 'workspace-1', name: 'workspace-1', type: 'team', role: 'member' },
     ])
     expect(store.needsWorkspaceChoice).toBe(false)
 
@@ -164,5 +166,29 @@ describe('useAuthStore', () => {
     expect(store.signInPhase).toBe('idle')
     expect(store.activeWorkspaceId).toBeUndefined()
     expect(store.isSignedIn).toBe(false)
+  })
+
+  it('fetchDistributions serves the fixtures when signed in and nothing when signed out', async () => {
+    await expect(store.fetchDistributions()).resolves.toEqual([])
+
+    authListener?.(signedIn)
+    const fetched = await store.fetchDistributions()
+    expect(fetched.length).toBeGreaterThan(0)
+    expect(store.distributions).toEqual(fetched)
+  })
+
+  it('signOut and a signed-out broadcast both clear the distribution list', async () => {
+    authListener?.(signedIn)
+    await store.fetchDistributions()
+    expect(store.distributions.length).toBeGreaterThan(0)
+
+    authListener?.(signedOut)
+    expect(store.distributions).toEqual([])
+
+    authListener?.(signedIn)
+    await store.fetchDistributions()
+    vi.mocked(api.comfybuilder.signOut).mockResolvedValue(signedOut)
+    await store.signOut()
+    expect(store.distributions).toEqual([])
   })
 })

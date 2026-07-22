@@ -54,6 +54,34 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate',
     },
+    devPlatform: {
+      signIn: { cta: 'Log in or create account' },
+      account: {
+        signedInAs: 'Signed in as {email}',
+        workspaceLabel: 'Workspace',
+        signOut: 'Sign out',
+        signOutConfirmTitle: 'Sign out of Comfy?',
+        signOutConfirmBody: 'Installed distributions are kept.',
+        signOutConfirmCta: 'Sign out',
+      },
+      distribution: {
+        states: {
+          noBuild: 'No build yet',
+          platformMismatch: 'Not available for this computer',
+          needsDesktopUpdate: 'Needs a newer Comfy Desktop',
+          installed: 'Installed',
+          updateAvailable: 'Update available',
+        },
+        blockedReason: {
+          buildFailed: 'The most recent build failed.',
+          noArtifactForMachine: 'Not built for this machine.',
+        },
+        availablePill: 'Available',
+        installTileMeta: 'Not installed yet',
+        updatedLabel: 'Updated',
+        emptyTitle: 'No distributions yet',
+      },
+    },
   },
 }
 
@@ -70,6 +98,12 @@ interface MockApi {
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
   focusComfyWindow: ReturnType<typeof vi.fn>
+  comfybuilder: {
+    getAuthStatus: ReturnType<typeof vi.fn>
+    signIn: ReturnType<typeof vi.fn>
+    signOut: ReturnType<typeof vi.fn>
+    onAuthChanged: ReturnType<typeof vi.fn>
+  }
 }
 
 function installMockApi(initial: Installation[]): MockApi {
@@ -81,6 +115,12 @@ function installMockApi(initial: Installation[]): MockApi {
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      signIn: vi.fn().mockResolvedValue({ signedIn: false }),
+      signOut: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn(() => () => {}),
+    },
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -106,6 +146,62 @@ describe('ChooserView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockModal.alert.mockClear()
+    window.localStorage.removeItem('comfy.devplatform.mockSession')
+  })
+
+  it('shows the log-in button top-right when signed out, and no distribution tiles', async () => {
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(0)
+  })
+
+  it('mock session: shows the account chip and one tile per not-installed distribution', async () => {
+    window.localStorage.setItem('comfy.devplatform.mockSession', '1')
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('willie@comfy.org')
+    // All five fixtures render — none are backed by a local install.
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(5)
+    // Blocked fixtures are shown with their reason tag, never hidden.
+    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-lighting-lookdev"]').text()).toContain(
+      'No build yet'
+    )
+  })
+
+  it('deduplicates a distribution whose name matches an existing install', async () => {
+    window.localStorage.setItem('comfy.devplatform.mockSession', '1')
+    installMockApi([makeInstall({ id: 'inst-previz', name: 'Previz Turntable' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-dist-tile-dist-previz-turntable"]').exists()).toBe(
+      false
+    )
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(4)
+  })
+
+  it('activating an installable distribution tile emits install-distribution', async () => {
+    window.localStorage.setItem('comfy.devplatform.mockSession', '1')
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find('[data-testid="chooser-dist-tile-dist-toy-story-9"]').trigger('click')
+    const events = wrapper.emitted('install-distribution')
+    expect(events).toBeDefined()
+    expect((events![0]![0] as { id: string }).id).toBe('dist-toy-story-9')
+  })
+
+  it('a blocked distribution tile does not emit on activation', async () => {
+    window.localStorage.setItem('comfy.devplatform.mockSession', '1')
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find('[data-testid="chooser-dist-tile-dist-lighting-lookdev"]').trigger('click')
+    expect(wrapper.emitted('install-distribution')).toBeUndefined()
   })
 
   it('renders the New Instance tile when the user has zero installs', async () => {
