@@ -119,13 +119,23 @@ function failExpiredSession(message: string): never {
   throw new ComfyBuilderApiError('unauthorized', message)
 }
 
+/** The one refresh in flight, shared by every concurrent 401. Refresh tokens
+ *  rotate, so two independent refreshes would burn each other's token — the
+ *  second caller must await the first's exchange, not start its own. */
+let inFlightRefresh: Promise<AuthTokens> | null = null
+
 /** Exchange the refresh token for fresh tokens, mapping any failure to `unauthorized`. */
 async function refreshTokens(tokens: AuthTokens): Promise<AuthTokens> {
   if (!tokens.refreshToken) {
     failExpiredSession('ComfyBuilder session expired and no refresh token is available')
   }
+  if (!inFlightRefresh) {
+    inFlightRefresh = refresh(tokens.refreshToken).finally(() => {
+      inFlightRefresh = null
+    })
+  }
   try {
-    return await refresh(tokens.refreshToken)
+    return await inFlightRefresh
   } catch {
     failExpiredSession('ComfyBuilder session expired and the token refresh failed')
   }

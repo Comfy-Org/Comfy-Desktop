@@ -70,8 +70,10 @@ describe('ComfyBuilderReauth', () => {
     document.body.innerHTML = ''
   })
 
-  it('stays hidden for a user who was never signed in this flow', () => {
+  it('stays hidden for a user who was never signed in this flow', async () => {
     mountReauth()
+    // Let boot hydration settle — the prompt must stay hidden after it too.
+    await flushPromises()
     expect(reauthShown()).toBe(false)
   })
 

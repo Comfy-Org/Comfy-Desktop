@@ -186,9 +186,16 @@ export const comfybuilder: SourcePlugin = {
     if (loadTokens() === null) return [requiresAuthOption()]
 
     // ALL pipelines are returned — un-installable ones carry a reason and are
-    // blocked at install, never hidden. Resolve their states in parallel.
+    // blocked at install, never hidden. Resolve their states in parallel;
+    // one pipeline's deployments call failing drops that card for this open
+    // of the wizard rather than failing the whole list.
     const pipelines = await listPipelines(apiClientOptions)
-    return Promise.all(pipelines.map((p) => buildPipelineOption(p.id, p.name, p.org_id)))
+    const results = await Promise.allSettled(
+      pipelines.map((p) => buildPipelineOption(p.id, p.name, p.org_id)),
+    )
+    return results
+      .filter((r): r is PromiseFulfilledResult<FieldOption> => r.status === 'fulfilled')
+      .map((r) => r.value)
   },
 
   buildInstallation(selections: Record<string, FieldOption | undefined>): Record<string, unknown> {

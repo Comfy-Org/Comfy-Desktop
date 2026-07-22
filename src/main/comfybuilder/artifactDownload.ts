@@ -128,8 +128,13 @@ export async function downloadPipelineArtifact(
       token = await mintDownloadToken(artifactBase, targetQuery, accessToken, signal)
     } catch (error) {
       lastError = error
-      authFailed = error instanceof DownloadAuthError
-      break
+      // Auth rejection is terminal — retrying can't help. A transient mint
+      // failure gets the remaining attempts like a failed download does.
+      if (error instanceof DownloadAuthError) {
+        authFailed = true
+        break
+      }
+      continue
     }
 
     try {

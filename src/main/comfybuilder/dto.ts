@@ -129,8 +129,12 @@ function parseDeployment(value: unknown, index: number): Deployment {
   const artifact = value.artifact === undefined ? undefined : value.artifact === null ? null : parseArtifactObject(value.artifact)
   const targetStatuses = parseTargetStatuses(value.target_statuses)
 
+  // Strip the raw target_statuses before spreading — only the validated parse
+  // result may reach the returned Deployment.
+  const { target_statuses: _rawTargetStatuses, ...rest } = value
+
   return {
-    ...value,
+    ...rest,
     id: parseString(value.id, `deployment[${index}].id`),
     pipeline_id: parseString(value.pipeline_id, `deployment[${index}].pipeline_id`),
     pipeline_revision: parseNumber(value.pipeline_revision, `deployment[${index}].pipeline_revision`),

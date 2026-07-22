@@ -54,4 +54,13 @@ export const MOCK_DISTRIBUTIONS: Distribution[] = [
     state: 'platform-mismatch',
     blockedReason: 'noArtifactForMachine',
   },
+  {
+    id: 'dist-research-nightly',
+    name: 'ComfyUI — Research Nightly',
+    description: 'Bleeding-edge research environment.',
+    version: '0.9',
+    state: 'needs-desktop-update',
+    blockedReason: 'needsDesktopUpdate',
+    minDesktopVersion: '99.0.0',
+  },
 ]

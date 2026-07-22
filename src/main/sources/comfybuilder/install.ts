@@ -163,7 +163,8 @@ export async function installComfyBuilderPipeline(params: InstallPipelineParams)
   // 2. Download the artifact tarball into the download cache.
   const cacheBase = cache.getCachePath(`comfybuilder_${pipelineId}_${deploymentId}`)
   fs.mkdirSync(cacheBase, { recursive: true })
-  const archivePath = path.join(cacheBase, artifact.filename)
+  // basename() so a server-supplied filename can never escape the cache dir.
+  const archivePath = path.join(cacheBase, path.basename(artifact.filename))
 
   sendProgress('download', { percent: 0, status: 'Downloading pipeline artifact…' })
   await downloadPipelineArtifact({
@@ -179,15 +180,22 @@ export async function installComfyBuilderPipeline(params: InstallPipelineParams)
   })
 
   // 3. Extract (.tar.gz -> nested tar -> files) into the install directory.
+  // A failed or cancelled extraction cleans up after itself — half-extracted
+  // files must not survive to masquerade as an install.
   if (signal?.aborted) throw new Error('Cancelled')
   fs.mkdirSync(installPath, { recursive: true })
   sendProgress('extract', { percent: 0, status: 'Extracting…' })
-  await extractNested(
-    archivePath,
-    installPath,
-    (p: ExtractProgress) => sendProgress('extract', { percent: p.percent, status: `Extracting… ${p.percent}%` }),
-    signal ? { signal } : {},
-  )
+  try {
+    await extractNested(
+      archivePath,
+      installPath,
+      (p: ExtractProgress) => sendProgress('extract', { percent: p.percent, status: `Extracting… ${p.percent}%` }),
+      signal ? { signal } : {},
+    )
+  } catch (err) {
+    await cleanupPartialInstall(installPath)
+    throw err
+  }
 
   // 4. Validate the extracted layout + manifest; abort + clean up on failure.
   try {

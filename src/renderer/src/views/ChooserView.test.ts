@@ -175,8 +175,8 @@ describe('ChooserView', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('willie@comfy.org')
-    // All five fixtures render — none are backed by a local install.
-    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(5)
+    // All six fixtures render — none are backed by a local install.
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(6)
     // Blocked fixtures are shown with their reason tag, never hidden.
     expect(wrapper.find('[data-testid="chooser-dist-tile-dist-audio-lab"]').text()).toContain(
       'No build yet'
@@ -203,7 +203,7 @@ describe('ChooserView', () => {
     expect(wrapper.find('[data-testid="chooser-dist-tile-dist-sdxl-essentials"]').exists()).toBe(
       false
     )
-    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(4)
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(5)
   })
 
   it('activating an installable distribution tile emits install-distribution', async () => {
