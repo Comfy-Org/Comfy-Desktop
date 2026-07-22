@@ -81,6 +81,14 @@ export function startLoopbackListener(
       resolveCode({ code })
     }
 
+    /** Answer the browser with a failure page and settle the code wait. */
+    const failRequest = (res: ServerResponse, statusCode: number, err: Error): void => {
+      res.statusCode = statusCode
+      res.setHeader('Content-Type', 'text/html; charset=utf-8')
+      res.end(renderHtml('Sign-in failed. You can close this window.'))
+      finishWithError(err)
+    }
+
     const timeoutHandle = setTimeout(() => {
       finishWithError(new Error('Loopback OAuth callback timed out'))
     }, timeoutMs)
@@ -118,29 +126,21 @@ export function startLoopbackListener(
 
       // CSRF protection: the callback must echo back the exact state we issued.
       if (params.get('state') !== expectedState) {
-        res.statusCode = 400
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.end(renderHtml('Sign-in failed. You can close this window.'))
-        finishWithError(new Error('state mismatch'))
+        failRequest(res, 400, new Error('state mismatch'))
         return
       }
 
-      // The IdP reported a failure (e.g. the user denied consent).
+      // The IdP reported a failure (e.g. the user denied consent). 200 — the
+      // browser reached us fine; the failure is the flow's, not the request's.
       const callbackError = params.get('error')
       if (callbackError) {
-        res.statusCode = 200
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.end(renderHtml('Sign-in failed. You can close this window.'))
-        finishWithError(new Error(callbackError))
+        failRequest(res, 200, new Error(callbackError))
         return
       }
 
       const code = params.get('code')
       if (!code) {
-        res.statusCode = 400
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.end(renderHtml('Sign-in failed. You can close this window.'))
-        finishWithError(new Error('missing authorization code'))
+        failRequest(res, 400, new Error('missing authorization code'))
         return
       }
 

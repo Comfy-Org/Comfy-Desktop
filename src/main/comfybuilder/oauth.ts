@@ -1,7 +1,6 @@
-import { Buffer } from 'node:buffer'
-
 import { shell } from 'electron'
 
+import { statusFromAccessToken } from './claims'
 import { OAUTH_CONFIG } from './config'
 import { startLoopbackListener } from './loopbackServer'
 import {
@@ -46,14 +45,6 @@ interface TokenResponse {
   expires_in: number
 }
 
-/** Claims read (never verified here — the server does that) from the access-token JWT. */
-interface AccessTokenClaims {
-  email?: string
-  workspace_id?: string
-  workspace_type?: string
-  role?: string
-}
-
 function resolveConfig(options: OAuthOptions): ResolvedOAuthConfig {
   return {
     authorizeUrl: options.authorizeUrl ?? OAUTH_CONFIG.authorizeUrl,
@@ -70,22 +61,6 @@ function toAuthTokens(response: TokenResponse): AuthTokens {
     accessToken: response.access_token,
     refreshToken: response.refresh_token,
     expiresAt: Date.now() + response.expires_in * 1000,
-  }
-}
-
-/**
- * Decode the JWT payload segment (base64url) into an {@link AuthStatus}. The
- * signature is verified server-side, so we only parse the claims for display.
- */
-function decodeAuthStatus(accessToken: string): AuthStatus {
-  const payloadSegment = accessToken.split('.')[1] ?? ''
-  const claims = JSON.parse(Buffer.from(payloadSegment, 'base64url').toString()) as AccessTokenClaims
-  return {
-    signedIn: true,
-    email: claims.email,
-    workspaceId: claims.workspace_id,
-    workspaceType: claims.workspace_type,
-    role: claims.role,
   }
 }
 
@@ -150,7 +125,7 @@ export async function signIn(
     }),
   )
 
-  return { tokens: toAuthTokens(response), status: decodeAuthStatus(response.access_token) }
+  return { tokens: toAuthTokens(response), status: statusFromAccessToken(response.access_token) }
 }
 
 /** Exchange a refresh token for a fresh access token (and rotated refresh token). */
