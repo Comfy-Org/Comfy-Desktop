@@ -30,6 +30,7 @@ const dialogs = useDialogs()
 
 const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
+const faceRef = ref<HTMLElement | null>(null)
 const signingIn = ref(false)
 
 const email = computed(() => store.status.email ?? '')
@@ -56,11 +57,15 @@ function toggleMenu(): void {
   menuOpen.value = !menuOpen.value
 }
 
-/** Escape closes the menu wherever focus is — the menu is never a trap. */
+/** Escape closes the menu wherever focus is — the menu is never a trap.
+ *  Focus returns to the trigger (APG menu pattern); pointer dismissal
+ *  deliberately doesn't refocus — that would steal focus from wherever
+ *  the user just clicked. */
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape' && menuOpen.value) {
     e.stopPropagation()
     closeMenu()
+    faceRef.value?.focus()
   }
 }
 
@@ -101,7 +106,12 @@ async function onSignOut(): Promise<void> {
     tone: 'primary',
   })
   if (result !== 'primary') return
-  await store.signOut()
+  try {
+    await store.signOut()
+  } catch {
+    // Sign-out IPC failed — stay visibly signed in rather than lie.
+    return
+  }
   emit('signed-out')
 }
 </script>
@@ -125,6 +135,7 @@ async function onSignOut(): Promise<void> {
 
     <template v-else>
       <button
+        ref="faceRef"
         type="button"
         class="account-chip__face"
         data-testid="devplatform-account-chip"

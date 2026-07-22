@@ -46,10 +46,16 @@ export function broadcastAuthChanged(status: AuthStatus): void {
  * main-side via `saveTokens`.
  */
 export function registerComfybuilderAuthIpc(): void {
+  // Bumped by signOut so a sign-in already out in the browser when the user
+  // signs out cannot resurrect the session when its flow completes.
+  let signOutGeneration = 0
+
   // Run the PKCE browser flow, persist the tokens main-side, and hand back only
   // the renderer-safe status. Tokens never leave the main process.
   ipcMain.handle(COMFYBUILDER_AUTH_CHANNELS.signIn, async (): Promise<AuthStatus> => {
+    const generation = signOutGeneration
     const { tokens, status } = await signIn()
+    if (generation !== signOutGeneration) return SIGNED_OUT
     saveTokens(tokens)
     broadcastAuthChanged(status)
     return status
@@ -57,6 +63,7 @@ export function registerComfybuilderAuthIpc(): void {
 
   // Forget the stored tokens and tell every window the session ended.
   ipcMain.handle(COMFYBUILDER_AUTH_CHANNELS.signOut, (): AuthStatus => {
+    signOutGeneration += 1
     clearTokens()
     broadcastAuthChanged(SIGNED_OUT)
     return SIGNED_OUT

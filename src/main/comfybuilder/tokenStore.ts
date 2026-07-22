@@ -50,7 +50,12 @@ export function saveTokens(tokens: AuthTokens): void {
     return
   }
   const encrypted = safeStorage.encryptString(JSON.stringify(tokens))
-  fs.writeFileSync(getAuthFilePath(), encrypted)
+  try {
+    fs.writeFileSync(getAuthFilePath(), encrypted)
+  } catch {
+    // The in-memory cache still holds the tokens — a failed disk write must
+    // not fail the sign-in the user just completed, only its persistence.
+  }
 }
 
 /** Return cached tokens, hydrating once from the encrypted file. Null when absent or unreadable. */
