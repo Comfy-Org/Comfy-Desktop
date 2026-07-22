@@ -602,7 +602,7 @@
     "builderLabel": "Comfy Builder",
     "builderTagline": "由你的团队预先配置。",
     "builderDesc": "适合工作室。安装由你的团队发布的、预先配置好的 ComfyUI 版本，开箱即用。",
-    "builderBadge": "企业版",
+    "builderBadge": "本地",
     "builderCta": "登录"
   },
   "tray": {
@@ -1318,12 +1318,9 @@
       "successTitle": "已登录为 {email}"
     },
     "workspace": {
-      "title": "选择工作区",
-      "lead": "分发版发布在工作区中。请选择你要从中安装的工作区。",
       "personalLabel": "个人",
       "roleOwner": "所有者",
-      "roleMember": "成员",
-      "continueCta": "继续"
+      "roleMember": "成员"
     },
     "distribution": {
       "states": {

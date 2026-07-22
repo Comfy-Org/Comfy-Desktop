@@ -1,29 +1,24 @@
 <script setup lang="ts">
 /**
- * DevPlatformChain — sign-in → workspace. Two screens, no more.
+ * The Comfy Builder sign-in gate. One screen: sign in, and first-use is over.
  *
- * Completing the workspace step ends first-use outright: there is no
- * distribution step here, because the org's distributions appear as ordinary
- * chooser tiles on the dashboard the user lands on. `complete` is that exit —
- * the host maps it to mark-completed + dismiss.
+ * There is deliberately no workspace-selection step — the user picks their
+ * workspace on the web login page before the token is ever minted, so asking
+ * again here would be a second answer to a settled question. Switching
+ * workspace afterwards lives in the account chip's dropdown instead.
  *
- * The chain renders layout-less: FirstUseTakeover already owns a
- * `BrandTakeoverLayout`, and a second one would replay the entrance animation
- * on every start ⇄ chain crossing. The footer Skip teleports into an anchor
- * the parent exposes inside its layout's `footer-left` slot (`defer` because
- * that slot is patched after this subtree on first render).
- *
- * `open()` is the reset — constructor state is never trusted for takeover
- * content, same rule the host applies to FirstUseTakeover itself.
+ * Renders layout-less: FirstUseTakeover already owns a `BrandTakeoverLayout`,
+ * and a second one would replay the entrance animation on every start ⇄ chain
+ * crossing. The footer Skip teleports into an anchor the parent exposes inside
+ * its layout's `footer-left` slot (`defer` because that slot is patched after
+ * this subtree on first render).
  */
-import { ref } from 'vue'
 import { ChevronLeft } from 'lucide-vue-next'
 import DevPlatformSignInStep from './DevPlatformSignInStep.vue'
-import DevPlatformWorkspaceStep from './DevPlatformWorkspaceStep.vue'
 import { useAuthStore } from '../../stores/authStore'
 
 const emit = defineEmits<{
-  /** Sign-in AND workspace selection are both done — the host ends first-use. */
+  /** Signed in — the host ends first-use and drops the user on the chooser. */
   complete: []
   /** The user opted out of signing in; the host returns to the start screen. */
   skip: []
@@ -31,28 +26,11 @@ const emit = defineEmits<{
 
 const store = useAuthStore()
 
-type Step = 'signin' | 'workspace'
-const step = ref<Step>('signin')
-
-/** Host-callable reset. An existing session has no browser handoff left to do,
- *  so it starts on the workspace screen. */
+/** Host-callable reset. Constructor state is never trusted for takeover
+ *  content, same rule the host applies to FirstUseTakeover itself; this also
+ *  invalidates a sign-in abandoned mid-wait on a previous entry. */
 function open(): void {
-  if (!store.isSignedIn) {
-    // Also invalidates any sign-in abandoned mid-wait on a previous entry.
-    store.cancelSignIn()
-    step.value = 'signin'
-    return
-  }
-  step.value = 'workspace'
-}
-
-function onSignedIn(): void {
-  step.value = 'workspace'
-}
-
-function onWorkspaceSelected(workspaceId: string): void {
-  store.selectWorkspace(workspaceId)
-  emit('complete')
+  if (!store.isSignedIn) store.cancelSignIn()
 }
 
 defineExpose({ open })
@@ -61,15 +39,9 @@ defineExpose({ open })
 <template>
   <div class="dp-chain">
     <DevPlatformSignInStep
-      v-if="step === 'signin'"
       class="dp-chain__step"
-      @signed-in="onSignedIn"
+      @signed-in="emit('complete')"
       @skip="emit('skip')"
-    />
-    <DevPlatformWorkspaceStep
-      v-else
-      class="dp-chain__step"
-      @selected="onWorkspaceSelected"
     />
   </div>
 

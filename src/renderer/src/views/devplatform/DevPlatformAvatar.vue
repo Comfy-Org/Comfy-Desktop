@@ -1,18 +1,22 @@
 <script setup lang="ts">
 /**
- * Workspace avatar — ported verbatim from the ComfyUI frontend's
- * `WorkspaceProfilePic.vue` so a workspace renders the SAME colour here as in
- * the web frontend's pickers. The PRNG and hue/sat/light maths are a wire
- * format: any change silently breaks that cross-surface identity.
+ * Square gradient avatar — ported verbatim from the ComfyUI frontend's
+ * `WorkspaceProfilePic.vue` so the same subject renders the SAME colour here as
+ * in the web frontend. The PRNG and hue/sat/light maths are a wire format: any
+ * change silently breaks that cross-surface identity.
+ *
+ * Used for both the signed-in account (seeded from the email) and workspace
+ * rows (seeded from the workspace name) — the colour is a deterministic
+ * function of whatever string it is given.
  */
 import { computed } from 'vue'
 
-const { workspaceName } = defineProps<{
-  /** Display name; only its first character is used. */
-  workspaceName: string
+const { name } = defineProps<{
+  /** Subject the colour is derived from; only its first character is rendered. */
+  name: string
 }>()
 
-const letter = computed(() => workspaceName?.charAt(0)?.toUpperCase() || '?')
+const letter = computed(() => name?.charAt(0)?.toUpperCase() || '?')
 
 /** mulberry32 — the frontend's PRNG, ported verbatim. */
 function mulberry32(a: number): () => number {
@@ -37,20 +41,20 @@ const gradient = computed(() => {
 </script>
 
 <template>
-  <!-- Decorative: the workspace name is always rendered beside this avatar. -->
-  <span class="ws-avatar" :style="{ background: gradient }" aria-hidden="true">
+  <!-- Decorative: the subject's name is always rendered beside this avatar. -->
+  <span class="dp-avatar" :style="{ background: gradient }" aria-hidden="true">
     {{ letter }}
   </span>
 </template>
 
 <style scoped>
-.ws-avatar {
+.dp-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: var(--ws-avatar-size, 32px);
-  height: var(--ws-avatar-size, 32px);
+  width: var(--dp-avatar-size, 32px);
+  height: var(--dp-avatar-size, 32px);
   border-radius: 6px;
   overflow: hidden;
   /* Paired to the generated gradient, not the app palette — same values as

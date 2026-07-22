@@ -173,6 +173,21 @@ describe('ChooserView', () => {
     )
   })
 
+  it('account chip menu lists the signed-in workspace, marked as active', async () => {
+    window.localStorage.setItem('comfy.devplatform.mockSession', '1')
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
+    const row = wrapper.find('[data-testid="devplatform-account-workspace-ComfyUI Team"]')
+    expect(row.exists()).toBe(true)
+    // The check is the selection cue; the token's one workspace is always active.
+    expect(row.attributes('aria-checked')).toBe('true')
+    expect(row.text()).toContain('ComfyUI Team')
+    expect(wrapper.find('[data-testid="devplatform-account-signout"]').exists()).toBe(true)
+  })
+
   it('deduplicates a distribution whose name matches an existing install', async () => {
     window.localStorage.setItem('comfy.devplatform.mockSession', '1')
     installMockApi([makeInstall({ id: 'inst-sdxl', name: 'ComfyUI — SDXL Essentials' })])

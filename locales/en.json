@@ -602,7 +602,7 @@
     "builderLabel": "Comfy Builder",
     "builderTagline": "Pre-configured by your team.",
     "builderDesc": "Best for studios. Install pre-configured versions of ComfyUI published by your team, ready to run.",
-    "builderBadge": "Enterprise",
+    "builderBadge": "Local",
     "builderCta": "Log in"
   },
   "tray": {
@@ -1318,12 +1318,9 @@
       "successTitle": "Signed in as {email}"
     },
     "workspace": {
-      "title": "Choose a workspace",
-      "lead": "Distributions are published to a workspace. Pick the one you want to install from.",
       "personalLabel": "Personal",
       "roleOwner": "Owner",
-      "roleMember": "Member",
-      "continueCta": "Continue"
+      "roleMember": "Member"
     },
     "distribution": {
       "states": {
