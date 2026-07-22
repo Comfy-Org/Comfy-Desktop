@@ -88,4 +88,81 @@ describe('useAuthStore', () => {
 
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
+
+  it('tracks the sign-in phase: waiting while in flight, success on a signed-in result', async () => {
+    let resolveSignIn!: (status: AuthStatus) => void
+    vi.mocked(api.comfybuilder.signIn).mockReturnValue(
+      new Promise((res) => {
+        resolveSignIn = res
+      }),
+    )
+
+    const pending = store.signIn()
+    expect(store.signInPhase).toBe('waiting-for-browser')
+
+    resolveSignIn(signedIn)
+    await pending
+    expect(store.signInPhase).toBe('success')
+    expect(store.status).toEqual(signedIn)
+  })
+
+  it('maps a loopback timeout rejection to the timeout phase, anything else to error', async () => {
+    vi.mocked(api.comfybuilder.signIn).mockRejectedValue(
+      new Error('Loopback OAuth callback timed out'),
+    )
+    await expect(store.signIn()).rejects.toThrow()
+    expect(store.signInPhase).toBe('timeout')
+
+    vi.mocked(api.comfybuilder.signIn).mockRejectedValue(new Error('access_denied'))
+    await expect(store.signIn()).rejects.toThrow()
+    expect(store.signInPhase).toBe('error')
+  })
+
+  it('cancelSignIn returns to idle and a late settle of the abandoned attempt cannot move the phase', async () => {
+    let resolveSignIn!: (status: AuthStatus) => void
+    vi.mocked(api.comfybuilder.signIn).mockReturnValue(
+      new Promise((res) => {
+        resolveSignIn = res
+      }),
+    )
+
+    const pending = store.signIn()
+    store.cancelSignIn()
+    expect(store.signInPhase).toBe('idle')
+
+    resolveSignIn(signedIn)
+    await pending
+    expect(store.signInPhase).toBe('idle')
+  })
+
+  it('derives the single workspace from the token claims', () => {
+    expect(store.workspaces).toEqual([])
+
+    authListener?.({
+      signedIn: true,
+      email: 'user@example.com',
+      workspaceId: 'workspace-1',
+      workspaceType: 'team',
+      role: 'member',
+    })
+
+    expect(store.workspaces).toEqual([
+      { id: 'workspace-1', name: 'user@example.com', type: 'team', role: 'member' },
+    ])
+    expect(store.needsWorkspaceChoice).toBe(false)
+
+    store.selectWorkspace('workspace-1')
+    expect(store.activeWorkspaceId).toBe('workspace-1')
+  })
+
+  it('signOut clears the phase and the active workspace', async () => {
+    vi.mocked(api.comfybuilder.signOut).mockResolvedValue(signedOut)
+    store.selectWorkspace('workspace-1')
+
+    await store.signOut()
+
+    expect(store.signInPhase).toBe('idle')
+    expect(store.activeWorkspaceId).toBeUndefined()
+    expect(store.isSignedIn).toBe(false)
+  })
 })

@@ -39,7 +39,14 @@ vi.mock('../components/TermsModal.vue', () => ({
 }))
 vi.mock('../components/BrandTakeoverLayout.vue', () => ({
   default: {
-    template: '<div data-testid="stub-brand-layout"><slot /></div>',
+    template: '<div data-testid="stub-brand-layout"><slot /><slot name="footer-left" /></div>',
+  },
+}))
+vi.mock('./devplatform/DevPlatformChain.vue', () => ({
+  default: {
+    name: 'DevPlatformChain',
+    template: '<div data-testid="stub-dp-chain" />',
+    methods: { open: vi.fn() },
   },
 }))
 
@@ -75,17 +82,13 @@ beforeEach(() => {
   } as unknown as typeof window.api
 })
 
-// The takeover now opens on the optional ComfyBuilder sign-in step; the
-// start-step tests below assert the start screen, so skip past sign-in first.
 async function mountTakeover() {
   const wrapper = mount(FirstUseTakeover, {
     global: { plugins: [i18n, createTestingPinia({ stubActions: false })] },
   })
-  const skip = wrapper.find('[data-testid="cb-signin-skip"]')
-  if (skip.exists()) {
-    await skip.trigger('click')
-    await flushPromises()
-  }
+  // Let open()'s async boot (experiment default, settings preload) settle
+  // before tests interact, as it does before a real user can.
+  await flushPromises()
   return wrapper
 }
 
@@ -379,6 +382,77 @@ describe('FirstUseTakeover start step', () => {
 
     expect(wrapper.emitted('chain-local')).toBeTruthy()
     expect(wrapper.emitted('complete-cloud')).toBeFalsy()
+  })
+})
+
+describe('FirstUseTakeover Comfy Builder card', () => {
+  it('renders the third card and relabels Continue when it is picked', async () => {
+    const wrapper = await mountTakeover()
+    const card = wrapper.find('[data-testid="first-use-pick-builder"]')
+    expect(card.exists()).toBe(true)
+
+    const btn = wrapper.find('[data-testid="first-use-continue"]')
+    expect(btn.text()).toBe('firstUse.startContinue')
+    await card.trigger('click')
+    expect(btn.text()).toBe('firstUse.builderCta')
+  })
+
+  it('routes builder + Continue to the chain after persisting consent, with no install emits', async () => {
+    const wrapper = await mountTakeover()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-pick-builder"]').trigger('click')
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="stub-dp-chain"]').exists()).toBe(true)
+    expect(window.api.setSetting).toHaveBeenCalledWith('telemetryEnabled', true)
+    expect(wrapper.emitted('chain-local')).toBeFalsy()
+    expect(wrapper.emitted('complete-cloud')).toBeFalsy()
+    expect(wrapper.emitted('complete-skip')).toBeFalsy()
+  })
+
+  it('Continue without accepting ToS nudges instead of entering the chain', async () => {
+    const wrapper = await mountTakeover()
+    await wrapper.find('[data-testid="first-use-pick-builder"]').trigger('click')
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="stub-dp-chain"]').exists()).toBe(false)
+    expect(
+      wrapper.find('[data-testid="first-use-consent-tos"]').classes()
+    ).toContain('start-consent-row--nudge')
+  })
+
+  it('chain `complete` ends first-use via complete-skip', async () => {
+    const wrapper = await mountTakeover()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-pick-builder"]').trigger('click')
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+
+    const chain = wrapper.findComponent('[data-testid="stub-dp-chain"]')
+    await chain.vm.$emit('complete')
+    expect(wrapper.emitted('complete-skip')).toBeTruthy()
+  })
+
+  it('chain `skip` returns to the start screen with the picker intact', async () => {
+    const wrapper = await mountTakeover()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-pick-builder"]').trigger('click')
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+
+    const chain = wrapper.findComponent('[data-testid="stub-dp-chain"]')
+    await chain.vm.$emit('skip')
+    expect(wrapper.find('[data-testid="stub-dp-chain"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="first-use-pick-builder"]').exists()).toBe(true)
+    expect(wrapper.emitted('complete-skip')).toBeFalsy()
   })
 })
 

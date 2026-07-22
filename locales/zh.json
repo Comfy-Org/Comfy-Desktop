@@ -598,7 +598,12 @@
     "localModeExpressLabel": "快速",
     "localModeConfigureLabel": "配置",
     "localDescRecommended": "使用**推荐设置**快速安装——跳过可选设置步骤。",
-    "localDescRecommendedGpu": "使用针对 **{gpu}** 调整的推荐设置快速安装。如果这不是你的硬件，请选择**配置**。"
+    "localDescRecommendedGpu": "使用针对 **{gpu}** 调整的推荐设置快速安装。如果这不是你的硬件，请选择**配置**。",
+    "builderLabel": "Comfy Builder",
+    "builderTagline": "由你的团队预先配置。",
+    "builderDesc": "适合工作室。安装由你的团队发布的、预先配置好的 ComfyUI 版本，开箱即用。",
+    "builderBadge": "企业版",
+    "builderCta": "登录"
   },
   "tray": {
     "showApp": "显示 Comfy Desktop",
@@ -1293,5 +1298,32 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消"
+  },
+  "devPlatform": {
+    "signIn": {
+      "title": "登录 Comfy",
+      "lead": "安装发布到你的工作区的分发版。",
+      "cta": "登录或创建账号",
+      "skip": "暂不登录",
+      "explainerTitle": "什么是分发版？",
+      "explainerBody": "分发版是由你的团队发布的、开箱即用的完整 ComfyUI 环境。登录后即可看到你可以安装的分发版。",
+      "waitingTitle": "正在等待浏览器",
+      "waitingBody": "我们已打开浏览器以完成登录。完成后请返回这里。",
+      "cancel": "取消",
+      "timeoutTitle": "登录已超时",
+      "timeoutBody": "没有收到浏览器的响应。这通常是因为在登录完成前关闭了标签页。",
+      "retry": "重试",
+      "errorTitle": "登录未完成",
+      "errorBody": "完成登录时出现问题。请重试；如果反复出现，你也可以不登录继续使用。",
+      "successTitle": "已登录为 {email}"
+    },
+    "workspace": {
+      "title": "选择工作区",
+      "lead": "分发版发布在工作区中。请选择你要从中安装的工作区。",
+      "personalLabel": "个人",
+      "roleOwner": "所有者",
+      "roleMember": "成员",
+      "continueCta": "继续"
+    }
   }
 }

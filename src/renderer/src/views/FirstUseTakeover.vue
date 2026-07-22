@@ -35,7 +35,10 @@
  *                  swap is silent in `useOverlay`); the host marks
  *                  completion when new-install ends successfully.
  *                  Local + Legacy Desktop detected routes to the
- *                  `localBranch` sub-step first.
+ *                  `localBranch` sub-step first. Comfy Builder routes
+ *                  to the `devPlatform` chain (sign in → workspace);
+ *                  completing it emits `complete-skip` — the user lands
+ *                  straight on the chooser, no install steps.
  *
  * The takeover stays a pure stepper — it does NOT call `setSetting`
  * for `firstUseCompleted` itself; the host owns that flip so the
@@ -56,12 +59,13 @@ import TermsModal from '../components/TermsModal.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import InlineRichText from '../components/InlineRichText.vue'
+import DevPlatformChain from './devplatform/DevPlatformChain.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
 
-import { useAuthStore } from '../stores/authStore'
-
-type Step = 'signin' | 'start' | 'mirrors' | 'localBranch'
+/** `devPlatform` hosts the Comfy Builder chain (sign in → workspace), reached
+ *  by picking the third card on the start screen and pressing Continue. */
+type Step = 'start' | 'mirrors' | 'localBranch' | 'devPlatform'
 
 const emit = defineEmits<{
   /** Cloud branch explicitly picked at the cloud-vs-local fork. Host
@@ -98,26 +102,7 @@ const emit = defineEmits<{
   'chain-migrate': [{ express: boolean }]
 }>()
 
-const step = ref<Step>('signin')
-const authStore = useAuthStore()
-
-async function handleSignIn() {
-  try {
-    const status = await authStore.signIn()
-    if (status.signedIn) {
-      setTimeout(() => {
-        step.value = 'start'
-      }, 1500)
-    }
-  } catch {
-    // Sign-in was cancelled or failed; stay on the sign-in step so the user
-    // can retry or skip. Matches InstallWizardModal/ComfyBuilderReauth handling.
-  }
-}
-
-function handleSkipSignIn() {
-  step.value = 'start'
-}
+const step = ref<Step>('start')
 const telemetryEnabled = ref(true)
 const locale = ref('en')
 
@@ -143,7 +128,7 @@ const forkExperimentVariant = ref<ForkVariant | null>(null)
  *  `'no-default'` pre-selects neither (user must click a card before
  *  Continue activates). Cloud is rendered as an equal-weight peer
  *  card regardless; users can flip between cards before Continue. */
-const pickedChoice = ref<'cloud' | 'local' | null>('local')
+const pickedChoice = ref<'cloud' | 'local' | 'builder' | null>('local')
 
 // Capacity-protection switch for Cloud (PostHog flag
 // `desktop-cloud-capacity`). At first-use, we follow the flag
@@ -159,7 +144,7 @@ const capacityReady = ref(false)
  *  user keeping the default pick is different from a user actively
  *  flipping the card. `null` for the `'no-default'` variant, where
  *  Continue is gated on an explicit pick so every commit is signal. */
-const initialDefaultChoice = ref<'cloud' | 'local' | null>('local')
+const initialDefaultChoice = ref<'cloud' | 'local' | 'builder' | null>('local')
 
 /** Read the experiment variant (boot-time cache, sync once main is
  *  ready) and decide which card should be the pre-selected default.
@@ -355,7 +340,37 @@ const isChinese = computed(() => locale.value.startsWith('zh'))
  *  entrance animation plays once on overlay open, not on every internal
  *  step swap. Mirrors still ships as `ModalShell` until it gets the
  *  brand treatment too. */
-const isBrandStep = computed(() => step.value === 'signin' || step.value === 'start' || step.value === 'localBranch')
+const isBrandStep = computed(
+  () => step.value === 'start' || step.value === 'localBranch' || step.value === 'devPlatform'
+)
+
+/** Picking Comfy Builder commits to logging in, not to installing, so the
+ *  Continue button says so. */
+const startContinueKey = computed(() =>
+  pickedChoice.value === 'builder' ? 'firstUse.builderCta' : 'firstUse.startContinue'
+)
+
+const chainRef = ref<InstanceType<typeof DevPlatformChain> | null>(null)
+
+/** Enter the chain. `open()` is its reset, same rule the host applies here. */
+async function goToDevPlatform(): Promise<void> {
+  step.value = 'devPlatform'
+  await nextTick()
+  chainRef.value?.open()
+}
+
+/** Sign-in + workspace both done: bypass the rest of setup and drop the user
+ *  on the chooser, where their org's distributions will live. Consent was
+ *  already persisted by `onContinue` before the chain was entered. */
+function onDevPlatformComplete(): void {
+  emitCompleted('skipped')
+  emit('complete-skip')
+}
+
+/** Skipping is unpenalised — back to the start screen with state intact. */
+function onDevPlatformSkip(): void {
+  step.value = 'start'
+}
 
 /** Single Continue commit for the merged start screen: T&C acceptance,
  *  telemetry pref, fork choice, and the Express-install modifier all
@@ -436,6 +451,15 @@ async function onContinue(): Promise<void> {
  *  `skipPick` for returning users by short-circuiting to `complete-skip`
  *  regardless of which card was selected. */
 async function routePostStart(): Promise<void> {
+  // Ahead of the skipPick short-circuit: picking Comfy Builder and pressing
+  // "Log in" is an explicit request that must not be silently discarded, even
+  // for returning users. Consent is already persisted; the chain's workspace
+  // Continue ends first-use via `onDevPlatformComplete`.
+  if (pickedChoice.value === 'builder') {
+    isContinuing.value = false
+    void goToDevPlatform()
+    return
+  }
   if (skipPick.value) {
     emitCompleted('skipped')
     emit('complete-skip')
@@ -544,7 +568,7 @@ function chooseMigrate(): void {
 function onStartCardsKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[role="radio"]')) return
-  const order = ['cloud', 'local'] as const
+  const order = ['cloud', 'local', 'builder'] as const
   const currentIndex = pickedChoice.value === null ? -1 : order.indexOf(pickedChoice.value)
   let next: number
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -586,11 +610,11 @@ interface OpenOpts {
   /** Skip ahead to a specific brand step on open. Used by the
    *  Configure → Back chain to land the user back on the localBranch
    *  sub-step instead of restarting at start. Defaults to 'start'. */
-  initialStep?: 'signin' | 'start' | 'localBranch'
+  initialStep?: 'start' | 'localBranch'
 }
 
 async function open(opts: OpenOpts = {}): Promise<void> {
-  step.value = opts.initialStep ?? 'signin'
+  step.value = opts.initialStep ?? 'start'
   skipPick.value = opts.skipPick === true
   hasLegacyDesktop.value = opts.hasLegacyDesktop === true
   whyCloudOpen.value = false
@@ -740,47 +764,29 @@ defineExpose({ open, resetContinue })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="isBrandStep" :vignette="step === 'start' || step === 'signin'">
-    <div v-if="step === 'signin'" class="start-screen">
-      <div class="brand-hero start-hero">
-        <h1 class="brand-title">Sign in to ComfyBuilder</h1>
-        <p class="brand-lead">Connect your account to access your pipelines and cloud resources.</p>
-        <div class="start-cards" style="flex-direction: column; gap: 16px; align-items: center; justify-content: center; margin-top: 32px;">
-          <button
-            type="button"
-            class="brand-primary start-continue"
-            data-testid="cb-signin-cta"
-            style="width: 100%; max-width: 300px;"
-            @click="handleSignIn"
-          >
-            Sign in to ComfyBuilder
-          </button>
-          <button
-            type="button"
-            class="brand-secondary"
-            data-testid="cb-signin-skip"
-            style="width: 100%; max-width: 300px;"
-            @click="handleSkipSignIn"
-          >
-            Skip
-          </button>
-        </div>
-        <div v-if="authStore.isSignedIn" data-testid="cb-signin-status" class="signin-status" style="margin-top: 16px; text-align: center; color: var(--text-muted);">
-          Signed in as {{ authStore.status.email }}
-        </div>
-      </div>
-    </div>
+  <!-- ONE layout instance for the whole first-run journey (start, the Comfy
+       Builder chain, and the localBranch sub-step) so the takeover entrance
+       plays once and the background vignette never snaps between steps. -->
+  <BrandTakeoverLayout v-if="isBrandStep" vignette>
+    <!-- Comfy Builder chain (sign in → workspace), layout-less: the chrome
+         around it is this instance. -->
+    <DevPlatformChain
+      v-if="step === 'devPlatform'"
+      ref="chainRef"
+      @complete="onDevPlatformComplete"
+      @skip="onDevPlatformSkip"
+    />
 
-    <!-- Step 1: Merged start screen. Wordmark on top, Cloud-vs-Local
-         radio cards in the middle, Express-Install opt-out modifier,
-         then the legal/telemetry checkboxes and the Continue / Cancel
-         action row. T&C must be accepted before Continue activates. -->
-    <div v-else-if="step === 'start'" class="start-screen">
+    <!-- Step 1: Merged start screen. Wordmark on top, the three fork cards in
+         the middle, Express-Install opt-out modifier, then the legal/telemetry
+         checkboxes and the Continue action row. T&C must be accepted before
+         Continue activates. -->
+    <div v-else-if="step === 'start'" class="start-screen start-screen--wide">
       <div class="brand-hero start-hero">
         <h1 class="brand-title">{{ $t('firstUse.pickTitle') }}</h1>
         <p class="brand-lead">{{ $t('firstUse.pickLead') }}</p>
         <div
-          class="start-cards"
+          class="start-cards start-cards--three"
           role="radiogroup"
           :aria-label="$t('firstUse.pickTitle')"
           @keydown="onStartCardsKeydown"
@@ -827,6 +833,21 @@ defineExpose({ open, resetContinue })
             data-testid="first-use-pick-local"
             @click="pickedChoice = 'local'"
           />
+          <!-- Picking this commits to logging in rather than installing, so
+               Continue relabels and routes to the chain. -->
+          <ChoiceCard
+            selectable
+            :selected="pickedChoice === 'builder'"
+            :label="$t('firstUse.builderLabel')"
+            :tagline="$t('firstUse.builderTagline')"
+            :description="$t('firstUse.builderDesc')"
+            data-testid="first-use-pick-builder"
+            @click="pickedChoice = 'builder'"
+          >
+            <template #label-trailing>
+              <span class="start-builder-badge">{{ $t('firstUse.builderBadge') }}</span>
+            </template>
+          </ChoiceCard>
         </div>
         <!-- Modifier checkboxes (Migrate + Express). Wrapped in a
              fit-content container so the two labels share the same
@@ -951,7 +972,7 @@ defineExpose({ open, resetContinue })
               aria-hidden="true"
             />
             <span>{{
-              isContinuing ? $t('firstUse.startContinueBusy') : $t('firstUse.startContinue')
+              isContinuing ? $t('firstUse.startContinueBusy') : $t(startContinueKey)
             }}</span>
           </button>
         </div>
@@ -1013,6 +1034,9 @@ defineExpose({ open, resetContinue })
       >
         ← {{ $t('common.back') }}
       </button>
+      <!-- Anchor the embedded chain teleports its footer-left control into.
+           `display: contents`, so it adds no box of its own. -->
+      <div v-else-if="step === 'devPlatform'" id="dp-chain-footer-left" class="footer-slot-anchor" />
     </template>
 
     <WhyTryCloudModal
@@ -1118,6 +1142,56 @@ defineExpose({ open, resetContinue })
   width: 100%;
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 32px;
+}
+/* Three cards, one row, at the same per-card width the two-card layout used.
+   `minmax(0, 1fr)` lets a track shrink under its content's intrinsic width so
+   the row can never wrap; the extra room comes from `.start-screen--wide`. */
+.start-cards--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Widen the step so three cards fit at full size. Everything else on the
+   screen is pinned back to the original 760px measure, so only the card row
+   grows; a window too narrow simply shrinks the row. */
+.start-screen--wide {
+  max-width: 1150px;
+}
+.start-screen--wide .start-hero {
+  max-width: 100%;
+}
+.start-screen--wide .start-hero > :not(.start-cards) {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+/* `.start-bottom` keeps its own `width: 95%`; cap it at 95% of the original
+   760px so the consent strip and Continue are pixel-identical. */
+.start-screen--wide .start-bottom {
+  max-width: calc(760px * 0.95);
+  margin-inline: auto;
+}
+
+/* "Enterprise" marker on the Comfy Builder card. Quiet outline, not a
+   promotional badge — it states who the option is for. */
+.start-builder-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in oklab, var(--neutral-100) 20%, transparent);
+  background: color-mix(in oklab, var(--neutral-100) 6%, transparent);
+  color: var(--neutral-200);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Anchor only — the embedded chain teleports its footer-left control here.
+   `display: contents` keeps it from generating a box in the frame's flex row. */
+.footer-slot-anchor {
+  display: contents;
 }
 /* Cloud card anchors the brand beam — keep the spotlight on the
  * Cloud card the same way the original pick step did. */

@@ -598,7 +598,12 @@
     "localModeExpressLabel": "Quick",
     "localModeConfigureLabel": "Configure",
     "localDescRecommended": "Fast install with **recommended settings** — skips optional setup steps.",
-    "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware."
+    "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware.",
+    "builderLabel": "Comfy Builder",
+    "builderTagline": "Pre-configured by your team.",
+    "builderDesc": "Best for studios. Install pre-configured versions of ComfyUI published by your team, ready to run.",
+    "builderBadge": "Enterprise",
+    "builderCta": "Log in"
   },
   "tray": {
     "showApp": "Show Comfy Desktop",
@@ -1293,5 +1298,32 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled"
+  },
+  "devPlatform": {
+    "signIn": {
+      "title": "Sign in to Comfy",
+      "lead": "Install the distributions published to your workspace.",
+      "cta": "Log in or create account",
+      "skip": "Skip for now",
+      "explainerTitle": "What's a distribution?",
+      "explainerBody": "Distributions are complete, ready-to-run ComfyUI environments published by your team. Signing in shows you the ones you can install.",
+      "waitingTitle": "Waiting for your browser",
+      "waitingBody": "We opened your browser to finish signing in. Come back here when you’re done.",
+      "cancel": "Cancel",
+      "timeoutTitle": "Sign-in timed out",
+      "timeoutBody": "We didn’t hear back from your browser. This usually means the tab was closed before sign-in finished.",
+      "retry": "Try again",
+      "errorTitle": "Sign-in didn’t complete",
+      "errorBody": "Something went wrong finishing sign-in. Try again — and if it keeps happening, you can continue without signing in.",
+      "successTitle": "Signed in as {email}"
+    },
+    "workspace": {
+      "title": "Choose a workspace",
+      "lead": "Distributions are published to a workspace. Pick the one you want to install from.",
+      "personalLabel": "Personal",
+      "roleOwner": "Owner",
+      "roleMember": "Member",
+      "continueCta": "Continue"
+    }
   }
 }
