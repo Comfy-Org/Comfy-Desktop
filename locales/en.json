@@ -606,6 +606,7 @@
     "pickLead": "Choose the setup that fits how you work. You can switch later.",
     "cloudTagline": "Instant setup. Full power.",
     "cloudDesc": "Best for **most users** who want to work from anywhere with models verified for commercial license.",
+    "gpuRecommendation": "Recommended for your hardware",
     "localLabel": "Local",
     "localTagline": "Full control. Your hardware.",
     "localDesc": "Best for **power users** who want to manage versions, custom nodes, and offline workflows.",

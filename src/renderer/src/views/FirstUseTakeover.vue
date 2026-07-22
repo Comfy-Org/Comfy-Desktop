@@ -56,8 +56,9 @@ import TermsModal from '../components/TermsModal.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import InlineRichText from '../components/InlineRichText.vue'
-import { emitTelemetryAction } from '../lib/telemetry'
+import { emitTelemetryAction, type TelemetryContext } from '../lib/telemetry'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
+import type { SystemInfo } from '../../../types/ipc'
 
 type Step = 'start' | 'mirrors' | 'localBranch'
 
@@ -305,6 +306,49 @@ const skipPick = ref(false)
  *  new-install takeover. Detection lives in main; the host plumbs the
  *  flag in via `open()`. */
 const hasLegacyDesktop = ref(false)
+/** Hardware facts resolved through the shared main-process classifier. A
+ *  missing value means the IPC failed, so the recommendation stays hidden. */
+const systemInfo = ref<SystemInfo | null>(null)
+let systemInfoRequest = 0
+const persistedTelemetryEnabled = ref<boolean | undefined>(undefined)
+const showGpuRecommendation = computed(() => {
+  const tier = systemInfo.value?.gpu_tier
+  return (
+    !skipPick.value &&
+    capacityReady.value &&
+    cloudCapacity.status.value === 'normal' &&
+    (tier === 'sub_low' || tier === 'cpu_only')
+  )
+})
+let gpuRecommendationTracked = false
+let gpuRecommendationContext: TelemetryContext | null = null
+
+function emitGpuRecommendationIfConsented(): void {
+  if (
+    gpuRecommendationTracked ||
+    !gpuRecommendationContext ||
+    persistedTelemetryEnabled.value !== true
+  ) {
+    return
+  }
+  gpuRecommendationTracked = true
+  emitTelemetryAction(
+    'comfy.desktop.first_use.gpu_reco_shown',
+    gpuRecommendationContext
+  )
+}
+
+watch(showGpuRecommendation, (shown) => {
+  if (!shown || gpuRecommendationContext || !systemInfo.value) return
+  gpuRecommendationContext = {
+    gpu_tier: systemInfo.value.gpu_tier,
+    gpu_vendor: systemInfo.value.gpu_vendor,
+    gpu_vram_gb: systemInfo.value.gpu_vram_gb,
+    gpu_model_bucket: systemInfo.value.gpu_model ?? 'unknown',
+    capacity_status: cloudCapacity.status.value
+  }
+  emitGpuRecommendationIfConsented()
+})
 const whyCloudOpen = ref(false)
 /** Which legal document to show when the terms modal is open, or null
  *  when the modal is closed. The two consent-row links on the Terms
@@ -377,6 +421,8 @@ async function onContinue(): Promise<void> {
     telemetry_enabled: telemetryEnabled.value,
     locale: locale.value
   })
+  persistedTelemetryEnabled.value = telemetryEnabled.value
+  emitGpuRecommendationIfConsented()
   emitTelemetryAction('comfy.desktop.first_use.fork_chosen', {
     choice: pickedChoice.value,
     has_legacy_desktop: hasLegacyDesktop.value,
@@ -398,7 +444,9 @@ async function onContinue(): Promise<void> {
     // bounce-after-cloud rate per variant. The key is captured too so
     // future experiments running concurrently can be split apart.
     experiment_key: FORK_DEFAULT_EXPERIMENT_KEY,
-    experiment_variant: forkExperimentVariant.value
+    experiment_variant: forkExperimentVariant.value,
+    gpu_tier: systemInfo.value?.gpu_tier ?? null,
+    reco_shown: gpuRecommendationContext !== null
   })
 
   if (isChinese.value) {
@@ -601,6 +649,9 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // whose Continue spinner is still flagged. Reset here so the
   // replayed start screen surfaces a fresh, clickable CTA.
   isContinuing.value = false
+  detectedGpuLabel.value = null
+  systemInfo.value = null
+  const request = ++systemInfoRequest
   // Reset funnel-completion bookkeeping so a takeover replay measures
   // duration / steps from the replay, not from the original mount.
   mountedAt = Date.now()
@@ -616,7 +667,9 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // a destructive default).
   const existing = (await window.api.getSetting('telemetryEnabled')) as boolean | undefined
   telemetryEnabled.value = existing !== false
-  // Locale + GPU detection run non-blocking so the start hero paints on
+  persistedTelemetryEnabled.value = existing
+  emitGpuRecommendationIfConsented()
+  // Locale + hardware detection run non-blocking so the start hero paints on
   // the first frame even if main is slow to resolve (e.g. cold IPC, no
   // GPU on CI). Sensible defaults (`'en'`, `null`) are already in place;
   // the reactive updates surface the real values when they arrive.
@@ -627,9 +680,11 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     })
     .catch(() => {})
   void window.api
-    .detectGPU()
-    .then((g) => {
-      detectedGpuLabel.value = g?.label ?? null
+    .getSystemInfo()
+    .then((info) => {
+      if (request !== systemInfoRequest) return
+      systemInfo.value = info
+      detectedGpuLabel.value = info.gpu_label
     })
     .catch(() => {})
 }
@@ -765,6 +820,15 @@ defineExpose({ open, resetContinue })
                   <Info :size="14" />
                 </button>
               </Tooltip>
+            </template>
+            <template v-if="showGpuRecommendation" #desc-trailing>
+              <div
+                class="start-gpu-recommendation"
+                data-testid="first-use-gpu-recommendation"
+              >
+                <Check :size="14" :stroke-width="2.5" aria-hidden="true" />
+                <span>{{ $t('firstUse.gpuRecommendation') }}</span>
+              </div>
             </template>
           </ChoiceCard>
           <ChoiceCard
@@ -1105,6 +1169,14 @@ defineExpose({ open, resetContinue })
 .start-cloud-info:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+.start-gpu-recommendation {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Modifier-checkbox container. Both rows (Migrate + Express) live

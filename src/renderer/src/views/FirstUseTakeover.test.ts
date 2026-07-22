@@ -7,6 +7,25 @@ vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
 }))
 
+const capacityMock = vi.hoisted(() => ({
+  status: 'normal' as 'normal' | 'degraded' | 'disabled',
+  tier: 'unknown' as 'free' | 'paid' | 'unknown',
+}))
+
+vi.mock('../composables/useCloudCapacity', async () => {
+  const { computed } = await import('vue')
+  return {
+    useCloudCapacity: () => ({
+      status: computed(() => capacityMock.status),
+      tier: computed(() => capacityMock.tier),
+      whenReady: vi.fn().mockResolvedValue(undefined),
+      isDisabled: () => capacityMock.status === 'disabled',
+      isDegraded: () => capacityMock.status === 'degraded',
+      confirmEntry: vi.fn().mockResolvedValue(true),
+    }),
+  }
+})
+
 vi.mock('../components/TakeoverHeader.vue', () => ({
   default: { template: '<div data-testid="stub-takeover-header"><slot /></div>' },
 }))
@@ -16,7 +35,7 @@ vi.mock('../components/ModalShell.vue', () => ({
 vi.mock('../components/ChoiceCard.vue', () => ({
   default: {
     template:
-      '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot /></div>',
+      '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot name="desc-trailing" /><slot /></div>',
   },
 }))
 vi.mock('../components/WhyTryCloudModal.vue', () => ({
@@ -43,6 +62,7 @@ vi.mock('../components/BrandTakeoverLayout.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import { emitTelemetryAction } from '../lib/telemetry'
 
 const i18n = createI18n({
   legacy: false,
@@ -53,11 +73,20 @@ const i18n = createI18n({
 })
 
 beforeEach(() => {
+  vi.mocked(emitTelemetryAction).mockClear()
+  capacityMock.status = 'normal'
+  capacityMock.tier = 'unknown'
   window.api = {
     setSetting: vi.fn().mockResolvedValue(undefined),
     getSetting: vi.fn().mockResolvedValue(true),
     getLocale: vi.fn().mockResolvedValue('en'),
-    detectGPU: vi.fn().mockResolvedValue(null),
+    getSystemInfo: vi.fn().mockResolvedValue({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce RTX 4070',
+      gpu_vram_gb: 12,
+      gpu_tier: 'mid',
+    }),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
     // Default to undefined so the existing tests exercise the control
@@ -75,6 +104,137 @@ function mountTakeover() {
 }
 
 describe('FirstUseTakeover start step', () => {
+  it.each(['sub_low', 'cpu_only'] as const)(
+    'shows and tracks the Cloud recommendation for %s hardware',
+    async (gpuTier) => {
+      ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+        gpu_vendor: gpuTier === 'cpu_only' ? null : 'nvidia',
+        gpu_label: gpuTier === 'cpu_only' ? null : 'NVIDIA',
+        gpu_model: gpuTier === 'cpu_only' ? null : 'NVIDIA GeForce GTX 1650',
+        gpu_vram_gb: gpuTier === 'cpu_only' ? null : 4,
+        gpu_tier: gpuTier,
+      })
+      const wrapper = mountTakeover()
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(true)
+      expect(emitTelemetryAction).toHaveBeenCalledWith(
+        'comfy.desktop.first_use.gpu_reco_shown',
+        {
+          gpu_tier: gpuTier,
+          gpu_vendor: gpuTier === 'cpu_only' ? null : 'nvidia',
+          gpu_vram_gb: gpuTier === 'cpu_only' ? null : 4,
+          gpu_model_bucket:
+            gpuTier === 'cpu_only' ? 'unknown' : 'NVIDIA GeForce GTX 1650',
+          capacity_status: 'normal',
+        },
+      )
+    },
+  )
+
+  it.each(['low', 'mid', 'high', 'apple'] as const)(
+    'does not show the Cloud recommendation for %s hardware',
+    async (gpuTier) => {
+      ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+        gpu_vendor: gpuTier === 'apple' ? 'mps' : 'nvidia',
+        gpu_label: gpuTier === 'apple' ? 'Apple Silicon' : 'NVIDIA',
+        gpu_model: 'Test GPU',
+        gpu_vram_gb: 12,
+        gpu_tier: gpuTier,
+      })
+      const wrapper = mountTakeover()
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(false)
+      expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+        'comfy.desktop.first_use.gpu_reco_shown',
+        expect.anything(),
+      )
+    },
+  )
+
+  it.each(['degraded', 'disabled'] as const)(
+    'suppresses the recommendation when Cloud capacity is %s',
+    async (capacityStatus) => {
+      capacityMock.status = capacityStatus
+      ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+        gpu_vendor: 'nvidia',
+        gpu_label: 'NVIDIA',
+        gpu_model: 'NVIDIA GeForce GTX 1650',
+        gpu_vram_gb: 4,
+        gpu_tier: 'sub_low',
+      })
+      const wrapper = mountTakeover()
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(false)
+    },
+  )
+
+  it('fails closed when system-info detection rejects', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('detection failed'),
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(false)
+    expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+      'comfy.desktop.first_use.gpu_reco_shown',
+      expect.anything(),
+    )
+  })
+
+  it('adds GPU tier and recommendation exposure to fork_chosen', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+
+    expect(emitTelemetryAction).toHaveBeenCalledWith(
+      'comfy.desktop.first_use.fork_chosen',
+      expect.objectContaining({ gpu_tier: 'sub_low', reco_shown: true }),
+    )
+  })
+
+  it('defers recommendation telemetry until first-use consent is accepted', async () => {
+    ;(window.api.getSetting as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(true)
+    expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+      'comfy.desktop.first_use.gpu_reco_shown',
+      expect.anything(),
+    )
+
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+
+    expect(emitTelemetryAction).toHaveBeenCalledWith(
+      'comfy.desktop.first_use.gpu_reco_shown',
+      expect.objectContaining({ gpu_tier: 'sub_low' }),
+    )
+  })
+
   it('Continue triggers a nudge shake on the ToS row when terms are not accepted', async () => {
     const wrapper = mountTakeover()
     const tosRow = wrapper.find('[data-testid="first-use-consent-tos"]')
@@ -123,6 +283,7 @@ describe('FirstUseTakeover start step', () => {
 
   it('Express-install checkbox is visible on the default Local pick and hides only when Cloud is picked', async () => {
     const wrapper = mountTakeover()
+    await flushPromises()
     // The row stays mounted (reserved layout space, no jump on swap)
     // but is visually + a11y hidden whenever Cloud is the active pick.
     const express = () => wrapper.find('[data-testid="first-use-express-install"]')
