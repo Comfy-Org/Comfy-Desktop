@@ -10,7 +10,7 @@
  *      with an optional post-download sha256 integrity check.
  */
 import { createHash } from 'crypto'
-import { createReadStream } from 'fs'
+import { createReadStream, rmSync } from 'fs'
 
 import { download } from '../lib/download'
 import type { DownloadProgress } from '../lib/download'
@@ -26,6 +26,9 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '')
 }
 
+/** Cap the resolve request so a hung API cannot stall the install forever. */
+const RESOLVE_TIMEOUT_MS = 30_000
+
 /**
  * Resolve an artifact's presigned archive URL:
  * `GET {baseUrl}/v1/build-artifacts/{id}/download` → `downloadUrl`.
@@ -35,10 +38,11 @@ export async function resolveSignedDownloadUrl(
   { baseUrl, signal }: ResolveSignedDownloadOptions,
 ): Promise<string> {
   const url = `${trimTrailingSlash(baseUrl)}/v1/build-artifacts/${encodeURIComponent(artifactId)}/download`
+  const timeout = AbortSignal.timeout(RESOLVE_TIMEOUT_MS)
   const response = await fetch(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    ...(signal ? { signal } : {}),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   })
   if (!response.ok) {
     throw new Error(`Failed to resolve signed download URL for artifact ${artifactId}: HTTP ${response.status}`)
@@ -92,6 +96,8 @@ export async function downloadArtifact({
     const expected = normalizeSha256(expectedSha256)
     const actual = await computeSha256(destPath)
     if (actual !== expected) {
+      // Drop the tainted bytes so a retry cannot reuse them from the cache.
+      rmSync(destPath, { force: true })
       throw new Error(`Artifact checksum mismatch: expected sha256 ${expected}, got ${actual}`)
     }
   }
