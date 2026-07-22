@@ -9,7 +9,7 @@
  */
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type { ElectronApi, ResolvedTheme, AdoptPromptRequest, AuthStatus } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -227,6 +227,19 @@ export function buildElectronApi(): ElectronApi {
     },
     ackAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-ack', payload),
     respondAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-response', payload),
+
+    // ComfyBuilder auth — the only renderer↔main auth bridge. Every call
+    // returns/observes AuthStatus; access/refresh tokens never cross IPC.
+    comfybuilder: {
+      signIn: (): Promise<AuthStatus> => ipcRenderer.invoke('comfybuilder:signIn'),
+      signOut: (): Promise<AuthStatus> => ipcRenderer.invoke('comfybuilder:signOut'),
+      getAuthStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('comfybuilder:getAuthStatus'),
+      onAuthChanged: (callback) => {
+        const handler = (_event: IpcRendererEvent, status: unknown) => callback(status as AuthStatus)
+        ipcRenderer.on('comfybuilder:authChanged', handler)
+        return () => ipcRenderer.removeListener('comfybuilder:authChanged', handler)
+      },
+    },
 
     // Event listeners (return unsubscribe functions)
     onInstallProgress: (callback) => {

@@ -1335,5 +1335,20 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消"
+  },
+  "devPlatform": {
+    "signIn": {
+      "cta": "登录或创建账号"
+    },
+    "workspace": {
+      "personalLabel": "个人"
+    },
+    "account": {
+      "signedInAs": "已登录为 {email}",
+      "signOut": "退出登录",
+      "signOutConfirmTitle": "要退出 Comfy 登录吗？",
+      "signOutConfirmBody": "已经安装的分发版会保留在这台电脑上并继续可用，只是在你重新登录之前不会再收到更新。",
+      "signOutConfirmCta": "退出登录"
+    }
   }
 }

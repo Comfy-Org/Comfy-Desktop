@@ -1335,5 +1335,20 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled"
+  },
+  "devPlatform": {
+    "signIn": {
+      "cta": "Log in or create account"
+    },
+    "workspace": {
+      "personalLabel": "Personal"
+    },
+    "account": {
+      "signedInAs": "Signed in as {email}",
+      "signOut": "Sign out",
+      "signOutConfirmTitle": "Sign out of Comfy?",
+      "signOutConfirmBody": "Distributions you already installed stay on this computer and keep working. They just won’t receive updates until you sign in again.",
+      "signOutConfirmCta": "Sign out"
+    }
   }
 }

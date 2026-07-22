@@ -54,6 +54,19 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate',
     },
+    devPlatform: {
+      signIn: { cta: 'Log in or create account' },
+      account: {
+        signedInAs: 'Signed in as {email}',
+        signOut: 'Sign out',
+        signOutConfirmTitle: 'Sign out of Comfy?',
+        signOutConfirmBody: 'Installed distributions are kept.',
+        signOutConfirmCta: 'Sign out',
+      },
+      workspace: {
+        personalLabel: 'Personal',
+      },
+    },
   },
 }
 
@@ -70,9 +83,24 @@ interface MockApi {
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
   focusComfyWindow: ReturnType<typeof vi.fn>
+  comfybuilder: {
+    getAuthStatus: ReturnType<typeof vi.fn>
+    signIn: ReturnType<typeof vi.fn>
+    signOut: ReturnType<typeof vi.fn>
+    onAuthChanged: ReturnType<typeof vi.fn>
+  }
 }
 
-function installMockApi(initial: Installation[]): MockApi {
+/** Signed-in fixture used by the tile/chip tests — a team-scoped session. */
+const TEAM_SESSION = {
+  signedIn: true,
+  email: 'willie@comfy.org',
+  workspaceId: 'ComfyUI Team',
+  workspaceType: 'team',
+  role: 'member',
+}
+
+function installMockApi(initial: Installation[], auth: unknown = { signedIn: false }): MockApi {
   const api: MockApi = {
     getInstallations: vi.fn().mockResolvedValue(initial),
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -81,6 +109,13 @@ function installMockApi(initial: Installation[]): MockApi {
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
+    comfybuilder: {
+      // Boot hydration pulls this once at store creation.
+      getAuthStatus: vi.fn().mockResolvedValue(auth),
+      signIn: vi.fn().mockResolvedValue(auth),
+      signOut: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn(() => () => {}),
+    },
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -106,6 +141,27 @@ describe('ChooserView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockModal.alert.mockClear()
+  })
+
+  it('shows the log-in button top-right when signed out, no chip', async () => {
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
+  })
+
+  it('chip face names the account and the token workspace; the menu offers sign out', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const face = wrapper.find('[data-testid="devplatform-account-chip"]')
+    expect(face.text()).toContain('willie@comfy.org')
+    expect(face.text()).toContain('ComfyUI Team')
+
+    await face.trigger('click')
+    expect(wrapper.find('[data-testid="devplatform-account-signout"]').exists()).toBe(true)
   })
 
   it('renders the New Instance tile when the user has zero installs', async () => {

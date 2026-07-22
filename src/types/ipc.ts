@@ -4,6 +4,9 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 export type { FirstUseMode }
 
+import type { AuthStatus } from '../main/comfybuilder/types'
+export type { AuthStatus }
+
 // Unsubscribe function returned by event listeners
 export type Unsubscribe = () => void
 
@@ -1299,6 +1302,15 @@ export interface ElectronApi {
    *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
+
+  // ComfyBuilder auth — the only renderer↔main auth bridge. Access/refresh
+  // tokens never cross IPC; every method returns/observes AuthStatus.
+  comfybuilder: {
+    signIn(): Promise<AuthStatus>
+    signOut(): Promise<AuthStatus>
+    getAuthStatus(): Promise<AuthStatus>
+    onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
+  }
 
   // Updates
   checkForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>

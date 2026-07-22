@@ -3,6 +3,7 @@ import { computed, onMounted, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
@@ -13,6 +14,7 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserInstallTile from './chooser/ChooserInstallTile.vue'
+import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
@@ -24,6 +26,7 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
  * entry.
  *
  * Layout:
+ *   - Top-right: Comfy Builder account chip (log-in button when signed out).
  *   - Top-left: "New Install" (always present).
  *   - Following: every install (local / cloud / remote) ordered by
  *     `lastLaunchedAt` desc, never-launched at the end.
@@ -57,6 +60,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
+// Mounting the store here (not just in the chip) keeps the auth session
+// hydrating with the page, ready for the distribution surface to follow.
+useAuthStore()
 const modal = useModal()
 
 onMounted(() => {
@@ -78,8 +84,13 @@ onMounted(() => {
 // flow through `visibleInstalls` like every other source — there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedLabel } =
-  useInstallList({ installations: installationsRef })
+const {
+  searchQuery,
+  activeFilter,
+  visibleInstalls,
+  showEmptyHint,
+  lastLaunchedLabel
+} = useInstallList({ installations: installationsRef })
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
 // drive the underlying filter state without the chip UI mounted.
@@ -232,6 +243,13 @@ function handleNewInstallClick(): void {
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
     <div class="chooser-view" :style="{ '--rows': clusterRows }">
+      <!-- Identity, top-right: the account chip when signed in, a quiet log-in
+           button when not. Absolutely positioned so it never enters the
+           centered wordmark → search → grid column. -->
+      <div class="chooser-account">
+        <DevPlatformAccountChip />
+      </div>
+
       <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
       <div class="chooser-search">
         <BaseInput
@@ -352,6 +370,18 @@ function handleNewInstallClick(): void {
   max-width: 1280px;
   padding: var(--chooser-pad-y) 24px;
   row-gap: var(--chooser-row-gap);
+}
+
+/* Account chip — pinned to the frame's top-right, out of the centered column
+ * so it can never collide with the wordmark or the search field. */
+.chooser-account {
+  position: absolute;
+  top: var(--chooser-pad-y);
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  max-width: min(340px, 45%);
 }
 
 .chooser-wordmark {
