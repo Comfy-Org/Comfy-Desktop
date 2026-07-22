@@ -5,8 +5,8 @@
  * install directory:
  *
  *   1. Resolve the artifact's presigned archive URL (unless one was passed in).
- *   2. Download the archive into the download cache (sha256-verified when the
- *      artifact carries `outputSha256`).
+ *   2. Download the archive into the download cache (sha256-verified against the
+ *      artifact's required `outputSha256`).
  *   3. Extract the archive (shared nested-extract path) into the install dir.
  *   4. Validate the extracted layout + `manifest.json`; on failure the partial
  *      files are removed and a typed {@link ComfyBuilderInstallError} is thrown.
@@ -148,6 +148,11 @@ export async function installArtifact(params: InstallArtifactParams): Promise<vo
   if (!signedUrl && !baseUrl) {
     throw new ComfyBuilderInstallError('invalid-artifact', 'A signedUrl or baseUrl is required to download the artifact.')
   }
+  // Integrity is mandatory: without an expected hash the download cannot be
+  // verified, so refuse rather than install unverified bytes.
+  if (typeof artifact.outputSha256 !== 'string' || artifact.outputSha256.length === 0) {
+    throw new ComfyBuilderInstallError('invalid-artifact', 'artifact is missing outputSha256; refusing to install unverified bytes')
+  }
 
   // 1. Resolve the presigned archive URL (skipped when one was passed in).
   const resolvedUrl =
@@ -165,22 +170,22 @@ export async function installArtifact(params: InstallArtifactParams): Promise<vo
     onProgress: (p: DownloadProgress) =>
       sendProgress('download', { percent: p.percent, status: `Downloading… ${p.receivedMB} / ${p.totalMB} MB` }),
     ...(signal ? { signal } : {}),
-    ...(artifact.outputSha256 ? { expectedSha256: artifact.outputSha256 } : {}),
+    expectedSha256: artifact.outputSha256,
   })
 
-  // 3. Extract (.tar.gz → nested tar → files) into the install directory.
+  // 3+4. Extract (.tar.gz -> nested tar -> files) then validate the layout +
+  // manifest. Any failure in either phase cleans up the extracted roots so a
+  // retry starts from a clean install dir.
   if (signal?.aborted) throw new Error('Cancelled')
   fs.mkdirSync(installPath, { recursive: true })
-  sendProgress('extract', { percent: 0, status: 'Extracting…' })
-  await extractNested(
-    archivePath,
-    installPath,
-    (p: ExtractProgress) => sendProgress('extract', { percent: p.percent, status: `Extracting… ${p.percent}%` }),
-    signal ? { signal } : {},
-  )
-
-  // 4. Validate the extracted layout + manifest; abort + clean up on failure.
   try {
+    sendProgress('extract', { percent: 0, status: 'Extracting…' })
+    await extractNested(
+      archivePath,
+      installPath,
+      (p: ExtractProgress) => sendProgress('extract', { percent: p.percent, status: `Extracting… ${p.percent}%` }),
+      signal ? { signal } : {},
+    )
     validateExtractedArtifact(installPath)
   } catch (err) {
     await cleanupPartialInstall(installPath)

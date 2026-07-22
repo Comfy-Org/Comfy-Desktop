@@ -47,5 +47,6 @@ export const comfybuilder: SourcePlugin = {
   getLaunchCommand: standalone.getLaunchCommand,
   probeInstallation: standalone.probeInstallation,
   getDetailSections: standalone.getDetailSections,
+  getListActions: standalone.getListActions,
   handleAction: standalone.handleAction,
 }

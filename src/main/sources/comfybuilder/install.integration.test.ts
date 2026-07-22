@@ -16,6 +16,7 @@
 //     asserting ComfyUI reports > 0 nodes.
 import { execFileSync, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import type { ClientRequest } from 'node:http'
@@ -91,6 +92,11 @@ function makeInstallTools(cacheDir: string): InstallTools {
   }
 }
 
+/** Hex sha256 of a file, matching what the artifact's `outputSha256` carries. */
+function sha256File(filePath: string): string {
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
+}
+
 /** Build a fabricated Desktop-layout tarball. Omit `withManifest` for the bad case. */
 async function writeFixtureArtifact(destPath: string, withManifest: boolean): Promise<void> {
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-fixture-src-'))
@@ -117,22 +123,34 @@ async function writeFixtureArtifact(destPath: string, withManifest: boolean): Pr
 describe('installArtifact (fabricated fixture)', () => {
   let goodApi: MockBuilderApi
   let badApi: MockBuilderApi
+  let garbageApi: MockBuilderApi
   let fixturesDir: string
   let tmpRoot: string
+  let goodSha: string
+  let badSha: string
+  let garbageSha: string
 
   beforeAll(async () => {
     fixturesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-fixtures-'))
     const goodPath = path.join(fixturesDir, 'good-artifact.tar.gz')
     const badPath = path.join(fixturesDir, 'bad-artifact.tar.gz')
+    const garbagePath = path.join(fixturesDir, 'garbage-artifact.tar.gz')
     await writeFixtureArtifact(goodPath, true)
     await writeFixtureArtifact(badPath, false)
+    // Non-archive bytes: sha verification passes, extraction fails.
+    fs.writeFileSync(garbagePath, Buffer.from('not a real tar.gz archive'))
+    goodSha = sha256File(goodPath)
+    badSha = sha256File(badPath)
+    garbageSha = sha256File(garbagePath)
     goodApi = await startMockBuilderApi({ archivePath: goodPath })
     badApi = await startMockBuilderApi({ archivePath: badPath })
+    garbageApi = await startMockBuilderApi({ archivePath: garbagePath })
   })
 
   afterAll(async () => {
     await goodApi.stop()
     await badApi.stop()
+    await garbageApi.stop()
     fs.rmSync(fixturesDir, { recursive: true, force: true })
   })
 
@@ -149,7 +167,7 @@ describe('installArtifact (fabricated fixture)', () => {
     await expect(
       installArtifact({
         installation,
-        artifact: makeArtifact(),
+        artifact: makeArtifact({ outputSha256: goodSha }),
         tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
         baseUrl: goodApi.baseUrl,
       }),
@@ -168,7 +186,7 @@ describe('installArtifact (fabricated fixture)', () => {
     try {
       await installArtifact({
         installation,
-        artifact: makeArtifact({ id: 'artifact-bad' }),
+        artifact: makeArtifact({ id: 'artifact-bad', outputSha256: badSha }),
         tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
         baseUrl: badApi.baseUrl,
       })
@@ -187,7 +205,7 @@ describe('installArtifact (fabricated fixture)', () => {
     const installPath = path.join(tmpRoot, 'install')
     const installation: InstallationRecord = {
       ...makeInstallation(installPath),
-      artifact: makeArtifact(),
+      artifact: makeArtifact({ outputSha256: goodSha }),
       comfybuilderBaseUrl: goodApi.baseUrl,
     }
     await expect(install(installation, makeInstallTools(path.join(tmpRoot, 'cache')))).resolves.toBeUndefined()
@@ -206,6 +224,47 @@ describe('installArtifact (fabricated fixture)', () => {
     expect(caught).toBeInstanceOf(ComfyBuilderInstallError)
     expect((caught as ComfyBuilderInstallError).kind).toBe('invalid-artifact')
     expect(fs.existsSync(installPath)).toBe(false)
+  })
+
+  it('rejects an artifact with no outputSha256 and installs nothing', async () => {
+    const installPath = path.join(tmpRoot, 'install')
+    const installation = makeInstallation(installPath)
+
+    let caught: unknown
+    try {
+      await installArtifact({
+        installation,
+        artifact: makeArtifact(), // no outputSha256
+        tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
+        baseUrl: goodApi.baseUrl,
+      })
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(ComfyBuilderInstallError)
+    expect((caught as ComfyBuilderInstallError).kind).toBe('invalid-artifact')
+    expect((caught as ComfyBuilderInstallError).message).toMatch(/outputSha256/)
+    expect(fs.existsSync(installPath)).toBe(false)
+  })
+
+  it('cleans up the install dir when extraction fails on a garbage archive', async () => {
+    const installPath = path.join(tmpRoot, 'install')
+    const installation = makeInstallation(installPath)
+
+    // sha matches (verification passes), but the bytes are not a real archive so
+    // extraction throws -> cleanupPartialInstall must remove the extracted roots.
+    await expect(
+      installArtifact({
+        installation,
+        artifact: makeArtifact({ id: 'artifact-garbage', outputSha256: garbageSha }),
+        tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
+        baseUrl: garbageApi.baseUrl,
+      }),
+    ).rejects.toThrow()
+
+    const leftover = fs.existsSync(installPath) ? fs.readdirSync(installPath) : []
+    expect(leftover).toEqual([])
   })
 })
 
@@ -263,10 +322,10 @@ describe.runIf(runRealBoot)('installArtifact + postInstall real-archive boot', (
     const installPath = path.join(tmpRoot, 'install')
     const installation: InstallationRecord = { ...makeInstallation(installPath), installPath, version: 'master' }
 
-    // Real download/extract/validate from the real archive.
+    // Real download/extract/validate from the real archive (sha now mandatory).
     await installArtifact({
       installation,
-      artifact: makeArtifact({ id: 'mac-mps-real' }),
+      artifact: makeArtifact({ id: 'mac-mps-real', outputSha256: sha256File(CB_TEST_ARCHIVE!) }),
       tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
       baseUrl: api.baseUrl,
     })
