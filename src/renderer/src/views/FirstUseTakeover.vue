@@ -249,7 +249,7 @@ const migrateExisting = ref(true)
 const showMigrateExisting = computed(
   () => pickedChoice.value === 'local' && hasLegacyDesktop.value
 )
-/** Detected GPU vendor — populated by `window.api.detectGPU()` on
+/** Detected GPU vendor — populated by `window.api.getSystemInfo()` on
  *  `open()`. Surfaces as an inline confirmation line under the Express
  *  checkbox so users on the wrong hardware can untick Express before
  *  the install kicks off. `null` when detection fails or returns no
@@ -310,10 +310,12 @@ const hasLegacyDesktop = ref(false)
  *  missing value means the IPC failed, so the recommendation stays hidden. */
 const systemInfo = ref<SystemInfo | null>(null)
 let systemInfoRequest = 0
+let systemInfoPromise: Promise<SystemInfo> | null = null
 const persistedTelemetryEnabled = ref<boolean | undefined>(undefined)
 const showGpuRecommendation = computed(() => {
   const tier = systemInfo.value?.gpu_tier
   return (
+    step.value === 'start' &&
     !skipPick.value &&
     capacityReady.value &&
     cloudCapacity.status.value === 'normal' &&
@@ -344,11 +346,19 @@ watch(showGpuRecommendation, (shown) => {
     gpu_tier: systemInfo.value.gpu_tier,
     gpu_vendor: systemInfo.value.gpu_vendor,
     gpu_vram_gb: systemInfo.value.gpu_vram_gb,
-    gpu_model_bucket: systemInfo.value.gpu_model ?? 'unknown',
+    gpu_model: systemInfo.value.gpu_model,
     capacity_status: cloudCapacity.status.value
   }
   emitGpuRecommendationIfConsented()
 })
+
+function loadSystemInfo(): Promise<SystemInfo> {
+  systemInfoPromise ??= window.api.getSystemInfo().catch((error) => {
+    systemInfoPromise = null
+    throw error
+  })
+  return systemInfoPromise
+}
 const whyCloudOpen = ref(false)
 /** Which legal document to show when the terms modal is open, or null
  *  when the modal is closed. The two consent-row links on the Terms
@@ -679,8 +689,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
-  void window.api
-    .getSystemInfo()
+  void loadSystemInfo()
     .then((info) => {
       if (request !== systemInfoRequest) return
       systemInfo.value = info

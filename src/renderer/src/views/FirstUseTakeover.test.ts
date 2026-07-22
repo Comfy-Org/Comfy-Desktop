@@ -124,8 +124,7 @@ describe('FirstUseTakeover start step', () => {
           gpu_tier: gpuTier,
           gpu_vendor: gpuTier === 'cpu_only' ? null : 'nvidia',
           gpu_vram_gb: gpuTier === 'cpu_only' ? null : 4,
-          gpu_model_bucket:
-            gpuTier === 'cpu_only' ? 'unknown' : 'NVIDIA GeForce GTX 1650',
+          gpu_model: gpuTier === 'cpu_only' ? null : 'NVIDIA GeForce GTX 1650',
           capacity_status: 'normal',
         },
       )
@@ -185,6 +184,16 @@ describe('FirstUseTakeover start step', () => {
     )
   })
 
+  it('reuses the system-info request across takeover open resets', async () => {
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(window.api.getSystemInfo).toHaveBeenCalledTimes(1)
+  })
+
   it('adds GPU tier and recommendation exposure to fork_chosen', async () => {
     ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
       gpu_vendor: 'nvidia',
@@ -232,6 +241,41 @@ describe('FirstUseTakeover start step', () => {
     expect(emitTelemetryAction).toHaveBeenCalledWith(
       'comfy.desktop.first_use.gpu_reco_shown',
       expect.objectContaining({ gpu_tier: 'sub_low' }),
+    )
+  })
+
+  it('does not track a recommendation that resolves after leaving the start step', async () => {
+    let resolveSystemInfo:
+      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
+      | undefined
+    ;(window.api.getLocale as ReturnType<typeof vi.fn>).mockResolvedValue('zh-CN')
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSystemInfo = resolve
+      }),
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-mirrors-accept"]').exists()).toBe(true)
+
+    resolveSystemInfo?.({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    await flushPromises()
+
+    expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+      'comfy.desktop.first_use.gpu_reco_shown',
+      expect.anything(),
     )
   })
 
