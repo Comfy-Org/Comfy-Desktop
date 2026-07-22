@@ -1370,6 +1370,11 @@
       "signOutConfirmTitle": "Sign out of Comfy?",
       "signOutConfirmBody": "Distributions you already installed stay on this computer and keep working. They just won’t receive updates until you sign in again.",
       "signOutConfirmCta": "Sign out"
-    }
+    },
+    "reauth": {
+      "sessionExpired": "Session expired — sign in again",
+      "signIn": "Sign in"
+    },
+    "installFailed": "ComfyBuilder install failed."
   }
 }

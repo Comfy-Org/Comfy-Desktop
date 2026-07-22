@@ -1370,6 +1370,11 @@
       "signOutConfirmTitle": "要退出 Comfy 登录吗？",
       "signOutConfirmBody": "已经安装的分发版会保留在这台电脑上并继续可用，只是在你重新登录之前不会再收到更新。",
       "signOutConfirmCta": "退出登录"
-    }
+    },
+    "reauth": {
+      "sessionExpired": "会话已过期 — 请重新登录",
+      "signIn": "登录"
+    },
+    "installFailed": "ComfyBuilder 安装失败。"
   }
 }

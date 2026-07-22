@@ -970,9 +970,7 @@ async function handleSave(): Promise<void> {
         } catch (err) {
           if (isComfyBuilder) {
             cbInstallError.value =
-              err instanceof Error && err.message
-                ? err.message
-                : 'ComfyBuilder install failed.'
+              err instanceof Error && err.message ? err.message : t('devPlatform.installFailed')
           }
           throw err
         }

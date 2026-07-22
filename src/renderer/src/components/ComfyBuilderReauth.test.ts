@@ -1,6 +1,7 @@
 import { createTestingPinia } from '@pinia/testing'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia } from 'pinia'
+import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AuthStatus } from '../../../main/comfybuilder/types'
@@ -29,6 +30,18 @@ vi.stubGlobal('window', {
   },
 })
 
+const i18n = createI18n({
+  legacy: false,
+  locale: 'en',
+  messages: {
+    en: {
+      devPlatform: {
+        reauth: { sessionExpired: 'Session expired — sign in again', signIn: 'Sign in' },
+      },
+    },
+  },
+})
+
 // Attach to a live document so DOM queries reflect the real re-render — a
 // root-level v-if component confuses @vue/test-utils' cached wrapper element.
 function mountReauth() {
@@ -37,7 +50,7 @@ function mountReauth() {
       components: { ComfyBuilderReauth },
       template: '<div><ComfyBuilderReauth /></div>',
     },
-    { attachTo: document.body },
+    { attachTo: document.body, global: { plugins: [i18n] } },
   )
 }
 

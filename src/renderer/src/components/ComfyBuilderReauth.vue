@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useAuthStore } from '../stores/authStore'
 
 const emit = defineEmits<{ recovered: [] }>()
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 
 // Only prompt on a mid-flow expiry: a user who was never signed in this flow
@@ -32,6 +34,8 @@ async function reauth(): Promise<void> {
   try {
     const status = await authStore.signIn()
     if (status.signedIn) emit('recovered')
+  } catch {
+    // Cancelled or failed browser handoff — the button simply re-arms.
   } finally {
     signingIn.value = false
   }
@@ -40,7 +44,7 @@ async function reauth(): Promise<void> {
 
 <template>
   <div v-if="showReauth" data-testid="cb-reauth" class="cb-reauth" role="alert">
-    <span class="cb-reauth__message">Session expired — Sign in again</span>
+    <span class="cb-reauth__message">{{ t('devPlatform.reauth.sessionExpired') }}</span>
     <button
       type="button"
       class="brand-primary cb-reauth__signin"
@@ -48,7 +52,7 @@ async function reauth(): Promise<void> {
       :disabled="signingIn"
       @click="reauth"
     >
-      Sign in
+      {{ t('devPlatform.reauth.signIn') }}
     </button>
   </div>
 </template>
