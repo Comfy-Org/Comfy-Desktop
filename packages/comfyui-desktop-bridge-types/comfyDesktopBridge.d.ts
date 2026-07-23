@@ -29,6 +29,14 @@ export interface LogsOutputMsg {
 }
 export type ComfyDesktop2TelemetryValue = string | number | boolean | null;
 export type ComfyDesktop2TelemetryProperties = Record<string, ComfyDesktop2TelemetryValue | ComfyDesktop2TelemetryValue[]>;
+export type ComfyDesktop2FirebaseAuthState = {
+    status: 'pending';
+} | {
+    status: 'signed_out';
+} | {
+    status: 'signed_in';
+    userId: string;
+};
 export interface ComfyDesktop2TerminalBridge {
     subscribe(installationId?: string): Promise<TerminalRestore>;
     unsubscribe(installationId?: string): Promise<void>;
@@ -47,6 +55,8 @@ export interface ComfyDesktop2LogsBridge {
 }
 export interface ComfyDesktop2TelemetryBridge {
     capture(event: string, properties?: ComfyDesktop2TelemetryProperties): void;
+    /** Report the hosted view's complete Firebase state for process-wide consensus. */
+    reportFirebaseAuthState?(state: ComfyDesktop2FirebaseAuthState): void;
 }
 export interface ComfyDesktop2Bridge {
     isRemote(): boolean;

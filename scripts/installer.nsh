@@ -242,7 +242,7 @@
   Pop $1
 !macroend
 
-!macro persistDownloadTokenFromInstallerName
+!macro persistWebsiteAnonymousIdFromInstallerName
   Push $R0
   Push $R1
   Push $R2
@@ -250,53 +250,61 @@
   Push $R4
   Push $R5
 
-  ; Windows MVP for GTM-104: the website/download proxy can serve the same
-  ; signed installer binary with a tokenized Content-Disposition filename, e.g.
-  ; Comfy-Desktop-dt_AbC123xYz789.exe. Persist only the 12-char opaque token;
-  ; the app validates the exact token shape before sending anything to telemetry.
+  ; GTM-277 direct website identity carrier. The Router serves the signed
+  ; installer as:
   ;
-  ; The "dt_" search is done inline with StrCpy rather than StrFunc's ${StrStr}:
-  ; StrFunc emits a standalone install function at include time, and electron-
-  ; builder compiles this script a second time for the uninstaller (where the
-  ; customInstall call site is not emitted). In that pass StrStr is unreferenced,
-  ; which trips NSIS warning 6010 — fatal under the release builder's -WX.
-  ${GetBaseName} "$EXEPATH" $R0
-  StrLen $R5 "$R0"
+  ;   Comfy-Desktop-Setup-phid1_<website PostHog $device_id>.exe
+  ;
+  ; where the payload is the raw $device_id — a 36-char lowercase hyphenated
+  ; UUID (posthog-js's format), already filename-safe, carried without any
+  ; encoding. The Router only emits the carrier for cookie values of exactly
+  ; that shape. Persist only the fixed-length payload; Desktop re-validates
+  ; the exact UUID shape before adopting it. Renamed/malformed installers
+  ; simply have no carrier.
+  ;
+  ; Per-machine installs run this section in an elevated process that may be
+  ; a different Windows account (over-the-shoulder UAC, or SYSTEM for silent
+  ; IT deploys), so per-user shell folders resolve to that account's profile,
+  ; not the interactive user's. Skip the carrier entirely there — Desktop
+  ; falls back to its generated anonymous ID — and never touch a profile the
+  ; installer cannot attribute.
+  ${If} $installMode != "all"
+  SetShellVarContext current
+  StrCpy $R2 "$APPDATA\Comfy Desktop"
+  ; The current installer filename is authoritative. A plain or malformed
+  ; installer must not leave a valid carrier from an earlier unlaunched setup.
+  Delete "$R2\pending-website-anonymous-id.txt"
 
-  StrCpy $R1 0
+  ${GetFileName} "$EXEPATH" $R0
+  StrLen $R5 "$R0"
   StrCpy $R4 ""
-  ${Do}
-    IntOp $R3 $R1 + 3
-    ${If} $R3 > $R5
-      ${ExitDo}
+
+  ; Case-sensitive grammar: 26-char prefix + 36-char UUID = 62 chars, then
+  ; the extension. Everything after the UUID — extension included — is
+  ; deliberately ignored: the payload is fixed-length, so browser duplicate-
+  ; download names ("… (1).exe") and other appended tails keep their carrier.
+  ${If} $R5 >= 62
+    StrCpy $R1 "$R0" 26
+    ${If} $R1 S== "Comfy-Desktop-Setup-phid1_"
+      StrCpy $R4 "$R0" 36 26
     ${EndIf}
-    StrCpy $R3 "$R0" 3 $R1
-    ; S== is case-sensitive (LogicLib == is case-insensitive StrCmp); the proxy
-    ; emits a lowercase "dt_" marker, matching StrFunc's case-sensitive StrStr.
-    ${If} $R3 S== "dt_"
-      IntOp $R3 $R1 + 3
-      StrCpy $R4 "$R0" 12 $R3
-      ${ExitDo}
-    ${EndIf}
-    IntOp $R1 $R1 + 1
-  ${Loop}
+  ${EndIf}
 
   StrLen $R3 "$R4"
-  ${If} $R3 == 12
+  ${If} $R3 == 36
     ; Matches Electron's packaged userData path documented in README:
     ; %APPDATA%\Comfy Desktop.
-    SetShellVarContext current
-    StrCpy $R2 "$APPDATA\Comfy Desktop"
     CreateDirectory "$R2"
     ClearErrors
-    FileOpen $R3 "$R2\pending-download-token.txt" w
+    FileOpen $R3 "$R2\pending-website-anonymous-id.txt" w
     ${IfNot} ${Errors}
       FileWrite $R3 "$R4$\r$\n"
       FileClose $R3
-      DetailPrint "  Download attribution token stored."
+      DetailPrint "  Website attribution identity stored."
     ${Else}
-      DetailPrint "  Download attribution token could not be stored."
+      DetailPrint "  Website attribution identity could not be stored."
     ${EndIf}
+  ${EndIf}
   ${EndIf}
 
   Pop $R5
@@ -322,7 +330,7 @@
   ; like an install log instead of jumping from "Step 2 — Extracting…"
   ; straight to the Finish page.
   SetDetailsPrint both
-  !insertmacro persistDownloadTokenFromInstallerName
+  !insertmacro persistWebsiteAnonymousIdFromInstallerName
   DetailPrint "  Application files installed to: $INSTDIR"
   DetailPrint "  Registered with Add or Remove Programs"
   DetailPrint "  Start Menu shortcut created"

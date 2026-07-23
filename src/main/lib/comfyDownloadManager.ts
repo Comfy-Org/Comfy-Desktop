@@ -3,19 +3,23 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
-import * as installations from '../installations'
 import { findInstallationIdByComfySender } from '../host/registry'
-import {
-  resolveInstallModelSearchPaths,
-  mapLegacyFolderType,
-  isSamePath,
-  TEMP_DIR_NAME,
-  type InstallModelSearch,
-} from './models'
+import { isSamePath, TEMP_DIR_NAME } from './models'
 import { _broadcastToRenderer } from './ipc/shared'
-import type { TemplateModelDownload } from '../sources/standalone/templateModels'
+import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
+import {
+  buildExistenceCandidates,
+  getModelsBaseDir,
+  regularFileExists,
+  resolveDownloadContextById,
+} from './modelDownloadPaths'
 
-export const ALLOWED_EXTENSIONS = ['.safetensors', '.sft', '.ckpt', '.pth', '.pt']
+export { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
+export {
+  areModelsPresent,
+  buildExistenceCandidates,
+  getModelsBaseDir,
+} from './modelDownloadPaths'
 
 /** Asset (output) downloads whose final file is itself an image we can preview. */
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -243,117 +247,11 @@ export function setMainWindow(win: BrowserWindow | null): void {
   mainWindow = win
 }
 
-/** Primary shared models directory — `<dir>/<category>/<file>` is where both the
- *  in-window model downloader and the install-time template pre-download land
- *  files, so they must agree. Exported for the latter (see `templateModels.ts`). */
-export function getModelsBaseDir(): string {
-  const modelsDirs = settings.get('modelsDirs') as string[] | undefined
-  return modelsDirs?.[0] || settings.defaults.modelsDirs[0]!
-}
-
-/** Global shared model dirs; the fallback search set when a download can't be
- *  attributed to a specific install. */
-function getSharedModelsDirs(): string[] {
-  const modelsDirs = settings.get('modelsDirs') as string[] | undefined
-  return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
-}
-
 /** installationId backing a download's originating comfy webview, or null when
  *  it can't be attributed (destroyed view / non-comfy sender). */
 function resolveSenderInstallationId(senderContents?: Electron.WebContents): string | null {
   if (!senderContents || senderContents.isDestroyed()) return null
   return findInstallationIdByComfySender(senderContents)
-}
-
-/** Resolve an install's model search context (shared vs per-install dirs + its
- *  `extra_model_paths.yaml`). Null when unattributable; callers then fall back
- *  to the global shared dir. */
-async function resolveDownloadContextById(
-  installationId: string | null,
-): Promise<InstallModelSearch | null> {
-  if (!installationId) return null
-  try {
-    const inst = await installations.get(installationId)
-    if (!inst || !inst.installPath) return null
-    return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
-  } catch {
-    return null
-  }
-}
-
-/** True when every model in `models` already exists somewhere the install's
- *  ComfyUI would find it — the same search set a download uses to short-circuit
- *  to "completed". Empty `models` returns false (nothing to call downloaded). */
-export async function areModelsPresent(
-  installationId: string | null,
-  models: ReadonlyArray<Pick<TemplateModelDownload, 'directory' | 'filename'>>,
-): Promise<boolean> {
-  if (models.length === 0) return false
-  const ctx = await resolveDownloadContextById(installationId)
-  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
-  const checks = await Promise.all(
-    models.map(async ({ directory, filename }) => {
-      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
-        if (await regularFileExists(candidate)) return true
-      }
-      return false
-    }),
-  )
-  return checks.every(Boolean)
-}
-
-/** Folder types whose ComfyUI defaults register multiple dirs, so a download
- *  must also check the alternates. Mirrors `folder_paths.py`. */
-const ROOT_FOLDER_ALTERNATES: Readonly<Record<string, string[]>> = {
-  text_encoders: ['text_encoders', 'clip'],
-  diffusion_models: ['diffusion_models', 'unet'],
-  controlnet: ['controlnet', 't2i_adapter'],
-}
-
-/** Relative `<type>/<remainder>` directory candidates for a download hint,
- *  expanded to include a model root's legacy/secondary type dirs. */
-function rootRelDirsForDirectory(directory: string): string[] {
-  const segments = directory.split(/[\\/]+/).filter(Boolean)
-  if (segments.length === 0) return [directory]
-  const rawType = segments[0]!
-  const remainder = segments.slice(1)
-  const heads = ROOT_FOLDER_ALTERNATES[mapLegacyFolderType(rawType)] ?? [rawType]
-  return heads.map((head) => path.join(head, ...remainder))
-}
-
-/** Every place a model file could already exist for an install — so an instant
- *  "completed" only fires when its ComfyUI would actually find the file:
- *  destination, every model root, and matching `extra_model_paths.yaml` dirs. */
-export function buildExistenceCandidates(
-  ctx: InstallModelSearch | null,
-  baseDir: string,
-  directory: string,
-  filename: string,
-): string[] {
-  const out = new Set<string>()
-  out.add(path.join(baseDir, directory, filename))
-  if (ctx) {
-    // Each complete root, including legacy/secondary type dirs ComfyUI also
-    // searches (e.g. a `text_encoders` download is satisfied by `<root>/clip`).
-    const relDirs = rootRelDirsForDirectory(directory)
-    for (const root of ctx.modelRoots) {
-      for (const rel of relDirs) {
-        out.add(path.join(root, rel, filename))
-      }
-    }
-    // Arbitrarily-mapped dirs from the install's own extra_model_paths.yaml.
-    const segments = directory.split(/[\\/]+/).filter(Boolean)
-    if (segments.length > 0) {
-      const type = mapLegacyFolderType(segments[0]!)
-      const remainder = segments.slice(1)
-      for (const extra of ctx.extraPaths) {
-        if (extra.type === type) {
-          out.add(path.join(extra.dir, ...remainder, filename))
-        }
-      }
-    }
-  }
-  return [...out]
 }
 
 /** Temp dir on the destination's volume so the final rename is atomic (no EXDEV). */
@@ -440,11 +338,6 @@ function isImageAsset(pending: PendingDownload): boolean {
   return !!pending.outputDir && hasImageExtension(pending.savePath)
 }
 
-export function stripQueryParams(rawFilename: string): string {
-  const qIdx = rawFilename.indexOf('?')
-  return qIdx >= 0 ? rawFilename.substring(0, qIdx) : rawFilename
-}
-
 function broadcastProgress(progress: DownloadProgress): void {
   // Send to the originating ComfyUI window and any subscribers
   const pending = pendingDownloads.get(progress.url)
@@ -507,16 +400,6 @@ async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.promises.access(filePath)
     return true
-  } catch {
-    return false
-  }
-}
-
-/** True only for an existing regular file, so the instant-complete shortcut
- *  doesn't fire on a directory that merely shares the model's name. */
-async function regularFileExists(filePath: string): Promise<boolean> {
-  try {
-    return (await fs.promises.stat(filePath)).isFile()
   } catch {
     return false
   }

@@ -3,16 +3,12 @@
  *
  * `installation_id` is computed as `SHA-256(machine_id + ':' + salt)`. It is
  * deterministic per machine (same OS-user account, same hardware) and
- * survives a clean reinstall — another Comfy product running on the same
- * machine with the same salt would compute the same hash, which is the
- * mechanism that would let us see one user across products.
+ * survives a clean reinstall. Another Comfy product can emit the same value
+ * for property-level analysis joins; this value is never a PostHog identity.
  *
- * On first boot post-upgrade for a user whose `device-id.txt` still holds the
- * legacy random UUID, `initDeviceId()` returns that legacy id so the caller
- * can fire a one-shot `posthog.aliasImmediate({ distinctId: new, alias: old })`
- * to merge histories. The boot path is also responsible for marking the
- * migration completed (`markIdentityMigrationCompleted()`) so the alias does
- * not re-fire on subsequent launches.
+ * On first boot post-upgrade, a legacy random `device-id.txt` is replaced by
+ * the deterministic installation property. Desktop intentionally performs no
+ * PostHog alias write; historical reconciliation is handled directly there.
  *
  * Synchronous `getDeviceId()` is preserved for backward compatibility with
  * the existing IPC handler and main-process call sites. It must only be
@@ -30,12 +26,11 @@ import { configDir } from './paths'
  *
  *   1. Rotation lever — bumping the version suffix (`-v1` → `-v2`)
  *      invalidates every previously-issued installation_id at once.
- *      Useful as a nuclear option (post-incident, or for a hard reset
- *      of the person graph).
- *   2. Future namespace alignment — if another Comfy product later
- *      ships telemetry and uses this same constant, the two products
- *      will compute the same hash on the same machine, so the analytics
- *      backend can see one person across both.
+ *      Useful as a nuclear option for invalidating property-level joins
+ *      after an incident; this does not change PostHog person identity.
+ *   2. Future namespace alignment — if another Comfy product later ships
+ *      telemetry with this same constant, analytics can join their events by
+ *      property without treating the machine hash as a person identity.
  *
  * Cryptographically this is friction, not privacy: the salt is in every
  * shipped binary, so an attacker with the binary can extract it. Real
@@ -92,16 +87,10 @@ export function consumeFirstLaunch(): boolean {
 }
 
 /**
- * Persisted legacy-id awaiting a successful alias to the new
- * `installation_id`. Written when we first detect a legacy random UUID
- * during `initDeviceId()`, read on subsequent boots, and cleared by
- * `clearPendingAlias()` once the alias actually ships. Decouples the
- * "we have a legacy id to migrate" signal from the "consent is granted
- * and PostHog is reachable" signal so a user who is on `'undecided'` at
- * first boot still gets their history merged once they consent on a
- * later launch.
+ * Path of a legacy alias retry marker some installs still carry. Nothing
+ * writes it; boot unconditionally removes it.
  */
-function pendingAliasPath(): string {
+function legacyIdentityRetryPath(): string {
   return path.join(configDir(), 'pending-identity-alias.txt')
 }
 
@@ -169,33 +158,21 @@ function writeIdFile(installationId: string): void {
   }
 }
 
-function readPendingAlias(): string | null {
+function readLegacyIdentityRetryMarker(): string | null {
   try {
-    const raw = fs.readFileSync(pendingAliasPath(), 'utf-8').trim()
+    const raw = fs.readFileSync(legacyIdentityRetryPath(), 'utf-8').trim()
     return raw.length > 0 ? raw : null
   } catch {
     return null
   }
 }
 
-function writePendingAlias(legacyId: string): void {
-  try {
-    fs.mkdirSync(path.dirname(pendingAliasPath()), { recursive: true })
-    fs.writeFileSync(pendingAliasPath(), legacyId)
-  } catch {
-    // best-effort persist; if write fails the alias will not retry, which
-    // is the same failure mode as a missing PostHog network call.
-  }
-}
-
 /**
- * Clear the persisted legacy id once the alias has shipped. Idempotent.
- * Called by the boot path's `onAliased` callback so an alias that never
- * shipped (consent denied, network down) gets a fresh attempt next boot.
+ * Remove an obsolete alias retry marker written by earlier versions.
  */
-export function clearPendingAlias(): void {
+export function clearLegacyIdentityRetryMarker(): void {
   try {
-    fs.unlinkSync(pendingAliasPath())
+    fs.unlinkSync(legacyIdentityRetryPath())
   } catch {
     // best effort — already gone is fine.
   }
@@ -205,12 +182,8 @@ export function clearPendingAlias(): void {
  * Initialize the device identity. Idempotent within a process — repeated
  * calls return the same promise.
  *
- * Returns the legacy id ONLY if a one-shot migration just happened from a
- * pre-v1 random-UUID `device-id.txt`. The caller is expected to fire
- * `posthog.aliasImmediate({ distinctId: installation_id, alias: legacyId })`
- * and a `comfy.desktop.identity.migrated` event, then call
- * `markIdentityMigrationCompleted()` so the alias does not re-fire on
- * subsequent launches.
+ * Returns a legacy id only so boot can retire obsolete local migration state.
+ * The value is never sent to PostHog by Desktop.
  *
  * Must be called once at app startup, before any synchronous
  * `getDeviceId()` consumer runs.
@@ -232,17 +205,15 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 
     cached = { installationId: newId, idClass }
 
-    // If a previous boot recorded a legacy id but the alias never
-    // shipped (consent denied / undecided / network down), retry it
-    // this boot. Takes precedence over a fresh detection because by
+    // If an older build recorded a legacy-id retry marker, surface it once so
+    // boot can remove that obsolete state. Takes precedence because by
     // the time we get here the `device-id.txt` was already rewritten
     // on that earlier boot, so `existing` no longer reveals it.
-    const persistedLegacy = !isMigrationCompleted() ? readPendingAlias() : null
+    const persistedLegacy = !isMigrationCompleted() ? readLegacyIdentityRetryMarker() : null
     if (persistedLegacy) {
       // Keep the on-disk hash in sync with the freshly-computed value
       // (no-op when they already match) but do NOT clear the pending
-      // alias — that only happens via `clearPendingAlias()` once the
-      // alias actually ships.
+      // marker — boot removes it after this migration step.
       if (existing !== newId) writeIdFile(newId)
       return { legacyId: persistedLegacy }
     }
@@ -252,20 +223,14 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
     }
 
     // Existing differs from what we'd compute. Three cases:
-    //   (a) existing is a legacy UUID -> first migration, alias it.
+    //   (a) existing is a legacy UUID -> first local migration.
     //   (b) existing is a 64-char hex (different hash) -> salt rotated or
-    //       cross-machine copy. Update silently, no alias.
-    //   (c) existing is garbage -> overwrite, no alias.
-    const shouldAlias = existing != null && isLegacyUuid(existing) && !isMigrationCompleted()
-
-    if (shouldAlias && existing) {
-      // Persist BEFORE overwriting `device-id.txt` so a process crash
-      // between here and a successful alias doesn't lose the legacy id.
-      writePendingAlias(existing)
-    }
+    //       cross-machine copy. Update silently.
+    //   (c) existing is garbage -> overwrite.
+    const isLegacy = existing != null && isLegacyUuid(existing) && !isMigrationCompleted()
 
     writeIdFile(newId)
-    return { legacyId: shouldAlias ? existing : null }
+    return { legacyId: isLegacy ? existing : null }
   })()
   return initPromise
 }
@@ -304,13 +269,7 @@ export function getIdClass(): IdClass {
 }
 
 /**
- * Records that the one-shot legacy-id alias has been issued, so subsequent
- * boots do not re-fire it. Idempotent.
- *
- * Note: if the alias network call ultimately fails to deliver (offline user),
- * we still mark complete so we don't retry on every boot indefinitely. The
- * cost is one legacy-id person not merged in PostHog for that user; PostHog
- * dashboards quarantine `id_class: 'random_fallback'` to mitigate.
+ * Record completion of the local UUID-to-installation-property migration.
  */
 export function markIdentityMigrationCompleted(): void {
   try {

@@ -3,13 +3,21 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   ComfyDesktop2Bridge,
   ComfyDesktop2LogsBridge,
-  ComfyDesktop2TelemetryBridge,
   ComfyDesktop2TerminalBridge,
   ComfyDownloadProgress,
   LogsOutputMsg,
   LogsRestore,
   TerminalRestore
 } from '@comfyorg/comfyui-desktop-bridge-types'
+import type { ComfyDesktop2TelemetryBridge } from '../types/comfyDesktopBridge'
+
+function sendTelemetry(channel: string, payload: unknown): void {
+  try {
+    ipcRenderer.send(channel, payload)
+  } catch {
+    // Telemetry must never break hosted frontend code.
+  }
+}
 
 /**
  * Interactive terminal bridge for the served ComfyUI frontend.
@@ -76,17 +84,12 @@ const Logs: ComfyDesktop2LogsBridge = {
 }
 
 const Telemetry: ComfyDesktop2TelemetryBridge = {
-  capture: (event, properties): void => {
-    // Telemetry payload errors must never break hosted frontend code.
-    try {
-      ipcRenderer.send('telemetry:capture', { event, properties })
-    } catch {
-      // ignore: telemetry must never break the renderer
-    }
-  }
+  capture: (event, properties): void => sendTelemetry('telemetry:capture', { event, properties }),
+  reportFirebaseAuthState: (state): void => sendTelemetry('telemetry:firebaseAuthState', state)
 }
 
-type ComfyDesktop2BridgeWithModelAccess = ComfyDesktop2Bridge & {
+type ComfyDesktop2RuntimeBridge = ComfyDesktop2Bridge & {
+  Telemetry: ComfyDesktop2TelemetryBridge
   openModelAccessPage: (url: string) => Promise<boolean>
 }
 
@@ -126,6 +129,6 @@ const bridge = {
   Terminal,
   Logs,
   Telemetry
-} satisfies ComfyDesktop2BridgeWithModelAccess
+} satisfies ComfyDesktop2RuntimeBridge
 
 contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

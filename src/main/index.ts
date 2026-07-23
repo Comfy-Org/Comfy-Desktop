@@ -82,18 +82,14 @@ import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
 import {
-  clearPendingDownloadToken,
-  markDownloadTokenAttributed,
-  readPendingDownloadToken
-} from './lib/downloadAttribution'
-import {
-  clearPendingAlias,
+  clearLegacyIdentityRetryMarker,
   consumeFirstLaunch,
   getDeviceId,
   getIdClass,
   initDeviceId,
   markIdentityMigrationCompleted
 } from './lib/deviceId'
+import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { initExperiments } from './lib/experiments'
 import { initCloudCapacity } from './lib/cloudCapacity'
 import { initUserTier } from './lib/userTier'
@@ -1414,21 +1410,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
 
-    // Initialize the deterministic device identity. Replaces the legacy
-    // random-UUID device-id.txt with SHA-256(machine_id + salt) so the id
-    // survives a clean reinstall and can be matched against the same hash
-    // computed by other Comfy products on the same machine. The legacy id,
-    // if any, is persisted in pending-identity-alias.txt by initDeviceId
-    // so a denied / undecided consent state at first boot does not lose
-    // the migration — it ships on the next consent-grant transition.
+    // installation_id is an event/person property, never a PostHog identity.
     const { legacyId } = await initDeviceId()
+    clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
+    // A fresh Windows install may adopt the website anonymous ID carried in
+    // the installer filename; see websiteAnonymousIdentity.ts.
+    const anonymousDistinctId = getInitialAnonymousDistinctId()
 
-    // Bind the anonymous distinct id before any capture runs. Does NOT
-    // `$identify` the installation_id (that would block the login stitch —
-    // see identity model in lib/telemetry.ts); the props below ship as a
-    // capture-`$set`.
-    mainTelemetry.identify(installationId, {
+    mainTelemetry.bindAnonymousId(anonymousDistinctId, installationId, {
       app_version: APP_VERSION,
       platform: process.platform,
       arch: process.arch,
@@ -1442,37 +1432,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
 
     const isFirstLaunch = consumeFirstLaunch()
-    const pendingDownloadToken = readPendingDownloadToken()
-    if (pendingDownloadToken) {
-      mainTelemetry.deferDownloadTokenAlias({
-        downloadToken: pendingDownloadToken.token,
-        installationId,
-        source: pendingDownloadToken.source,
-        attachToFirstLaunch: isFirstLaunch,
-        onAliased: () => {
-          clearPendingDownloadToken()
-          markDownloadTokenAttributed()
-        }
-      })
-    }
-
     if (legacyId) {
-      // Queue the alias instead of awaiting it on the boot critical path.
-      // - Fires as soon as consent is granted (synchronously if already so,
-      //   on the next setConsentState('granted') transition otherwise).
-      // - Persisted pending-alias file (in deviceId.ts) is the source of
-      //   truth across boots — clear it AND mark migration complete only
-      //   inside the onAliased callback so a denied user does not skip the
-      //   alias permanently.
-      mainTelemetry.deferMigrationAlias({
-        legacyId,
-        installationId,
-        idClass: getIdClass(),
-        onAliased: () => {
-          clearPendingAlias()
-          markIdentityMigrationCompleted()
-        }
-      })
+      // Historical random installation ids are reconciled directly in
+      // PostHog, not by Desktop alias writes. Complete only the local migration.
+      markIdentityMigrationCompleted()
     }
 
     // Boot the experiments cache. Synchronously loads the on-disk flag
