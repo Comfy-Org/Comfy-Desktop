@@ -187,22 +187,75 @@ describe('firebaseAuthIdentity consensus', () => {
     activate(reporter)
     vi.clearAllMocks()
 
-    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' })
+    bindMainVerifiedFirebaseUser(
+      'F',
+      { signed_in_via: 'desktop_2' },
+      reporter.asWebContents()
+    )
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
-    expect(telemetry.registerPersonProperties).toHaveBeenCalledWith({
-      signed_in_via: 'desktop_2'
-    })
+    expect(telemetry.registerPersonProperties).not.toHaveBeenCalled()
 
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
     expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
   })
 
-  it('uses the main-verified bind when no hosted reporter is active', () => {
-    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' })
+  it('applies main-verified properties only after that hosted reporter confirms the UID', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    vi.clearAllMocks()
+
+    bindMainVerifiedFirebaseUser(
+      'F',
+      { signed_in_via: 'desktop_2' },
+      reporter.asWebContents()
+    )
+    reporter.navigate(cloudUrl)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
     expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {
       signed_in_via: 'desktop_2'
     })
+  })
+
+  it('keeps a local main-verified identity bound across its injection reload', () => {
+    const localUrl = 'http://127.0.0.1:8188/'
+    const reporter = new FakeWebContents(localUrl)
+    activate(reporter)
+    vi.clearAllMocks()
+
+    bindMainVerifiedFirebaseUser(
+      'F',
+      { signed_in_via: 'desktop_2' },
+      reporter.asWebContents()
+    )
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {
+      signed_in_via: 'desktop_2'
+    })
+
+    vi.clearAllMocks()
+    reporter.navigate(localUrl)
+
+    expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
+    expect(telemetry.markAnonymousEpochUnmergeable).not.toHaveBeenCalled()
+  })
+
+  it('does not apply a local account properties to an unrelated active Cloud account', () => {
+    const hosted = new FakeWebContents(cloudUrl)
+    activate(hosted)
+    reportFirebaseAuthState(hosted.asWebContents(), { status: 'signed_in', userId: 'B' })
+    const local = new FakeWebContents('http://127.0.0.1:8188/')
+    activate(local)
+    vi.clearAllMocks()
+
+    bindMainVerifiedFirebaseUser(
+      'A',
+      { email: 'a@example.com' },
+      local.asWebContents()
+    )
+
+    expect(telemetry.bindUserId).not.toHaveBeenCalled()
+    expect(telemetry.registerPersonProperties).not.toHaveBeenCalled()
+    expect(telemetry.markAnonymousEpochUnmergeable).toHaveBeenCalled()
   })
 
   it('unbinds while any live reporter is pending without tainting the epoch', () => {

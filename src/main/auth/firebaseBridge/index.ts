@@ -146,7 +146,7 @@ export async function handleFirebasePopup(
     // Do not report success until the session is installed in the initiating
     // view. Hosted Cloud views bind through declarative auth consensus;
     // local/legacy views use the main-verified fallback.
-    bindSignedInUser(user)
+    bindSignedInUser(user, comfyContents)
     // Pull the user back into the app after the browser completes sign-in.
     restoreParentWindow(opts.parentWindow)
   } catch (err) {

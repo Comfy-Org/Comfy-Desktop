@@ -58,7 +58,15 @@ interface ReporterFrameState {
   state: ComfyDesktop2FirebaseAuthState
 }
 
+interface MainVerifiedAuthState {
+  userId: string
+  origin: string
+  properties: Record<string, mainTelemetry.TelemetryValue>
+  propertiesApplied: boolean
+}
+
 const reporters = new Map<WebContents, Reporter>()
+const mainVerifiedStates = new Map<WebContents, MainVerifiedAuthState>()
 let requestedUserId: string | null = null
 let anonymousEpochIsUnmergeable = false
 let persistedEpochStateLoaded = false
@@ -66,6 +74,14 @@ let epochTaintIsDurable = true
 
 function isTrustedCloudUrl(url: string): boolean {
   return parseTrustedCloudUrl(url) !== null
+}
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
 }
 
 function isSameFrame(
@@ -122,30 +138,60 @@ function loadPersistedEpochState(): void {
  */
 export function bindMainVerifiedFirebaseUser(
   userId: string,
-  properties: Record<string, mainTelemetry.TelemetryValue> = {}
+  properties: Record<string, mainTelemetry.TelemetryValue> = {},
+  source?: WebContents
 ): void {
   const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
   if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
   loadPersistedEpochState()
   if (!clearUnmergeableEpoch()) return
-  requestedUserId = normalizedUserId
-  const hasActiveReporter = [...reporters.entries()].some(
-    ([webContents, reporter]) => !webContents.isDestroyed() && reporter.active
-  )
-  if (hasActiveReporter) {
-    // The injected page will report its restored Firebase user after reload.
-    // Queue verified properties now, but let multi-view consensus perform the
-    // only identity bind so navigation cannot cause a bind/unbind/rebind pair.
-    mainTelemetry.registerPersonProperties(properties)
+  if (!source) {
+    requestedUserId = normalizedUserId
+    mainTelemetry.bindUserId(normalizedUserId, properties)
     return
   }
-  mainTelemetry.bindUserId(normalizedUserId, properties)
+  const origin = originOf(source.getURL())
+  if (!origin) return
+  mainVerifiedStates.set(source, {
+    userId: normalizedUserId,
+    origin,
+    properties,
+    propertiesApplied: false
+  })
+  reconcile()
 }
 
 function reconcile(): void {
-  const states = [...reporters.entries()]
+  const activeReporterStates = [...reporters.entries()]
     .filter(([webContents, reporter]) => !webContents.isDestroyed() && reporter.active)
-    .map(([, reporter]) => reporter.state)
+    .map(([webContents, reporter]) => ({ webContents, state: reporter.state }))
+  const mainCandidates: Array<{
+    webContents: WebContents
+    state: MainVerifiedAuthState
+    contributes: boolean
+  }> = []
+  for (const [webContents, state] of mainVerifiedStates) {
+    if (webContents.isDestroyed() || originOf(webContents.getURL()) !== state.origin) {
+      mainVerifiedStates.delete(webContents)
+      continue
+    }
+    const reporter = reporters.get(webContents)
+    if (
+      reporter?.active &&
+      reporter.state.status !== 'pending' &&
+      (reporter.state.status !== 'signed_in' || reporter.state.userId !== state.userId)
+    ) {
+      mainVerifiedStates.delete(webContents)
+      continue
+    }
+    mainCandidates.push({ webContents, state, contributes: !reporter?.active })
+  }
+  const states: ComfyDesktop2FirebaseAuthState[] = [
+    ...activeReporterStates.map(({ state }) => state),
+    ...mainCandidates
+      .filter(({ contributes }) => contributes)
+      .map(({ state }) => ({ status: 'signed_in' as const, userId: state.userId }))
+  ]
 
   if (states.length === 0 || states.some((state) => state.status === 'pending')) {
     requestAnonymousIdentity()
@@ -187,7 +233,26 @@ function reconcile(): void {
   if (!clearUnmergeableEpoch()) return
 
   requestedUserId = userId
-  mainTelemetry.applyFirebaseUserConsensus(userId)
+  const confirmedMainStates = mainCandidates.filter(({ webContents, state, contributes }) => {
+    if (state.userId !== userId) return false
+    if (contributes) return true
+    const reporterState = reporters.get(webContents)?.state
+    return reporterState?.status === 'signed_in' && reporterState.userId === userId
+  })
+  const unappliedMainStates = confirmedMainStates.filter(({ state }) => !state.propertiesApplied)
+  if (unappliedMainStates.length > 0) {
+    const properties = Object.assign(
+      {},
+      ...unappliedMainStates.map(({ state }) => state.properties)
+    ) as Record<string, mainTelemetry.TelemetryValue>
+    mainTelemetry.bindUserId(userId, properties)
+    for (const { webContents, state, contributes } of unappliedMainStates) {
+      state.propertiesApplied = true
+      if (!contributes) mainVerifiedStates.delete(webContents)
+    }
+  } else {
+    mainTelemetry.applyFirebaseUserConsensus(userId)
+  }
 }
 
 function settleFailedNavigation(webContents: WebContents, reporter: Reporter): void {
@@ -332,6 +397,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
       settleFailedNavigation(webContents, reporter)
     },
     onDestroyed: () => {
+      mainVerifiedStates.delete(webContents)
       reporters.delete(webContents)
       reconcile()
     }
@@ -369,6 +435,7 @@ export function deactivateFirebaseAuthReporter(webContents: WebContents): void {
   reporter.eligible = false
   reporter.active = false
   reporter.state = { status: 'pending' }
+  mainVerifiedStates.delete(webContents)
   reconcile()
 }
 
@@ -418,6 +485,7 @@ export function _resetForTest(): void {
     }
   }
   reporters.clear()
+  mainVerifiedStates.clear()
   requestedUserId = null
   anonymousEpochIsUnmergeable = false
   persistedEpochStateLoaded = false

@@ -245,7 +245,7 @@ export async function signInViaDesktopLoginCode(
     // Bind only after the session was successfully installed. Hosted Cloud
     // views wait for their declarative auth reporter; local/legacy views use
     // the main-verified fallback, so this produces exactly one success.
-    bindSignedInUser(user)
+    bindSignedInUser(user, comfyContents)
     mainTelemetry.capture('comfy.desktop.identity.login_attributed', {
       via: 'desktop_login_code'
     })

@@ -226,7 +226,7 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'custom-token-value', {
       signal: expect.any(AbortSignal)
     })
-    expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser)
+    expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser, contents)
     expect(h.capture).toHaveBeenCalledWith('comfy.desktop.identity.login_attributed', {
       via: 'desktop_login_code'
     })

@@ -31,6 +31,9 @@ let mockFlagsDelayMs = 0
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
+    on(): () => void {
+      return () => {}
+    }
     capture(call: CapturedCall): void {
       captured.push(call)
     }

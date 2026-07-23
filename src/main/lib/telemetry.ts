@@ -554,6 +554,12 @@ export function initTelemetry(opts: InitOptions): void {
       // no stored IP, no city/coordinate "where are they now" tracking.
       disableGeoip: false
     })
+    client.on('flush', acknowledgeDeliveredIdentityMerges)
+    client.on('error', () => {
+      // The SDK removes HTTP-failed non-network batches from memory. Keep the
+      // disk queue authoritative and allow a later trigger/restart to requeue.
+      queuedPendingIdentityMergeIds.clear()
+    })
   } catch {
     client = null
   }
@@ -599,12 +605,42 @@ let installationIdProperty: string | null = null
 let pendingIdentityMergeFlush: Promise<void> | null = null
 const queuedPendingIdentityMergeIds = new Set<string>()
 
+function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
+  if (!Array.isArray(messages)) return
+  const delivered = new Set<string>()
+  const pending = readPendingIdentityMerges()
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue
+    const candidate = message as {
+      event?: unknown
+      distinct_id?: unknown
+      properties?: { $anon_distinct_id?: unknown }
+    }
+    if (candidate.event !== '$identify' || typeof candidate.distinct_id !== 'string') continue
+    const anonymousId = candidate.properties?.$anon_distinct_id
+    if (typeof anonymousId !== 'string') continue
+    for (const merge of pending) {
+      if (merge.userId === candidate.distinct_id && merge.anonymousId === anonymousId) {
+        delivered.add(merge.id)
+      }
+    }
+  }
+  if (delivered.size > 0 && clearPendingIdentityMerges(delivered)) {
+    for (const id of delivered) queuedPendingIdentityMergeIds.delete(id)
+  }
+}
+
 function flushPendingIdentityMerges(): Promise<void> {
   if (pendingIdentityMergeFlush) return pendingIdentityMergeFlush
   if (!canEmit() || consentState !== 'granted') return Promise.resolve()
 
-  const admittedIds = new Set<string>()
-  for (const merge of readPendingIdentityMerges()) {
+  const pending = readPendingIdentityMerges()
+  const pendingIds = new Set(pending.map((merge) => merge.id))
+  for (const id of queuedPendingIdentityMergeIds) {
+    if (!pendingIds.has(id)) queuedPendingIdentityMergeIds.delete(id)
+  }
+  let admittedAny = false
+  for (const merge of pending) {
     if (!queuedPendingIdentityMergeIds.has(merge.id)) {
       try {
         client!.identify({
@@ -618,23 +654,19 @@ function flushPendingIdentityMerges(): Promise<void> {
           }
         })
         queuedPendingIdentityMergeIds.add(merge.id)
+        admittedAny = true
       } catch {
         continue
       }
     }
-    admittedIds.add(merge.id)
   }
-  if (admittedIds.size === 0) return Promise.resolve()
+  if (!admittedAny && queuedPendingIdentityMergeIds.size === 0) return Promise.resolve()
 
   const activeClient = client!
   pendingIdentityMergeFlush = activeClient
     .flush()
-    .then(() => {
-      clearPendingIdentityMerges(admittedIds)
-    })
     .catch(() => {})
     .finally(() => {
-      for (const id of admittedIds) queuedPendingIdentityMergeIds.delete(id)
       pendingIdentityMergeFlush = null
     })
   return pendingIdentityMergeFlush

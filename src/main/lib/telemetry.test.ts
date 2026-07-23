@@ -72,10 +72,26 @@ const featureFlagCalls: Array<{
   options?: { sendFeatureFlagEvents?: boolean }
 }> = []
 
-const posthogClientMock = vi.hoisted(() => ({ failNextCaptures: 0, failNextFlushes: 0 }))
+const posthogClientMock = vi.hoisted(() => ({
+  failNextCaptures: 0,
+  failNextFlushes: 0,
+  autoFailNextIdentifies: 0
+}))
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
+    private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
+    private queuedIdentifies: Array<Record<string, unknown>> = []
+
+    on(event: string, listener: (...args: unknown[]) => void): () => void {
+      const listeners = this.listeners.get(event) ?? new Set()
+      listeners.add(listener)
+      this.listeners.set(event, listeners)
+      return () => listeners.delete(listener)
+    }
+    private emit(event: string, ...args: unknown[]): void {
+      for (const listener of this.listeners.get(event) ?? []) listener(...args)
+    }
     capture(call: CapturedCall): void {
       if (posthogClientMock.failNextCaptures > 0) {
         posthogClientMock.failNextCaptures--
@@ -85,6 +101,16 @@ vi.mock('posthog-node', () => ({
     }
     identify(call: IdentifyCall): void {
       identifies.push(call)
+      if (posthogClientMock.autoFailNextIdentifies > 0) {
+        posthogClientMock.autoFailNextIdentifies--
+        queueMicrotask(() => this.emit('error', new Error('auto-flush failed')))
+        return
+      }
+      this.queuedIdentifies.push({
+        event: '$identify',
+        distinct_id: call.distinctId,
+        properties: call.properties
+      })
     }
     captureException(
       error: unknown,
@@ -96,8 +122,13 @@ vi.mock('posthog-node', () => ({
     flush(): Promise<void> {
       if (posthogClientMock.failNextFlushes > 0) {
         posthogClientMock.failNextFlushes--
+        this.queuedIdentifies = []
+        this.emit('error', new Error('offline'))
         return Promise.reject(new Error('offline'))
       }
+      const sent = this.queuedIdentifies
+      this.queuedIdentifies = []
+      if (sent.length > 0) this.emit('flush', sent)
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
@@ -232,6 +263,7 @@ afterEach(() => {
   anonymousIdentityMock.unmergeable = false
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
+  posthogClientMock.autoFailNextIdentifies = 0
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
@@ -864,7 +896,9 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
   })
 
   it('replays an unacknowledged identity merge after restart', async () => {
-    posthogClientMock.failNextFlushes = 1
+    // Reproduce posthog-node's auto-flush race: identify is removed from the
+    // SDK queue after an HTTP failure, then our explicit empty flush resolves.
+    posthogClientMock.autoFailNextIdentifies = 1
 
     telemetry.applyFirebaseUserConsensus('user-123')
     await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(1))
