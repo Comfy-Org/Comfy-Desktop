@@ -453,11 +453,8 @@ const gridHandlers = {
 
       <!-- ============ Layout A — Shelves ============ -->
       <div v-else-if="layoutMode === 'shelves'" class="proto-scroll">
+        <!-- Your installs: bare tiles at the top, no header. -->
         <section class="proto-shelf">
-          <header class="proto-shelf-head">
-            <span class="proto-shelf-title">Your installs</span>
-            <span class="proto-shelf-count">{{ plainInstalls.length }}</span>
-          </header>
           <ChooserFamilyGrid
             show-new
             align="start"
@@ -467,27 +464,29 @@ const gridHandlers = {
           />
         </section>
 
-        <section v-if="authStore.isSignedIn && installedEntries.length" class="proto-shelf">
+        <!-- One workspace shelf headed by the workspace name; available
+             distributions follow the installed ones on a fresh row (two
+             stacked grids sharing the section's row gap). -->
+        <section
+          v-if="authStore.isSignedIn && (installedEntries.length || availableEntries.length)"
+          class="proto-shelf"
+        >
           <header class="proto-shelf-head">
             <span class="proto-shelf-dot" aria-hidden="true" />
-            <span class="proto-shelf-title">Installed from {{ workspaceName }}</span>
-            <span class="proto-shelf-count">{{ installedEntries.length }}</span>
+            <span class="proto-shelf-title">{{ workspaceName }}</span>
+            <span class="proto-shelf-count">{{
+              installedEntries.length + availableEntries.length
+            }}</span>
           </header>
           <ChooserFamilyGrid
+            v-if="installedEntries.length"
             align="start"
             :entries="installedEntries"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
-        </section>
-
-        <section v-if="authStore.isSignedIn && availableEntries.length" class="proto-shelf">
-          <header class="proto-shelf-head">
-            <span class="proto-shelf-dot" aria-hidden="true" />
-            <span class="proto-shelf-title">Available from {{ workspaceName }}</span>
-            <span class="proto-shelf-count">{{ availableEntries.length }}</span>
-          </header>
           <ChooserFamilyGrid
+            v-if="availableEntries.length"
             align="start"
             :entries="availableEntries"
             :is-stopped-action-gated="isStoppedActionGated"
@@ -744,7 +743,9 @@ const gridHandlers = {
 .proto-shelf {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* Matches the grid's row gap so two stacked grids in one shelf read as
+   * continuous rows, not separate blocks. */
+  gap: 16px;
 }
 
 .proto-shelf-head {
