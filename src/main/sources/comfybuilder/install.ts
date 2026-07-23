@@ -32,12 +32,8 @@ import type { InstallTools } from '../../types/sources'
 /**
  * The archive-layout contract: the two directories comfy-builder tars at the
  * top level. Isolated to one constant so a builder rename is a one-line change.
- *
- * NOTE (env-reshape follow-up): the reused standalone `postInstall`/launch still
- * expect a `standalone-env/` master env to copy into `ComfyUI/.venv`, whereas the
- * builder ships a single ready `venv/`. Bridging the two (and bundling `uv` into
- * the venv) is a separate change that needs a real builder archive to validate;
- * this stage only lands + validates the download.
+ * The archive's `venv/` is a complete, relocatable env — `./launch` consumes it
+ * directly (no post-extract env build), so this stage only lands + validates it.
  */
 const ARTIFACT_DIRS = ['venv', 'ComfyUI'] as const
 
@@ -110,8 +106,8 @@ function cacheSlug(artifactId: string): string {
  * Install a chosen ComfyBuilder artifact end to end (resolve → download →
  * extract → validate). Throws {@link ComfyBuilderInstallError} on an invalid
  * artifact record (before any network I/O) or invalid extracted contents (after
- * cleaning up partial files). The venv/package phases run afterwards via the
- * source's reused standalone `postInstall`.
+ * cleaning up partial files). Launch then drives the extracted `venv/` directly
+ * (see `./launch`); there is no post-extract env build.
  */
 export async function installArtifact(params: InstallArtifactParams): Promise<void> {
   const { installation, artifact, tools, signedUrl, baseUrl, authToken } = params

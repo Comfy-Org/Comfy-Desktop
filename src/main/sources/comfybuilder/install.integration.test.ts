@@ -12,10 +12,10 @@
 //     copy is infeasible in CI).
 //
 // (b) Real-archive boot — opt-in, gated on darwin AND `CB_TEST_ARCHIVE`. Points
-//     the mock at the real archive, runs the REAL `installArtifact` + standalone
-//     `postInstall`, then spawns the launch command and polls `/object_info`,
-//     asserting ComfyUI reports > 0 nodes.
-import { execFileSync, spawn } from 'node:child_process'
+//     the mock at the real archive, runs the REAL `installArtifact` + the
+//     comfybuilder `postInstall` (no-op) + `getLaunchCommand` (the archive's own
+//     `venv/`), then spawns it and polls `/object_info`, asserting > 0 nodes.
+import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -306,7 +306,7 @@ function pollObjectInfo(port: number, budgetMs: number): Promise<number> {
   })
 }
 
-describe.runIf(runRealBoot)('installArtifact + postInstall real-archive boot', () => {
+describe.runIf(runRealBoot)('installArtifact → launch real-archive boot', () => {
   let api: MockBuilderApi
   let tmpRoot: string
   let child: ChildProcess | undefined
@@ -320,40 +320,26 @@ describe.runIf(runRealBoot)('installArtifact + postInstall real-archive boot', (
     if (tmpRoot) fs.rmSync(tmpRoot, { recursive: true, force: true })
   })
 
-  it('downloads → extracts → validates → builds env → boots ComfyUI (> 0 nodes)', async () => {
+  it('downloads → extracts → validates → launches the archive venv → boots ComfyUI (> 0 nodes)', async () => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-boot-'))
     const installPath = path.join(tmpRoot, 'install')
-    const installation: InstallationRecord = { ...makeInstallation(installPath), installPath, version: 'master' }
+    const installation: InstallationRecord = { ...makeInstallation(installPath), installPath }
 
-    // Real download/extract/validate from the real archive (sha now mandatory).
+    // Real download/extract/validate from the real archive (sha mandatory).
     await installArtifact({
       installation,
-      artifact: makeArtifact({ id: 'mac-mps-real', outputSha256: sha256File(CB_TEST_ARCHIVE!) }),
+      artifact: makeArtifact({ id: 'real-archive', outputSha256: sha256File(CB_TEST_ARCHIVE!) }),
       tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
       baseUrl: api.baseUrl,
     })
 
-    // Env-reshape seam (test-only): main's createEnv runs
-    // `<installPath>/standalone-env/bin/uv`, which the real archive does NOT
-    // bundle. Symlink the system uv so postInstall's `uv venv` can run.
-    // TODO(builder): archive must bundle standalone-env/bin/uv (reshape bridge).
-    const uvTarget = path.join(installPath, 'standalone-env', 'bin', 'uv')
-    if (!fs.existsSync(uvTarget)) {
-      const systemUv = execFileSync('which', ['uv']).toString().trim()
-      fs.symlinkSync(systemUv, uvTarget)
-      console.warn(`TODO(builder): archive must bundle standalone-env/bin/uv (reshape bridge). Symlinked system uv ${systemUv} for this test.`)
-    }
-
-    // Real standalone postInstall: uv venv + package copy (no auto-update, since
-    // the record has no autoUpdateComfyUI, so the torch sync phase is skipped).
-    const { postInstall } = await import('../standalone/install')
+    // Env-reshape: the archive ships a ready `venv/`, so postInstall is a no-op
+    // and launch drives that venv's python directly — no rebuild, no uv.
+    const { postInstall, getLaunchCommand } = await import('./launch')
     await postInstall(installation, { sendProgress: vi.fn(), update: async () => {} })
 
-    // Launch via the reused standalone launch command and poll /object_info.
-    const { standalone } = await import('../standalone')
     const port = 18188
-    const launchInstallation: InstallationRecord = { ...installation, launchArgs: `--cpu --port ${port}` }
-    const launch = standalone.getLaunchCommand(launchInstallation)
+    const launch = getLaunchCommand({ ...installation, launchArgs: `--cpu --port ${port}` })
     expect(launch?.cmd).toBeTruthy()
 
     child = spawn(launch!.cmd!, launch!.args ?? [], { cwd: launch!.cwd, stdio: 'inherit' })
