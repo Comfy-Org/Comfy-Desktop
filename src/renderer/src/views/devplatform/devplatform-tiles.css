@@ -18,6 +18,24 @@
   outline-offset: 2px;
 }
 
+/* --- Uninstalled tile -----------------------------------------------------
+ * Available from the workspace but not on this machine: the card renders
+ * hollow — wash dropped, dashed border — so filled cards read as "have" and
+ * hollow ones as "could have". Hovering an installable card fills it back
+ * in, previewing the install it becomes. Blocked cards (below, later in the
+ * cascade) keep their recessed treatment on top of the hollow shape. */
+.dist-tile.dist-tile--uninstalled {
+  background: transparent;
+  /* Dashes cover ~half the edge, so the tone runs brighter than the solid
+   * surface border to hold the same perceived weight. */
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+}
+.dist-tile.dist-tile--uninstalled:hover,
+.dist-tile.dist-tile--uninstalled:focus-visible {
+  background: var(--chooser-surface-bg-hover);
+  border: 1px solid var(--chooser-surface-border-hover);
+}
+
 /* --- Blocked tile ---------------------------------------------------------
  * Firmly de-emphasised but never hidden (product contract). The dim goes on
  * the identity block and the tile chrome, not the root — root opacity would

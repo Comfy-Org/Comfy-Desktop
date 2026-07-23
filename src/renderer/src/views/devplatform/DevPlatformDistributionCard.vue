@@ -49,6 +49,12 @@ const BLOCKED_STATE_KEY: Record<string, string> = {
 
 const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
 
+/** Available from the workspace but not on this machine (installable or
+ *  blocked) — rendered hollow so it can't be mistaken for something owned. */
+const isUninstalled = computed(
+  () => props.distribution.state === 'installable' || isBlocked.value
+)
+
 /** The two labelled versions: ComfyUI's leads faint, the distribution's
  *  release follows emphasised — the shared faint-then-bright meta pattern,
  *  so the numbers can't be conflated. */
@@ -107,7 +113,7 @@ function onActivate(): void {
 <template>
   <div
     class="chooser-tile chooser-tile--install dist-tile dist-tile--chooser"
-    :class="{ 'dist-tile--blocked': isBlocked }"
+    :class="{ 'dist-tile--blocked': isBlocked, 'dist-tile--uninstalled': isUninstalled }"
     role="button"
     tabindex="0"
     :aria-disabled="isBlocked ? true : undefined"
