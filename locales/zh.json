@@ -364,6 +364,7 @@
   "channelCards": {
     "installedVersion": "已安装版本",
     "latestVersion": "最新版本",
+    "comfyVersion": "ComfyUI 版本",
     "lastChecked": "上次检查",
     "status": "状态",
     "updateAvailable": "有可用更新",

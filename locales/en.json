@@ -364,6 +364,7 @@
   "channelCards": {
     "installedVersion": "Installed Version",
     "latestVersion": "Latest Version",
+    "comfyVersion": "ComfyUI Version",
     "lastChecked": "Last Checked",
     "status": "Status",
     "updateAvailable": "Update available",

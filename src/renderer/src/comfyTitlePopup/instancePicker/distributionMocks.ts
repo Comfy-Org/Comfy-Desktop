@@ -102,6 +102,7 @@ function buildDistributionSections(dist: Distribution): DetailSection[] {
               data: {
                 installedVersion: `Dist v${installedVersion}`,
                 latestVersion: `Dist v${dist.version ?? installedVersion}`,
+                bundledComfyVersion: dist.comfyuiVersion ? `v${dist.comfyuiVersion}` : undefined,
                 lastChecked: 'Just now',
                 lastCheckedAt: Date.now() - 60_000,
                 updateAvailable: hasUpdate,
@@ -125,6 +126,7 @@ function buildDistributionSections(dist: Distribution): DetailSection[] {
               data: {
                 installedVersion: `Dist v${installedVersion}`,
                 latestVersion: `Dist v${installedVersion}`,
+                bundledComfyVersion: dist.comfyuiVersion ? `v${dist.comfyuiVersion}` : undefined,
                 lastChecked: 'Just now',
                 lastCheckedAt: Date.now() - 60_000,
                 updateAvailable: false

@@ -59,6 +59,9 @@ const draftIsCurrent = computed(() => state.draft === currentValue.value)
 interface PreviewData {
   installedVersion?: string
   latestVersion?: string
+  /** The ComfyUI version this build bundles — set for distribution installs,
+   *  whose own version numbers are the headline facts. */
+  bundledComfyVersion?: string
   lastChecked?: string
   lastCheckedAt?: number
   updateAvailable?: boolean
@@ -73,6 +76,7 @@ const preview = computed<PreviewData | null>(() => {
   return {
     installedVersion: data.installedVersion,
     latestVersion: data.latestVersion,
+    bundledComfyVersion: data.bundledComfyVersion,
     lastChecked: data.lastChecked,
     lastCheckedAt: data.lastCheckedAt,
     updateAvailable: data.updateAvailable,
@@ -210,6 +214,14 @@ const statRows = computed<StatRow[]>(() => {
       label: t('channelCards.latestVersion', 'Latest'),
       value: formatVersionLabel(preview.value.latestVersion),
       highlight: true
+    })
+  }
+
+  if (preview.value.bundledComfyVersion) {
+    rows.push({
+      id: 'comfy-version',
+      label: t('channelCards.comfyVersion', 'ComfyUI Version'),
+      value: formatVersionLabel(preview.value.bundledComfyVersion)
     })
   }
 
