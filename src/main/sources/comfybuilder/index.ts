@@ -1,11 +1,11 @@
 /**
  * ComfyBuilder source plugin.
  *
- * A ComfyBuilder artifact unpacks to the same `standalone-env/` + `ComfyUI/.venv`
- * layout as a standalone install, so everything past the artifact download is the
- * standalone source, reused verbatim: `postInstall` (env create + package copy),
- * `getLaunchCommand`, `getTerminalEnv` (its default), and `probeInstallation`.
- * Only the download/extract/validate stage (`./install`) is bespoke.
+ * A ComfyBuilder artifact unpacks to a ready `venv/` + `ComfyUI/` at the install
+ * root, so the download/extract/validate stage (`./install`) and the env
+ * consumption (`./launch`: no-op postInstall + launch the archive's `venv/`) are
+ * bespoke. The dashboard/list/probe glue is still reused from the standalone
+ * source, which is layout-agnostic for those paths.
  *
  * Intentionally minimal: no list UI, no OAuth, no version picker. `hidden` keeps
  * it out of the install wizard; records are created programmatically from a
@@ -13,6 +13,7 @@
  */
 import { standalone } from '../standalone'
 import { install } from './install'
+import { getLaunchCommand, postInstall } from './launch'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 
 export const comfybuilder: SourcePlugin = {
@@ -42,9 +43,10 @@ export const comfybuilder: SourcePlugin = {
   // Bespoke artifact download/extract/validate.
   install,
 
-  // Everything past the download is identical to a standalone install.
-  postInstall: standalone.postInstall,
-  getLaunchCommand: standalone.getLaunchCommand,
+  // Env-reshape: the archive ships a ready `venv/`, so post-extract is a no-op
+  // and launch drives that venv directly (NOT the standalone `.venv` rebuild).
+  postInstall,
+  getLaunchCommand,
   probeInstallation: standalone.probeInstallation,
   getDetailSections: standalone.getDetailSections,
   getListActions: standalone.getListActions,
