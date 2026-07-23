@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -14,31 +14,23 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
-import ChooserLayoutSwitcher from './chooser/ChooserLayoutSwitcher.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
-import type {
-  ChooserGridEntry,
-  ChooserProtoFilter,
-  ChooserProtoLayout
-} from './chooser/chooser-proto'
+import type { ChooserGridEntry } from './chooser/chooser-proto'
 import type { Distribution } from '../devplatform/types'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
- * Chooser view — PROTOTYPE branch.
+ * Chooser view — PROTOTYPE branch (shelves layout).
  *
- * Three competing IA layouts for delineating the tile families (the user's
- * own installs / builder-backed installs / available workspace
- * distributions), switchable live via the floating HUD (or keys 1/2/3):
+ * One scrolling column, two shelves: the user's own installs sit bare at the
+ * top (New Install tile first), then one workspace shelf headed by the
+ * workspace name — builder-backed installs and installed distributions on the
+ * first row(s), available distributions starting on a fresh row beneath.
  *
- *   - shelves: one column, labelled section headers.
- *   - chips:   flat mixed grid + family filter chips; workspace tiles tinted.
- *   - zones:   spatial split — your installs left, workspace panel right.
- *
- * All copy in the prototype layer is hardcoded English — throwaway with the
- * branch. Tile rendering + event plumbing is shared via ChooserFamilyGrid.
+ * Prototype copy is hardcoded English — dies with the branch. Tile rendering
+ * + event plumbing is shared via ChooserFamilyGrid.
  */
 
 const props = withDefaults(
@@ -174,7 +166,7 @@ const availableDists = computed(() =>
 )
 
 function installEntry(inst: Installation): ChooserGridEntry {
-  return { kind: 'install', inst, builder: isBuilderInstall(inst) }
+  return { kind: 'install', inst }
 }
 function distEntry(dist: Distribution): ChooserGridEntry {
   return { kind: 'dist', dist }
@@ -186,93 +178,8 @@ const installedEntries = computed<ChooserGridEntry[]>(() => [
   ...installedDists.value.map(distEntry)
 ])
 const availableEntries = computed<ChooserGridEntry[]>(() => availableDists.value.map(distEntry))
-/** Layout B's "All": the shipped order — installs by recency, then dists. */
-const allEntries = computed<ChooserGridEntry[]>(() => [
-  ...visibleInstalls.value.map(installEntry),
-  ...visibleDistributions.value.map(distEntry)
-])
 
 const workspaceName = computed(() => authStore.selectedWorkspace?.name ?? 'Workspace')
-
-// --- PROTOTYPE: layout switching -------------------------------------------
-
-const PROTO_LAYOUT_KEY = 'chooser-proto-layout'
-
-function readStoredLayout(): ChooserProtoLayout {
-  try {
-    const stored = localStorage.getItem(PROTO_LAYOUT_KEY)
-    if (stored === 'shelves' || stored === 'chips' || stored === 'zones') return stored
-  } catch {
-    // storage unavailable (tests) — fall through to default
-  }
-  return 'shelves'
-}
-
-const layoutMode = ref<ChooserProtoLayout>(readStoredLayout())
-watch(layoutMode, (mode) => {
-  try {
-    localStorage.setItem(PROTO_LAYOUT_KEY, mode)
-  } catch {
-    // storage unavailable — layout just won't persist
-  }
-})
-
-/** Keys 1/2/3 flip layouts when focus isn't in a text field. */
-function onProtoKeydown(event: KeyboardEvent): void {
-  if (event.metaKey || event.ctrlKey || event.altKey) return
-  const target = event.target as HTMLElement | null
-  if (
-    target &&
-    (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-  ) {
-    return
-  }
-  const map: Record<string, ChooserProtoLayout> = { '1': 'shelves', '2': 'chips', '3': 'zones' }
-  const next = map[event.key]
-  if (next) layoutMode.value = next
-}
-onMounted(() => window.addEventListener('keydown', onProtoKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onProtoKeydown))
-
-// --- PROTOTYPE: layout B chip filter ---------------------------------------
-
-const protoFilter = ref<ChooserProtoFilter>('all')
-
-const protoChips = computed(
-  (): { key: ChooserProtoFilter; label: string; count: number; builder: boolean }[] => [
-    { key: 'all', label: 'All', count: allEntries.value.length, builder: false },
-    { key: 'yours', label: 'Yours', count: plainInstalls.value.length, builder: false },
-    {
-      key: 'installed',
-      label: 'Workspace · installed',
-      count: installedEntries.value.length,
-      builder: true
-    },
-    {
-      key: 'available',
-      label: 'Workspace · available',
-      count: availableEntries.value.length,
-      builder: true
-    }
-  ]
-)
-
-const chipEntries = computed<ChooserGridEntry[]>(() => {
-  switch (protoFilter.value) {
-    case 'yours':
-      return yourEntries.value
-    case 'installed':
-      return installedEntries.value
-    case 'available':
-      return availableEntries.value
-    default:
-      return allEntries.value
-  }
-})
-
-const chipShowsNew = computed(
-  () => protoFilter.value === 'all' || protoFilter.value === 'yours'
-)
 
 // --- Distribution kebab menu ---
 const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
@@ -451,13 +358,11 @@ const gridHandlers = {
         {{ t('chooser.noMatches') }}
       </div>
 
-      <!-- ============ Layout A — Shelves ============ -->
-      <div v-else-if="layoutMode === 'shelves'" class="proto-scroll">
+      <div v-else class="proto-scroll">
         <!-- Your installs: bare tiles at the top, no header. -->
         <section class="proto-shelf">
           <ChooserFamilyGrid
             show-new
-            align="start"
             :entries="yourEntries"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
@@ -480,93 +385,16 @@ const gridHandlers = {
           </header>
           <ChooserFamilyGrid
             v-if="installedEntries.length"
-            align="start"
             :entries="installedEntries"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
           <ChooserFamilyGrid
             v-if="availableEntries.length"
-            align="start"
             :entries="availableEntries"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
-        </section>
-      </div>
-
-      <!-- ============ Layout B — Chips ============ -->
-      <div v-else-if="layoutMode === 'chips'" class="proto-stack">
-        <div class="proto-chips">
-          <button
-            v-for="chip in protoChips"
-            :key="chip.key"
-            type="button"
-            class="proto-chip"
-            :class="{ 'proto-chip--active': protoFilter === chip.key }"
-            :disabled="chip.count === 0 && chip.key !== 'all'"
-            @click="protoFilter = chip.key"
-          >
-            <span v-if="chip.builder" class="proto-chip-dot" aria-hidden="true" />
-            {{ chip.label }}
-            <span class="proto-chip-count">{{ chip.count }}</span>
-          </button>
-        </div>
-        <div class="proto-scroll proto-scroll--flat">
-          <ChooserFamilyGrid
-            :show-new="chipShowsNew"
-            tag-builder
-            :entries="chipEntries"
-            :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-        </div>
-      </div>
-
-      <!-- ============ Layout C — Zones ============ -->
-      <div v-else class="proto-scroll proto-zones">
-        <section class="proto-zone">
-          <header class="proto-zone-head">
-            <span class="proto-zone-kicker proto-zone-kicker--plain">This computer</span>
-            <span class="proto-zone-title">Your installs</span>
-          </header>
-          <ChooserFamilyGrid
-            fluid
-            show-new
-            align="start"
-            :entries="yourEntries"
-            :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-        </section>
-
-        <section v-if="authStore.isSignedIn" class="proto-zone proto-zone--workspace">
-          <header class="proto-zone-head">
-            <span class="proto-zone-kicker">Workspace</span>
-            <span class="proto-zone-title">{{ workspaceName }}</span>
-          </header>
-
-          <div class="proto-zone-sub">Installed</div>
-          <ChooserFamilyGrid
-            v-if="installedEntries.length"
-            fluid
-            align="start"
-            :entries="installedEntries"
-            :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-          <p v-else class="proto-zone-empty">Nothing installed from this workspace yet</p>
-
-          <div class="proto-zone-sub">Available</div>
-          <ChooserFamilyGrid
-            v-if="availableEntries.length"
-            fluid
-            align="start"
-            :entries="availableEntries"
-            :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-          <p v-else class="proto-zone-empty">No distributions available</p>
         </section>
       </div>
 
@@ -589,8 +417,6 @@ const gridHandlers = {
         @close="closeDistMenu"
         @select="handleDistMenuSelect"
       />
-
-      <ChooserLayoutSwitcher v-model="layoutMode" />
     </div>
   </BrandBackground>
 </template>
@@ -738,8 +564,6 @@ const gridHandlers = {
   }
 }
 
-/* --- Layout A: shelves --- */
-
 .proto-shelf {
   display: flex;
   flex-direction: column;
@@ -776,131 +600,5 @@ const gridHandlers = {
   border-radius: 999px;
   background: color-mix(in srgb, var(--proto-builder) 75%, transparent);
   flex-shrink: 0;
-}
-
-/* --- Layout B: chips over a flat grid --- */
-
-.proto-stack {
-  grid-row: 4;
-  width: 100%;
-  min-height: 0;
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-}
-.proto-stack .proto-scroll {
-  grid-row: auto;
-  flex: 0 1 auto;
-}
-
-.proto-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.proto-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--chooser-surface-border-hover);
-  background: transparent;
-  font: inherit;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    border-color 100ms ease,
-    color 100ms ease;
-}
-.proto-chip:hover:not(:disabled) {
-  background: var(--chooser-surface-bg-hover);
-  color: var(--text);
-}
-.proto-chip--active {
-  background: var(--chooser-surface-bg-hover);
-  border-color: var(--border-strong, rgba(255, 255, 255, 0.3));
-  color: var(--text);
-}
-.proto-chip:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.proto-chip-count {
-  font-size: 11px;
-  color: var(--text-faint);
-}
-.proto-chip-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--proto-builder) 75%, transparent);
-  flex-shrink: 0;
-}
-
-/* --- Layout C: machine / workspace zones --- */
-
-.proto-zones {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  align-content: flex-start;
-  gap: 20px;
-}
-
-.proto-zone {
-  flex: 1 1 340px;
-  min-width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.proto-zone--workspace {
-  border: 1px solid color-mix(in srgb, var(--proto-builder) 25%, transparent);
-  background: color-mix(in srgb, var(--proto-builder) 6%, transparent);
-  border-radius: 16px;
-  padding: 14px 16px 16px;
-}
-
-.proto-zone-head {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.proto-zone-kicker {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--proto-builder) 80%, var(--text-muted));
-}
-.proto-zone-kicker--plain {
-  color: var(--text-faint);
-}
-.proto-zone-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.proto-zone-sub {
-  margin-top: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-.proto-zone-empty {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-faint);
 }
 </style>

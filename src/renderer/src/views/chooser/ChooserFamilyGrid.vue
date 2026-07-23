@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * PROTOTYPE (throwaway branch) — one tile grid shared by every chooser IA
- * layout variant (shelves / chips / zones). Renders the New Install tile,
- * install tiles and distribution cards from a mixed entry list and re-emits
- * every tile event verbatim; ChooserView owns all the handlers.
+ * PROTOTYPE (throwaway branch) — one shelf row-group of chooser tiles.
+ * Renders the New Install tile, install tiles and distribution cards from a
+ * mixed entry list and re-emits every tile event verbatim; ChooserView owns
+ * all the handlers.
  */
 import { useI18n } from 'vue-i18n'
 import { Plus } from 'lucide-vue-next'
@@ -16,17 +16,11 @@ import type { Installation } from '../../types/ipc'
 const props = withDefaults(
   defineProps<{
     entries: ChooserGridEntry[]
-    /** Lead with the New Install tile (the "yours" family owns it). */
+    /** Lead with the New Install tile (the your-installs family owns it). */
     showNew?: boolean
-    /** Violet-tint workspace-family tiles (layout B's mixed grid). */
-    tagBuilder?: boolean
-    /** Fluid tracks for the zone panes (layout C); fixed 280px otherwise. */
-    fluid?: boolean
-    /** Left-align rows under a shelf header instead of centering them. */
-    align?: 'center' | 'start'
     isStoppedActionGated: (inst: Installation) => boolean
   }>(),
-  { showNew: false, tagBuilder: false, fluid: false, align: 'center' }
+  { showNew: false }
 )
 
 const emit = defineEmits<{
@@ -59,13 +53,7 @@ function lockLeavingTileSize(el: Element): void {
 </script>
 
 <template>
-  <TransitionGroup
-    tag="div"
-    name="tile"
-    class="proto-grid"
-    :class="{ 'proto-grid--fluid': props.fluid, 'proto-grid--start': props.align === 'start' }"
-    @before-leave="lockLeavingTileSize"
-  >
+  <TransitionGroup tag="div" name="tile" class="proto-grid" @before-leave="lockLeavingTileSize">
     <button
       v-if="props.showNew"
       key="__new"
@@ -83,7 +71,6 @@ function lockLeavingTileSize(el: Element): void {
         v-if="entry.kind === 'install'"
         :installation="entry.inst"
         :is-stopped-action-gated="props.isStoppedActionGated(entry.inst)"
-        :class="{ 'proto-family-builder': props.tagBuilder && entry.builder }"
         @pick="emit('pick', $event)"
         @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"
         @open-kebab-menu="(event, inst) => emit('open-kebab-menu', event, inst)"
@@ -94,7 +81,6 @@ function lockLeavingTileSize(el: Element): void {
       <DevPlatformDistributionCard
         v-else
         :distribution="entry.dist"
-        :class="{ 'proto-family-builder': props.tagBuilder }"
         @select="emit('dist-select', entry.dist)"
         @open-kebab-menu="(event) => emit('dist-kebab', event, entry.dist)"
       />
@@ -110,25 +96,11 @@ function lockLeavingTileSize(el: Element): void {
   position: relative;
   width: 100%;
   display: grid;
-  /* Fixed tracks + centered group: same contract as the shipped grid. */
+  /* Fixed tracks, left-aligned under the shelf header. */
   grid-template-columns: repeat(auto-fit, 280px);
-  justify-content: center;
+  justify-content: start;
   gap: 16px;
   align-content: start;
-}
-.proto-grid--start {
-  justify-content: start;
-}
-.proto-grid--fluid {
-  /* Zone panes are narrower than the full canvas — let tiles flex. */
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  justify-content: stretch;
-}
-
-/* Workspace-family tint for the mixed grid (layout B): a quiet violet edge
- * so builder tiles read as a family without a labelled badge. */
-.proto-family-builder {
-  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--proto-builder) 55%, transparent);
 }
 
 /* Tile FLIP — copied from the shipped ChooserView grid. */

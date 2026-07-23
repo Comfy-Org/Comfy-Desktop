@@ -1,22 +1,14 @@
 /**
- * PROTOTYPE (throwaway branch) — shared types for the chooser IA layout
- * variants. Three families: the user's own installs, builder-backed installs
- * ("installed from workspace"), and not-yet-installed workspace distributions.
+ * PROTOTYPE (throwaway branch) — shared types for the chooser's shelf layout.
+ * Two families: the user's own installs, and the workspace's distributions
+ * (builder-backed installs + not-yet-installed distributions).
  */
 import type { Distribution } from '../../devplatform/types'
 import type { Installation } from '../../types/ipc'
 
-/** The three competing layouts: sectioned shelves, filter chips over a flat
- *  grid, and a spatial machine/workspace split. */
-export type ChooserProtoLayout = 'shelves' | 'chips' | 'zones'
-
-/** Layout B's chip filter. */
-export type ChooserProtoFilter = 'all' | 'yours' | 'installed' | 'available'
-
-/** One tile in a family grid — an install tile or a distribution card.
- *  `builder` marks an install that backs a workspace distribution. */
+/** One tile in a family grid — an install tile or a distribution card. */
 export type ChooserGridEntry =
-  | { kind: 'install'; inst: Installation; builder: boolean }
+  | { kind: 'install'; inst: Installation }
   | { kind: 'dist'; dist: Distribution }
 
 export function entryKey(entry: ChooserGridEntry): string {
