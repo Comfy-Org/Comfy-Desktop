@@ -91,9 +91,9 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `lifecycle-migrate.test.ts` | `@lifecycle` | Yes (light) | Real auto-tracker detection on boot; kebab → Migrate → adoption confirm → Cancel driven through the real UI. The final test is a read-only `getFieldOptions` contract guard on the R2 release/variant feed the migrate flow's silent variant pick consumes. |
 | `lifecycle-periodic-update-check.test.ts` | `@lifecycle` | Yes | Real background re-fetch of the release cache. |
 | `lifecycle-snapshot-export.test.ts` | `@lifecycle` | Yes (light) | Writes real snapshot envelope JSON to disk; native save dialog stubbed with a fixed path. |
-| `lifecycle-snapshot-import.test.ts` | `@lifecycle` | Yes (light) | Consumes a real envelope; writes a snapshot into the install; native open dialog stubbed with a fixed path. |
-| `lifecycle-snapshot-restore.test.ts` | `@lifecycle` | Yes | Live restore moves real HEADs; every test drives the real expanded-row Restore button and confirm. |
-| `lifecycle-snapshot-roundtrip.test.ts` | `@lifecycle` | Yes (light) | Real export from install A, real import into install B; native dialogs stubbed with fixed paths. |
+| `lifecycle-snapshot-import.test.ts` | `@lifecycle` | Yes (light) | Consumes a real envelope through the toolbar Import flow; import stages a restore target and must not commit history (#1137); native open dialog stubbed with a fixed path. |
+| `lifecycle-snapshot-restore.test.ts` | `@lifecycle` | Yes | Live restore moves real HEADs; both restore operations drive the real expanded-row Restore button and confirm. |
+| `lifecycle-snapshot-roundtrip.test.ts` | `@lifecycle` | Yes (light) | Real export from install A, real import preview into install B proving envelope round-trip; import stages without committing history (#1137); native dialogs stubbed with fixed paths. |
 | `lifecycle-snapshot-share.test.ts` | `@lifecycle` | Yes (light) | Real export of the latest snapshot; native save dialog stubbed with a fixed path. |
 | `lifecycle-snapshot.test.ts` | `@lifecycle` | Yes | Real snapshot capture driven through the picker save CTA and prompt UI; asserted via the rendered snapshot row plus read-only backend queries. |
 | `lifecycle-startup-update-check.test.ts` | `@lifecycle` | Yes | One real `git ls-remote` to github.com per startup. |
