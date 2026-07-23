@@ -78,68 +78,67 @@ function buildDistributionSections(dist: Distribution): DetailSection[] {
   const installedVersion = dist.installedVersion ?? dist.version ?? '?'
   const hasUpdate = dist.state === 'update-available'
   return [
-    // --- Update: distribution versions, not ComfyUI's. ---
+    // --- Update: same channel-cards shape the standalone source emits, so
+    //     ChannelPicker renders the identical headline / facts box /
+    //     right-aligned CTAs — with distribution versions in every slot. ---
     {
       tab: 'update',
-      title: 'Distribution Version',
+      title: 'Updates',
       fields: [
         {
-          id: 'dist-installed-version',
-          label: 'Installed Version',
-          value: `Dist v${installedVersion}`,
-          editable: false
-        },
-        {
-          id: 'dist-latest-version',
-          label: 'Latest Version',
-          value: `Dist v${dist.version ?? installedVersion}`,
-          editable: false
-        },
-        {
-          id: 'dist-comfyui-version',
-          label: 'ComfyUI Version',
-          value: dist.comfyuiVersion ? `v${dist.comfyuiVersion}` : '—',
-          editable: false,
-          tooltip: 'Bundled by the distribution build — updates with the distribution.'
-        },
-        { id: 'dist-last-checked', label: 'Last Checked', value: 'Just now', editable: false }
-      ],
-      actions: [
-        { id: 'check-update', label: 'Check for Updates', style: 'accent' },
-        {
-          id: 'dist-update-now',
-          label: hasUpdate ? `Update to Dist v${dist.version}` : 'Update Now',
-          style: 'primary',
-          enabled: hasUpdate,
-          disabledMessage: "You're on the latest version."
-        }
-      ]
-    },
-    {
-      tab: 'update',
-      title: 'Update Track',
-      description: 'How this install follows new versions published to the workspace.',
-      fields: [
-        {
-          id: 'dist-update-track',
-          label: 'Track',
+          id: 'updateChannel',
+          label: 'Update Track',
           value: 'latest',
           editable: true,
-          editType: 'select',
+          refreshSection: true,
+          editType: 'channel-cards',
+          tooltip: 'How this install follows new versions published to the workspace.',
           options: [
             {
               value: 'latest',
               label: 'Latest published',
               description: 'Follow every version the workspace publishes.',
-              recommended: true
+              recommended: true,
+              data: {
+                installedVersion: `Dist v${installedVersion}`,
+                latestVersion: `Dist v${dist.version ?? installedVersion}`,
+                lastChecked: 'Just now',
+                lastCheckedAt: Date.now() - 60_000,
+                updateAvailable: hasUpdate,
+                actions: hasUpdate
+                  ? [
+                      {
+                        id: 'dist-update-now',
+                        label: 'Update Now',
+                        style: 'primary',
+                        enabled: true,
+                        tooltip: `Update to Dist v${dist.version}`
+                      }
+                    ]
+                  : []
+              }
             },
             {
               value: 'pinned',
               label: `Pinned — Dist v${installedVersion}`,
-              description: 'Stay on this version until an admin changes the pin.'
+              description: 'Stay on this version until an admin changes the pin.',
+              data: {
+                installedVersion: `Dist v${installedVersion}`,
+                latestVersion: `Dist v${installedVersion}`,
+                lastChecked: 'Just now',
+                lastCheckedAt: Date.now() - 60_000,
+                updateAvailable: false
+              }
             }
           ]
-        },
+        }
+      ],
+      actions: [{ id: 'check-update', label: 'Check for Updates' }]
+    },
+    {
+      tab: 'update',
+      title: 'Automatic Updates',
+      fields: [
         {
           id: 'dist-auto-update',
           label: 'Update automatically on launch',

@@ -119,8 +119,10 @@ const showEnrichingHint = computed(
 function formatVersionLabel(raw: string | undefined): string {
   if (!raw || raw === '—') return '—'
   const trimmed = raw.trim()
-  if (trimmed.startsWith('v') || trimmed.startsWith('V')) return trimmed
-  return `v${trimmed}`
+  // Only bare numeric versions earn the v prefix; labelled values
+  // ("Dist v12") pass through untouched.
+  if (/^\d/.test(trimmed)) return `v${trimmed}`
+  return trimmed
 }
 
 function normalizeVersion(raw: string | undefined): string {
