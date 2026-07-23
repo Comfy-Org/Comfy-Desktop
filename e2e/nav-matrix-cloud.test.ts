@@ -67,7 +67,11 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('cloud target with no window: opens a new window @lifecycle', async () => {
+// Tagged platform, not @lifecycle: the cloud install is a seeded record,
+// sessions are cleared via a dev hook, and the assertion is IPC + window
+// count — synthetic navigation coverage, not a real cloud attach flow
+// (that is lifecycle-cloud.test.ts).
+test('cloud target with no window: opens a new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
   await openCloudInNewWindow()
 
