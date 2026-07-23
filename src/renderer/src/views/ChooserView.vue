@@ -377,7 +377,6 @@ const gridHandlers = {
           class="proto-shelf"
         >
           <header class="proto-shelf-head">
-            <span class="proto-shelf-dot" aria-hidden="true" />
             <span class="proto-shelf-title">{{ workspaceName }}</span>
             <span class="proto-shelf-count">{{
               installedEntries.length + availableEntries.length
@@ -447,8 +446,6 @@ const gridHandlers = {
    * Rows: [top spacer] [wordmark] [search] [content] [bottom spacer] */
   --chooser-pad-y: clamp(12px, 2.5vh, 24px);
   --chooser-row-gap: clamp(16px, 3.5vh, 32px);
-  /* PROTOTYPE: workspace-family accent shared by all three layouts. */
-  --proto-builder: #a78bfa;
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -593,12 +590,5 @@ const gridHandlers = {
 .proto-shelf-count {
   font-size: 11px;
   color: var(--text-faint);
-}
-.proto-shelf-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--proto-builder) 75%, transparent);
-  flex-shrink: 0;
 }
 </style>
