@@ -328,7 +328,7 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
 
   // Target the seeded `current-state` snapshot (commit B). It was seeded
   // with `skipPipSync: true` BEFORE app launch, so no fixture mutation
-  // happens mid-run — and since the earlier restore left HEADs on commit
+  // happens mid-run - and since the earlier restore left HEADs on commit
   // A, restoring it gives the op real git checkout work (A -> B). Real
   // pip sync remains uncovered here (no Python env in this fixture); see
   // the file header.

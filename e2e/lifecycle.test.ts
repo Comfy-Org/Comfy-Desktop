@@ -226,15 +226,23 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
 
-  // Express defaults to checked on Local pick — uncheck it to force
-  // the New Install takeover path. Assert the default first (read-only),
-  // then toggle through the real checkbox control.
+  // Express defaults to UNCHECKED on Local pick (#1020: users land on
+  // Configure before any files are written). Assert the default first
+  // (read-only), then toggle the real checkbox control on and back off
+  // so the non-express New Install takeover path is taken.
   const expressCheckbox = '[data-testid="first-use-express-install"] input[type="checkbox"]'
+  expect(
+    await ctx.panel.evaluate<boolean>(
+      `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === false`,
+    ),
+    'Express Install should default to unchecked on Local pick',
+  ).toBe(true)
+  expect(await ctx.panel.click(expressCheckbox)).toBe(true)
   expect(
     await ctx.panel.evaluate<boolean>(
       `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === true`,
     ),
-    'Express Install should default to checked on Local pick',
+    'Express Install checkbox did not check',
   ).toBe(true)
   expect(await ctx.panel.click(expressCheckbox)).toBe(true)
   expect(
@@ -332,6 +340,11 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
 
 test('completes install (auto-launches via brand chrome) @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
+  // The CPU-variant pick at the end of the previous test re-fires the
+  // variant option reload, which transiently disables Continue
+  // (`saveDisabled`). A DOM click on a disabled button is a silent
+  // no-op, so wait for the gate to re-open before clicking.
+  await waitForConfigContinueEnabled('Continue button never re-enabled after the variant pick')
   expect(await ctx.panel.click('.config-continue')).toBe(true)
   await ctx.panel.waitForVisible('.template-skip', { timeout: 10_000 })
   expect(await ctx.panel.clickByText('.template-skip', 'Skip & Install')).toBe(true)
@@ -557,7 +570,16 @@ async function stopAndReturnToDashboardViaUI(): Promise<void> {
   expect(await ctx.panel.click(byTestId(TID.lifecycleReturnDashboard))).toBe(true)
 
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
-  await expectChooserVisible(ctx.panel)
+  // `detachInstall` destroys the install-backed panel webContents and
+  // mounts a fresh chooser-mode one, so there is a window where no
+  // panel.html webContents exists. Poll tolerantly until the NEW panel
+  // is up and showing the chooser instead of assuming continuity.
+  await expect
+    .poll(
+      () => ctx.panel.evaluate<boolean>(`!!document.querySelector('.chooser-view')`).catch(() => false),
+      { timeout: 30_000, intervals: [250, 500] },
+    )
+    .toBe(true)
 }
 
 test('stop ComfyUI again so update-comfyui (requires stopped) can run @lifecycle', async () => {
