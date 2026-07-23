@@ -284,6 +284,7 @@ const placeholderTitle = computed<string>(() => {
         <button
           class="brand-ghost brand-progress__footer-btn"
           type="button"
+          :data-testid="TID.lifecycleReturnDashboard"
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
@@ -314,6 +315,7 @@ const placeholderTitle = computed<string>(() => {
         <button
           class="brand-ghost brand-progress__footer-btn"
           type="button"
+          :data-testid="TID.lifecycleReturnDashboard"
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />

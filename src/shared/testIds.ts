@@ -58,6 +58,9 @@ export const TID = {
   /** Primary action on the lifecycle stopped/crashed card (teleported to
    *  body via `BrandTakeoverLayout`, so it is NOT under `.lifecycle-view`). */
   lifecycleRelaunch: 'lifecycle-relaunch',
+  /** Back / "Return to Dashboard" ghost action on the lifecycle
+   *  stopped/crashed card (calls `window.api.returnToDashboard()`). */
+  lifecycleReturnDashboard: 'lifecycle-return-dashboard',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',

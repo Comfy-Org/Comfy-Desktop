@@ -118,6 +118,55 @@ export class WebContentsPage {
     })()`)
   }
 
+  /** Click the nth (0-based) element matching `selector`. Returns false
+   *  if fewer than `index + 1` elements match. */
+  clickNth(selector: string, index: number): Promise<boolean> {
+    return this.wcEval<boolean>(`(() => {
+      const els = document.querySelectorAll(${JSON.stringify(selector)})
+      const el = els[${index}]
+      if (!el) return false
+      el.click()
+      return true
+    })()`)
+  }
+
+  /**
+   * Fill an input through Electron's real text-input pipeline: focus +
+   * select-all in the page, then `webContents.insertText`, which routes
+   * through the renderer's IME/input path and fires real `beforeinput` /
+   * `input` events - unlike assigning `.value` and dispatching synthetic
+   * events, which bypasses the browser's input handling entirely.
+   */
+  async fill(selector: string, text: string): Promise<void> {
+    // Each retry attempt re-focuses and re-selects before inserting so a
+    // retried insert replaces the previous attempt's text instead of
+    // appending to it, then verifies the resulting value.
+    await evalWithRetry(async () => {
+      const focused = await this.wcEval<boolean>(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (!el) return false
+        el.focus()
+        if (typeof el.select === 'function') el.select()
+        return document.activeElement === el
+      })()`)
+      if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
+      const id = await findWebContentsId(this.app, this.marker)
+      if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+      await this.app.evaluate(async ({ webContents }, payload) => {
+        const wc = webContents.fromId(payload.id)
+        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+        await wc.insertText(payload.text)
+      }, { id, text })
+      const value = await this.wcEval<string | null>(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        return el && 'value' in el ? el.value : null
+      })()`)
+      if (value !== text) {
+        throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
+      }
+    })
+  }
+
   /**
    * Click the first element matching `selector` whose textContent contains
    * `textSubstring` (case-insensitive). Returns false if no match.

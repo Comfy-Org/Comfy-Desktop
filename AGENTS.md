@@ -43,6 +43,15 @@ If you encounter a flaky test during a run, investigate and fix it before contin
 
 When the user gives explicit direction (e.g., "move away from takeovers", "use the unified primitive"), apply it everywhere — search the whole codebase for remaining offenders. **Never silently defer or skip part of an instruction without asking.** If something looks risky, ask; don't decide unilaterally to leave it for later.
 
+## Post-change review: code review after every big piece
+
+After completing any substantial piece of work (a new feature, a test-suite change, a refactor spanning multiple files), do a dedicated code review pass before moving on:
+
+- Review the full diff (`git diff` against the merge base), not just the files you remember touching.
+- Check that CI-relevant checks (typecheck, lint, build, tests) pass AND that their passing is meaningful — no weakened assertions, skipped tests, or reduced coverage.
+- Verify code coverage did not decrease compared to the base branch.
+- Use an independent reviewer (e.g. the oracle) for changes with subtle correctness risk.
+
 ## Post-change review: deduplication
 
 After creating or modifying code, check for duplicated logic before committing:

@@ -124,12 +124,9 @@ test('captures a new snapshot through the picker UI and shows it at the top @lif
   expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
 
   await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
-  await popup.evaluate<void>(`(() => {
-    const el = document.querySelector(${JSON.stringify(byTestId(TID.basePromptInput))})
-    if (!(el instanceof HTMLInputElement)) throw new Error('snapshot label input not found')
-    el.value = 'captured-by-test'
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  })()`)
+  // Real text input via `webContents.insertText`, not a synthetic
+  // `.value=` assignment.
+  await popup.fill(byTestId(TID.basePromptInput), 'captured-by-test')
   expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
 
   await expect

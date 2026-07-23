@@ -40,6 +40,8 @@ import {
   clickInstallTile,
   expectChooserVisible,
   expectTakeoverOpen,
+  openManageViaDashboard,
+  openPickerViaTitlePill,
 } from './support/chooserHelpers'
 import {
   ensureInstallPanelView,
@@ -47,12 +49,10 @@ import {
   getRunningSessionSnapshot,
   hasActiveOperation,
   resetIpcInvocations,
-  returnFirstInstallHostToDashboard,
 } from './support/devHooks'
 import {
   closeTitlePopupIfOpen,
   isPopupVisible,
-  systemModalPage,
   titlePopupPage,
   waitForWebContents,
   type WebContentsPage,
@@ -227,14 +227,22 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
 
   // Express defaults to checked on Local pick — uncheck it to force
-  // the New Install takeover path.
-  await ctx.panel.evaluate<void>(
-    `(() => {
-      const wrap = document.querySelector('[data-testid="first-use-express-install"]')
-      const cb = wrap && wrap.querySelector('input[type="checkbox"]')
-      if (cb && cb.checked) cb.click()
-    })()`,
-  )
+  // the New Install takeover path. Assert the default first (read-only),
+  // then toggle through the real checkbox control.
+  const expressCheckbox = '[data-testid="first-use-express-install"] input[type="checkbox"]'
+  expect(
+    await ctx.panel.evaluate<boolean>(
+      `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === true`,
+    ),
+    'Express Install should default to checked on Local pick',
+  ).toBe(true)
+  expect(await ctx.panel.click(expressCheckbox)).toBe(true)
+  expect(
+    await ctx.panel.evaluate<boolean>(
+      `document.querySelector(${JSON.stringify(expressCheckbox)})?.checked === false`,
+    ),
+    'Express Install checkbox did not uncheck',
+  ).toBe(true)
 
   // Tick the required ToS checkbox (telemetry stays at its default
   // opt-in; the test settings already disable telemetry network egress
@@ -286,14 +294,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
   expect(
-    await ctx.panel.evaluate<boolean>(
-      `(() => {
-        const opts = document.querySelectorAll('[role="listbox"] [role="option"]')
-        if (opts.length < 2) return false
-        opts[1].click()
-        return true
-      })()`,
-    ),
+    await ctx.panel.clickNth('[role="listbox"] [role="option"]', 1),
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox',
   ).toBe(true)
 
@@ -494,15 +495,9 @@ interface InstallationLite {
  *  the new install's name through `useDialogs` → DialogHost → BasePrompt. */
 async function submitCopyNamePrompt(popup: WebContentsPage, name: string): Promise<void> {
   await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
-  await popup.evaluate<void>(
-    `(() => {
-      const el = document.querySelector(${JSON.stringify(byTestId(TID.basePromptInput))})
-      if (!el) throw new Error('prompt input not found')
-      el.value = ${JSON.stringify(name)}
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      el.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
+  // Real text entry through Electron's input pipeline (focus + insertText),
+  // not a synthetic `.value=` assignment.
+  await popup.fill(byTestId(TID.basePromptInput), name)
   expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
 }
 
@@ -521,41 +516,85 @@ async function waitForCopyRegistered(name: string): Promise<InstallationLite> {
   return copyRecord!
 }
 
-interface UpdateActionResult {
-  ok: boolean
-  message?: string
-  navigate?: string
-}
-
 let _updateInstallId = ''
 let _updateInstallPath = ''
 let _comfyUIDir = ''
 let _installedCommit = ''
 
-test('stop ComfyUI again so update-comfyui (requires stopped) can run @lifecycle', async () => {
-  // The running install has no panel view, so the menu-equivalent return
-  // route asks for confirmation in the shell system modal.
-  const returnPromise = returnFirstInstallHostToDashboard(ctx.app)
-  await waitForWebContents(ctx.app, 'comfySystemModal.html')
-  const sysModal = systemModalPage(ctx.app)
-  await sysModal.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await sysModal.click(byTestId(TID.baseAlertAction))).toBe(true)
-  await returnPromise
+/** Stop the running install and land back on the dashboard through the
+ *  REAL production controls: title-bar install pill -> picker footer More
+ *  -> Stop -> in-drawer BaseAlert confirm -> stopped lifecycle card ->
+ *  "Return to Dashboard". Replaces the old `__e2e` return hook, which
+ *  bypassed every one of those controls. No-ops when ComfyUI is already
+ *  stopped and the window already shows the chooser. */
+async function stopAndReturnToDashboardViaUI(): Promise<void> {
+  if (!(await comfyFrontendIsLoaded())) {
+    const chooserUp = await ctx.panel.exists('.chooser-view').catch(() => false)
+    if (chooserUp) return
+  }
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.pickerMoreTrigger))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.pinBottomAction('stop')), { timeout: 10_000 })
+  expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+
+  // A successful stop dismisses the drawer and swaps the host body to the
+  // stopped lifecycle card (production mounts panel.html for it). The
+  // stopped card can render before `confirmAndStop` resolves and emits
+  // the popup's `request-dismiss`; wait for the popup to actually hide
+  // so the return click below hits a visible, uncovered control.
+  // Generous timeouts: Windows process-tree teardown can lag by tens of
+  // seconds.
   await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfySystemModal.html'), {
-      timeout: 10_000, intervals: [100, 250],
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 120_000, intervals: [250, 500],
     })
     .toBe(false)
-  await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
   await waitForWebContents(ctx.app, 'panel.html')
-  await expectChooserVisible(ctx.panel)
+  await ctx.panel.waitForVisible(byTestId(TID.lifecycleReturnDashboard), { timeout: 120_000 })
+  expect(await ctx.panel.click(byTestId(TID.lifecycleReturnDashboard))).toBe(true)
 
-  // Both windows are chooser hosts now; keep one so marker-based helpers
-  // have a single panel target for the rest of the serial spec.
-  await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) => {
+  await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
+  await expectChooserVisible(ctx.panel)
+}
+
+test('stop ComfyUI again so update-comfyui (requires stopped) can run @lifecycle', async () => {
+  test.setTimeout(300_000)
+
+  // Close the extra dashboard window the multi-window test opened FIRST,
+  // so the single remaining window is the comfy host and every
+  // marker-based facade (panel/title-bar) resolves to it unambiguously.
+  // Keep whichever window owns the live comfy frontend rather than
+  // trusting window ordering. Test-stage teardown, not a flow under test.
+  // The comfy frontend lives in a child WebContentsView, so identify
+  // the host by inspecting `contentView.children` (BrowserWindow
+  // .fromWebContents returns null for child-view webContents).
+  await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
     const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
-    for (const win of wins.slice(1)) win.close()
+    const comfyHost = wins.find((w) =>
+      w.contentView.children.some((v) =>
+        v instanceof WebContentsView &&
+        /^http:\/\/(127\.0\.0\.1|localhost):/.test(v.webContents.getURL()),
+      ),
+    )
+    if (!comfyHost) throw new Error('running comfy host window not found')
+    for (const win of wins) {
+      if (win.id !== comfyHost.id) win.close()
+    }
   }))
+  // Wait until only the comfy host remains so the marker-based
+  // panel/title-bar facades resolve unambiguously.
+  await expect
+    .poll(() => evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
+    )), { timeout: 15_000, intervals: [200, 500] })
+    .toBe(1)
+
+  // Full real-UI stop + return: pill -> picker Stop -> confirm ->
+  // stopped card -> Return to Dashboard.
+  await stopAndReturnToDashboardViaUI()
 })
 
 test('captures install metadata for the update tests @lifecycle', async () => {
@@ -585,20 +624,11 @@ test('update-comfyui drives the real updater and moves HEAD forward @lifecycle',
   test.setTimeout(600_000)
   expect(_installedCommit, 'installed commit not captured').toBeTruthy()
 
-  // Open the picker on the Update tab. The install sits one
-  // stable release, so the stable channel card resolves updateAvailable
-  // and surfaces the real Update Now button.
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({
-        installationId: ${JSON.stringify(_updateInstallId)},
-        initialTab: 'update',
-      })
-      return true
-    })()`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  // Open the picker on the Update tab through the real dashboard entry
+  // controls (tile kebab -> Manage -> Update tab). The install sits one
+  // stable release back, so the stable channel card resolves
+  // updateAvailable and surfaces the real Update Now button.
+  const popup = await openManageViaDashboard(ctx.app, ctx.panel, _updateInstallId, 'update')
   await popup.waitForSelector(byTestId(TID.updateActionButton('update-comfyui')), { timeout: 60_000 })
   expect(await popup.click(byTestId(TID.updateActionButton('update-comfyui')))).toBe(true)
 
@@ -714,82 +744,59 @@ async function waitForOperationDrain(installationId: string, timeout = 300_000):
     .toBe(false)
 }
 
-/** Drives the menu-equivalent Return to Dashboard and clicks through
- *  whichever confirm surface main raises for a running local install:
- *  the panel modal when the panelView is alive, the shell system modal
- *  when it isn't. Already-stopped sessions clear without any confirm,
- *  in which case the helper resolves as soon as main does. */
-async function returnToDashboardThroughConfirm(): Promise<void> {
-  const returnPromise = returnFirstInstallHostToDashboard(ctx.app)
-  let settled = false
-  const settle = (): void => {
-    settled = true
-  }
-  void returnPromise.then(settle, settle)
-  // The RTD confirm is a "simple confirm": ModalDialog routes it through
-  // BaseAlert, so on BOTH surfaces the button to click is
-  // `TID.baseAlertAction` — in panel.html when the panelView is alive, in
-  // comfySystemModal.html when main falls back to the shell modal.
-  let clicked = false
-  const deadline = Date.now() + 15_000
-  while (!settled && Date.now() < deadline) {
-    const panelConfirmVisible = await ctx.panel
-      .isVisible(byTestId(TID.baseAlertAction))
-      .catch(() => false) // panel.html may not exist on the system-modal path
-    // A false click return means the surface vanished between the
-    // visibility check and the click — keep polling instead of letting
-    // `returnPromise` hang on a confirm that was never actually pressed.
-    if (panelConfirmVisible) {
-      if (await ctx.panel.click(byTestId(TID.baseAlertAction))) {
-        clicked = true
-        break
-      }
-    }
-    if (await isPopupVisible(ctx.app, 'comfySystemModal.html')) {
-      const sysModal = systemModalPage(ctx.app)
-      if (await sysModal.isVisible(byTestId(TID.baseAlertAction))) {
-        if (await sysModal.click(byTestId(TID.baseAlertAction))) {
-          clicked = true
-          break
-        }
-      }
-    }
-    await new Promise((r) => setTimeout(r, 200))
-  }
-  // Main waits indefinitely for the confirm once the renderer acks; fail
-  // loudly rather than letting `await returnPromise` eat the test timeout.
-  if (!settled && !clicked) {
-    throw new Error('return-to-dashboard confirm never became visible on panel or system modal')
-  }
-  await returnPromise
-}
-
 let _restoreSnapshotFilename = ''
 let _snapshotHeadAtCapture = ''
 
 test('captures a snapshot for the picker-driven restore test @lifecycle', async () => {
-  // ComfyUI is running from the prior re-launch test. `snapshot-save`
-  // is NOT in REQUIRES_STOPPED so it runs against a live install — the
-  // snapshot just records the current state. Captured label gives us a
-  // stable filename to grab in the restore test below.
+  // ComfyUI is running from the prior re-launch test. Captured label
+  // gives us a stable filename to grab in the restore test below.
   expect(_updateInstallId, 'update install id not captured').toBeTruthy()
+  // Harness observability, not part of the flow under test:
   // `clickInstallTile` in test 11 triggers `onLaunch`'s chooser-pick
   // attach which calls `destroyPanelView(claimed)` (index.ts) without
   // remounting — production lazily mounts a fresh install-backed
   // panel on the next Settings click / comfy-lifecycle body, so
   // `panel.html` doesn't exist while ComfyUI is the active body.
-  // The remaining picker-driven tests in this file all need
-  // `ctx.panel` reachable; do the lazy mount ourselves once here.
+  // The remaining tests in this file read state via `ctx.panel.evaluate`
+  // for their assertions; do the lazy mount ourselves once here.
   expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
-  await ctx.panel.evaluate<unknown>(
-    `window.api.runAction(${JSON.stringify(_updateInstallId)}, 'snapshot-save', { label: 'lifecycle-restore-target' })`,
+
+  // Capture the pre-existing filenames first: a reused profile can carry
+  // a same-labelled snapshot from a prior run, and the poll below must
+  // prove THIS Save produced a new one, not match a stale leftover.
+  const filenamesBefore = new Set(
+    (await ctx.panel.evaluate<SnapshotListLite>(
+      `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+    )).snapshots.map((s) => s.filename),
   )
-  const list = await ctx.panel.evaluate<SnapshotListLite>(
-    `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
-  )
-  const target = list.snapshots.find((s) => s.label === 'lifecycle-restore-target')
-  expect(target, 'lifecycle-restore-target snapshot missing from getSnapshots').toBeDefined()
+
+  // Real capture flow: title pill -> picker Snapshots tab -> Create
+  // Snapshot CTA -> label prompt -> confirm. `snapshot-save` is NOT in
+  // REQUIRES_STOPPED so it runs against the live install — the snapshot
+  // just records the current state.
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
+  await popup.waitForVisible(byTestId(TID.snapshotsSaveCta), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
+  await popup.fill(byTestId(TID.basePromptInput), 'lifecycle-restore-target')
+  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
+
+  // The capture runs behind the prompt confirm; poll until the labelled
+  // snapshot lands in the registry.
+  let target: SnapshotListLite['snapshots'][number] | undefined
+  await expect
+    .poll(async () => {
+      const list = await ctx.panel.evaluate<SnapshotListLite>(
+        `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+      )
+      target = list.snapshots.find(
+        (s) => s.label === 'lifecycle-restore-target' && !filenamesBefore.has(s.filename),
+      )
+      return target ?? null
+    }, { timeout: 30_000, intervals: [500, 1_000] })
+    .not.toBeNull()
+  await closeTitlePopupIfOpen(ctx.app)
   _restoreSnapshotFilename = target!.filename
   _snapshotHeadAtCapture = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
@@ -843,21 +850,12 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  // Open the picker in expanded mode on the Update tab. Channel
-  // metadata loads via real `check-update` against github.com for both
-  // stable and latest — `latest` reports an update against the master
-  // tip, so its cross-channel Update Now button comes alive.
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({
-        installationId: ${JSON.stringify(_updateInstallId)},
-        initialTab: 'update',
-      })
-      return true
-    })()`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  // Open the picker through the running host's title pill onto the
+  // Update tab. Channel metadata loads via real `check-update` against
+  // github.com for both stable and latest — `latest` reports an update
+  // against the master tip, so its cross-channel Update Now button
+  // comes alive.
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
 
   // ChannelPicker renders a BaseSelect (`role="combobox"`); the
   // dropdown's options are `role="option"` with the channel label.
@@ -912,6 +910,10 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   expect(headAfter, 'cross-channel update did not move HEAD').not.toBe(headBefore)
   expect(headAfter).toMatch(/^[a-f0-9]{40}$/)
 
+  // Inline-picker routing keeps the popup open on its success screen;
+  // close it so the next test's title-pill entry opens the picker
+  // instead of toggling it shut.
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
 test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle', async () => {
@@ -936,17 +938,8 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle'
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({
-        installationId: ${JSON.stringify(_updateInstallId)},
-        initialTab: 'snapshots',
-      })
-      return true
-    })()`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  // Real entry: running host title pill -> picker Snapshots tab.
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
   // Expand the snapshot row to reveal Restore.
   await popup.waitForSelector(byTestId(TID.snapshotRow(_restoreSnapshotFilename)), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.snapshotRow(_restoreSnapshotFilename)))).toBe(true)
@@ -980,6 +973,11 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle'
     cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
   }).trim()
   expect(headAfter).toMatch(/^[a-f0-9]{40}$/)
+
+  // Inline-picker routing keeps the popup open on its success screen;
+  // close it so the next test's title-pill entry opens the picker
+  // instead of toggling it shut.
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
 // ---------------------------------------------------------------------------
@@ -1010,16 +1008,10 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @lifecycle
   const beforeSnapshot = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
   expect(beforeSnapshot, 'expected a running session before Restart').not.toBeNull()
 
-  // Open the picker seeded on the running install so the detail pane
-  // (and its footer CTA) targets it.
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({ installationId: ${JSON.stringify(_updateInstallId)} })
-      return true
-    })()`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  // Open the picker through the running host's title pill — it seeds
+  // the running install so the detail pane (and its footer CTA)
+  // targets it.
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
 
   await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
   await expect
@@ -1092,17 +1084,8 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({
-        installationId: ${JSON.stringify(_updateInstallId)},
-        initialTab: 'config',
-      })
-      return true
-    })()`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  // Real entry: running host title pill -> picker Config tab.
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
 
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
   expect(await popup.click(byTestId(TID.pickerMoreTrigger))).toBe(true)
@@ -1183,25 +1166,14 @@ let _copyInstallPath = ''
 test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycle', async () => {
   test.setTimeout(600_000)
 
-  // Copy is REQUIRES_STOPPED — stop comfy via return-to-dashboard so
+  // Copy is REQUIRES_STOPPED — stop comfy through the real UI (pill ->
+  // picker Stop -> confirm -> stopped card -> Return to Dashboard) so
   // the IPC handler doesn't bail and the picker dispatches without a
   // self-stop preamble.
-  await returnToDashboardThroughConfirm()
-  await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
-  await waitForWebContents(ctx.app, 'panel.html')
-  await expectChooserVisible(ctx.panel)
+  await stopAndReturnToDashboardViaUI()
 
-  await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({
-        installationId: ${JSON.stringify(_updateInstallId)},
-        initialTab: 'config',
-      })
-      return true
-    })()`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  // Real entry: dashboard tile kebab -> Manage.
+  const popup = await openManageViaDashboard(ctx.app, ctx.panel, _updateInstallId, 'config')
 
   // Open the footer "More" overflow menu → click Copy. (`[data-more-trigger]`
   // also matches the window-options caret, so target the explicit test id.)
@@ -1244,18 +1216,29 @@ test('cleans up the copy install before the original delete test runs @lifecycle
   test.setTimeout(300_000)
   expect(_copyInstallId, 'no copy install id captured to clean up').toBeTruthy()
 
-  // Direct runAction('delete') bypasses the confirm chain — the copy
-  // is stopped (never launched), so no `stop-comfyui` preamble is
-  // needed. Frees disk before the existing final delete test runs
-  // against the original.
-  const result = await ctx.panel.evaluate<UpdateActionResult>(
-    `window.api.runAction(${JSON.stringify(_copyInstallId)}, 'delete')`,
-  )
-  expect(result.ok, `delete copy failed: ${result.message ?? ''}`).toBe(true)
+  // Real delete flow on the copy's dashboard tile: kebab -> Delete ->
+  // BaseAlert confirm. The copy is stopped (never launched), so no
+  // `stop-comfyui` preamble is needed. Frees disk before the existing
+  // final delete test runs against the original.
+  await expectChooserVisible(ctx.panel)
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_copyInstallId)), { timeout: 15_000 })
+  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_copyInstallId)))).toBe(true)
+  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('delete')), { timeout: 5_000 })
+  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('delete')))).toBe(true)
+  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
+  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
 
-  expect(existsSync(_copyInstallPath), `copy install dir ${_copyInstallPath} still on disk after delete`).toBe(false)
+  // The full-tree recursive rm runs async behind the confirm.
+  await expect
+    .poll(() => existsSync(_copyInstallPath), { timeout: 240_000, intervals: [1_000, 2_000] })
+    .toBe(false)
+  await expect
+    .poll(async () => {
+      const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      return remaining.some((i) => i.id === _copyInstallId)
+    }, { timeout: 30_000, intervals: [250, 500] })
+    .toBe(false)
   const remaining = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
-  expect(remaining.find((i) => i.id === _copyInstallId), 'copy install record not removed after delete').toBeUndefined()
   expect(remaining.find((i) => i.id === _updateInstallId), 'original install was unexpectedly removed').toBeDefined()
 })
 
@@ -1424,13 +1407,12 @@ let _deleteInstallId = ''
 let _deleteInstallPath = ''
 
 test('stops comfy and captures the installed dir state before driving delete @lifecycle', async () => {
-  // delete is in REQUIRES_STOPPED — stop comfy via return-to-dashboard so
-  // the IPC handler doesn't bail on us. rtd preserves the chooser host so
-  // we still have an IPC target for delete + getInstallations.
-  await returnToDashboardThroughConfirm()
-  await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
-  await waitForWebContents(ctx.app, 'panel.html')
-  await expectChooserVisible(ctx.panel)
+  // delete is in REQUIRES_STOPPED — stop comfy through the real UI
+  // (pill -> picker Stop -> confirm -> stopped card -> Return to
+  // Dashboard) so the IPC handler doesn't bail on us. The return
+  // preserves the chooser host so we still have an IPC target for
+  // delete + getInstallations.
+  await stopAndReturnToDashboardViaUI()
 
   const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
   expect(installs.length, 'no tracked installation after install').toBeGreaterThan(0)
