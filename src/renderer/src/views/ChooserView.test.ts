@@ -70,6 +70,8 @@ interface MockApi {
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
   focusComfyWindow: ReturnType<typeof vi.fn>
+  // authStore reads window.api.comfybuilder at construction time.
+  comfybuilder: Record<string, ReturnType<typeof vi.fn>>
 }
 
 function installMockApi(initial: Installation[]): MockApi {
@@ -81,6 +83,16 @@ function installMockApi(initial: Installation[]): MockApi {
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn(() => () => {}),
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+      listWorkspaces: vi.fn().mockResolvedValue([]),
+      switchWorkspace: vi.fn(),
+      listDistributions: vi.fn().mockResolvedValue([]),
+      installDistribution: vi.fn(),
+    },
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api

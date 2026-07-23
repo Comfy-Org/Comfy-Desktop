@@ -1121,6 +1121,43 @@
     },
     "viewLogs": "View logs"
   },
+  "devPlatform": {
+    "signIn": {
+      "cta": "Log in"
+    },
+    "account": {
+      "signOut": "Sign out",
+      "signedInAs": "Signed in as {email}",
+      "signOutConfirmTitle": "Sign out of ComfyBuilder?",
+      "signOutConfirmBody": "Your installed distributions are kept and still run. They just stop receiving updates until you sign back in.",
+      "signOutConfirmCta": "Sign out"
+    },
+    "workspace": {
+      "personalLabel": "Personal",
+      "switchLabel": "Workspace"
+    },
+    "distribution": {
+      "availablePill": "Available",
+      "updatedLabel": "Updated",
+      "installTileMeta": "Not installed yet",
+      "emptyTitle": "No distributions published to this workspace yet.",
+      "installFailed": "Could not start the install. Try again.",
+      "states": {
+        "noBuild": "No build",
+        "platformMismatch": "Not for this machine",
+        "needsDesktopUpdate": "Update required",
+        "updateAvailable": "Update",
+        "installed": "Installed"
+      },
+      "blockedReason": {
+        "buildFailed": "This distribution has no successful build yet.",
+        "noBuild": "This distribution has no successful build yet.",
+        "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU.",
+        "platformMismatch": "The latest build has no artifact for this operating system and GPU.",
+        "needsDesktopUpdate": "This distribution needs Comfy Desktop {version} or newer."
+      }
+    }
+  },
   "errors": {
     "invalidUrl": "Enter a valid URL (e.g. http://localhost:8188).",
     "noLaunchSupport": "This source does not support launching yet.",
