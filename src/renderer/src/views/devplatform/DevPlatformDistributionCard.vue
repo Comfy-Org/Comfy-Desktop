@@ -78,8 +78,15 @@ const stateLabel = computed(() => {
   return ''
 })
 
-/** The blue Update pill — same styling as the install tile's. */
-const showUpdatePill = computed(() => props.distribution.state === 'update-available')
+/** The blue action pill, pinned right of the facts: Update on
+ *  update-available, Install on installable — identical styling; the whole
+ *  card is the click target that performs it. Empty = no pill. */
+const actionPillLabel = computed(() => {
+  const state = props.distribution.state
+  if (state === 'update-available') return t('chooser.updatePill')
+  if (state === 'installable') return t('devPlatform.distribution.menuInstall')
+  return ''
+})
 
 /** Full-contrast explanation, carried on `title` so it eats no tile space. */
 const blockedReason = computed(() => {
@@ -134,7 +141,7 @@ function onActivate(): void {
 
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <div v-if="stateLabel || factsLine || showUpdatePill" class="chooser-tile-footer">
+      <div v-if="stateLabel || factsLine || actionPillLabel" class="chooser-tile-footer">
         <TruncatedText v-if="stateLabel" class="chooser-tile-meta-line" :text="stateLabel" />
         <TruncatedText v-else-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
           <span v-if="comfyVersionLabel" class="chooser-tile-meta-source">{{
@@ -148,11 +155,11 @@ function onActivate(): void {
         <!-- Mirrors the install tile's update pill: facts left, pill pinned
              right. The whole card is the click target that performs it. -->
         <span
-          v-if="showUpdatePill"
+          v-if="actionPillLabel"
           class="chooser-tile-pill chooser-tile-pill-update chooser-tile-pill-action"
         >
           <ArrowDownToLine :size="11" aria-hidden="true" />
-          {{ t('chooser.updatePill') }}
+          {{ actionPillLabel }}
         </span>
       </div>
     </div>
