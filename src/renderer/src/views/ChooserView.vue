@@ -15,6 +15,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
+import DistributionDetailOverlay from './devplatform/DistributionDetailOverlay.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ChooserGridEntry } from './chooser/chooser-proto'
 import type { Distribution } from '../devplatform/types'
@@ -136,6 +137,28 @@ const distributionNote = computed(() => {
 
 function handleDistributionActivate(dist: Distribution): void {
   emit('install-distribution', dist)
+  // TEMP: the real install chain isn't wired yet, so flip the mock state in
+  // place — install and update both land on the latest published version.
+  // Lets the prototype demo the full install → installed → uninstall loop.
+  if (dist.state === 'installable' || dist.state === 'update-available') {
+    dist.state = 'installed'
+    dist.installedVersion = dist.version
+  }
+}
+
+/** Uninstall (mock): confirm, then return the card to its hollow available
+ *  state. The real path will run the delete pipeline once installs carry a
+ *  distribution link. */
+async function uninstallDistribution(dist: Distribution): Promise<void> {
+  const confirmed = await modal.confirm({
+    title: 'Uninstall Distribution',
+    message: `${dist.name} will be removed from this computer. It stays available from ${workspaceName.value} and can be reinstalled at any time.`,
+    confirmLabel: 'Uninstall',
+    confirmStyle: 'danger'
+  })
+  if (!confirmed) return
+  dist.state = 'installable'
+  dist.installedVersion = undefined
 }
 
 // --- PROTOTYPE: family partitions -----------------------------------------
@@ -193,6 +216,12 @@ const showWorkspaceShelf = computed(
 )
 
 // --- Distribution kebab menu ---
+//
+// Two item sets sharing one grammar with the install-tile menu:
+//   uninstalled → Install · Details… · [View on Developer Platform]
+//   installed   → [Update to Dist vN] · Manage… · [View on Developer
+//                 Platform] · Uninstall
+// The platform link is admin/owner only — members can't edit the pipeline.
 const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
   open: false,
   x: 0,
@@ -200,17 +229,39 @@ const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution |
   dist: null
 })
 
+/** TEMP: hardcoded base until main exposes the platform web URL. */
+const DEV_PLATFORM_URL_BASE = 'https://comfy-builder.fennec-typhon.ts.net'
+
+const canViewOnPlatform = computed(() => {
+  const role = authStore.selectedWorkspace?.role
+  return role === 'owner' || role === 'admin'
+})
+
 const distMenuItems = computed<ContextMenuItem[]>(() => {
   const dist = distMenu.value.dist
   if (!dist) return []
-  const installable = dist.state === 'installable' || dist.state === 'update-available'
-  return [
-    {
+  const installed = dist.state === 'installed' || dist.state === 'update-available'
+  const items: ContextMenuItem[] = []
+  if (installed) {
+    if (dist.state === 'update-available') {
+      items.push({ id: 'update', label: `Update to Dist v${dist.version}` })
+    }
+    items.push({ id: 'manage', label: 'Manage…' })
+  } else {
+    items.push({
       id: 'install',
       label: t('devPlatform.distribution.menuInstall'),
-      disabled: !installable
-    }
-  ]
+      disabled: dist.state !== 'installable'
+    })
+    items.push({ id: 'details', label: 'Details…' })
+  }
+  if (canViewOnPlatform.value) {
+    items.push({ id: 'view-platform', label: 'View on Developer Platform', separator: true })
+  }
+  if (installed) {
+    items.push({ id: 'uninstall', label: 'Uninstall', style: 'danger', separator: true })
+  }
+  return items
 })
 
 function openDistKebabMenu(event: MouseEvent, dist: Distribution): void {
@@ -229,7 +280,47 @@ function closeDistMenu(): void {
 function handleDistMenuSelect(itemId: string): void {
   const dist = distMenu.value.dist
   closeDistMenu()
-  if (itemId === 'install' && dist) handleDistributionActivate(dist)
+  if (!dist) return
+  switch (itemId) {
+    case 'install':
+    case 'update':
+      handleDistributionActivate(dist)
+      break
+    case 'details':
+      openDistOverlay(dist, 'details')
+      break
+    case 'manage':
+      openDistOverlay(dist, 'manage')
+      break
+    case 'view-platform':
+      void window.api.openExternal(`${DEV_PLATFORM_URL_BASE}/pipelines/${dist.id}`)
+      break
+    case 'uninstall':
+      void uninstallDistribution(dist)
+      break
+  }
+}
+
+// --- PROTOTYPE: distribution Details / Manage overlay ---
+//
+// Same presentation family as the install Manage view, renderer-local
+// against the mocks (the real picker popup is main-process-fed).
+const distOverlay = ref<{ open: boolean; mode: 'details' | 'manage'; dist: Distribution | null }>({
+  open: false,
+  mode: 'details',
+  dist: null
+})
+
+function openDistOverlay(dist: Distribution, mode: 'details' | 'manage'): void {
+  distOverlay.value = { open: true, mode, dist }
+}
+
+function closeDistOverlay(): void {
+  distOverlay.value = { open: false, mode: 'details', dist: null }
+}
+
+function handleOverlayInstall(): void {
+  if (distOverlay.value.dist) handleDistributionActivate(distOverlay.value.dist)
 }
 
 // --- Manage / context menu ---
@@ -429,6 +520,15 @@ const gridHandlers = {
         :items="distMenuItems"
         @close="closeDistMenu"
         @select="handleDistMenuSelect"
+      />
+
+      <DistributionDetailOverlay
+        v-if="distOverlay.open && distOverlay.dist"
+        :distribution="distOverlay.dist"
+        :mode="distOverlay.mode"
+        :workspace-name="workspaceName"
+        @close="closeDistOverlay"
+        @install="handleOverlayInstall"
       />
     </div>
   </BrandBackground>
