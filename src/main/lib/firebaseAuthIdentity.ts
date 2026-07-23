@@ -129,6 +129,16 @@ export function bindMainVerifiedFirebaseUser(
   loadPersistedEpochState()
   if (!clearUnmergeableEpoch()) return
   requestedUserId = normalizedUserId
+  const hasActiveReporter = [...reporters.entries()].some(
+    ([webContents, reporter]) => !webContents.isDestroyed() && reporter.active
+  )
+  if (hasActiveReporter) {
+    // The injected page will report its restored Firebase user after reload.
+    // Queue verified properties now, but let multi-view consensus perform the
+    // only identity bind so navigation cannot cause a bind/unbind/rebind pair.
+    mainTelemetry.registerPersonProperties(properties)
+    return
+  }
   mainTelemetry.bindUserId(normalizedUserId, properties)
 }
 

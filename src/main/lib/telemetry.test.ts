@@ -72,7 +72,7 @@ const featureFlagCalls: Array<{
   options?: { sendFeatureFlagEvents?: boolean }
 }> = []
 
-const posthogClientMock = vi.hoisted(() => ({ failNextCaptures: 0 }))
+const posthogClientMock = vi.hoisted(() => ({ failNextCaptures: 0, failNextFlushes: 0 }))
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
@@ -94,6 +94,10 @@ vi.mock('posthog-node', () => ({
       exceptions.push({ error, distinctId, properties })
     }
     flush(): Promise<void> {
+      if (posthogClientMock.failNextFlushes > 0) {
+        posthogClientMock.failNextFlushes--
+        return Promise.reject(new Error('offline'))
+      }
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
@@ -117,6 +121,17 @@ const anonymousIdentityMock = vi.hoisted(() => ({
   unmergeable: false
 }))
 
+const pendingIdentityMergeMock = vi.hoisted(() => ({
+  entries: [] as Array<{
+    id: string
+    anonymousId: string
+    userId: string
+    nextAnonymousId: string
+    installationId: string
+  }>,
+  nextId: 1
+}))
+
 vi.mock('./anonymousIdentity', () => ({
   clearPersistedUnmergeableAnonymousEpoch: () => {
     anonymousIdentityMock.unmergeable = false
@@ -130,6 +145,41 @@ vi.mock('./anonymousIdentity', () => ({
   rotatePersistedAnonymousDistinctId: () => {
     if (anonymousIdentityMock.fail) return null
     return anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
+  }
+}))
+
+vi.mock('./pendingIdentityMerge', () => ({
+  readPendingIdentityMerges: () => [...pendingIdentityMergeMock.entries],
+  enqueuePendingIdentityMerge: (
+    merge: Omit<(typeof pendingIdentityMergeMock.entries)[number], 'id'>
+  ) => {
+    const entry = { ...merge, id: `merge-${pendingIdentityMergeMock.nextId++}` }
+    pendingIdentityMergeMock.entries.push(entry)
+    return entry
+  },
+  reservePendingIdentityMerge: (
+    merge: Omit<
+      (typeof pendingIdentityMergeMock.entries)[number],
+      'id' | 'nextAnonymousId'
+    >
+  ) => {
+    if (anonymousIdentityMock.fail) return null
+    const nextAnonymousId =
+      anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
+    if (!nextAnonymousId) return null
+    const entry = {
+      ...merge,
+      nextAnonymousId,
+      id: `merge-${pendingIdentityMergeMock.nextId++}`
+    }
+    pendingIdentityMergeMock.entries.push(entry)
+    return entry
+  },
+  clearPendingIdentityMerges: (ids: ReadonlySet<string>) => {
+    pendingIdentityMergeMock.entries = pendingIdentityMergeMock.entries.filter(
+      (entry) => !ids.has(entry.id)
+    )
+    return true
   }
 }))
 
@@ -181,6 +231,9 @@ afterEach(() => {
   anonymousIdentityMock.fail = false
   anonymousIdentityMock.unmergeable = false
   posthogClientMock.failNextCaptures = 0
+  posthogClientMock.failNextFlushes = 0
+  pendingIdentityMergeMock.entries = []
+  pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
   delete process.env['POSTHOG_ENABLED']
   telemetry._resetForTest()
@@ -808,6 +861,31 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.find((c) => c.event === 'app:user_logged_in')?.distinctId).toBe('user-123')
     telemetry.capture('authenticated.event')
     expect(captured.at(-1)?.properties).not.toHaveProperty('$process_person_profile')
+  })
+
+  it('replays an unacknowledged identity merge after restart', async () => {
+    posthogClientMock.failNextFlushes = 1
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+    await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(1))
+
+    telemetry._resetForTest()
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anonymous-next-1', 'installation-id-fake')
+
+    await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(0))
+    expect(identifies).toContainEqual({
+      distinctId: 'user-123',
+      properties: {
+        $set: {
+          installation_id: 'installation-id-fake',
+          is_authenticated: true
+        },
+        $anon_distinct_id: 'anonymous-start'
+      }
+    })
   })
 
   it('keeps repeated binds of the same Firebase UID idempotent', () => {

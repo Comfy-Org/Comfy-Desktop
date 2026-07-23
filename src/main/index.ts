@@ -86,10 +86,12 @@ import {
   consumeFirstLaunch,
   getDeviceId,
   getIdClass,
+  hasCompletedFirstLaunch,
   initDeviceId,
   markIdentityMigrationCompleted
 } from './lib/deviceId'
 import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
+import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudCapacity } from './lib/cloudCapacity'
 import { initUserTier } from './lib/userTier'
@@ -1416,7 +1418,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const installationId = getDeviceId()
     // A fresh Windows install may adopt the website anonymous ID carried in
     // the installer filename; see websiteAnonymousIdentity.ts.
-    const anonymousDistinctId = getInitialAnonymousDistinctId()
+    const anonymousDistinctId = recoverPendingIdentityRotation(
+      getInitialAnonymousDistinctId(hasCompletedFirstLaunch())
+    )
 
     mainTelemetry.bindAnonymousId(anonymousDistinctId, installationId, {
       app_version: APP_VERSION,

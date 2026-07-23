@@ -27,6 +27,7 @@ import {
   emitSignInFailure,
   type HandleFirebasePopupOpts,
   isOnOrigin,
+  originOf,
   POST_SIGNIN_HOLD_MS
 } from '../firebaseBridge/flowShared'
 import { buildIndexedDbInjectScript } from '../firebaseBridge/inject'
@@ -81,6 +82,7 @@ export async function signInViaDesktopLoginCode(
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
 ): Promise<'handled' | 'fallback'> {
+  const sessionTargetOrigin = originOf(comfyContents.getURL())
   const firebaseEnv = detectFirebaseEnv(interceptedAuthUrl)
   const cloudOrigin = cloudLoginOriginForUrl(
     comfyContents.getURL(),
@@ -221,30 +223,32 @@ export async function signInViaDesktopLoginCode(
     })
     if (controller.signal.aborted) return 'handled'
     const user = buildPersistedUserFromCustomToken(firebaseConfig, signIn, account)
-    // Same identity hook as the legacy bridge (consent-gated downstream),
-    // bound before the reload below so the merge survives a teardown.
-    bindSignedInUser(user)
-    // Desktop half of the GTM-93 stitch — mirrors the backend's
-    // comfy.cloud.identity.login_attributed emitted at redeem time.
-    mainTelemetry.capture('comfy.desktop.identity.login_attributed', {
-      via: 'desktop_login_code'
-    })
     if (comfyContents.isDestroyed()) return 'handled'
     // Same hold as the legacy bridge: let the user see the browser's
     // signed-in state before Desktop pulls focus back. Abort-aware — a
     // re-click during the hold rejects into the catch below as 'handled'.
     await abortableSleep(POST_SIGNIN_HOLD_MS, controller.signal)
     if (controller.signal.aborted || comfyContents.isDestroyed()) return 'handled'
-    // The inject script carries the refresh token into the page's main world,
-    // so it must only ever run on the Cloud origin. Minutes elapse between
-    // flow start and here (browser sign-in + hold), which is ample time for
-    // the view to have navigated elsewhere; re-check rather than assume.
-    if (!isOnOrigin(comfyContents, cloudOrigin)) return 'handled'
+    // The backend/login origin and the embedded session target are distinct:
+    // local and preview views authenticate through production Cloud, but the
+    // resulting Firebase session must be injected back into the exact origin
+    // that initiated the flow. Pin that origin before any awaits and fail if
+    // the view moved while the browser flow was open.
+    if (!sessionTargetOrigin || !isOnOrigin(comfyContents, sessionTargetOrigin)) {
+      throw new Error('embedded view changed origin before session injection')
+    }
     await comfyContents.executeJavaScript(
       buildIndexedDbInjectScript(user, firebaseConfig.apiKey),
       true
     )
     if (controller.signal.aborted) return 'handled'
+    // Bind only after the session was successfully installed. Hosted Cloud
+    // views wait for their declarative auth reporter; local/legacy views use
+    // the main-verified fallback, so this produces exactly one success.
+    bindSignedInUser(user)
+    mainTelemetry.capture('comfy.desktop.identity.login_attributed', {
+      via: 'desktop_login_code'
+    })
     restoreParentWindow(opts.parentWindow)
     return 'handled'
   } catch (err) {

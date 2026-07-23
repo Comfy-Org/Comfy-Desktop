@@ -41,6 +41,13 @@ import {
   parseWebsiteAnonymousIdPayload,
   pendingWebsiteAnonymousIdPath
 } from './websiteAnonymousIdentity'
+import {
+  clearPendingIdentityMerges,
+  enqueuePendingIdentityMerge,
+  readPendingIdentityMerges,
+  recoverPendingIdentityRotation,
+  reservePendingIdentityMerge
+} from './pendingIdentityMerge'
 
 beforeEach(() => {
   testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'anonymous-identity-test-'))
@@ -195,7 +202,7 @@ describe('websiteAnonymousIdentity', () => {
     fs.writeFileSync(pendingWebsiteAnonymousIdPath(), websiteAnonymousId)
     safeFileMock.failWrites = true
 
-    expect(getInitialAnonymousDistinctId()).not.toBe(websiteAnonymousId)
+    expect(getInitialAnonymousDistinctId()).toBe(websiteAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBeNull()
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(true)
   })
@@ -206,8 +213,8 @@ describe('websiteAnonymousIdentity', () => {
     // D minted in the same boot must not reach disk and outrank the carrier.
     safeFileMock.failNextWrites = 1
 
-    const ephemeral = getInitialAnonymousDistinctId()
-    expect(ephemeral).not.toBe(websiteAnonymousId)
+    const inMemoryCarrier = getInitialAnonymousDistinctId()
+    expect(inMemoryCarrier).toBe(websiteAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBeNull()
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(true)
 
@@ -225,5 +232,80 @@ describe('websiteAnonymousIdentity', () => {
     expect(regenerated).not.toBe(websiteAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBe(regenerated)
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
+  })
+
+  it('does not adopt a carrier on the first upgrade from a pre-identity build', () => {
+    fs.writeFileSync(pendingWebsiteAnonymousIdPath(), websiteAnonymousId)
+
+    const desktopAnonymousId = getInitialAnonymousDistinctId(true)
+
+    expect(desktopAnonymousId).not.toBe(websiteAnonymousId)
+    expect(readPersistedAnonymousDistinctId()).toBe(desktopAnonymousId)
+    expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
+  })
+})
+
+describe('pendingIdentityMerge', () => {
+  it('persists merge retries until their acknowledged ids are cleared', () => {
+    const first = enqueuePendingIdentityMerge({
+      anonymousId: 'anonymous-1',
+      userId: 'firebase-1',
+      nextAnonymousId: 'anonymous-2',
+      installationId: 'installation-1'
+    })
+    const second = enqueuePendingIdentityMerge({
+      anonymousId: 'anonymous-2',
+      userId: 'firebase-2',
+      nextAnonymousId: 'anonymous-3',
+      installationId: 'installation-1'
+    })
+
+    expect(first).not.toBeNull()
+    expect(second).not.toBeNull()
+    expect(readPendingIdentityMerges()).toHaveLength(2)
+    expect(clearPendingIdentityMerges(new Set([first!.id]))).toBe(true)
+    expect(readPendingIdentityMerges()).toEqual([second])
+  })
+
+  it('reserves the retry record before replacing the reusable anonymous id', () => {
+    expect(persistAnonymousDistinctId('anonymous-1')).toBe(true)
+
+    const pending = reservePendingIdentityMerge({
+      anonymousId: 'anonymous-1',
+      userId: 'firebase-1',
+      installationId: 'installation-1'
+    })
+
+    expect(pending).not.toBeNull()
+    expect(readPendingIdentityMerges()).toEqual([pending])
+    expect(readPersistedAnonymousDistinctId()).toBe(pending!.nextAnonymousId)
+  })
+
+  it('completes an interrupted reserved rotation before first capture', () => {
+    expect(persistAnonymousDistinctId('anonymous-1')).toBe(true)
+    const pending = enqueuePendingIdentityMerge({
+      anonymousId: 'anonymous-1',
+      userId: 'firebase-1',
+      nextAnonymousId: 'anonymous-2',
+      installationId: 'installation-1'
+    })
+
+    expect(recoverPendingIdentityRotation('anonymous-1')).toBe('anonymous-2')
+    expect(readPersistedAnonymousDistinctId()).toBe('anonymous-2')
+    expect(readPendingIdentityMerges()).toEqual([pending])
+  })
+
+  it('does not identify without a durable retry record', () => {
+    safeFileMock.failWrites = true
+
+    expect(
+      enqueuePendingIdentityMerge({
+        anonymousId: 'anonymous-1',
+        userId: 'firebase-1',
+        nextAnonymousId: 'anonymous-2',
+        installationId: 'installation-1'
+      })
+    ).toBeNull()
+    expect(readPendingIdentityMerges()).toEqual([])
   })
 })

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 import {
@@ -62,9 +61,10 @@ function readPendingWebsiteAnonymousId(): string | null {
 /**
  * Resolve the pre-login PostHog distinct ID before the first capture. An
  * existing persisted ID always wins; a website carrier only seeds a fresh
- * install, and only once it has been durably persisted.
+ * install. A valid carrier remains the in-memory ID if its first persistence
+ * attempt fails, while the pending file preserves the retry for next launch.
  */
-export function getInitialAnonymousDistinctId(): string {
+export function getInitialAnonymousDistinctId(existingInstallation = false): string {
   const persisted = readPersistedAnonymousDistinctId()
   if (persisted) {
     clearPendingWebsiteAnonymousId()
@@ -80,17 +80,23 @@ export function getInitialAnonymousDistinctId(): string {
     return getOrCreateAnonymousDistinctId()
   }
 
+  // Builds released before this identity model have a first-launch marker but
+  // no anonymous-ID file. A manually downloaded carrier installer is an
+  // upgrade in that case, not a fresh acquisition.
+  if (existingInstallation) {
+    clearPendingWebsiteAnonymousId()
+    return getOrCreateAnonymousDistinctId()
+  }
+
   const websiteAnonymousId = readPendingWebsiteAnonymousId()
   if (websiteAnonymousId) {
     if (persistAnonymousDistinctId(websiteAnonymousId)) {
       clearPendingWebsiteAnonymousId()
       return websiteAnonymousId
     }
-    // W is valid but could not be durably adopted. Fall back to an ephemeral
-    // ID for this process — matching getOrCreateAnonymousDistinctId's own
-    // failed-persist behavior — instead of letting a competing random D reach
-    // disk and permanently outrank the retained carrier on the next startup.
-    return randomUUID()
+    // Keep W in memory while the pending file remains for a later persistence
+    // retry. An ephemeral D would strand this process's acquisition events.
+    return websiteAnonymousId
   }
 
   clearPendingWebsiteAnonymousId()

@@ -128,10 +128,6 @@ export async function handleFirebasePopup(
     showCopyLinkBanner(comfyContents, loginUrl)
     const { user, apiKey } = await abortable(handle.signInPromise, signal)
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
-    // Bind PostHog identity as soon as main verifies the user — hosted
-    // bundles without the consensus bridge never report auth state, and
-    // consensus supersedes this bind afterward (same-UID rebinds are no-ops).
-    bindSignedInUser(user)
     if (comfyContents.isDestroyed()) return
     // Hold for a beat so the user actually sees the "You're signed in"
     // page (with its synchronised countdown) before we yank focus back
@@ -147,6 +143,10 @@ export async function handleFirebasePopup(
       signal
     )
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
+    // Do not report success until the session is installed in the initiating
+    // view. Hosted Cloud views bind through declarative auth consensus;
+    // local/legacy views use the main-verified fallback.
+    bindSignedInUser(user)
     // Pull the user back into the app after the browser completes sign-in.
     restoreParentWindow(opts.parentWindow)
   } catch (err) {

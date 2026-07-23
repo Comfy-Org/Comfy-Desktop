@@ -83,12 +83,16 @@ const GRANT = {
 
 function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   executeJavaScript: ReturnType<typeof vi.fn>
+  getURL: ReturnType<typeof vi.fn>
 } {
   return {
     isDestroyed: vi.fn(() => false),
     getURL: vi.fn(() => url),
     executeJavaScript: vi.fn(() => Promise.resolve())
-  } as unknown as WebContents & { executeJavaScript: ReturnType<typeof vi.fn> }
+  } as unknown as WebContents & {
+    executeJavaScript: ReturnType<typeof vi.fn>
+    getURL: ReturnType<typeof vi.fn>
+  }
 }
 
 /** Fresh module per test — the singleton AbortController lives at module scope. */
@@ -284,12 +288,9 @@ describe('signInViaDesktopLoginCode', () => {
     })
     mockSignInChain({ uid: 'uid-1' })
     const mod = await loadOrchestrator()
+    const contents = fakeContents('http://127.0.0.1:8188/')
 
-    const promise = mod.signInViaDesktopLoginCode(
-      AUTH_URL,
-      fakeContents('http://127.0.0.1:8188/'),
-      {}
-    )
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
@@ -299,6 +300,7 @@ describe('signInViaDesktopLoginCode', () => {
       expect.anything()
     )
     expect(h.openExternal.mock.calls[0]![0]).toMatch(/^https:\/\/cloud\.comfy\.org\/cloud\/login/)
+    expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
   })
 
   it('omits installation_id when telemetry consent is off or undecided', async () => {
@@ -355,7 +357,11 @@ describe('signInViaDesktopLoginCode', () => {
     // injection and this test would pass with the guard removed.
     mockSignInChain({ uid: 'uid-1' })
     const mod = await loadOrchestrator()
-    const contents = fakeContents('https://evil.example.com/pwned')
+    const contents = fakeContents()
+    contents.getURL
+      .mockReturnValueOnce('https://cloud.comfy.org/')
+      .mockReturnValueOnce('https://cloud.comfy.org/')
+      .mockReturnValue('https://evil.example.com/pwned')
 
     const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
     await vi.runAllTimersAsync()
@@ -365,6 +371,41 @@ describe('signInViaDesktopLoginCode', () => {
     // stands between it and the foreign page.
     expect(h.buildPersistedUserFromCustomToken).toHaveBeenCalled()
     expect(contents.executeJavaScript).not.toHaveBeenCalled()
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    expect(h.capture).not.toHaveBeenCalledWith(
+      'comfy.desktop.identity.login_attributed',
+      expect.anything()
+    )
+    expect(h.emit).toHaveBeenCalledWith(
+      'comfy.desktop.auth.sign_in_failed',
+      expect.objectContaining({ flow: 'desktop_login_code' })
+    )
+  })
+
+  it('does not bind or attribute success when session injection fails', async () => {
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const contents = fakeContents()
+    contents.executeJavaScript.mockRejectedValue(new Error('frame destroyed'))
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    expect(h.capture).not.toHaveBeenCalledWith(
+      'comfy.desktop.identity.login_attributed',
+      expect.anything()
+    )
+    expect(h.emit).toHaveBeenCalledWith(
+      'comfy.desktop.auth.sign_in_failed',
+      expect.objectContaining({ flow: 'desktop_login_code' })
+    )
   })
 
   it('fails in place on a terminal exchange error — no legacy restart after the browser opened', async () => {

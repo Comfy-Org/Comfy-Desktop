@@ -109,6 +109,7 @@ describe('handleFirebasePopup legacy flow', () => {
     await flow
 
     expect(contents.executeJavaScript).not.toHaveBeenCalledWith('inject-user', true)
+    expect(h.bindUserId).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
   })
 
@@ -125,6 +126,7 @@ describe('handleFirebasePopup legacy flow', () => {
     await flow
 
     expect(contents.executeJavaScript).not.toHaveBeenCalledWith('inject-user', true)
+    expect(h.bindUserId).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
   })
 
@@ -139,7 +141,7 @@ describe('handleFirebasePopup legacy flow', () => {
 
     const staleFlow = handleFirebasePopup(AUTH_URL, contents)
     await vi.advanceTimersByTimeAsync(0)
-    expect(h.bindUserId).toHaveBeenCalledWith('old-user', expect.anything())
+    expect(h.bindUserId).not.toHaveBeenCalled()
     expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_started', {
       provider: 'google.com',
       flow: 'loopback_bridge'
@@ -152,6 +154,7 @@ describe('handleFirebasePopup legacy flow', () => {
     await staleFlow
 
     expect(contents.executeJavaScript).not.toHaveBeenCalledWith('inject-user', true)
+    expect(h.bindUserId).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
     expect(contents.off).toHaveBeenCalledTimes(1)
     runBannerCleanup()

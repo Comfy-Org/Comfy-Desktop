@@ -6,6 +6,7 @@ const telemetry = vi.hoisted(() => ({
   applyFirebaseAnonymousConsensus: vi.fn(),
   applyFirebaseUserConsensus: vi.fn(),
   bindUserId: vi.fn(),
+  registerPersonProperties: vi.fn(),
   discardUnmergeableAnonymousEpoch: vi.fn(() => true),
   hasUnmergeableAnonymousEpoch: vi.fn(() => false),
   markAnonymousEpochUnmergeable: vi.fn(() => true)
@@ -181,18 +182,27 @@ describe('firebaseAuthIdentity consensus', () => {
     expect(telemetry.discardUnmergeableAnonymousEpoch).not.toHaveBeenCalled()
   })
 
-  it('lets signed-out renderer consensus supersede a main-verified bootstrap bind', () => {
+  it('waits for active renderer consensus after a main-verified sign-in', () => {
     const reporter = new FakeWebContents(cloudUrl)
     activate(reporter)
     vi.clearAllMocks()
 
     bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' })
-    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {
+    expect(telemetry.bindUserId).not.toHaveBeenCalled()
+    expect(telemetry.registerPersonProperties).toHaveBeenCalledWith({
       signed_in_via: 'desktop_2'
     })
 
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
-    expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
+    expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
+  })
+
+  it('uses the main-verified bind when no hosted reporter is active', () => {
+    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' })
+
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {
+      signed_in_via: 'desktop_2'
+    })
   })
 
   it('unbinds while any live reporter is pending without tainting the epoch', () => {

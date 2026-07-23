@@ -125,6 +125,11 @@ import {
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import {
+  clearPendingIdentityMerges,
+  readPendingIdentityMerges,
+  reservePendingIdentityMerge
+} from './pendingIdentityMerge'
 
 export type TelemetryValue = boolean | number | string | null | undefined
 export type TelemetryContext = Record<string, TelemetryValue | TelemetryValue[]>
@@ -184,6 +189,8 @@ export function _resetForTest(): void {
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
+  pendingIdentityMergeFlush = null
+  queuedPendingIdentityMergeIds.clear()
 }
 
 /** @internal — exposed for tests. */
@@ -589,6 +596,49 @@ let anonymousDistinctId: string | null = null
 let nextAnonymousDistinctId: string | null = null
 let boundUserId: string | null = null
 let installationIdProperty: string | null = null
+let pendingIdentityMergeFlush: Promise<void> | null = null
+const queuedPendingIdentityMergeIds = new Set<string>()
+
+function flushPendingIdentityMerges(): Promise<void> {
+  if (pendingIdentityMergeFlush) return pendingIdentityMergeFlush
+  if (!canEmit() || consentState !== 'granted') return Promise.resolve()
+
+  const admittedIds = new Set<string>()
+  for (const merge of readPendingIdentityMerges()) {
+    if (!queuedPendingIdentityMergeIds.has(merge.id)) {
+      try {
+        client!.identify({
+          distinctId: merge.userId,
+          properties: {
+            $set: {
+              installation_id: merge.installationId,
+              is_authenticated: true
+            },
+            $anon_distinct_id: merge.anonymousId
+          }
+        })
+        queuedPendingIdentityMergeIds.add(merge.id)
+      } catch {
+        continue
+      }
+    }
+    admittedIds.add(merge.id)
+  }
+  if (admittedIds.size === 0) return Promise.resolve()
+
+  const activeClient = client!
+  pendingIdentityMergeFlush = activeClient
+    .flush()
+    .then(() => {
+      clearPendingIdentityMerges(admittedIds)
+    })
+    .catch(() => {})
+    .finally(() => {
+      for (const id of admittedIds) queuedPendingIdentityMergeIds.delete(id)
+      pendingIdentityMergeFlush = null
+    })
+  return pendingIdentityMergeFlush
+}
 
 /**
  * Ship deferred one-shot state. Each buffer is cleared only when its capture
@@ -615,6 +665,7 @@ function tryFlushDeferred(): void {
     pendingUserBinding = null
     applyFirebaseUserConsensus(userId)
   }
+  void flushPendingIdentityMerges()
 }
 
 /** Bind W/D for captures and a separate installation property. No SDK identify. */
@@ -697,11 +748,16 @@ export function applyFirebaseUserConsensus(userId: string): void {
   }
 
   const anonymousId = anonymousDistinctId
-  const reservedNextAnonymousId = rotatePersistedAnonymousDistinctId()
-  if (!reservedNextAnonymousId) {
+  const pendingMerge = reservePendingIdentityMerge({
+    anonymousId,
+    userId: normalizedUserId,
+    installationId: installationIdProperty
+  })
+  if (!pendingMerge) {
     pendingUserBinding = normalizedUserId
     return
   }
+  const reservedNextAnonymousId = pendingMerge.nextAnonymousId
 
   const personSet = scrubProperties({
     ...(pendingPersonSet || {}),
@@ -721,6 +777,7 @@ export function applyFirebaseUserConsensus(userId: string): void {
         $anon_distinct_id: anonymousId
       }
     })
+    queuedPendingIdentityMergeIds.add(pendingMerge.id)
   } catch {
     // Conservatively abandon D if the SDK may have partially accepted it.
     anonymousDistinctId = reservedNextAnonymousId
@@ -735,6 +792,7 @@ export function applyFirebaseUserConsensus(userId: string): void {
   pendingPersonSetOnce = null
   pendingUserBinding = null
   capture('app:user_logged_in', { user_id: normalizedUserId })
+  void flushPendingIdentityMerges()
 }
 
 /**
@@ -1183,6 +1241,7 @@ export async function shutdown(reason: string): Promise<void> {
     // ignore
   }
   try {
+    await flushPendingIdentityMerges()
     await client.shutdown()
   } catch {
     // ignore
