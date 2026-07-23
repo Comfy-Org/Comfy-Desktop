@@ -331,7 +331,9 @@ export function registerInstallationHandlers(): void {
         // After postInstall, check for pending snapshot restore
         const freshInst = await installations.get(installationId)
         const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
-        if (freshInst && pendingFile && fs.existsSync(pendingFile)) {
+        // No existsSync gate: if the staged file is gone, restoreSnapshotIntoInstallation
+        // throws, failing the install explicitly instead of silently skipping the restore.
+        if (freshInst && pendingFile) {
           const sendOutput = (text: string): void => {
             try {
               if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })

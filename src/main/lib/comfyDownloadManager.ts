@@ -13,6 +13,7 @@ import {
   type InstallModelSearch,
 } from './models'
 import { _broadcastToRenderer } from './ipc/shared'
+import type { TemplateModelDownload } from '../sources/standalone/templateModels'
 
 export const ALLOWED_EXTENSIONS = ['.safetensors', '.sft', '.ckpt', '.pth', '.pt']
 
@@ -278,6 +279,27 @@ async function resolveDownloadContextById(
   } catch {
     return null
   }
+}
+
+/** True when every model in `models` already exists somewhere the install's
+ *  ComfyUI would find it — the same search set a download uses to short-circuit
+ *  to "completed". Empty `models` returns false (nothing to call downloaded). */
+export async function areModelsPresent(
+  installationId: string | null,
+  models: ReadonlyArray<Pick<TemplateModelDownload, 'directory' | 'filename'>>,
+): Promise<boolean> {
+  if (models.length === 0) return false
+  const ctx = await resolveDownloadContextById(installationId)
+  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
+  const checks = await Promise.all(
+    models.map(async ({ directory, filename }) => {
+      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+        if (await regularFileExists(candidate)) return true
+      }
+      return false
+    }),
+  )
+  return checks.every(Boolean)
 }
 
 /** Folder types whose ComfyUI defaults register multiple dirs, so a download

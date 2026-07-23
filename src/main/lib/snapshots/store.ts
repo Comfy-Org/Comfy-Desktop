@@ -162,9 +162,10 @@ async function writeSnapshot(
   data: Omit<Snapshot, 'createdAt' | 'version'> & {
     trigger: Snapshot['trigger']
     label: string | null
-  }
+  },
+  at: Date = new Date()
 ): Promise<string> {
-  const now = new Date()
+  const now = at
   const snapshot: Snapshot = {
     version: 1,
     createdAt: now.toISOString(),
@@ -384,6 +385,81 @@ export async function saveSnapshot(
       deduplicatedPrevious: false
     })
     return filename
+  })
+}
+
+/**
+ * Stricter "does this snapshot represent the live state" check than
+ * `statesMatch`, which intentionally ignores `updateChannel` and
+ * `pythonVersion`. For the post-restore "is the top snapshot still accurate?"
+ * decision those two are user-visible state we don't want to collapse, so we
+ * compare them too.
+ */
+function snapshotRepresentsCurrentState(
+  snapshot: Snapshot,
+  current: Omit<Snapshot, 'createdAt' | 'trigger' | 'label' | 'version'>
+): boolean {
+  return (
+    statesMatch(snapshot, current) &&
+    (snapshot.updateChannel || 'stable') === (current.updateChannel || 'stable') &&
+    (snapshot.pythonVersion || '') === (current.pythonVersion || '')
+  )
+}
+
+/**
+ * Repair safety-net: guarantee the newest snapshot reflects the actual live
+ * environment.
+ *
+ * This is NOT the primary fix for the #1137 "failed restore shows the unapplied
+ * target as Latest" bug — that is solved by never committing an imported target
+ * to history until the restore succeeds (see exportImport.ts / AGENTS.md). After
+ * a normal failed restore the previous in-history snapshot already represents
+ * the rolled-back live state, so this is a no-op.
+ *
+ * It only does real work in genuine edge cases where the on-disk state is novel
+ * and no existing snapshot matches it: an install with no prior snapshot, or a
+ * partial restore with no source rollback (e.g. fresh-install migration). In
+ * those cases it writes a fresh `post-restore` snapshot of the live state so the
+ * top of the timeline is accurate again.
+ *
+ * Returns the filename representing the live state — either the newly written
+ * snapshot (`saved: true`) or the existing matching top snapshot (`saved:
+ * false`) — so the caller can refresh `installation.lastSnapshot`.
+ */
+export async function ensureCurrentSnapshotOnTop(
+  installPath: string,
+  installation: InstallationRecord
+): Promise<{ saved: boolean; filename?: string }> {
+  return withLock(installPath, async () => {
+    const current = await captureState(installPath, installation)
+    const [top] = await listSnapshots(installPath)
+
+    if (top && snapshotRepresentsCurrentState(top.snapshot, current)) {
+      return { saved: false, filename: top.filename }
+    }
+
+    // Snapshots are ordered by `createdAt`. The stale top is often a freshly
+    // imported snapshot whose timestamp is the same millisecond as — or, for a
+    // multi-snapshot import, slightly ahead of — now, so stamp this one strictly
+    // after it to guarantee it lands on top.
+    const topTime = top ? Date.parse(top.snapshot.createdAt) : NaN
+    const writeAt = Number.isFinite(topTime)
+      ? new Date(Math.max(Date.now(), topTime + 1))
+      : new Date()
+    const filename = await writeSnapshot(
+      installPath,
+      { ...current, trigger: 'post-restore', label: null },
+      writeAt
+    )
+    emitSnapshotCreated({
+      installation,
+      trigger: 'post-restore',
+      customNodesCount: current.customNodes.length,
+      pipPackagesCount: Object.keys(current.pipPackages).length,
+      hasLabel: false,
+      deduplicatedPrevious: false
+    })
+    return { saved: true, filename }
   })
 }
 

@@ -377,7 +377,7 @@ export async function handleMigrateToStandalone({
         await fs.promises.rm(destPath, { recursive: true, force: true })
       } catch {}
     }
-    if (abort.signal.aborted) return { ok: true, navigate: 'detail' }
+    if (abort.signal.aborted) return { ok: false, cancelled: true, navigate: 'detail' }
     return { ok: false, message: (err as Error).message }
   }
 }

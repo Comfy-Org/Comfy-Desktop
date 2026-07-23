@@ -509,17 +509,7 @@ function onRawChange(value: string): void {
   flex-direction: column;
   gap: 20px;
   padding: 4px 4px 12px;
-  height: 100%;
   min-width: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-}
-
-.args-page::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 .args-page-header {
