@@ -3,12 +3,13 @@
 // Integration test for the ComfyBuilder install glue.
 //
 // (a) CI path — drives the real `installArtifact` (+ the `install()` record
-//     wrapper) against a small FABRICATED `standalone-env`/`ComfyUI`/manifest
-//     tarball served by the mock Builder API: the artifact is downloaded over
-//     HTTP (electron `net` is bridged to node http so the real `download()`
-//     streams bytes to disk), extracted with the real 7za nested extractor, and
-//     its manifest validated for real. The reused standalone post-extract phases
-//     are NOT run here (a real `uv venv` + package copy is infeasible in CI).
+//     wrapper) against a small FABRICATED `venv/`/`ComfyUI/` tarball (the shape
+//     comfy-builder tars; no in-archive manifest) served by the mock Builder API:
+//     the artifact is downloaded over HTTP (electron `net` is bridged to node
+//     http so the real `download()` streams bytes to disk), extracted with the
+//     real 7za nested extractor, and its layout validated for real. The reused
+//     standalone post-extract phases are NOT run here (a real `uv venv` + package
+//     copy is infeasible in CI).
 //
 // (b) Real-archive boot — opt-in, gated on darwin AND `CB_TEST_ARCHIVE`. Points
 //     the mock at the real archive, runs the REAL `installArtifact` + standalone
@@ -97,19 +98,23 @@ function sha256File(filePath: string): string {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
 }
 
-/** Build a fabricated Desktop-layout tarball. Omit `withManifest` for the bad case. */
-async function writeFixtureArtifact(destPath: string, withManifest: boolean): Promise<void> {
+/**
+ * Build a fabricated archive in the shape comfy-builder actually tars
+ * (buildexec/assemble.go): top-level `venv/` + `ComfyUI/` + a lockfile, and NO
+ * in-archive manifest (it's DB/GCS-sealed). Omit `withVenv` for the bad case
+ * (a build that failed to produce the env dir).
+ */
+async function writeFixtureArtifact(destPath: string, withVenv: boolean): Promise<void> {
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-fixture-src-'))
   try {
-    fs.mkdirSync(path.join(staging, 'standalone-env', 'bin'), { recursive: true })
-    fs.writeFileSync(path.join(staging, 'standalone-env', 'bin', 'python3'), '')
     fs.mkdirSync(path.join(staging, 'ComfyUI'), { recursive: true })
     fs.writeFileSync(path.join(staging, 'ComfyUI', 'main.py'), '')
-    const entries = ['standalone-env', 'ComfyUI']
-    if (withManifest) {
-      const manifest = { id: 'mac-mps', version: '1.0.0', comfyui_ref: 'master', python_version: '3.11.9' }
-      fs.writeFileSync(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-      entries.push('manifest.json')
+    fs.writeFileSync(path.join(staging, 'uv.lock'), 'version = 1\n')
+    const entries = ['ComfyUI', 'uv.lock']
+    if (withVenv) {
+      fs.mkdirSync(path.join(staging, 'venv', 'bin'), { recursive: true })
+      fs.writeFileSync(path.join(staging, 'venv', 'bin', 'python3'), '')
+      entries.push('venv')
     }
     await tarCreate(
       { gzip: true, file: destPath, cwd: staging, portable: true, mtime: new Date('2026-01-01T00:00:00.000Z') },
@@ -161,7 +166,7 @@ describe('installArtifact (fabricated fixture)', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true })
   })
 
-  it('resolves, downloads, extracts, and validates the manifest', async () => {
+  it('resolves, downloads, extracts, and validates the layout', async () => {
     const installPath = path.join(tmpRoot, 'install')
     const installation = makeInstallation(installPath)
     await expect(
@@ -173,12 +178,11 @@ describe('installArtifact (fabricated fixture)', () => {
       }),
     ).resolves.toBeUndefined()
 
-    expect(fs.statSync(path.join(installPath, 'standalone-env')).isDirectory()).toBe(true)
+    expect(fs.statSync(path.join(installPath, 'venv')).isDirectory()).toBe(true)
     expect(fs.statSync(path.join(installPath, 'ComfyUI')).isDirectory()).toBe(true)
-    expect(fs.existsSync(path.join(installPath, 'manifest.json'))).toBe(true)
   })
 
-  it('aborts with invalid-manifest and removes partial extracted files', async () => {
+  it('aborts with invalid-layout and removes partial extracted files', async () => {
     const installPath = path.join(tmpRoot, 'install')
     const installation = makeInstallation(installPath)
 
@@ -195,10 +199,9 @@ describe('installArtifact (fabricated fixture)', () => {
     }
 
     expect(caught).toBeInstanceOf(ComfyBuilderInstallError)
-    expect((caught as ComfyBuilderInstallError).kind).toBe('invalid-manifest')
-    expect(fs.existsSync(path.join(installPath, 'standalone-env'))).toBe(false)
+    expect((caught as ComfyBuilderInstallError).kind).toBe('invalid-layout')
+    expect(fs.existsSync(path.join(installPath, 'venv'))).toBe(false)
     expect(fs.existsSync(path.join(installPath, 'ComfyUI'))).toBe(false)
-    expect(fs.existsSync(path.join(installPath, 'manifest.json'))).toBe(false)
   })
 
   it('install(inst, tools): reads the artifact off the record and installs', async () => {
@@ -209,7 +212,7 @@ describe('installArtifact (fabricated fixture)', () => {
       comfybuilderBaseUrl: goodApi.baseUrl,
     }
     await expect(install(installation, makeInstallTools(path.join(tmpRoot, 'cache')))).resolves.toBeUndefined()
-    expect(fs.existsSync(path.join(installPath, 'manifest.json'))).toBe(true)
+    expect(fs.existsSync(path.join(installPath, 'venv'))).toBe(true)
   })
 
   it('install(inst, tools): throws invalid-artifact when the record has no artifact', async () => {

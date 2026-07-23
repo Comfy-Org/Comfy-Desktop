@@ -8,13 +8,14 @@
  *   2. Download the archive into the download cache (sha256-verified against the
  *      artifact's required `outputSha256`).
  *   3. Extract the archive (shared nested-extract path) into the install dir.
- *   4. Validate the extracted layout + `manifest.json`; on failure the partial
- *      files are removed and a typed {@link ComfyBuilderInstallError} is thrown.
+ *   4. Validate the extracted layout; on failure the partial files are removed
+ *      and a typed {@link ComfyBuilderInstallError} is thrown.
  *
- * A ComfyBuilder artifact unpacks to the same `standalone-env/` + `ComfyUI/`
- * layout as a standalone install, so the post-extract phases (env create →
- * package copy) are the standalone source's `postInstall`, reused verbatim and
- * wired onto the source in `./index` — never duplicated here.
+ * The archive is what comfy-builder actually tars (buildexec/assemble.go): a
+ * top-level `venv/` + `ComfyUI/` (plus a lockfile, and `syslib/` when present).
+ * The manifest is NOT in the archive — comfy-builder seals it into the DB/GCS
+ * (freeze.go), so the version metadata Desktop needs rides on the artifact/version
+ * record from the API, not on a file inside the tarball.
  */
 import fs from 'fs'
 import path from 'path'
@@ -26,19 +27,22 @@ import type { Cache } from '../../lib/cache'
 import type { DownloadProgress } from '../../lib/download'
 import { extractNested } from '../../lib/extract'
 import type { ExtractProgress } from '../../lib/extract'
-import { MANIFEST_FILE } from '../standalone/envPaths'
 import type { InstallTools } from '../../types/sources'
 
 /**
- * The archive-layout contract. A future builder that ships a `venv/` instead of
- * a pre-extracted `standalone-env/`, or drops the in-tar manifest, is a one-line
- * change here — nothing else in the install path assumes the layout.
+ * The archive-layout contract: the two directories comfy-builder tars at the
+ * top level. Isolated to one constant so a builder rename is a one-line change.
+ *
+ * NOTE (env-reshape follow-up): the reused standalone `postInstall`/launch still
+ * expect a `standalone-env/` master env to copy into `ComfyUI/.venv`, whereas the
+ * builder ships a single ready `venv/`. Bridging the two (and bundling `uv` into
+ * the venv) is a separate change that needs a real builder archive to validate;
+ * this stage only lands + validates the download.
  */
-const ARTIFACT_DIRS = ['standalone-env', 'ComfyUI'] as const
-const REQUIRED_MANIFEST_FIELDS = ['id', 'version', 'comfyui_ref', 'python_version'] as const
+const ARTIFACT_DIRS = ['venv', 'ComfyUI'] as const
 
 /** Why an install failed, so callers can branch on `kind`. */
-export type ComfyBuilderInstallErrorKind = 'invalid-artifact' | 'invalid-manifest'
+export type ComfyBuilderInstallErrorKind = 'invalid-artifact' | 'invalid-layout'
 
 /** Typed install failure (bad artifact record vs. bad extracted contents). */
 export class ComfyBuilderInstallError extends Error {
@@ -76,50 +80,20 @@ function isExistingDir(dirPath: string): boolean {
   }
 }
 
-/** Read + JSON-parse the extracted `manifest.json`, throwing a typed error when
- *  it is missing, unreadable, or not a JSON object. */
-function readManifest(installPath: string): Record<string, unknown> {
-  const manifestPath = path.join(installPath, MANIFEST_FILE)
-  let raw: string
-  try {
-    raw = fs.readFileSync(manifestPath, 'utf8')
-  } catch {
-    throw new ComfyBuilderInstallError('invalid-manifest', `Extracted artifact is missing ${MANIFEST_FILE}.`)
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new ComfyBuilderInstallError('invalid-manifest', `${MANIFEST_FILE} is not valid JSON.`)
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new ComfyBuilderInstallError('invalid-manifest', `${MANIFEST_FILE} must be a JSON object.`)
-  }
-  return parsed as Record<string, unknown>
-}
-
 /** Assert the extracted tree matches the archive-layout contract:
- *  `standalone-env/`, `ComfyUI/`, and a well-formed `manifest.json`. */
+ *  `venv/` + `ComfyUI/`. */
 function validateExtractedArtifact(installPath: string): void {
   for (const dir of ARTIFACT_DIRS) {
     if (!isExistingDir(path.join(installPath, dir))) {
-      throw new ComfyBuilderInstallError('invalid-manifest', `Extracted artifact is missing the ${dir}/ directory.`)
-    }
-  }
-  const manifest = readManifest(installPath)
-  for (const field of REQUIRED_MANIFEST_FIELDS) {
-    const value = manifest[field]
-    if (typeof value !== 'string' || value.length === 0) {
-      throw new ComfyBuilderInstallError('invalid-manifest', `${MANIFEST_FILE} is missing a valid "${field}".`)
+      throw new ComfyBuilderInstallError('invalid-layout', `Extracted artifact is missing the ${dir}/ directory.`)
     }
   }
 }
 
 /** Remove the extracted artifact roots so a failed install leaves nothing behind. */
 async function cleanupPartialInstall(installPath: string): Promise<void> {
-  const entries: readonly string[] = [...ARTIFACT_DIRS, MANIFEST_FILE]
   await Promise.all(
-    entries.map((entry) =>
+    ARTIFACT_DIRS.map((entry) =>
       fs.promises.rm(path.join(installPath, entry), { recursive: true, force: true }).catch(() => {}),
     ),
   )
