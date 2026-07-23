@@ -21,6 +21,16 @@ export type DistributionState =
   | 'installed'
   | 'update-available'
 
+/** A workspace the signed-in account can act in. One personal workspace plus
+ *  any team workspaces; distributions and billing hang off the workspace. */
+export interface WorkspaceOption {
+  id: string
+  name: string
+  type: 'personal' | 'team'
+  /** The signed-in account's role within this workspace. */
+  role: 'owner' | 'admin' | 'member'
+}
+
 /** A distribution: a versioned, self-contained ComfyUI environment. NAME is
  *  the primary key in the UI; version is metadata. */
 export interface Distribution {

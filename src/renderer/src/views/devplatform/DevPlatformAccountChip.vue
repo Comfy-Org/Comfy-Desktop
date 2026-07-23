@@ -14,7 +14,8 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, Loader2, LogIn, LogOut } from 'lucide-vue-next'
+import { Check, ChevronDown, Loader2, LogIn, LogOut } from 'lucide-vue-next'
+import type { WorkspaceOption } from '../../devplatform/types'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
 import { useDialogs } from '../../composables/useDialogs'
@@ -35,19 +36,36 @@ const signingIn = ref(false)
 
 const email = computed(() => store.status.email ?? '')
 
+/** A workspace option's display label; the product names personal workspaces. */
+function workspaceLabel(ws: WorkspaceOption): string {
+  return ws.type === 'personal' ? t('devPlatform.workspace.personalLabel') : ws.name
+}
+
+/** The account's role in a workspace, e.g. "Owner" — the row's second line. */
+function roleLabel(ws: WorkspaceOption): string {
+  return t(`devPlatform.workspace.roles.${ws.role}`)
+}
+
 /**
- * The workspace named by the access token's single claim. Team ids double as
- * the display name (the claims carry no human name — backend gap); personal
- * workspaces are named by the product. A switcher needs list-workspaces and
- * token re-scope endpoints that don't exist yet, so the chip only DISPLAYS
- * the workspace.
+ * The workspace the chip names. A pick in the menu's switcher (TEMP mock —
+ * selection is display-only until the token re-scope endpoint exists) wins;
+ * otherwise the access token's single claim: team ids double as the display
+ * name (the claims carry no human name — backend gap), personal workspaces
+ * are named by the product.
  */
 const workspaceName = computed(() => {
   const s = store.status
   if (!s.signedIn) return ''
+  if (store.selectedWorkspace) return workspaceLabel(store.selectedWorkspace)
   if (s.workspaceType === 'team' && s.workspaceId) return s.workspaceId
   return t('devPlatform.workspace.personalLabel')
 })
+
+function onSelectWorkspace(ws: WorkspaceOption): void {
+  store.selectWorkspace(ws.id)
+  closeMenu()
+  faceRef.value?.focus()
+}
 
 function closeMenu(): void {
   menuOpen.value = false
@@ -167,6 +185,36 @@ async function onSignOut(): Promise<void> {
         :aria-label="$t('devPlatform.account.signedInAs', { email })"
         data-testid="devplatform-account-menu"
       >
+        <!-- Workspace switcher (TEMP mock): rows mirror the chip face's
+             avatar-plus-name reading, radio semantics mark the active pick. -->
+        <div class="account-chip__menu-label" aria-hidden="true">
+          {{ $t('devPlatform.workspace.switcherLabel') }}
+        </div>
+        <button
+          v-for="ws in store.workspaces"
+          :key="ws.id"
+          type="button"
+          class="account-chip__item account-chip__workspace-row"
+          role="menuitemradio"
+          :aria-checked="store.selectedWorkspace?.id === ws.id"
+          :data-testid="`devplatform-workspace-${ws.id}`"
+          @click="onSelectWorkspace(ws)"
+        >
+          <DevPlatformAvatar class="account-chip__row-avatar" :name="workspaceLabel(ws)" />
+          <span class="account-chip__row-text">
+            <span class="account-chip__row-name">{{ workspaceLabel(ws) }}</span>
+            <span class="account-chip__row-role">{{ roleLabel(ws) }}</span>
+          </span>
+          <Check
+            v-if="store.selectedWorkspace?.id === ws.id"
+            :size="14"
+            class="account-chip__row-check"
+            aria-hidden="true"
+          />
+        </button>
+
+        <div class="account-chip__menu-sep" aria-hidden="true" />
+
         <button
           type="button"
           class="account-chip__item"
@@ -320,6 +368,52 @@ async function onSignOut(): Promise<void> {
 }
 .account-chip__item:hover {
   background: color-mix(in oklab, var(--neutral-100) 8%, transparent);
+}
+
+.account-chip__menu-label {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--neutral-300);
+}
+
+.account-chip__workspace-row {
+  gap: 8px;
+}
+/* Sized to span the stacked name + role lines beside it. */
+.account-chip__row-avatar {
+  --dp-avatar-size: 34px;
+  flex: 0 0 auto;
+}
+.account-chip__row-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.3;
+}
+.account-chip__row-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-chip__row-role {
+  font-size: var(--takeover-fs-caption);
+  color: var(--neutral-300);
+}
+.account-chip__row-check {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--neutral-100);
+}
+
+.account-chip__menu-sep {
+  margin: 6px 4px;
+  border-top: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
 }
 .account-chip__item:focus-visible {
   outline: 2px solid var(--focus-ring);

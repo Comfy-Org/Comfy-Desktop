@@ -88,6 +88,12 @@ const messages = {
       },
       workspace: {
         personalLabel: 'Personal',
+        switcherLabel: 'Workspace',
+        roles: {
+          owner: 'Owner',
+          admin: 'Admin',
+          member: 'Member',
+        },
       },
     },
   },
@@ -251,17 +257,61 @@ describe('ChooserView', () => {
     ])
   })
 
-  it('chip face names the account and the token workspace; the menu offers sign out', async () => {
+  it('chip face names the account and the mock current workspace; the menu offers sign out', async () => {
     installMockApi([], TEAM_SESSION)
     const wrapper = mountChooser()
     await flushPromises()
 
     const face = wrapper.find('[data-testid="devplatform-account-chip"]')
     expect(face.text()).toContain('willie@comfy.org')
-    expect(face.text()).toContain('ComfyUI Team')
+    // The mock default workspace, never the token's raw workspace id.
+    expect(face.text()).toContain('Comfy Design Team')
+    expect(face.text()).not.toContain('ComfyUI Team')
 
     await face.trigger('click')
     expect(wrapper.find('[data-testid="devplatform-account-signout"]').exists()).toBe(true)
+  })
+
+  it('chip menu lists the mock workspaces; picking one renames the chip face', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
+
+    // `.account-chip__row-name` excludes the avatar's initial letter.
+    const rowNames = ['ws-personal', 'ws-design', 'ws-frontend'].map((id) =>
+      wrapper.find(`[data-testid="devplatform-workspace-${id}"] .account-chip__row-name`).text()
+    )
+    expect(rowNames).toEqual(['Personal', 'Comfy Design Team', 'Comfy Front End'])
+
+    // Each row shows the account's role beneath the name.
+    const rowRoles = ['ws-personal', 'ws-design', 'ws-frontend'].map((id) =>
+      wrapper.find(`[data-testid="devplatform-workspace-${id}"] .account-chip__row-role`).text()
+    )
+    expect(rowRoles).toEqual(['Owner', 'Member', 'Admin'])
+
+    // The mock current workspace carries the tick before any pick.
+    expect(
+      wrapper.find('[data-testid="devplatform-workspace-ws-design"]').attributes('aria-checked')
+    ).toBe('true')
+
+    await wrapper.find('[data-testid="devplatform-workspace-ws-frontend"]').trigger('click')
+
+    // Selection closes the menu and the chip face now names the pick.
+    expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(false)
+    const face = wrapper.find('[data-testid="devplatform-account-chip"]')
+    expect(face.text()).toContain('Comfy Front End')
+    expect(face.text()).not.toContain('ComfyUI Team')
+
+    // Reopen: the pick carries the radio check.
+    await face.trigger('click')
+    expect(
+      wrapper.find('[data-testid="devplatform-workspace-ws-frontend"]').attributes('aria-checked')
+    ).toBe('true')
+    expect(
+      wrapper.find('[data-testid="devplatform-workspace-ws-personal"]').attributes('aria-checked')
+    ).toBe('false')
   })
 
   it('deduplicates a distribution whose name matches an existing install', async () => {

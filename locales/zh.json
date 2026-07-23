@@ -1341,7 +1341,13 @@
       "cta": "登录或创建账号"
     },
     "workspace": {
-      "personalLabel": "个人"
+      "personalLabel": "个人",
+      "switcherLabel": "工作区",
+      "roles": {
+        "owner": "所有者",
+        "admin": "管理员",
+        "member": "成员"
+      }
     },
     "distribution": {
       "states": {

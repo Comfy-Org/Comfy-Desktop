@@ -1341,7 +1341,13 @@
       "cta": "Log in or create account"
     },
     "workspace": {
-      "personalLabel": "Personal"
+      "personalLabel": "Personal",
+      "switcherLabel": "Workspace",
+      "roles": {
+        "owner": "Owner",
+        "admin": "Admin",
+        "member": "Member"
+      }
     },
     "distribution": {
       "states": {

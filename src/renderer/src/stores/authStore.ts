@@ -3,8 +3,8 @@ import { defineStore } from 'pinia'
 
 import type { ElectronApi } from '../../../types/ipc'
 import type { AuthStatus } from '../../../main/comfybuilder/types'
-import type { Distribution } from '../devplatform/types'
-import { MOCK_DISTRIBUTIONS } from '../devplatform/mocks'
+import type { Distribution, WorkspaceOption } from '../devplatform/types'
+import { MOCK_DISTRIBUTIONS, MOCK_WORKSPACES } from '../devplatform/mocks'
 
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
@@ -37,13 +37,17 @@ export const useAuthStore = defineStore('auth', () => {
     revision += 1
     status.value = { signedIn: false }
     distributions.value = []
+    pickedWorkspaceId.value = null
     return status.value
   }
 
   const unsubscribe = comfybuilderApi.onAuthChanged((nextStatus) => {
     revision += 1
     status.value = nextStatus
-    if (!nextStatus.signedIn) distributions.value = []
+    if (!nextStatus.signedIn) {
+      distributions.value = []
+      pickedWorkspaceId.value = null
+    }
   })
 
   // Hydrate from the persisted session once at creation — main only pushes
@@ -56,6 +60,29 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+
+  // --- Workspace switcher (TEMP: display-only mock) ---
+  //
+  // The real switcher needs list-workspaces + token re-scope endpoints; until
+  // they exist the chip offers these fixtures and a selection only changes
+  // what the UI displays. The design-team fixture stands in as the current
+  // workspace so the mock never shows the token's raw workspace id.
+  const workspaces = computed<WorkspaceOption[]>(() => (isSignedIn.value ? MOCK_WORKSPACES : []))
+
+  /** TEMP default: the mock presents the design team as the current workspace,
+   *  standing in for the token's real (id-only) claim. */
+  const MOCK_CURRENT_WORKSPACE_ID = 'ws-design'
+  const pickedWorkspaceId = ref<string | null>(null)
+
+  const selectedWorkspace = computed<WorkspaceOption | null>(() => {
+    if (!isSignedIn.value) return null
+    const id = pickedWorkspaceId.value ?? MOCK_CURRENT_WORKSPACE_ID
+    return workspaces.value.find((ws) => ws.id === id) ?? null
+  })
+
+  function selectWorkspace(id: string): void {
+    pickedWorkspaceId.value = id
+  }
 
   /** TEMP: served from fixtures until the builder pipeline list is exposed
    *  over IPC — see `devplatform/mocks.ts`. */
@@ -78,6 +105,9 @@ export const useAuthStore = defineStore('auth', () => {
     distributions,
     loadingDistributions,
     isSignedIn,
+    workspaces,
+    selectedWorkspace,
+    selectWorkspace,
     fetchStatus,
     signIn,
     signOut,

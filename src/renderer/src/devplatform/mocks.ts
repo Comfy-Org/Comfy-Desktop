@@ -4,7 +4,15 @@
  * The builder API's pipeline list isn't exposed over IPC yet, so the store
  * serves these. Delete this file when the real endpoint lands.
  */
-import type { Distribution } from './types'
+import type { Distribution, WorkspaceOption } from './types'
+
+/** TEMP: workspace options for the mock switcher — the real list comes from
+ *  the platform once the token re-scope endpoint exists. */
+export const MOCK_WORKSPACES: WorkspaceOption[] = [
+  { id: 'ws-personal', name: 'Personal', type: 'personal', role: 'owner' },
+  { id: 'ws-design', name: 'Comfy Design Team', type: 'team', role: 'member' },
+  { id: 'ws-frontend', name: 'Comfy Front End', type: 'team', role: 'admin' },
+]
 
 /** One fixture per tile state so the whole vocabulary is reviewable at once. */
 export const MOCK_DISTRIBUTIONS: Distribution[] = [
