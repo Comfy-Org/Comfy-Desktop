@@ -14,6 +14,27 @@ const telemetry = vi.hoisted(() => ({
 
 vi.mock('./telemetry', () => telemetry)
 
+const verifiedLocalUsers = vi.hoisted(() => new Map<string, string>())
+vi.mock('./verifiedLocalFirebaseAuth', () => ({
+  isLoopbackOrigin: (origin: string) => {
+    try {
+      const url = new URL(origin)
+      return url.hostname === 'localhost' || url.hostname.startsWith('127.')
+    } catch {
+      return false
+    }
+  },
+  readVerifiedLocalFirebaseUser: (origin: string) => verifiedLocalUsers.get(origin) ?? null,
+  persistVerifiedLocalFirebaseUser: (origin: string, userId: string) => {
+    verifiedLocalUsers.set(origin, userId)
+    return true
+  },
+  clearVerifiedLocalFirebaseUser: (origin: string) => {
+    verifiedLocalUsers.delete(origin)
+    return true
+  }
+}))
+
 import {
   _resetForTest,
   activateFirebaseAuthReporter,
@@ -166,6 +187,7 @@ describe('firebaseAuthIdentity consensus', () => {
     telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(true)
     telemetry.hasUnmergeableAnonymousEpoch.mockReturnValue(false)
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
+    verifiedLocalUsers.clear()
   })
 
   it('waits for every live trusted reporter before binding one agreed user', () => {
@@ -217,7 +239,7 @@ describe('firebaseAuthIdentity consensus', () => {
     })
   })
 
-  it('keeps a local main-verified identity bound across its injection reload', () => {
+  it('waits for a scoped local reporter after main-verified sign-in and across reload', () => {
     const localUrl = 'http://127.0.0.1:8188/'
     const reporter = new FakeWebContents(localUrl)
     activate(reporter)
@@ -228,15 +250,53 @@ describe('firebaseAuthIdentity consensus', () => {
       { signed_in_via: 'desktop_2' },
       reporter.asWebContents()
     )
+    expect(telemetry.bindUserId).not.toHaveBeenCalled()
+
+    reporter.navigate(localUrl)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
     expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {
       signed_in_via: 'desktop_2'
     })
 
     vi.clearAllMocks()
     reporter.navigate(localUrl)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
-    expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
+    expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
     expect(telemetry.markAnonymousEpochUnmergeable).not.toHaveBeenCalled()
+  })
+
+  it('unbinds a scoped local user on logout and rejects an unverified replacement', () => {
+    const localUrl = 'http://127.0.0.1:8188/'
+    const reporter = new FakeWebContents(localUrl)
+    activate(reporter)
+    bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
+    reporter.navigate(localUrl)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    vi.clearAllMocks()
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+    expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
+    expect(verifiedLocalUsers.size).toBe(0)
+
+    vi.clearAllMocks()
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'attacker' })
+    expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
+    expect(telemetry.bindUserId).not.toHaveBeenCalled()
+  })
+
+  it('restores a previously verified local session after process state resets', () => {
+    const localUrl = 'http://127.0.0.1:8188/'
+    verifiedLocalUsers.set('http://127.0.0.1:8188', 'F')
+    const reporter = new FakeWebContents(localUrl)
+    activate(reporter)
+    vi.clearAllMocks()
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
+    expect(telemetry.bindUserId).not.toHaveBeenCalled()
   })
 
   it('does not apply a local account properties to an unrelated active Cloud account', () => {
@@ -252,6 +312,8 @@ describe('firebaseAuthIdentity consensus', () => {
       { email: 'a@example.com' },
       local.asWebContents()
     )
+    local.navigate(local.getURL())
+    reportFirebaseAuthState(local.asWebContents(), { status: 'signed_in', userId: 'A' })
 
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
     expect(telemetry.registerPersonProperties).not.toHaveBeenCalled()

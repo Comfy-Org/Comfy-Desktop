@@ -9,7 +9,6 @@ import {
   recordExposure,
   type ExperimentExposureSource
 } from '../experiments'
-import { parseTrustedCloudUrl } from '../trustedCloudUrl'
 import { reportFirebaseAuthState } from '../firebaseAuthIdentity'
 import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
 import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from '../opaqueIdentifier'
@@ -34,7 +33,7 @@ function firebaseAuthReporterFrame(event: IpcMainEvent): WebFrameMain | null {
   const mainFrame = event.sender.mainFrame
   if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId)
     return null
-  return parseTrustedCloudUrl(frame.url) === null ? null : frame
+  return frame
 }
 
 function asFirebaseAuthState(value: unknown): ComfyDesktop2FirebaseAuthState | null {
@@ -208,7 +207,8 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.registerPersonProperties(props)
   })
 
-  // Every trusted hosted Cloud main frame reports declarative Firebase state.
+  // Auth consensus validates trusted Cloud and scoped, main-verified loopback
+  // reporters after this handler proves the message came from the main frame.
   ipcMain.on('telemetry:firebaseAuthState', (event, payload: unknown) => {
     const frame = firebaseAuthReporterFrame(event)
     if (!frame) return

@@ -162,7 +162,7 @@ describe('registerTelemetryHandlers', () => {
     expect(sent.key_125).toBeUndefined()
   })
 
-  it('accepts declarative auth state only from trusted Cloud main frames', () => {
+  it('accepts declarative auth state from Cloud main frames', () => {
     const signedInEvent = identityEvent('https://cloud.comfy.org/workspaces/abc')
     const signedOutEvent = identityEvent('https://pr-123.testingcloud.comfy.org/workspaces/abc')
     listener('telemetry:firebaseAuthState')(signedInEvent, {
@@ -210,12 +210,14 @@ describe('registerTelemetryHandlers', () => {
     expect(mocks.reportFirebaseAuthState).not.toHaveBeenCalled()
   })
 
-  it('rejects auth state from local pages, other origins, subframes, and malformed payloads', () => {
-    listener('telemetry:firebaseAuthState')(identityEvent('file:///launcher/index.html'), {
+  it('forwards main frames for auth-scope validation and rejects subframes or malformed payloads', () => {
+    const fileEvent = identityEvent('file:///launcher/index.html')
+    const remoteEvent = identityEvent('https://attacker.example/')
+    listener('telemetry:firebaseAuthState')(fileEvent, {
       status: 'signed_in',
       userId: 'local-user'
     })
-    listener('telemetry:firebaseAuthState')(identityEvent('https://attacker.example/'), {
+    listener('telemetry:firebaseAuthState')(remoteEvent, {
       status: 'signed_out'
     })
     listener('telemetry:firebaseAuthState')(identityEvent('https://cloud.comfy.org/', false), {
@@ -229,7 +231,19 @@ describe('registerTelemetryHandlers', () => {
       status: 'unknown'
     })
 
-    expect(mocks.reportFirebaseAuthState).not.toHaveBeenCalled()
+    expect(mocks.reportFirebaseAuthState).toHaveBeenCalledTimes(2)
+    expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
+      1,
+      (fileEvent as { sender: unknown }).sender,
+      { processId: 100, routingId: 200 },
+      { status: 'signed_in', userId: 'local-user' }
+    )
+    expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
+      2,
+      (remoteEvent as { sender: unknown }).sender,
+      { processId: 100, routingId: 200 },
+      { status: 'signed_out' }
+    )
   })
 
   it.each([

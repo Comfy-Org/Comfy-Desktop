@@ -159,6 +159,8 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
     userId: string
     nextAnonymousId: string
     installationId: string
+    personSet: Record<string, boolean | number | string | null>
+    personSetOnce?: Record<string, boolean | number | string | null>
   }>,
   nextId: 1
 }))
@@ -890,7 +892,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
       installation_id: 'installation-id-fake'
     })
     expect(last.properties?.$set_once).toEqual({ first_generation_at: 'first' })
-    expect(captured.find((c) => c.event === 'app:user_logged_in')?.distinctId).toBe('user-123')
+    expect(captured.find((c) => c.event === 'app:user_logged_in')).toBeUndefined()
     telemetry.capture('authenticated.event')
     expect(captured.at(-1)?.properties).not.toHaveProperty('$process_person_profile')
   })
@@ -900,6 +902,8 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     // SDK queue after an HTTP failure, then our explicit empty flush resolves.
     posthogClientMock.autoFailNextIdentifies = 1
 
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
     telemetry.applyFirebaseUserConsensus('user-123')
     await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(1))
 
@@ -914,9 +918,11 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
       distinctId: 'user-123',
       properties: {
         $set: {
+          gpu_tier: 'high',
           installation_id: 'installation-id-fake',
           is_authenticated: true
         },
+        $set_once: { first_generation_at: 'first' },
         $anon_distinct_id: 'anonymous-start'
       }
     })
@@ -1088,9 +1094,12 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(identifies).toHaveLength(1)
     expect(identifies.at(-1)).toMatchObject({
       distinctId: 'bridge-user',
-      properties: expect.objectContaining({ $anon_distinct_id: 'anonymous-start' })
+      properties: expect.objectContaining({
+        $anon_distinct_id: 'anonymous-start',
+        $set: expect.objectContaining({ plan: 'pro' })
+      })
     })
-    expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toMatchObject({
+    expect(captured.find((c) => c.event === 'app:user_logged_in')).toMatchObject({
       distinctId: 'bridge-user'
     })
 

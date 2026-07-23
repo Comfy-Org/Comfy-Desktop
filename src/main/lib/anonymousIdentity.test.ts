@@ -48,6 +48,11 @@ import {
   recoverPendingIdentityRotation,
   reservePendingIdentityMerge
 } from './pendingIdentityMerge'
+import {
+  clearVerifiedLocalFirebaseUser,
+  persistVerifiedLocalFirebaseUser,
+  readVerifiedLocalFirebaseUser
+} from './verifiedLocalFirebaseAuth'
 
 beforeEach(() => {
   testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'anonymous-identity-test-'))
@@ -251,13 +256,16 @@ describe('pendingIdentityMerge', () => {
       anonymousId: 'anonymous-1',
       userId: 'firebase-1',
       nextAnonymousId: 'anonymous-2',
-      installationId: 'installation-1'
+      installationId: 'installation-1',
+      personSet: { installation_id: 'installation-1', is_authenticated: true },
+      personSetOnce: { first_generation_at: 'first' }
     })
     const second = enqueuePendingIdentityMerge({
       anonymousId: 'anonymous-2',
       userId: 'firebase-2',
       nextAnonymousId: 'anonymous-3',
-      installationId: 'installation-1'
+      installationId: 'installation-1',
+      personSet: { installation_id: 'installation-1', is_authenticated: true }
     })
 
     expect(first).not.toBeNull()
@@ -273,7 +281,8 @@ describe('pendingIdentityMerge', () => {
     const pending = reservePendingIdentityMerge({
       anonymousId: 'anonymous-1',
       userId: 'firebase-1',
-      installationId: 'installation-1'
+      installationId: 'installation-1',
+      personSet: { installation_id: 'installation-1', is_authenticated: true }
     })
 
     expect(pending).not.toBeNull()
@@ -287,7 +296,8 @@ describe('pendingIdentityMerge', () => {
       anonymousId: 'anonymous-1',
       userId: 'firebase-1',
       nextAnonymousId: 'anonymous-2',
-      installationId: 'installation-1'
+      installationId: 'installation-1',
+      personSet: { installation_id: 'installation-1', is_authenticated: true }
     })
 
     expect(recoverPendingIdentityRotation('anonymous-1')).toBe('anonymous-2')
@@ -303,9 +313,25 @@ describe('pendingIdentityMerge', () => {
         anonymousId: 'anonymous-1',
         userId: 'firebase-1',
         nextAnonymousId: 'anonymous-2',
-        installationId: 'installation-1'
+        installationId: 'installation-1',
+        personSet: { installation_id: 'installation-1', is_authenticated: true }
       })
     ).toBeNull()
     expect(readPendingIdentityMerges()).toEqual([])
+  })
+})
+
+describe('verifiedLocalFirebaseAuth', () => {
+  it('persists a main-verified user only for the exact loopback origin', () => {
+    expect(persistVerifiedLocalFirebaseUser('http://127.0.0.1:8188', 'firebase-1')).toBe(true)
+    expect(readVerifiedLocalFirebaseUser('http://127.0.0.1:8188')).toBe('firebase-1')
+    expect(readVerifiedLocalFirebaseUser('http://127.0.0.1:8189')).toBeNull()
+    expect(persistVerifiedLocalFirebaseUser('https://attacker.example', 'firebase-2')).toBe(false)
+  })
+
+  it('clears the trusted local user on logout', () => {
+    expect(persistVerifiedLocalFirebaseUser('http://localhost:8188', 'firebase-1')).toBe(true)
+    expect(clearVerifiedLocalFirebaseUser('http://localhost:8188')).toBe(true)
+    expect(readVerifiedLocalFirebaseUser('http://localhost:8188')).toBeNull()
   })
 })

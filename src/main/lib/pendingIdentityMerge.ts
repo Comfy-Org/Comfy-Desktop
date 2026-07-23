@@ -15,7 +15,11 @@ export interface PendingIdentityMerge {
   userId: string
   nextAnonymousId: string
   installationId: string
+  personSet: PendingIdentityProperties
+  personSetOnce?: PendingIdentityProperties
 }
+
+export type PendingIdentityProperties = Record<string, boolean | number | string | null>
 
 function pendingIdentityMergesPath(): string {
   return path.join(configDir(), PENDING_IDENTITY_MERGES_FILE)
@@ -35,7 +39,38 @@ function normalizeEntry(value: unknown): PendingIdentityMerge | null {
   const nextAnonymousId = normalizeIdentity(entry.nextAnonymousId)
   const installationId = normalizeOpaqueIdentifier(entry.installationId, 256)
   if (!id || !anonymousId || !userId || !nextAnonymousId || !installationId) return null
-  return { id, anonymousId, userId, nextAnonymousId, installationId }
+  const personSet =
+    normalizeProperties(entry.personSet) ?? {
+      installation_id: installationId,
+      is_authenticated: true
+    }
+  const personSetOnce = normalizeProperties(entry.personSetOnce)
+  return {
+    id,
+    anonymousId,
+    userId,
+    nextAnonymousId,
+    installationId,
+    personSet,
+    ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {})
+  }
+}
+
+function normalizeProperties(value: unknown): PendingIdentityProperties | null {
+  if (value === undefined) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const properties: PendingIdentityProperties = {}
+  for (const [key, candidate] of Object.entries(value)) {
+    if (
+      candidate === null ||
+      typeof candidate === 'boolean' ||
+      typeof candidate === 'number' ||
+      typeof candidate === 'string'
+    ) {
+      properties[key] = candidate
+    }
+  }
+  return properties
 }
 
 export function readPendingIdentityMerges(): PendingIdentityMerge[] {

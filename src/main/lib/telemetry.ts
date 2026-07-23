@@ -49,8 +49,8 @@
  *     per-install record id (`inst-<ms>`, `installations.ts`), so the value
  *     is not yet uniformly machine-scoped; #1159 redirects those overrides
  *     to `install_id`.
- *   - Firebase UID (`F`) is set only after every live hosted Cloud view reports
- *     the same resolved user. This is the only `client.identify()` call and
+ *   - Firebase UID (`F`) is set only after every live auth-reporting view agrees
+ *     on the resolved user. This is the only `client.identify()` call and
  *     carries W/D as `$anon_distinct_id`, merging the anonymous history without
  *     an alias event. Before that write, a fresh D is persisted for logout,
  *     account switch, or the next startup.
@@ -127,6 +127,7 @@ import {
 import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
 import {
   clearPendingIdentityMerges,
+  type PendingIdentityProperties,
   readPendingIdentityMerges,
   reservePendingIdentityMerge
 } from './pendingIdentityMerge'
@@ -591,7 +592,13 @@ let pendingPersonSet: Record<string, TelemetryValue> | null = null
 /** Same, for write-once (`$set_once`) markers. */
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
 
-let pendingUserBinding: string | null = null
+interface PendingUserBinding {
+  userId: string
+  emitLoginEvent: boolean
+  properties: Record<string, TelemetryValue>
+}
+
+let pendingUserBinding: PendingUserBinding | null = null
 
 /**
  * `anonymousDistinctId` is the active W/D for the current anonymous period.
@@ -646,10 +653,8 @@ function flushPendingIdentityMerges(): Promise<void> {
         client!.identify({
           distinctId: merge.userId,
           properties: {
-            $set: {
-              installation_id: merge.installationId,
-              is_authenticated: true
-            },
+            $set: merge.personSet,
+            ...(merge.personSetOnce ? { $set_once: merge.personSetOnce } : {}),
             $anon_distinct_id: merge.anonymousId
           }
         })
@@ -693,9 +698,9 @@ function tryFlushDeferred(): void {
     pendingFirstLaunch = null
   }
   if (pendingUserBinding) {
-    const userId = pendingUserBinding
+    const { userId, emitLoginEvent, properties } = pendingUserBinding
     pendingUserBinding = null
-    applyFirebaseUserConsensus(userId)
+    applyFirebaseUserBinding(userId, emitLoginEvent, properties)
   }
   void flushPendingIdentityMerges()
 }
@@ -728,17 +733,53 @@ export function bindAnonymousId(
  * A fresh D is persisted before identify so logout, account switch, and the
  * next process can never reuse an id that may have been merged into F.
  */
-export function applyFirebaseUserConsensus(userId: string): void {
+function persistablePersonProperties(
+  properties: TelemetryContext
+): PendingIdentityProperties {
+  const persistable: PendingIdentityProperties = {}
+  for (const [key, value] of Object.entries(properties)) {
+    if (
+      value === null ||
+      typeof value === 'boolean' ||
+      typeof value === 'number' ||
+      typeof value === 'string'
+    ) {
+      persistable[key] = value
+    }
+  }
+  return persistable
+}
+
+function queuePendingUserBinding(
+  userId: string,
+  emitLoginEvent: boolean,
+  properties: Record<string, TelemetryValue>
+): void {
+  const existing = pendingUserBinding?.userId === userId ? pendingUserBinding : null
+  pendingUserBinding = {
+    userId,
+    emitLoginEvent: emitLoginEvent || existing?.emitLoginEvent === true,
+    properties: { ...(existing?.properties ?? {}), ...properties }
+  }
+}
+
+function applyFirebaseUserBinding(
+  userId: string,
+  emitLoginEvent: boolean,
+  properties: Record<string, TelemetryValue> = {}
+): void {
   const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
   // Reject early rather than burn an anonymous rotation on an identify that
   // can never merge.
   if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
-    pendingUserBinding = normalizedUserId
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
   if (boundUserId === normalizedUserId) {
+    if (Object.keys(properties).length > 0) registerPersonProperties(properties)
+    if (emitLoginEvent) capture('app:user_logged_in', { user_id: normalizedUserId })
     return
   }
   if (boundUserId) {
@@ -761,7 +802,7 @@ export function applyFirebaseUserConsensus(userId: string): void {
       anonymousDistinctId = safeAnonymousId
       distinctId = safeAnonymousId
     }
-    pendingUserBinding = normalizedUserId
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
 
@@ -779,26 +820,31 @@ export function applyFirebaseUserConsensus(userId: string): void {
     distinctId = safeAnonymousId
   }
 
-  const anonymousId = anonymousDistinctId
-  const pendingMerge = reservePendingIdentityMerge({
-    anonymousId,
-    userId: normalizedUserId,
-    installationId: installationIdProperty
-  })
-  if (!pendingMerge) {
-    pendingUserBinding = normalizedUserId
-    return
-  }
-  const reservedNextAnonymousId = pendingMerge.nextAnonymousId
-
   const personSet = scrubProperties({
     ...(pendingPersonSet || {}),
+    ...properties,
     installation_id: installationIdProperty,
     is_authenticated: true
   })
   const personSetOnce = pendingPersonSetOnce
     ? scrubProperties(pendingPersonSetOnce as TelemetryContext)
     : null
+  const anonymousId = anonymousDistinctId
+  const pendingMerge = reservePendingIdentityMerge({
+    anonymousId,
+    userId: normalizedUserId,
+    installationId: installationIdProperty,
+    personSet: persistablePersonProperties(personSet),
+    ...(personSetOnce
+      ? { personSetOnce: persistablePersonProperties(personSetOnce) }
+      : {})
+  })
+  if (!pendingMerge) {
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    return
+  }
+  const reservedNextAnonymousId = pendingMerge.nextAnonymousId
+
   distinctId = normalizedUserId
   try {
     client!.identify({
@@ -815,7 +861,7 @@ export function applyFirebaseUserConsensus(userId: string): void {
     anonymousDistinctId = reservedNextAnonymousId
     nextAnonymousDistinctId = null
     distinctId = reservedNextAnonymousId
-    pendingUserBinding = normalizedUserId
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
   boundUserId = normalizedUserId
@@ -823,20 +869,24 @@ export function applyFirebaseUserConsensus(userId: string): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingUserBinding = null
-  capture('app:user_logged_in', { user_id: normalizedUserId })
+  if (emitLoginEvent) {
+    capture('app:user_logged_in', { user_id: normalizedUserId })
+  }
   void flushPendingIdentityMerges()
+}
+
+/** Apply declarative renderer consensus without emitting an interactive login conversion. */
+export function applyFirebaseUserConsensus(userId: string): void {
+  applyFirebaseUserBinding(userId, false)
 }
 
 /**
  * Bind a main-process-verified interactive sign-in (OAuth loopback bridge or
- * desktop login code). Hosted bundles without the consensus bridge never
- * report auth state, so this is the only bind path for them; when consensus
- * does arrive it supersedes this call, and same-UID rebinds are no-ops.
+ * desktop login code). The verified flow owns the login-success conversion;
+ * declarative Cloud and scoped-local restored-session consensus stays silent.
  */
 export function bindUserId(userId: string, properties: Record<string, TelemetryValue> = {}): void {
-  applyFirebaseUserConsensus(userId)
-  if (Object.keys(properties).length === 0) return
-  registerPersonProperties(properties)
+  applyFirebaseUserBinding(userId, true, properties)
 }
 
 /**

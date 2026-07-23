@@ -10,6 +10,7 @@ import type {
   TerminalRestore
 } from '@comfyorg/comfyui-desktop-bridge-types'
 import type { ComfyDesktop2TelemetryBridge } from '../types/comfyDesktopBridge'
+import { startLocalFirebaseAuthMonitor } from './localFirebaseAuthMonitor'
 
 function sendTelemetry(channel: string, payload: unknown): void {
   try {
@@ -83,10 +84,16 @@ const Logs: ComfyDesktop2LogsBridge = {
   }
 }
 
+const reportFirebaseAuthState: NonNullable<
+  ComfyDesktop2TelemetryBridge['reportFirebaseAuthState']
+> = (state): void => sendTelemetry('telemetry:firebaseAuthState', state)
+
 const Telemetry: ComfyDesktop2TelemetryBridge = {
   capture: (event, properties): void => sendTelemetry('telemetry:capture', { event, properties }),
-  reportFirebaseAuthState: (state): void => sendTelemetry('telemetry:firebaseAuthState', state)
+  reportFirebaseAuthState
 }
+
+startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
 
 type ComfyDesktop2RuntimeBridge = ComfyDesktop2Bridge & {
   Telemetry: ComfyDesktop2TelemetryBridge

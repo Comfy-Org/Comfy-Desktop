@@ -3,10 +3,18 @@ import type { ComfyDesktop2FirebaseAuthState } from '../../types/comfyDesktopBri
 import * as mainTelemetry from './telemetry'
 import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
 import { parseTrustedCloudUrl } from './trustedCloudUrl'
+import {
+  clearVerifiedLocalFirebaseUser,
+  isLoopbackOrigin,
+  persistVerifiedLocalFirebaseUser,
+  readVerifiedLocalFirebaseUser
+} from './verifiedLocalFirebaseAuth'
 
 interface Reporter {
   eligible: boolean
   active: boolean
+  localReportingAuthorized: boolean
+  localExpectedUserId: string | null
   awaitingCommittedFrame: boolean
   mainFrameNavigationsInFlight: number
   provisionalFailureTerminals: Map<string, number>
@@ -84,6 +92,30 @@ function originOf(url: string): string | null {
   }
 }
 
+function localExpectedUserIdForUrl(url: string): string | null {
+  const origin = originOf(url)
+  return origin && isLoopbackOrigin(origin) ? readVerifiedLocalFirebaseUser(origin) : null
+}
+
+function refreshReporterAuthScope(reporter: Reporter, url: string): boolean {
+  const expectedUserId = localExpectedUserIdForUrl(url)
+  reporter.localExpectedUserId = expectedUserId
+  reporter.localReportingAuthorized = expectedUserId !== null
+  return isTrustedCloudUrl(url) || reporter.localReportingAuthorized
+}
+
+function clearAcceptedLocalSignOut(
+  webContents: WebContents,
+  reporter: Reporter,
+  origin: string | null,
+  state: ComfyDesktop2FirebaseAuthState
+): void {
+  if (!origin || !isLoopbackOrigin(origin) || state.status !== 'signed_out') return
+  clearVerifiedLocalFirebaseUser(origin)
+  reporter.localExpectedUserId = null
+  mainVerifiedStates.delete(webContents)
+}
+
 function isSameFrame(
   first: FirebaseAuthFrameIdentity | null,
   second: FirebaseAuthFrameIdentity
@@ -152,6 +184,20 @@ export function bindMainVerifiedFirebaseUser(
   }
   const origin = originOf(source.getURL())
   if (!origin) return
+  if (isLoopbackOrigin(origin)) {
+    trackFirebaseAuthReporter(source)
+    const reporter = reporters.get(source)
+    if (
+      !reporter?.eligible ||
+      !persistVerifiedLocalFirebaseUser(origin, normalizedUserId)
+    ) {
+      return
+    }
+    reporter.localReportingAuthorized = true
+    reporter.localExpectedUserId = normalizedUserId
+    reporter.active = true
+    reporter.state = { status: 'pending' }
+  }
   mainVerifiedStates.set(source, {
     userId: normalizedUserId,
     origin,
@@ -281,7 +327,8 @@ function settleFailedNavigation(webContents: WebContents, reporter: Reporter): v
     // later commit supplies an exact frame identity.
     reporter.awaitingCommittedFrame = true
     reporter.committedFrame = null
-    reporter.active = reporter.eligible && isTrustedCloudUrl(webContents.getURL())
+    reporter.active =
+      reporter.eligible && refreshReporterAuthScope(reporter, webContents.getURL())
     reporter.state = { status: 'pending' }
   }
   reporter.committedCandidate = null
@@ -296,6 +343,8 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
   const reporter: Reporter = {
     eligible: false,
     active: false,
+    localReportingAuthorized: false,
+    localExpectedUserId: null,
     awaitingCommittedFrame: true,
     mainFrameNavigationsInFlight: 0,
     provisionalFailureTerminals: new Map(),
@@ -342,12 +391,13 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
       if (reporter.mainFrameNavigationsInFlight > 0) {
         reporter.mainFrameNavigationsInFlight -= 1
       }
+      const authScopeIsActive = refreshReporterAuthScope(reporter, url)
       reporter.committedCandidate = {
         frame: {
           processId: frameProcessId,
           routingId: frameRoutingId
         },
-        active: reporter.eligible && isTrustedCloudUrl(url),
+        active: reporter.eligible && authScopeIsActive,
         state: { status: 'pending' }
       }
       reporter.committedFrame = reporter.committedCandidate.frame
@@ -423,7 +473,7 @@ export function activateFirebaseAuthReporter(webContents: WebContents): void {
   reporter.committedFrame = null
   reporter.recoverableState = null
   reporter.committedCandidate = null
-  reporter.active = isTrustedCloudUrl(webContents.getURL())
+  reporter.active = refreshReporterAuthScope(reporter, webContents.getURL())
   reporter.state = { status: 'pending' }
   reconcile()
 }
@@ -447,9 +497,24 @@ export function reportFirebaseAuthState(
 ): void {
   trackFirebaseAuthReporter(webContents)
   const reporter = reporters.get(webContents)
-  if (!reporter?.eligible || !isTrustedCloudUrl(webContents.getURL())) return
+  if (!reporter?.eligible) return
+  const currentOrigin = originOf(webContents.getURL())
+  const trustedCloud = isTrustedCloudUrl(webContents.getURL())
+  const trustedLocal =
+    currentOrigin !== null &&
+    isLoopbackOrigin(currentOrigin) &&
+    reporter.localReportingAuthorized
+  if (!trustedCloud && !trustedLocal) return
+  if (
+    trustedLocal &&
+    state.status === 'signed_in' &&
+    state.userId !== reporter.localExpectedUserId
+  ) {
+    return
+  }
   const candidate = reporter.committedCandidate
   if (candidate && isSameFrame(candidate.frame, frame)) {
+    clearAcceptedLocalSignOut(webContents, reporter, currentOrigin, state)
     candidate.state = state
     return
   }
@@ -459,6 +524,7 @@ export function reportFirebaseAuthState(
     isSameFrame(recoverable.frame, frame) &&
     isSameFrame(recoverable.frame, currentMainFrame(webContents))
   ) {
+    clearAcceptedLocalSignOut(webContents, reporter, currentOrigin, state)
     recoverable.state = state
     return
   }
@@ -468,6 +534,7 @@ export function reportFirebaseAuthState(
     !isSameFrame(reporter.committedFrame, frame)
   )
     return
+  clearAcceptedLocalSignOut(webContents, reporter, currentOrigin, state)
   reporter.active = true
   reporter.state = state
   reconcile()
