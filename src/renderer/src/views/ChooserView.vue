@@ -537,7 +537,11 @@ const gridHandlers = {
 .proto-scroll {
   grid-row: 4;
   width: 100%;
-  max-width: 1168px;
+  /* Content box must hold exactly 4 tracks (4 × 280px + 3 × 16px = 1168px);
+   * the side padding — breathing room so edge tiles' focus rings don't clip
+   * against the scroll container — goes on top, or auto-fit drops to 3. */
+  --proto-pad-x: 4px;
+  max-width: calc(1168px + 2 * var(--proto-pad-x));
   min-height: 0;
   max-height: 100%;
   overflow-y: auto;
@@ -545,7 +549,7 @@ const gridHandlers = {
   flex-direction: column;
   gap: 28px;
   --chooser-fade: clamp(12px, 2.5vh, 24px);
-  padding: var(--chooser-fade) 2px;
+  padding: var(--chooser-fade) var(--proto-pad-x);
 }
 
 /* Soft top + bottom fade so rows glide under the edge instead of clipping. */
