@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * One distribution, rendered as a chooser tile — a sibling of
+ * One distribution, rendered as a chooser tile: a sibling of
  * `views/chooser/ChooserInstallTile.vue`: same box, same classes, same type
  * scale. Activating it is the same gesture as launching an existing install.
  *
  * NAME is the headline; version + size drop into the single meta row. Blocked
  * states (no-build / platform-mismatch / needs-desktop-update) are shown with
- * a short reason tag — full reason on `title` — and never hidden. No security
+ * a short reason tag: full reason on `title`: and never hidden. No security
  * chrome: these are ordinary pipeline facts, not threats.
  *
  * The footer answers the installation tile's recency question honestly: a
@@ -26,7 +26,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** The user activated the tile — the host starts the install flow. */
+  /** The user activated the tile: the host starts the install flow. */
   select: []
 }>()
 
@@ -39,7 +39,7 @@ const BLOCKED_STATES: readonly DistributionState[] = [
   'needs-desktop-update',
 ]
 
-/** i18n suffix per blocked state — keys both the short tag label (`states.*`)
+/** i18n suffix per blocked state: keys both the short tag label (`states.*`)
  *  and the fallback long reason (`blockedReason.*`). */
 const BLOCKED_STATE_KEY: Record<string, string> = {
   'no-build': 'noBuild',
@@ -49,7 +49,7 @@ const BLOCKED_STATE_KEY: Record<string, string> = {
 
 const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
 
-/** Present on this machine already — the two post-install states. */
+/** Present on this machine already: the two post-install states. */
 const isInstalledLocally = computed(
   () => props.distribution.state === 'installed' || props.distribution.state === 'update-available'
 )
@@ -113,7 +113,7 @@ function onActivate(): void {
     @keydown.enter.prevent="onActivate"
     @keydown.space.prevent="onActivate"
   >
-    <!-- "Packaged environment" glyph — the one icon every distribution wears. -->
+    <!-- "Packaged environment" glyph: the one icon every distribution wears. -->
     <span class="chooser-tile-icon" aria-hidden="true">
       <Package :size="22" />
     </span>

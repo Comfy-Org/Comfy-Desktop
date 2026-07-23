@@ -25,7 +25,7 @@ export function getCloudSession(): CloudSession {
 
 /**
  * The catalog client, bound to the shared session's token provider and the
- * staging builder gateway. Cached — the session is the mutable part, and the
+ * staging builder gateway. Cached: the session is the mutable part, and the
  * provider it hands out always reads the current tokens.
  */
 export function getBuilderClient(): ComfyBuilderClient {
@@ -38,7 +38,7 @@ export function getBuilderClient(): ComfyBuilderClient {
   return client
 }
 
-/** @internal — reset the singletons between tests. */
+/** @internal: reset the singletons between tests. */
 export function _resetForTest(): void {
   session = null
   client = null

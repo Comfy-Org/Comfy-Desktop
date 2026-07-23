@@ -1,12 +1,12 @@
 /**
- * Distribution display + install-state policy — the UI layer, NOT the library.
+ * Distribution display + install-state policy: the UI layer, NOT the library.
  *
  * The comfy-builder library gives raw distributions / versions / artifacts and a
  * pure host-matcher (`selectArtifactForHost`). This module applies the product
  * policy on top: for each distribution it resolves the latest COMPLETE version,
  * asks whether an artifact exists for THIS host, and flattens that into a single
  * renderer-safe display row (`installable` / `no-build` / `platform-mismatch`).
- * The renderer renders the row and, on click, asks main to install by id — the
+ * The renderer renders the row and, on click, asks main to install by id: the
  * chosen artifact (and its download ref) never leaves the main process.
  *
  * `installed` / `update-available` are LOCAL states owned by the renderer (it
@@ -63,14 +63,14 @@ export async function resolveHost(): Promise<Host> {
 /** Latest version whose status reads as a completed build, or null. */
 function latestCompleteVersion<T extends { version: number; status: string }>(versions: T[]): T | null {
   const complete = versions
-    .filter((v) => COMPLETE_VERSION_STATUSES.has(v.status.toLowerCase()))
+    .filter((v) => typeof v.status === 'string' && COMPLETE_VERSION_STATUSES.has(v.status.toLowerCase()))
     .sort((a, b) => b.version - a.version)
   return complete[0] ?? null
 }
 
 /**
  * Resolve one distribution into a display row: newest complete version, then
- * whether it has a host-runnable artifact. Never drops the distribution — an
+ * whether it has a host-runnable artifact. Never drops the distribution: an
  * un-installable one becomes a blocked row with a reason, not a hidden entry.
  */
 async function buildRow(

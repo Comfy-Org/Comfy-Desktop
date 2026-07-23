@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * Account chip — persistent identity, top-right (the Docker Desktop pattern).
+ * Account chip: persistent identity, top-right (the Docker Desktop pattern).
  *
  * Signed out it is one quiet log-in button that runs the browser handoff
- * itself. Signed in it names the account AND the workspace on the chip face —
+ * itself. Signed in it names the account AND the workspace on the chip face:
  * a token carries exactly one workspace claim, so everything downstream
  * belongs to whichever workspace this chip names; keeping it visible makes a
  * wrong-workspace mistake self-correcting.
@@ -14,7 +14,7 @@
  * silent re-scope); the chip shows a spinner on the row while that is out.
  *
  * Sign out confirms, because users reasonably fear it uninstalls what they
- * installed. It does not — the confirm body says exactly that. Tone stays
+ * installed. It does not: the confirm body says exactly that. Tone stays
  * primary, never danger.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -47,7 +47,7 @@ const email = computed(() => store.status.email ?? '')
 
 /**
  * The workspace named by the access token's single claim. Team ids double as
- * the display name (the claims carry no human name — backend gap); personal
+ * the display name (the claims carry no human name: backend gap); personal
  * workspaces are named by the product.
  */
 const workspaceName = computed(() => {
@@ -71,16 +71,16 @@ function closeMenu(): void {
 
 function toggleMenu(): void {
   menuOpen.value = !menuOpen.value
-  // Opening the menu is when the switcher needs its list — pull it lazily so a
+  // Opening the menu is when the switcher needs its list: pull it lazily so a
   // signed-in user who never opens the menu never makes the call.
   if (menuOpen.value && store.workspaces.length === 0) {
     void store.fetchWorkspaces().catch(() => {})
   }
 }
 
-/** Escape closes the menu wherever focus is — the menu is never a trap.
+/** Escape closes the menu wherever focus is: the menu is never a trap.
  *  Focus returns to the trigger (APG menu pattern); pointer dismissal
- *  deliberately doesn't refocus — that would steal focus from wherever
+ *  deliberately doesn't refocus: that would steal focus from wherever
  *  the user just clicked. */
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape' && menuOpen.value) {
@@ -110,7 +110,7 @@ async function onSignIn(): Promise<void> {
   try {
     await store.signIn()
   } catch {
-    // Cancelled or failed browser handoff — the button simply re-arms.
+    // Cancelled or failed browser handoff: the button simply re-arms.
   } finally {
     signingIn.value = false
   }
@@ -125,7 +125,7 @@ async function onSelectWorkspace(workspaceId: string): Promise<void> {
     closeMenu()
     emit('workspace-switched')
   } catch {
-    // Cancelled or failed re-auth — the current workspace is unchanged.
+    // Cancelled or failed re-auth: the current workspace is unchanged.
   } finally {
     switchingTo.value = null
   }
@@ -145,7 +145,7 @@ async function onSignOut(): Promise<void> {
   try {
     await store.signOut()
   } catch {
-    // Sign-out IPC failed — stay visibly signed in rather than lie.
+    // Sign-out IPC failed: stay visibly signed in rather than lie.
     return
   }
   emit('signed-out')
@@ -182,7 +182,7 @@ async function onSignOut(): Promise<void> {
         <!-- Seeded from the workspace, not the account: the avatar reads as
              "which workspace am I in", matching the rows in the menu. -->
         <DevPlatformAvatar class="account-chip__avatar" :name="workspaceName || email || '?'" />
-        <!-- Account over workspace. The workspace needs no label — the avatar
+        <!-- Account over workspace. The workspace needs no label: the avatar
              beside it is the workspace's, so the second line reads as one. -->
         <span class="account-chip__identity">
           <span class="account-chip__email">{{ email }}</span>
@@ -281,8 +281,8 @@ async function onSignOut(): Promise<void> {
 
 /* Chip face: frosted, quiet, and two-line so the workspace never has to be
    truncated out of existence on a narrow window. Shares the 6px radius of
-   `button.brand-tertiary` — the signed-out control that occupies this same
-   slot — so the two states of one affordance keep one silhouette. */
+   `button.brand-tertiary`: the signed-out control that occupies this same
+   slot: so the two states of one affordance keep one silhouette. */
 .account-chip__face {
   display: inline-flex;
   align-items: center;

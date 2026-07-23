@@ -1,7 +1,7 @@
 /*
  * Distribution-tile deltas on top of `views/chooser/chooser-tiles.css`.
  *
- * A distribution renders as a chooser tile — a visual sibling of an
+ * A distribution renders as a chooser tile: a visual sibling of an
  * installed-instance tile, since that is the interface users already pick
  * installs from. Everything structural (box, padding, radius, name → meta →
  * footer stack, pill vocabulary) comes from chooser-tiles.css unchanged; this
@@ -13,7 +13,7 @@
   width: 100%;
 }
 
-/* House focus ring — overrides the chooser sheet's `--accent` fallback. */
+/* House focus ring: overrides the chooser sheet's `--accent` fallback. */
 .dist-tile:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -40,7 +40,7 @@
   color: var(--neutral-100);
 }
 
-/* Update-available is the one state asking the user to act — warning tone. */
+/* Update-available is the one state asking the user to act: warning tone. */
 .dist-tile-pill--update {
   gap: 4px;
   flex-shrink: 0;
@@ -50,7 +50,7 @@
   background: color-mix(in oklab, var(--warning) 12%, transparent);
 }
 
-/* Blocked tag — the danger tag's shape, re-toned. Not a security signal: these
+/* Blocked tag: the danger tag's shape, re-toned. Not a security signal: these
  * are ordinary pipeline facts, so no lock icon, no red banner. The label stays
  * full-contrast on a dimmed tile; the full reason rides on `title`. */
 .dist-tile-tag--blocked {
@@ -70,7 +70,7 @@
 
 /* --- Blocked tile ---------------------------------------------------------
  * De-emphasised but readable, never hidden (product contract). The dim goes on
- * the identity block, not the root — root opacity would drag the state label
+ * the identity block, not the root: root opacity would drag the state label
  * down with it. */
 .dist-tile--blocked {
   cursor: default;
@@ -79,7 +79,7 @@
 .dist-tile--blocked .chooser-tile-name {
   opacity: 0.62;
 }
-/* Meta + footer step UP to --neutral-200 instead of dimming — the faint tier
+/* Meta + footer step UP to --neutral-200 instead of dimming: the faint tier
  * multiplied by 0.62 would drop under the 3:1 contrast floor. */
 .dist-tile--blocked .chooser-tile-meta-line,
 .dist-tile--blocked .chooser-tile-meta-source,

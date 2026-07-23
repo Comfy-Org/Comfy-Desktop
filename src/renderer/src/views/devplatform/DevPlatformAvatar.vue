@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * Square gradient avatar — ported verbatim from the ComfyUI frontend's
+ * Square gradient avatar: ported verbatim from the ComfyUI frontend's
  * `WorkspaceProfilePic.vue` so the same subject renders the SAME colour here as
  * in the web frontend. The PRNG and hue/sat/light maths are a wire format: any
  * change silently breaks that cross-surface identity.
  *
  * Used for both the signed-in account (seeded from the email) and workspace
- * rows (seeded from the workspace name) — the colour is a deterministic
+ * rows (seeded from the workspace name): the colour is a deterministic
  * function of whatever string it is given.
  */
 import { computed } from 'vue'
@@ -18,7 +18,7 @@ const { name } = defineProps<{
 
 const letter = computed(() => name?.charAt(0)?.toUpperCase() || '?')
 
-/** mulberry32 — the frontend's PRNG, ported verbatim. */
+/** mulberry32: the frontend's PRNG, ported verbatim. */
 function mulberry32(a: number): () => number {
   return function () {
     let t = (a += 0x6d2b79f5)
@@ -29,9 +29,9 @@ function mulberry32(a: number): () => number {
 }
 
 /** Two-stop gradient seeded from the letter. The rand() call ORDER and COUNT are
- *  part of the contract — reordering or adding a call changes every colour.
+ *  part of the contract: reordering or adding a call changes every colour.
  *
- *  The second stop's hue spread is narrowed against the frontend's 40–120°: at
+ *  The second stop's hue spread is narrowed against the frontend's 40-120°: at
  *  that width the two stops read as two separate colours rather than one shaded
  *  one. hue1/sat/light are untouched, so the colour family still matches. */
 const gradient = computed(() => {
@@ -61,7 +61,7 @@ const gradient = computed(() => {
   height: var(--dp-avatar-size, 32px);
   border-radius: 6px;
   overflow: hidden;
-  /* Paired to the generated gradient, not the app palette — same values as
+  /* Paired to the generated gradient, not the app palette: same values as
    * the frontend component this is ported from. */
   color: #fff;
   /* Scales with the box so the letter keeps the same optical weight at any size. */

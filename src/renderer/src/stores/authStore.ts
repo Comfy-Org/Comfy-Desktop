@@ -5,7 +5,7 @@ import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
 import type { Distribution } from '../devplatform/types'
 
 /**
- * Dev-platform session store — the renderer's single source of auth + workspace
+ * Dev-platform session store: the renderer's single source of auth + workspace
  * + distribution state.
  *
  * It only ever holds renderer-safe data (AuthStatus / Workspace / distribution
@@ -25,7 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
    *  sign-out) so a slower in-flight pull can never overwrite a newer status. */
   let revision = 0
 
-  /** Drop workspace-scoped caches — the list and the distributions both belong
+  /** Drop workspace-scoped caches: the list and the distributions both belong
    *  to the token's single workspace, so a switch/sign-out invalidates them. */
   function resetScopedState(): void {
     workspaces.value = []
@@ -62,12 +62,14 @@ export const useAuthStore = defineStore('auth', () => {
       workspaces.value = []
       return workspaces.value
     }
+    const seen = revision
     loadingWorkspaces.value = true
     try {
-      workspaces.value = await comfybuilderApi.listWorkspaces()
+      const next = await comfybuilderApi.listWorkspaces()
+      if (revision === seen) workspaces.value = next
       return workspaces.value
     } finally {
-      loadingWorkspaces.value = false
+      if (revision === seen) loadingWorkspaces.value = false
     }
   }
 
@@ -89,7 +91,7 @@ export const useAuthStore = defineStore('auth', () => {
     else distributions.value = []
   })
 
-  // Hydrate from the persisted session once at creation — main only pushes
+  // Hydrate from the persisted session once at creation: main only pushes
   // CHANGES, so the boot state has to be pulled. The revision guard keeps
   // this pull from overwriting anything newer.
   void fetchStatus().catch(() => {})
@@ -106,12 +108,14 @@ export const useAuthStore = defineStore('auth', () => {
       distributions.value = []
       return distributions.value
     }
+    const seen = revision
     loadingDistributions.value = true
     try {
-      distributions.value = await comfybuilderApi.listDistributions()
+      const next = await comfybuilderApi.listDistributions()
+      if (revision === seen) distributions.value = next
       return distributions.value
     } finally {
-      loadingDistributions.value = false
+      if (revision === seen) loadingDistributions.value = false
     }
   }
 

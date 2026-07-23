@@ -1,5 +1,5 @@
 /**
- * ComfyBuilder install source — main process only.
+ * ComfyBuilder install source: main process only.
  *
  * A thin SourcePlugin over the comfy-builder functionality library. The catalog
  * / host-matching / sign-in all happen in the dev-platform IPC layer; by the
@@ -7,7 +7,7 @@
  * identity (id + os/gpu/accel + sha256). `install()` hands that artifact to the
  * library's `installArtifact` (download → verify sha → extract into the install
  * dir), and `getLaunchCommand()` drives the extracted `venv/` via
- * `buildLaunchSpec`. There is no adopt/probe path — a ComfyBuilder install is
+ * `buildLaunchSpec`. There is no adopt/probe path: a ComfyBuilder install is
  * only ever created by the dev-platform flow, never discovered on disk.
  */
 import { installArtifact, buildLaunchSpec } from '../../comfybuilder'
@@ -42,7 +42,7 @@ export const comfybuilder: SourcePlugin = {
   label: 'ComfyBuilder',
   description: 'Install a ComfyUI distribution built with ComfyBuilder.',
   category: 'local',
-  // Never a "New Install" wizard source — records are created by the dev-platform
+  // Never a "New Install" wizard source: records are created by the dev-platform
   // distribution flow, so it must not appear in the generic source picker.
   hidden: true,
   fields: [],
@@ -84,15 +84,15 @@ export const comfybuilder: SourcePlugin = {
         title: 'Installation Info',
         fields: [
           { label: 'Install method', value: (installation.sourceLabel as string) || 'ComfyBuilder' },
-          { label: 'Distribution', value: (installation.distributionName as string) || '—' },
-          { label: 'Version', value: (installation.version as string) || '—' },
+          { label: 'Distribution', value: (installation.distributionName as string) || '-' },
+          { label: 'Version', value: (installation.version as string) || '-' },
         ],
       },
     ]
   },
 
-  // A ComfyBuilder install is never discovered on disk — only the dev-platform
-  // flow creates one — so there is nothing to probe/adopt.
+  // A ComfyBuilder install is never discovered on disk: only the dev-platform
+  // flow creates one: so there is nothing to probe/adopt.
   probeInstallation(): Record<string, unknown> | null {
     return null
   },
@@ -100,7 +100,7 @@ export const comfybuilder: SourcePlugin = {
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
     const artifact = artifactFromRecord(installation)
     // `installArtifact` fails closed on a missing/blank sha256 (invalid-artifact)
-    // and on a byte mismatch (checksum-mismatch) — we do NOT relax that here.
+    // and on a byte mismatch (checksum-mismatch): we do NOT relax that here.
     await installArtifact({
       artifact,
       client: getBuilderClient(),

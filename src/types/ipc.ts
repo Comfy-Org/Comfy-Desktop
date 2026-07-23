@@ -39,7 +39,7 @@ export interface DevPlatformDistribution {
   installedVersion?: string
 }
 
-/** Kickoff result of `installDistribution` — mirrors `addInstallation` so the
+/** Kickoff result of `installDistribution`: mirrors `addInstallation` so the
  *  renderer drives the same `installInstance` + progress flow. */
 export interface InstallDistributionResult {
   ok: boolean
@@ -1343,7 +1343,7 @@ export interface ElectronApi {
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
 
-  // Dev platform (cloud auth + comfy-builder) — the only renderer↔main bridge
+  // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
   // for this flow. Access/refresh tokens never cross IPC: every method returns
   // or observes a renderer-safe AuthStatus / Workspace / distribution row.
   comfybuilder: {

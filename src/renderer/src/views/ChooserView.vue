@@ -34,7 +34,7 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
  *   - Following: every install (local / cloud / remote) ordered by
  *     `lastLaunchedAt` desc, never-launched at the end.
  *   - Then, when signed in, one tile per distribution published to the
- *     workspace that isn't installed yet — installing a distribution is the
+ *     workspace that isn't installed yet: installing a distribution is the
  *     SAME GESTURE as launching an existing install: one tile, one click.
  *   - Filter chips above the grid narrow by source category.
  *
@@ -77,11 +77,15 @@ onMounted(() => {
 })
 
 // Sign-in / workspace-switch can happen ON this page (the chip), so the
-// distribution list follows the session rather than mount timing.
+// distribution list follows the session rather than mount timing. Keying on the
+// workspace id (not just signed-in) is what re-fetches after a switch, where the
+// store clears the grid but signed-in stays true.
 watch(
-  () => authStore.isSignedIn,
-  (signedIn) => {
-    if (signedIn && authStore.distributions.length === 0) void authStore.fetchDistributions()
+  () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
+  () => {
+    if (authStore.isSignedIn && authStore.distributions.length === 0) {
+      void authStore.fetchDistributions().catch(() => {})
+    }
   },
   { immediate: true }
 )
@@ -123,11 +127,14 @@ defineExpose({ activeFilter })
 // DE-DUPLICATION: an already-installed distribution is an ordinary
 // installation and must not be listed twice. `installation.distributionId`
 // when the comfybuilder install carries it (the index signature passes it
-// through), else case-insensitive name equality — an install created from a
+// through), else case-insensitive name equality: an install created from a
 // distribution inherits its name.
 function installationBacksDistribution(inst: Installation, dist: Distribution): boolean {
   const linked = inst.distributionId
   if (typeof linked === 'string' && linked.length > 0) return linked === dist.id
+  // Name-match is a fallback only for a comfybuilder install; never let an
+  // unrelated same-named local install hide a distribution tile.
+  if (inst.sourceId !== 'comfybuilder') return false
   return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
 }
 
@@ -149,7 +156,7 @@ const visibleDistributions = computed<Distribution[]>(() =>
 const showNoMatches = computed(() => showEmptyHint.value && visibleDistributions.value.length === 0)
 
 /** One quiet line under the grid when the signed-in workspace has nothing
- *  published. Never a panel — this page already has content. */
+ *  published. Never a panel: this page already has content. */
 const distributionNote = computed(() => {
   if (!authStore.isSignedIn) return ''
   if (searchQuery.value.trim()) return ''
@@ -162,7 +169,7 @@ const distributionNote = computed(() => {
  * Install a distribution: main resolves the host artifact + creates the record,
  * then we drive the SAME `installInstance` + progress UI every other install
  * uses (via the `show-progress` event PanelApp already handles). A blocked tile
- * never reaches here — the card suppresses its own activation.
+ * never reaches here: the card suppresses its own activation.
  */
 async function handleDistributionActivate(dist: Distribution): Promise<void> {
   const result = await window.api.comfybuilder.installDistribution(dist.id).catch((err: unknown) => ({
@@ -178,7 +185,7 @@ async function handleDistributionActivate(dist: Distribution): Promise<void> {
   }
   emit('show-progress', {
     installationId: result.entry.id,
-    title: `${t('newInstall.installing')} — ${result.entry.name}`,
+    title: `${t('newInstall.installing')}: ${result.entry.name}`,
     apiCall: () => window.api.installInstance(result.entry!.id),
     autoLaunchOnFinish: true,
     opKind: 'install'
@@ -396,7 +403,7 @@ function handleNewInstallClick(): void {
         <!-- Distributions: siblings of the install tiles, same box, same
              TransitionGroup, so installing one is the same gesture as
              launching an install. Blocked states render WITH their reason and
-             are never filtered out — the card owns that treatment. -->
+             are never filtered out: the card owns that treatment. -->
         <DevPlatformDistributionCard
           v-for="dist in visibleDistributions"
           :key="`dist:${dist.id}`"
@@ -474,7 +481,7 @@ function handleNewInstallClick(): void {
   row-gap: var(--chooser-row-gap);
 }
 
-/* Account chip — pinned to the frame's top-right, out of the centered column
+/* Account chip: pinned to the frame's top-right, out of the centered column
  * so it can never collide with the wordmark or the search field. */
 .chooser-account {
   position: absolute;
