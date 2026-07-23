@@ -20,6 +20,9 @@ export interface ResolveSignedDownloadOptions {
   /** ComfyBuilder API base, e.g. `https://platformapi.comfy.org/builder`. */
   baseUrl: string
   signal?: AbortSignal
+  /** Cloud JWT for the deployed builder gateway. The resolve endpoint sits behind
+   *  auth (the returned presigned URL is what's auth-free, not this call). */
+  authToken?: string
 }
 
 function trimTrailingSlash(url: string): string {
@@ -35,13 +38,15 @@ const RESOLVE_TIMEOUT_MS = 30_000
  */
 export async function resolveSignedDownloadUrl(
   artifactId: string,
-  { baseUrl, signal }: ResolveSignedDownloadOptions,
+  { baseUrl, signal, authToken }: ResolveSignedDownloadOptions,
 ): Promise<string> {
   const url = `${trimTrailingSlash(baseUrl)}/v1/build-artifacts/${encodeURIComponent(artifactId)}/download`
   const timeout = AbortSignal.timeout(RESOLVE_TIMEOUT_MS)
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (authToken) headers.Authorization = `Bearer ${authToken}`
   const response = await fetch(url, {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers,
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   })
   if (!response.ok) {

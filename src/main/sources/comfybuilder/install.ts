@@ -70,6 +70,8 @@ export interface InstallArtifactParams {
   signedUrl?: string
   /** ComfyBuilder API base for resolving the signed URL; required when `signedUrl` is absent. */
   baseUrl?: string
+  /** Cloud JWT for the deployed builder gateway (the resolve endpoint is auth-gated). */
+  authToken?: string
 }
 
 function isExistingDir(dirPath: string): boolean {
@@ -112,7 +114,7 @@ function cacheSlug(artifactId: string): string {
  * source's reused standalone `postInstall`.
  */
 export async function installArtifact(params: InstallArtifactParams): Promise<void> {
-  const { installation, artifact, tools, signedUrl, baseUrl } = params
+  const { installation, artifact, tools, signedUrl, baseUrl, authToken } = params
   const { sendProgress, cache, signal } = tools
   const { installPath } = installation
 
@@ -130,7 +132,12 @@ export async function installArtifact(params: InstallArtifactParams): Promise<vo
 
   // 1. Resolve the presigned archive URL (skipped when one was passed in).
   const resolvedUrl =
-    signedUrl ?? (await resolveSignedDownloadUrl(artifact.id, { baseUrl: baseUrl!, ...(signal ? { signal } : {}) }))
+    signedUrl ??
+    (await resolveSignedDownloadUrl(artifact.id, {
+      baseUrl: baseUrl!,
+      ...(signal ? { signal } : {}),
+      ...(authToken ? { authToken } : {}),
+    }))
 
   // 2. Download the archive into the download cache.
   const cacheBase = cache.getCachePath(`comfybuilder_${cacheSlug(artifact.id)}`)
@@ -185,11 +192,13 @@ export async function install(installation: InstallationRecord, tools: InstallTo
   const artifact = readArtifact(installation)
   const baseUrl = typeof installation.comfybuilderBaseUrl === 'string' ? installation.comfybuilderBaseUrl : undefined
   const signedUrl = typeof installation.signedUrl === 'string' ? installation.signedUrl : undefined
+  const authToken = typeof installation.comfybuilderAuthToken === 'string' ? installation.comfybuilderAuthToken : undefined
   await installArtifact({
     installation,
     artifact,
     tools: { sendProgress, cache, ...(signal ? { signal } : {}) },
     ...(signedUrl ? { signedUrl } : {}),
     ...(baseUrl ? { baseUrl } : {}),
+    ...(authToken ? { authToken } : {}),
   })
 }
