@@ -18,9 +18,12 @@ const props = withDefaults(
     entries: ChooserGridEntry[]
     /** Lead with the New Install tile (the your-installs family owns it). */
     showNew?: boolean
+    /** Center the tile rows (the no-workspace fallback — the shipped look);
+     *  default is left-aligned under a shelf header. */
+    centered?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
   }>(),
-  { showNew: false }
+  { showNew: false, centered: false }
 )
 
 const emit = defineEmits<{
@@ -53,7 +56,13 @@ function lockLeavingTileSize(el: Element): void {
 </script>
 
 <template>
-  <TransitionGroup tag="div" name="tile" class="proto-grid" @before-leave="lockLeavingTileSize">
+  <TransitionGroup
+    tag="div"
+    name="tile"
+    class="proto-grid"
+    :class="{ 'proto-grid--centered': props.centered }"
+    @before-leave="lockLeavingTileSize"
+  >
     <button
       v-if="props.showNew"
       key="__new"
@@ -101,6 +110,9 @@ function lockLeavingTileSize(el: Element): void {
   justify-content: start;
   gap: 16px;
   align-content: start;
+}
+.proto-grid--centered {
+  justify-content: center;
 }
 
 /* Tile FLIP — copied from the shipped ChooserView grid. */

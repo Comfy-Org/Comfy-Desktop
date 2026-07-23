@@ -181,6 +181,17 @@ const availableEntries = computed<ChooserGridEntry[]>(() => availableDists.value
 
 const workspaceName = computed(() => authStore.selectedWorkspace?.name ?? 'Workspace')
 
+/** The workspace shelf exists when the signed-in workspace has anything to
+ *  show. Judged on the PRE-SEARCH lists so typing in search can't flip the
+ *  page between its two arrangements; without a shelf the page falls back
+ *  to the shipped centered grid — most users never see shelves at all. */
+const showWorkspaceShelf = computed(
+  () =>
+    authStore.isSignedIn &&
+    (chooserDistributions.value.length > 0 ||
+      installationStore.installations.some(isBuilderInstall))
+)
+
 // --- Distribution kebab menu ---
 const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
   open: false,
@@ -359,10 +370,13 @@ const gridHandlers = {
       </div>
 
       <div v-else class="proto-scroll">
-        <!-- Your installs: bare tiles at the top, no header. -->
+        <!-- Your installs: bare tiles at the top, no header. Centered (the
+             shipped look) whenever there's no workspace shelf beneath —
+             a lone left-aligned cluster reads as broken, not arranged. -->
         <section class="proto-shelf">
           <ChooserFamilyGrid
             show-new
+            :centered="!showWorkspaceShelf"
             :entries="yourEntries"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
@@ -373,7 +387,7 @@ const gridHandlers = {
              distributions follow the installed ones on a fresh row (two
              stacked grids sharing the section's row gap). -->
         <section
-          v-if="authStore.isSignedIn && (installedEntries.length || availableEntries.length)"
+          v-if="showWorkspaceShelf && (installedEntries.length || availableEntries.length)"
           class="proto-shelf"
         >
           <header class="proto-shelf-head">
