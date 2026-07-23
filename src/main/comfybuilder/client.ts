@@ -19,7 +19,7 @@ export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
-export type ComfyBuilderErrorKind = 'unauthorized' | 'not-found' | 'network' | 'server'
+export type ComfyBuilderErrorKind = 'unauthorized' | 'forbidden' | 'not-found' | 'network' | 'server'
 
 export class ComfyBuilderApiError extends Error {
   override name = 'ComfyBuilderApiError'
@@ -99,12 +99,27 @@ export class ComfyBuilderClient {
       throw new ComfyBuilderApiError('network', `Request to ${path} failed: ${(err as Error).message}`)
     }
 
-    if (res.status === 401 || res.status === 403) {
-      this.auth.onUnauthorized?.()
-      throw new ComfyBuilderApiError('unauthorized', `Not authorized for ${path}`, res.status)
+    // 401 = dead token: prompt re-auth. 403 = authenticated but lacks access to
+    // this resource; a single forbidden item must NOT sign the user out.
+    if (res.status === 401) {
+      try { this.auth.onUnauthorized?.() } catch { /* an injected callback must not mask the typed error */ }
+      throw new ComfyBuilderApiError('unauthorized', `Not authorized for ${path}`, 401)
     }
+    if (res.status === 403) throw new ComfyBuilderApiError('forbidden', `Forbidden: ${path}`, 403)
     if (res.status === 404) throw new ComfyBuilderApiError('not-found', `${path} not found`, 404)
     if (!res.ok) throw new ComfyBuilderApiError('server', `${path} failed: HTTP ${res.status}`, res.status)
-    return (await res.json()) as T
+
+    // A 2xx with an empty / non-JSON / null body must surface as a typed error,
+    // never a raw SyntaxError or a downstream `body.foo` TypeError.
+    let body: unknown
+    try {
+      body = await res.json()
+    } catch {
+      throw new ComfyBuilderApiError('server', `${path} returned a non-JSON body`)
+    }
+    if (body === null || typeof body !== 'object') {
+      throw new ComfyBuilderApiError('server', `${path} returned an unexpected body`)
+    }
+    return body as T
   }
 }

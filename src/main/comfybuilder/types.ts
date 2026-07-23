@@ -47,6 +47,8 @@ export interface Artifact {
 export interface Host {
   os: ArtifactOs
   gpu: ArtifactGpu
+  /** Preferred accelerator build (e.g. `cu128`) when a gpu ships several. Optional. */
+  accelVariant?: string
 }
 
 /**

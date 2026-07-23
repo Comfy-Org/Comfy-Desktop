@@ -54,4 +54,22 @@ describe('ComfyBuilderClient', () => {
     vi.stubGlobal('fetch', mockFetch(500, {}))
     await expect(new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')).rejects.toMatchObject({ kind: 'server' })
   })
+
+  it('maps 403 to forbidden WITHOUT signing the user out', async () => {
+    const onUnauthorized = vi.fn()
+    vi.stubGlobal('fetch', mockFetch(403, {}))
+    await expect(new ComfyBuilderClient({ auth: auth('t', onUnauthorized) }).listDistributions()).rejects.toMatchObject({ kind: 'forbidden' })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it('maps an empty/non-JSON 2xx body to a typed server error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch)
+    await expect(new ComfyBuilderClient({ auth: auth('t') }).listDistributions()).rejects.toMatchObject({ kind: 'server' })
+  })
+
+  it('a throwing onUnauthorized does not mask the unauthorized error', async () => {
+    vi.stubGlobal('fetch', mockFetch(401, {}))
+    const client = new ComfyBuilderClient({ auth: auth('t', vi.fn(() => { throw new Error('boom') })) })
+    await expect(client.listVersions('d1')).rejects.toMatchObject({ kind: 'unauthorized' })
+  })
 })

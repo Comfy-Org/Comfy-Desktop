@@ -46,4 +46,16 @@ describe('selectArtifactForHost', () => {
     const cpuOnly = [art('windows', 'cpu')]
     expect(selectArtifactForHost(cpuOnly, { os: 'windows', gpu: 'nvidia' })?.gpu).toBe('cpu')
   })
+
+  it('prefers the matching accelVariant among same-gpu builds', () => {
+    const cudas = [art('linux', 'nvidia', { id: 'cu118', accelVariant: 'cu118' }), art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })]
+    expect(selectArtifactForHost(cudas, { os: 'linux', gpu: 'nvidia', accelVariant: 'cu128' })?.id).toBe('cu128')
+  })
+
+  it('is deterministic (not input-order dependent) when accel ties', () => {
+    const a = art('linux', 'nvidia', { id: 'cu118', accelVariant: 'cu118' })
+    const b = art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })
+    const host = { os: 'linux', gpu: 'nvidia' } as const
+    expect(selectArtifactForHost([a, b], host)?.id).toBe(selectArtifactForHost([b, a], host)?.id)
+  })
 })

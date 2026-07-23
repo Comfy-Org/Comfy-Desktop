@@ -32,19 +32,35 @@ function gpuScore(artifactGpu: ArtifactGpu, hostGpu: ArtifactGpu): number {
 }
 
 /**
- * Pick the best `ready` artifact for the host: the one whose OS matches and
- * whose GPU best fits (exact, else CPU fallback). Returns null when the version
- * has no runnable artifact for this machine (e.g. a windows-only build on mac).
+ * Score an artifact for the host: GPU fit is dominant; a matching `accelVariant`
+ * (e.g. cu128) breaks ties among same-GPU builds, then `accelVariant` string
+ * order makes the choice deterministic (never input-order dependent).
+ */
+function score(a: Artifact, host: Host): number {
+  const gpu = gpuScore(a.gpu, host.gpu)
+  if (gpu < 0) return gpu
+  const accelMatch = host.accelVariant && a.accelVariant === host.accelVariant ? 1 : 0
+  return gpu * 2 + accelMatch
+}
+
+/**
+ * Pick the best `ready` artifact for the host: OS must match, then GPU fit
+ * (exact, else CPU fallback), then a preferred `accelVariant`, then a
+ * deterministic tie-break. Returns null when the version has no runnable
+ * artifact for this machine (e.g. a windows-only build on mac).
  */
 export function selectArtifactForHost(artifacts: readonly Artifact[], host: Host): Artifact | null {
   let best: Artifact | null = null
   let bestScore = 0
   for (const a of artifacts) {
     if (a.status !== 'ready' || a.os !== host.os) continue
-    const score = gpuScore(a.gpu, host.gpu)
-    if (score > bestScore) {
+    const s = score(a, host)
+    if (s <= 0) continue
+    // Strictly greater wins; on an exact tie, the lexicographically smaller
+    // accelVariant wins so selection is deterministic across input orderings.
+    if (s > bestScore || (s === bestScore && best !== null && a.accelVariant < best.accelVariant)) {
       best = a
-      bestScore = score
+      bestScore = s
     }
   }
   return best
