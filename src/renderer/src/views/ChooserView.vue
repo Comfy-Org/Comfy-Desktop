@@ -290,7 +290,9 @@ function handleDistMenuSelect(itemId: string): void {
       openDistOverlay(dist, 'details')
       break
     case 'manage':
-      openDistOverlay(dist, 'manage')
+      // Manage opens the REAL instance-picker popup: the popup's TEMP mock
+      // layer owns the dist:* row and its tab data (distributionMocks.ts).
+      window.api.openInstancePicker({ installationId: `dist:${dist.id}` })
       break
     case 'view-platform':
       void window.api.openExternal(`${DEV_PLATFORM_URL_BASE}/pipelines/${dist.id}`)

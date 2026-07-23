@@ -28,8 +28,9 @@ export function isPickerTab(tab: string | null | undefined): tab is PickerTab {
   return tab != null && PICKER_TABS.has(tab as PickerTab)
 }
 
-/** Instance source categories (mirrors `category` in `src/main/sources/*.ts`). */
-export type InstanceCategory = 'local' | 'cloud' | 'remote'
+/** Instance source categories (mirrors `category` in `src/main/sources/*.ts`,
+ *  plus `distribution` for workspace-distribution installs). */
+export type InstanceCategory = 'local' | 'cloud' | 'remote' | 'distribution'
 
 /**
  * Tabs each instance category cannot surface, regardless of backend sections.
@@ -44,6 +45,10 @@ const HIDDEN_TABS_BY_CATEGORY: Record<InstanceCategory, ReadonlySet<PickerTab>> 
   local: new Set(),
   cloud: new Set(['console']),
   remote: new Set(['console']),
+  // Distribution installs will run locally, but the mock rows have no
+  // process to attach a PTY to — hidden until the real feed lands
+  // (whether the tab returns then is an open product decision).
+  distribution: new Set(['console']),
 }
 
 /** Whether `tab` is permitted for an instance of `category`. Unknown categories

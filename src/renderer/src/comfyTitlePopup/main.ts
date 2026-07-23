@@ -6,6 +6,7 @@ import { createPinia } from 'pinia'
 import TitlePopupApp from './TitlePopupApp.vue'
 import { createAppI18n } from '../lib/i18nFactory'
 import { installPickerSettingsApiShim } from './pickerSettingsApiShim'
+import { installDistributionMockApiLayer } from './instancePicker/distributionMocks'
 
 // Default to dark; the popup overrides bg/text inline from main's theme,
 // but data-theme still drives any non-overridden fallback CSS variables.
@@ -16,6 +17,9 @@ document.documentElement.setAttribute('data-theme', 'dark')
 // Must run BEFORE Vue mounts so modules that capture window.api at import
 // time (e.g. useComfyUISettings) see the shim populated.
 installPickerSettingsApiShim()
+// TEMP(dist-mock): answers dist:* calls locally on top of the shim — same
+// mount-order constraint.
+installDistributionMockApiLayer()
 
 const pinia = createPinia()
 

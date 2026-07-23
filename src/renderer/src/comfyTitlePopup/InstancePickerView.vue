@@ -14,6 +14,7 @@ import ComfyUISettingsContent from '../components/settings/ComfyUISettingsConten
 import InfoTooltip from '../components/InfoTooltip.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import InstanceRow from './instancePicker/InstanceRow.vue'
+import { isMockDistributionId, mockDistributionRows } from './instancePicker/distributionMocks'
 import { resolvePickerTab, type PickerTab } from '../lib/pickerTabs'
 import { resolveProgressRouting } from '../lib/pickerProgressRouting'
 import type {
@@ -168,7 +169,12 @@ const bridge = (window as unknown as { __comfyTitlePopup?: PickerBridge }).__com
 const installations = computed<Installation[]>(
   () => props.snapshot.installs as unknown as Installation[]
 )
-const installationsRef = toRef(() => installations.value)
+// TEMP(dist-mock): installed workspace distributions ride the list as
+// renderer-local rows; their settings data is answered by the mock api
+// layer (see distributionMocks.ts). James swaps both for the real feed.
+const distributionRows = mockDistributionRows()
+const allRows = computed<Installation[]>(() => [...installations.value, ...distributionRows])
+const installationsRef = toRef(() => allRows.value)
 const {
   searchQuery,
   activeFilter,
@@ -238,7 +244,7 @@ watch(
 const selectedInstall = computed<Installation | null>(() => {
   const id = selectedId.value
   if (id) {
-    const found = installations.value.find((i) => i.id === id)
+    const found = allRows.value.find((i) => i.id === id)
     if (found) return found
   }
   return null
@@ -324,7 +330,9 @@ function handleOpenDashboard(): void {
 watch(
   () => selectedInstall.value?.id ?? null,
   (next) => {
-    bridge?.setPickerSelectedInstall(next)
+    // TEMP(dist-mock): main must never see mock distribution ids — it would
+    // try to resolve settings for an install it doesn't track.
+    bridge?.setPickerSelectedInstall(next && isMockDistributionId(next) ? null : next)
   }
 )
 
@@ -332,6 +340,7 @@ watch(
 // via the change-only watcher above, so persist it once on mount.
 if (
   selectedId.value &&
+  !isMockDistributionId(selectedId.value) &&
   !props.snapshot.selectedInstallationId &&
   !props.snapshot.activeInstallationId
 ) {
@@ -356,6 +365,8 @@ watch(
 
 function handleSettingsShowProgress(opts: ShowProgressOpts): void {
   if (!opts.actionId) return
+  // TEMP(dist-mock): no real ops exist for mock distribution rows.
+  if (isMockDistributionId(opts.installationId)) return
   // opts.actionData may be a Vue reactive proxy, which can't cross the
   // contextBridge structured-clone boundary; deep-clone to a plain object.
   const rawActionData = opts.actionData
@@ -501,6 +512,8 @@ const instanceActions = useInstanceActions({
 async function handleExpandedNav(decision: NavDecision): Promise<void> {
   const inst = selectedInstall.value
   if (!inst) return
+  // TEMP(dist-mock): mock distribution rows can't launch or navigate.
+  if (isMockDistributionId(inst.id)) return
   await instanceActions.dispatch(decision, inst)
 }
 </script>
