@@ -57,12 +57,9 @@
 .dist-tile--blocked .chooser-tile-kebab {
   opacity: 0.38;
 }
-/* The state message steps UP to --neutral-200 instead of dimming — it is the
- * one thing a blocked tile exists to say. */
-.dist-tile--blocked .chooser-tile-meta-line,
-.dist-tile--blocked .chooser-tile-meta-source,
-.dist-tile--blocked .chooser-tile-meta-sep,
-.dist-tile--blocked .chooser-tile-meta-version {
+/* The blocked-reason tag (right slot) is the one thing a blocked tile exists
+ * to say — full readability while the identity and facts recede around it. */
+.dist-tile-state-tag {
   color: var(--neutral-200);
 }
 /* Suppress the hover promise the tile cannot honour; the kebab alone wakes. */

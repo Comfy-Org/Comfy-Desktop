@@ -5,13 +5,15 @@
  * scale, same top-right kebab. Activating it is the same gesture as launching
  * an existing install.
  *
- * NAME is the headline; the single meta line beneath it carries the one fact
- * that matters for this card's state — the labelled versions ("v0.28.0 ·
- * Dist v12.0") when installable, or the state itself ("No build yet",
- * "OS incompatible", …). The top-right corner belongs to the kebab alone:
- * state never renders as a pill. Blocked tiles keep their full explanation
- * on `title` and are never hidden — these are ordinary pipeline facts, not
- * threats.
+ * NAME is the headline. The footer row follows one grammar shared with the
+ * install tiles: LEFT is identity facts — the labelled versions ("v0.28.0 ·
+ * Dist v12"), faint-then-emphasised — and RIGHT is one status/action slot:
+ * a blue pill for what you can do (Install / Update) or a quiet neutral tag
+ * for why you can't ("No build yet", "OS incompatible"). State never
+ * replaces identity; installed-and-current shows nothing on the right (its
+ * shelf placement already says it). Blocked tiles keep their full
+ * explanation on `title` and are never hidden — these are ordinary pipeline
+ * facts, not threats.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -72,16 +74,12 @@ const factsLine = computed(() =>
   [comfyVersionLabel.value, distVersionLabel.value].filter(Boolean).join(' · ')
 )
 
-/** A state that replaces the facts on the meta line. Update-available keeps
- *  the facts — its state renders as the Update pill. */
+/** Blocked reason for the right-slot state tag ("No build yet", …). Only
+ *  blocked states earn one — never a substitute for the facts line. */
 const stateLabel = computed(() => {
-  const state = props.distribution.state
-  if (isBlocked.value) {
-    const suffix = BLOCKED_STATE_KEY[state] ?? 'noBuild'
-    return t(`devPlatform.distribution.states.${suffix}`)
-  }
-  if (state === 'installed') return t('devPlatform.distribution.states.installed')
-  return ''
+  if (!isBlocked.value) return ''
+  const suffix = BLOCKED_STATE_KEY[props.distribution.state] ?? 'noBuild'
+  return t(`devPlatform.distribution.states.${suffix}`)
 })
 
 /** The blue action pill, pinned right of the facts: Update on
@@ -147,9 +145,8 @@ function onActivate(): void {
 
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <div v-if="stateLabel || factsLine || actionPillLabel" class="chooser-tile-footer">
-        <TruncatedText v-if="stateLabel" class="chooser-tile-meta-line" :text="stateLabel" />
-        <TruncatedText v-else-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
+      <div v-if="factsLine || stateLabel || actionPillLabel" class="chooser-tile-footer">
+        <TruncatedText v-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
           <span v-if="comfyVersionLabel" class="chooser-tile-meta-source">{{
             comfyVersionLabel
           }}</span>
@@ -158,14 +155,21 @@ function onActivate(): void {
             distVersionLabel
           }}</span>
         </TruncatedText>
-        <!-- Mirrors the install tile's update pill: facts left, pill pinned
-             right. The whole card is the click target that performs it. -->
+        <!-- Right slot: what you can do (blue Install / Update pill — the
+             whole card is the click target that performs it) or why you
+             can't (quiet blocked-reason tag). Never both. -->
         <span
           v-if="actionPillLabel"
           class="chooser-tile-pill chooser-tile-pill-update chooser-tile-pill-action"
         >
           <ArrowDownToLine :size="11" aria-hidden="true" />
           {{ actionPillLabel }}
+        </span>
+        <span
+          v-else-if="stateLabel"
+          class="chooser-tile-pill chooser-tile-pill-action dist-tile-state-tag"
+        >
+          {{ stateLabel }}
         </span>
       </div>
     </div>
