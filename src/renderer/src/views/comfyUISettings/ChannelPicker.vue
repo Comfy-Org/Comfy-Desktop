@@ -233,7 +233,12 @@ const checkUpdateAction = computed<ActionDef | undefined>(() =>
 )
 
 const promotedPrimaryActions = computed<ActionDef[]>(() =>
-  selectedActions.value.filter((a) => a.id === 'update-comfyui' || a.id === 'copy-update')
+  // The two known standalone ids, plus any primary-styled card action —
+  // sources aren't limited to the ComfyUI update vocabulary (e.g. a
+  // distribution card's Update Now).
+  selectedActions.value.filter(
+    (a) => a.id === 'update-comfyui' || a.id === 'copy-update' || a.style === 'primary'
+  )
 )
 
 const otherSecondaryActions = computed<ActionDef[]>(() =>
@@ -295,9 +300,13 @@ const footerActions = computed<
     }
   }
 
-  const updateNow = promotedPrimaryActions.value.find((a) => a.id === 'update-comfyui')
-  if (updateNow) {
-    out.push({ action: updateNow, variant: 'accent' })
+  // The accented do-the-update action renders last (bottom-right):
+  // update-comfyui on standalone installs, any other promoted primary
+  // elsewhere.
+  for (const action of promotedPrimaryActions.value) {
+    if (action.id !== 'copy-update') {
+      out.push({ action, variant: 'accent' })
+    }
   }
 
   return out
