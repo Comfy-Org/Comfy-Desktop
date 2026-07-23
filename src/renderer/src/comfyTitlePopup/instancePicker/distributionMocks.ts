@@ -79,26 +79,24 @@ function buildDistributionSections(dist: Distribution): DetailSection[] {
   const hasUpdate = dist.state === 'update-available'
   return [
     // --- Update: same channel-cards shape the standalone source emits, so
-    //     ChannelPicker renders the identical headline / facts box /
-    //     right-aligned CTAs — with distribution versions in every slot. ---
+    //     ChannelPicker renders the identical headline + facts box. A single
+    //     option = trackless mode: no track card, and the actions (Update
+    //     Now / Check for Updates) render inside the versions table. ---
     {
       tab: 'update',
       title: 'Updates',
       fields: [
         {
           id: 'updateChannel',
-          label: 'Update Track',
+          label: 'Updates',
           value: 'latest',
           editable: true,
           refreshSection: true,
           editType: 'channel-cards',
-          tooltip: 'How this install follows new versions published to the workspace.',
           options: [
             {
               value: 'latest',
               label: 'Latest published',
-              description: 'Follow every version the workspace publishes.',
-              recommended: true,
               data: {
                 installedVersion: `Dist v${installedVersion}`,
                 latestVersion: `Dist v${dist.version ?? installedVersion}`,
@@ -117,19 +115,6 @@ function buildDistributionSections(dist: Distribution): DetailSection[] {
                       }
                     ]
                   : []
-              }
-            },
-            {
-              value: 'pinned',
-              label: `Pinned — Dist v${installedVersion}`,
-              description: 'Stay on this version until an admin changes the pin.',
-              data: {
-                installedVersion: `Dist v${installedVersion}`,
-                latestVersion: `Dist v${installedVersion}`,
-                bundledComfyVersion: dist.comfyuiVersion ? `v${dist.comfyuiVersion}` : undefined,
-                lastChecked: 'Just now',
-                lastCheckedAt: Date.now() - 60_000,
-                updateAvailable: false
               }
             }
           ]

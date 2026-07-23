@@ -264,8 +264,15 @@ const otherSecondaryActions = computed<ActionDef[]>(() =>
   )
 )
 
+/** A field with fewer than two options has no track to pick, so the whole
+ *  track card disappears and its actions move into the stats box —
+ *  distribution installs simply follow their workspace; standalone keeps
+ *  its stable/latest picker. */
+const trackless = computed(() => (props.field.options?.length ?? 0) < 2)
+
 const showCheckInHeader = computed(
   () =>
+    !trackless.value &&
     checkUpdateAction.value != null &&
     promotedPrimaryActions.value.length === 0 &&
     otherSecondaryActions.value.length === 0
@@ -370,6 +377,27 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
         <dt>{{ row.label }}</dt>
         <dd :title="row.title">{{ row.value }}</dd>
       </div>
+      <!-- Trackless mode: the track card is gone, so its actions live here. -->
+      <div v-if="trackless && showFooterActions" class="channel-picker-stat-actions">
+        <button
+          v-for="{ action, variant } in footerActions"
+          :key="action.id"
+          type="button"
+          class="channel-picker-action"
+          :class="[variant, { 'is-running': isActionRunning(action.id) }]"
+          :disabled="action.enabled === false || isActionRunning(action.id)"
+          :title="action.tooltip"
+          :data-testid="TID.updateActionButton(action.id)"
+          @click="emit('action', action)"
+        >
+          <Loader2
+            v-if="isActionRunning(action.id)"
+            :size="14"
+            class="channel-picker-action-spinner"
+          />
+          {{ action.label }}
+        </button>
+      </div>
     </dl>
 
     <!-- Hint shown while `commitsAhead` is still being computed; self-hides
@@ -384,7 +412,7 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
       {{ t('channelCards.computingCommitsAhead', 'Computing commits ahead…') }}
     </p>
 
-    <div class="channel-picker-card">
+    <div v-if="!trackless" class="channel-picker-card">
       <div class="channel-picker-channel-header">
         <span class="channel-picker-field-label">
           {{ field.label }}
@@ -537,6 +565,16 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
 .channel-picker-stat-row.is-highlight dd {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* Trackless action row — right-aligned inside the stats box, divided from
+ * the fact rows like any other row. */
+.channel-picker-stat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-hover);
 }
 
 .channel-picker-card {
