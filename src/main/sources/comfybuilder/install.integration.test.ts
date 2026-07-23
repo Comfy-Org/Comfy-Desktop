@@ -2,7 +2,7 @@
 //
 // Integration test for the ComfyBuilder install glue.
 //
-// (a) CI path — drives the real `installArtifact` (+ the `install()` record
+// (a) CI path: drives the real `installArtifact` (+ the `install()` record
 //     wrapper) against a small FABRICATED `venv/`/`ComfyUI/` tarball (the shape
 //     comfy-builder tars; no in-archive manifest) served by the mock Builder API:
 //     the artifact is downloaded over HTTP (electron `net` is bridged to node
@@ -11,7 +11,7 @@
 //     standalone post-extract phases are NOT run here (a real `uv venv` + package
 //     copy is infeasible in CI).
 //
-// (b) Real-archive boot — opt-in, gated on darwin AND `CB_TEST_ARCHIVE`. Points
+// (b) Real-archive boot: opt-in, gated on darwin AND `CB_TEST_ARCHIVE`. Points
 //     the mock at the real archive, runs the REAL `installArtifact` + the
 //     comfybuilder `postInstall` (no-op) + `getLaunchCommand` (the archive's own
 //     `venv/`), then spawns it and polls `/object_info`, asserting > 0 nodes.
@@ -334,7 +334,7 @@ describe.runIf(runRealBoot)('installArtifact → launch real-archive boot', () =
     })
 
     // Env-reshape: the archive ships a ready `venv/`, so postInstall is a no-op
-    // and launch drives that venv's python directly — no rebuild, no uv.
+    // and launch drives that venv's python directly; no rebuild, no uv.
     const { postInstall, getLaunchCommand } = await import('./launch')
     await postInstall(installation, { sendProgress: vi.fn(), update: async () => {} })
 

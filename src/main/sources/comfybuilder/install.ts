@@ -1,5 +1,5 @@
 /**
- * ComfyBuilder install glue — main process only.
+ * ComfyBuilder install glue (main process only).
  *
  * Given a chosen ComfyBuilder artifact, download → extract → validate into the
  * install directory:
@@ -13,7 +13,7 @@
  *
  * The archive is what comfy-builder actually tars (buildexec/assemble.go): a
  * top-level `venv/` + `ComfyUI/` (plus a lockfile, and `syslib/` when present).
- * The manifest is NOT in the archive — comfy-builder seals it into the DB/GCS
+ * The manifest is NOT in the archive: comfy-builder seals it into the DB/GCS
  * (freeze.go), so the version metadata Desktop needs rides on the artifact/version
  * record from the API, not on a file inside the tarball.
  */
@@ -32,7 +32,7 @@ import type { InstallTools } from '../../types/sources'
 /**
  * The archive-layout contract: the two directories comfy-builder tars at the
  * top level. Isolated to one constant so a builder rename is a one-line change.
- * The archive's `venv/` is a complete, relocatable env — `./launch` consumes it
+ * The archive's `venv/` is a complete, relocatable env that `./launch` consumes
  * directly (no post-extract env build), so this stage only lands + validates it.
  */
 const ARTIFACT_DIRS = ['venv', 'ComfyUI'] as const
@@ -50,7 +50,7 @@ export class ComfyBuilderInstallError extends Error {
   }
 }
 
-/** Tools the artifact stage needs — a subset of the standard install bundle. */
+/** Tools the artifact stage needs (a subset of the standard install bundle). */
 export interface InstallArtifactTools {
   sendProgress: (step: string, data: { percent: number; status: string }) => void
   cache: Cache
@@ -150,9 +150,9 @@ export async function installArtifact(params: InstallArtifactParams): Promise<vo
     expectedSha256: artifact.outputSha256,
   })
 
-  // 3+4. Extract (.tar.gz -> nested tar -> files) then validate the layout +
-  // manifest. Any failure in either phase cleans up the extracted roots so a
-  // retry starts from a clean install dir.
+  // 3+4. Extract (.tar.gz -> nested tar -> files) then validate the layout. Any
+  // failure in either phase cleans up the extracted roots so a retry starts from
+  // a clean install dir.
   if (signal?.aborted) throw new Error('Cancelled')
   fs.mkdirSync(installPath, { recursive: true })
   try {

@@ -46,18 +46,12 @@ describe('comfybuilder launch', () => {
     expect(cmd?.port).toBe(9001)
   })
 
-  it('returns null when the venv python is missing', () => {
+  it.each([
+    ['venv python missing', (p: string) => { fs.mkdirSync(path.join(p, 'ComfyUI'), { recursive: true }); fs.writeFileSync(path.join(p, 'ComfyUI', 'main.py'), '') }],
+    ['ComfyUI/main.py missing', (p: string) => { fs.mkdirSync(path.dirname(builderPythonPath(p)), { recursive: true }); fs.writeFileSync(builderPythonPath(p), '') }],
+  ])('returns null when %s', (_name, setup) => {
     const installPath = path.join(dir, 'install')
-    fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
-    fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), '')
-    expect(getLaunchCommand(makeInstall(installPath))).toBeNull()
-  })
-
-  it('returns null when ComfyUI/main.py is missing', () => {
-    const installPath = path.join(dir, 'install')
-    const pyDir = path.dirname(builderPythonPath(installPath))
-    fs.mkdirSync(pyDir, { recursive: true })
-    fs.writeFileSync(builderPythonPath(installPath), '')
+    setup(installPath)
     expect(getLaunchCommand(makeInstall(installPath))).toBeNull()
   })
 

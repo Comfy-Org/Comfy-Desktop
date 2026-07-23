@@ -1,11 +1,11 @@
 /**
- * ComfyBuilder env consumption — the "env-reshape".
+ * ComfyBuilder env consumption (the "env-reshape").
  *
  * Unlike a standalone install (a `standalone-env/` master env copied into
  * `ComfyUI/.venv` by `postInstall`), a comfy-builder archive ships ONE ready,
  * relocatable `venv/` at the install root (python + torch + all deps already
- * installed). So there is nothing to build: `postInstall` is a no-op (bar a unix
- * exec-bit fix) and launch drives the archive's `venv/` python directly.
+ * installed). So there is nothing to build: `postInstall` is a no-op and launch
+ * drives the archive's `venv/` python directly.
  */
 import fs from 'fs'
 import path from 'path'
@@ -15,28 +15,16 @@ import type { InstallationRecord } from '../../installations'
 import type { LaunchCommand, PostInstallTools } from '../../types/sources'
 import { extractPort, parseArgs } from '../../lib/util'
 
-/** The archive's bundled interpreter: `venv/python.exe` on Windows,
- *  `venv/bin/python3` elsewhere. */
+/** The archive's bundled interpreter. */
 export function builderPythonPath(installPath: string): string {
   return process.platform === 'win32'
     ? path.join(installPath, 'venv', 'python.exe')
     : path.join(installPath, 'venv', 'bin', 'python3')
 }
 
-/**
- * No env build — the archive's `venv/` is already complete. Only restore the
- * unix exec bit on the venv's bin/ (a nested tar extract can drop it); on Windows
- * there is nothing to do.
- */
-export async function postInstall(_installation: InstallationRecord, _tools: PostInstallTools): Promise<void> {
-  if (process.platform === 'win32') return
-  const binDir = path.join(_installation.installPath, 'venv', 'bin')
-  try {
-    for (const entry of fs.readdirSync(binDir)) {
-      try { fs.chmodSync(path.join(binDir, entry), 0o755) } catch {}
-    }
-  } catch {}
-}
+/** No-op: the archive ships a complete, ready `venv/`, so there is no env to build.
+ *  `extractNested` uses native tar, which preserves the venv's exec bits. */
+export async function postInstall(_installation: InstallationRecord, _tools: PostInstallTools): Promise<void> {}
 
 /** Launch ComfyUI with the archive's own venv python (no `.venv` rebuild). */
 export function getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {

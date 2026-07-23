@@ -1,13 +1,12 @@
 /**
- * ComfyBuilder artifact download helpers — main process only.
+ * ComfyBuilder artifact download helpers (main process only).
  *
- * Two steps, both auth-free: the ComfyBuilder API returns a short-lived
- * presigned URL whose signature carries its own authorization, so neither the
- * resolve request nor the download itself sends a bearer token.
- *
- *   1. `resolveSignedDownloadUrl` — GET the signed download link for an artifact.
- *   2. `downloadArtifact` — stream that link to disk via main's `download()`,
- *      with an optional post-download sha256 integrity check.
+ *   1. `resolveSignedDownloadUrl`: GET the signed download link for an artifact.
+ *      The deployed builder gateway auth-gates this call, so it sends a Cloud
+ *      JWT when given one. The returned presigned URL is what's auth-free: its
+ *      signature carries its own authorization.
+ *   2. `downloadArtifact`: stream that presigned URL to disk via main's
+ *      `download()`, with an optional post-download sha256 integrity check.
  */
 import { createHash } from 'crypto'
 import { createReadStream, rmSync } from 'fs'

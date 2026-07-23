@@ -4,8 +4,11 @@
  * A ComfyBuilder artifact unpacks to a ready `venv/` + `ComfyUI/` at the install
  * root, so the download/extract/validate stage (`./install`) and the env
  * consumption (`./launch`: no-op postInstall + launch the archive's `venv/`) are
- * bespoke. The dashboard/list/probe glue is still reused from the standalone
- * source, which is layout-agnostic for those paths.
+ * bespoke. The list/launch glue is reused from the standalone source; the detail
+ * view is reused too, but it reads a standalone `ComfyUI/.venv`/`standalone-env/`
+ * that a `venv/` install lacks, so torch/python render blank and the Update tab
+ * is inert (a pinned-env install has nothing to update). A first-class detail
+ * view is a follow-up.
  *
  * Intentionally minimal: no list UI, no OAuth, no version picker. `hidden` keeps
  * it out of the install wizard; records are created programmatically from a
@@ -35,7 +38,8 @@ export const comfybuilder: SourcePlugin = {
 
   buildInstallation(selections: Record<string, FieldOption | undefined>): Record<string, unknown> {
     // The chosen artifact rides on the selection's `data`; the creator flattens
-    // `artifact` + `comfybuilderBaseUrl` onto the record for `install` to read.
+    // `artifact` + `comfybuilderBaseUrl` + `comfybuilderAuthToken` onto the
+    // record for `install` to read.
     const data = (selections.artifact?.data ?? {}) as Record<string, unknown>
     return { launchMode: 'window', ...data }
   },
