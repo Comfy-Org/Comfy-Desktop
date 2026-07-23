@@ -124,10 +124,14 @@ export async function installArtifact(params: InstallArtifactParams): Promise<vo
   if (!signedUrl && !baseUrl) {
     throw new ComfyBuilderInstallError('invalid-artifact', 'A signedUrl or baseUrl is required to download the artifact.')
   }
-  // Integrity is mandatory: without an expected hash the download cannot be
-  // verified, so refuse rather than install unverified bytes.
-  if (typeof artifact.outputSha256 !== 'string' || artifact.outputSha256.length === 0) {
-    throw new ComfyBuilderInstallError('invalid-artifact', 'artifact is missing outputSha256; refusing to install unverified bytes')
+  // e2e ONLY (do NOT graduate to PR #1288): the staging build-artifacts API does
+  // not yet expose an archive-bytes sha256, so integrity is verify-if-present here.
+  // Production must restore the mandatory-sha once the builder exposes the hash.
+  const expectedSha256 = typeof artifact.outputSha256 === 'string' && artifact.outputSha256.length > 0
+    ? artifact.outputSha256
+    : undefined
+  if (!expectedSha256) {
+    console.warn('comfybuilder(e2e): artifact has no outputSha256; downloading without integrity verification')
   }
 
   // 1. Resolve the presigned archive URL (skipped when one was passed in).
@@ -151,7 +155,7 @@ export async function installArtifact(params: InstallArtifactParams): Promise<vo
     onProgress: (p: DownloadProgress) =>
       sendProgress('download', { percent: p.percent, status: `Downloading… ${p.receivedMB} / ${p.totalMB} MB` }),
     ...(signal ? { signal } : {}),
-    expectedSha256: artifact.outputSha256,
+    ...(expectedSha256 ? { expectedSha256 } : {}),
   })
 
   // 3+4. Extract (.tar.gz -> nested tar -> files) then validate the layout +

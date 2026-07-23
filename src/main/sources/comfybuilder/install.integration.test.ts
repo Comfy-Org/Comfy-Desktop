@@ -229,26 +229,20 @@ describe('installArtifact (fabricated fixture)', () => {
     expect(fs.existsSync(installPath)).toBe(false)
   })
 
-  it('rejects an artifact with no outputSha256 and installs nothing', async () => {
+  it('installs without outputSha256 (e2e verify-if-present: staging exposes no hash)', async () => {
     const installPath = path.join(tmpRoot, 'install')
     const installation = makeInstallation(installPath)
 
-    let caught: unknown
-    try {
-      await installArtifact({
+    // No outputSha256 → download proceeds unverified (e2e-only relaxation).
+    await expect(
+      installArtifact({
         installation,
         artifact: makeArtifact(), // no outputSha256
         tools: makeArtifactTools(path.join(tmpRoot, 'cache')),
         baseUrl: goodApi.baseUrl,
-      })
-    } catch (err) {
-      caught = err
-    }
-
-    expect(caught).toBeInstanceOf(ComfyBuilderInstallError)
-    expect((caught as ComfyBuilderInstallError).kind).toBe('invalid-artifact')
-    expect((caught as ComfyBuilderInstallError).message).toMatch(/outputSha256/)
-    expect(fs.existsSync(installPath)).toBe(false)
+      }),
+    ).resolves.toBeUndefined()
+    expect(fs.statSync(path.join(installPath, 'venv')).isDirectory()).toBe(true)
   })
 
   it('cleans up the install dir when extraction fails on a garbage archive', async () => {

@@ -12,16 +12,26 @@
  * chosen artifact.
  */
 import { standalone } from '../standalone'
+import { getFieldOptions } from './catalog'
 import { install } from './install'
 import { getLaunchCommand, postInstall } from './launch'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 
 export const comfybuilder: SourcePlugin = {
   id: 'comfybuilder',
-  label: 'ComfyBuilder',
+  label: 'ComfyBuilder (dev)',
   category: 'local',
-  hidden: true,
-  fields: [],
+  // e2e: un-hidden so the install wizard renders the catalog-browse fields.
+  hidden: false,
+  fields: [
+    { id: 'baseUrl', label: 'Builder API base', type: 'text', defaultValue: 'https://stagingplatformapi.comfy.org/builder' },
+    { id: 'jwt', label: 'Cloud JWT', type: 'text', action: { label: 'Connect' } },
+    { id: 'distribution', label: 'Distribution', type: 'select', errorTarget: 'jwt' },
+    { id: 'version', label: 'Version', type: 'select', errorTarget: 'jwt' },
+    { id: 'artifact', label: 'Target', type: 'select', errorTarget: 'jwt' },
+  ],
+
+  getFieldOptions,
 
   // Reuse the standalone install stepper (download → extract → setup → cleanup);
   // the artifact ships a pinned env, so there is no post-install auto-update.
@@ -35,9 +45,13 @@ export const comfybuilder: SourcePlugin = {
 
   buildInstallation(selections: Record<string, FieldOption | undefined>): Record<string, unknown> {
     // The chosen artifact rides on the selection's `data`; the creator flattens
-    // `artifact` + `comfybuilderBaseUrl` onto the record for `install` to read.
+    // `artifact` + `comfybuilderBaseUrl` + `comfybuilderAuthToken` onto the record
+    // for `install` to read.
     const data = (selections.artifact?.data ?? {}) as Record<string, unknown>
-    return { launchMode: 'window', ...data }
+    const artifact = data.artifact as { gpu?: string } | undefined
+    // A cpu target has no GPU torch, so force ComfyUI onto CPU at launch.
+    const launchArgs = artifact?.gpu === 'cpu' ? '--cpu' : undefined
+    return { launchMode: 'window', ...(launchArgs ? { launchArgs } : {}), ...data }
   },
 
   // Bespoke artifact download/extract/validate.
