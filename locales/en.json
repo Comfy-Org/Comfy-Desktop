@@ -1359,6 +1359,8 @@
         "desktopTooOld": "This distribution needs Comfy Desktop {version} or newer. Update Comfy Desktop to install it."
       },
       "menuInstall": "Install",
+      "distVersion": "Dist v{version}",
+      "comfyVersion": "v{version}",
       "emptyTitle": "No distributions yet"
     },
     "account": {

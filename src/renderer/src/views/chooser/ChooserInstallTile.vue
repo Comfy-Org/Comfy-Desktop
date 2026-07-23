@@ -80,8 +80,11 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
+/** Version leads faint, source/channel follows emphasised — the shared
+ *  meta-line pattern (`meta-source` is the faint tone, `meta-version` the
+ *  emphasised one; the class names carry tone, not content). */
 const metaLine = computed(() =>
-  [sourceLabel.value, inst.value.version].filter(Boolean).join(' · ')
+  [inst.value.version, sourceLabel.value].filter(Boolean).join(' · ')
 )
 
 
@@ -135,7 +138,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
   >
     <!-- Type icon only; source/channel lives in the meta line below. -->
     <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
-      <component :is="typeMeta.icon" :size="22" />
+      <component :is="typeMeta.icon" :size="32" />
     </span>
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
@@ -193,9 +196,9 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       <TruncatedText class="chooser-tile-name" :text="inst.name" />
       <div v-if="metaLine || actionPill" class="chooser-tile-footer">
         <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-          <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
-          <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
-          <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
+          <span v-if="inst.version" class="chooser-tile-meta-source">{{ inst.version }}</span>
+          <span v-if="inst.version && sourceLabel" class="chooser-tile-meta-sep">·</span>
+          <span v-if="sourceLabel" class="chooser-tile-meta-version">{{ sourceLabel }}</span>
         </TruncatedText>
         <!-- Action pill; pinned right by its own margin, never truncates. -->
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">

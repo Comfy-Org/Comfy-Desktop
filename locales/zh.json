@@ -1359,6 +1359,8 @@
         "desktopTooOld": "该分发版需要 Comfy Desktop {version} 或更高版本。请更新 Comfy Desktop 后再安装。"
       },
       "menuInstall": "安装",
+      "distVersion": "分发版 v{version}",
+      "comfyVersion": "v{version}",
       "emptyTitle": "还没有分发版"
     },
     "account": {

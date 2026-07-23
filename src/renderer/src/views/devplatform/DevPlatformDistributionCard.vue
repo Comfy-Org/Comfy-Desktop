@@ -6,17 +6,17 @@
  * an existing install.
  *
  * NAME is the headline; the single meta line beneath it carries the one fact
- * that matters for this card's state — version · size when installable, or
- * the state itself ("No build yet", "OS incompatible", …). The top-right
- * corner belongs to the kebab alone: state never renders as a pill. Blocked
- * tiles keep their full explanation on `title` and are never hidden — these
- * are ordinary pipeline facts, not threats.
+ * that matters for this card's state — the labelled versions ("v0.28.0 ·
+ * Dist v12.0") when installable, or the state itself ("No build yet",
+ * "OS incompatible", …). The top-right corner belongs to the kebab alone:
+ * state never renders as a pill. Blocked tiles keep their full explanation
+ * on `title` and are never hidden — these are ordinary pipeline facts, not
+ * threats.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDownToLine, MoreVertical, Package } from 'lucide-vue-next'
 import TruncatedText from '../../components/TruncatedText.vue'
-import { formatBytesCoarse } from '../../lib/formatting'
 import type { Distribution, DistributionState } from '../../devplatform/types'
 
 const props = defineProps<{
@@ -49,25 +49,33 @@ const BLOCKED_STATE_KEY: Record<string, string> = {
 
 const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
 
-const sizeLabel = computed(() =>
-  props.distribution.sizeBytes ? formatBytesCoarse(props.distribution.sizeBytes) : ''
-)
+/** The two labelled versions: ComfyUI's leads faint, the distribution's
+ *  release follows emphasised — the shared faint-then-bright meta pattern,
+ *  so the numbers can't be conflated. */
+const comfyVersionLabel = computed(() => {
+  const version = props.distribution.comfyuiVersion
+  return version ? t('devPlatform.distribution.comfyVersion', { version }) : ''
+})
 
-/** Dot-separated facts row: version · size. Both optional. */
+const distVersionLabel = computed(() => {
+  const version = props.distribution.version
+  return version ? t('devPlatform.distribution.distVersion', { version }) : ''
+})
+
 const factsLine = computed(() =>
-  [props.distribution.version, sizeLabel.value].filter(Boolean).join(' · ')
+  [comfyVersionLabel.value, distVersionLabel.value].filter(Boolean).join(' · ')
 )
 
-/** The one line under the name: the state when it isn't installable facts.
- *  Update-available keeps the facts — its state renders as the Update pill. */
-const metaLine = computed(() => {
+/** A state that replaces the facts on the meta line. Update-available keeps
+ *  the facts — its state renders as the Update pill. */
+const stateLabel = computed(() => {
   const state = props.distribution.state
   if (isBlocked.value) {
     const suffix = BLOCKED_STATE_KEY[state] ?? 'noBuild'
     return t(`devPlatform.distribution.states.${suffix}`)
   }
   if (state === 'installed') return t('devPlatform.distribution.states.installed')
-  return factsLine.value
+  return ''
 })
 
 /** The blue Update pill — same styling as the install tile's. */
@@ -104,7 +112,7 @@ function onActivate(): void {
   >
     <!-- "Packaged environment" glyph — the one icon every distribution wears. -->
     <span class="chooser-tile-icon" aria-hidden="true">
-      <Package :size="22" />
+      <Package :size="32" />
     </span>
 
     <!-- Top-right is the kebab's alone — state lives on the meta line. -->
@@ -126,8 +134,17 @@ function onActivate(): void {
 
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <div v-if="metaLine || showUpdatePill" class="chooser-tile-footer">
-        <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine" />
+      <div v-if="stateLabel || factsLine || showUpdatePill" class="chooser-tile-footer">
+        <TruncatedText v-if="stateLabel" class="chooser-tile-meta-line" :text="stateLabel" />
+        <TruncatedText v-else-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
+          <span v-if="comfyVersionLabel" class="chooser-tile-meta-source">{{
+            comfyVersionLabel
+          }}</span>
+          <span v-if="comfyVersionLabel && distVersionLabel" class="chooser-tile-meta-sep">·</span>
+          <span v-if="distVersionLabel" class="chooser-tile-meta-version">{{
+            distVersionLabel
+          }}</span>
+        </TruncatedText>
         <!-- Mirrors the install tile's update pill: facts left, pill pinned
              right. The whole card is the click target that performs it. -->
         <span

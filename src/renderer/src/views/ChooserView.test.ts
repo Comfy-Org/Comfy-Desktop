@@ -82,6 +82,8 @@ const messages = {
           noArtifactForMachine: 'Not built for this machine.',
         },
         menuInstall: 'Install',
+        distVersion: 'Dist v{version}',
+        comfyVersion: 'v{version}',
         emptyTitle: 'No distributions yet',
       },
       workspace: {
@@ -196,17 +198,20 @@ describe('ChooserView', () => {
     // old top-right pill copy is gone for good.
     const toolkit = wrapper.find('[data-testid="chooser-dist-tile-dist-3d-toolkit"]')
     expect(toolkit.text()).toContain('OS incompatible')
-    expect(toolkit.text()).not.toContain('4.7')
+    expect(toolkit.text()).not.toContain('Dist v5')
     expect(toolkit.text()).not.toContain('Not available for this computer')
 
     // The tiles carry no footer copy and no pills — two text lines max.
     expect(toolkit.text()).not.toContain('Not installed yet')
     expect(wrapper.text()).not.toContain('Available')
 
-    // Update-available: version facts stay on the left; the state renders as
-    // the same blue Update pill the install tiles wear, pinned right.
+    // Update-available: labelled versions stay on the left (no file size);
+    // the state renders as the same blue Update pill the install tiles wear.
     const videoSuite = wrapper.find('[data-testid="chooser-dist-tile-dist-video-suite"]')
-    expect(videoSuite.text()).toContain('12.0')
+    expect(videoSuite.text()).toContain('Dist v13')
+    expect(videoSuite.text()).toContain('v0.28.0')
+    expect(videoSuite.text()).not.toContain('ComfyUI v0.28.0')
+    expect(videoSuite.text()).not.toContain('GB')
     expect(videoSuite.find('.chooser-tile-pill-update').text()).toBe('Update')
 
     // Every distribution card wears the kebab.

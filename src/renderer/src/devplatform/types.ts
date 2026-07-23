@@ -28,6 +28,9 @@ export interface Distribution {
   name: string
   description?: string
   version?: string
+  /** The ComfyUI version the latest build bundles — distinct from `version`
+   *  (the distribution's own release number); the UI labels both. */
+  comfyuiVersion?: string
   /** ISO 8601 finish stamp of the latest succeeded deployment. */
   finishedAt?: string
   sizeBytes?: number
