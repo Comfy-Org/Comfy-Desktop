@@ -10,7 +10,7 @@ import type { Distribution } from './types'
 export const MOCK_DISTRIBUTIONS: Distribution[] = [
   {
     id: 'dist-image-baseline',
-    name: 'ComfyUI — Image Baseline',
+    name: 'CMFY-The-Matrix',
     description: 'Core image environment: frontend, models and the approved node set.',
     version: '137',
     finishedAt: '2026-07-21T16:40:00Z',
@@ -19,7 +19,7 @@ export const MOCK_DISTRIBUTIONS: Distribution[] = [
   },
   {
     id: 'dist-video-suite',
-    name: 'ComfyUI — Video Suite',
+    name: 'CMFY-Blade-Runner',
     description: 'Video generation and upscale chain.',
     version: '12.0',
     finishedAt: '2026-07-14T11:05:00Z',
@@ -29,7 +29,7 @@ export const MOCK_DISTRIBUTIONS: Distribution[] = [
   },
   {
     id: 'dist-sdxl-essentials',
-    name: 'ComfyUI — SDXL Essentials',
+    name: 'CMFY-Inception',
     description: 'Lightweight SDXL environment with ControlNet.',
     version: '3.1',
     finishedAt: '2026-07-09T08:30:00Z',
@@ -39,14 +39,14 @@ export const MOCK_DISTRIBUTIONS: Distribution[] = [
   },
   {
     id: 'dist-audio-lab',
-    name: 'ComfyUI — Audio Lab',
+    name: 'CMFY-Audio-Lab',
     description: 'Audio generation environment.',
     state: 'no-build',
     blockedReason: 'buildFailed',
   },
   {
     id: 'dist-3d-toolkit',
-    name: 'ComfyUI — 3D Toolkit',
+    name: 'CMFY-3D-Suite',
     description: '3D generation and texturing environment.',
     version: '4.7',
     finishedAt: '2026-07-18T10:00:00Z',
@@ -56,7 +56,7 @@ export const MOCK_DISTRIBUTIONS: Distribution[] = [
   },
   {
     id: 'dist-research-nightly',
-    name: 'ComfyUI — Research Nightly',
+    name: 'CMFY-Interstellar',
     description: 'Bleeding-edge research environment.',
     version: '0.9',
     state: 'needs-desktop-update',

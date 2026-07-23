@@ -7,9 +7,16 @@ import ChooserView from './ChooserView.vue'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
 
-// Stub the heavy ContextMenu child — we don't exercise menu interactions here.
+// Stub the heavy ContextMenu child — menu internals are its own test's job.
+// Props are declared so tests can assert what the host passes; `select` is
+// emitted from the stub to drive the host's handlers.
 vi.mock('../components/ContextMenu.vue', () => ({
-  default: { name: 'ContextMenu', template: '<div data-testid="context-menu" />' },
+  default: {
+    name: 'ContextMenu',
+    props: ['open', 'x', 'y', 'items'],
+    emits: ['close', 'select'],
+    template: '<div data-testid="context-menu" />',
+  },
 }))
 
 // Test-controllable `useModal` mock — `viewError` routes its readable
@@ -66,18 +73,15 @@ const messages = {
       distribution: {
         states: {
           noBuild: 'No build yet',
-          platformMismatch: 'Not available for this computer',
+          platformMismatch: 'OS incompatible',
           needsDesktopUpdate: 'Needs a newer Comfy Desktop',
           installed: 'Installed',
-          updateAvailable: 'Update available',
         },
         blockedReason: {
           buildFailed: 'The most recent build failed.',
           noArtifactForMachine: 'Not built for this machine.',
         },
-        availablePill: 'Available',
-        installTileMeta: 'Not installed yet',
-        updatedLabel: 'Updated',
+        menuInstall: 'Install',
         emptyTitle: 'No distributions yet',
       },
       workspace: {
@@ -177,10 +181,69 @@ describe('ChooserView', () => {
     expect(wrapper.text()).toContain('willie@comfy.org')
     // All six fixtures render — none are backed by a local install.
     expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(6)
-    // Blocked fixtures are shown with their reason tag, never hidden.
+    // Blocked fixtures are shown with their state on the meta line, never hidden.
     expect(wrapper.find('[data-testid="chooser-dist-tile-dist-audio-lab"]').text()).toContain(
       'No build yet'
     )
+  })
+
+  it('distribution card state lives on the meta line; the top-right holds only the kebab', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    // Platform-mismatch: "OS incompatible" replaces version · size, and the
+    // old top-right pill copy is gone for good.
+    const toolkit = wrapper.find('[data-testid="chooser-dist-tile-dist-3d-toolkit"]')
+    expect(toolkit.text()).toContain('OS incompatible')
+    expect(toolkit.text()).not.toContain('4.7')
+    expect(toolkit.text()).not.toContain('Not available for this computer')
+
+    // The tiles carry no footer copy and no pills — two text lines max.
+    expect(toolkit.text()).not.toContain('Not installed yet')
+    expect(wrapper.text()).not.toContain('Available')
+
+    // Update-available: version facts stay on the left; the state renders as
+    // the same blue Update pill the install tiles wear, pinned right.
+    const videoSuite = wrapper.find('[data-testid="chooser-dist-tile-dist-video-suite"]')
+    expect(videoSuite.text()).toContain('12.0')
+    expect(videoSuite.find('.chooser-tile-pill-update').text()).toBe('Update')
+
+    // Every distribution card wears the kebab.
+    expect(wrapper.findAll('[data-testid^="chooser-dist-kebab-"]').length).toBe(6)
+  })
+
+  it('distribution kebab opens a menu whose Install entry installs; blocked cards get it disabled', async () => {
+    installMockApi([], TEAM_SESSION)
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    // ContextMenu is stubbed file-wide, so assert at its boundary: the props
+    // the host passes in, and the host's response to a `select` emit. The
+    // second stub instance is the distribution menu (first is the install menu).
+    const distMenuStub = () => wrapper.findAllComponents({ name: 'ContextMenu' })[1]!
+
+    // Installable card: the menu opens with an enabled Install item.
+    await wrapper.find('[data-testid="chooser-dist-kebab-dist-image-baseline"]').trigger('click')
+    expect(distMenuStub().props('open')).toBe(true)
+    expect(distMenuStub().props('items')).toEqual([
+      expect.objectContaining({ id: 'install', disabled: false }),
+    ])
+
+    // Selecting Install routes to the install flow for that distribution.
+    distMenuStub().vm.$emit('select', 'install')
+    await flushPromises()
+    const events = wrapper.emitted('install-distribution')
+    expect(events).toBeTruthy()
+    expect((events![0]![0] as { id: string }).id).toBe('dist-image-baseline')
+    expect(distMenuStub().props('open')).toBe(false)
+
+    // Blocked card: the menu opens but Install is disabled.
+    await wrapper.find('[data-testid="chooser-dist-kebab-dist-audio-lab"]').trigger('click')
+    expect(distMenuStub().props('open')).toBe(true)
+    expect(distMenuStub().props('items')).toEqual([
+      expect.objectContaining({ id: 'install', disabled: true }),
+    ])
   })
 
   it('chip face names the account and the token workspace; the menu offers sign out', async () => {
@@ -197,7 +260,7 @@ describe('ChooserView', () => {
   })
 
   it('deduplicates a distribution whose name matches an existing install', async () => {
-    installMockApi([makeInstall({ id: 'inst-sdxl', name: 'ComfyUI — SDXL Essentials' })], TEAM_SESSION)
+    installMockApi([makeInstall({ id: 'inst-sdxl', name: 'CMFY-Inception' })], TEAM_SESSION)
     const wrapper = mountChooser()
     await flushPromises()
     expect(wrapper.find('[data-testid="chooser-dist-tile-dist-sdxl-essentials"]').exists()).toBe(
@@ -436,18 +499,15 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toHaveLength(1)
   })
 
-  it('shows a relative recency line for a booted install and "not launched yet" for a fresh one', async () => {
+  it('install tiles carry no launch-recency line — name and meta only', async () => {
     installMockApi([
       makeInstall({ id: 'booted', name: 'Booted', lastLaunchedAt: Date.now() - 2 * 60_000 }),
-      makeInstall({ id: 'fresh', name: 'Fresh' }),
     ])
     const wrapper = mountChooser()
     await flushPromises()
-    const tiles = wrapper.findAll('.chooser-tile')
-    const bootedTile = tiles.find((t) => t.text().includes('Booted'))!
-    const freshTile = tiles.find((t) => t.text().includes('Fresh'))!
-    expect(bootedTile.find('.chooser-tile-recency-text').text()).toContain('Launched')
-    expect(freshTile.find('.chooser-tile-recency-text').text()).toBe('Not launched yet')
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Booted'))!
+    expect(tile.find('.chooser-tile-recency-text').exists()).toBe(false)
+    expect(tile.text()).not.toContain('Launched')
   })
 
   it('renders the update affordance as a bare "Update" pill — the target version lives in the meta line', async () => {

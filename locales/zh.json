@@ -1346,10 +1346,9 @@
     "distribution": {
       "states": {
         "noBuild": "尚无构建",
-        "platformMismatch": "不适用于此电脑",
+        "platformMismatch": "系统不兼容",
         "needsDesktopUpdate": "需要更新版本的 Comfy Desktop",
-        "installed": "已安装",
-        "updateAvailable": "有可用更新"
+        "installed": "已安装"
       },
       "blockedReason": {
         "noBuild": "该分发版尚未完成构建。构建成功后即可安装。",
@@ -1359,9 +1358,7 @@
         "needsDesktopUpdate": "该分发版需要 Comfy Desktop {version} 或更高版本。请更新 Comfy Desktop 后再安装。",
         "desktopTooOld": "该分发版需要 Comfy Desktop {version} 或更高版本。请更新 Comfy Desktop 后再安装。"
       },
-      "availablePill": "可安装",
-      "installTileMeta": "尚未安装",
-      "updatedLabel": "更新于",
+      "menuInstall": "安装",
       "emptyTitle": "还没有分发版"
     },
     "account": {

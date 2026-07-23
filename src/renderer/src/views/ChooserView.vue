@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef, watch } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -18,6 +18,7 @@ import DevPlatformDistributionCard from './devplatform/DevPlatformDistributionCa
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { Distribution } from '../devplatform/types'
+import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
@@ -107,8 +108,7 @@ const {
   activeFilter,
   visibleInstalls,
   showEmptyHint,
-  matchesQuery,
-  lastLaunchedLabel
+  matchesQuery
 } = useInstallList({ installations: installationsRef })
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
@@ -168,6 +168,51 @@ const distributionNote = computed(() => {
 
 function handleDistributionActivate(dist: Distribution): void {
   emit('install-distribution', dist)
+}
+
+// --- Distribution kebab menu ---
+//
+// Every distribution card carries the same top-right kebab as an install
+// tile. Install is the one action a distribution supports today; blocked
+// and already-installed states keep the item visible but disabled, with
+// the tile's own reason semantics.
+const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  dist: null
+})
+
+const distMenuItems = computed<ContextMenuItem[]>(() => {
+  const dist = distMenu.value.dist
+  if (!dist) return []
+  const installable = dist.state === 'installable' || dist.state === 'update-available'
+  return [
+    {
+      id: 'install',
+      label: t('devPlatform.distribution.menuInstall'),
+      disabled: !installable
+    }
+  ]
+})
+
+function openDistKebabMenu(event: MouseEvent, dist: Distribution): void {
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect?.()
+  // Right-aligned drop, matching the install-tile kebab. ContextMenu clamps
+  // to the viewport, so a negative x is safe.
+  const x = rect ? rect.right - 180 : event.clientX
+  const y = (rect?.bottom ?? event.clientY) + 4
+  distMenu.value = { open: true, x, y, dist }
+}
+
+function closeDistMenu(): void {
+  distMenu.value = { open: false, x: 0, y: 0, dist: null }
+}
+
+function handleDistMenuSelect(itemId: string): void {
+  const dist = distMenu.value.dist
+  closeDistMenu()
+  if (itemId === 'install' && dist) handleDistributionActivate(dist)
 }
 
 // --- Cluster top offset ---
@@ -369,7 +414,6 @@ function handleNewInstallClick(): void {
           :key="inst.id"
           :installation="inst"
           :is-stopped-action-gated="isStoppedActionGated(inst)"
-          :last-launched-label="lastLaunchedLabel(inst)"
           @pick="pickInstall"
           @open-card-menu="openCardMenu"
           @open-kebab-menu="openKebabMenu"
@@ -387,6 +431,7 @@ function handleNewInstallClick(): void {
           :key="`dist:${dist.id}`"
           :distribution="dist"
           @select="handleDistributionActivate(dist)"
+          @open-kebab-menu="(event) => openDistKebabMenu(event, dist)"
         />
       </TransitionGroup>
 
@@ -399,6 +444,15 @@ function handleNewInstallClick(): void {
         :items="ctxMenuItems"
         @close="closeMenu"
         @select="handleCtxMenuSelect"
+      />
+
+      <ContextMenu
+        :open="distMenu.open"
+        :x="distMenu.x"
+        :y="distMenu.y"
+        :items="distMenuItems"
+        @close="closeDistMenu"
+        @select="handleDistMenuSelect"
       />
     </div>
   </BrandBackground>

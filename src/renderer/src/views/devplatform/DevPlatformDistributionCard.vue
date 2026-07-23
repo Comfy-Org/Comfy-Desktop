@@ -2,23 +2,21 @@
 /**
  * One distribution, rendered as a chooser tile — a sibling of
  * `views/chooser/ChooserInstallTile.vue`: same box, same classes, same type
- * scale. Activating it is the same gesture as launching an existing install.
+ * scale, same top-right kebab. Activating it is the same gesture as launching
+ * an existing install.
  *
- * NAME is the headline; version + size drop into the single meta row. Blocked
- * states (no-build / platform-mismatch / needs-desktop-update) are shown with
- * a short reason tag — full reason on `title` — and never hidden. No security
- * chrome: these are ordinary pipeline facts, not threats.
- *
- * The footer answers the installation tile's recency question honestly: a
- * distribution that isn't installed says "Not installed yet"; an installed one
- * carries the build's "updated" stamp.
+ * NAME is the headline; the single meta line beneath it carries the one fact
+ * that matters for this card's state — version · size when installable, or
+ * the state itself ("No build yet", "OS incompatible", …). The top-right
+ * corner belongs to the kebab alone: state never renders as a pill. Blocked
+ * tiles keep their full explanation on `title` and are never hidden — these
+ * are ordinary pipeline facts, not threats.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, Package } from 'lucide-vue-next'
+import { ArrowDownToLine, MoreVertical, Package } from 'lucide-vue-next'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { formatBytesCoarse } from '../../lib/formatting'
-import { formatRelativeFromMs } from '../../lib/datetime'
 import type { Distribution, DistributionState } from '../../devplatform/types'
 
 const props = defineProps<{
@@ -28,6 +26,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** The user activated the tile — the host starts the install flow. */
   select: []
+  /** The kebab was clicked — the host opens the distribution menu. */
+  'open-kebab-menu': [event: MouseEvent]
 }>()
 
 const { t } = useI18n()
@@ -39,7 +39,7 @@ const BLOCKED_STATES: readonly DistributionState[] = [
   'needs-desktop-update',
 ]
 
-/** i18n suffix per blocked state — keys both the short tag label (`states.*`)
+/** i18n suffix per blocked state — keys both the short meta label (`states.*`)
  *  and the fallback long reason (`blockedReason.*`). */
 const BLOCKED_STATE_KEY: Record<string, string> = {
   'no-build': 'noBuild',
@@ -49,18 +49,29 @@ const BLOCKED_STATE_KEY: Record<string, string> = {
 
 const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
 
-/** Present on this machine already — the two post-install states. */
-const isInstalledLocally = computed(
-  () => props.distribution.state === 'installed' || props.distribution.state === 'update-available'
+const sizeLabel = computed(() =>
+  props.distribution.sizeBytes ? formatBytesCoarse(props.distribution.sizeBytes) : ''
 )
 
-const showAvailablePill = computed(() => props.distribution.state === 'installable')
+/** Dot-separated facts row: version · size. Both optional. */
+const factsLine = computed(() =>
+  [props.distribution.version, sizeLabel.value].filter(Boolean).join(' · ')
+)
 
-const blockedLabel = computed(() => {
-  if (!isBlocked.value) return ''
-  const suffix = BLOCKED_STATE_KEY[props.distribution.state] ?? 'noBuild'
-  return t(`devPlatform.distribution.states.${suffix}`)
+/** The one line under the name: the state when it isn't installable facts.
+ *  Update-available keeps the facts — its state renders as the Update pill. */
+const metaLine = computed(() => {
+  const state = props.distribution.state
+  if (isBlocked.value) {
+    const suffix = BLOCKED_STATE_KEY[state] ?? 'noBuild'
+    return t(`devPlatform.distribution.states.${suffix}`)
+  }
+  if (state === 'installed') return t('devPlatform.distribution.states.installed')
+  return factsLine.value
 })
+
+/** The blue Update pill — same styling as the install tile's. */
+const showUpdatePill = computed(() => props.distribution.state === 'update-available')
 
 /** Full-contrast explanation, carried on `title` so it eats no tile space. */
 const blockedReason = computed(() => {
@@ -70,29 +81,6 @@ const blockedReason = computed(() => {
   return t(`devPlatform.distribution.blockedReason.${suffix}`, {
     version: props.distribution.minDesktopVersion ?? '',
   })
-})
-
-const sizeLabel = computed(() =>
-  props.distribution.sizeBytes ? formatBytesCoarse(props.distribution.sizeBytes) : ''
-)
-
-/** Dot-separated facts row: version · size. Both optional. */
-const metaLine = computed(() =>
-  [props.distribution.version, sizeLabel.value].filter(Boolean).join(' · ')
-)
-
-const updatedLabel = computed(() => {
-  const iso = props.distribution.finishedAt
-  if (!iso) return ''
-  const ms = Date.parse(iso)
-  if (Number.isNaN(ms)) return ''
-  const rel = formatRelativeFromMs(ms, t)
-  return rel ? `${t('devPlatform.distribution.updatedLabel')} ${rel}` : ''
-})
-
-const footerLabel = computed(() => {
-  if (!isInstalledLocally.value) return t('devPlatform.distribution.installTileMeta')
-  return updatedLabel.value
 })
 
 function onActivate(): void {
@@ -108,6 +96,7 @@ function onActivate(): void {
     role="button"
     tabindex="0"
     :aria-disabled="isBlocked ? true : undefined"
+    :title="blockedReason || undefined"
     :data-testid="`chooser-dist-tile-${distribution.id}`"
     @click="onActivate"
     @keydown.enter.prevent="onActivate"
@@ -118,48 +107,35 @@ function onActivate(): void {
       <Package :size="22" />
     </span>
 
+    <!-- Top-right is the kebab's alone — state lives on the meta line. -->
     <div class="chooser-tile-actions">
-      <span
-        v-if="isBlocked"
-        class="chooser-tile-danger-tag dist-tile-tag--blocked"
-        :title="blockedReason"
+      <button
+        type="button"
+        class="chooser-tile-kebab"
+        :title="t('chooser.moreActions')"
+        :aria-label="t('chooser.moreActions')"
+        :data-testid="`chooser-dist-kebab-${distribution.id}`"
+        @click.stop="emit('open-kebab-menu', $event)"
+        @contextmenu.stop="emit('open-kebab-menu', $event)"
+        @keydown.enter.stop
+        @keydown.space.stop
       >
-        <AlertCircle :size="12" aria-hidden="true" />
-        {{ blockedLabel }}
-      </span>
-      <!-- Update-available: the only state asking the user to act. -->
-      <span
-        v-else-if="distribution.state === 'update-available'"
-        class="chooser-tile-pill dist-tile-pill--update"
-      >
-        <ArrowDownToLine :size="11" aria-hidden="true" />
-        {{ t('devPlatform.distribution.states.updateAvailable') }}
-      </span>
-      <span
-        v-else-if="distribution.state === 'installed'"
-        class="chooser-tile-pill dist-tile-pill--installed"
-      >
-        {{ t('devPlatform.distribution.states.installed') }}
-      </span>
-      <!-- Says this tile is something you can ADD, which is what distinguishes
-           it from the installation tiles beside it. -->
-      <span v-else-if="showAvailablePill" class="chooser-tile-pill dist-tile-pill--available">
-        {{ t('devPlatform.distribution.availablePill') }}
-      </span>
+        <MoreVertical :size="16" />
+      </button>
     </div>
 
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-        <span v-if="distribution.version" class="chooser-tile-meta-version">
-          {{ distribution.version }}
-        </span>
-        <span v-if="distribution.version && sizeLabel" class="chooser-tile-meta-sep">·</span>
-        <span v-if="sizeLabel" class="chooser-tile-meta-source">{{ sizeLabel }}</span>
-      </TruncatedText>
-      <div class="chooser-tile-footer">
-        <span v-if="footerLabel" class="chooser-tile-recency">
-          <span class="chooser-tile-recency-text">{{ footerLabel }}</span>
+      <div v-if="metaLine || showUpdatePill" class="chooser-tile-footer">
+        <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine" />
+        <!-- Mirrors the install tile's update pill: facts left, pill pinned
+             right. The whole card is the click target that performs it. -->
+        <span
+          v-if="showUpdatePill"
+          class="chooser-tile-pill chooser-tile-pill-update chooser-tile-pill-action"
+        >
+          <ArrowDownToLine :size="11" aria-hidden="true" />
+          {{ t('chooser.updatePill') }}
         </span>
       </div>
     </div>

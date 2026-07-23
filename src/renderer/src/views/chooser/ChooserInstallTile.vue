@@ -13,8 +13,6 @@ interface Props {
   installation: Installation
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
-  /** Pre-formatted recency label — "Launched 3h ago" / "Not launched yet". */
-  lastLaunchedLabel: string
 }
 
 const props = defineProps<Props>()
@@ -109,14 +107,6 @@ const actionPill = computed(() => {
   return null
 })
 
-/** Precise fallback for the relative recency label; empty when never booted. */
-const absoluteLaunchedTime = computed(() => {
-  const ts = inst.value.lastLaunchedAt
-  return typeof ts === 'number'
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(ts)
-    : ''
-})
-
 function handleClick(): void {
   if (isStopping.value) return
   emit('pick', inst.value)
@@ -197,23 +187,17 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       </button>
     </div>
 
-    <!-- Stacked tiers (name → meta → recency); each truncates on its own row. -->
+    <!-- Two lines: name, then one row with the meta facts left and the
+         action pill (update / migrate) pinned right. -->
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="inst.name" />
-      <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-        <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
-        <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
-        <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
-      </TruncatedText>
-      <div class="chooser-tile-footer">
-        <Tooltip
-          class="chooser-tile-recency"
-          :text="absoluteLaunchedTime"
-          :disabled="!absoluteLaunchedTime"
-        >
-          <span class="chooser-tile-recency-text">{{ lastLaunchedLabel }}</span>
-        </Tooltip>
-        <!-- Action pill (update / migrate); pinned right, never truncates. -->
+      <div v-if="metaLine || actionPill" class="chooser-tile-footer">
+        <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
+          <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
+          <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
+          <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
+        </TruncatedText>
+        <!-- Action pill; pinned right by its own margin, never truncates. -->
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
           <span
             class="chooser-tile-pill"

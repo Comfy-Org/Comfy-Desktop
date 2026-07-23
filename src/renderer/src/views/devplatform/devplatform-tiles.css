@@ -3,10 +3,9 @@
  *
  * A distribution renders as a chooser tile — a visual sibling of an
  * installed-instance tile, since that is the interface users already pick
- * installs from. Everything structural (box, padding, radius, name → meta →
- * footer stack, pill vocabulary) comes from chooser-tiles.css unchanged; this
- * file adds only the blocked treatment, the pill tones, and the house
- * focus ring.
+ * installs from. Everything structural (box, padding, radius, name → meta
+ * stack, kebab) comes from chooser-tiles.css unchanged; this file adds only
+ * the blocked treatment and the house focus ring.
  */
 
 .dist-tile {
@@ -19,82 +18,46 @@
   outline-offset: 2px;
 }
 
-/* --- Pills ---------------------------------------------------------------- */
-
-/* "Installed" is a fact, not a call to action. */
-.dist-tile-pill--installed {
-  color: var(--neutral-200);
-  border-color: var(--brand-surface-border);
-  background: var(--brand-surface-bg-hover);
-}
-
-/* "Available" answers the one question a distribution tile raises next to the
- * installation tiles around it. Deliberately the quietest pill in the family. */
-.dist-tile-pill--available {
-  color: var(--neutral-200);
-  border-color: color-mix(in oklab, var(--neutral-100) 14%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 6%, transparent);
-}
-.dist-tile--chooser:hover .dist-tile-pill--available,
-.dist-tile--chooser:focus-visible .dist-tile-pill--available {
-  color: var(--neutral-100);
-}
-
-/* Update-available is the one state asking the user to act — warning tone. */
-.dist-tile-pill--update {
-  gap: 4px;
-  flex-shrink: 0;
-  opacity: 1;
-  color: var(--warning);
-  border-color: color-mix(in oklab, var(--warning) 45%, transparent);
-  background: color-mix(in oklab, var(--warning) 12%, transparent);
-}
-
-/* Blocked tag — the danger tag's shape, re-toned. Not a security signal: these
- * are ordinary pipeline facts, so no lock icon, no red banner. The label stays
- * full-contrast on a dimmed tile; the full reason rides on `title`. */
-.dist-tile-tag--blocked {
-  cursor: default;
-  color: var(--neutral-100);
-  border-color: color-mix(in oklab, var(--warning) 40%, transparent);
-  background: color-mix(in oklab, var(--warning) 10%, transparent);
-  max-width: 190px;
-  text-overflow: ellipsis;
-}
-.dist-tile-tag--blocked:hover,
-.dist-tile-tag--blocked:focus-visible {
-  /* No hover lift: the tag is a label, not a button. */
-  background: color-mix(in oklab, var(--warning) 10%, transparent);
-  transform: none;
-}
-
 /* --- Blocked tile ---------------------------------------------------------
- * De-emphasised but readable, never hidden (product contract). The dim goes on
- * the identity block, not the root — root opacity would drag the state label
- * down with it. */
-.dist-tile--blocked {
+ * Firmly de-emphasised but never hidden (product contract). The dim goes on
+ * the identity block and the tile chrome, not the root — root opacity would
+ * drag the state line down with it. The state message ("No build yet",
+ * "OS incompatible") deliberately stays at full readable contrast. The full
+ * reason rides on the tile's `title`. */
+/* Doubled class beats ChooserView's later-injected `.chooser-tile` surface
+ * rule, which ties on specificity otherwise (both sheets style the same root). */
+.dist-tile.dist-tile--blocked {
   cursor: default;
+  /* The tile surface is a 4%-white wash — merely reducing it is imperceptible
+   * on the dark backdrop, so a blocked card drops the wash entirely and keeps
+   * only a half-strength border to hold its shape. */
+  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
+  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
 }
 .dist-tile--blocked .chooser-tile-icon,
-.dist-tile--blocked .chooser-tile-name {
-  opacity: 0.62;
+.dist-tile--blocked .chooser-tile-name,
+.dist-tile--blocked .chooser-tile-kebab {
+  opacity: 0.38;
 }
-/* Meta + footer step UP to --neutral-200 instead of dimming — the faint tier
- * multiplied by 0.62 would drop under the 3:1 contrast floor. */
+/* The state message steps UP to --neutral-200 instead of dimming — it is the
+ * one thing a blocked tile exists to say. */
 .dist-tile--blocked .chooser-tile-meta-line,
 .dist-tile--blocked .chooser-tile-meta-source,
 .dist-tile--blocked .chooser-tile-meta-sep,
-.dist-tile--blocked .chooser-tile-meta-version,
-.dist-tile--blocked .chooser-tile-recency-text {
+.dist-tile--blocked .chooser-tile-meta-version {
   color: var(--neutral-200);
 }
-/* Suppress the hover promise the tile cannot honour. */
-.dist-tile--blocked:hover {
-  background: var(--chooser-surface-bg);
-  border-color: var(--chooser-surface-border);
+/* Suppress the hover promise the tile cannot honour; the kebab alone wakes. */
+.dist-tile.dist-tile--blocked:hover {
+  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
+  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
 }
 .dist-tile--blocked:hover .chooser-tile-icon,
 .dist-tile--blocked:hover .chooser-tile-name {
   color: var(--neutral-100);
-  opacity: 0.62;
+  opacity: 0.38;
+}
+.dist-tile--blocked .chooser-tile-kebab:hover,
+.dist-tile--blocked .chooser-tile-kebab:focus-visible {
+  opacity: 1;
 }

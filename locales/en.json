@@ -1346,10 +1346,9 @@
     "distribution": {
       "states": {
         "noBuild": "No build yet",
-        "platformMismatch": "Not available for this computer",
+        "platformMismatch": "OS incompatible",
         "needsDesktopUpdate": "Needs a newer Comfy Desktop",
-        "installed": "Installed",
-        "updateAvailable": "Update available"
+        "installed": "Installed"
       },
       "blockedReason": {
         "noBuild": "This distribution hasn’t finished building yet. It becomes installable as soon as a build succeeds.",
@@ -1359,9 +1358,7 @@
         "needsDesktopUpdate": "This distribution needs Comfy Desktop {version} or newer. Update Comfy Desktop to install it.",
         "desktopTooOld": "This distribution needs Comfy Desktop {version} or newer. Update Comfy Desktop to install it."
       },
-      "availablePill": "Available",
-      "installTileMeta": "Not installed yet",
-      "updatedLabel": "Updated",
+      "menuInstall": "Install",
       "emptyTitle": "No distributions yet"
     },
     "account": {
