@@ -19,7 +19,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import {
@@ -189,7 +189,12 @@ test.beforeAll(async () => {
           {
             trigger: 'manual',
             label: 'current-state',
-            createdAt: '2099-01-01T00:00:00.000Z',
+            // Newer than restore-target so it is the "current state" row
+            // at seed time, but OLDER than any snapshot the app captures
+            // during the run: the newest row (snapshotIndex 0) renders no
+            // Restore control, and the picker-driven test below must be
+            // able to restore this one after post-restore lands on top.
+            createdAt: '2026-01-02T00:00:00.000Z',
             comfyui: {
               ref: comfyCommitB,
               commit: comfyCommitB,
@@ -321,21 +326,17 @@ test('restore captures a post-restore snapshot @lifecycle', async () => {
 test('picker-driven restore surfaces inline op-card + auto-dismisses on success @lifecycle', async () => {
   test.setTimeout(120_000)
 
-  // The earlier restore created a `post-restore` snapshot. Pick that as the
-  // target so this test preserves the serial restore sequence.
+  // Target the seeded `current-state` snapshot (commit B). It was seeded
+  // with `skipPipSync: true` BEFORE app launch, so no fixture mutation
+  // happens mid-run — and since the earlier restore left HEADs on commit
+  // A, restoring it gives the op real git checkout work (A -> B). Real
+  // pip sync remains uncovered here (no Python env in this fixture); see
+  // the file header.
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`,
   )
-  const target = list.snapshots.find((s) => s.trigger === 'post-restore')
-    ?? list.snapshots[0]
-  expect(target, 'no snapshot to restore in picker test').toBeDefined()
-
-  // This fixture has no Python environment; keep the generated target focused
-  // on the real git restore path, as with the seeded restore target.
-  const targetPath = path.join(stagedInstallPath, '.launcher', 'snapshots', target!.filename)
-  const targetSnapshot = JSON.parse(await readFile(targetPath, 'utf-8')) as Record<string, unknown>
-  targetSnapshot.skipPipSync = true
-  await writeFile(targetPath, `${JSON.stringify(targetSnapshot, null, 2)}\n`)
+  const target = list.snapshots.find((s) => s.trigger === 'manual' && s.label === 'current-state')
+  expect(target, 'seeded current-state snapshot missing from list').toBeDefined()
 
   await ctx.panel.evaluate<boolean>(
     `(() => {
