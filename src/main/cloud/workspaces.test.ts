@@ -24,4 +24,9 @@ describe('listWorkspaces', () => {
     stub(401, {})
     await expect(listWorkspaces('tok', { apiBase: 'https://cloud/api' })).rejects.toThrow(/authorized/i)
   })
+
+  it('returns [] on a null / non-object 200 body', async () => {
+    stub(200, null)
+    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
+  })
 })

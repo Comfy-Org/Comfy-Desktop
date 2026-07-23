@@ -29,13 +29,23 @@ function encryptionAvailable(): boolean {
   return ok
 }
 
+function isTokens(v: unknown): v is AuthTokens {
+  return !!v && typeof v === 'object' && typeof (v as AuthTokens).accessToken === 'string' && typeof (v as AuthTokens).expiresAt === 'number'
+}
+
 export function saveTokens(tokens: AuthTokens): void {
   cachedTokens = tokens
-  if (!encryptionAvailable()) return // never write plaintext; memory only
+  if (!encryptionAvailable()) {
+    // No secure backend: never write plaintext, and drop any prior encrypted
+    // file so a later run can't read stale tokens back as current.
+    try { fs.rmSync(filePath(), { force: true }) } catch { /* nothing to remove */ }
+    return
+  }
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(tokens)))
   } catch {
-    // A failed persist must not fail the sign-in the user just completed.
+    // A failed persist must not fail the sign-in the user just completed; the
+    // in-memory cache still holds the tokens for this session.
   }
 }
 
@@ -43,7 +53,9 @@ export function loadTokens(): AuthTokens | null {
   if (cachedTokens) return cachedTokens
   if (!encryptionAvailable()) return null
   try {
-    cachedTokens = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath()))) as AuthTokens
+    const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath())))
+    if (!isTokens(parsed)) return null // corrupt/incompatible payload -> signed out
+    cachedTokens = parsed
     return cachedTokens
   } catch {
     return null

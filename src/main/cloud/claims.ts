@@ -22,8 +22,15 @@ function decodeJwtPayload(token: string): AccessTokenClaims | null {
   }
 }
 
-/** Signed-in status from an access token's claims. A malformed token still counts
- *  as signed in; the identity fields just stay unset. */
+/**
+ * Signed-in status from an access token's claims. A malformed token still counts
+ * as signed in; the identity fields just stay unset.
+ *
+ * SECURITY: these claims are NOT signature-verified here (the server verifies the
+ * token on every request). Treat `role`/`workspaceId`/`workspaceType` as
+ * DISPLAY-ONLY; never gate features or access on them client-side, or a forged
+ * local token would grant them.
+ */
 export function statusFromAccessToken(accessToken: string): AuthStatus {
   const claims = decodeJwtPayload(accessToken)
   return {

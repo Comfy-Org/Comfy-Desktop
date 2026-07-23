@@ -46,6 +46,17 @@ describe('CloudSession.getAccessToken', () => {
     expect(await new CloudSession().getAccessToken()).toBe('stale')
     expect(refresh).not.toHaveBeenCalled()
   })
+
+  it('single-flights concurrent refreshes (one rotation, no token-family race)', async () => {
+    mocked(loadTokens).mockReturnValue({ accessToken: 'stale', refreshToken: 'r', expiresAt: past })
+    let resolveRefresh!: (t: { accessToken: string; refreshToken: string; expiresAt: number }) => void
+    mocked(refresh).mockReturnValue(new Promise((r) => { resolveRefresh = r }))
+    const s = new CloudSession()
+    const [p1, p2, p3] = [s.getAccessToken(), s.getAccessToken(), s.getAccessToken()]
+    resolveRefresh({ accessToken: 'fresh', refreshToken: 'r2', expiresAt: future })
+    expect(await Promise.all([p1, p2, p3])).toEqual(['fresh', 'fresh', 'fresh'])
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('CloudSession workspace + provider', () => {

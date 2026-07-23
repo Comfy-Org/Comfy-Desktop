@@ -42,24 +42,43 @@ function resolveConfig(o: OAuthOptions): Required<Omit<OAuthOptions, 'workspaceI
   }
 }
 
-function toTokens(r: TokenResponse): AuthTokens {
-  return { accessToken: r.access_token, refreshToken: r.refresh_token, expiresAt: Date.now() + r.expires_in * 1000 }
+/** Build tokens, keeping the prior refresh token when the server omits one
+ *  (RFC 6749 §6: refresh_token is optional on a refresh grant). */
+function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
+  return {
+    accessToken: r.access_token,
+    refreshToken: r.refresh_token ?? fallbackRefresh,
+    expiresAt: Date.now() + r.expires_in * 1000,
+  }
 }
 
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
   const controller = new AbortController()
+  // Keep the abort armed until the body is fully read, so a slow/unbounded body
+  // can't hang the flow after the response headers arrive.
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
-  let resp: Response
   try {
-    resp = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(), signal: controller.signal })
+    const resp = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: controller.signal,
+    })
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => '')
+      throw new Error(`OAuth token request failed: ${resp.status} ${detail || resp.statusText}`)
+    }
+    const data = (await resp.json()) as Partial<TokenResponse>
+    if (typeof data.access_token !== 'string' || data.access_token.length === 0) {
+      throw new Error('OAuth token response missing access_token')
+    }
+    if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
+      throw new Error('OAuth token response missing a valid expires_in')
+    }
+    return data as TokenResponse
   } finally {
     clearTimeout(timer)
   }
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '')
-    throw new Error(`OAuth token request failed: ${resp.status} ${detail || resp.statusText}`)
-  }
-  return (await resp.json()) as TokenResponse
 }
 
 export async function signIn(options: OAuthOptions = {}): Promise<{ tokens: AuthTokens; status: AuthStatus }> {
@@ -69,20 +88,26 @@ export async function signIn(options: OAuthOptions = {}): Promise<{ tokens: Auth
   const state = generateState()
 
   const listener = await startLoopbackListener({ expectedState: state, timeoutMs: cfg.timeoutMs })
-  const authorizeUrl = buildAuthorizeUrl({
-    authorizeUrl: cfg.authorizeUrl, clientId: cfg.clientId, redirectUri: listener.redirectUri,
-    scope: cfg.scope, resource: cfg.resource, state, codeChallenge,
-    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-  })
-  // System browser only (RFC 8252): never an embedded window/webview.
-  await shell.openExternal(authorizeUrl)
-  const { code } = await listener.waitForCode()
+  try {
+    const authorizeUrl = buildAuthorizeUrl({
+      authorizeUrl: cfg.authorizeUrl, clientId: cfg.clientId, redirectUri: listener.redirectUri,
+      scope: cfg.scope, resource: cfg.resource, state, codeChallenge,
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    })
+    // System browser only (RFC 8252): never an embedded window/webview.
+    await shell.openExternal(authorizeUrl)
+    const { code } = await listener.waitForCode()
 
-  const r = await requestToken(cfg.tokenUrl, new URLSearchParams({
-    grant_type: 'authorization_code', code, redirect_uri: listener.redirectUri,
-    client_id: cfg.clientId, code_verifier: codeVerifier, resource: cfg.resource,
-  }))
-  return { tokens: toTokens(r), status: statusFromAccessToken(r.access_token) }
+    const r = await requestToken(cfg.tokenUrl, new URLSearchParams({
+      grant_type: 'authorization_code', code, redirect_uri: listener.redirectUri,
+      client_id: cfg.clientId, code_verifier: codeVerifier, resource: cfg.resource,
+    }))
+    return { tokens: toTokens(r), status: statusFromAccessToken(r.access_token) }
+  } finally {
+    // Always tear the listener down, even if openExternal or waitForCode threw,
+    // so a failed sign-in never leaks a listening socket until the timeout.
+    listener.close()
+  }
 }
 
 export async function refresh(refreshToken: string, options: OAuthOptions = {}): Promise<AuthTokens> {
@@ -90,5 +115,5 @@ export async function refresh(refreshToken: string, options: OAuthOptions = {}):
   const r = await requestToken(cfg.tokenUrl, new URLSearchParams({
     grant_type: 'refresh_token', refresh_token: refreshToken, client_id: cfg.clientId, resource: cfg.resource,
   }))
-  return toTokens(r)
+  return toTokens(r, refreshToken)
 }

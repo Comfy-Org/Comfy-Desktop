@@ -41,8 +41,9 @@ export async function listWorkspaces(accessToken: string, options: ListWorkspace
   if (res.status === 404) return []
   if (res.status === 401 || res.status === 403) throw new Error('Not authorized to list workspaces')
   if (!res.ok) throw new Error(`List workspaces failed: HTTP ${res.status}`)
-  const body = (await res.json()) as { workspaces?: WorkspaceRow[] }
-  return (body.workspaces ?? []).map((w) => ({
+  const body: unknown = await res.json().catch(() => null)
+  const rows = body && typeof body === 'object' ? (body as { workspaces?: WorkspaceRow[] }).workspaces : undefined
+  return (rows ?? []).map((w) => ({
     id: w.id,
     name: w.name,
     type: w.type,

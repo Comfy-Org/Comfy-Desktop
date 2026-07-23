@@ -17,6 +17,10 @@ import { listWorkspaces } from './workspaces'
 const REFRESH_SKEW_MS = 60_000
 
 export class CloudSession {
+  /** Deduped in-flight refresh: parallel callers share one rotation so they
+   *  never race the refresh token (a race can revoke the whole token family). */
+  private refreshing: Promise<string | null> | null = null
+
   /** Start the PKCE sign-in (system browser); persists tokens on success. */
   async login(): Promise<AuthStatus> {
     const { tokens, status } = await signIn()
@@ -51,12 +55,22 @@ export class CloudSession {
     const tokens = loadTokens()
     if (!tokens) return null
     if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken) return tokens.accessToken
+    // Single-flight: the first caller runs the refresh, the rest await it.
+    if (!this.refreshing) {
+      this.refreshing = this.doRefresh(tokens.refreshToken).finally(() => { this.refreshing = null })
+    }
+    return this.refreshing
+  }
+
+  private async doRefresh(refreshToken: string): Promise<string | null> {
     try {
-      const rotated = await refresh(tokens.refreshToken)
+      const rotated = await refresh(refreshToken)
       saveTokens(rotated)
       return rotated.accessToken
     } catch {
-      return tokens.accessToken // let the caller's 401 handling take over
+      // Refresh failed: fall back to the current token and let the caller's 401
+      // handling take over. Re-read in case another flow updated it meanwhile.
+      return loadTokens()?.accessToken ?? null
     }
   }
 

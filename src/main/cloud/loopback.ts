@@ -12,8 +12,11 @@ export interface LoopbackListener {
   /** The `http://127.0.0.1:<port>/callback` URI to register as the redirect target. */
   redirectUri: string
   /** Resolves with the authorization `code` on a matching callback; rejects on
-   *  state mismatch, IdP error, or timeout. Same promise on every call. */
+   *  an IdP error (matching state) or timeout. A callback with a wrong/missing
+   *  state is ignored (kept listening), never settling. Same promise every call. */
   waitForCode: () => Promise<{ code: string }>
+  /** Tear the listener down (idempotent); safe to call after settle. */
+  close: () => void
 }
 
 function html(message: string): string {
@@ -60,7 +63,14 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       const params = new URLSearchParams(q >= 0 ? url.slice(q + 1) : '')
       if (req.method === 'GET' && path === '/favicon.ico') { res.statusCode = 204; res.end(); return }
       if (req.method !== 'GET' || path !== '/callback') { res.statusCode = 404; res.end(); return }
-      if (params.get('state') !== expectedState) { failRequest(res, 400, new Error('state mismatch')); return }
+      // Wrong/missing state = not our callback (a port scan, prefetch, or another
+      // flow). Refuse it but KEEP LISTENING so an outsider can't abort our sign-in.
+      if (params.get('state') !== expectedState) {
+        res.statusCode = 400
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.end(html('Invalid request.'))
+        return
+      }
       const idpError = params.get('error')
       if (idpError) { failRequest(res, 200, new Error(idpError)); return }
       const code = params.get('code')
@@ -76,7 +86,7 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
     server.on('error', (err: Error) => { fail(err); rejectListener(err) })
     server.listen(0, '127.0.0.1', () => {
       const { port } = server!.address() as AddressInfo
-      resolveListener({ redirectUri: `http://127.0.0.1:${port}/callback`, waitForCode: () => codePromise })
+      resolveListener({ redirectUri: `http://127.0.0.1:${port}/callback`, waitForCode: () => codePromise, close })
     })
   })
 }
