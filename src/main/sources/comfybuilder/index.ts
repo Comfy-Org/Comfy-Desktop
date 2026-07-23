@@ -1,0 +1,122 @@
+/**
+ * ComfyBuilder install source — main process only.
+ *
+ * A thin SourcePlugin over the comfy-builder functionality library. The catalog
+ * / host-matching / sign-in all happen in the dev-platform IPC layer; by the
+ * time an install record reaches here it already carries the chosen artifact's
+ * identity (id + os/gpu/accel + sha256). `install()` hands that artifact to the
+ * library's `installArtifact` (download → verify sha → extract into the install
+ * dir), and `getLaunchCommand()` drives the extracted `venv/` via
+ * `buildLaunchSpec`. There is no adopt/probe path — a ComfyBuilder install is
+ * only ever created by the dev-platform flow, never discovered on disk.
+ */
+import { installArtifact, buildLaunchSpec } from '../../comfybuilder'
+import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress } from '../../comfybuilder'
+import { getBuilderClient } from '../../devplatform/session'
+import { defaultDownloadCacheDir } from '../../lib/paths'
+import { t } from '../../lib/i18n'
+import type { InstallationRecord } from '../../installations'
+import type {
+  SourcePlugin,
+  LaunchCommand,
+  ActionResult,
+  InstallTools,
+} from '../../types/sources'
+
+const DEFAULT_LAUNCH_ARGS = '--enable-manager'
+
+/** Reconstruct the library Artifact from the fields the install record carries. */
+function artifactFromRecord(inst: InstallationRecord): Artifact {
+  return {
+    id: (inst.artifactId as string) ?? '',
+    os: (inst.artifactOs as ArtifactOs) ?? 'linux',
+    gpu: (inst.artifactGpu as ArtifactGpu) ?? 'cpu',
+    accelVariant: (inst.artifactAccelVariant as string) ?? '',
+    status: 'ready',
+    ...(inst.artifactSha256 ? { outputSha256: inst.artifactSha256 as string } : {}),
+  }
+}
+
+export const comfybuilder: SourcePlugin = {
+  id: 'comfybuilder',
+  label: 'ComfyBuilder',
+  description: 'Install a ComfyUI distribution built with ComfyBuilder.',
+  category: 'local',
+  // Never a "New Install" wizard source — records are created by the dev-platform
+  // distribution flow, so it must not appear in the generic source picker.
+  hidden: true,
+  fields: [],
+  defaultLaunchArgs: DEFAULT_LAUNCH_ARGS,
+
+  get installSteps() {
+    return [
+      { phase: 'download', label: t('common.download') },
+      { phase: 'extract', label: t('common.extract') },
+    ]
+  },
+
+  getDefaults() {
+    return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
+  },
+
+  buildInstallation(): Record<string, unknown> {
+    // Records are assembled by `installDistribution` (which already knows the
+    // resolved artifact), not the generic build-installation chain.
+    return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
+  },
+
+  getListPreview(installation: InstallationRecord): string | null {
+    return (installation.distributionName as string) || null
+  },
+
+  getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {
+    const spec = buildLaunchSpec(installation.installPath, {
+      launchArgs: ((installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS),
+    })
+    if (!spec) return null
+    return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
+  },
+
+  getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
+    return [
+      {
+        tab: 'status',
+        title: 'Installation Info',
+        fields: [
+          { label: 'Install method', value: (installation.sourceLabel as string) || 'ComfyBuilder' },
+          { label: 'Distribution', value: (installation.distributionName as string) || '—' },
+          { label: 'Version', value: (installation.version as string) || '—' },
+        ],
+      },
+    ]
+  },
+
+  // A ComfyBuilder install is never discovered on disk — only the dev-platform
+  // flow creates one — so there is nothing to probe/adopt.
+  probeInstallation(): Record<string, unknown> | null {
+    return null
+  },
+
+  async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
+    const artifact = artifactFromRecord(installation)
+    // `installArtifact` fails closed on a missing/blank sha256 (invalid-artifact)
+    // and on a byte mismatch (checksum-mismatch) — we do NOT relax that here.
+    await installArtifact({
+      artifact,
+      client: getBuilderClient(),
+      installPath: installation.installPath,
+      cacheDir: defaultDownloadCacheDir(),
+      onProgress: (p: InstallProgress) => {
+        // The library's `resolve` phase has no labeled step; fold it into the
+        // download step at 0% so the stepper still shows forward motion.
+        const phase = p.phase === 'resolve' ? 'download' : p.phase
+        tools.sendProgress(phase, { percent: p.percent, status: p.detail ?? '' })
+      },
+      ...(tools.signal ? { signal: tools.signal } : {}),
+    })
+  },
+
+  async handleAction(actionId: string): Promise<ActionResult> {
+    return { ok: false, message: `Action "${actionId}" not yet implemented.` }
+  },
+}

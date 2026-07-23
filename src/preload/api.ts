@@ -200,6 +200,26 @@ export function buildElectronApi(): ElectronApi {
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),
     getDeviceId: () => ipcRenderer.invoke('get-device-id'),
 
+    // Dev platform (cloud auth + comfy-builder). Tokens never cross IPC; these
+    // only ever carry AuthStatus / Workspace / distribution display rows.
+    comfybuilder: {
+      signIn: () => ipcRenderer.invoke('comfybuilder:signIn'),
+      signOut: () => ipcRenderer.invoke('comfybuilder:signOut'),
+      getAuthStatus: () => ipcRenderer.invoke('comfybuilder:getAuthStatus'),
+      onAuthChanged: (callback) => {
+        const handler = (_event: IpcRendererEvent, status: unknown) =>
+          callback(status as Parameters<typeof callback>[0])
+        ipcRenderer.on('comfybuilder:authChanged', handler)
+        return () => ipcRenderer.removeListener('comfybuilder:authChanged', handler)
+      },
+      listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
+      switchWorkspace: (workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
+      listDistributions: () => ipcRenderer.invoke('comfybuilder:listDistributions'),
+      installDistribution: (distributionId) =>
+        ipcRenderer.invoke('comfybuilder:installDistribution', distributionId)
+    },
+
     // Model downloads
     listModelDownloads: () => ipcRenderer.invoke('model-download-list'),
     pauseModelDownload: (url) => ipcRenderer.invoke('model-download-pause', { url }),
