@@ -78,8 +78,12 @@ const i18n = createI18n({
 /** `get-system-info` payload trimmed to the two fields this view reads.
  *  `gpu_tier` drives the Cloud recommendation, `gpu_label` the Express
  *  install hint. */
-function systemInfo(tier: GpuTier, label: string | null = 'NVIDIA') {
-  return { gpu_tier: tier, gpu_label: label }
+function systemInfo(
+  tier: GpuTier,
+  label: string | null = 'NVIDIA',
+  hardware: { gpu_vendor?: string | null; gpu_vram_gb?: number | null } = {}
+) {
+  return { gpu_tier: tier, gpu_label: label, ...hardware }
 }
 
 function deferred<T>() {
@@ -649,6 +653,47 @@ describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
     expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
       'true'
     )
+  })
+
+  // `deriveGpuTier` reports `cpu_only` both for "no GPU" and for "discrete
+  // GPU found, VRAM unreadable" — `si.graphics()` failing while `detectGPU()`
+  // succeeds lands a 4090 in the second bucket. The tier alone can't tell
+  // them apart, so the vendor + VRAM fields from the same payload have to.
+  it.each([
+    ['nvidia' as const, 'a discrete NVIDIA card'],
+    ['amd' as const, 'a discrete AMD card']
+  ])('stays quiet when VRAM is unreadable on %s', async (vendor) => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      systemInfo('cpu_only', 'NVIDIA', { gpu_vendor: vendor, gpu_vram_gb: null })
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+    expect(badge(wrapper).exists()).toBe(false)
+    // And the no-preselect override stays off with it — an unverifiable
+    // reading must not change the picker either.
+    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
+      'true'
+    )
+  })
+
+  it('still recommends when there is genuinely no GPU vendor', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      systemInfo('cpu_only', null, { gpu_vendor: null, gpu_vram_gb: null })
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+    // Null VRAM is only disqualifying alongside a detected discrete vendor.
+    expect(badge(wrapper).exists()).toBe(true)
+  })
+
+  it('still recommends a discrete card whose VRAM really is small', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      systemInfo('sub_low', 'NVIDIA', { gpu_vendor: 'nvidia', gpu_vram_gb: 4 })
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+    // The guard is narrow: it suppresses unreadable VRAM, not low VRAM.
+    expect(badge(wrapper).exists()).toBe(true)
   })
 
   it('pre-selects neither card, gates Continue, and stays keyboard-reachable', async () => {

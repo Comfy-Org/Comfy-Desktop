@@ -35,7 +35,7 @@ const stubs = {
   ChoiceCard: {
     props: { selectable: Boolean, selected: Boolean, tabStop: Boolean },
     template:
-      '<div :role="selectable ? \'radio\' : undefined" :data-selected="String(!!selected)"><slot name="label-trailing" /><slot name="desc-trailing" /><slot /></div>'
+      '<div :role="selectable ? \'radio\' : undefined" :data-selected="String(!!selected)" :data-tab-stop="String(!!tabStop)"><slot name="label-trailing" /><slot name="desc-trailing" /><slot /></div>'
   }
 }
 
@@ -85,6 +85,22 @@ describe('Cloud recommendation vs. capacity kill switch', () => {
     expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
       'true'
     )
+  })
+
+  it('leaves exactly one card Tab-reachable when Cloud is capacity-disabled', async () => {
+    const wrapper = await mountAt({ capacity: 'disabled' })
+    // ChoiceCard takes tabindex 0 when it is `selected` OR holds `tabStop`,
+    // so reachability is the union. The invariant the group must never
+    // violate is one reachable member — zero drops the radiogroup out of
+    // the tab order, and this is the branch `keyboardEntryChoice` flips to
+    // Local for.
+    const reachable = wrapper
+      .findAll('[data-testid="first-use-pick-cloud"], [data-testid="first-use-pick-local"]')
+      .filter(
+        (c) => c.attributes('data-selected') === 'true' || c.attributes('data-tab-stop') === 'true'
+      )
+    expect(reachable).toHaveLength(1)
+    expect(reachable[0]?.attributes('data-testid')).toBe('first-use-pick-local')
   })
 
   it('arrow keys refuse to select a capacity-disabled Cloud card', async () => {

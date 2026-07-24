@@ -306,6 +306,11 @@ const showGpuHint = computed(
  *  the recommendation fails closed — the alternative is telling someone
  *  with a 4090 their hardware is inadequate. */
 const gpuTier = ref<GpuTier | null>(null)
+/** Corroborating signals for the tier, read from the same payload. See
+ *  `vramUnverified` — the tier alone can't tell "no GPU" from "GPU found,
+ *  VRAM unreadable". */
+const gpuVendor = ref<string | null>(null)
+const gpuVramGb = ref<number | null>(null)
 /** True once the system-info query has settled either way — gates
  *  `hardwareRecommendsCloud` so the badge never flashes before we know. */
 const hardwareChecked = ref(false)
@@ -333,6 +338,17 @@ const CLOUD_RECO_REASON_ID = 'first-use-cloud-reco-reason'
 /** Starts `false` to match its fail-closed direction, so the pill never
  *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
+/** `deriveGpuTier` folds two different situations into `cpu_only`: no GPU at
+ *  all (`vendor` empty), and a discrete card whose VRAM came back unreadable
+ *  (`vendor` set, `vramGb` null → `vram <= 0`). Only the first deserves the
+ *  recommendation. The second happens whenever `si.graphics()` fails while
+ *  `detectGPU()` succeeds — the badge would then tell someone with a 4090
+ *  that their hardware is inadequate, the exact false positive the tier-based
+ *  signal exists to avoid. Tolerable for telemetry cohorts, not for a claim
+ *  we make to the user's face. */
+const vramUnverified = computed(
+  () => (gpuVendor.value === 'nvidia' || gpuVendor.value === 'amd') && gpuVramGb.value === null
+)
 /** Whether this machine's hardware nudges toward Cloud. Suppressed when
  *  Cloud is capacity-disabled: that card is unclickable, so recommending
  *  it would be a dead end. */
@@ -341,6 +357,7 @@ const hardwareRecommendsCloud = computed(
     hardwareChecked.value &&
     gpuTier.value !== null &&
     RECO_GPU_TIERS.has(gpuTier.value) &&
+    !vramUnverified.value &&
     !cloudCapacity.isDisabled()
 )
 // On recommended hardware, pre-select neither card — force an explicit
@@ -687,10 +704,12 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   if (!nextChoice || (nextChoice === 'cloud' && cloudCapacity.isDisabled())) return
   e.preventDefault()
   pickChoice(nextChoice)
+  // Captured synchronously: `currentTarget` is only set while the event is
+  // being dispatched, so reading it inside the `nextTick` callback is not
+  // guaranteed to still resolve to the group.
+  const group = e.currentTarget as HTMLElement | null
   void nextTick(() => {
-    const radios = (e.currentTarget as HTMLElement | null)?.querySelectorAll<HTMLElement>(
-      '[role="radio"]'
-    )
+    const radios = group?.querySelectorAll<HTMLElement>('[role="radio"]')
     radios?.[next]?.focus()
   })
 }
@@ -787,6 +806,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       // Stays `null` when the IPC failed, which keeps
       // `hardwareRecommendsCloud` false — fail closed.
       gpuTier.value = info?.gpu_tier ?? null
+      gpuVendor.value = info?.gpu_vendor ?? null
+      gpuVramGb.value = info?.gpu_vram_gb ?? null
     })
     .finally(() => {
       hardwareChecked.value = true
