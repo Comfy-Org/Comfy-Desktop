@@ -1296,6 +1296,12 @@ export interface ElectronApi {
    *  renders pre-consent, so the experiments cache can't serve it).
    *  Fails OPEN — only an explicit `'off'` / `false` returns false. */
   getCloudRecoEnabled(): Promise<boolean>
+  /** Ops switch for the "5 free runs" trial pill, from the
+   *  `desktop-cloud-free-runs` PostHog flag. Separate from the
+   *  recommendation switch because the free tier is an independent
+   *  offer. Fails CLOSED — the pill asserts a live entitlement, so an
+   *  unresolvable flag means we don't make the claim. */
+  getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>

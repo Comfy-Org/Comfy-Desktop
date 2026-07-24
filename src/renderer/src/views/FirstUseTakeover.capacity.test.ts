@@ -53,6 +53,7 @@ async function mountAt(opts: {
       .fn()
       .mockResolvedValue({ gpu_tier: opts.gpuTier ?? 'cpu_only', gpu_label: null }),
     getCloudRecoEnabled: vi.fn().mockResolvedValue(true),
+    getCloudFreeRunsEnabled: vi.fn().mockResolvedValue(true),
     getCloudCapacity: vi.fn().mockResolvedValue(opts.capacity),
     getCloudUserTier: vi.fn().mockResolvedValue(opts.tier ?? 'unknown'),
     setFirstUseMode: vi.fn(),

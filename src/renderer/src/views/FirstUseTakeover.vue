@@ -216,6 +216,20 @@ async function loadCloudRecoEnabled(): Promise<boolean> {
   }
 }
 
+/** Ops switch for the "5 free runs" trial pill — `desktop-cloud-free-runs`,
+ *  independent of the recommendation above because the free tier is its own
+ *  offer: it should disappear when the free tier goes down, not when the GPU
+ *  upsell is retired. Fails CLOSED (see `cloudSwitches.ts`): the pill asserts
+ *  a live entitlement, and advertising runs that aren't being granted is
+ *  worse than showing nothing. */
+async function loadCloudFreeRunsEnabled(): Promise<boolean> {
+  try {
+    return await window.api.getCloudFreeRunsEnabled()
+  } catch {
+    return false
+  }
+}
+
 /** Apply the resolved variant to the picker state, respecting the
  *  hard precedence rules (legacy-desktop > capacity-disabled >
  *  experiment). Idempotent — safe to call from `onMounted` and from
@@ -268,13 +282,15 @@ onMounted(async () => {
   // Capacity + experiment + reco kill-switch in parallel; all best-effort
   // and fail (open or closed, per their own docs above) so the picker
   // still works if any of them errors.
-  const [variant, , recoEnabled] = await Promise.all([
+  const [variant, , recoEnabled, freeRunsEnabled] = await Promise.all([
     loadForkExperimentVariant(),
     cloudCapacity.whenReady(),
-    loadCloudRecoEnabled()
+    loadCloudRecoEnabled(),
+    loadCloudFreeRunsEnabled()
   ])
   forkExperimentVariant.value = variant
   cloudRecoEnabled.value = recoEnabled
+  cloudFreeRunsEnabled.value = freeRunsEnabled
   recoFlagResolved.value = true
   applyForkExperimentDefault(variant)
   capacityReady.value = true
@@ -353,6 +369,10 @@ const RECO_GPU_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['sub_low', 'cpu_o
  *  logic the real value landed. */
 const cloudRecoEnabled = ref(true)
 const recoFlagResolved = ref(false)
+/** `desktop-cloud-free-runs` switch. Starts `false` — matching its
+ *  fail-closed direction — so the pill never flashes in and back out
+ *  while the boot fetch is still in flight. */
+const cloudFreeRunsEnabled = ref(false)
 /** Whether this machine's hardware nudges toward Cloud — GPU-Aware Cloud
  *  Upsell (Slack thread + Notion plan, 2026-07-24). Suppressed when Cloud
  *  is capacity-disabled: that card is unclickable, so recommending it and
@@ -957,14 +977,15 @@ defineExpose({ open, resetContinue })
               <!-- 'unknown' tier means this device has never authenticated
                    with Cloud (useCloudCapacity docs the tri-state) — the
                    trial pill is for people who haven't tried it yet, not a
-                   permanent fixture on the card. Behind the
-                   `desktop-cloud-reco` kill switch — the "5 free runs"
-                   claim depends on the quota being live, so ops needs the
-                   same off-switch it has for the badge — and suppressed
-                   when Cloud is capacity-disabled and unclickable. -->
+                   permanent fixture on the card. Gated on its OWN switch
+                   (`desktop-cloud-free-runs`), not the recommendation's:
+                   the free tier is an independent offer, so the pill
+                   should follow the free tier down, not the GPU upsell.
+                   Also suppressed when Cloud is capacity-disabled and the
+                   card is unclickable. -->
               <span
                 v-if="
-                  cloudRecoEnabled &&
+                  cloudFreeRunsEnabled &&
                   !cloudCapacity.isDisabled() &&
                   cloudCapacity.tier.value === 'unknown'
                 "

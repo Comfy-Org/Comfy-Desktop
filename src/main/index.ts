@@ -96,7 +96,7 @@ import {
 } from './lib/deviceId'
 import { initExperiments } from './lib/experiments'
 import { initCloudCapacity } from './lib/cloudCapacity'
-import { initCloudReco } from './lib/cloudReco'
+import { cloudRecoSwitch, cloudFreeRunsSwitch } from './lib/cloudSwitches'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1496,11 +1496,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // throttled when GPUs are saturated). See `cloudCapacity.ts`.
     void initCloudCapacity({ distinctId: installationId })
 
-    // Same ops-flag path, same consent-bypass reasoning: the GPU-aware
-    // Cloud recommendation on the first-use picker renders while consent
-    // is still `'undecided'`, so the experiments cache would never have a
-    // value to give it. See `cloudReco.ts`.
-    void initCloudReco({ distinctId: installationId })
+    // Same ops-flag path, same consent-bypass reasoning: the first-use
+    // picker renders while consent is still `'undecided'`, so the
+    // experiments cache would never have a value to give it. See
+    // `cloudSwitches.ts`.
+    void cloudRecoSwitch.init({ distinctId: installationId })
+    void cloudFreeRunsSwitch.init({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache so the very first
     // dashboard render knows whether the signed-in user is on a paid
