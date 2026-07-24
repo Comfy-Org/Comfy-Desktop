@@ -31,6 +31,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { resolve } from 'node:path'
@@ -1007,7 +1008,10 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
     if (!existsSync(configPath)) return null
     const section = readFileSync(configPath, 'utf-8')
       .split(/^\[/m).find((s) => s.startsWith('default]')) ?? ''
-    return /^\s*security_level = (\S+)\s*$/m.exec(section)?.[1] ?? null
+    // Option keys are matched case-insensitively with flexible delimiters,
+    // mirroring Python configparser (section names stay case-sensitive:
+    // Manager only reads the exact `[default]`).
+    return /^\s*security_level\s*[=:]\s*(\S+)\s*$/im.exec(section)?.[1] ?? null
   }
   /** The install's own persisted level, straight from its record. */
   const readRecordLevel = (): Promise<string | null> =>
@@ -1040,9 +1044,17 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   // The middle gate is the level's only clean observable here - git-url/pip
   // installs are gated by dedicated config flags, and the high gate also
   // depends on --listen exposure.
+  const probeTarget = `lifecycle-enforcement-probe-${randomUUID()}`
   const managerBlocksMiddleRisk = async (): Promise<boolean> => {
+    // The allowed arm is only a guaranteed no-op while no snapshot by this
+    // name exists - assert that invariant instead of assuming it.
+    const probeSnapshotPath = path.join(
+      _updateInstallPath, 'ComfyUI', 'user', '__manager', 'snapshots', `${probeTarget}.json`,
+    )
+    expect(existsSync(probeSnapshotPath), `probe snapshot unexpectedly exists: ${probeSnapshotPath}`)
+      .toBe(false)
     const res = await fetch(
-      `${await comfyOrigin()}/api/v2/snapshot/remove?target=lifecycle-enforcement-probe-does-not-exist`,
+      `${await comfyOrigin()}/api/v2/snapshot/remove?target=${encodeURIComponent(probeTarget)}`,
       { method: 'POST', signal: AbortSignal.timeout(15_000) },
     )
     if (res.status !== 403) {
@@ -1057,7 +1069,7 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   // Production degrades an unrecognized record value to the default, so
   // normalize the same way before deriving the expected trigger label.
   const storedRaw = await readRecordLevel()
-  const storedBefore = storedRaw != null && storedRaw in LEVEL_LABELS ? storedRaw : null
+  const storedBefore = storedRaw != null && Object.hasOwn(LEVEL_LABELS, storedRaw) ? storedRaw : null
   const initialLabel = LEVEL_LABELS[storedBefore ?? 'normal']!
   // The target must differ from BOTH the persisted record and whatever
   // the on-disk config currently says - otherwise a broken/no-op launch
@@ -1131,7 +1143,7 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   // the config first, so the running level equals the pre-edit file
   // content; skip when that content is unrecognizable (hand-mutated
   // reused profile), since production would have degraded it at launch.
-  if (configLevelBefore === null || configLevelBefore in LEVEL_LABELS) {
+  if (configLevelBefore === null || Object.hasOwn(LEVEL_LABELS, configLevelBefore)) {
     expect(
       await managerBlocksMiddleRisk(),
       'live Manager enforcement changed before relaunch - the level must only apply at startup',
