@@ -56,6 +56,14 @@ describe('getPhaseWeights', () => {
     expect(w.extract).toBe(0.3)
   })
 
+  it('uses the curated table for a comfybuilder distribution install', () => {
+    const w = getPhaseWeights(steps('download', 'extract', 'models'))
+    expect(sum(w)).toBeCloseTo(1.0, 5)
+    // Archive download dominates; models must not steal its share via equal split.
+    expect(w.download).toBeGreaterThan(w.extract)
+    expect(w.download).toBeGreaterThan(w.models)
+  })
+
   it('falls back to equal weights for an unknown weightless fingerprint', () => {
     const w = getPhaseWeights(steps('a', 'b', 'c', 'd'))
     expect(w).toEqual({ a: 0.25, b: 0.25, c: 0.25, d: 0.25 })

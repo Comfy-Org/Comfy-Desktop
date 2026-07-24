@@ -36,6 +36,13 @@ const TABLES: Record<string, Record<string, number>> = {
     download: 0.70,
     extract: 0.30,
   },
+  // ComfyBuilder distribution install: archive download dominates wall time;
+  // model staging varies but is small when a distribution declares few/none.
+  'download|extract|models': {
+    download: 0.65,
+    extract: 0.15,
+    models: 0.20,
+  },
   // Legacy Desktop migrate
   migration: {
     migration: 1.0,
