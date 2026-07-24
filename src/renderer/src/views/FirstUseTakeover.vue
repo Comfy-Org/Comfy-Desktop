@@ -1243,6 +1243,14 @@ defineExpose({ open, resetContinue })
 .start-card-cloud :deep(.choice-card__label) {
   gap: 4px;
 }
+/* More breathing room above the reco badge than ChoiceCard's default 6px —
+ * bumped here, on the wrapper, instead of `.start-cloud-reco` itself: a
+ * margin on the badge sits *inside* the Tooltip's trigger element, which
+ * inflates the box the tooltip measures itself against and pushes the
+ * bubble further away than intended (see the fix a commit up). */
+.start-card-cloud :deep(.choice-card__desc-trailing) {
+  margin-top: 14px;
+}
 
 /* "5 FREE RUNS" trial pill. Same solid-chip shape as the Why-Cloud modal's
  * credits pill (.why-cloud-pill), scaled down for the label row, but in
