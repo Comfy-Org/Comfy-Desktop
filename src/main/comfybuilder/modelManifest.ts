@@ -84,14 +84,26 @@ function loadOverride(value: string): ModelManifest {
   }
 }
 
-/** Map a version NUMBER to its version id via the versions list, or null. */
+// A version whose build finished, mirroring the set the install artifact was
+// selected from, so the manifest is resolved off the same version the archive
+// came from (and never a failed/incomplete row that shares the number).
+const COMPLETE_VERSION_STATUSES = new Set(['complete', 'completed', 'ready', 'succeeded', 'success'])
+
+/** Map a version NUMBER to the id of its COMPLETE version, or null. Matching on
+ *  number alone could pick a failed row that shares the number; the install
+ *  artifact came from the complete one, so pin to that. */
 async function resolveVersionId(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
   distributionId: string,
   versionNumber: string,
 ): Promise<string | null> {
   const versions = await client.listVersions(distributionId)
-  const match = versions.find((v) => String(v.version) === versionNumber)
+  const match = versions.find(
+    (v) =>
+      String(v.version) === versionNumber &&
+      typeof v.status === 'string' &&
+      COMPLETE_VERSION_STATUSES.has(v.status.toLowerCase()),
+  )
   return match?.id ?? null
 }
 
@@ -104,8 +116,10 @@ export async function resolveModelManifest(
   key: ManifestKey,
   client: Pick<ComfyBuilderClient, 'listVersions' | 'fetchModelManifest'>,
 ): Promise<ModelManifest> {
+  // The inline/file override is a test seam: gate it behind E2E so a shipped
+  // build can't be made to stage attacker-chosen models via a stray env var.
   const override = process.env.COMFY_BUILDER_MODELS_MANIFEST
-  if (override) return loadOverride(override)
+  if (override && process.env.E2E === '1') return loadOverride(override)
 
   if (process.env.COMFY_BUILDER_MODELS_LIVE === '1') {
     const versionId = await resolveVersionId(client, key.distributionId, key.version)

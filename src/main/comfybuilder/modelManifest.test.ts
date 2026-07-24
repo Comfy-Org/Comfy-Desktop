@@ -18,7 +18,7 @@ function client(over: Partial<{ listVersions: unknown; fetchModelManifest: unkno
   } as never
 }
 
-const ENV_KEYS = ['COMFY_BUILDER_MODELS_MANIFEST', 'COMFY_BUILDER_MODELS_LIVE']
+const ENV_KEYS = ['COMFY_BUILDER_MODELS_MANIFEST', 'COMFY_BUILDER_MODELS_LIVE', 'E2E']
 afterEach(() => {
   for (const k of ENV_KEYS) delete process.env[k]
   vi.restoreAllMocks()
@@ -36,22 +36,31 @@ describe('resolveModelManifest', () => {
     expect(m.models).toEqual([])
   })
 
-  it('honors an inline-JSON override (the e2e seam)', async () => {
+  it('honors an inline-JSON override only under E2E (the test seam)', async () => {
     const override: ModelManifest = {
-      models: [{ type: 'checkpoints', filename: 'x.safetensors', downloadUrl: 'http://127.0.0.1:1/x' }],
+      models: [{ type: 'checkpoints', filename: 'x.safetensors', downloadUrl: 'https://h/x' }],
       modelPolicy: null,
       partnerNodePolicy: null,
     }
     process.env.COMFY_BUILDER_MODELS_MANIFEST = JSON.stringify(override)
+    process.env.E2E = '1'
     const m = await resolveModelManifest({ distributionId: KNOWN_DIST, version: '1' }, client())
     expect(m.models).toEqual(override.models)
   })
 
-  it('honors a file-path override', async () => {
+  it('ignores the override in a non-E2E build (falls through to the mock)', async () => {
+    process.env.COMFY_BUILDER_MODELS_MANIFEST = JSON.stringify({ models: [{ type: 'x', filename: 'evil', downloadUrl: 'https://evil/x' }] })
+    // no E2E
+    const m = await resolveModelManifest({ distributionId: KNOWN_DIST, version: '1' }, client())
+    expect(m.models[0]!.type).toBe('vae_approx') // the static mock, not the injected one
+  })
+
+  it('honors a file-path override under E2E', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-mf-'))
     const file = path.join(dir, 'manifest.json')
-    fs.writeFileSync(file, JSON.stringify({ models: [{ type: 'vae', filename: 'v.pt', downloadUrl: 'http://h/v' }] }))
+    fs.writeFileSync(file, JSON.stringify({ models: [{ type: 'vae', filename: 'v.pt', downloadUrl: 'https://h/v' }] }))
     process.env.COMFY_BUILDER_MODELS_MANIFEST = file
+    process.env.E2E = '1'
     const m = await resolveModelManifest({ distributionId: 'unknown', version: '1' }, client())
     expect(m.models[0]!.filename).toBe('v.pt')
     fs.rmSync(dir, { recursive: true, force: true })
@@ -79,5 +88,20 @@ describe('resolveModelManifest', () => {
     const m = await resolveModelManifest({ distributionId: KNOWN_DIST, version: '99' }, c)
     expect(m.models).toEqual([])
     expect((c as unknown as { fetchModelManifest: ReturnType<typeof vi.fn> }).fetchModelManifest).not.toHaveBeenCalled()
+  })
+
+  it('LIVE=1 pins the COMPLETE version when a failed row shares the number', async () => {
+    process.env.COMFY_BUILDER_MODELS_LIVE = '1'
+    const c = client({
+      // The failed row appears first and shares number 5; the artifact came
+      // from the complete one, so the manifest must resolve off ver-good.
+      listVersions: vi.fn(async () => [
+        { id: 'ver-bad', version: 5, status: 'failed' },
+        { id: 'ver-good', version: 5, status: 'complete' },
+      ]),
+      fetchModelManifest: vi.fn(async () => ({ models: [], modelPolicy: null, partnerNodePolicy: null })),
+    })
+    await resolveModelManifest({ distributionId: KNOWN_DIST, version: '5' }, c)
+    expect((c as unknown as { fetchModelManifest: ReturnType<typeof vi.fn> }).fetchModelManifest).toHaveBeenCalledWith('ver-good')
   })
 })

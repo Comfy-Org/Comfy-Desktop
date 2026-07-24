@@ -65,6 +65,33 @@ function isSafeSegment(seg: string): boolean {
   return true
 }
 
+/** A model URL must be https, or http to loopback. A remote plaintext (or
+ *  downgradeable) source is MITM-substitutable, and a substituted `.pth`/`.ckpt`
+ *  is arbitrary-code on load, so it is enforced independently of the sha256.
+ *  Loopback http carries no network and never leaves the machine, so it is
+ *  allowed (a local model cache or the test server). */
+function isAllowedUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    if (u.protocol === 'https:') return true
+    return u.protocol === 'http:' && ['127.0.0.1', '::1', 'localhost'].includes(u.hostname)
+  } catch {
+    return false
+  }
+}
+
+/** The real path of `dir` is inside `root` (defends against a symlinked model
+ *  subdir in the extracted archive redirecting a write outside the install). */
+function isContained(root: string, dir: string): boolean {
+  try {
+    const realRoot = fs.realpathSync(root)
+    const realDir = fs.realpathSync(dir)
+    return realDir === realRoot || realDir.startsWith(realRoot + path.sep)
+  } catch {
+    return false
+  }
+}
+
 /** The install's built-in ComfyUI models root, `<installPath>/ComfyUI/models`. */
 export function installModelsRoot(installPath: string): string {
   return path.join(installPath, 'ComfyUI', 'models')
@@ -90,8 +117,19 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     if (!isSafeSegment(model.type) || !isSafeSegment(model.filename)) {
       throw new StageModelsError('invalid-model', `Model ${model.type}/${model.filename} has an unsafe path.`)
     }
+    if (!isAllowedUrl(model.downloadUrl)) {
+      throw new StageModelsError('invalid-model', `Model ${model.type}/${model.filename} download URL must be https.`)
+    }
 
     const destDir = path.join(modelsRoot, model.type)
+    // Create the target dir first, then confirm it really resolves inside the
+    // install: a malicious archive can ship `ComfyUI/models/<type>` as a symlink
+    // pointing outside, and writing through it would escape the install.
+    fs.mkdirSync(destDir, { recursive: true })
+    if (!isContained(installPath, destDir)) {
+      throw new StageModelsError('invalid-model', `Model directory ${model.type} escapes the install.`)
+    }
+
     const dest = path.join(destDir, model.filename)
     const expected = normalizeSha256(model.sha256)
 
@@ -106,11 +144,14 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
       await fs.promises.rm(dest, { force: true }).catch(() => {})
     }
 
-    fs.mkdirSync(destDir, { recursive: true })
     // Download to a sibling, verify, then rename into place: an interrupted
     // transfer never leaves a truncated model at the real name, and the rename
-    // is atomic on the same filesystem.
+    // is atomic on the same filesystem. Drop a symlinked leftover partial so a
+    // pre-planted link can't redirect the write; a plain partial resumes.
     const partial = `${dest}.partial`
+    if (fs.existsSync(partial) && fs.lstatSync(partial).isSymbolicLink()) {
+      await fs.promises.rm(partial, { force: true }).catch(() => {})
+    }
     onProgress?.({ index, total, filename: model.filename, percent: 0 })
     await doDownload(
       model.downloadUrl,

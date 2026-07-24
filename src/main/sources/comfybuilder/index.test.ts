@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
@@ -10,8 +10,19 @@ vi.mock('electron', () => ({
   net: { request: vi.fn() },
 }))
 
+// Stub the library so install() wiring can be asserted without real downloads.
+vi.mock('../../comfybuilder', () => ({
+  installArtifact: vi.fn(async () => {}),
+  buildLaunchSpec: vi.fn(() => null),
+  stageModels: vi.fn(async () => {}),
+  resolveModelManifest: vi.fn(async () => ({ models: [], modelPolicy: null, partnerNodePolicy: null })),
+}))
+vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
+
+import { installArtifact, stageModels, resolveModelManifest } from '../../comfybuilder'
 import { comfybuilder, withAccelArgs } from './index'
 import type { InstallationRecord } from '../../installations'
+import type { InstallTools } from '../../types/sources'
 
 const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
   ({
@@ -25,6 +36,56 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     version: '1',
     ...overrides,
   }) as unknown as InstallationRecord
+
+function fakeTools(signal?: AbortSignal): InstallTools & { sent: Array<{ phase: string; detail: unknown }> } {
+  const sent: Array<{ phase: string; detail: unknown }> = []
+  return {
+    sent,
+    sendProgress: (phase: string, detail: unknown) => sent.push({ phase, detail }),
+    download: vi.fn(),
+    cache: {} as never,
+    extract: vi.fn(),
+    ...(signal ? { signal } : {}),
+  } as never
+}
+
+describe('comfybuilder.install wiring', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('installs the archive, then resolves the manifest, then stages models', async () => {
+    const tools = fakeTools()
+    await comfybuilder.install!(record(), tools)
+
+    expect(installArtifact).toHaveBeenCalledTimes(1)
+    expect(resolveModelManifest).toHaveBeenCalledTimes(1)
+    expect(stageModels).toHaveBeenCalledTimes(1)
+    // The archive must be in place before models are staged into its tree.
+    const archiveOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+    const stageOrder = (stageModels as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+    expect(archiveOrder).toBeLessThan(stageOrder)
+
+    // The manifest is keyed by the record's distribution + version number.
+    expect(resolveModelManifest).toHaveBeenCalledWith({ distributionId: 'd1', version: '1' }, expect.anything())
+    // A terminal models progress event fires so the step completes.
+    expect(tools.sent.some((s) => s.phase === 'models')).toBe(true)
+  })
+
+  it('folds the library resolve phase into the download step', async () => {
+    const tools = fakeTools()
+    await comfybuilder.install!(record(), tools)
+    const onProgress = (installArtifact as unknown as { mock: { calls: Array<[{ onProgress: (p: unknown) => void }]> } }).mock.calls[0]![0].onProgress
+    onProgress({ phase: 'resolve', percent: 0 })
+    expect(tools.sent.some((s) => s.phase === 'download')).toBe(true)
+    expect(tools.sent.some((s) => s.phase === 'resolve')).toBe(false)
+  })
+
+  it('threads the abort signal into both phases', async () => {
+    const signal = new AbortController().signal
+    await comfybuilder.install!(record(), fakeTools(signal))
+    expect((installArtifact as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock.calls[0]![0].signal).toBe(signal)
+    expect((stageModels as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock.calls[0]![0].signal).toBe(signal)
+  })
+})
 
 describe('comfybuilder.getListActions', () => {
   // Without this the renderer gets an empty action array, reads the install as

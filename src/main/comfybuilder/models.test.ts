@@ -89,6 +89,32 @@ describe('stageModels', () => {
     expect(dl).not.toHaveBeenCalled()
   })
 
+  it('rejects a non-https download URL before any download', async () => {
+    const install = freshInstall()
+    const dl = fakeDownload(Buffer.from('x'))
+    await expect(
+      stageModels({ models: [model({ downloadUrl: 'http://insecure/m.safetensors' })], installPath: install, download: dl }),
+    ).rejects.toMatchObject({ kind: 'invalid-model' })
+    expect(dl).not.toHaveBeenCalled()
+  })
+
+  it('refuses to write through a model dir that symlinks outside the install', async () => {
+    const install = freshInstall()
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-escape-'))
+    tmpRoots.push(outside)
+    // A malicious archive ships ComfyUI/models/<type> as a symlink escaping the install.
+    const modelsRoot = installModelsRoot(install)
+    fs.mkdirSync(modelsRoot, { recursive: true })
+    fs.symlinkSync(outside, path.join(modelsRoot, 'evil'))
+    const dl = fakeDownload(Buffer.from('payload'))
+    await expect(
+      stageModels({ models: [model({ type: 'evil', filename: 'x.pth' })], installPath: install, download: dl }),
+    ).rejects.toMatchObject({ kind: 'invalid-model' })
+    // Nothing was written into the escape target.
+    expect(fs.existsSync(path.join(outside, 'x.pth'))).toBe(false)
+    expect(fs.existsSync(path.join(outside, 'x.pth.partial'))).toBe(false)
+  })
+
   it('skips a model already present with a matching hash (idempotent re-run)', async () => {
     const install = freshInstall()
     const bytes = Buffer.from('already-here')
