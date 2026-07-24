@@ -533,6 +533,23 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     })
   })
 
+  it('managerSecurityLevel: emits only the selected value (null when never chosen)', () => {
+    // Unset means the install's own Manager config prevails, so there is no
+    // truthful effective value to report.
+    expect(settings.getTrackedSettingsTelemetryProperties(['managerSecurityLevel'])).toEqual({
+      setting_manager_security_level_selected: null,
+    })
+    settings.set('managerSecurityLevel', 'normal-')
+    expect(settings.getTrackedSettingsTelemetryProperties(['managerSecurityLevel'])).toEqual({
+      setting_manager_security_level_selected: 'normal-',
+    })
+    // A hand-edited bogus string degrades to null instead of leaking.
+    settings.set('managerSecurityLevel', 'bogus' as never)
+    expect(settings.getTrackedSettingsTelemetryProperties(['managerSecurityLevel'])).toEqual({
+      setting_manager_security_level_selected: null,
+    })
+  })
+
   it('omits the legacy autoUpdate setting entirely', () => {
     settings.set('autoUpdate', false)
     expect(settings.getTrackedSettingsTelemetryProperties()).not.toHaveProperty('setting_auto_update')

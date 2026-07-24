@@ -224,12 +224,14 @@ const SETTINGS_SCHEMA = {
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
   },
   chineseMirrorsPrompted: { nullable: false, telemetry: { policy: 'omit' } },
-  // Security posture is useful signal; validate the enum so a hand-edited
-  // settings.json can't leak a free-form string.
+  // What the user actually selected (null = never chose; the install's own
+  // Manager config prevails). Validate the enum so a hand-edited settings.json
+  // can't leak a free-form string.
   managerSecurityLevel: {
     nullable: false,
     telemetry: {
       policy: 'value',
+      prop: 'setting_manager_security_level_selected',
       toTelemetry: (raw) =>
         raw === 'strong' || raw === 'normal' || raw === 'normal-' || raw === 'weak' ? raw : null,
     },

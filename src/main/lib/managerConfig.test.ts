@@ -98,14 +98,51 @@ describe('ensureManagerConfig', () => {
     })
   })
 
-  it('skips seeding entirely when a legacy ComfyUI-Manager config exists', async () => {
-    const legacyTarget = _internals.legacyConfigPath(tmpRoot)
-    fs.mkdirSync(path.dirname(legacyTarget), { recursive: true })
-    fs.writeFileSync(legacyTarget, '[default]\nchannel_url = legacy\n', 'utf-8')
+  describe('legacy config present', () => {
+    function seedLegacy(content: string): string {
+      const legacyTarget = _internals.legacyConfigPath(tmpRoot)
+      fs.mkdirSync(path.dirname(legacyTarget), { recursive: true })
+      fs.writeFileSync(legacyTarget, content, 'utf-8')
+      return legacyTarget
+    }
 
-    await ensureManagerConfig(tmpRoot, { useChineseMirrors: true, securityLevel: 'weak' })
+    function readLegacy(): string {
+      return fs.readFileSync(_internals.legacyConfigPath(tmpRoot), 'utf-8')
+    }
 
-    expect(fs.existsSync(_internals.modernConfigPath(tmpRoot))).toBe(false)
+    it('updates the legacy file in place without creating the modern config', async () => {
+      seedLegacy('[default]\nchannel_url = legacy\nsecurity_level = normal\n')
+
+      await ensureManagerConfig(tmpRoot, { useChineseMirrors: true, securityLevel: 'weak' })
+
+      expect(fs.existsSync(_internals.modernConfigPath(tmpRoot))).toBe(false)
+      const written = readLegacy()
+      expect(written).toContain('channel_url = legacy')
+      expect(written).toContain('security_level = weak')
+    })
+
+    it('never seeds mirror keys into a legacy config', async () => {
+      const original = '[default]\nchannel_url = legacy\n'
+      seedLegacy(original)
+
+      await ensureManagerConfig(tmpRoot, { useChineseMirrors: true })
+
+      expect(fs.existsSync(_internals.modernConfigPath(tmpRoot))).toBe(false)
+      expect(readLegacy()).toBe(original)
+    })
+
+    it('reconciles the modern config when both files exist (Manager reads the modern one)', async () => {
+      const legacyOriginal = '[default]\nsecurity_level = weak\n'
+      seedLegacy(legacyOriginal)
+      const modernTarget = _internals.modernConfigPath(tmpRoot)
+      fs.mkdirSync(path.dirname(modernTarget), { recursive: true })
+      fs.writeFileSync(modernTarget, '[default]\nsecurity_level = normal\n', 'utf-8')
+
+      await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, securityLevel: 'strong' })
+
+      expect(readModern()).toContain('security_level = strong')
+      expect(readLegacy()).toBe(legacyOriginal)
+    })
   })
 
   describe('path helpers', () => {
@@ -137,6 +174,34 @@ describe('ensureManagerConfig', () => {
 
     it('creates a [default] section when none exists', () => {
       expect(_internals.withSecurityLevel('', 'normal')).toBe('[default]\nsecurity_level = normal\n')
+    })
+
+    it('only touches the key inside [default], not a same-named key in another section', () => {
+      const content = '[other]\nsecurity_level = normal\n\n[default]\nsecurity_level = weak\n'
+      expect(_internals.withSecurityLevel(content, 'strong')).toBe(
+        '[other]\nsecurity_level = normal\n\n[default]\nsecurity_level = strong\n'
+      )
+    })
+
+    it('inserts into [default] when the key exists only in another section', () => {
+      const content = '[other]\nsecurity_level = normal\n\n[default]\nchannel_url = x\n'
+      expect(_internals.withSecurityLevel(content, 'strong')).toBe(
+        '[other]\nsecurity_level = normal\n\n[default]\nsecurity_level = strong\nchannel_url = x\n'
+      )
+    })
+
+    it('ignores a same-named key in a section after [default]', () => {
+      const content = '[default]\nchannel_url = x\n\n[other]\nsecurity_level = normal\n'
+      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+        '[default]\nsecurity_level = weak\nchannel_url = x\n\n[other]\nsecurity_level = normal\n'
+      )
+    })
+
+    it('preserves CRLF line endings when replacing', () => {
+      const content = '[default]\r\nsecurity_level = normal\r\nchannel_url = x\r\n'
+      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+        '[default]\r\nsecurity_level = weak\r\nchannel_url = x\r\n'
+      )
     })
   })
 })
