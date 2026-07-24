@@ -1293,7 +1293,7 @@ defineExpose({ open, resetContinue })
      an extra margin here was also getting picked up by the wrapping
      Tooltip's trigger measurement, pushing the tooltip bubble noticeably
      further from the badge than intended. */
-  padding: 3px 9px;
+  padding: 5px 9px;
   border-radius: 999px;
   background: color-mix(in oklab, var(--neutral-100) 12%, transparent);
   color: var(--neutral-100);
