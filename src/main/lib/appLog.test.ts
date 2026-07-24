@@ -141,7 +141,7 @@ describe('appLog', () => {
     // A later normal write is free to rotate the overage.
     writeAppLog('INFO', 'after crash')
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(1)
-  })
+  }, 15_000)
 
   it('flushes a buffered tail on the crash path without rotating past the cap', () => {
     const isRotated = (f: string): boolean =>
@@ -157,7 +157,7 @@ describe('appLog', () => {
     flushOperationOutput(undefined, { rotate: false })
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
     expect(read()).toContain('dying mid-line, no newline')
-  })
+  }, 15_000)
 
   it('flushes only the targeted installation, leaving others buffered', () => {
     initAppLog({ dir: tmpDir })

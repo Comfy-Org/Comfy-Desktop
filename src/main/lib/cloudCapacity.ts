@@ -4,8 +4,8 @@
  * Reads the `desktop-cloud-capacity` PostHog flag at boot via `getOpsFlag`, which
  * deliberately BYPASSES the consent gate: this is server config pushed TO the client to
  * protect service availability, not analytics collected FROM the user, so a user who
- * declined telemetry still benefits when GPUs are saturated. Only the anonymous distinct id
- * and flag key leave the device.
+ * declined telemetry still benefits when GPUs are saturated. The evaluation request supplies
+ * only the installation-stable key and flag key; implicit flag events are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so a
  * kill-switch isn't accidentally consent-gated. Fetched once at boot; running apps pick up
@@ -29,10 +29,7 @@ let initPromise: Promise<void> | null = null
  * renderer query landing before the fetch settles sees the resolved value, not the default.
  * Idempotent within a process.
  */
-export function initCloudCapacity(opts: {
-  distinctId: string
-  timeoutMs?: number
-}): Promise<void> {
+export function initCloudCapacity(opts: { distinctId: string; timeoutMs?: number }): Promise<void> {
   if (initPromise) return initPromise
   initPromise = mainTelemetry
     .getOpsFlag(CLOUD_CAPACITY_FLAG_KEY, opts.distinctId, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
@@ -45,7 +42,6 @@ export function initCloudCapacity(opts: {
       console.log('[cloud-capacity] init: fetched=', value, '→ cached=', cached)
     })
     .catch((err) => {
-       
       console.log('[cloud-capacity] init error:', err)
       // fail-safe: keep `'normal'`
     })

@@ -31,14 +31,13 @@ let mockFlagsDelayMs = 0
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
+    on(): () => void {
+      return () => {}
+    }
     capture(call: CapturedCall): void {
       captured.push(call)
     }
     identify(): void {}
-    alias(): void {}
-    aliasImmediate(): Promise<void> {
-      return Promise.resolve()
-    }
     captureException(): void {}
     flush(): Promise<void> {
       return Promise.resolve()
@@ -82,7 +81,7 @@ describe('experiments', () => {
     experiments._resetForTest()
     telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
     telemetry.setConsentState('granted')
-    telemetry.identify('test-distinct-id')
+    telemetry.bindAnonymousId('test-distinct-id', 'test-installation-id')
   })
 
   afterEach(() => {
