@@ -30,7 +30,9 @@ describe('reconcileManagerConfigForLaunch', () => {
   })
 
   it('skips remote launches entirely (no local install to reconcile)', async () => {
-    await reconcileManagerConfigForLaunch({ remote: true, installPath: '/inst' })
+    await expect(
+      reconcileManagerConfigForLaunch({ remote: true, installPath: '/inst' })
+    ).resolves.toEqual({ ok: true })
     expect(mockEnsure).not.toHaveBeenCalled()
   })
 
@@ -98,7 +100,7 @@ describe('reconcileManagerConfigForLaunch', () => {
     })
   })
 
-  it('warns and captures config_seed_failed telemetry on failure without throwing', async () => {
+  it('stays non-blocking on failure when no Manager option was chosen (mirror-only seeding)', async () => {
     const err = new Error('EACCES: permission denied')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mockEnsure.mockRejectedValueOnce(err)
@@ -106,7 +108,7 @@ describe('reconcileManagerConfigForLaunch', () => {
     try {
       await expect(
         reconcileManagerConfigForLaunch({ remote: false, installPath: '/inst' })
-      ).resolves.toBeUndefined()
+      ).resolves.toEqual({ ok: true })
 
       expect(warn).toHaveBeenCalledWith('Failed to reconcile ComfyUI-Manager config:', err)
       // Exact match against the canonical scrubbed fields - a drift to an
@@ -115,6 +117,60 @@ describe('reconcileManagerConfigForLaunch', () => {
         'comfy.desktop.manager.config_seed_failed',
         buildErrorFields(err)
       )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  // Fail closed: launching after a failed write would run Manager with stale
+  // (possibly weaker) security settings while the UI claims the new values.
+  it('fails closed when a chosen security level cannot be written', async () => {
+    const err = new Error('EACCES: permission denied')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockEnsure.mockRejectedValueOnce(err)
+
+    try {
+      await expect(
+        reconcileManagerConfigForLaunch({
+          remote: false, installPath: '/inst', securityLevel: 'strong'
+        })
+      ).resolves.toEqual({ ok: false, error: err })
+      expect(telemetry.capture).toHaveBeenCalledWith(
+        'comfy.desktop.manager.config_seed_failed',
+        buildErrorFields(err)
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('fails closed when a chosen network mode cannot be written', async () => {
+    const err = new Error('EBUSY: resource busy')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockEnsure.mockRejectedValueOnce(err)
+
+    try {
+      await expect(
+        reconcileManagerConfigForLaunch({
+          remote: false, installPath: '/inst', networkMode: 'public'
+        })
+      ).resolves.toEqual({ ok: false, error: err })
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('stays non-blocking on failure when only bogus (ignored) options were passed', async () => {
+    const err = new Error('boom')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockEnsure.mockRejectedValueOnce(err)
+
+    try {
+      await expect(
+        reconcileManagerConfigForLaunch({
+          remote: false, installPath: '/inst', securityLevel: 'bogus', networkMode: 'bogus'
+        })
+      ).resolves.toEqual({ ok: true })
     } finally {
       warn.mockRestore()
     }

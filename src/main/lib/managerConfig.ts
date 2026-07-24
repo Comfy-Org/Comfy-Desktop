@@ -83,43 +83,62 @@ function buildManagerConfig(opts: {
 // migration path parses with strict=True, where such duplicates raise.
 function withDefaultOption(content: string, key: string, value: string): string {
   const line = `${key} = ${value}`
-  const isHeader = (l: string) => /^[ \t]*\[[^\]]*\][ \t]*\r?$/.test(l)
-  const isDefaultHeader = (l: string) => /^[ \t]*\[default\][ \t]*\r?$/.test(l)
+  const stripCR = (l: string) => (l.endsWith('\r') ? l.slice(0, -1) : l)
+  // configparser matches headers with r"\[(?P<header>[^]]+)\]" via re.match
+  // on the stripped line: the name ends at the FIRST `]` and trailing text
+  // (e.g. an inline comment) is ignored. Section names are case-sensitive.
+  const headerName = (l: string): string | null => {
+    const m = /^[ \t]*\[([^\]]+)\]/.exec(stripCR(l))
+    return m ? m[1]! : null
+  }
   // configparser accepts both `=` and `:` delimiters - a hand-written
   // `key: value` line must be replaced, not shadowed by an inserted `=`
   // line (Manager parses with strict=False, where the later line wins).
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
   const optionPattern = new RegExp(`^[ \\t]*${escapedKey}[ \\t]*[=:]`, 'i')
   const isOptionKey = (l: string) => optionPattern.test(l)
+  // An indented non-blank line after an option is a continuation of its
+  // value in configparser; it must travel with the option line it extends.
+  const isContinuation = (l: string) => /^[ \t]+\S/.test(stripCR(l))
 
+  // strict=False merges repeated [default] sections (later duplicates win),
+  // so every default section is visited: the first matching option is
+  // replaced in place, every later duplicate - and each option's
+  // continuation lines - is removed, leaving exactly one canonical line.
   const lines = content.split('\n')
-  const start = lines.findIndex(isDefaultHeader)
-  if (start === -1) {
-    const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : ''
-    return `${content}${separator}[default]\n${line}\n`
-  }
-  let end = lines.length
-  for (let i = start + 1; i < lines.length; i++) {
-    if (isHeader(lines[i] ?? '')) {
-      end = i
-      break
-    }
-  }
+  let inDefault = false
+  let firstDefaultHeader = -1
   let replaced = false
-  for (let i = start + 1; i < end; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const current = lines[i] ?? ''
-    if (!isOptionKey(current)) continue
+    const section = headerName(current)
+    if (section !== null) {
+      inDefault = section === 'default'
+      if (inDefault && firstDefaultHeader === -1) firstDefaultHeader = i
+      continue
+    }
+    if (!inDefault || !isOptionKey(current)) continue
+    let contEnd = i + 1
+    while (contEnd < lines.length && isContinuation(lines[contEnd] ?? '')) contEnd++
     if (!replaced) {
       lines[i] = line + (current.endsWith('\r') ? '\r' : '')
       replaced = true
+      lines.splice(i + 1, contEnd - (i + 1))
     } else {
-      lines.splice(i, 1)
+      lines.splice(i, contEnd - i)
       i--
-      end--
     }
   }
   if (!replaced) {
-    lines.splice(start + 1, 0, line + ((lines[start] ?? '').endsWith('\r') ? '\r' : ''))
+    if (firstDefaultHeader === -1) {
+      const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : ''
+      return `${content}${separator}[default]\n${line}\n`
+    }
+    lines.splice(
+      firstDefaultHeader + 1,
+      0,
+      line + ((lines[firstDefaultHeader] ?? '').endsWith('\r') ? '\r' : '')
+    )
   }
   return lines.join('\n')
 }

@@ -312,5 +312,34 @@ describe('ensureManagerConfig', () => {
         _internals.withDefaultOption('[default]\nSecurity_Level: normal\n', 'security_level', 'weak')
       ).toBe('[default]\nsecurity_level = weak\n')
     })
+
+    // strict=False merges repeated [default] sections and the LAST duplicate
+    // wins - editing only the first section would leave the later value in
+    // control. All duplicates must collapse to one canonical line.
+    it('collapses duplicates across repeated [default] sections', () => {
+      const content = '[default]\nnetwork_mode = public\n\n[default]\nnetwork_mode = offline\n'
+      expect(_internals.withDefaultOption(content, 'network_mode', 'personal_cloud')).toBe(
+        '[default]\nnetwork_mode = personal_cloud\n\n[default]\n'
+      )
+    })
+
+    // configparser's section regex stops at the first `]` and ignores
+    // trailing text, so `[other] junk` IS a section boundary and
+    // `[default] ; note` IS the default section.
+    it('treats a header with trailing text as a section boundary', () => {
+      const content = '[default] ; note\nsecurity_level = normal\n[other] junk\nsecurity_level = weak\n'
+      expect(_internals.withDefaultOption(content, 'security_level', 'strong')).toBe(
+        '[default] ; note\nsecurity_level = strong\n[other] junk\nsecurity_level = weak\n'
+      )
+    })
+
+    // Indented lines are value continuations in configparser - they must be
+    // removed with the value they extend, not left to corrupt the new one.
+    it('drops continuation lines of a replaced option', () => {
+      const content = '[default]\nnetwork_mode = public\n    stale-suffix\nchannel_url = x\n'
+      expect(_internals.withDefaultOption(content, 'network_mode', 'offline')).toBe(
+        '[default]\nnetwork_mode = offline\nchannel_url = x\n'
+      )
+    })
   })
 })

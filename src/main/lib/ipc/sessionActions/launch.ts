@@ -367,12 +367,17 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     }
   }
 
-  await reconcileManagerConfigForLaunch({
+  // Fail closed: launching after a failed config write would run Manager
+  // with stale security settings while the UI claims the chosen values.
+  const managerReconcile = await reconcileManagerConfigForLaunch({
     remote: Boolean(launchCmd.remote),
     installPath: inst.installPath,
     securityLevel: inst.managerSecurityLevel,
     networkMode: inst.managerNetworkMode,
   })
+  if (!managerReconcile.ok) {
+    return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
+  }
 
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
