@@ -7,8 +7,9 @@
  *
  * NAME is the headline. The footer row follows the grammar the install tiles
  * use: LEFT is identity facts (labelled version · size), RIGHT is one
- * status/action slot — a pill for what you can do, or a quiet tag for why you
- * can't. Never both, and state never replaces the facts.
+ * status/action slot — a pill for what you can do (Install / Update), or a
+ * quiet tag for what simply is (Installed, or why it's blocked). Never both,
+ * and state never replaces the facts.
  *
  * The version is labelled ("Dist v2") because these cards share a grid with
  * install tiles, whose version IS the ComfyUI version. A bare "2" beside a
@@ -69,11 +70,14 @@ const versionLabel = computed(() =>
 /** Dot-separated identity facts: version · size. Both optional. */
 const factsLine = computed(() => [versionLabel.value, sizeLabel.value].filter(Boolean).join(' · '))
 
-/** Right slot, part one: the blue pill for an action the card can perform.
- *  Empty when there's nothing to do. */
+/** Right slot, part one: the blue pill for an action the card performs.
+ *  Install and Update are the same gesture — activate the card — so they
+ *  wear the same pill. Empty when there's nothing to do. */
 const actionPill = computed(() => {
   if (props.distribution.state === 'update-available')
     return t('devPlatform.distribution.states.updateAvailable')
+  if (props.distribution.state === 'installable')
+    return t('devPlatform.distribution.menuInstall')
   return ''
 })
 
@@ -87,8 +91,6 @@ const stateTag = computed(() => {
   }
   if (props.distribution.state === 'installed')
     return t('devPlatform.distribution.states.installed')
-  if (props.distribution.state === 'installable')
-    return t('devPlatform.distribution.availablePill')
   return ''
 })
 

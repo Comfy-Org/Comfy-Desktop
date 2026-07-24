@@ -1140,7 +1140,6 @@
       "switchLabel": "Workspace"
     },
     "distribution": {
-      "availablePill": "Available",
       "menuInstall": "Install",
       "distVersion": "Dist v{version}",
       "emptyTitle": "No distributions published to this workspace yet.",

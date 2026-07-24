@@ -61,7 +61,6 @@ const messages = {
     },
     devPlatform: {
       distribution: {
-        availablePill: 'Available',
         menuInstall: 'Install',
         distVersion: 'Dist v{version}',
         states: {
@@ -605,10 +604,20 @@ describe('ChooserView', () => {
       const card = wrapper.find(`[data-testid="chooser-dist-tile-${id}"]`)
       expect(card.findAll('.chooser-tile-pill-action').length).toBe(1)
     }
-    // Update is the actionable one, so it takes the blue pill.
-    const updatable = wrapper.find('[data-testid="chooser-dist-tile-b"]')
-    expect(updatable.find('.chooser-tile-pill-update').exists()).toBe(true)
-    expect(updatable.find('.dist-tile-state-tag').exists()).toBe(false)
+    // Both are actionable, so both take the blue pill, not a state tag.
+    for (const id of ['a', 'b']) {
+      const card = wrapper.find(`[data-testid="chooser-dist-tile-${id}"]`)
+      expect(card.find('.chooser-tile-pill-update').exists()).toBe(true)
+      expect(card.find('.dist-tile-state-tag').exists()).toBe(false)
+    }
+  })
+
+  it('names the action on an installable distribution rather than its state', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'd5', name: 'Fresh', state: 'installable' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const pill = wrapper.find('[data-testid="chooser-dist-tile-d5"]').find('.chooser-tile-pill-action')
+    expect(pill.text()).toBe('Install')
   })
 
   it('has no Desktop entry in the filter state', async () => {
