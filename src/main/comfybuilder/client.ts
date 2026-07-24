@@ -11,6 +11,7 @@ import type {
   Artifact,
   Distribution,
   DistributionVersion,
+  ModelManifest,
   TokenProvider,
 } from './types'
 
@@ -74,6 +75,23 @@ export class ComfyBuilderClient {
   async getVersion(versionId: string): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
     const body = await this.get<VersionDetailResponse>(`/v1/distribution-versions/${encodeURIComponent(versionId)}`)
     return { version: body.version, artifacts: body.artifacts ?? [] }
+  }
+
+  /**
+   * A version's models + runtime policies, projected from its sealed manifest
+   * by the builder API. Each model carries a ready-to-GET `downloadUrl` and its
+   * target model directory; a client stages these before starting ComfyUI. An
+   * empty `models` array is normal (a version may declare none).
+   */
+  async fetchModelManifest(versionId: string): Promise<ModelManifest> {
+    const body = await this.get<Partial<ModelManifest>>(
+      `/v1/distribution-versions/${encodeURIComponent(versionId)}/manifest`,
+    )
+    return {
+      models: body.models ?? [],
+      modelPolicy: body.modelPolicy ?? null,
+      partnerNodePolicy: body.partnerNodePolicy ?? null,
+    }
   }
 
   /** Resolve an artifact's short-lived presigned archive URL. */

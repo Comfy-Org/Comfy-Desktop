@@ -266,6 +266,9 @@
     "copyError": "复制错误详情",
     "clear": "清除"
   },
+  "comfybuilder": {
+    "stageModels": "下载模型"
+  },
   "list": {
     "loadSnapshot": "加载快照",
     "snapshotSourceName": "源实例",

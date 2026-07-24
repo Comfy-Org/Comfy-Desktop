@@ -76,3 +76,49 @@ export interface InstallProgress {
   percent: number
   detail?: string
 }
+
+/**
+ * One model the distribution pre-installs, projected from the version's sealed
+ * manifest by the builder API (mirrors its `DistributionModel` schema). `type`
+ * is the ComfyUI model directory the file installs into (e.g. `checkpoints`),
+ * so the file lands at `models/<type>/<filename>`. `downloadUrl` is ready to GET
+ * as-is (a public source URL, or a short-lived presigned URL for a private one).
+ */
+export interface ModelDescriptor {
+  type: string
+  filename: string
+  /** Hex sha256 of the content, when known. Absent for a public model whose
+   *  author supplied none, in which case it installs without verification. */
+  sha256?: string
+  downloadUrl: string
+  /** When `downloadUrl` expires (presigned URLs only). Advisory. */
+  expiresAt?: string
+}
+
+/** A runtime allow/deny list (`DistributionPolicy` on the wire). Advisory
+ *  metadata the client may later enforce; staging does not gate on it. */
+export interface ModelPolicy {
+  mode: 'allowlist' | 'blocklist'
+  list?: string[]
+}
+
+/**
+ * The model + policy view of a distribution version (the builder API's
+ * `DistributionManifest`). A client stages `models` before starting ComfyUI; the
+ * archive itself carries only code and the environment, never weights.
+ */
+export interface ModelManifest {
+  models: ModelDescriptor[]
+  modelPolicy?: ModelPolicy | null
+  partnerNodePolicy?: ModelPolicy | null
+}
+
+/** Per-model staging progress, surfaced to the UI while models download. */
+export interface StageProgress {
+  /** 1-based index of the model currently downloading. */
+  index: number
+  total: number
+  filename: string
+  /** Percent of the current model (0-100). */
+  percent: number
+}

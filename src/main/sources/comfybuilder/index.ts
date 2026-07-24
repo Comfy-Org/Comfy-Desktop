@@ -16,8 +16,8 @@
  * new-install wizard. That is why `getListActions` below exists even though it
  * looks like boilerplate.
  */
-import { installArtifact, buildLaunchSpec } from '../../comfybuilder'
-import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress } from '../../comfybuilder'
+import { installArtifact, buildLaunchSpec, stageModels, resolveModelManifest } from '../../comfybuilder'
+import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress, StageProgress } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
 import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
@@ -75,6 +75,7 @@ export const comfybuilder: SourcePlugin = {
     return [
       { phase: 'download', label: t('common.download') },
       { phase: 'extract', label: t('common.extract') },
+      { phase: 'models', label: t('comfybuilder.stageModels') },
     ]
   },
 
@@ -136,12 +137,13 @@ export const comfybuilder: SourcePlugin = {
 
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
     const artifact = artifactFromRecord(installation)
-    // `installArtifact` verifies the sha256 when the artifact carries one and
-    // fails on a byte mismatch. A missing hash is skipped for the initial rollout
-    // (see the TODO there) until the builder populates it.
+    const client = getBuilderClient()
+    // Phase 1: archive (code + environment). `installArtifact` verifies the
+    // sha256 when the artifact carries one and fails on a byte mismatch. A
+    // missing hash is skipped for the initial rollout (see the TODO there).
     await installArtifact({
       artifact,
-      client: getBuilderClient(),
+      client,
       installPath: installation.installPath,
       cacheDir: defaultDownloadCacheDir(),
       onProgress: (p: InstallProgress) => {
@@ -152,6 +154,23 @@ export const comfybuilder: SourcePlugin = {
       },
       ...(tools.signal ? { signal: tools.signal } : {}),
     })
+
+    // Phase 2: models. The archive carries no weights, so stage the
+    // distribution's declared models into the install's ComfyUI model tree
+    // before launch, the way comfy-deploy provisions a volume before boot. An
+    // empty manifest stages nothing and the step completes immediately.
+    const manifest = await resolveModelManifest(
+      { distributionId: installation.distributionId as string, version: installation.version as string },
+      client,
+    )
+    await stageModels({
+      models: manifest.models,
+      installPath: installation.installPath,
+      onProgress: (p: StageProgress) =>
+        tools.sendProgress('models', { percent: p.percent, status: `${p.filename} (${p.index}/${p.total})` }),
+      ...(tools.signal ? { signal: tools.signal } : {}),
+    })
+    tools.sendProgress('models', { percent: 100, status: '' })
   },
 
   async handleAction(actionId: string): Promise<ActionResult> {

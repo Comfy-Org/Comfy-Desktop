@@ -266,6 +266,9 @@
     "copyError": "Copy error details",
     "clear": "Clear"
   },
+  "comfybuilder": {
+    "stageModels": "Download models"
+  },
   "list": {
     "loadSnapshot": "Load Snapshot",
     "snapshotSourceName": "Source Instance",

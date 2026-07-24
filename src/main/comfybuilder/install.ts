@@ -68,16 +68,23 @@ function cacheSlug(artifactId: string): string {
   return artifactId.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
-function sha256File(filePath: string): Promise<string> {
+/** Streaming lowercase-hex sha256 of a file. Exported so model staging verifies
+ *  downloads the same way archive install does. Resolves on 'close' (not 'end')
+ *  so the fd is released before a following rmSync, avoiding EBUSY on Windows. */
+export function sha256File(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256')
     const stream = createReadStream(filePath)
     stream.on('error', reject)
     stream.on('data', (chunk) => hash.update(chunk))
-    // 'close' (not 'end'): the fd is released, so a following rmSync on a
-    // mismatch won't hit EBUSY on Windows.
     stream.on('close', () => resolve(hash.digest('hex')))
   })
+}
+
+/** Normalize a manifest hash for comparison: strip an optional `sha256:` prefix,
+ *  trim, lowercase. Returns '' when there is no usable hash. */
+export function normalizeSha256(raw: string | undefined): string {
+  return raw?.replace(/^sha256:/i, '').trim().toLowerCase() ?? ''
 }
 
 function assertLayout(installPath: string): void {
@@ -112,7 +119,7 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
   // TODO: fail closed on a missing hash too. The builder does not populate
   // outputSha256 yet, so for the initial rollout a missing hash installs
   // unverified rather than blocking every install.
-  const expected = artifact.outputSha256?.replace(/^sha256:/i, '').trim().toLowerCase()
+  const expected = normalizeSha256(artifact.outputSha256)
   if (!expected) {
     console.warn('[comfybuilder] artifact has no outputSha256; installing without integrity verification')
   }

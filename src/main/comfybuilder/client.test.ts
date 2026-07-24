@@ -32,6 +32,20 @@ describe('ComfyBuilderClient', () => {
     expect(await client.resolveDownloadUrl('a1')).toBe('https://gcs/signed')
   })
 
+  it('fetchModelManifest hits the version manifest path and normalizes absent fields', async () => {
+    const f = mockFetch(200, {
+      models: [{ type: 'checkpoints', filename: 'sd.safetensors', downloadUrl: 'https://x/sd' }],
+    })
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
+    const m = await client.fetchModelManifest('ver-9')
+    expect(m.models).toHaveLength(1)
+    expect(m.modelPolicy).toBeNull()
+    expect(m.partnerNodePolicy).toBeNull()
+    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/ver-9/manifest')
+  })
+
   it('throws unauthorized (no network) when signed out', async () => {
     const f = mockFetch(200, {})
     vi.stubGlobal('fetch', f)

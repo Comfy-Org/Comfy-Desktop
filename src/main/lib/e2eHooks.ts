@@ -15,6 +15,8 @@ import {
   _test_ageEntries as _test_ageReleaseCacheEntries,
 } from './release-cache'
 import { _test_getOpenTitlePopupBounds } from '../popups/titlePopup'
+import { stageModels, resolveModelManifest } from '../comfybuilder'
+import { getBuilderClient } from '../devplatform/session'
 import { returnToDashboard } from '../host/detach'
 import { comfyWindows, getEntryByInstallationId, isInstallHost } from '../host/registry'
 import { ensurePanelView } from '../host/panelView'
@@ -79,6 +81,14 @@ export interface E2EHelpers {
   /** Mount the install-backed panelView for `installationId` (production mounts it lazily),
    *  so tests can reach `panel.html` immediately after a launch. Returns whether the entry exists. */
   ensureInstallPanelView(installationId: string): boolean
+  /** Run the REAL comfybuilder model-staging (resolve manifest -> download ->
+   *  verify -> place) against `installPath`, isolated from the archive/auth path.
+   *  Resolves to the staged `type/filename` list, or a typed error on failure. */
+  stageDistributionModels(opts: {
+    installPath: string
+    distributionId: string
+    version: string
+  }): Promise<{ staged: string[] } | { error: string; kind?: string }>
 }
 
 export function registerE2EHooks(): void {
@@ -130,6 +140,16 @@ export function registerE2EHooks(): void {
       if (!entry || entry.window.isDestroyed()) return false
       ensurePanelView(entry.windowKey, entry, 'comfy-lifecycle')
       return true
+    },
+    async stageDistributionModels({ installPath, distributionId, version }) {
+      const manifest = await resolveModelManifest({ distributionId, version }, getBuilderClient())
+      try {
+        await stageModels({ models: manifest.models, installPath })
+        return { staged: manifest.models.map((m) => `${m.type}/${m.filename}`) }
+      } catch (e) {
+        const err = e as { message?: string; kind?: string }
+        return { error: err.message ?? String(e), ...(err.kind ? { kind: err.kind } : {}) }
+      }
     },
   }
   ;(globalThis as unknown as { __e2e: E2EHelpers }).__e2e = helpers
