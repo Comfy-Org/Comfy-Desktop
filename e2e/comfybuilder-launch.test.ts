@@ -9,9 +9,10 @@
  *
  *   1. an installed distribution tile launches (run-action `launch` plus the
  *      progress takeover) and never mounts the wizard;
- *   2. a not-yet-installed distribution exposes a DISABLED launch action
- *      carrying the not-ready message, and clicking its tile explains itself
- *      instead of bouncing into the wizard.
+ *   2. clicking a not-ready one explains itself instead of bouncing there.
+ *
+ * The per-status action contract itself lives in the plugin unit test, which
+ * pins it without needing a seeded record.
  *
  * The seeded venv python exits immediately, so the launch is attempted and
  * then fails at the boot wait. Attempted-vs-never-attempted is the whole
@@ -31,9 +32,6 @@ import { byTestId, TID } from './support/testIds'
 /** Both steps of the new-install wizard: the surface a missing launch action
  *  used to bounce the user into. */
 const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
-
-/** Same tile-name selector `clickInstallTile` matches against. */
-const TILE_NAME_SELECTOR = '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name'
 
 interface DistributionCase {
   id: string
@@ -58,12 +56,6 @@ const FAILED: DistributionCase = {
   name: 'desktop-4target-stg-v0192',
   status: 'failed',
   installPath: '',
-}
-
-interface ListActionShape {
-  id: string
-  enabled: boolean
-  disabledMessage?: string
 }
 
 let ctx: AppContext
@@ -134,39 +126,6 @@ test.afterAll(async () => {
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
 })
 
-test('a not-ready ComfyBuilder distribution exposes a disabled launch action @windows @macos @linux', async () => {
-  // The harness seeds installations.json AFTER launch, so wait for the tile:
-  // its presence is the proof that main has re-read the record, which a bare
-  // `getListActions(id)` probe would otherwise race (returning [] for an
-  // unknown id and looking exactly like the bug this file pins).
-  await ctx.panel.waitFor(
-    async () => (await ctx.panel.allText(TILE_NAME_SELECTOR))
-      .some((t) => t.toLowerCase().includes(FAILED.name.toLowerCase())),
-    { timeout: 15_000, message: `Tile for "${FAILED.name}" never appeared` },
-  )
-
-  const actions = await ctx.panel.evaluate<ListActionShape[]>(
-    `window.api.getListActions(${JSON.stringify(FAILED.id)})`,
-  )
-  expect(actions.map((a) => a.id)).toContain('launch')
-  const launch = actions.find((a) => a.id === 'launch')!
-  expect(launch.enabled).toBe(false)
-  expect(launch.disabledMessage).toBe(en.errors.installNotReady)
-})
-
-test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos @linux', async () => {
-  await clickInstallTile(ctx.panel, FAILED.name)
-
-  // `useListAction` short-circuits a disabled action into an alert, so the
-  // user is told why nothing launched rather than being handed a wizard.
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  expect(await ctx.panel.textOf('.base-alert-message-text')).toContain(en.errors.installNotReady)
-  expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
-
-  await ctx.panel.click(byTestId(TID.baseAlertAction))
-  await expectChooserVisible(ctx.panel)
-})
-
 test('clicking an installed ComfyBuilder tile launches it instead of opening the new-install wizard @windows @macos @linux', async () => {
   await resetIpcInvocations(ctx.app)
   await clickInstallTile(ctx.panel, INSTALLED.name)
@@ -184,4 +143,17 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
 
   await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
+})
+
+test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos @linux', async () => {
+  await clickInstallTile(ctx.panel, FAILED.name)
+
+  // `useListAction` short-circuits a disabled action into an alert, so the
+  // user is told why nothing launched rather than being handed a wizard.
+  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  expect(await ctx.panel.textOf('.base-alert-message-text')).toContain(en.errors.installNotReady)
+  expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
+
+  await ctx.panel.click(byTestId(TID.baseAlertAction))
+  await expectChooserVisible(ctx.panel)
 })
