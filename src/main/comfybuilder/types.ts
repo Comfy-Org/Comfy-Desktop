@@ -37,10 +37,11 @@ export interface Artifact {
   /** Accelerator build variant, e.g. `cu128`. Part of the target identity. */
   accelVariant: string
   status: string
-  /** Storage ref of the built archive. */
-  outputRef?: string
-  /** Hex sha256 of the archive (optionally `sha256:`-prefixed). Verified post-download. */
-  outputSha256?: string
+  /** Storage ref of the built archive (the API's `archiveRef`). Absent until the target is ready. */
+  archiveRef?: string
+  /** Hex sha256 of the archive (the API's `archiveSha256`, optionally `sha256:`-prefixed).
+   *  Absent until the signer computes it; verified post-download when present. */
+  archiveSha256?: string
 }
 
 /** The machine an install targets: which artifact to pick. */

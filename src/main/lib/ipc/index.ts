@@ -34,6 +34,7 @@ import { setTerminalEnvResolver } from '../terminal'
 import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
+import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 
 export {
@@ -267,5 +268,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerLogsHandlers()
   registerCrashHandlers()
   registerTelemetryHandlers()
+  registerDevPlatformHandlers()
   return startupMaintenance
 }

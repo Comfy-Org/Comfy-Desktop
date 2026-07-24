@@ -21,16 +21,16 @@ describe('installArtifact guards', () => {
     expect(client.resolveDownloadUrl).not.toHaveBeenCalled()
   })
 
-  // TODO: flip back to fail-closed once the builder populates outputSha256.
+  // TODO: flip back to fail-closed once the builder populates archiveSha256.
   it.each([
     ['absent', undefined],
     ['blank', '   '],
     ['prefix-only', 'sha256:'],
-  ])('proceeds (unverified) when outputSha256 is %s', async (name, sha) => {
+  ])('proceeds (unverified) when archiveSha256 is %s', async (name, sha) => {
     const client = { resolveDownloadUrl: vi.fn(async () => 'https://example.test/a.tar.gz') }
     // Gets past the hash gate: the stubbed extract writes no layout, so it fails
     // on the layout check rather than on the missing hash.
-    await expect(installArtifact({ artifact: artifact({ outputSha256: sha }), client, installPath: path.join(os.tmpdir(), `cb-${name}`), cacheDir: os.tmpdir() }))
+    await expect(installArtifact({ artifact: artifact({ archiveSha256: sha }), client, installPath: path.join(os.tmpdir(), `cb-${name}`), cacheDir: os.tmpdir() }))
       .rejects.toMatchObject({ kind: 'invalid-layout' })
     expect(client.resolveDownloadUrl).toHaveBeenCalled()
   })

@@ -7,7 +7,7 @@
  * `ComfyUI/` (a ready, relocatable env), so there is no post-extract env build;
  * launch drives that `venv/` directly (see `./launch`).
  *
- * Integrity: when the artifact carries an `outputSha256` the bytes must match or
+ * Integrity: when the artifact carries an `archiveSha256` the bytes must match or
  * nothing is extracted. A MISSING hash is currently installed unverified because
  * the builder does not populate it yet (see the TODO in `installArtifact`); that
  * becomes fail-closed once it does. The archive downloads to a per-run temp under `cacheDir`
@@ -117,11 +117,11 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
 
   // A hash that IS present is always enforced (see the compare below).
   // TODO: fail closed on a missing hash too. The builder does not populate
-  // outputSha256 yet, so for the initial rollout a missing hash installs
+  // archiveSha256 yet, so for the initial rollout a missing hash installs
   // unverified rather than blocking every install.
-  const expected = normalizeSha256(artifact.outputSha256)
+  const expected = normalizeSha256(artifact.archiveSha256)
   if (!expected) {
-    console.warn('[comfybuilder] artifact has no outputSha256; installing without integrity verification')
+    console.warn('[comfybuilder] artifact has no archiveSha256; installing without integrity verification')
   }
 
   onProgress?.({ phase: 'resolve', percent: 0 })
