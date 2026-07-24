@@ -105,7 +105,7 @@ function mountTakeover() {
 
 describe('FirstUseTakeover start step', () => {
   it.each(['sub_low', 'cpu_only'] as const)(
-    'shows and tracks the Cloud recommendation for %s hardware',
+    'shows and tracks the Cloud recommendation with no default for %s hardware',
     async (gpuTier) => {
       ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
         gpu_vendor: gpuTier === 'cpu_only' ? null : 'nvidia',
@@ -128,8 +128,45 @@ describe('FirstUseTakeover start step', () => {
           capacity_status: 'normal',
         },
       )
+      await wrapper
+        .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+        .setValue(true)
+      const btn = wrapper.find('[data-testid="first-use-continue"]')
+      expect(btn.attributes('disabled')).toBeDefined()
+
+      await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
+      expect(btn.attributes('disabled')).toBeUndefined()
     },
   )
+
+  it('does not replace a choice made before hardware detection resolves', async () => {
+    let resolveSystemInfo:
+      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
+      | undefined
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSystemInfo = resolve
+      }),
+    )
+    const wrapper = mountTakeover()
+    await wrapper.find('[data-testid="first-use-pick-cloud"]').trigger('click')
+
+    resolveSystemInfo?.({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeUndefined()
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    expect(wrapper.emitted('complete-cloud')).toBeTruthy()
+  })
 
   it.each(['low', 'mid', 'high', 'apple'] as const)(
     'does not show the Cloud recommendation for %s hardware',
@@ -149,6 +186,10 @@ describe('FirstUseTakeover start step', () => {
         'comfy.desktop.first_use.gpu_reco_shown',
         expect.anything(),
       )
+      await wrapper
+        .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+        .setValue(true)
+      expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeUndefined()
     },
   )
 
@@ -207,6 +248,7 @@ describe('FirstUseTakeover start step', () => {
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
+    await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     expect(emitTelemetryAction).toHaveBeenCalledWith(
@@ -236,6 +278,7 @@ describe('FirstUseTakeover start step', () => {
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
       .setValue(true)
+    await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
     await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
 
     expect(emitTelemetryAction).toHaveBeenCalledWith(
@@ -607,6 +650,24 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
       variant: 'cloud-default',
       source: 'cache'
     })
+  })
+
+  it('replaces the cloud-default variant with no default for recommended hardware', async () => {
+    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('cloud')
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeDefined()
   })
 
   it("pre-selects nothing when the flag returns 'none' (no-default arm) and disables Continue until a card is picked", async () => {

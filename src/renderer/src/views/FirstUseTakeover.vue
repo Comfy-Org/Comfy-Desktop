@@ -124,6 +124,12 @@ const forkExperimentVariant = ref<ForkVariant | null>(null)
  *  Continue activates). Cloud is rendered as an equal-weight peer
  *  card regardless; users can flip between cards before Continue. */
 const pickedChoice = ref<'cloud' | 'local' | null>('local')
+const forkChoiceInteracted = ref(false)
+
+function selectForkChoice(choice: 'cloud' | 'local'): void {
+  forkChoiceInteracted.value = true
+  pickedChoice.value = choice
+}
 
 // Capacity-protection switch for Cloud (PostHog flag
 // `desktop-cloud-capacity`). At first-use, we follow the flag
@@ -196,6 +202,7 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
     initialDefaultChoice.value = 'local'
     return
   }
+  if (forkChoiceInteracted.value) return
   if (variant === 'cloud-default') {
     pickedChoice.value = 'cloud'
     initialDefaultChoice.value = 'cloud'
@@ -341,7 +348,12 @@ function emitGpuRecommendationIfConsented(): void {
 }
 
 watch(showGpuRecommendation, (shown) => {
-  if (!shown || gpuRecommendationContext || !systemInfo.value) return
+  if (!shown) return
+  if (!forkChoiceInteracted.value) {
+    pickedChoice.value = null
+    initialDefaultChoice.value = null
+  }
+  if (gpuRecommendationContext || !systemInfo.value) return
   gpuRecommendationContext = {
     gpu_tier: systemInfo.value.gpu_tier,
     gpu_vendor: systemInfo.value.gpu_vendor,
@@ -417,6 +429,7 @@ async function onContinue(): Promise<void> {
   // no pick to commit. The button is already :disabled in this state,
   // but guard defensively so a programmatic click can't bypass.
   if (pickedChoice.value === null) return
+  forkChoiceInteracted.value = true
   // Keep `isContinuing` true past `routePostStart()` because the chain
   // handlers (express prep, cloud auto-launch, new-install swap) all
   // either unmount this takeover or swap to a sub-step within ms. The
@@ -560,7 +573,7 @@ function onWhyCloudTryCloud(): void {
   // selection to Cloud but leaves the user on the screen so they can
   // accept T&C and press Continue. The legal gate is non-negotiable —
   // we can't auto-commit on the user's behalf.
-  pickedChoice.value = 'cloud'
+  selectForkChoice('cloud')
 }
 
 function chooseMigrate(): void {
@@ -594,7 +607,7 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   const nextChoice = order[next]
   if (!nextChoice) return
   e.preventDefault()
-  pickedChoice.value = nextChoice
+  selectForkChoice(nextChoice)
   void nextTick(() => {
     const radios = (e.currentTarget as HTMLElement | null)?.querySelectorAll<HTMLElement>(
       '[role="radio"]'
@@ -633,6 +646,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   whyCloudOpen.value = false
   termsDoc.value = null
   acceptedTos.value = false
+  forkChoiceInteracted.value = false
   // Safe baseline: Local pre-selected. The variant-aware apply call
   // below overrides to Cloud (`'cloud-default'` arm) or null
   // (`'no-default'` arm) when neither hard gate (legacy-desktop,
@@ -815,7 +829,7 @@ defineExpose({ open, resetContinue })
             "
             :description="$t(cloudDescriptionKey)"
             data-testid="first-use-pick-cloud"
-            @click="cloudCapacity.isDisabled() ? null : (pickedChoice = 'cloud')"
+            @click="cloudCapacity.isDisabled() ? null : selectForkChoice('cloud')"
           >
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
@@ -847,7 +861,7 @@ defineExpose({ open, resetContinue })
             :tagline="$t('firstUse.localTagline')"
             :description="$t('firstUse.localDesc')"
             data-testid="first-use-pick-local"
-            @click="pickedChoice = 'local'"
+            @click="selectForkChoice('local')"
           />
         </div>
         <!-- Modifier checkboxes (Migrate + Express). Wrapped in a
