@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useActionGuard } from './useActionGuard'
@@ -41,6 +42,11 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       source_category: inst.sourceCategory || 'unknown',
       ui_surface: uiSurface
     }
+    const actionData = action.data ? toRaw(action.data) : undefined
+    const runWithActionData = (installationId: string, actionId: string): Promise<ActionResult> =>
+      actionData
+        ? window.api.runAction(installationId, actionId, actionData)
+        : window.api.runAction(installationId, actionId)
 
     if (action.enabled === false && action.disabledMessage) {
       await modal.alert({ title: action.label, message: action.disabledMessage })
@@ -118,7 +124,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         installationId: inst.id,
         title: `${t('desktop.migrating')} — ${inst.name}`,
         apiCall: async () => {
-          const migrateResult = await window.api.runAction(inst.id, 'migrate-to-standalone')
+          const migrateResult = await runWithActionData(inst.id, 'migrate-to-standalone')
           if (!migrateResult.ok || !migrateResult.newInstallationId) return migrateResult
           // Launch the adopted install in the same overlay (continuous flow).
           return window.api.runAction(migrateResult.newInstallationId, 'launch')
@@ -151,13 +157,13 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       const apiCall = needsSelfStop
         ? async () => {
             await stopAndWaitForExit(inst.id, isRunning)
-            const result = await window.api.runAction(inst.id, action.id)
+            const result = await runWithActionData(inst.id, action.id)
             if (wantsRelaunch && result?.ok !== false) {
               await window.api.runAction(inst.id, 'launch')
             }
             return result
           }
-        : () => window.api.runAction(inst.id, action.id)
+        : () => runWithActionData(inst.id, action.id)
       callbacks.showProgress({
         installationId: inst.id,
         title: `${action.progressTitle || action.label} — ${inst.name}`,
@@ -175,7 +181,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       if (needsSelfStop) {
         await stopAndWaitForExit(inst.id, isRunning)
       }
-      const result = await window.api.runAction(inst.id, action.id)
+      const result = await runWithActionData(inst.id, action.id)
       if (result.running) {
         await actionGuard.checkBeforeAction(inst.id, action.label)
         return

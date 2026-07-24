@@ -56,6 +56,24 @@ function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
         defaultId: 0,
         cancelId: 1
       }
+    case 'torch-mismatch':
+      return {
+        type: 'warning',
+        title: i18n.t('desktop.adoptPromptTorchMismatchTitle'),
+        message: i18n.t('desktop.adoptPromptTorchMismatchMessage', {
+          device: typeof data['selectedDevice'] === 'string' ? data['selectedDevice'].toUpperCase() : 'GPU',
+          version: typeof data['installedVersion'] === 'string' ? data['installedVersion'] : 'unknown',
+        }),
+        buttons: [
+          {
+            label: i18n.t('desktop.adoptPromptUseCpu'),
+            choice: { kind: 'torch-mismatch', choice: 'use-cpu' }
+          },
+          { label: i18n.t('common.cancel'), choice: { kind: 'torch-mismatch', choice: 'cancel' } }
+        ],
+        defaultId: 0,
+        cancelId: 1
+      }
     case 'source-missing':
       return {
         type: 'error',

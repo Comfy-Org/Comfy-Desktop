@@ -3,7 +3,6 @@ import path from 'path'
 import { fetchJSON } from '../../lib/fetch'
 import { parseArgs, extractPort, formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
-import { launchAction } from '../../lib/actions'
 import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
 import {
@@ -16,7 +15,13 @@ import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog } from './templateCatalog'
 import * as installations from '../../installations'
 
-import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
+import {
+  getListPreview,
+  getStatusTag,
+  getDetailSections,
+  getStandaloneLaunchAction,
+  R2_BASE_URL,
+} from './updateSections'
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
 import type {
@@ -297,7 +302,11 @@ export const standalone: SourcePlugin = {
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {
     const installed = installation.status === 'installed'
     return [
-      launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
+      getStandaloneLaunchAction(
+        installation,
+        installed,
+        !installed ? t('errors.installNotReady') : undefined
+      ),
     ]
   },
 

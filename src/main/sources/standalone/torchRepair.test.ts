@@ -7,7 +7,14 @@ vi.mock('electron', () => ({
   app: { getPath: () => '' },
 }))
 
-import { getTorchVendorMismatch, copyTorchFamily } from './torchRepair'
+import {
+  getTorchVendorMismatch,
+  getLegacyTorchVendorMismatch,
+  getAdoptedTorchVendorMismatch,
+  hasCpuLaunchArg,
+  withCpuLaunchArg,
+  copyTorchFamily,
+} from './torchRepair'
 import type { InstallationRecord } from '../../installations'
 
 let tmpDir: string
@@ -153,6 +160,87 @@ describe('getTorchVendorMismatch', () => {
   it('returns null when no variant is recorded', () => {
     makeVenvWithTorch(tmpDir, '2.12.0')
     expect(getTorchVendorMismatch(install({}))).toBeNull()
+  })
+})
+
+describe('Legacy Desktop torch mismatch detection', () => {
+  const adopted = (over: Partial<InstallationRecord> = {}): InstallationRecord => install({
+    adopted: true,
+    adoptedBaseDir: path.join(tmpDir, 'ComfyUI'),
+    adoptedSelectedDevice: 'nvidia',
+    ...over,
+  })
+
+  it('flags the incident signature: NVIDIA selected with a bare CPU-only torch build', () => {
+    makeVenvWithTorch(tmpDir, '2.12.0', { cuda: null })
+
+    const beforeAdoption = getLegacyTorchVendorMismatch(path.join(tmpDir, 'ComfyUI'), 'nvidia')
+    const afterAdoption = getAdoptedTorchVendorMismatch(adopted())
+
+    expect(beforeAdoption).toMatchObject({ variantBase: 'nvidia', installedVersion: '2.12.0' })
+    expect(afterAdoption).toMatchObject({ variantBase: 'nvidia', installedVersion: '2.12.0' })
+  })
+
+  it('accepts a bare-versioned torch build whose metadata reports CUDA support', () => {
+    makeVenvWithTorch(tmpDir, '2.6.0', { cuda: '12.4' })
+    expect(getAdoptedTorchVendorMismatch(adopted())).toBeNull()
+  })
+
+  it('does not flag an adopted environment configured for CPU or MPS', () => {
+    makeVenvWithTorch(tmpDir, '2.12.0')
+    expect(getAdoptedTorchVendorMismatch(adopted({ adoptedSelectedDevice: 'cpu' }))).toBeNull()
+    expect(getAdoptedTorchVendorMismatch(adopted({ adoptedSelectedDevice: 'mps' }))).toBeNull()
+  })
+
+  it('does not infer a device when legacy device metadata is absent', () => {
+    makeVenvWithTorch(tmpDir, '2.12.0')
+    expect(getAdoptedTorchVendorMismatch(adopted({ adoptedSelectedDevice: undefined }))).toBeNull()
+  })
+
+  it('does not classify a bare wheel when accelerator metadata is unreadable', () => {
+    const sitePackages = makeVenvWithTorch(tmpDir, '2.12.0')
+    fs.rmSync(path.join(sitePackages, 'torch', 'version.py'))
+    expect(getAdoptedTorchVendorMismatch(adopted())).toBeNull()
+  })
+
+  it('requires metadata for the selected accelerator rather than an unrelated field', () => {
+    const sitePackages = makeVenvWithTorch(tmpDir, '2.12.0', { cuda: null })
+    const versionFile = path.join(sitePackages, 'torch', 'version.py')
+    const cudaOnly = fs.readFileSync(versionFile, 'utf-8')
+      .split('\n')
+      .filter((line) => !/^(hip|rocm|xpu):/.test(line))
+      .join('\n')
+    fs.writeFileSync(versionFile, cudaOnly)
+    expect(getAdoptedTorchVendorMismatch(adopted({ adoptedSelectedDevice: 'amd' }))).toBeNull()
+    expect(getAdoptedTorchVendorMismatch(adopted({ adoptedSelectedDevice: 'intel-xpu' }))).toBeNull()
+  })
+
+  it('still recognizes an explicit +cpu wheel when accelerator metadata is unreadable', () => {
+    const sitePackages = makeVenvWithTorch(tmpDir, '2.12.0+cpu')
+    fs.rmSync(path.join(sitePackages, 'torch', 'version.py'))
+    expect(getAdoptedTorchVendorMismatch(adopted())).not.toBeNull()
+  })
+})
+
+describe('hasCpuLaunchArg', () => {
+  it('recognizes the standalone CPU flag without matching prefixes or invalid assignments', () => {
+    expect(hasCpuLaunchArg('--listen 127.0.0.1 --cpu')).toBe(true)
+    expect(hasCpuLaunchArg(['-s', 'main.py', '--cpu'])).toBe(true)
+    expect(hasCpuLaunchArg('--cpu-vae')).toBe(false)
+    expect(hasCpuLaunchArg('--cpu=true')).toBe(false)
+    expect(hasCpuLaunchArg(undefined)).toBe(false)
+  })
+
+  it('replaces mutually exclusive GPU modes and DirectML with CPU mode', () => {
+    expect(withCpuLaunchArg([
+      '-s',
+      'main.py',
+      '--lowvram',
+      '--directml',
+      '0',
+      '--listen',
+      '127.0.0.1',
+    ])).toEqual(['-s', 'main.py', '--listen', '127.0.0.1', '--cpu'])
   })
 })
 

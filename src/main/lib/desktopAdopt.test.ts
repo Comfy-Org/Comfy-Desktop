@@ -267,6 +267,7 @@ function buildDeps(overrides: Partial<AdoptDeps>, info: DesktopInstallInfo): Par
   return {
     detectDesktopInstall: () => info,
     validateLegacyVenv: async () => ({ ok: true }),
+    getLegacyTorchVendorMismatch: () => null,
     copyStagedSource: async (src, dest) => {
       fs.mkdirSync(path.dirname(dest), { recursive: true })
       fs.cpSync(src, dest, { recursive: true })
@@ -289,6 +290,13 @@ function buildDeps(overrides: Partial<AdoptDeps>, info: DesktopInstallInfo): Par
     now: () => new Date('2026-05-19T12:00:00.000Z'),
     ...overrides
   }
+}
+
+const cpuOnlyNvidiaTorchMismatch = {
+  variantBase: 'nvidia',
+  expectedFamily: 'cu',
+  installedVersion: '2.12.0',
+  installedTag: '',
 }
 
 beforeEach(() => {
@@ -1020,11 +1028,16 @@ describe('adoptDesktopInstall', () => {
       )
       const tools = buildSilentTools(prompt)
       const validate = vi.fn(async () => ({ ok: false as const, message: 'no torch' }))
+      const getMismatch = vi.fn(() => cpuOnlyNvidiaTorchMismatch)
       const record = await adoptDesktopInstall({
         tools,
-        deps: buildDeps({ validateLegacyVenv: validate }, legacy.info)
+        deps: buildDeps({
+          validateLegacyVenv: validate,
+          getLegacyTorchVendorMismatch: getMismatch,
+        }, legacy.info)
       })
       expect(validate).toHaveBeenCalledOnce()
+      expect(getMismatch).not.toHaveBeenCalled()
       expect(prompt).toHaveBeenCalledWith(
         'venv-broken',
         expect.objectContaining({ message: 'no torch' })
@@ -1050,6 +1063,82 @@ describe('adoptDesktopInstall', () => {
         })
       ).rejects.toThrow(/venv-broken-cancelled/)
       // No installation created
+      expect(installationsMock.__records).toHaveLength(0)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('records an explicit CPU fallback when the selected GPU has CPU-only PyTorch', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: {
+        'config.json': JSON.stringify({ selectedDevice: 'nvidia', detectedGpu: 'nvidia' }),
+        'comfy.settings.json': '{}',
+      }
+    })
+    try {
+      const prompt = vi.fn(
+        async (): Promise<UserChoice> => ({ kind: 'torch-mismatch', choice: 'use-cpu' })
+      )
+      const record = await adoptDesktopInstall({
+        tools: buildSilentTools(prompt),
+        deps: buildDeps({
+          getLegacyTorchVendorMismatch: () => cpuOnlyNvidiaTorchMismatch,
+        }, legacy.info)
+      })
+
+      expect(prompt).toHaveBeenCalledWith('torch-mismatch', {
+        selectedDevice: 'nvidia',
+        installedVersion: '2.12.0',
+      })
+      expect(record.adoptedSelectedDevice).toBe('nvidia')
+      expect(record.adoptedCpuFallback).toBe(true)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('leaves an explicit legacy CPU configuration alone', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: {
+        'config.json': JSON.stringify({ selectedDevice: 'nvidia' }),
+        'comfy.settings.json': JSON.stringify({ 'Comfy.Server.LaunchArgs': { cpu: '' } }),
+      }
+    })
+    try {
+      const getMismatch = vi.fn(() => cpuOnlyNvidiaTorchMismatch)
+      const prompt = vi.fn()
+      const record = await adoptDesktopInstall({
+        tools: buildSilentTools(prompt),
+        deps: buildDeps({ getLegacyTorchVendorMismatch: getMismatch }, legacy.info)
+      })
+
+      expect(getMismatch).not.toHaveBeenCalled()
+      expect(prompt).not.toHaveBeenCalled()
+      expect(record.launchArgs).toContain('--cpu')
+      expect(record.adoptedCpuFallback).toBeUndefined()
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('cancels adoption instead of changing PyTorch without consent', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: {
+        'config.json': JSON.stringify({ selectedDevice: 'nvidia' }),
+        'comfy.settings.json': '{}',
+      }
+    })
+    try {
+      const prompt = vi.fn(
+        async (): Promise<UserChoice> => ({ kind: 'torch-mismatch', choice: 'cancel' })
+      )
+      await expect(adoptDesktopInstall({
+        tools: buildSilentTools(prompt),
+        deps: buildDeps({
+          getLegacyTorchVendorMismatch: () => cpuOnlyNvidiaTorchMismatch
+        }, legacy.info)
+      })).rejects.toThrow('torch-mismatch-cancelled')
       expect(installationsMock.__records).toHaveLength(0)
     } finally {
       legacy.cleanup()

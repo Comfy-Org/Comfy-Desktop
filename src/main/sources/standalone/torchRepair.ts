@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { stripPlatform, findSitePackages, getTorchVersion } from './envPaths'
+import { stripPlatform, findSitePackages } from './envPaths'
 import { getActiveVenvDir } from '../../lib/pythonEnv'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
 import { copyDirWithProgress } from '../../lib/copy'
@@ -60,6 +60,7 @@ interface AcceleratorEvidence {
   hip: boolean
   rocm: boolean
   xpu: boolean
+  known: Set<'cuda' | 'hip' | 'rocm' | 'xpu'>
 }
 
 /**
@@ -73,15 +74,25 @@ interface AcceleratorEvidence {
  * (`cuda: Optional[str] = '13.0'`), so the regex tolerates an optional `: type`.
  */
 function readTorchAcceleratorEvidence(sitePackages: string): AcceleratorEvidence {
-  const empty: AcceleratorEvidence = { cuda: false, hip: false, rocm: false, xpu: false }
+  const empty: AcceleratorEvidence = {
+    cuda: false,
+    hip: false,
+    rocm: false,
+    xpu: false,
+    known: new Set(),
+  }
   try {
     const txt = fs.readFileSync(path.join(sitePackages, 'torch', 'version.py'), 'utf-8')
-    const field = (name: string): boolean => {
+    const known = new Set<'cuda' | 'hip' | 'rocm' | 'xpu'>()
+    const field = (name: 'cuda' | 'hip' | 'rocm' | 'xpu'): boolean => {
       const m = txt.match(new RegExp(`^${name}\\s*(?::[^=\\n]+)?=\\s*(None|'([^']*)'|"([^"]*)")`, 'm'))
-      if (!m || m[1] === 'None') return false
+      if (!m) return false
+      known.add(name)
+      if (m[1] === 'None') return false
       return ((m[2] ?? m[3] ?? '').trim()).length > 0
     }
-    return { cuda: field('cuda'), hip: field('hip'), rocm: field('rocm'), xpu: field('xpu') }
+    const evidence = { cuda: field('cuda'), hip: field('hip'), rocm: field('rocm'), xpu: field('xpu') }
+    return { ...evidence, known }
   } catch {
     return empty
   }
@@ -114,6 +125,45 @@ function hasExpectedAccelerator(variantBase: string, tag: string, ev: Accelerato
   return false
 }
 
+function hasExpectedAcceleratorMetadata(variantBase: string, ev: AcceleratorEvidence): boolean {
+  if (variantBase === 'nvidia') return ev.known.has('cuda')
+  if (variantBase === 'amd') return ev.known.has('hip') || ev.known.has('rocm')
+  if (variantBase === 'intel-xpu') return ev.known.has('xpu')
+  return false
+}
+
+function getExpectedVariantBase(variant: string): string | null {
+  const base = stripPlatform(variant)
+  return Object.keys(EXPECTED_FAMILY).find((key) => base === key || base.startsWith(`${key}-`)) ?? null
+}
+
+function getTorchMismatch(
+  venvDir: string,
+  variant: string,
+  requireKnownEvidence = false
+): TorchMismatch | null {
+  const variantBase = getExpectedVariantBase(variant)
+  if (!variantBase) return null
+
+  const sitePackages = findSitePackages(venvDir)
+  if (!sitePackages) return null
+  const installedVersion = readTorchVersionFromSite(sitePackages)
+  if (!installedVersion) return null
+
+  const installedTag = localTag(installedVersion)
+  const evidence = readTorchAcceleratorEvidence(sitePackages)
+  if (hasExpectedAccelerator(variantBase, installedTag, evidence)) return null
+  if (
+    requireKnownEvidence &&
+    installedTag !== 'cpu' &&
+    !hasExpectedAcceleratorMetadata(variantBase, evidence)
+  ) {
+    return null
+  }
+
+  return { variantBase, expectedFamily: EXPECTED_FAMILY[variantBase]!, installedVersion, installedTag }
+}
+
 /**
  * Detect a GPU-variant install whose torch lacks its expected accelerator — the
  * signature of the brief `--upgrade` bug that replaced the bundled CUDA/ROCm
@@ -126,21 +176,44 @@ export function getTorchVendorMismatch(installation: InstallationRecord): TorchM
   if (installation.adopted === true) return null
   const variant = typeof installation.variant === 'string' ? installation.variant : ''
   if (!variant) return null
+  return getTorchMismatch(getActiveVenvDir(installation), variant)
+}
 
-  const base = stripPlatform(variant)
-  const variantBase = Object.keys(EXPECTED_FAMILY).find((k) => base === k || base.startsWith(`${k}-`))
-  if (!variantBase) return null // cpu, mps, or unknown — nothing to repair
+/** Detect a CPU-only torch build in a Legacy Desktop venv configured for a GPU. */
+export function getLegacyTorchVendorMismatch(
+  legacyBaseDir: string,
+  selectedDevice: string | null | undefined
+): TorchMismatch | null {
+  if (!selectedDevice) return null
+  return getTorchMismatch(path.join(legacyBaseDir, '.venv'), selectedDevice, true)
+}
 
-  const sitePackages = findSitePackages(getActiveVenvDir(installation))
-  if (!sitePackages) return null
-  const installedVersion = getTorchVersion(installation)
-  if (!installedVersion) return null // can't read torch — leave it alone
+/** Detect the same mismatch after a Legacy Desktop environment has been adopted. */
+export function getAdoptedTorchVendorMismatch(installation: InstallationRecord): TorchMismatch | null {
+  if (installation.adopted !== true) return null
+  const selectedDevice = installation.adoptedSelectedDevice
+  if (typeof selectedDevice !== 'string') return null
+  return getTorchMismatch(getActiveVenvDir(installation), selectedDevice, true)
+}
 
-  const installedTag = localTag(installedVersion)
-  const evidence = readTorchAcceleratorEvidence(sitePackages)
-  if (hasExpectedAccelerator(variantBase, installedTag, evidence)) return null
+export function hasCpuLaunchArg(args: string | readonly string[] | null | undefined): boolean {
+  if (Array.isArray(args)) return args.includes('--cpu')
+  return typeof args === 'string' && /(?:^|\s)--cpu(?=$|\s)/.test(args)
+}
 
-  return { variantBase, expectedFamily: EXPECTED_FAMILY[variantBase]!, installedVersion, installedTag }
+export function withCpuLaunchArg(args: readonly string[]): string[] {
+  const conflictingVramArgs = new Set(['--gpu-only', '--highvram', '--lowvram', '--novram'])
+  const filtered: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!
+    if (conflictingVramArgs.has(arg)) continue
+    if (arg === '--directml' || arg.startsWith('--directml=')) {
+      if (arg === '--directml' && /^-?\d+$/.test(args[i + 1] ?? '')) i += 1
+      continue
+    }
+    filtered.push(arg)
+  }
+  return hasCpuLaunchArg(filtered) ? filtered : [...filtered, '--cpu']
 }
 
 export interface TorchRepairTools {

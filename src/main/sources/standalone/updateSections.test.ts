@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import fs from 'fs'
 import type { InstallationRecord } from '../../installations'
+import type * as TorchRepairModule from './torchRepair'
 
 // `getDetailSections` transitively imports `electron` (via paths/settings).
 vi.mock('electron', () => ({
@@ -29,8 +30,17 @@ vi.mock('../../lib/git', () => ({
   hasGitDir: vi.fn(() => true),
 }))
 
+const getAdoptedTorchVendorMismatchMock = vi.hoisted(() => vi.fn())
+vi.mock('./torchRepair', async (importOriginal) => {
+  const actual = await importOriginal<typeof TorchRepairModule>()
+  return {
+    ...actual,
+    getAdoptedTorchVendorMismatch: getAdoptedTorchVendorMismatchMock,
+  }
+})
+
 import * as releaseCache from '../../lib/release-cache'
-import { getDetailSections, getEffectiveChannel } from './updateSections'
+import { getDetailSections, getEffectiveChannel, getStandaloneLaunchAction } from './updateSections'
 
 interface UpdateAction {
   id: string
@@ -76,6 +86,7 @@ describe('updateSections — update-comfyui action payload', () => {
   beforeEach(() => {
     vi.mocked(releaseCache.getEffectiveInfo).mockReset()
     vi.mocked(releaseCache.isUpdateAvailable).mockReset().mockReturnValue(true)
+    getAdoptedTorchVendorMismatchMock.mockReset().mockReturnValue(null)
     // hasGit is gated on a `.git` probe; return true so the actions are emitted.
     vi.spyOn(fs, 'existsSync').mockReturnValue(true)
     vi.mocked(releaseCache.getEffectiveInfo).mockImplementation((_repo, channel) => ({
@@ -158,6 +169,40 @@ describe('updateSections — update-comfyui action payload', () => {
     const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
     expect(action!.confirm?.message).toContain('standalone.updateBreakingWarning')
     expect(action!.confirm?.message).toContain('standalone.updateSnapshotUndoHint')
+  })
+})
+
+describe('getStandaloneLaunchAction - adopted CPU-only PyTorch', () => {
+  beforeEach(() => {
+    getAdoptedTorchVendorMismatchMock.mockReset().mockReturnValue({
+      variantBase: 'nvidia',
+      expectedFamily: 'cu',
+      installedVersion: '2.12.0',
+      installedTag: '',
+    })
+  })
+
+  it('requires explicit CPU fallback consent', () => {
+    const action = getStandaloneLaunchAction(baseInstall({ adopted: true }), true) as {
+      data?: Record<string, unknown>
+      confirm?: { title: string; message: string }
+    }
+    expect(action.data).toEqual({ adoptedCpuFallback: true })
+    expect(action.confirm?.title).toBe('desktop.adoptedTorchMismatchTitle')
+    expect(action.confirm?.message).toBe('desktop.adoptedTorchMismatchMessage')
+  })
+
+  it('does not prompt again after consent or when --cpu is already explicit', () => {
+    const consented = getStandaloneLaunchAction(
+      baseInstall({ adopted: true, adoptedCpuFallback: true }),
+      true,
+    ) as { confirm?: unknown }
+    const explicitCpu = getStandaloneLaunchAction(
+      baseInstall({ adopted: true, launchArgs: '--listen 127.0.0.1 --cpu' }),
+      true,
+    ) as { confirm?: unknown }
+    expect(consented.confirm).toBeUndefined()
+    expect(explicitCpu.confirm).toBeUndefined()
   })
 })
 

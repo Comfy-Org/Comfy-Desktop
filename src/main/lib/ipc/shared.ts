@@ -616,8 +616,9 @@ export async function performCopy(
     } = inst
 
     // Adopted copies are self-contained after `fixupCopy`. Re-home adopted-* fields to the
-    // new install so adopted-aware code keeps working; drop the metadata-only "where did
-    // this come from" fields since they describe the original adoption, not the copy.
+    // new install so adopted-aware code keeps working; drop metadata that only describes
+    // where the original adoption came from. Keep the selected device because launch-time
+    // environment compatibility checks still need it for the copied venv.
     let recordData: Record<string, unknown> = {
       ...inherited,
       name: '',  // overwritten below
@@ -640,7 +641,7 @@ export async function performCopy(
       )
       const {
         adoptedFromLegacyVersion: _afv, adoptedFromGpu: _afg,
-        adoptedSelectedDevice: _asd, adoptedComfyTagAtMigration: _act,
+        adoptedComfyTagAtMigration: _act,
         adoptedSourceMode: _asm,
         inputDir: _idn, outputDir: _odn,
         ...adoptInherited
