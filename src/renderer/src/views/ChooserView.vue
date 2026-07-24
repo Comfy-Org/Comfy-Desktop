@@ -78,13 +78,8 @@ onMounted(() => {
 // flow through `visibleInstalls` like every other source — there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const {
-  searchQuery,
-  activeFilter,
-  visibleInstalls,
-  showEmptyHint,
-  lastLaunchedLabel
-} = useInstallList({ installations: installationsRef })
+const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedLabel } =
+  useInstallList({ installations: installationsRef })
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
 // drive the underlying filter state without the chip UI mounted.
@@ -97,9 +92,7 @@ defineExpose({ activeFilter })
 /** Unfiltered tile count: New Install + every install (cloud included).
  *  Reads the raw list, not `visibleInstalls`, so search never shifts the
  *  cluster. */
-const baseTileCount = computed(
-  () => 1 + installationStore.installations.length
-)
+const baseTileCount = computed(() => 1 + installationStore.installations.length)
 
 const TILES_PER_ROW = 4
 
@@ -187,7 +180,7 @@ async function pickInstall(inst: Installation): Promise<void> {
   // Cloud capacity gate — catches the case where a cloud install
   // already exists and the user clicks its per-install tile (the
   // generic "Try Cloud" tile gates separately in `handleCloudClick`).
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry())) return
+  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry('picker'))) return
   emit('pick', inst)
 }
 
@@ -215,6 +208,15 @@ function viewError(inst: Installation): void {
   }
   if (err.lastStderr) message = `${message}\n\n${err.lastStderr}`
   void modal.alert({ title: t('chooser.errorTitle'), message })
+}
+
+/** Surface a backend-flagged danger state (failed install, interrupted delete,
+ *  missing install folder) from its dashboard pill. The label is the short
+ *  pill text; `detail` carries the full explanation built in the main process. */
+function viewDanger(inst: Installation): void {
+  const tag = inst.statusTag
+  if (!tag || tag.style !== 'danger') return
+  void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
 // Capacity-protection switch (PostHog flag `desktop-cloud-capacity`).
@@ -281,6 +283,7 @@ function handleNewInstallClick(): void {
           @open-kebab-menu="openKebabMenu"
           @trigger-action="(action, installation) => triggerAction(action, installation)"
           @view-error="viewError"
+          @view-danger="viewDanger"
         />
       </TransitionGroup>
 

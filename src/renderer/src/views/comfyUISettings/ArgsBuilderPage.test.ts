@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
+import { en } from '../../lib/i18nMessages'
 import type { ComfyArgDef } from '../../types/ipc'
 
 // Pins the deselectable "Choose one" contract: the exclusive group renders as
@@ -11,7 +12,7 @@ import type { ComfyArgDef } from '../../types/ipc'
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
-  messages: { en: {} },
+  messages: { en },
   missingWarn: false,
   fallbackWarn: false,
 })
@@ -23,7 +24,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Run on CPU only.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpuVram',
   },
   {
     name: 'gpu-only',
@@ -31,7 +32,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Force GPU usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpuVram',
   },
   {
     name: 'lowvram',
@@ -39,7 +40,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Reduce VRAM usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'GPU & VRAM',
+    category: 'gpuVram',
   },
   {
     name: 'port',
@@ -47,7 +48,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Server port.',
     type: 'value',
     metavar: 'PORT',
-    category: 'Network',
+    category: 'network',
   },
 ]
 
@@ -150,6 +151,18 @@ describe('ArgsBuilderPage — exclusive group dropdown', () => {
     const wrapper = await mountPage('--lowvram')
     const trigger = wrapper.findAll('[role="combobox"]')[0]
     expect(trigger?.text()).toContain('--lowvram')
+  })
+
+  it('shows the selected member full help below the dropdown (no reopen needed)', async () => {
+    const wrapper = await mountPage('--lowvram')
+    const help = wrapper.findAll('.args-page-cluster-help')
+    expect(help.length).toBeGreaterThan(0)
+    expect(help[0]!.text()).toBe('Reduce VRAM usage.')
+  })
+
+  it('shows no cluster help until a member is selected', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('.args-page-cluster-help').exists()).toBe(false)
   })
 
   it('promotes an active exclusive group to the Active section as the same dropdown', async () => {

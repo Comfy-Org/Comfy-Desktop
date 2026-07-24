@@ -4,9 +4,12 @@
 
 export const TID = {
   pickerRow: (installId: string) => `picker-row-${installId}`,
-  pickerRowOpen: (installId: string) => `picker-row-open-${installId}`,
-  pickerRowManage: (installId: string) => `picker-row-manage-${installId}`,
   pickerNewWindow: 'picker-new-window',
+  /** Pin-bottom primary CTA (Start / Restart / Switch per `decideNavigation`). */
+  pickerPrimaryCta: 'picker-primary-cta',
+  /** Footer "More" overflow-menu trigger (distinct from the CTA caret,
+   *  which shares the `data-more-trigger` attribute). */
+  pickerMoreTrigger: 'picker-more-trigger',
   pickerSettingsLoading: 'picker-settings-loading',
   pickerSettingsSections: 'picker-settings-sections',
   pickerOpErrorMessage: 'picker-op-error-message',
@@ -34,10 +37,14 @@ export const TID = {
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
 
+  /** A tab button in the picker settings tab bar. `key` matches `TabDef.key`. */
+  settingsTab: (key: string) => `settings-tab-${key}`,
+
   /** An action item in the Settings footer "More" menu. `actionId`
    *  matches the source's `ActionDef.id` (with Launch→Restart as `restart`). */
   pinBottomAction: (actionId: string) => `pin-bottom-action-${actionId}`,
 
+  snapshotsSaveCta: 'snapshots-save-cta',
   snapshotRow: (filename: string) => `snapshot-row-${filename}`,
   snapshotRowRestore: (filename: string) => `snapshot-row-restore-${filename}`,
   snapshotRowExport: (filename: string) => `snapshot-row-export-${filename}`,
@@ -47,6 +54,13 @@ export const TID = {
   snapshotsOpCardCancel: 'snapshots-op-card-cancel',
   snapshotsOpCardRetry: 'snapshots-op-card-retry',
   snapshotsOpCardDismiss: 'snapshots-op-card-dismiss',
+
+  /** Primary action on the lifecycle stopped/crashed card (teleported to
+   *  body via `BrandTakeoverLayout`, so it is NOT under `.lifecycle-view`). */
+  lifecycleRelaunch: 'lifecycle-relaunch',
+  /** Back / "Return to Dashboard" ghost action on the lifecycle
+   *  stopped/crashed card (calls `window.api.returnToDashboard()`). */
+  lifecycleReturnDashboard: 'lifecycle-return-dashboard',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',

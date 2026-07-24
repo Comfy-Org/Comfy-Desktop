@@ -25,6 +25,10 @@ export interface DownloadMeta {
 interface DownloadOptions {
   signal?: AbortSignal
   expectedSize?: number
+  /** Abort the request when no bytes arrive for this long (ms), turning a
+   *  silently stalled connection into a fast, retryable error instead of a hang.
+   *  Defaults to `DEFAULT_IDLE_TIMEOUT_MS`. */
+  idleTimeoutMs?: number
   // Internal: suppresses the auto-derived R2 mirror retry. Set by the
   // mirror-retry branch itself to avoid bouncing back to primary indefinitely.
   _skipMirror?: boolean
@@ -32,6 +36,12 @@ interface DownloadOptions {
 }
 
 export const META_SUFFIX = '.dl-meta'
+
+/** No-progress watchdog: a download with no `data` for this long is treated as a
+ *  dead connection and aborted (the caller's retry budget then takes over). Sized
+ *  to tolerate a slow-but-alive link while escaping a true mid-stream stall (the
+ *  `ERR_HTTP2_PROTOCOL_ERROR` class that otherwise hangs with no retry/log). */
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000
 
 export function downloadMetaPath(filePath: string): string {
   return filePath + META_SUFFIX
@@ -67,7 +77,7 @@ export function download(
   options?: DownloadOptions | number
 ): Promise<string> {
   const opts: DownloadOptions = typeof options === 'number' ? { _maxRedirects: options } : options ?? {}
-  const { signal, expectedSize, _maxRedirects = 5, _skipMirror = false } = opts
+  const { signal, expectedSize, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS, _maxRedirects = 5, _skipMirror = false } = opts
 
   // Mirror retry is gated on useChineseMirrors to avoid a thundering-herd
   // tens-of-TB GCS egress event if R2 ever hiccups for the global user base.
@@ -131,10 +141,30 @@ export function download(
     }
 
     let aborted = false
+    let stalled = false
     let settled = false
     let fileStream: fs.WriteStream | null = null
     const safeResolve = (v: string): void => { if (!settled) { settled = true; resolve(v) } }
     const safeReject = (e: Error): void => { if (!settled) { settled = true; reject(e) } }
+
+    // No-progress watchdog: rearmed on every byte; if it fires the connection is
+    // dead-but-not-erroring, so abort and reject with a retryable stall error.
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+    const onStall = (): void => {
+      stalled = true
+      cleanup()
+      request.abort()
+      const err = new Error(`Download stalled: no data for ${Math.round(idleTimeoutMs / 1000)}s`)
+      if (fileStream) {
+        fileStream.close(() => safeReject(err))
+      } else {
+        safeReject(err)
+      }
+    }
+    const armIdleTimer = (): void => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(onStall, idleTimeoutMs)
+    }
 
     const rejectCancelled = (): void => {
       const err = new Error('Download cancelled')
@@ -153,6 +183,7 @@ export function download(
     if (signal) signal.addEventListener('abort', onAbort, { once: true })
 
     const cleanup = (): void => {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
       if (signal) signal.removeEventListener('abort', onAbort)
     }
 
@@ -228,6 +259,7 @@ export function download(
       })
 
       response.on('data', (chunk: Buffer) => {
+        armIdleTimer()
         receivedBytes += chunk.length
         fileStream!.write(chunk)
         if (onProgress) {
@@ -287,14 +319,14 @@ export function download(
 
       response.on('error', (err: Error) => {
         cleanup()
-        if (aborted) return // onAbort already handled it
+        if (aborted || stalled) return // onAbort / onStall already rejected
         fileStream!.close(() => safeReject(err))
       })
     })
 
     request.on('error', (err: Error) => {
       cleanup()
-      if (aborted) return // onAbort already handled it
+      if (aborted || stalled) return // onAbort / onStall already rejected
       // Network failure before any response arrived — try the mirror exactly
       // once. If a partial body had already started landing we skip the mirror
       // to avoid stitching together two origins' bytes.
@@ -304,6 +336,7 @@ export function download(
         safeReject(err)
       }
     })
+    armIdleTimer() // covers a connect that never responds, not just a mid-stream stall
     request.end()
   })
 }

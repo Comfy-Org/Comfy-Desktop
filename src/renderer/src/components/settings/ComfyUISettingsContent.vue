@@ -1,12 +1,42 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircle, XCircle, ChevronUp, HardDrive, SlidersHorizontal, Info, RefreshCw, History, SquareTerminal } from 'lucide-vue-next'
+import {
+  CheckCircle,
+  XCircle,
+  ChevronUp,
+  HardDrive,
+  SlidersHorizontal,
+  Info,
+  RefreshCw,
+  History,
+  SquareTerminal,
+  Cloud,
+  Play,
+  RotateCcw,
+  LayoutDashboard,
+  SquareArrowOutUpRight,
+  Copy,
+  CopyPlus,
+  FolderOpen,
+  Share2,
+  ArrowRightLeft,
+  Pencil,
+  Trash2,
+  CircleStop,
+  EyeOff,
+  Settings2,
+  Repeat2,
+  Server
+} from 'lucide-vue-next'
+import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
-import { useInstallCta } from '../../composables/useInstallCta'
+import { useInstanceNavState } from '../../composables/useInstanceNavState'
 import { useCloudCapacity } from '../../composables/useCloudCapacity'
+import { decideNavigation, type NavDecision } from '../../../../shared/navigation/navDecision'
+import type { Category, ViewKind } from '../../../../shared/viewKind'
 import { findActionById } from '../../lib/findAction'
-import MoreMenu from '../../views/comfyUISettings/MoreMenu.vue'
+import MoreMenu, { type MenuAction } from '../../views/comfyUISettings/MoreMenu.vue'
 import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
 import StatusFactPanel from '../../views/comfyUISettings/StatusFactPanel.vue'
@@ -17,7 +47,11 @@ import Tooltip from '../ui/Tooltip.vue'
 import OperationErrorDetail from '../ui/OperationErrorDetail.vue'
 import type { PickerTab, SectionTab } from '../../lib/pickerTabs'
 import { isTabAllowedForCategory } from '../../lib/pickerTabs'
-import { humanizeOpStatus, operationInflightLabel, operationSuccessLabel } from '../../lib/progressStatusLabel'
+import {
+  humanizeOpStatus,
+  operationInflightLabel,
+  operationSuccessLabel
+} from '../../lib/progressStatusLabel'
 import type { ActionDef, DetailField, Installation, ShowProgressOpts } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 
@@ -56,6 +90,12 @@ interface Props {
    *  primary action restarts in-place (this window) or focuses the
    *  install's already-open window (another window). */
   activeInstallationId?: string | null
+  /** Host view-kind (from the picker snapshot). Drives the state-aware
+   *  navigation decision for the footer CTA + caret. Defaults to a dashboard
+   *  host for callers that don't pass it. */
+  currentView?: ViewKind
+  /** Raw active-install category of the host (`null` on a dashboard host). */
+  currentCategory?: Category | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -65,11 +105,13 @@ const props = withDefaults(defineProps<Props>(), {
   autoActionNonce: 0,
   activeOperation: null,
   activeInstallationId: null,
+  currentView: 'dashboard',
+  currentCategory: null,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
     modelsDirs: [],
-    modelsSystemDefault: '',
-  }),
+    modelsSystemDefault: ''
+  })
 })
 
 const emit = defineEmits<{
@@ -80,10 +122,12 @@ const emit = defineEmits<{
   /** Backend stopped from the preview; host dismisses the whole popup so the
    *  window's stopped-relaunch card shows. */
   'request-dismiss': []
-  /** Footer primary CTA. `restartInPlace` is true only when the install
-   *  runs in this host window; false when it runs in a different window
-   *  so the host routes to `pickInstall` and raises the existing one. */
-  'primary-action': [restartInPlace: boolean]
+  /** Footer primary CTA. Carries the resolved `NavDecision`; the picker routes
+   *  its verb through the instance-action dispatcher. */
+  'primary-action': [decision: NavDecision]
+  /** Caret split-button item (e.g. "Open in new window"). Carries the secondary
+   *  `NavDecision` the user picked. */
+  'open-new-window': [decision: NavDecision]
   'op-cancel': []
   'op-retry': []
   'op-dismiss': []
@@ -108,9 +152,14 @@ watch(
 )
 
 const installation = toRef(props, 'installation')
-const installCta = useInstallCta(installation, {
-  activeInstallationId: toRef(props, 'activeInstallationId'),
+// One nav-state read-model drives both the footer CTA and the caret; `installCta`
+// is its shared run-state derivation, reused here rather than built twice.
+const navState = useInstanceNavState(installation, {
+  currentView: () => props.currentView,
+  currentCategory: () => props.currentCategory,
+  activeInstallationId: () => props.activeInstallationId
 })
+const installCta = navState.cta
 const {
   sections,
   loading,
@@ -148,11 +197,7 @@ watch(autoActionKey, (next, prev) => {
   if (next !== prev) consumedAutoActionKey.value = null
 })
 watch(
-  [
-    () => autoActionKey.value,
-    () => props.installation?.id ?? null,
-    () => sectionsFresh.value
-  ],
+  [() => autoActionKey.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
   async ([key, installId, isFresh]) => {
     // `isFresh` guards against acting on a previous install's stale
     // payload — sections are no longer blanked on switch.
@@ -185,8 +230,11 @@ watch(
 
 // Auto-refresh stale channel-cards when the Update tab opens, so a user
 // who opens the picker long after install doesn't see release data from
-// the last manual check. Per-(install, channel) dedupe via
-// `refreshedChannelKeys`; main short-circuits on a 10s window.
+// the last manual check. Fires only when the selected card's
+// `data.lastCheckedAt` is missing or older than `STALE_CHANNEL_CARD_MS`.
+// Per-(install, channel) dedupe via `refreshedChannelKeys`; main
+// short-circuits on a 10s window.
+const STALE_CHANNEL_CARD_MS = 15 * 60 * 1000
 const refreshedChannelKeys = new Set<string>()
 watch(
   [() => activeTab.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
@@ -203,6 +251,16 @@ watch(
 
     const currentChannel = typeof channelField.value === 'string' ? channelField.value : null
     if (!currentChannel) return
+
+    // Skip while the selected card's data is still fresh. Without this
+    // gate the watcher fires on every Update-tab mount regardless of
+    // cache age — the dedupe set below only blocks repeat fires within
+    // the same component instance, not re-mounts (the picker rebuilds
+    // on every open).
+    const currentCard = channelField.options?.find((o) => o.value === currentChannel)
+    const lastCheckedAt = (currentCard?.data as { lastCheckedAt?: number } | undefined)
+      ?.lastCheckedAt
+    if (lastCheckedAt && Date.now() - lastCheckedAt <= STALE_CHANNEL_CARD_MS) return
 
     // Look up the canonical action def from sections to inherit whatever
     // `enabled` / disabledMessage main attaches. Bail if main isn't
@@ -292,9 +350,7 @@ const tabs = computed<TabDef[]>(() => {
   // startup args — relabel it "Storage" to match its contents.
   const isCloud = installation.value?.sourceCategory === 'cloud'
   return ALL_TABS.filter((tab) =>
-    tab.key === 'console'
-      ? showConsoleTab.value
-      : sectionsForTab(tab.sectionTab).value.length > 0
+    tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
   ).map((tab) =>
     isCloud && tab.key === 'config'
       ? { ...tab, label: t('comfyUISettings.tabStorage', 'Storage'), icon: HardDrive }
@@ -310,7 +366,15 @@ const showUpdateBadge = computed(() => {
 // If the selected tab disappeared, fall back to the requested
 // `initialTab` if now available, else the first surviving tab. Prefer
 // the requested tab over `next[0]` so deep links honour caller intent.
-watch(tabs, (next) => {
+//
+// Gated on `sectionsFresh`: while a local install's sections are empty or
+// stale (initial load / retarget), every backend-gated tab vanishes and
+// only the section-less Console tab survives, so an ungated fallback would
+// latch `activeTab` onto Console and never revert once the real sections
+// arrive (the Console tab stays valid). Only reconcile against a payload
+// that actually belongs to the current install.
+watch([tabs, sectionsFresh], ([next, isFresh]) => {
+  if (!isFresh) return
   if (next.length === 0) return
   if (next.some((tab) => tab.key === activeTab.value)) return
   const requested = next.find((tab) => tab.key === props.initialTab)
@@ -388,6 +452,9 @@ const subPageTransition = ref<'subpage-push' | 'subpage-pop'>('subpage-push')
 function openArgsPage(): void {
   subPageTransition.value = 'subpage-push'
   subPage.value = 'args'
+}
+function handleOpenPath(path: string): void {
+  if (path) void window.api.openPath(path)
 }
 function closeSubPage(): void {
   subPageTransition.value = 'subpage-pop'
@@ -488,9 +555,21 @@ const hasPendingRestart = computed(
 const cloudCapacity = useCloudCapacity()
 const isCloudCapacityBlocked = computed(
   () =>
-    installation.value?.sourceCategory === 'cloud' &&
-    cloudCapacity.effectiveStatus() === 'disabled'
+    installation.value?.sourceCategory === 'cloud' && cloudCapacity.effectiveStatus() === 'disabled'
 )
+
+// The footer CTA verb/label and the caret items both come from one
+// `decideNavigation` call (via the shared `navState` above), so they can't drift.
+const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
+
+/** Resolve a decision label key, re-pointing "Open Cloud" → "Open Remote" for a
+ *  remote install (the table folds remote into cloud; raw category is known here). */
+function resolveNavLabel(key: string): string {
+  if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
+    return t('instancePicker.openRemote', 'Open Remote')
+  }
+  return t(key)
+}
 
 const primaryActionLabel = computed(() => {
   if (isCloudCapacityBlocked.value) {
@@ -499,35 +578,167 @@ const primaryActionLabel = computed(() => {
   if (hasPendingRestart.value) {
     return t('instancePicker.restartToApply', 'Restart to apply changes')
   }
-  return installCta.label.value
+  return resolveNavLabel(primaryDecision.value.primaryLabel)
 })
+
+/** Leading icon for a nav label key (shared by the primary CTA and caret items). */
+function navIcon(labelKey: string): Component {
+  switch (labelKey) {
+    case 'instancePicker.openCloud':
+      return Cloud
+    case 'instancePicker.openDashboard':
+      return LayoutDashboard
+    case 'instancePicker.restart':
+    case 'instancePicker.restartToApply':
+      return RotateCcw
+    case 'instancePicker.switch':
+      return Repeat2
+    case 'instancePicker.openInNewWindow':
+      return SquareArrowOutUpRight
+    case 'instancePicker.open':
+      return Play
+    default:
+      return Settings2
+  }
+}
+
+/** Category-aware icon: the folded "Open Cloud" cell shows a server glyph for an
+ *  actual remote install (mirrors `resolveNavLabel`). */
+function navIconFor(key: string): Component {
+  if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
+    return Server
+  }
+  return navIcon(key)
+}
+
+const primaryActionIcon = computed<Component>(() =>
+  hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
+)
+
+/** The selected install's "Stop" action (absent for cloud — no local process to
+ *  stop). Surfaced on the caret to put stopping one click from the CTA. */
+const stopAction = computed<ActionDef | undefined>(() =>
+  pinBottomActions.value.find((a) => a.id === 'stop')
+)
+/** Nav caret items are keyed by `secondary[]` index, not label, so two
+ *  alternatives sharing a label can't collide. */
+const NAV_ITEM_PREFIX = 'nav:'
+const caretActions = computed<MenuAction[]>(() => {
+  // A running target (verb `focus`) can't open a second window — its only
+  // useful caret action is Stop (remote has one; cloud doesn't → empty caret).
+  if (primaryDecision.value.verb === 'focus') {
+    return stopAction.value ? [{ ...stopAction.value, icon: actionIcon('stop') }] : []
+  }
+  const navItems: MenuAction[] = primaryDecision.value.secondary.map((alt, i) => ({
+    id: `${NAV_ITEM_PREFIX}${i}`,
+    label: resolveNavLabel(alt.primaryLabel),
+    icon: navIconFor(alt.primaryLabel)
+  }))
+  if (primaryDecision.value.verb === 'restart' && stopAction.value) {
+    navItems.push({ ...stopAction.value, icon: actionIcon('stop') })
+  }
+  return navItems
+})
+
+/** Leading icon for a footer "More" action id; falls back to a neutral glyph so
+ *  the icon column never reads half-empty for a backend action we don't map. */
+function actionIcon(id: string): Component {
+  switch (id) {
+    case 'update-comfyui':
+    case 'check-update':
+      return RefreshCw
+    case 'copy':
+      return Copy
+    case 'copy-update':
+      return CopyPlus
+    case 'open-folder':
+    case 'reveal-in-folder':
+      return FolderOpen
+    case 'share':
+      return Share2
+    case 'migrate-to-standalone':
+    case 'migrate':
+      return ArrowRightLeft
+    case 'restore-snapshot':
+      return History
+    case 'rename':
+      return Pencil
+    case 'stop':
+      return CircleStop
+    case 'untrack':
+    case 'remove':
+      return EyeOff
+    case 'delete':
+      return Trash2
+    default:
+      return Settings2
+  }
+}
+
+const pinBottomMenuActions = computed<MenuAction[]>(() =>
+  pinBottomActions.value.map((action) => ({ ...action, icon: actionIcon(action.id) }))
+)
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
   if (!selectedInstall) return
-  // The restart-in-place click IS the restart: main stops + relaunches with the
+  // A restart click IS the restart: main stops + relaunches with the
   // freshly-saved values, so consume the pending-restart state now. A remote
   // relaunch surfaces no observable lifecycle dip, so the watchers can't clear it.
-  if (installCta.restartInPlace.value && pendingRestartFieldIds.value.size > 0) {
+  if (primaryDecision.value.verb === 'restart' && pendingRestartFieldIds.value.size > 0) {
     clearPendingRestart(selectedInstall.id)
   }
-  emit('primary-action', installCta.restartInPlace.value)
+  emit('primary-action', primaryDecision.value)
 }
 
-const opInflight  = computed(() => props.activeOperation != null && !props.activeOperation.done)
-const opSuccess   = computed(() => props.activeOperation?.done === true && props.activeOperation.ok === true)
-const opError     = computed(() => props.activeOperation?.done === true && props.activeOperation.ok === false && props.activeOperation.error !== 'Cancelled.')
-const opCancelled = computed(() => props.activeOperation?.done === true && props.activeOperation.error === 'Cancelled.')
+const caretMenuOpen = ref(false)
+function toggleCaretMenu(): void {
+  caretMenuOpen.value = !caretMenuOpen.value
+}
+function closeCaretMenu(): void {
+  caretMenuOpen.value = false
+}
+function handleCaretPick(action: ActionDef): void {
+  if (!installation.value) return
+  // Nav alternatives carry a `nav:<index>` id → emit the matching decision; a
+  // reused lifecycle action (e.g. Stop) keeps its own id and routes through the
+  // same `runAction` the More menu uses.
+  if (action.id.startsWith(NAV_ITEM_PREFIX)) {
+    const index = Number(action.id.slice(NAV_ITEM_PREFIX.length))
+    const picked = primaryDecision.value.secondary[index]
+    if (picked) emit('open-new-window', picked)
+    return
+  }
+  void runAction(action)
+}
 
-const opProgressPct     = computed(() => Math.min(100, Math.max(0, props.activeOperation?.percent ?? 0)))
-const opIsIndeterminate = computed(() => (props.activeOperation?.percent ?? -1) < 0 && !props.activeOperation?.done)
+const opInflight = computed(() => props.activeOperation != null && !props.activeOperation.done)
+const opSuccess = computed(
+  () => props.activeOperation?.done === true && props.activeOperation.ok === true
+)
+const opError = computed(
+  () =>
+    props.activeOperation?.done === true &&
+    props.activeOperation.ok === false &&
+    props.activeOperation.error !== 'Cancelled.'
+)
+const opCancelled = computed(
+  () => props.activeOperation?.done === true && props.activeOperation.error === 'Cancelled.'
+)
+
+const opProgressPct = computed(() =>
+  Math.min(100, Math.max(0, props.activeOperation?.percent ?? 0))
+)
+const opIsIndeterminate = computed(
+  () => (props.activeOperation?.percent ?? -1) < 0 && !props.activeOperation?.done
+)
 
 const opStatusLabel = computed(() => {
   const op = props.activeOperation
   if (!op) return ''
   if (opCancelled.value) return t('instancePicker.progressCancelled')
-  if (opError.value)     return op.error ?? t('instancePicker.progressError')
-  if (opSuccess.value)   return opSuccessLabel.value
+  if (opError.value) return op.error ?? t('instancePicker.progressError')
+  if (opSuccess.value) return opSuccessLabel.value
   return humanizeOpStatus(op.status, t)
 })
 
@@ -543,12 +754,12 @@ const opSuccessLabel = computed(() => {
 
 function formatSpeed(bps: number): string {
   if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} MB/s`
-  if (bps >= 1_000)     return `${Math.round(bps / 1_000)} KB/s`
+  if (bps >= 1_000) return `${Math.round(bps / 1_000)} KB/s`
   return `${Math.round(bps)} B/s`
 }
 const opSpeedLabel = computed(() => {
   const spd = props.activeOperation?.speedBytesPerSec
-  return (spd != null && spd > 0) ? formatSpeed(spd) : null
+  return spd != null && spd > 0 ? formatSpeed(spd) : null
 })
 
 // Show overlay whenever an op is present, except snapshot-restore on
@@ -606,7 +817,10 @@ function clearCountdown(): void {
 }
 
 watch(opSuccess, (yes) => {
-  if (!yes) { clearCountdown(); return }
+  if (!yes) {
+    clearCountdown()
+    return
+  }
   // Reload so installed version + update badge reflect the new state.
   void reload()
   // Clear the dedup key so the auto-refresh watcher can re-fire.
@@ -667,8 +881,9 @@ defineExpose({
           class="settings-v2-tab"
           :class="{
             'is-active': activeTab === tab.key,
-            'is-locked': opInflight && activeTab !== tab.key,
+            'is-locked': opInflight && activeTab !== tab.key
           }"
+          :data-testid="TID.settingsTab(tab.key)"
           @click="selectTab(tab.key)"
           @keydown="handleTabKeydown($event, i)"
         >
@@ -685,7 +900,7 @@ defineExpose({
       </Tooltip>
     </nav>
 
-    <section class="settings-v2-body">
+    <section class="settings-v2-body scroll-visible">
       <p v-if="!installation" class="empty">
         {{ t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.') }}
       </p>
@@ -719,11 +934,7 @@ defineExpose({
         >
           <!-- Always-visible explanation of why the Start button is
                greyed (the tooltip is hover-only). -->
-          <div
-            v-if="isCloudCapacityBlocked"
-            class="cloud-capacity-banner"
-            role="status"
-          >
+          <div v-if="isCloudCapacityBlocked" class="cloud-capacity-banner" role="status">
             <Info :size="16" class="cloud-capacity-banner-icon" aria-hidden="true" />
             <div class="cloud-capacity-banner-body">
               <p class="cloud-capacity-banner-title">{{ $t('cloud.capacityDisabled') }}</p>
@@ -773,6 +984,7 @@ defineExpose({
                 :sections="storageSections"
                 :pending-restart-field-ids="pendingRestartFieldIds"
                 @update-field="updateField"
+                @refresh="reload"
               />
             </div>
             <div
@@ -785,7 +997,6 @@ defineExpose({
             <div v-else :key="`tab-${activeTab}-${paneInstallKey}`" class="settings-v2-tab-pane">
               <Transition name="op-overlay" mode="out-in">
                 <div v-if="showOpOverlay" key="op-overlay" class="op-overlay">
-
                   <template v-if="opInflight">
                     <p class="op-title">{{ opTitleLabel }}</p>
                     <p class="op-name">{{ installation?.name }}</p>
@@ -839,7 +1050,10 @@ defineExpose({
                       <XCircle :size="32" />
                     </div>
                     <p class="op-title op-title--error">{{ t('instancePicker.progressError') }}</p>
-                    <OperationErrorDetail v-if="activeOperation?.error" :error="activeOperation.error" />
+                    <OperationErrorDetail
+                      v-if="activeOperation?.error"
+                      :error="activeOperation.error"
+                    />
                     <div class="op-actions">
                       <button type="button" class="op-primary-btn" @click="emit('op-retry')">
                         {{ t('instancePicker.progressRetry') }}
@@ -851,12 +1065,13 @@ defineExpose({
                   </template>
 
                   <template v-else-if="opCancelled">
-                    <p class="op-title op-title--muted">{{ t('instancePicker.progressCancelled') }}</p>
+                    <p class="op-title op-title--muted">
+                      {{ t('instancePicker.progressCancelled') }}
+                    </p>
                     <button type="button" class="op-ghost-btn" @click="emit('op-dismiss')">
                       {{ t('instancePicker.progressDismiss') }}
                     </button>
                   </template>
-
                 </div>
 
                 <div v-else key="sections" class="settings-v2-tab-pane">
@@ -869,6 +1084,7 @@ defineExpose({
                     @update-field="updateField"
                     @run-action="runAction"
                     @open-args-page="openArgsPage"
+                    @open-path="handleOpenPath"
                   />
                 </div>
               </Transition>
@@ -885,16 +1101,53 @@ defineExpose({
         </span>
       </Transition>
 
-      <button
-        type="button"
-        class="primary settings-v2-relaunch"
-        :class="{ 'is-pending-restart': hasPendingRestart, 'is-capacity-disabled': isCloudCapacityBlocked }"
-        :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
-        :title="isCloudCapacityBlocked ? $t('cloud.capacityDisabledHint') : undefined"
-        @click="handlePrimaryAction"
-      >
-        {{ primaryActionLabel }}
-      </button>
+      <div class="settings-v2-cta-wrap" :class="{ 'has-caret': caretActions.length > 0 }">
+        <button
+          type="button"
+          class="primary settings-v2-relaunch"
+          :class="{
+            'is-pending-restart': hasPendingRestart,
+            'is-capacity-disabled': isCloudCapacityBlocked,
+            'is-split': caretActions.length > 0
+          }"
+          :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
+          :title="isCloudCapacityBlocked ? $t('cloud.capacityDisabledHint') : undefined"
+          :data-testid="TID.pickerPrimaryCta"
+          @click="handlePrimaryAction"
+        >
+          <component
+            :is="primaryActionIcon"
+            v-if="!isCloudCapacityBlocked"
+            :size="15"
+            class="settings-v2-relaunch-icon"
+            aria-hidden="true"
+          />
+          <span>{{ primaryActionLabel }}</span>
+        </button>
+        <template v-if="caretActions.length > 0">
+          <button
+            type="button"
+            class="primary settings-v2-cta-caret"
+            data-more-trigger
+            :class="{ 'is-active': caretMenuOpen }"
+            aria-haspopup="menu"
+            :aria-expanded="caretMenuOpen"
+            :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
+            :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
+            :data-testid="TID.pickerNewWindow"
+            @click="toggleCaretMenu"
+          >
+            <ChevronUp :size="14" />
+          </button>
+          <MoreMenu
+            :open="caretMenuOpen"
+            :actions="caretActions"
+            :heading="t('instancePicker.windowOptions', 'Window options')"
+            @close="closeCaretMenu"
+            @pick="handleCaretPick"
+          />
+        </template>
+      </div>
 
       <div class="settings-v2-more-wrap">
         <button
@@ -906,6 +1159,7 @@ defineExpose({
           :aria-expanded="moreMenuOpen"
           :aria-label="t('comfyUISettings.more', 'More')"
           :disabled="!installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh"
+          :data-testid="TID.pickerMoreTrigger"
           @click="toggleMoreMenu"
         >
           {{ t('comfyUISettings.more', 'More') }}
@@ -913,7 +1167,7 @@ defineExpose({
         </button>
         <MoreMenu
           :open="moreMenuOpen"
-          :actions="pinBottomActions"
+          :actions="pinBottomMenuActions"
           @close="closeMoreMenu"
           @pick="runAction"
         />
@@ -1060,13 +1314,6 @@ defineExpose({
   display: flex;
   flex-direction: column;
   position: relative;
-  scrollbar-width: none;
-}
-
-.settings-v2-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 .settings-v2-body-root {
@@ -1125,8 +1372,12 @@ defineExpose({
   justify-content: center;
   margin-bottom: 2px;
 }
-.op-icon--success { color: var(--brand-success, #27ae60); }
-.op-icon--error   { color: var(--brand-error,   #e74c3c); }
+.op-icon--success {
+  color: var(--brand-success, #27ae60);
+}
+.op-icon--error {
+  color: var(--brand-error, #e74c3c);
+}
 
 .op-title {
   font-size: 15px;
@@ -1135,8 +1386,12 @@ defineExpose({
   margin: 0;
   line-height: 1.25;
 }
-.op-title--error { color: var(--brand-error, #e74c3c); }
-.op-title--muted { color: var(--text-muted, var(--neutral-100)); }
+.op-title--error {
+  color: var(--brand-error, #e74c3c);
+}
+.op-title--muted {
+  color: var(--text-muted, var(--neutral-100));
+}
 
 .op-name {
   font-size: 12px;
@@ -1148,6 +1403,11 @@ defineExpose({
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.op-name--error {
+  color: var(--brand-error, #e74c3c);
+  opacity: 0.8;
+}
+
 .op-bar-wrap {
   width: 100%;
   max-width: 260px;
@@ -1207,8 +1467,12 @@ defineExpose({
   animation: op-bar-slide 1.5s ease-in-out infinite;
 }
 @keyframes op-bar-slide {
-  0%   { transform: translateX(-130%); }
-  100% { transform: translateX(280%); }
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
 }
 
 .op-countdown {
@@ -1238,8 +1502,12 @@ defineExpose({
   cursor: pointer;
   transition: opacity 120ms ease;
 }
-.op-primary-btn:hover  { opacity: 0.85; }
-.op-primary-btn:active { opacity: 0.7; }
+.op-primary-btn:hover {
+  opacity: 0.85;
+}
+.op-primary-btn:active {
+  opacity: 0.7;
+}
 
 .op-ghost-btn {
   height: 28px;
@@ -1250,13 +1518,20 @@ defineExpose({
   color: var(--text-muted, var(--neutral-100));
   font-size: 11px;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
 }
-.op-ghost-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.op-ghost-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
 
 .op-overlay-enter-active,
 .op-overlay-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
 }
 .op-overlay-enter-from,
 .op-overlay-leave-to {
@@ -1297,6 +1572,10 @@ defineExpose({
   min-width: 200px;
   height: 32px;
   padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   font-size: 12px;
   font-weight: 500;
   line-height: 16px;
@@ -1306,12 +1585,46 @@ defineExpose({
     color 160ms ease;
 }
 
+/* Slightly dim the leading icon so the label stays the focal point. */
+.settings-v2-relaunch-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 /* Pending-restart promotion. Dark text required: yellow is too light for white. */
 .settings-v2-relaunch.is-pending-restart,
 .settings-v2-relaunch.is-pending-restart:hover {
   background: var(--neutral-50);
   border-color: var(--neutral-50);
   color: var(--neutral-950);
+}
+
+/* Split-button: the primary CTA (label fills the left, clicking it runs the
+ * primary action) glued to a chevron zone that opens the navigation
+ * alternatives. The two read as one control. */
+.settings-v2-cta-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+}
+.settings-v2-cta-wrap.has-caret .settings-v2-relaunch.is-split {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.settings-v2-cta-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 30px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  /* Hairline divider against the primary so the split reads as two zones. */
+  border-left: 1px solid color-mix(in srgb, var(--neutral-950) 18%, transparent);
+}
+.settings-v2-cta-caret.is-active {
+  filter: brightness(0.94);
 }
 
 .settings-v2-more-wrap {

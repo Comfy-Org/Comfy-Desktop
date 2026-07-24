@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { reactive, computed, ref } from 'vue'
-import type { RunningInstance, ComfyOutputData, ComfyExitedData } from '../types/ipc'
+import type { RunningInstance, ComfyOutputData, ComfyExitedData, CrashKind } from '../types/ipc'
 
 interface SessionBuffer {
   output: string
@@ -24,6 +24,16 @@ interface ErrorInstance {
    *  message-only). The lifecycle view renders this inline so the user
    *  doesn't have to dig into the log file to see what blew up. */
   lastStderr?: string
+  /** Hex form of a Windows native-crash exit code (e.g. `'0xC0000005'`), shown
+   *  next to the raw decimal so the code is decipherable. Absent for plain
+   *  application exits. */
+  exitCodeHex?: string
+  /** Recognised native-crash flavour (e.g. `'access-violation'`) used to pick
+   *  more specific, actionable crash copy. */
+  crashKind?: CrashKind
+  /** VC++ runtime DLLs found missing on a Windows access-violation crash;
+   *  non-empty drives the "repair the redistributable" hint. */
+  vcRuntimeMissing?: string[]
   /** Wall-clock ms when the crash was first recorded. Used to measure
    *  crash-to-relaunch latency on `comfy.desktop.instance.relaunched_after_crash`. */
   crashedAtMs?: number
@@ -187,6 +197,9 @@ export const useSessionStore = defineStore('session', () => {
           exitCode: c.exitCode,
           signal: c.signal,
           lastStderr: c.lastStderr,
+          exitCodeHex: c.exitCodeHex,
+          crashKind: c.crashKind,
+          vcRuntimeMissing: c.vcRuntimeMissing,
           crashedAtMs: c.crashedAtMs,
         })
       }
@@ -226,9 +239,11 @@ export const useSessionStore = defineStore('session', () => {
         const session = sessions.get(data.installationId)
         if (session) {
           session.exited = true
-          const msg = data.crashed
-            ? `Process crashed (exit code ${data.exitCode ?? 'unknown'})`
-            : 'Process exited'
+          const codeLabel =
+            data.exitCode != null
+              ? `${data.exitCode}${data.exitCodeHex ? ` / ${data.exitCodeHex}` : ''}`
+              : 'unknown'
+          const msg = data.crashed ? `Process crashed (exit code ${codeLabel})` : 'Process exited'
           session.output += `\n\n--- ${msg} ---\n`
         }
       }),
@@ -241,6 +256,9 @@ export const useSessionStore = defineStore('session', () => {
           exitCode: data.exitCode,
           signal: data.signal,
           lastStderr: data.lastStderr,
+          exitCodeHex: data.exitCodeHex,
+          crashKind: data.crashKind,
+          vcRuntimeMissing: data.vcRuntimeMissing,
           crashedAtMs: data.crashedAtMs ?? Date.now()
         })
       })

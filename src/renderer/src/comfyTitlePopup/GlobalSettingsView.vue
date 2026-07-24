@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
+import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
@@ -70,6 +70,7 @@ interface GlobalSettingsBridge {
   ): Promise<{ ok: boolean; message?: string }>
   globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
   globalSettingsOpenPath(path: string): void
+  globalSettingsOpenLogsFolder(): void
   globalSettingsOpenExternal(url: string): void
   globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
   globalSettingsCheckForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>
@@ -132,8 +133,7 @@ async function handleBrowseCacheDir(): Promise<void> {
 }
 
 function handleOpenCacheDir(): void {
-  const p = fieldPath(cacheDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(cacheDirField.value))
 }
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
@@ -155,8 +155,11 @@ async function handleBrowseInstallDir(): Promise<void> {
 }
 
 function handleOpenInstallDir(): void {
-  const p = fieldPath(installDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(installDirField.value))
+}
+
+function handleOpenPath(path: string): void {
+  if (path) bridge?.globalSettingsOpenPath(path)
 }
 const appUpdateState = computed<AppUpdateState>(
   () => props.snapshot.appUpdate.state as unknown as AppUpdateState
@@ -172,6 +175,10 @@ async function handleUpdateField(field: DetailField, value: unknown): Promise<vo
 function handleOpenExternal(url: string): void {
   if (!url) return
   bridge?.globalSettingsOpenExternal(url)
+}
+
+function handleOpenLogsFolder(): void {
+  bridge?.globalSettingsOpenLogsFolder()
 }
 
 async function handleUpdateNow(): Promise<void> {
@@ -276,14 +283,22 @@ onMounted(() => {
         <template v-if="activeTab === 'general'">
           <!-- Locale picker first, no microsection header — it's a single
                control and the lone "Language" label on it is enough. -->
-          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" />
+          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" @open-path="handleOpenPath" />
 
           <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
-            <SettingsSectionList :sections="generalSections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="generalSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.privacy', 'Privacy')">
-            <SettingsSectionList :sections="telemetrySections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="telemetrySections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.community', 'Community')">
@@ -309,6 +324,7 @@ onMounted(() => {
             @update-now="handleUpdateNow"
             @check-for-update="handleCheckForUpdate"
             @update-field="handleUpdateField"
+            @open-path="handleOpenPath"
           />
         </template>
 
@@ -331,7 +347,11 @@ onMounted(() => {
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="snapshot.i18n.advanced">
-            <SettingsSectionList :sections="advancedSections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="advancedSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.cache', 'Cache')">
@@ -342,6 +362,13 @@ onMounted(() => {
               @open="handleOpenCacheDir"
               @browse="handleBrowseCacheDir"
             />
+          </GlobalSettingsMicroSection>
+
+          <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
+            <button type="button" class="gs-logs-btn" @click="handleOpenLogsFolder">
+              <FileText :size="14" aria-hidden="true" />
+              <span>{{ t('settings.openLogsFolder', 'Open logs folder') }}</span>
+            </button>
           </GlobalSettingsMicroSection>
         </template>
       </section>
@@ -374,6 +401,23 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 700;
   color: color-mix(in oklab, var(--text) 90%, transparent);
+}
+
+.gs-logs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+  border-radius: 8px;
+  color: var(--neutral-100);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.gs-logs-btn:hover {
+  background: color-mix(in oklab, var(--text) 8%, transparent);
 }
 
 .gs-close {

@@ -39,6 +39,24 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // Install pipeline failures — monitors the install funnel's bottom step.
   'comfy.desktop.install.standalone.error',
   'comfy.desktop.install.post_install.error',
+  // Per-phase install boundary. Only the `status='error'` rows are the
+  // alerting signal (a phase threw); the `start`/`end` rows are PostHog-only
+  // funnel timing. `forwardToRenderer` mirrors the whole name, so a Datadog
+  // monitor filters on `status:error` to page on a phase failure (e.g.
+  // torch_deps_sync hard-failing for a population after a release).
+  'comfy.desktop.install.phase',
+  // Onboarding→install handoff abort (#1224): the user left the install path
+  // without dispatching an install (wizard_cancelled / add_installation_failed /
+  // dispatch_no_entry / back_to_local_branch). This is the previously-silent
+  // new-user drop-off; a monitor filters on the failure-class `reason`s so a
+  // spike after a release pages ops. `install.dispatched` is the paired success
+  // gate and stays PostHog-only (product/funnel, not an alerting signal).
+  'comfy.desktop.install.not_started',
+  // ComfyUI server boot failed — waitForPort timeout / early process exit /
+  // renderer did-fail-load / render-process-gone. Paired with the buffered
+  // boot_phase timings so a monitor can alert on boot-failure rate per
+  // release / variant and the phase breakdown explains where it stalled.
+  'comfy.desktop.comfyui.boot_failed',
   // Migration pipeline failures (Desktop-1 -> standalone).
   'comfy.desktop.migrate.flow.error',
   'comfy.desktop.migrate.user_files.error',
@@ -77,4 +95,38 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
 
 export function isDatadogMirroredEvent(eventName: string): boolean {
   return DATADOG_MIRRORED_EVENT_NAMES.has(eventName)
+}
+
+/**
+ * Context keys stripped from the Datadog RUM copy of a mirrored event.
+ *
+ * Datadog is the alerting surface: monitors group and alert on LOW-cardinality
+ * facets (`error_class`, `error_bucket`, `exit_code`, `signal`, phase / variant
+ * / retry fields). The free-text diagnostic fields below are high-cardinality
+ * and/or large (`error_tail` and `last_stderr` run to kilobytes), which bloats
+ * RUM action payloads and pollutes facets for no monitoring benefit. They stay
+ * in PostHog (where the actual triage happens); only the Datadog mirror drops
+ * them. Mirrors the deliberate choice already made for `auth.sign_in_failed`.
+ */
+export const DATADOG_DROPPED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
+  'error_message',
+  'error_signature',
+  'error_tail',
+  'last_stderr',
+])
+
+/**
+ * Return a copy of `context` with the high-cardinality / large diagnostic keys
+ * removed, for sending to Datadog RUM. Returns the input unchanged when it
+ * carries none of them (the common case) to avoid a needless allocation.
+ */
+export function stripDatadogDroppedKeys<T extends Record<string, unknown>>(context: T): T {
+  let out: T | null = null
+  for (const key of DATADOG_DROPPED_CONTEXT_KEYS) {
+    if (key in context) {
+      if (!out) out = { ...context }
+      delete out[key]
+    }
+  }
+  return out ?? context
 }

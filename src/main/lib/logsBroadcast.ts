@@ -28,6 +28,7 @@
  */
 
 import type { WebContents } from 'electron'
+import { writeOperationOutput } from './appLog'
 
 const MAX_BUFFER_CHARS = 256 * 1024 // 256 KB per install — generous, fits any reasonable scrollback
 
@@ -62,6 +63,9 @@ function evictUntilBelowCap(state: InstallLogState): void {
  */
 export function appendLog(installationId: string, text: string): void {
   if (!text) return
+  // Tee into the durable global app log so operation output survives the
+  // modal/app lifecycle and background runs with no window.
+  writeOperationOutput(installationId, text)
   const state = ensureState(installationId)
   state.buffer.push(text)
   state.bufferSize += text.length

@@ -16,6 +16,8 @@ vi.mock('../../lib/comfyui-releases', () => ({
 }))
 
 import { standalone, buildPinnedVariant } from './index'
+import { resetTemplateCatalogCache } from './templateCatalog'
+import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
 import { PLATFORM_PREFIX } from './envPaths'
@@ -116,6 +118,135 @@ describe('standalone.buildInstallation', () => {
     })
     expect(result.originalBuild).toBe(1)
     expect(result.originalTorchVersion).toBe('2.7.0')
+  })
+
+  // --- Starter-template gating (the "Skip & Install" vs "Install" contract) ---
+  describe('starter template', () => {
+    const base = {
+      release: makeRelease('stable', 'v0.18.2-env1'),
+      variant: makeVariant(VENDOR_ID),
+    }
+    const template = (value: string, sizeBytes?: number): FieldOption => ({
+      value,
+      label: value,
+      ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {}),
+    })
+
+    it('"Skip & Install" (template = none) builds NO model download', () => {
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(NO_TEMPLATE_VALUE) })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.pendingTemplateOpen).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+      expect(result.bundledTemplateSizeBytes).toBeUndefined()
+    })
+
+    it('"Skip & Install" with no bundledTemplate selection at all builds no download', () => {
+      const result = standalone.buildInstallation(base)
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+
+    it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
+      const realId = CURATED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateId).toBe(realId)
+      expect(result.pendingTemplateOpen).toBe(realId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
+
+    it('freezes the hydrated size on the record so the download estimate matches consent', () => {
+      const realId = CURATED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId, 1234) })
+      expect(result.bundledTemplateSizeBytes).toBe(1234)
+    })
+
+    it('defaults size to 0 when the selection carries no hydrated size', () => {
+      const realId = CURATED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateSizeBytes).toBe(0)
+    })
+
+    it('persists a live-index substitute id not in the curated set (substitution survives the gate)', () => {
+      // When a curated id vanishes upstream the picker offers a same-modality
+      // substitute whose id isn't in CURATED_TEMPLATES; picking it must still install.
+      const substituteId = 'some_live_image_model'
+      expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(substituteId, 5),
+      })
+      expect(result.bundledTemplateId).toBe(substituteId)
+      expect(result.pendingTemplateOpen).toBe(substituteId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
+
+    it('rejects a forged id that could escape a path/URL', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template('../../etc/passwd'),
+      })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+  })
+})
+
+// --- getFieldOptions('bundledTemplate') — curated + hydrated picker options ---
+
+describe('standalone.getFieldOptions bundledTemplate', () => {
+  beforeEach(() => {
+    mockedFetchJSON.mockReset()
+    resetTemplateCatalogCache()
+  })
+
+  it('leads with the skip sentinel, then one option per curated template', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    expect(options[0]!.value).toBe(NO_TEMPLATE_VALUE)
+    expect(options.length).toBe(CURATED_TEMPLATES.length + 1)
+  })
+
+  it('marks the per-modality recommended picks (not the skip option)', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    const skip = options.find((o) => o.value === NO_TEMPLATE_VALUE)!
+    expect(skip.recommended).toBeFalsy()
+    const recommendedIds = options.filter((o) => o.recommended).map((o) => o.value)
+    expect(recommendedIds).toEqual(
+      CURATED_TEMPLATES.filter((t) => t.recommended).map((t) => t.id)
+    )
+  })
+
+  it('falls back to snapshot metadata when the index fetch fails (offline)', async () => {
+    mockedFetchJSON.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    const first = CURATED_TEMPLATES[0]!
+    const card = options.find((o) => o.value === first.id)!
+    expect(card.label).toBe(first.snapshot.title)
+    expect(card.data!.sizeBytes).toBe(first.snapshot.sizeBytes)
+  })
+
+  it('hydrates title/size from the live index, overriding the snapshot', async () => {
+    const first = CURATED_TEMPLATES[0]!
+    mockedFetchJSON.mockImplementation((url: string) => {
+      if (url === INDEX_URL) {
+        return Promise.resolve([
+          {
+            title: 'Image',
+            templates: [
+              { name: first.id, title: 'Live Title', description: 'Live desc', size: 999, mediaSubtype: 'webp' },
+            ],
+          },
+        ])
+      }
+      return Promise.resolve(undefined)
+    })
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    const card = options.find((o) => o.value === first.id)!
+    expect(card.label).toBe('Live Title')
+    expect(card.description).toBe('Live desc')
+    expect(card.data!.sizeBytes).toBe(999)
+    expect(card.data!.category).toBe('Image')
   })
 })
 
@@ -410,16 +541,28 @@ describe('standalone.getFieldOptions variant version display', () => {
     expect(card.description).toContain('ComfyUI 0.20.1')
   })
 
-  it('variant card shows the bundled version when "Latest on GitHub" is selected', async () => {
+  it('variant card shows the upstream version as a nightly (not the bundled one) when "Latest on GitHub" is selected', async () => {
     const { vendorId } = setupVersionGap()
     mockedGetLatestStableTag.mockResolvedValue('v0.22.3')
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // Latest-on-GitHub leaves the install on whatever the bundle
-    // shipped with (master-ish HEAD); the card advertises that, not
-    // the stable tag the OTHER channel would land on.
+    // Picking 'latest' fast-forwards the install to master HEAD (a few commits
+    // past the latest stable tag), so the card advertises that as a nightly â€”
+    // not the much older ComfyUI baked into the bundle (issue #1068).
+    expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
+    expect(card.description).not.toContain('ComfyUI 0.20.1')
+  })
+
+  it('variant card falls back to the bundled version on "Latest on GitHub" when the upstream tag is unresolved', async () => {
+    const { vendorId } = setupVersionGap()
+    mockedGetLatestStableTag.mockResolvedValue(null)
+    const release = await getReleaseOption('latest')
+
+    const variants = await standalone.getFieldOptions!('variant', { release }, {})
+    const card = variants.find((o) => o.value === vendorId)!
     expect(card.description).toContain('ComfyUI 0.20.1')
+    expect(card.description).not.toContain('nightly')
   })
 })

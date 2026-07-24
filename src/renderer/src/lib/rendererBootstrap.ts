@@ -41,7 +41,7 @@ import {
 // and is gated to the failure-event allow-list in
 // `src/shared/datadogMirroredEvents.ts`.
 import { scrubAll } from '../../../shared/piiScrub'
-import { isDatadogMirroredEvent } from '../../../shared/datadogMirroredEvents'
+import { isDatadogMirroredEvent, stripDatadogDroppedKeys } from '../../../shared/datadogMirroredEvents'
 
 function serializeUnknownError(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
@@ -194,6 +194,20 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
   return mutated ?? context
 }
 
+// The telemetry IPC bridge gives `_json`-suffixed keys a larger ceiling
+// (`MAX_TELEMETRY_JSON_STRING_LENGTH` in `registerTelemetryHandlers`) so
+// pre-serialized structured payloads survive intact. We mirror that ceiling
+// here: anything larger is omitted and flagged via `*_truncated` rather than
+// shipped as a value the bridge would slice mid-string into invalid JSON.
+// Kept under PostHog's 1 MB per-event hard limit.
+const MAX_TELEMETRY_JSON_LENGTH = 768 * 1024
+
+function serializeForTelemetry(value: unknown): { json: string | null; truncated: boolean } {
+  const json = JSON.stringify(value)
+  if (json.length > MAX_TELEMETRY_JSON_LENGTH) return { json: null, truncated: true }
+  return { json, truncated: false }
+}
+
 function trackTelemetryAction(
   actionName: string,
   context: TelemetryContext,
@@ -206,7 +220,9 @@ function trackTelemetryAction(
   // alerting, not analysis.
   if (isDatadogInitialized && isDatadogMirroredEvent(actionName)) {
     try {
-      datadogRum.addAction(actionName, scrubbed)
+      // Datadog is the alerting surface: keep the low-cardinality facets and
+      // drop the large free-text diagnostics (they stay in PostHog for triage).
+      datadogRum.addAction(actionName, stripDatadogDroppedKeys(scrubbed))
     } catch {}
   }
   // Renderer routes capture through main's posthog-node via IPC. The
@@ -380,29 +396,27 @@ async function initializeProviders(): Promise<void> {
   // always-on `'title-bar'` renderer. Without this gate the inventory
   // would fire N times per session — once per host window's title-bar
   // bootstrap. Payload is metadata + diff counts only (no per-node /
-  // per-package contents) and is capped to ~200 KB main-side; arrays
-  // of objects bypass the typed bridge the same way `snapshot_history`
-  // does below.
+  // per-package contents) and is byte-capped main-side.
   if (rendererRole === 'panel') {
     window.api
       .getInstallsInventory()
       .then((inventory) => {
         if (!inventory) return
-        // Honor the pre-consent gate even on the bypass path.
+        // Honor the pre-consent gate.
         if (!isTelemetryEmitAllowed('comfy.desktop.session.installs_inventory')) return
-        if (isDatadogInitialized) {
-          try {
-            datadogRum.addAction(
-              'comfy.desktop.session.installs_inventory',
-              inventory as unknown as Record<string, unknown>
-            )
-          } catch {}
-        }
+        // The per-install detail is an array of objects: serialize it to a
+        // `_json` string so it survives the IPC bridge (which gives `_json`
+        // keys a larger ceiling). The inventory is byte-capped main-side to
+        // stay under that ceiling and PostHog's 1 MB per-event limit.
+        const installsJson = serializeForTelemetry(inventory.installs)
         try {
-          window.api.captureTelemetry(
-            'comfy.desktop.session.installs_inventory',
-            inventory as unknown as Record<string, unknown>
-          )
+          window.api.captureTelemetry('comfy.desktop.session.installs_inventory', {
+            total_install_count: inventory.total_install_count,
+            included_install_count: inventory.included_install_count,
+            truncated: inventory.truncated,
+            installs_json: installsJson.json,
+            installs_json_truncated: installsJson.truncated
+          })
         } catch {
           // ignore
         }
@@ -424,21 +438,38 @@ async function initializeProviders(): Promise<void> {
       // - nvidia_driver_version / nvidia_driver_supported
       // - cpu_manufacturer / cpu_physical_cores / cpu_speed_ghz
       // - os_arch
-      // The previous system_info event only forwarded the basic fields.
-      // We now forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
-      // / `gpu_count` / `gpu_driver_version` for cohort filtering.
-      const primaryGpu = info.gpus[0] ?? null
-      const gpuVramMb = primaryGpu?.vram_mb ?? null
+      // Forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
+      // / `gpu_count` / `gpu_driver_version` for cohort filtering. Main has
+      // already selected the real compute GPU (`gpu_model` / `gpu_vram_mb` /
+      // per-vendor driver), so we use those instead of re-picking `gpus[0]`,
+      // which can be a virtual display adapter.
+      const gpuVramMb = info.gpu_vram_mb
       const gpuVramGb = gpuVramMb != null ? Math.round(gpuVramMb / 1024) : null
-      const gpuDriverVersion = info.nvidia_driver_version ?? primaryGpu?.driver_version ?? null
+      const gpuDriverVersion =
+        info.nvidia_driver_version ??
+        info.amd_driver_version ??
+        info.intel_driver_version ??
+        null
       const gpuTier = deriveGpuTier({ vendor: info.gpu_vendor, vramGb: gpuVramGb })
+      // `gpus` / `installations` are arrays of objects. The telemetry IPC
+      // bridge only accepts scalars and arrays of scalars, so a native array
+      // of objects is silently dropped before it reaches PostHog. Serialize
+      // each to a JSON string (queryable via `JSONExtractArrayRaw`) and don't
+      // forward the native arrays, which would just be discarded.
+      const { gpus, installations, ...infoRest } = info
+      const gpusJson = serializeForTelemetry(gpus)
+      const installationsJson = serializeForTelemetry(installations)
       const enriched: Record<string, string | number | boolean | null | undefined> = {
-        ...(info as unknown as Record<string, string | number | boolean | null | undefined>),
+        ...(infoRest as unknown as Record<string, string | number | boolean | null | undefined>),
         gpu_vram_mb: gpuVramMb,
         gpu_vram_gb: gpuVramGb,
-        gpu_count: info.gpus.length,
+        gpu_count: gpus.length,
         gpu_driver_version: gpuDriverVersion,
-        gpu_tier: gpuTier
+        gpu_tier: gpuTier,
+        gpus_json: gpusJson.json,
+        gpus_json_truncated: gpusJson.truncated,
+        installations_json: installationsJson.json,
+        installations_json_truncated: installationsJson.truncated
       }
       if (rendererRole === 'panel') {
         trackTelemetryAction('comfy.desktop.session.system_info', enriched)
@@ -611,67 +642,17 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
     })
   }
 
-  // `comfy-exited` / `comfy-boot-log` / `instance-started` are install-
-  // lifecycle events whose renderer-side handlers convert them into
-  // telemetry Actions. These are owned by the panel renderer (which drives
-  // the install/lifecycle UI) — gating them to `'panel'` prevents the
-  // title-bar bootstrap from double-firing the broadcast `instance-started`
-  // event on Datadog/PostHog when both renderers are mounted.
+  // `comfy-boot-log` → telemetry Action, gated to `'panel'` so it fires once
+  // (not per host-window title-bar). It's safe here because it runs while the
+  // panel is still alive. `exited` / `instance_started` / `installation_started`
+  // / `snapshot_history` used to live here too but now emit from main, since
+  // Desktop 2 tears the panel down before those callbacks could fire.
   if (rendererRole === 'panel') {
-    window.api.onComfyExited((data) => {
-      trackTelemetryAction('comfy.desktop.comfyui.exited', {
-        installation_id: data.installationId,
-        crashed: data.crashed ?? false,
-        exit_code: data.exitCode ?? null,
-        last_stderr: data.lastStderr ?? null
-      })
-    })
-
     window.api.onComfyBootLog((data) => {
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {
         installation_id: data.installationId,
         boot_stderr: data.bootStderr
       })
-    })
-
-    window.api.onInstanceStarted((data) => {
-      const bootTimeMs = (data as unknown as Record<string, unknown>).bootTimeMs as
-        | number
-        | undefined
-      window.api
-        .getInstallationDdContext(data.installationId)
-        .then((ctx) => {
-          if (!ctx) return
-          const { snapshot_diffs, ...metadata } = ctx
-          trackTelemetryAction('comfy.desktop.session.installation_started', {
-            ...(metadata as unknown as Record<
-              string,
-              string | number | boolean | null | undefined
-            >),
-            boot_time_ms: bootTimeMs ?? null
-          })
-          if (snapshot_diffs.length > 0) {
-            // snapshot_diffs is an array of objects, which Datadog/PostHog handle
-            // natively; bypass the typed bridge via a fresh call.
-            if (isDatadogInitialized) {
-              try {
-                datadogRum.addAction('comfy.desktop.session.snapshot_history', {
-                  installation_id: ctx.installation_id,
-                  snapshot_diffs
-                })
-              } catch {}
-            }
-            try {
-              window.api.captureTelemetry('comfy.desktop.session.snapshot_history', {
-                installation_id: ctx.installation_id,
-                snapshot_diffs
-              } as unknown as Record<string, unknown>)
-            } catch {
-              // ignore
-            }
-          }
-        })
-        .catch(() => {})
     })
   }
 }

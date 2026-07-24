@@ -72,6 +72,7 @@ import {
   getTerminalRestore,
   disposeTerminal,
   disposeAllTerminals,
+  setTerminalEnvResolver,
   _resetTerminalsForTest,
 } from './terminal'
 
@@ -114,6 +115,8 @@ describe('terminal manager', () => {
     _resetTerminalsForTest()
     spawned.length = 0
     spawn.mockClear()
+    // Default: no source-specific env, so #spawn uses the standalone fallback.
+    setTerminalEnvResolver(() => null)
   })
 
   it('spawns a shell on first subscribe and reports it alive', async () => {
@@ -124,6 +127,58 @@ describe('terminal manager', () => {
     expect(restore.exited).toBe(false)
     // Init commands (venv activate + pip alias) are written into the shell.
     expect(ptyAt(0).written.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('falls back to the standalone env (ComfyUI/.venv + bundled uv) when no source env', async () => {
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    // installPath is /installs/inst-a (see the installations mock above).
+    expect(init).toContain('ComfyUI')
+    expect(init).toContain('.venv')
+    expect(init).toContain('standalone-env')
+  })
+
+  it('activates a git install\'s own venv without referencing standalone-env', async () => {
+    setTerminalEnvResolver(() => ({ venvDir: '/repo/.venv', promptName: '.venv' }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    expect(init).toContain('/repo/.venv')
+    // The reported bug: a git env must not point pip at a nonexistent uv.exe.
+    expect(init).not.toContain('standalone-env')
+    expect(init).not.toMatch(/\bpip\b/)
+  })
+
+  it('puts a portable install\'s embedded python on PATH and routes pip through it', async () => {
+    setTerminalEnvResolver(() => ({
+      pathPrepends: ['/p/python_embeded', '/p/python_embeded/Scripts'],
+      promptName: 'python_embeded',
+      pip: { exe: '/p/python_embeded/python.exe', args: ['-s', '-m', 'pip'] },
+    }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    expect(init).toContain('python_embeded')
+    expect(init).toContain('pip')
+    expect(init).not.toContain('standalone-env')
+    // No venv to activate for a portable build.
+    expect(init).not.toContain('activate')
+    expect(init).not.toContain('VIRTUAL_ENV =')
+  })
+
+  it('opens the shell in the resolved ComfyUI code folder when it exists', async () => {
+    // process.cwd() is a real, existing dir, so it survives the existence guard.
+    const codeDir = process.cwd()
+    setTerminalEnvResolver(() => ({ cwd: codeDir }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
+    expect(opts?.cwd).toBe(codeDir)
+  })
+
+  it('falls back to the install path when the resolved cwd is missing', async () => {
+    setTerminalEnvResolver(() => ({ cwd: '/definitely/not/a/real/dir' }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
+    // installPath is /installs/inst-a (see the installations mock above).
+    expect(opts?.cwd).toBe('/installs/inst-a')
   })
 
   it('streams output to subscribers and retains scrollback', async () => {

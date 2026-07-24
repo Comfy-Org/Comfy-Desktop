@@ -16,7 +16,35 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
 }))
 
-import { isCrashedExit } from './launch'
+import { desktopFeatureFlags, isCrashedExit } from './launch'
+import type { InstallationRecord } from '../shared'
+
+const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
+
+describe('desktopFeatureFlags', () => {
+  it('always injects the unconditional desktop flags', () => {
+    const flags = desktopFeatureFlags(installOf('standalone'), false)
+    expect(flags.show_signin_button).toBe('true')
+    expect(flags.supports_terminal).toBe('true')
+  })
+
+  it('injects enable_telemetry only for standalone installs that opted in', () => {
+    expect(desktopFeatureFlags(installOf('standalone'), true).enable_telemetry).toBe('true')
+  })
+
+  it('omits enable_telemetry when telemetry is disabled (default off)', () => {
+    expect(desktopFeatureFlags(installOf('standalone'), false)).not.toHaveProperty(
+      'enable_telemetry'
+    )
+  })
+
+  it('omits enable_telemetry for non-standalone installs even when opted in', () => {
+    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty(
+      'enable_telemetry'
+    )
+    expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+  })
+})
 
 describe('isCrashedExit', () => {
   it('treats a clean exit (code 0, no signal) as not crashed', () => {

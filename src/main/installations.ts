@@ -1,7 +1,9 @@
 import path from 'path'
+import fs from 'fs'
 import { EventEmitter } from 'events'
+import { app } from 'electron'
 import { dataDir } from './lib/paths'
-import { readFileSafeAsync, writeFileSafeAsync } from './lib/safe-file'
+import { readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './lib/safe-file'
 import type { ComfyVersion } from './lib/version'
 
 /** Event bus for installation lifecycle changes. `'updated'`(record) fires on
@@ -47,6 +49,21 @@ export interface InstallationRecord {
   inputDir?: string
   /** Per-install output dir, used only when `useSharedInputOutput === false`. */
   outputDir?: string
+  /** POC: starter template id the user picked in the install wizard. Durable
+   *  record of intent; survives relaunches. */
+  bundledTemplateId?: string
+  /** Coarse model-download estimate (bytes) for `bundledTemplateId`, frozen from
+   *  the wizard's hydrated value so the background download's progress denominator
+   *  matches the consent label without re-fetching the template index. */
+  bundledTemplateSizeBytes?: number
+  /** One-shot flag consumed by the first launch — when set, the comfy URL is
+   *  decorated with `?template=<id>` so the frontend auto-opens it, then this is
+   *  cleared so subsequent relaunches start blank. */
+  pendingTemplateOpen?: string | null
+  /** When true, the install's `template-models` phase pre-downloads the chosen
+   *  template's required models into the shared models dir. Set from the wizard
+   *  consent checkbox; only meaningful alongside `bundledTemplateId`. */
+  downloadTemplateModels?: boolean
   [key: string]: unknown
 }
 
@@ -97,7 +114,34 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   return p
 }
 
+/** E2E-only: write `E2E_INSTALLATIONS_SEED` to installations.json before the
+ *  first read, so the harness needn't guess the platform-specific data dir
+ *  (XDG on Linux, userData elsewhere). Seeding before the first `load()` also
+ *  guarantees the boot-time cloud-entry `ensureExists` merges on top of the
+ *  seed and the renderer's one-shot store hydration sees it — a post-launch
+ *  file write raced both. Runs at most once per process. */
+let e2eSeedApplied = false
+function maybeSeedFromEnv(): void {
+  if (e2eSeedApplied) return
+  e2eSeedApplied = true
+  // Hard guard: never run in production builds.
+  if (app.isPackaged) return
+  if (process.env['E2E'] !== '1') return
+  const seed = process.env['E2E_INSTALLATIONS_SEED']
+  if (!seed) return
+  // Drop the env var so the payload doesn't leak into child processes.
+  delete process.env['E2E_INSTALLATIONS_SEED']
+  try {
+    JSON.parse(seed) // validate before writing
+    fs.mkdirSync(path.dirname(dataPath), { recursive: true })
+    writeFileSafe(dataPath, seed, true)
+  } catch (err) {
+    console.warn('Installations: failed to apply E2E_INSTALLATIONS_SEED:', (err as Error).message)
+  }
+}
+
 async function load(): Promise<InstallationRecord[]> {
+  maybeSeedFromEnv()
   const raw = await readFileSafeAsync(dataPath)
   if (raw) {
     try {
@@ -128,9 +172,14 @@ export async function hasNameConflict(id: string, name: string): Promise<boolean
 export function uniqueName(baseName: string, existing: InstallationRecord[], excludeId?: string): string {
   const names = new Set(existing.filter((i) => i.id !== excludeId).map((i) => i.name))
   if (!names.has(baseName)) return baseName
+  // On conflict, strip a trailing " (N)" so an already-suffixed name renumbers
+  // cleanly ("ComfyUI (1)" → "ComfyUI (2)") instead of compounding into
+  // "ComfyUI (1) (1)". A name with no conflict is returned untouched above, so
+  // an intentional " (N)" name is preserved when it's actually free.
+  const stem = baseName.replace(/ \(\d+\)$/, '')
   let suffix = 1
-  while (names.has(`${baseName} (${suffix})`)) suffix++
-  return `${baseName} (${suffix})`
+  while (names.has(`${stem} (${suffix})`)) suffix++
+  return `${stem} (${suffix})`
 }
 
 export async function add(installation: Record<string, unknown>): Promise<InstallationRecord> {
@@ -267,6 +316,26 @@ export async function markLaunched(
     installationEvents.emit('changed')
   }
   return updated
+}
+
+/**
+ * POC: consume the one-shot starter-template flag. Clears `pendingTemplateOpen`
+ * so the template only auto-opens on the first launch, not on relaunches.
+ * No-op (returns false) when the install is gone or the flag was already clear,
+ * so the caller can fire-and-forget. Skips the `'updated'` event to avoid a
+ * title-bar refresh churn on every first launch — nothing observes this field.
+ */
+export async function clearPendingTemplateOpen(installationId: string): Promise<boolean> {
+  return enqueue(async () => {
+    const list = await load()
+    const index = list.findIndex((i) => i.id === installationId)
+    if (index === -1) return false
+    const existing = list[index]!
+    if (existing.pendingTemplateOpen == null) return false
+    list[index] = { ...existing, pendingTemplateOpen: null } as InstallationRecord
+    await save(list)
+    return true
+  })
 }
 
 /** Most-recently-launched install (by global `lastLaunchedAt`), or null

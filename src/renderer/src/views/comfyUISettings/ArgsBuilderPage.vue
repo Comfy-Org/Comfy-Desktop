@@ -36,6 +36,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+/** Translate a stable category slug (from `comfy-args.ts`) for display.
+ *  vue-i18n falls back to the English (`en`) catalog for any untranslated key. */
+function categoryLabel(key: string): string {
+  return t(`comfyUISettings.argsCategory.${key}`)
+}
+
 const localValue = ref(props.initialValue)
 const schema = ref<ComfyArgDef[]>([])
 const loading = ref(false)
@@ -104,7 +110,7 @@ function getValue(name: string): string {
 }
 
 function commit(known: Map<string, string>): void {
-  const next = serialize(known, parsed.value.extra)
+  const next = serialize(known, parsed.value.extra, schema.value)
   localValue.value = next
   emit('update', next)
 }
@@ -163,6 +169,22 @@ function activeInGroup(group: string): string {
     if (a.exclusiveGroup === group && parsed.value.known.has(a.name)) return a.name
   }
   return ''
+}
+
+// The currently-selected member of an exclusive group, so the cluster can show
+// its full help text below the dropdown (the dropdown options are collapsed
+// once one is chosen).
+function activeDefInGroup(group: string): ComfyArgDef | null {
+  const name = activeInGroup(group)
+  if (!name) return null
+  return schema.value.find((a) => a.name === name) ?? null
+}
+
+// The active member of an exclusive group, when it takes a value — lets the
+// cluster show a value input (e.g. `--cache-ram 4 8`, `--cache-lru 10`).
+function activeValueDefInGroup(group: string): ComfyArgDef | null {
+  const def = activeDefInGroup(group)
+  return def && def.type !== 'boolean' ? def : null
 }
 
 // Dropdown options for an exclusive cluster: a synthetic "None" entry that
@@ -301,7 +323,7 @@ const structuredGroups = computed(() => {
   }
   if (activeItems.length === 0) return result
   const ordered = new Map<string, GroupItem[]>()
-  ordered.set(t('comfyUISettings.argsActiveTitle', 'Active'), activeItems)
+  ordered.set('active', activeItems)
   for (const [category, items] of result) ordered.set(category, items)
   return ordered
 })
@@ -401,7 +423,7 @@ function onRawChange(value: string): void {
         :key="category"
         class="args-page-category"
       >
-        <header class="args-page-category-title">{{ category }}</header>
+        <header class="args-page-category-title">{{ categoryLabel(category) }}</header>
 
         <div v-for="(item, idx) in items" :key="idx" class="args-page-item">
           <!-- Exclusive cluster as a compact dropdown; the label lists the members so you can see the choices before opening, and a synthetic "None" option clears the group. -->
@@ -418,6 +440,21 @@ function onRawChange(value: string): void {
                 :placeholder="t('comfyUISettings.argsExclusiveNone', 'None (default)')"
                 @update:model-value="(v) => onExclusivePick(item.group!, v)"
               />
+              <BaseInput
+                v-if="activeValueDefInGroup(item.group)"
+                class="args-page-value-input"
+                :model-value="getValue(activeValueDefInGroup(item.group)!.name)"
+                :placeholder="
+                  activeValueDefInGroup(item.group)!.type === 'multi-value'
+                    ? t('comfyUISettings.argsMultiPlaceholder', 'space-separated values')
+                    : (activeValueDefInGroup(item.group)!.metavar ??
+                      t('comfyUISettings.argsValuePlaceholder', 'value'))
+                "
+                @change="(v) => setValue(activeValueDefInGroup(item.group!)!, v)"
+              />
+              <p v-if="activeDefInGroup(item.group)?.help" class="args-page-cluster-help">
+                {{ activeDefInGroup(item.group)!.help }}
+              </p>
             </div>
           </template>
 
@@ -441,15 +478,19 @@ function onRawChange(value: string): void {
                 <BaseInput
                   v-if="
                     isActive(item.arg.name) &&
-                    (item.arg.type === 'value' || item.arg.type === 'optional-value')
+                    (item.arg.type === 'value' ||
+                      item.arg.type === 'optional-value' ||
+                      item.arg.type === 'multi-value')
                   "
                   class="args-page-value-input"
                   :model-value="getValue(item.arg.name)"
                   :placeholder="
-                    item.arg.metavar ??
-                    (item.arg.type === 'optional-value'
-                      ? t('comfyUISettings.argsOptionalPlaceholder', 'optional')
-                      : t('comfyUISettings.argsValuePlaceholder', 'value'))
+                    item.arg.type === 'multi-value'
+                      ? t('comfyUISettings.argsMultiPlaceholder', 'space-separated values')
+                      : (item.arg.metavar ??
+                        (item.arg.type === 'optional-value'
+                          ? t('comfyUISettings.argsOptionalPlaceholder', 'optional')
+                          : t('comfyUISettings.argsValuePlaceholder', 'value')))
                   "
                   @change="(v) => setValue(item.arg!, v)"
                 />
@@ -468,17 +509,7 @@ function onRawChange(value: string): void {
   flex-direction: column;
   gap: 20px;
   padding: 4px 4px 12px;
-  height: 100%;
   min-width: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-}
-
-.args-page::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 .args-page-header {
@@ -799,5 +830,14 @@ function onRawChange(value: string): void {
   text-transform: none;
   letter-spacing: 0;
   color: color-mix(in srgb, var(--text-muted) 85%, transparent);
+}
+
+/* Full help text for the selected cluster member; wraps freely (no clamping). */
+.args-page-cluster-help {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 </style>

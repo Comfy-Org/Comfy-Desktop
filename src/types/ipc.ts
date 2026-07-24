@@ -29,7 +29,7 @@ export interface Installation {
   sourceLabel: string
   sourceCategory: string
   version?: string
-  statusTag?: { style: string; label: string }
+  statusTag?: { style: string; label: string; version?: string; detail?: string }
   seen?: boolean
   listPreview?: string
   launchMode?: string
@@ -53,6 +53,14 @@ export interface RunningInstance {
   url?: string
   mode: string
   startedAt?: number
+  /** Boot duration (ms from launch start to server-ready). Present on the
+   *  `instance-started` broadcast; absent from `getRunningInstances()`. */
+  bootTimeMs?: number
+  /** Spawn-retry counts for this boot, folded onto `instance-started` so the
+   *  renderer's telemetry carries them without a separate `server_ready`
+   *  event. 0 on the remote / skip-port paths. */
+  portRetries?: number
+  rebootRetries?: number
 }
 
 // --- Source / New Install types ---
@@ -115,7 +123,9 @@ export interface ComfyArgDef {
   name: string
   flag: string
   help: string
-  type: 'boolean' | 'value' | 'optional-value'
+  /** `multi-value` is a variadic flag (argparse nargs `*`/`+`, shown as `[X ...]`
+   *  in --help) that accepts several space-separated values, e.g. `--cache-ram 4 8`. */
+  type: 'boolean' | 'value' | 'optional-value' | 'multi-value'
   metavar?: string
   choices?: string[]
   exclusiveGroup?: string
@@ -128,16 +138,16 @@ export interface DetailField {
   value: string | boolean | number | string[] | Record<string, string> | null
   editable?: boolean
   editType?:
-    | 'select'
-    | 'boolean'
-    | 'text'
-    | 'number'
-    | 'path'
-    | 'channel-cards'
-    | 'args-builder'
-    | 'env-vars'
-    | 'model-dirs'
-    | 'hidden'
+  | 'select'
+  | 'boolean'
+  | 'text'
+  | 'number'
+  | 'path'
+  | 'channel-cards'
+  | 'args-builder'
+  | 'env-vars'
+  | 'model-dirs'
+  | 'hidden'
   options?: DetailFieldOption[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
@@ -234,6 +244,11 @@ export interface PromptDef {
   field: string
   required?: boolean | string
   messageDetails?: ModalDetailGroup[]
+  /** When true, the shown `defaultValue` is first run through
+   *  `getUniqueName()` so the pre-filled name matches what will actually be
+   *  assigned on save. Set on flows that create a NEW install (copy /
+   *  copy-update); never on rename, where keeping the current name is valid. */
+  uniquifyDefault?: boolean
 }
 
 export interface ModalDetailGroup {
@@ -413,6 +428,10 @@ export interface ProbeResult {
   version?: string
   repo?: string
   branch?: string
+  /** Resolved install root. Set when the probe corrected the user-picked path
+   *  (e.g. they pointed at the nested `ComfyUI/` folder of a standalone or
+   *  portable install). When present, it should be recorded as the installPath. */
+  installPath?: string
   [key: string]: unknown
 }
 
@@ -423,6 +442,7 @@ export interface ProgressData {
   status?: string
   percent?: number
   steps?: ProgressStep[]
+  error?: boolean
 }
 
 export interface ProgressStep {
@@ -432,6 +452,35 @@ export interface ProgressStep {
    *  renderer paces the bar from these (the producer is the single source of
    *  truth); when absent it falls back to a curated weight table. */
   weight?: number
+}
+
+/**
+ * A mid-operation prompt the main process needs the user to answer (e.g.
+ * during Legacy Desktop adoption). Surfaced as an in-app dialog above the
+ * ProgressModal — never a native OS message box. Labels arrive pre-translated
+ * from main; the renderer must not re-translate them. The renderer ACKs
+ * delivery, then replies with the chosen `buttonIndex`.
+ */
+export interface AdoptPromptRequest {
+  promptId: string
+  type: 'info' | 'warning' | 'error' | 'question'
+  title: string
+  message: string
+  detail?: string
+  /** Pre-translated heading for the `detail` block. */
+  detailLabel?: string
+  buttons: string[]
+  defaultId: number
+  cancelId: number
+}
+
+export interface AdoptPromptAck {
+  promptId: string
+}
+
+export interface AdoptPromptResponse {
+  promptId: string
+  buttonIndex: number
 }
 
 // --- Event data types ---
@@ -448,6 +497,17 @@ export interface TerminalRestore {
   exited: boolean
 }
 
+/** Recognised native-crash flavour decoded from a Windows NTSTATUS exit code.
+ *  `unknown` covers a decoded fault code we have no specific guidance for.
+ *  Shared across the IPC boundary so producer (main decode) and consumer
+ *  (renderer crash copy) can't drift on the string values. */
+export type CrashKind =
+  | 'access-violation'
+  | 'illegal-instruction'
+  | 'stack-buffer-overrun'
+  | 'heap-corruption'
+  | 'unknown'
+
 export interface ComfyExitedData {
   installationId: string
   installationName: string
@@ -460,6 +520,19 @@ export interface ComfyExitedData {
    *  signal" from "crashed with non-zero exit". */
   signal?: string
   lastStderr?: string
+  /** Hex form of `exitCode` when it decodes to a Windows native-crash
+   *  (NTSTATUS) code, e.g. `'0xC0000005'`. Absent for plain application
+   *  exits. Lets the UI show the meaningful hex alongside the raw decimal. */
+  exitCodeHex?: string
+  /** Recognised native-crash flavour for `exitCode` (e.g. `'access-violation'`),
+   *  used to pick human-readable, actionable crash copy. Absent when the exit
+   *  code isn't a decodable native fault. */
+  crashKind?: CrashKind
+  /** On a Windows access-violation crash, the Visual C++ runtime DLLs found
+   *  missing from `System32` (e.g. `['vcruntime140_1.dll']`). Non-empty means
+   *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
+   *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
+  vcRuntimeMissing?: string[]
   /**
    * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
    * Set by `recordCrash()` so a renderer that hydrates the crash *after*
@@ -550,9 +623,13 @@ export interface SystemInfo {
   gpu_vendor: string | null
   gpu_label: string | null
   gpu_model: string | null
+  /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
+  gpu_vram_mb: number | null
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
+  amd_driver_version: string | null
+  intel_driver_version: string | null
   platform: string
   arch: string
   os_version: string
@@ -655,7 +732,7 @@ export interface InstallationDdContext {
 /** Compact per-install summary for the per-session boot census
  *  emitted as `comfy.desktop.session.installs_inventory`. Strictly metadata
  *  + counts + diff summaries (no per-node / per-package contents) so
- *  the inventory can pack many installs into the same RUM payload. */
+ *  the inventory can pack many installs into a single PostHog event. */
 export interface InstallInventoryEntry {
   installation_id: string
   source_id: string
@@ -895,6 +972,8 @@ export interface ElectronApi {
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
+  /** Read-only snapshot of an install's durable log buffer (joined string). */
+  logsSnapshot(installationId: string): Promise<string>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -903,11 +982,8 @@ export interface ElectronApi {
   getLocaleMessages(): Promise<Record<string, unknown>>
   getAvailableLocales(): Promise<{ value: string; label: string }[]>
   /** Resolved locale string from main (`language` setting or
-   *  `app.getLocale()` fallback). The renderer's vue-i18n locale is
-   *  always 'en' (messages are deep-merged onto the en bundle), so
-   *  consumers needing the user's actual language — e.g. the first-use
-   *  takeover deciding whether to insert the China-mirror sub-step —
-   *  must read it from main via this call. */
+   *  `app.getLocale()` fallback). Renderers mirror this into vue-i18n;
+   *  main is the single locale authority. */
   getLocale(): Promise<string>
 
   /** Categorised snapshot of the persisted installs for the first-use
@@ -939,7 +1015,13 @@ export interface ElectronApi {
   reorderInstallations(orderedIds: string[]): Promise<void>
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
-  installInstance(installationId: string): Promise<void>
+  /** `express` flags the one-click express-install path (vs the manual
+   *  Configure wizard). Used only to label the `install.completed`
+   *  telemetry event's `method`; defaults to false. */
+  installInstance(installationId: string, express?: boolean): Promise<void>
+  /** Skip waiting on the starter-template model download — hands the still-
+   *  running task off to the title-bar downloads tray (no restart). */
+  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1157,14 +1239,8 @@ export interface ElectronApi {
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
   importSnapshotsConfirm(
     installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreFile?: string; message?: string }>
+  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
-  previewDesktopMigration(): Promise<{
-    ok: boolean
-    message?: string
-    preview?: SnapshotFilePreview
-    snapshotPath?: string
-  }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string
@@ -1213,8 +1289,8 @@ export interface ElectronApi {
   /** Per-session boot census of every persisted install (metadata +
    *  snapshot diff counts). Powers the `comfy.desktop.session.installs_inventory`
    *  telemetry event so dashboards see the user's full install footprint
-   *  without waiting for them to launch each one. Capped to ~200 KB
-   *  total to stay under Datadog RUM's per-action context limit. */
+   *  without waiting for them to launch each one. Byte-capped main-side to
+   *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
 
@@ -1254,6 +1330,13 @@ export interface ElectronApi {
    *  non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
 
+  // Adopt prompts: in-app replacement for native message boxes shown
+  // mid-operation (e.g. Legacy Desktop adoption). The renderer subscribes,
+  // ACKs delivery, and replies with the chosen button index.
+  onAdoptPrompt(callback: (request: AdoptPromptRequest) => void): Unsubscribe
+  ackAdoptPrompt(payload: AdoptPromptAck): void
+  respondAdoptPrompt(payload: AdoptPromptResponse): void
+
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
@@ -1275,7 +1358,9 @@ export interface ElectronApi {
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
-  onLocaleChanged(callback: (messages: Record<string, unknown>) => void): Unsubscribe
+  onLocaleChanged(
+    callback: (payload: { locale: string; messages: Record<string, unknown> }) => void
+  ): Unsubscribe
   onConfirmQuit(callback: (details: QuitActiveItem[]) => void): Unsubscribe
   onInstallationsChanged(callback: () => void): Unsubscribe
   onInstallationsVersionsUpdated(
@@ -1432,13 +1517,13 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-        | 'install-update'
-        | 'app-update-restart-prompt'
-        | 'app-update-download-prompt'
-        | 'open-settings'
-        | 'picker-pick-install'
-        | 'picker-install-action'
-        | 'picker-show-progress'
+      | 'install-update'
+      | 'app-update-restart-prompt'
+      | 'app-update-download-prompt'
+      | 'open-settings'
+      | 'picker-pick-install'
+      | 'picker-install-action'
+      | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>
@@ -1480,6 +1565,24 @@ export const REQUIRES_STOPPED = new Set([
   'migrate-from'
 ])
 
+/** Title-popup kind tags — the discriminant for popup config/opts across main,
+ *  preload, and the popup renderer. Single source so the tag can't desync. */
+export const POPUP_KIND = {
+  menu: 'menu',
+  downloads: 'downloads',
+  downloadsFull: 'downloads-full',
+  instancePicker: 'instance-picker',
+  globalSettings: 'global-settings'
+} as const
+
+export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+/** Resolved popup theme passed in every popup config. */
+export interface PopupTheme {
+  bg: string
+  text: string
+}
+
 /** Picker popup's settings-passthrough IPC channels — main registers them,
  *  preload invokes them. Single source so a typo can't desync the two sides. */
 export const PICKER_SETTINGS_CHANNELS = {
@@ -1503,9 +1606,10 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
-  previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
-  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags'
+  getLocale: 'comfy-titlepopup:picker-settings-get-locale',
+  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags',
+  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name'
 } as const

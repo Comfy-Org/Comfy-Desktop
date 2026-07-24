@@ -4,6 +4,22 @@ import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { en } from '../lib/i18nMessages.ts'
+import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
+
+// NavDecision fixtures the settings footer would emit; the picker routes their
+// `verb` through the instance-action dispatcher.
+const SWITCH_DECISION: NavDecision = {
+  window: 'same', verb: 'switch',
+  primaryLabel: NAV_LABEL.start, secondary: [], telemetry: 'instance.switched',
+}
+const RESTART_DECISION: NavDecision = {
+  window: 'same', verb: 'restart',
+  primaryLabel: NAV_LABEL.restart, secondary: [], telemetry: null,
+}
+const FOCUS_DECISION: NavDecision = {
+  window: 'same', verb: 'focus',
+  primaryLabel: NAV_LABEL.switch, secondary: [], telemetry: null,
+}
 import type { SnapshotListData } from '../types/ipc'
 
 // The interactive console pane drives a real xterm terminal (needs a canvas);
@@ -115,6 +131,8 @@ function installMockBridge(): BridgeState {
       },
     ),
     pickerSettingsGetLocaleMessages: vi.fn(async () => ({})),
+    pickerSettingsGetLocale: vi.fn(async () => 'en'),
+    pickerSettingsOnLocaleChanged: vi.fn(() => () => {}),
   }
     ; (window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
@@ -425,19 +443,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
     })
-
-    it('pulls main\'s locale catalog on mount', async () => {
-      await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
-        activeInstallationId: 'a',
-        runningInstallationIds: [],
-      })
-      await flushPromises()
-      const bridgeRef = (window as unknown as {
-        __comfyTitlePopup: { pickerSettingsGetLocaleMessages: ReturnType<typeof vi.fn> }
-      }).__comfyTitlePopup
-      expect(bridgeRef.pickerSettingsGetLocaleMessages).toHaveBeenCalled()
-    })
+    // Locale loading moved to the popup root (TitlePopupApp) so every kind
+    // tracks main's language live — see TitlePopupApp.test.ts.
   })
 
   describe('primary action dispatch', () => {
@@ -452,7 +459,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', false)
+      settings.vm.$emit('primary-action', SWITCH_DECISION)
       await flushPromises()
       expect(bridge.picks).toEqual(['a'])
       expect(bridge.restarts).toEqual([])
@@ -470,7 +477,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', true)
+      settings.vm.$emit('primary-action', RESTART_DECISION)
       await flushPromises()
       // Renderer parks on the confirm; bridge hasn't fired yet.
       const dialogs = useDialogs()
@@ -496,7 +503,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: ['a'],
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
-      settings.vm.$emit('primary-action', true)
+      settings.vm.$emit('primary-action', RESTART_DECISION)
       await flushPromises()
       const dialogs = useDialogs()
       expect(dialogs.state.open).toBe(true)
@@ -516,7 +523,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: ['r'],
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
-      settings.vm.$emit('primary-action', true)
+      settings.vm.$emit('primary-action', RESTART_DECISION)
       await flushPromises()
       // No confirm parked — restart fires straight through with `confirmed: true`.
       const dialogs = useDialogs()
@@ -542,7 +549,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', false)
+      settings.vm.$emit('primary-action', FOCUS_DECISION)
       await flushPromises()
       expect(bridge.picks).toEqual(['b'])
       expect(bridge.restarts).toEqual([])

@@ -12,6 +12,7 @@ import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import TooltipWrap from '../../components/TooltipWrap.vue'
+import { isOpenablePathString } from '../../lib/openablePath'
 import type { ActionDef, DetailField, DetailSection } from '../../types/ipc'
 
 /**
@@ -61,6 +62,9 @@ const emit = defineEmits<{
   'update-field': [field: DetailField, value: unknown]
   'run-action': [action: ActionDef]
   'open-args-page': [field: DetailField]
+  /** Open a filesystem path in the OS file manager; the host wires the IPC
+   *  (`window.api.openPath` in the panel, the bridge in the title popup). */
+  'open-path': [path: string]
 }>()
 
 const { t } = useI18n()
@@ -116,6 +120,16 @@ function isPathLikeValue(value: unknown): boolean {
   const v = value.trim()
   if (!v || v === '—') return false
   return v.includes('/') || v.includes('\\') || v.startsWith('~')
+}
+
+/** Stricter than `isPathLikeValue`: only values safe to open in the OS file
+ *  manager. `editType === 'path'` is openable when it holds a real value (not
+ *  empty or the `—` placeholder); otherwise the value must look like a local
+ *  path (not a URL, SSH remote, or date). */
+function canOpenFilesystemPath(field: DetailField): boolean {
+  const v = asString(field.value).trim()
+  if (field.editType === 'path') return v.length > 0 && v !== '—'
+  return isOpenablePathString(v)
 }
 
 function readonlyDisplayValue(field: DetailField): string {
@@ -260,9 +274,21 @@ function fieldOwnsLabel(field: DetailField): boolean {
             v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
             class="settings-v2-readonly-path"
           >
-            <span class="settings-v2-field-readonly settings-v2-field-readonly-path">{{
-              readonlyDisplayValue(field)
-            }}</span>
+            <button
+              v-if="canOpenFilesystemPath(field)"
+              type="button"
+              class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open"
+              :title="t('models.openDir', 'Open folder')"
+              :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
+              @click="emit('open-path', readonlyDisplayValue(field))"
+            >
+              {{ readonlyDisplayValue(field) }}
+            </button>
+            <span
+              v-else
+              class="settings-v2-field-readonly settings-v2-field-readonly-path"
+              >{{ readonlyDisplayValue(field) }}</span
+            >
             <BaseCopyButton :value="readonlyDisplayValue(field)" />
           </div>
 
@@ -624,6 +650,26 @@ function fieldOwnsLabel(field: DetailField): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Clickable path that opens the folder in the OS file manager. Only the path
+ *  text is the click target (matches StorageDirRow / StatusFactPanel), so the
+ *  button is sized to its text rather than filling the value column. */
+.settings-v2-field-readonly-open {
+  flex: 0 1 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-v2-field-readonly-open:hover,
+.settings-v2-field-readonly-open:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
 }
 
 .settings-v2-field-readonly {

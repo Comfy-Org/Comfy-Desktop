@@ -230,16 +230,18 @@ async function confirmRestore(): Promise<void> {
     ? diffHasChanges(restorePreviewDiff.value.diff)
     : undefined
   let filename = restorePreviewFilename.value
+  let restoreToken: string | null = null
 
   if (pendingImport.value) {
-    // Import flow: write snapshots to disk now, then restore the newest.
+    // Import flow: stage the snapshots as a restore target, then restore. They
+    // only become history once the restore succeeds (see the snapshot-restore
+    // action), so a failed restore can't leave a never-applied snapshot on top.
     pendingImport.value = false
     restorePreviewFilename.value = null
     restorePreviewDiff.value = null
 
-    // Gate the import-confirm step behind the busy guard — confirm
-    // writes the staged snapshots into the install and immediately
-    // auto-restores from the newest one, so racing an in-flight op
+    // Gate the import-confirm step behind the busy guard — confirm stages the
+    // snapshots and immediately auto-restores, so racing an in-flight op
     // (copy / release-update / migrate / running launch) would clobber
     // both surfaces.
     if (
@@ -258,20 +260,21 @@ async function confirmRestore(): Promise<void> {
       snapshot_count_bucket: toCountBucket(snapshots.value.length),
       imported_bucket: toCountBucket(result.imported ?? 0)
     })
-    filename = result.restoreFile ?? null
-    await load()
-    emit('refresh-all')
+    // Nothing landed in the live history yet; don't reload until the restore
+    // commits it on success.
+    restoreToken = result.restoreToken ?? null
+    filename = null
   } else {
     restorePreviewFilename.value = null
     restorePreviewDiff.value = null
   }
 
-  if (!filename) return
+  if (!filename && !restoreToken) return
 
   const action: ActionDef = {
     id: 'snapshot-restore',
     label: t('standalone.snapshotRestore'),
-    data: { file: filename },
+    data: restoreToken ? { restoreToken } : { file: filename },
     showProgress: true,
     progressTitle: t('standalone.snapshotRestoringTitle'),
     cancellable: true

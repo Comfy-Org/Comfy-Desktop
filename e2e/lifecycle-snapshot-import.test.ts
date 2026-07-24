@@ -1,25 +1,25 @@
 /**
- * Lifecycle E2E: snapshot import end-to-end through the Snapshots tab
- * UI (lifecycle audit gap #10).
+ * Lifecycle E2E: snapshot import staged-restore handshake driven through
+ * the Snapshots tab UI (lifecycle audit gap #10).
  *
- * Drives the production wiring from the Import button click down to a
- * new snapshot file landing on disk and showing in the registry:
- *   - toolbar Import button → `handleImport` →
- *     `window.api.importSnapshotsPreview` → `dialog.showOpenDialog`
- *     (stubbed to return the seeded envelope path) → returns the
- *     parsed envelope,
- *   - SnapshotsView's preview confirm modal → user clicks Continue
- *     (`modalConfirm` testid),
- *   - `importSnapshotsDiff` then `importSnapshotsConfirm` resolve
- *     against the install and the imported snapshot record lands
- *     under `<installPath>/.launcher/snapshots/`.
+ * Drives the production wiring from the toolbar Import button down to the
+ * staged restore target:
+ *   - toolbar Import button -> `handleImport` ->
+ *     `window.api.importSnapshotsPreview` -> `dialog.showOpenDialog`
+ *     (stubbed to return the seeded envelope path) -> preview confirm
+ *     modal lists the envelope's snapshot,
+ *   - Continue (BaseAlert action) -> `importSnapshotsDiff` +
+ *     `importSnapshotsConfirm` stage the envelope as a restore target and
+ *     fire the follow-on `snapshot-restore` runAction.
  *
- * The follow-on `snapshot-restore` runAction emitted by SnapshotsView
- * is out of scope here — it requires real git repos to drive (covered
- * by `lifecycle-snapshot-restore.test.ts`). We assert the import
- * succeeded by polling for the install's snapshot count to advance
- * before the restore op gets a chance to do anything that would
- * interfere with the assertion.
+ * Key invariant under test (#1137): importing does NOT commit the envelope
+ * to history. The staged target only becomes history once a restore from
+ * it succeeds; here the restore fails for real (the fixture install has no
+ * git repos), the persistent error op card surfaces the failure, and the
+ * imported snapshot must never appear in history (so it can never show as
+ * "Latest"). Successful in-history restore mechanics are covered by
+ * `lifecycle-snapshot-restore.test.ts`; the commit-on-success leg of a
+ * staged import needs real git repos and has no e2e coverage yet.
  */
 
 import os from 'node:os'
@@ -95,9 +95,8 @@ test.beforeAll(async () => {
 
   // Monkey-patch `dialog.showOpenDialog` so the Electron native open
   // dialog never opens during the test; the stub returns the seeded
-  // envelope path. The snapshot-restore that fires after a successful
-  // import would otherwise need real git repos on disk; the test
-  // captures the snapshot count BEFORE the restore op can interfere.
+  // envelope path. Stubbed native OS dialogs are the one allowed
+  // lifecycle exception.
   await ctx.app.evaluate(({ dialog }, filePath) => {
     ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
       canceled: false,
@@ -112,7 +111,7 @@ test.afterAll(async () => {
   if (envelopeDir) await rm(envelopeDir, { recursive: true, force: true })
 })
 
-test('Import preview → Continue writes the envelope snapshot into the install @lifecycle', async () => {
+test('Import via the toolbar stages a restore target without touching history @lifecycle', async () => {
   // Sanity: empty install starts with zero snapshots.
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
@@ -133,33 +132,32 @@ test('Import preview → Continue writes the envelope snapshot into the install 
 
   expect(await popup.click(byTestId(TID.snapshotsImport))).toBe(true)
 
-  // The preview confirm modal mounts in the popup webContents. Simple
-  // confirms route through BaseAlert (test-id `base-alert-action`);
-  // rich confirms keep the legacy ModalDialog path (`modal-confirm-button`).
-  // Accept either so the test stays stable across the dialog refactors.
-  const confirmSelector =
-    `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
-  await popup.waitForVisible(confirmSelector, { timeout: 10_000 })
-  expect(await popup.click(confirmSelector)).toBe(true)
-
-  // Poll for the snapshot to land on disk + the registry refresh.
-  // The import path writes the JSON synchronously then calls
-  // installations.update(snapshotCount), so a single poll on
-  // `getSnapshots` covers both. Generous timeout because the import-
-  // confirm chains diffAgainstCurrent which reads the install dir.
-  await expect
-    .poll(
-      async () =>
-        ctx.panel.evaluate<number>(
-          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`,
-        ),
-      { timeout: 15_000, intervals: [250, 500] },
-    )
-    .toBe(1)
-
-  const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; comfyuiVersion?: string }>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label, comfyuiVersion: s.comfyuiVersion })))`,
+  // The preview confirm modal lists the envelope's snapshot label - proof
+  // the stubbed open dialog fed the real preview/parse path.
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  await popup.waitFor(
+    async () => ((await popup.textOf('body')) ?? '').includes(IMPORTED_LABEL),
+    { timeout: 10_000, message: 'preview modal did not list the imported snapshot label' },
   )
-  expect(snapshots.length).toBe(1)
-  expect(snapshots[0]?.label).toBe(IMPORTED_LABEL)
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+
+  // Import-confirm stages the envelope and fires the follow-on
+  // `snapshot-restore` op. The fixture install has no git repos, so the
+  // real restore fails; the persistent error op card (with its Try again
+  // button) is the terminal signal. Scope the retry button to the error
+  // rail state so a cancelled op can never satisfy the wait.
+  await popup.waitForVisible(
+    `.snapshots-rail-save-box.is-op-error ${byTestId(TID.snapshotsOpCardRetry)}`,
+    { timeout: 60_000 },
+  )
+
+  // The crux of #1137: the imported snapshot never landed in history (and
+  // so can never show as "Latest"). A failed restore may write a live-state
+  // `post-restore` correction snapshot on top, so assert on the imported
+  // label and trigger, not on the raw count.
+  const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`,
+  )
+  expect(snapshots.some((s) => s.label === IMPORTED_LABEL)).toBe(false)
+  expect(snapshots.some((s) => s.trigger === 'manual')).toBe(false)
 })

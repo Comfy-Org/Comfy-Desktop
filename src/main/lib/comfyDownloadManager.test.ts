@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import os from 'os'
+import fs from 'fs'
 import path from 'path'
+import * as settings from '../settings'
+import type { buildExistenceCandidates as BuildExistenceCandidates } from './comfyDownloadManager'
+import type * as ComfyDownloadManager from './comfyDownloadManager'
 
 vi.mock('electron', () => ({
   app: {
@@ -9,7 +13,7 @@ vi.mock('electron', () => ({
       return path.join(os.tmpdir(), 'comfyui-desktop-2-test')
     },
   },
-  BrowserWindow: class {},
+  BrowserWindow: Object.assign(class {}, { getAllWindows: () => [] }),
   dialog: {},
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   shell: {},
@@ -21,15 +25,90 @@ let isPathContained: (filePath: string, baseDir: string) => boolean
 let sanitizeAssetFilename: (filename: string, outputDir: string) => string | null
 let parseContentDispositionFilename: (header: string | null) => string | null
 let buildSaveDialogFilters: (suggestedName: string) => Electron.FileFilter[]
+let buildExistenceCandidates: typeof BuildExistenceCandidates
+let mod: typeof ComfyDownloadManager
 
 beforeAll(async () => {
-  const mod = await import('./comfyDownloadManager')
+  mod = await import('./comfyDownloadManager')
   ALLOWED_EXTENSIONS = mod.ALLOWED_EXTENSIONS
   hasValidExtension = mod.hasValidExtension
   isPathContained = mod.isPathContained
   sanitizeAssetFilename = mod.sanitizeAssetFilename
   parseContentDispositionFilename = mod.parseContentDispositionFilename
   buildSaveDialogFilters = mod.buildSaveDialogFilters
+  buildExistenceCandidates = mod.buildExistenceCandidates
+})
+
+describe('buildExistenceCandidates', () => {
+  it('uses only the destination when there is no install context', () => {
+    const candidates = buildExistenceCandidates(null, '/shared', 'loras', 'x.safetensors')
+    expect(candidates).toEqual([path.join('/shared', 'loras', 'x.safetensors')])
+  })
+
+  it('probes every model root for the folder type', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models', '/external'],
+      extraPaths: [],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras', 'x.safetensors')
+    expect(candidates).toContain(path.join('/install/models', 'loras', 'x.safetensors'))
+    expect(candidates).toContain(path.join('/external', 'loras', 'x.safetensors'))
+    // The global shared dir is NOT a root here, so it must not be probed.
+    expect(candidates).not.toContain(path.join('/shared', 'loras', 'x.safetensors'))
+  })
+
+  it('probes arbitrarily-mapped extra_model_paths dirs for the type', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [
+        { section: 's', basePath: null, type: 'loras', rawType: 'loras', dir: '/custom/somedir/myname', isDefault: false },
+        { section: 's', basePath: null, type: 'checkpoints', rawType: 'checkpoints', dir: '/custom/cp', isDefault: false },
+      ],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras', 'x.safetensors')
+    expect(candidates).toContain(path.join('/custom/somedir/myname', 'x.safetensors'))
+    // checkpoints mapping must not be probed for a loras download.
+    expect(candidates).not.toContain(path.join('/custom/cp', 'x.safetensors'))
+  })
+
+  it('probes a model root for both controlnet/ and its t2i_adapter/ alternate', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'controlnet', 'x.safetensors')
+    // ComfyUI's controlnet defaults also search <root>/t2i_adapter, and the
+    // launcher YAML registers it under controlnet, so both must be probed.
+    expect(candidates).toContain(path.join('/install/models', 'controlnet', 'x.safetensors'))
+    expect(candidates).toContain(path.join('/install/models', 't2i_adapter', 'x.safetensors'))
+  })
+
+  it('matches legacy folder aliases (clip → text_encoders)', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [
+        { section: 's', basePath: null, type: 'text_encoders', rawType: 'clip', dir: '/custom/clip', isDefault: false },
+      ],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'clip', 'x.safetensors')
+    expect(candidates).toContain(path.join('/custom/clip', 'x.safetensors'))
+  })
+
+  it('appends a nested directory remainder when probing extra dirs', () => {
+    const ctx = {
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: [
+        { section: 's', basePath: null, type: 'loras', rawType: 'loras', dir: '/custom/loras', isDefault: false },
+      ],
+    }
+    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras/sub', 'x.safetensors')
+    expect(candidates).toContain(path.join('/custom/loras', 'sub', 'x.safetensors'))
+  })
 })
 
 describe('ALLOWED_EXTENSIONS', () => {
@@ -205,5 +284,111 @@ describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
     expect(buildSaveDialogFilters('justname')).toEqual([
       { name: 'All Files', extensions: ['*'] },
     ])
+  })
+})
+
+describe('template tray-mirror cleanup', () => {
+  const entry = (url: string, status: 'downloading' | 'completed') => ({
+    url,
+    filename: url.split('/').pop()!,
+    progress: status === 'completed' ? 100 : 40,
+    status,
+  })
+
+  it('dismissRecentDownload removes a finished mirrored template row', () => {
+    mod.setTemplateTrayMirror('inst-a', [entry('template-model://checkpoints/m.safetensors', 'completed')])
+    expect(mod.getDownloadsTrayState().recent.some((r) => r.url.includes('m.safetensors'))).toBe(true)
+
+    expect(mod.dismissRecentDownload('template-model://checkpoints/m.safetensors')).toBe(true)
+    expect(mod.getDownloadsTrayState().recent.some((r) => r.url.includes('m.safetensors'))).toBe(false)
+  })
+
+  it('clearFinishedDownloads purges terminal mirror rows but keeps in-flight ones', () => {
+    mod.setTemplateTrayMirror('inst-b', [
+      entry('template-model://vae/done.safetensors', 'completed'),
+      entry('template-model://vae/live.safetensors', 'downloading'),
+    ])
+    const removed = mod.clearFinishedDownloads()
+    expect(removed).toBeGreaterThanOrEqual(1)
+
+    const tray = mod.getDownloadsTrayState()
+    expect(tray.recent.some((r) => r.url.includes('done.safetensors'))).toBe(false)
+    // The still-downloading row survives in `active`.
+    expect(tray.active.some((r) => r.url.includes('live.safetensors'))).toBe(true)
+
+    mod.clearTemplateTrayMirror('inst-b') // cleanup so other tests start clean
+  })
+})
+
+describe('template mirror visibility in the All-Downloads modal', () => {
+  const entry = (url: string) => ({
+    url,
+    filename: url.split('/').pop()!,
+    progress: 40,
+    status: 'downloading' as const,
+  })
+
+  it('getAllDownloads() includes template-mirror rows (modal seed)', () => {
+    mod.setTemplateTrayMirror('inst-seed', [entry('template-model://loras/x.safetensors')])
+    expect(mod.getAllDownloads().some((d) => d.url.includes('x.safetensors'))).toBe(true)
+    mod.clearTemplateTrayMirror('inst-seed')
+  })
+
+  it('setTemplateTrayMirror fans each row out as model-download-progress (modal live)', async () => {
+    const { BrowserWindow } = (await import('electron')) as unknown as {
+      BrowserWindow: { getAllWindows: () => unknown[] }
+    }
+    const send = vi.fn()
+    const fakeWin = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }
+    const spy = vi.spyOn(BrowserWindow, 'getAllWindows').mockReturnValue([fakeWin])
+    try {
+      mod.setTemplateTrayMirror('inst-live', [entry('template-model://vae/y.safetensors')])
+      const progressCalls = send.mock.calls.filter((c) => c[0] === 'model-download-progress')
+      expect(progressCalls.length).toBeGreaterThanOrEqual(1)
+      expect(progressCalls.some((c) => (c[1] as { url: string }).url.includes('y.safetensors'))).toBe(true)
+    } finally {
+      spy.mockRestore()
+      mod.clearTemplateTrayMirror('inst-live')
+    }
+  })
+})
+
+describe('areModelsPresent', () => {
+  let base: string
+
+  beforeAll(async () => {
+    base = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'amp-'))
+    await fs.promises.mkdir(path.join(base, 'checkpoints'), { recursive: true })
+    await fs.promises.mkdir(path.join(base, 'vae'), { recursive: true })
+    await fs.promises.writeFile(path.join(base, 'checkpoints', 'a.safetensors'), 'x')
+    await fs.promises.writeFile(path.join(base, 'vae', 'b.safetensors'), 'x')
+    vi.spyOn(settings, 'get').mockImplementation((key) =>
+      key === 'modelsDirs' ? [base] : (settings.defaults as Record<string, unknown>)[key],
+    )
+  })
+
+  afterAll(async () => {
+    vi.restoreAllMocks()
+    await fs.promises.rm(base, { recursive: true, force: true })
+  })
+
+  it('returns false for an empty model list', async () => {
+    expect(await mod.areModelsPresent(null, [])).toBe(false)
+  })
+
+  it('returns true only when every model is on disk (shared dir, no install)', async () => {
+    const present = await mod.areModelsPresent(null, [
+      { directory: 'checkpoints', filename: 'a.safetensors' },
+      { directory: 'vae', filename: 'b.safetensors' },
+    ])
+    expect(present).toBe(true)
+  })
+
+  it('returns false when any single model is missing', async () => {
+    const present = await mod.areModelsPresent(null, [
+      { directory: 'checkpoints', filename: 'a.safetensors' },
+      { directory: 'vae', filename: 'missing.safetensors' },
+    ])
+    expect(present).toBe(false)
   })
 })

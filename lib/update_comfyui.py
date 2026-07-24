@@ -21,10 +21,57 @@ Outputs structured markers that the launcher can parse:
 """
 
 import os
+import subprocess
 import pygit2
 import re
 from datetime import datetime
 import sys
+
+from pygit2_compat import harden_pygit2_config, disable_symlinks
+
+
+def is_auth_error(exc):
+    """True when an exception message looks like an auth/transport failure
+    that the bundled (SSH-less) pygit2 can't satisfy but system git could."""
+    msg = str(exc).lower()
+    return (
+        "authentication" in msg
+        or "callback" in msg
+        or "unsupported url protocol" in msg
+        or "credential" in msg
+    )
+
+
+def system_git_available():
+    """True if a usable system `git` binary is on PATH."""
+    try:
+        subprocess.run(
+            ["git", "--version"], capture_output=True, timeout=10
+        )
+        return True
+    except Exception:
+        return False
+
+
+def system_git_fetch(repo_path, refspecs):
+    """Fetch from origin using system git, which honors the user's full git
+    config (proxy, insteadOf, ssh keys, credential helpers). Returns True on
+    success. `-c safe.directory=*` mirrors pygit2's disabled owner validation
+    so launcher-managed repos owned by another user still work."""
+    try:
+        result = subprocess.run(
+            ["git", "-c", "safe.directory=*", "-C", repo_path,
+             "fetch", "origin"] + list(refspecs),
+            capture_output=True, timeout=900, text=True,
+        )
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+        return result.returncode == 0
+    except Exception as ex:
+        print("System git fetch error: %s" % ex)
+        return False
 
 
 # A strict vMAJOR.MINOR.PATCH gate keeps `--tag` from arbitrary-ref territory:
@@ -75,6 +122,7 @@ def main():
             sys.exit(2)
 
     pygit2.option(pygit2.GIT_OPT_SET_OWNER_VALIDATION, 0)
+    http_proxy = harden_pygit2_config()
 
     git_dir = os.path.join(repo_path, '.git')
 
@@ -102,6 +150,10 @@ def main():
             print(err)
         print(".git contents: %s" % os.listdir(git_dir))
         sys.exit(1)
+
+    # Force core.symlinks=false on Windows so the checkout below can't fail on a
+    # symlink the user lacks the privilege to create (see disable_symlinks).
+    disable_symlinks(repo)
 
     # Emit pre-update HEAD
     pre_head = str(repo.head.target)
@@ -133,21 +185,46 @@ def main():
     except Exception:
         print("Warning: could not create backup branch.")
 
-    # Fetch master from origin (handles shallow/single-branch clones)
-    print("Fetching from origin…")
+    # Fetch master + tags from origin (handles shallow/single-branch clones).
+    print("Fetching from origin...")
+    refspecs = [
+        "+refs/heads/master:refs/remotes/origin/master",
+        "+refs/tags/*:refs/tags/*",
+    ]
+    origin = None
     for remote in repo.remotes:
         if remote.name == "origin":
-            refspecs = [
-                "+refs/heads/master:refs/remotes/origin/master",
-                "+refs/tags/*:refs/tags/*",
-            ]
-            try:
-                remote.fetch(refspecs)
-            except Exception as e:
-                print("[ERROR] Failed to fetch from origin: %s" % e)
-                print("Check your internet connection and try again.")
-                sys.exit(1)
+            origin = remote
             break
+    if origin is not None:
+        force_pygit2 = os.environ.get("COMFY_FORCE_PYGIT2") == "1"
+        try:
+            origin.fetch(refspecs, proxy=http_proxy or None)
+        except Exception as e:
+            print("[WARN] pygit2 fetch from origin failed: %s" % e)
+            # The bundled pygit2 has no SSH transport, so a git config that
+            # rewrites GitHub HTTPS to SSH (insteadOf) fails here. Retry with
+            # system git, which honors the user's full config. Skipped when
+            # COMFY_FORCE_PYGIT2=1 (developers exercising the pygit2 path).
+            if (not force_pygit2 and is_auth_error(e)
+                    and system_git_available()):
+                print("Retrying fetch with system git (honors your git config)...")
+                if not system_git_fetch(repo_path, refspecs):
+                    print("[ERROR] Failed to fetch from origin.")
+                    print("Check your internet connection and try again.")
+                    sys.exit(1)
+                print("System git fetch succeeded.")
+            else:
+                print("[ERROR] Failed to fetch from origin: %s" % e)
+                if is_auth_error(e):
+                    print("Git authentication was required for an anonymous "
+                          "fetch. This usually means your git config rewrites "
+                          "GitHub HTTPS URLs to SSH; the bundled updater "
+                          "fetches over anonymous HTTPS and cannot use SSH "
+                          "credentials.")
+                else:
+                    print("Check your internet connection and try again.")
+                sys.exit(1)
 
     # Hard-reset master to origin/master.
     # Launcher-managed installations should not have local modifications to
@@ -158,13 +235,50 @@ def main():
     remote_ref = repo.lookup_reference("refs/remotes/origin/master")
     remote_id = remote_ref.target
     branch = repo.lookup_branch("master")
-    if branch is None:
-        repo.create_branch("master", repo.get(remote_id))
-    else:
-        branch.set_target(remote_id)
-    ref = repo.lookup_reference("refs/heads/master")
-    repo.checkout(ref, strategy=pygit2.GIT_CHECKOUT_FORCE)
-    repo.reset(remote_id, pygit2.GIT_RESET_HARD)
+    # Snapshot the pre-update state so a failed checkout/reset can be undone. The
+    # branch ref is advanced *before* the working-tree checkout below, so without
+    # this a mid-checkout failure would leave the source pointing at the new
+    # commit with a half-updated tree - new source paired with the old venv,
+    # which crashes ComfyUI on import (issue #1233). Capture the actual HEAD (not
+    # master's tip): launcher installs often run detached at a tag, where master
+    # differs from the checked-out commit.
+    pre_reset_head = repo.head.target
+    was_detached = repo.head_is_detached
+    # Capture the exact symbolic ref so an attached HEAD is reattached to its
+    # original branch (not assumed to be master) on rollback.
+    pre_head_ref = None if was_detached else repo.head.name
+    pre_master_target = branch.target if branch is not None else None
+    try:
+        if branch is None:
+            repo.create_branch("master", repo.get(remote_id))
+        else:
+            branch.set_target(remote_id)
+        ref = repo.lookup_reference("refs/heads/master")
+        repo.checkout(ref, strategy=pygit2.GIT_CHECKOUT_FORCE)
+        repo.reset(remote_id, pygit2.GIT_RESET_HARD)
+    except Exception as exc:
+        # Roll the source back to the pre-update commit so a failed update never
+        # leaves the installation in an inconsistent (new-code/old-deps) state.
+        # Restore master to its original tip and HEAD to its original position
+        # and attachment, then hard-reset the working tree to the pre-update HEAD.
+        print("[ERROR] Update checkout failed: %s" % exc)
+        try:
+            restore_branch = repo.lookup_branch("master")
+            if pre_master_target is not None:
+                if restore_branch is None:
+                    repo.create_branch("master", repo.get(pre_master_target))
+                else:
+                    restore_branch.set_target(pre_master_target)
+            if was_detached:
+                repo.set_head(pre_reset_head)
+            else:
+                repo.set_head(pre_head_ref)
+            repo.reset(pre_reset_head, pygit2.GIT_RESET_HARD)
+            print("Restored ComfyUI source to pre-update commit %s"
+                  % str(pre_reset_head)[:7])
+        except Exception as restore_exc:
+            print("[ERROR] Failed to restore pre-update state: %s" % restore_exc)
+        sys.exit(1)
 
     # Checkout stable tag if requested
     if stable:

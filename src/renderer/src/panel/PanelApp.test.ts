@@ -113,14 +113,6 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../components/DownloadsModal.vue', () => ({
-  default: {
-    name: 'DownloadsModal',
-    props: ['open'],
-    emits: ['close'],
-    template: '<div data-testid="downloads-modal" />'
-  }
-}))
 vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   default: {
     name: 'MigrateConfirmTakeover',
@@ -289,6 +281,9 @@ function installMockApi(initial?: {
     onComfyOutput: vi.fn(() => () => {}),
     onComfyExited: vi.fn(() => () => {}),
     onInstanceCrashed: vi.fn(() => () => {}),
+    onAdoptPrompt: vi.fn(() => () => {}),
+    ackAdoptPrompt: vi.fn(),
+    respondAdoptPrompt: vi.fn(),
     onErrorDetail: vi.fn(() => () => {}),
     getSetting: vi.fn(async (key: string) => state.settings[key]),
     setSetting: vi.fn(async (key: string, value: unknown) => {
@@ -313,6 +308,9 @@ function installMockApi(initial?: {
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
     getListActions: vi.fn(async () => []),
+    // Picker thumbnail warm-up fetches the bundled-template options on the
+    // first-use cold-start path; returning users must never trigger it.
+    getFieldOptions: vi.fn(async () => []),
     openGlobalSettings: vi.fn(),
     openInstancePicker: vi.fn()
   }
@@ -521,6 +519,24 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
+  })
+
+  it('warms picker thumbnails on the first-use cold-start path', async () => {
+    mockState.settings.firstUseCompleted = false
+    window.history.replaceState({}, '', '/?panel=chooser')
+    mountPanel()
+    await flushPromises()
+    const api = (window as unknown as { api: { getFieldOptions: ReturnType<typeof vi.fn> } }).api
+    expect(api.getFieldOptions).toHaveBeenCalledTimes(1)
+    expect(api.getFieldOptions).toHaveBeenCalledWith('standalone', 'bundledTemplate', {}, {})
+  })
+
+  it('does NOT warm picker thumbnails for returning users', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mountPanel()
+    await flushPromises()
+    const api = (window as unknown as { api: { getFieldOptions: ReturnType<typeof vi.fn> } }).api
+    expect(api.getFieldOptions).not.toHaveBeenCalled()
   })
 
   it('marks firstUseCompleted=true and closes the takeover on Cloud-branch pick', async () => {

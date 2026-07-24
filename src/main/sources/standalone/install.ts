@@ -2,6 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
+import type { InstallPhaseName, InstallPhaseStatus } from '../../lib/installer'
+import * as mainTelemetry from '../../lib/telemetry'
+import { buildErrorFields } from '../../../shared/errorEvent'
 import { copyDirWithProgress } from '../../lib/copy'
 import { readGitHead, isGitAvailable, isPygit2Configured, tryConfigurePygit2Fallback, fetchTags } from '../../lib/git'
 import { resolveLocalVersion } from '../../lib/version-resolve'
@@ -18,9 +21,71 @@ import {
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
 import { tagsEqual, type ComfyVersion } from '../../lib/version'
+import { resolveNestedComfyUIParent } from '../common/nestedRoot'
 import type { InstallTools, PostInstallTools } from '../../types/sources'
 
 const BULKY_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
+
+/**
+ * Per-phase install telemetry. Splits the two former mega-spans
+ * (`install.standalone` / `install.post_install`) into the five real dark
+ * sub-steps so the install→canvas drop (−79%) is attributable to a phase.
+ * `torch_deps_sync` is the dominant +60min sink and gets its own boundary.
+ *
+ * Lives here (not at the orchestration call sites) so BOTH the express install
+ * path (`install-instance` handler) and the standalone-migration path — which
+ * both call this module's `install` / `postInstall` — are instrumented by one
+ * wiring. Enum/number/bool props only; the installation id is an opaque
+ * `inst-<ms>` token and the variant is an enum, so nothing here is raw user
+ * data. `error` events ride the Datadog mirror (via `emit`) for alerting.
+ */
+type InstallPhase = InstallPhaseName | 'env_create' | 'package_copy' | 'torch_deps_sync'
+
+function emitInstallPhase(
+  installation: InstallationRecord,
+  phase: InstallPhase,
+  status: InstallPhaseStatus,
+  info: { durationMs?: number; error?: unknown } = {}
+): void {
+  // Side-channel only: classification/emission must never derail an install
+  // phase (this is also the installer's onPhase tap).
+  try {
+    const props: Record<string, string | number | null> = {
+      installation_id: installation.id,
+      variant: (installation.variant as string | undefined) ?? null,
+      phase,
+      status
+    }
+    if (typeof info.durationMs === 'number') props.duration_ms = info.durationMs
+    if (status === 'error') {
+      // Standard error schema so a failing phase carries the actual error
+      // text, not just the coarse bucket.
+      Object.assign(props, buildErrorFields(info.error))
+    }
+    mainTelemetry.emit('comfy.desktop.install.phase', props)
+  } catch (err) {
+    console.warn('Install phase telemetry emission failed:', err)
+  }
+}
+
+/** Wrap a post-install phase with start/end/error boundaries. Re-throws so the
+ *  cancel / repair control flow is untouched; telemetry is a side-channel. */
+async function withPostInstallPhase<T>(
+  installation: InstallationRecord,
+  phase: InstallPhase,
+  fn: () => Promise<T>
+): Promise<T> {
+  emitInstallPhase(installation, phase, 'start')
+  const t0 = Date.now()
+  try {
+    const result = await fn()
+    emitInstallPhase(installation, phase, 'end', { durationMs: Date.now() - t0 })
+    return result
+  } catch (err) {
+    emitInstallPhase(installation, phase, 'error', { durationMs: Date.now() - t0, error: err })
+    throw err
+  }
+}
 
 async function stripMasterPackages(installPath: string): Promise<void> {
   try {
@@ -41,22 +106,26 @@ async function stripMasterPackages(installPath: string): Promise<void> {
 }
 
 async function createEnv(
-  installPath: string,
+  installation: InstallationRecord,
   onProgress: (copied: number, total: number, elapsedSecs: number, etaSecs: number) => void,
   signal?: AbortSignal
 ): Promise<void> {
+  const installPath = installation.installPath
   const uvPath = getUvPath(installPath)
   const masterPython = getMasterPythonPath(installPath)
   const venvPath = getVenvDir(installPath)
-  await new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) return reject(new Error('Cancelled'))
-    const proc = execFile(uvPath, ['venv', '--python', masterPython, venvPath], { cwd: installPath }, (err, _stdout, stderr) => {
+  // env_create: `uv venv` — the bare interpreter env, before any packages land.
+  await withPostInstallPhase(installation, 'env_create', () =>
+    new Promise<void>((resolve, reject) => {
       if (signal?.aborted) return reject(new Error('Cancelled'))
-      if (err) return reject(new Error(`Failed to create .venv: ${stderr || err.message}`))
-      resolve()
+      const proc = execFile(uvPath, ['venv', '--python', masterPython, venvPath], { cwd: installPath }, (err, _stdout, stderr) => {
+        if (signal?.aborted) return reject(new Error('Cancelled'))
+        if (err) return reject(new Error(`Failed to create .venv: ${stderr || err.message}`))
+        resolve()
+      })
+      signal?.addEventListener('abort', () => { try { proc.kill() } catch {} }, { once: true })
     })
-    signal?.addEventListener('abort', () => { try { proc.kill() } catch {} }, { once: true })
-  })
+  )
 
   try {
     const masterSitePackages = findSitePackages(path.join(installPath, 'standalone-env'))
@@ -64,8 +133,12 @@ async function createEnv(
     if (!masterSitePackages || !envSitePackages || !fs.existsSync(masterSitePackages)) {
       throw new Error('Could not locate site-packages for .venv.')
     }
-    await copyDirWithProgress(masterSitePackages, envSitePackages, onProgress, { signal })
-    await codesignBinaries(envSitePackages)
+    // package_copy: hydrate the venv from the master site-packages (multi-GB,
+    // the disk-bound stretch of post-install).
+    await withPostInstallPhase(installation, 'package_copy', async () => {
+      await copyDirWithProgress(masterSitePackages, envSitePackages, onProgress, { signal })
+      await codesignBinaries(envSitePackages)
+    })
   } catch (err) {
     await fs.promises.rm(venvPath, { recursive: true, force: true }).catch(() => {})
     throw err
@@ -73,15 +146,25 @@ async function createEnv(
 }
 
 export async function install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
+  // The installer owns the download↔extract seam; map its boundary callbacks
+  // onto the consent-gated install.phase telemetry with this install's id/variant.
+  const installerCtx = {
+    ...tools,
+    onPhase: (
+      phase: InstallPhaseName,
+      status: InstallPhaseStatus,
+      info?: { durationMs?: number; error?: unknown }
+    ) => emitInstallPhase(installation, phase, status, info ?? {})
+  }
   const files = installation.downloadFiles as Array<{ url: string; filename: string; size: number }> | undefined
   if (files && files.length > 0) {
     const cacheDir = `${installation.releaseTag as string}_${installation.variant as string}`
-    await downloadAndExtractMulti(files, installation.installPath, cacheDir, tools)
+    await downloadAndExtractMulti(files, installation.installPath, cacheDir, installerCtx)
   } else if (installation.downloadUrl as string | undefined) {
     const downloadUrl = installation.downloadUrl as string
     const filename = downloadUrl.split('/').pop()!
     const cacheKey = `${installation.releaseTag as string}_${filename}`
-    await downloadAndExtract(downloadUrl, installation.installPath, cacheKey, tools)
+    await downloadAndExtract(downloadUrl, installation.installPath, cacheKey, installerCtx)
   }
 }
 
@@ -100,7 +183,7 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
   await repairMacBinaries(installation.installPath, sendProgress)
   if (signal?.aborted) throw new Error('Cancelled')
   sendProgress('setup', { percent: 0, status: 'Creating Python environment…' })
-  await createEnv(installation.installPath, (copied, total, elapsedSecs, etaSecs) => {
+  await createEnv(installation, (copied, total, elapsedSecs, etaSecs) => {
     const percent = Math.round((copied / total) * 100)
     const elapsed = formatTime(elapsedSecs)
     const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
@@ -173,23 +256,29 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
       } else if (pickedTag ? onPickedTag : onLatestTag) {
         sendProgress('update', { percent: 100, status: 'Already up to date' })
       } else {
-        const result = await runComfyUIUpdate({
-          installPath: installation.installPath,
-          installation,
-          channel,
-          ...(pickedTag ? { targetTag: pickedTag } : {}),
-          update,
-          sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
-          signal,
-          // The standalone bundle ships a pre-extracted venv whose pinned
-          // versions can lag ComfyUI's own `requirements.txt` (most visibly
-          // `comfy-aimdo`, which crashes on import when the venv's copy is
-          // older than what ComfyUI's source expects). Force a `pip install
-          // --upgrade -r requirements.txt` after the post-install git update,
-          // even when the file is byte-identical pre/post, so the venv always
-          // ends up in sync with ComfyUI's pins before the user runs anything.
-          forceDepsSync: true,
-        })
+        // torch_deps_sync: the dominant dark time-sink in post-install
+        // (the forced `pip install --upgrade -r requirements.txt` can run
+        // 60+ min on a cold torch/cuda set). Own boundary so it stops hiding
+        // inside the post_install mega-span and a stall here is attributable.
+        const result = await withPostInstallPhase(installation, 'torch_deps_sync', () =>
+          runComfyUIUpdate({
+            installPath: installation.installPath,
+            installation,
+            channel,
+            ...(pickedTag ? { targetTag: pickedTag } : {}),
+            update,
+            sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
+            signal,
+            // The standalone bundle ships a pre-extracted venv whose pinned
+            // versions can lag ComfyUI's own `requirements.txt` (most visibly
+            // `comfy-aimdo`, which crashes on import when the venv's copy is
+            // older than what ComfyUI's source expects). Force a `pip install
+            // --upgrade -r requirements.txt` after the post-install git update,
+            // even when the file is byte-identical pre/post, so the venv always
+            // ends up in sync with ComfyUI's pins before the user runs anything.
+            forceDepsSync: true,
+          })
+        )
         installation = result.installation
         if (result.ok) {
           sendProgress('update', { percent: 100, status: 'Up to date' })
@@ -203,22 +292,40 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
       sendProgress('update', { percent: 100, status: 'Skipped' })
     }
   }
+  // NOTE: starter-template model downloads no longer run here. They start in the
+  // BACKGROUND when install begins (see `startTemplateDownload` wired in
+  // registerInstallationHandlers) and are displayed as a launch-span stepper
+  // phase, so the bytes overlap env setup instead of blocking the install.
+}
+
+/**
+ * Resolve the standalone root for a probed directory. Returns the directory
+ * itself when it holds the standalone markers (`standalone-env/` +
+ * `ComfyUI/main.py`), or its parent when the user pointed at the nested
+ * `ComfyUI/` folder inside a standalone install. Returns null otherwise.
+ */
+function findStandaloneRoot(dirPath: string): string | null {
+  const hasMarkers = (root: string): boolean =>
+    fs.existsSync(path.join(root, 'standalone-env')) &&
+    fs.existsSync(path.join(root, 'ComfyUI', 'main.py'))
+  if (hasMarkers(dirPath)) return dirPath
+  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
+  return resolveNestedComfyUIParent(dirPath, hasMarkers)
 }
 
 export async function probeInstallation(dirPath: string): Promise<Record<string, unknown> | null> {
-  const envExists = fs.existsSync(path.join(dirPath, 'standalone-env'))
-  const mainExists = fs.existsSync(path.join(dirPath, 'ComfyUI', 'main.py'))
-  if (!envExists || !mainExists) return null
-  const hasVenv = fs.existsSync(path.join(dirPath, 'ComfyUI', '.venv'))
-  const hasLegacyEnvs = fs.existsSync(path.join(dirPath, 'envs'))
-  const hasGit = fs.existsSync(path.join(dirPath, 'ComfyUI', '.git'))
+  const root = findStandaloneRoot(dirPath)
+  if (!root) return null
+  const hasVenv = fs.existsSync(path.join(root, 'ComfyUI', '.venv'))
+  const hasLegacyEnvs = fs.existsSync(path.join(root, 'envs'))
+  const hasGit = fs.existsSync(path.join(root, 'ComfyUI', '.git'))
 
   let version = 'unknown'
   let releaseTag = ''
   let variant = ''
   let pythonVersion = ''
   try {
-    const data = JSON.parse(fs.readFileSync(path.join(dirPath, MANIFEST_FILE), 'utf8')) as Record<string, string>
+    const data = JSON.parse(fs.readFileSync(path.join(root, MANIFEST_FILE), 'utf8')) as Record<string, string>
     version = data.comfyui_ref || version
     releaseTag = data.version || releaseTag
     variant = data.id || variant
@@ -227,7 +334,7 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
 
   let comfyVersion: ComfyVersion | undefined
   if (hasGit) {
-    const comfyuiDir = path.join(dirPath, 'ComfyUI')
+    const comfyuiDir = path.join(root, 'ComfyUI')
     const commit = readGitHead(comfyuiDir)
     if (commit) {
       const manifestTag = version !== 'unknown' ? version : undefined
@@ -242,6 +349,9 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
     variant,
     pythonVersion,
     hasGit,
+    // Record the standalone root, not whatever the user picked — they may have
+    // pointed at the nested `ComfyUI/` folder. Runtime paths resolve off this.
+    installPath: root,
     launchArgs: DEFAULT_LAUNCH_ARGS,
     launchMode: 'window',
     ...(hasLegacyEnvs && !hasVenv ? { needsEnvMigration: true } : {}),

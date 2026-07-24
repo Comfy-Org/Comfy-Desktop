@@ -3,7 +3,17 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
+import * as installations from '../installations'
+import { findInstallationIdByComfySender } from '../host/registry'
+import {
+  resolveInstallModelSearchPaths,
+  mapLegacyFolderType,
+  isSamePath,
+  TEMP_DIR_NAME,
+  type InstallModelSearch,
+} from './models'
 import { _broadcastToRenderer } from './ipc/shared'
+import type { TemplateModelDownload } from '../sources/standalone/templateModels'
 
 export const ALLOWED_EXTENSIONS = ['.safetensors', '.sft', '.ckpt', '.pth', '.pt']
 
@@ -29,19 +39,19 @@ export function buildSaveDialogFilters(suggestedName: string): Electron.FileFilt
   // to the single one we infer. Comfy outputs png/webp/jpg images, mp4/webm
   // video, and wav/mp3/flac/ogg audio depending on the node graph.
   const FAMILIES: Record<string, { name: string; extensions: string[] }> = {
-    png:  { name: 'PNG Image',  extensions: ['png'] },
-    jpg:  { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+    png: { name: 'PNG Image', extensions: ['png'] },
+    jpg: { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
     jpeg: { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
     webp: { name: 'WebP Image', extensions: ['webp'] },
-    gif:  { name: 'GIF Image',  extensions: ['gif'] },
-    bmp:  { name: 'Bitmap Image', extensions: ['bmp'] },
-    mp4:  { name: 'MP4 Video',  extensions: ['mp4'] },
+    gif: { name: 'GIF Image', extensions: ['gif'] },
+    bmp: { name: 'Bitmap Image', extensions: ['bmp'] },
+    mp4: { name: 'MP4 Video', extensions: ['mp4'] },
     webm: { name: 'WebM Video', extensions: ['webm'] },
-    mov:  { name: 'QuickTime Video', extensions: ['mov'] },
-    wav:  { name: 'WAV Audio',  extensions: ['wav'] },
-    mp3:  { name: 'MP3 Audio',  extensions: ['mp3'] },
+    mov: { name: 'QuickTime Video', extensions: ['mov'] },
+    wav: { name: 'WAV Audio', extensions: ['wav'] },
+    mp3: { name: 'MP3 Audio', extensions: ['mp3'] },
     flac: { name: 'FLAC Audio', extensions: ['flac'] },
-    ogg:  { name: 'OGG Audio',  extensions: ['ogg'] },
+    ogg: { name: 'OGG Audio', extensions: ['ogg'] },
   }
 
   const primary = FAMILIES[ext]
@@ -103,6 +113,9 @@ interface RetryParams {
   directory?: string
   outputDir?: string
   authToken?: string
+  /** Install that initiated the download, so a retry resolves the same
+   *  destination even after the originating comfy view is gone. */
+  installationId?: string | null
 }
 const retryParamsByUrl = new Map<string, RetryParams>()
 
@@ -127,6 +140,67 @@ function isTerminalStatus(status: DownloadProgress['status']): boolean {
   return status === 'completed' || status === 'error' || status === 'cancelled'
 }
 
+/**
+ * Template-model downloads mirrored into the tray after the user skips ahead to
+ * ComfyUI. The resume-capable background task stays the byte-owner; this is a
+ * read-only reflection merged into the tray view-state, NOT a real download — so
+ * it never touches `pendingDownloads`' DownloadItem lifecycle (cancel/retry/
+ * temp-rename stay untouched). Scoped per install so concurrent installs can each
+ * mirror their own rows without clobbering one another. */
+const templateTrayMirrorByInstall = new Map<string, Map<string, DownloadProgress>>()
+
+/**
+ * Replace `installationId`'s mirrored template rows and notify the tray.
+ * `entries` is that install's full current set (one per template file); passing
+ * `[]` clears its rows. Stamps `createdAt` so rows hold a stable slot.
+ */
+export function setTemplateTrayMirror(installationId: string, entries: DownloadProgress[]): void {
+  const prev = templateTrayMirrorByInstall.get(installationId)
+  // Empty set clears this install's rows. Don't keep (or create) an empty
+  // bucket: while a download is still resolving it has no files yet, and a
+  // lingering empty bucket would both leak and emit `tray-state-changed` on
+  // every poll with nothing to show.
+  if (entries.length === 0) {
+    if (!prev) return
+    for (const url of prev.keys()) createdAtByUrl.delete(url)
+    templateTrayMirrorByInstall.delete(installationId)
+    downloadEvents.emit('tray-state-changed')
+    return
+  }
+  const nextUrls = new Set(entries.map((e) => e.url))
+  if (prev) {
+    for (const url of prev.keys()) {
+      if (!nextUrls.has(url)) createdAtByUrl.delete(url)
+    }
+  }
+  const bucket = new Map<string, DownloadProgress>()
+  for (const entry of entries) {
+    let createdAt = createdAtByUrl.get(entry.url)
+    if (createdAt === undefined) {
+      createdAt = Date.now()
+      createdAtByUrl.set(entry.url, createdAt)
+    }
+    bucket.set(entry.url, { ...entry, createdAt })
+  }
+  templateTrayMirrorByInstall.set(installationId, bucket)
+  // Fan out as `model-download-progress` so the renderer download store (the
+  // All-Downloads modal + Settings tab) tracks these like any real download.
+  // The tray popup reads the merged `getDownloadsTrayState()` snapshot instead.
+  for (const entry of bucket.values()) {
+    _broadcastToRenderer('model-download-progress', entry)
+  }
+  downloadEvents.emit('tray-state-changed')
+}
+
+/** Drop `installationId`'s mirrored template rows from the tray (e.g. window close). */
+export function clearTemplateTrayMirror(installationId: string): void {
+  const bucket = templateTrayMirrorByInstall.get(installationId)
+  if (!bucket) return
+  for (const url of bucket.keys()) createdAtByUrl.delete(url)
+  templateTrayMirrorByInstall.delete(installationId)
+  downloadEvents.emit('tray-state-changed')
+}
+
 function pushRecent(progress: DownloadProgress): void {
   // Replace any prior entry for the same URL so a re-attempted download
   // appears once.
@@ -146,28 +220,149 @@ function pushRecent(progress: DownloadProgress): void {
 
 export function getDownloadsTrayState(): DownloadsTrayState {
   const active: DownloadProgress[] = []
+  const recent: DownloadProgress[] = recentDownloads.slice()
   for (const pending of pendingDownloads.values()) {
     const s = pending.lastProgress.status
     if (s === 'pending' || s === 'downloading' || s === 'paused') {
       active.push(pending.lastProgress)
     }
   }
-  return { active, recent: recentDownloads.slice() }
+  // Merge every install's mirrored template-model rows: in-flight ones join
+  // `active`, finished ones join `recent`, so the tray reflects each
+  // skipped-but-still-running download exactly like a native one.
+  for (const bucket of templateTrayMirrorByInstall.values()) {
+    for (const entry of bucket.values()) {
+      if (isTerminalStatus(entry.status)) recent.push(entry)
+      else active.push(entry)
+    }
+  }
+  return { active, recent }
 }
 
 export function setMainWindow(win: BrowserWindow | null): void {
   mainWindow = win
 }
 
-function getModelsBaseDir(): string {
+/** Primary shared models directory — `<dir>/<category>/<file>` is where both the
+ *  in-window model downloader and the install-time template pre-download land
+ *  files, so they must agree. Exported for the latter (see `templateModels.ts`). */
+export function getModelsBaseDir(): string {
   const modelsDirs = settings.get('modelsDirs') as string[] | undefined
   return modelsDirs?.[0] || settings.defaults.modelsDirs[0]!
 }
 
-const TEMP_DIR_NAME = '.desktop2-downloads'
+/** Global shared model dirs; the fallback search set when a download can't be
+ *  attributed to a specific install. */
+function getSharedModelsDirs(): string[] {
+  const modelsDirs = settings.get('modelsDirs') as string[] | undefined
+  return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
+}
+
+/** installationId backing a download's originating comfy webview, or null when
+ *  it can't be attributed (destroyed view / non-comfy sender). */
+function resolveSenderInstallationId(senderContents?: Electron.WebContents): string | null {
+  if (!senderContents || senderContents.isDestroyed()) return null
+  return findInstallationIdByComfySender(senderContents)
+}
+
+/** Resolve an install's model search context (shared vs per-install dirs + its
+ *  `extra_model_paths.yaml`). Null when unattributable; callers then fall back
+ *  to the global shared dir. */
+async function resolveDownloadContextById(
+  installationId: string | null,
+): Promise<InstallModelSearch | null> {
+  if (!installationId) return null
+  try {
+    const inst = await installations.get(installationId)
+    if (!inst || !inst.installPath) return null
+    return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+  } catch {
+    return null
+  }
+}
+
+/** True when every model in `models` already exists somewhere the install's
+ *  ComfyUI would find it — the same search set a download uses to short-circuit
+ *  to "completed". Empty `models` returns false (nothing to call downloaded). */
+export async function areModelsPresent(
+  installationId: string | null,
+  models: ReadonlyArray<Pick<TemplateModelDownload, 'directory' | 'filename'>>,
+): Promise<boolean> {
+  if (models.length === 0) return false
+  const ctx = await resolveDownloadContextById(installationId)
+  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
+  const checks = await Promise.all(
+    models.map(async ({ directory, filename }) => {
+      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+        if (await regularFileExists(candidate)) return true
+      }
+      return false
+    }),
+  )
+  return checks.every(Boolean)
+}
+
+/** Folder types whose ComfyUI defaults register multiple dirs, so a download
+ *  must also check the alternates. Mirrors `folder_paths.py`. */
+const ROOT_FOLDER_ALTERNATES: Readonly<Record<string, string[]>> = {
+  text_encoders: ['text_encoders', 'clip'],
+  diffusion_models: ['diffusion_models', 'unet'],
+  controlnet: ['controlnet', 't2i_adapter'],
+}
+
+/** Relative `<type>/<remainder>` directory candidates for a download hint,
+ *  expanded to include a model root's legacy/secondary type dirs. */
+function rootRelDirsForDirectory(directory: string): string[] {
+  const segments = directory.split(/[\\/]+/).filter(Boolean)
+  if (segments.length === 0) return [directory]
+  const rawType = segments[0]!
+  const remainder = segments.slice(1)
+  const heads = ROOT_FOLDER_ALTERNATES[mapLegacyFolderType(rawType)] ?? [rawType]
+  return heads.map((head) => path.join(head, ...remainder))
+}
+
+/** Every place a model file could already exist for an install — so an instant
+ *  "completed" only fires when its ComfyUI would actually find the file:
+ *  destination, every model root, and matching `extra_model_paths.yaml` dirs. */
+export function buildExistenceCandidates(
+  ctx: InstallModelSearch | null,
+  baseDir: string,
+  directory: string,
+  filename: string,
+): string[] {
+  const out = new Set<string>()
+  out.add(path.join(baseDir, directory, filename))
+  if (ctx) {
+    // Each complete root, including legacy/secondary type dirs ComfyUI also
+    // searches (e.g. a `text_encoders` download is satisfied by `<root>/clip`).
+    const relDirs = rootRelDirsForDirectory(directory)
+    for (const root of ctx.modelRoots) {
+      for (const rel of relDirs) {
+        out.add(path.join(root, rel, filename))
+      }
+    }
+    // Arbitrarily-mapped dirs from the install's own extra_model_paths.yaml.
+    const segments = directory.split(/[\\/]+/).filter(Boolean)
+    if (segments.length > 0) {
+      const type = mapLegacyFolderType(segments[0]!)
+      const remainder = segments.slice(1)
+      for (const extra of ctx.extraPaths) {
+        if (extra.type === type) {
+          out.add(path.join(extra.dir, ...remainder, filename))
+        }
+      }
+    }
+  }
+  return [...out]
+}
+
+/** Temp dir on the destination's volume so the final rename is atomic (no EXDEV). */
+function modelTempDirFor(baseDir: string): string {
+  return path.join(baseDir, TEMP_DIR_NAME)
+}
 
 function getTempDir(): string {
-  return path.join(getModelsBaseDir(), TEMP_DIR_NAME)
+  return modelTempDirFor(getModelsBaseDir())
 }
 
 function getAssetTempDir(): string {
@@ -317,12 +512,22 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/** True only for an existing regular file, so the instant-complete shortcut
+ *  doesn't fire on a directory that merely shares the model's name. */
+async function regularFileExists(filePath: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(filePath)).isFile()
+  } catch {
+    return false
+  }
+}
+
 export function parseContentDispositionFilename(header: string | null): string | null {
   if (!header) return null
   // Try filename*= (RFC 5987 encoded)
   const starMatch = header.match(/filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;\s]+)/i)
   if (starMatch?.[1]) {
-    try { return decodeURIComponent(starMatch[1]) } catch {}
+    try { return decodeURIComponent(starMatch[1]) } catch { }
   }
   // Try filename="..." or filename=...
   const match = header.match(/filename\s*=\s*"([^"]+)"/i) || header.match(/filename\s*=\s*([^;\s]+)/i)
@@ -341,7 +546,7 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
       const rcd = new URL(u).searchParams.get('response-content-disposition')
       const rcdName = parseContentDispositionFilename(rcd)
       if (rcdName) return rcdName
-    } catch {}
+    } catch { }
   }
 
   return null
@@ -364,16 +569,29 @@ export async function startModelDownload(
   rawFilename: string,
   directory: string,
   senderContents?: Electron.WebContents,
+  installationId?: string | null,
 ): Promise<boolean> {
   const filename = stripQueryParams(rawFilename)
-  const baseDir = getModelsBaseDir()
+  // Resolve the initiating install so destination + existence check follow its
+  // model settings. An explicit `installationId` (from retries) wins over the
+  // live sender so a retry still targets the right install after its view is gone.
+  const resolvedInstallId = installationId ?? resolveSenderInstallationId(senderContents)
+  const ctx = await resolveDownloadContextById(resolvedInstallId)
+  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const savePath = path.join(baseDir, directory, filename)
-  const tempDir = getTempDir()
+  const tempDir = modelTempDirFor(baseDir)
   const tempPath = path.join(tempDir, `${Date.now()}-${filename}.tmp`)
 
   // Capture before the validation early-returns so even a synchronous
   // error (bad path / extension) lands a retryable terminal entry.
-  retryParamsByUrl.set(url, { kind: 'model', filename, directory, window: win, senderContents })
+  retryParamsByUrl.set(url, {
+    kind: 'model',
+    filename,
+    directory,
+    window: win,
+    senderContents,
+    installationId: resolvedInstallId,
+  })
 
   const makeProgress = (
     overrides: Partial<DownloadProgress>,
@@ -399,15 +617,23 @@ export async function startModelDownload(
     return false
   }
 
-  if (await fileExists(savePath)) {
-    // File already exists — report completed without starting a download
-    const progress = makeProgress({ progress: 1, status: 'completed', savePath })
-    broadcastProgress(progress)
-    return true
+  // Report completed without downloading only when the file already exists
+  // somewhere the install's ComfyUI actually searches.
+  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+    if (await regularFileExists(candidate)) {
+      const progress = makeProgress({ progress: 1, status: 'completed', savePath: candidate })
+      broadcastProgress(progress)
+      return true
+    }
   }
-
   const existing = pendingDownloads.get(url)
   if (existing) {
+    // Downloads are keyed solely by URL, so one URL can't carry two concurrent
+    // destinations. If another install is already fetching this URL into a
+    // different dir, fail closed rather than complete into the wrong place.
+    if (!isSamePath(path.dirname(existing.savePath), path.dirname(savePath))) {
+      return false
+    }
     if (win !== existing.window) {
       existing.subscriberWindows.add(win)
     }
@@ -585,7 +811,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         try {
           fs.renameSync(pending.tempPath, pending.savePath)
         } catch {
-          try { fs.unlinkSync(pending.tempPath) } catch {}
+          try { fs.unlinkSync(pending.tempPath) } catch { }
           if (!fs.existsSync(pending.savePath)) {
             reportProgress({
               url: pending.url,
@@ -600,7 +826,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
           }
         }
         // Try to remove the temp directory if it's now empty (safe — fails silently if not empty)
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch {}
+        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
       }
       reportProgress({
         url: pending.url,
@@ -613,8 +839,8 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       })
     } else if (state === 'cancelled') {
       if (pending.tempPath) {
-        try { fs.unlinkSync(pending.tempPath) } catch {}
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch {}
+        try { fs.unlinkSync(pending.tempPath) } catch { }
+        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
       }
       reportProgress({
         url: pending.url,
@@ -625,8 +851,8 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       })
     } else {
       if (pending.tempPath) {
-        try { fs.unlinkSync(pending.tempPath) } catch {}
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch {}
+        try { fs.unlinkSync(pending.tempPath) } catch { }
+        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
       }
       reportProgress({
         url: pending.url,
@@ -829,7 +1055,7 @@ export function retryDownload(url: string): boolean {
     // download simply re-enters `error` and stays retryable.
     void startAssetDownload(win, url, params.filename, params.outputDir!, params.authToken, sender)
   } else {
-    void startModelDownload(win, url, params.filename, params.directory ?? '', sender)
+    void startModelDownload(win, url, params.filename, params.directory ?? '', sender, params.installationId)
   }
   return true
 }
@@ -905,15 +1131,35 @@ export function getAllDownloads(): DownloadProgress[] {
   for (const recent of recentDownloads) {
     result.push(recent)
   }
+  // Seed the All-Downloads modal with template-mirror rows too, matching what
+  // `getDownloadsTrayState()` shows in the tray popup.
+  for (const bucket of templateTrayMirrorByInstall.values()) {
+    for (const entry of bucket.values()) result.push(entry)
+  }
   return result
+}
+
+/** Remove `url` from any per-install template mirror bucket, pruning emptied
+ *  buckets. Mirrored rows live outside `recentDownloads`, so the recent-buffer
+ *  cleanup paths must drop them here too or finished ones linger forever. */
+function removeMirroredTemplateRow(url: string): boolean {
+  for (const [installationId, bucket] of templateTrayMirrorByInstall) {
+    if (bucket.delete(url)) {
+      createdAtByUrl.delete(url)
+      if (bucket.size === 0) templateTrayMirrorByInstall.delete(installationId)
+      return true
+    }
+  }
+  return false
 }
 
 /** Dismiss a single terminal entry from the recent buffer (cancel in-flight
  *  ones first). Broadcasts `model-download-removed` so every renderer drops it. */
 export function dismissRecentDownload(url: string): boolean {
   const idx = recentDownloads.findIndex((d) => d.url === url)
-  if (idx < 0) return false
-  recentDownloads.splice(idx, 1)
+  const removedMirror = removeMirroredTemplateRow(url)
+  if (idx < 0 && !removedMirror) return false
+  if (idx >= 0) recentDownloads.splice(idx, 1)
   createdAtByUrl.delete(url)
   retryParamsByUrl.delete(url)
   _broadcastToRenderer('model-download-removed', { url })
@@ -921,19 +1167,31 @@ export function dismissRecentDownload(url: string): boolean {
   return true
 }
 
-/** Bulk-dismiss every terminal entry from the recent buffer. */
+/** Bulk-dismiss every terminal entry from the recent buffer and the finished
+ *  template-mirror rows. */
 export function clearFinishedDownloads(): number {
-  if (recentDownloads.length === 0) return 0
+  const removedUrls: string[] = []
   const removed = recentDownloads.splice(0, recentDownloads.length)
   for (const r of removed) {
     createdAtByUrl.delete(r.url)
     retryParamsByUrl.delete(r.url)
+    removedUrls.push(r.url)
   }
-  _broadcastToRenderer('model-downloads-cleared-finished', {
-    urls: removed.map((r) => r.url),
-  })
+  // Purge terminal template-mirror rows too; drop buckets left empty.
+  for (const [installationId, bucket] of templateTrayMirrorByInstall) {
+    for (const [url, entry] of bucket) {
+      if (isTerminalStatus(entry.status)) {
+        bucket.delete(url)
+        createdAtByUrl.delete(url)
+        removedUrls.push(url)
+      }
+    }
+    if (bucket.size === 0) templateTrayMirrorByInstall.delete(installationId)
+  }
+  if (removedUrls.length === 0) return 0
+  _broadcastToRenderer('model-downloads-cleared-finished', { urls: removedUrls })
   downloadEvents.emit('tray-state-changed')
-  return removed.length
+  return removedUrls.length
 }
 
 /** Detach a closing window's downloads; they continue in the background via
@@ -950,10 +1208,10 @@ export function detachWindowDownloads(win: BrowserWindow): void {
 export async function cleanupTempDownloads(): Promise<void> {
   try {
     await fs.promises.rm(getTempDir(), { recursive: true, force: true })
-  } catch {}
+  } catch { }
   try {
     await fs.promises.rm(getAssetTempDir(), { recursive: true, force: true })
-  } catch {}
+  } catch { }
 }
 
 /** Test-only: replace the in-memory buffers with `snapshot` and emit

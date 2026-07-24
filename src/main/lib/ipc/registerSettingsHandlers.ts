@@ -275,7 +275,10 @@ export function applySettingSet(key: string, value: unknown): void {
   }
   if (key === 'language') {
     i18n.init(value as string)
-    _broadcastToRenderer('locale-changed', i18n.getMessages())
+    _broadcastToRenderer('locale-changed', {
+      locale: i18n.getLocale(),
+      messages: i18n.getMessages()
+    })
     if (_onLocaleChanged) _onLocaleChanged()
   }
   if (key === 'telemetryEnabled') {
@@ -289,6 +292,12 @@ export function applySettingSet(key: string, value: unknown): void {
   if (key === 'autoInstallUpdates' || key === 'autoUpdate') {
     // Re-broadcast so a pending 'ready' immediately reads as auto-on/off.
     updater.notifyAutoUpdateChanged()
+  }
+  // Keep the durable per-setting person properties current on toggle (issues
+  // #1220/#1223) instead of waiting for the next boot. No-op for 'omit' keys.
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties([key])
+  if (Object.keys(trackedProps).length > 0) {
+    mainTelemetry.registerPersonProperties(trackedProps)
   }
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')

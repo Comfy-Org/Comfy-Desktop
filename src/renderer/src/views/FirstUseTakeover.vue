@@ -266,8 +266,17 @@ const showGpuHint = computed(
 let mountedAt = Date.now()
 const stepsSeen = new Set<Step>()
 let completedFired = false
+/** True when the exit hands off to a chain flow (chain-local /
+ *  chain-migrate). Those chains keep the host locked to `'post-consent'`
+ *  across the takeover swap, so the unmount hook must not clobber their
+ *  mode push with `'none'`. */
+let chainHandoff = false
 
 function emitCompleted(exitPath: 'cloud' | 'local-new' | 'local-migrate' | 'skipped'): void {
+  // Recompute the handoff flag on every exit — even telemetry-deduped
+  // ones — so a cancelled chain followed by a different exit path can't
+  // leave a stale `chainHandoff` suppressing the unmount's `'none'` push.
+  chainHandoff = exitPath === 'local-new' || exitPath === 'local-migrate'
   if (completedFired) return
   completedFired = true
   const durationMs = Date.now() - mountedAt
@@ -430,7 +439,7 @@ async function routePostStart(): Promise<void> {
     // pick to Local so a second Continue click just proceeds (the
     // Cloud card is already visually greyed). User sees: spinner
     // disappears, Local is now selected, hit Continue → moves on.
-    if (!(await cloudCapacity.confirmEntry())) {
+    if (!(await cloudCapacity.confirmEntry('first_use'))) {
       // Separate event from `fork_chosen` because the user picked cloud
       // but never actually entered it — counting them as a cloud
       // converter would inflate the dashboard. `disabled` means the
@@ -457,7 +466,7 @@ async function routePostStart(): Promise<void> {
     // does on chain-local: with both ticked, the host runs the
     // migration straight through (preview + auto-pick + run) without
     // surfacing the confirm step.
-    emitTelemetryAction('desktop2.first_use.local_branch_chosen', { choice: 'migrate' })
+    emitTelemetryAction('comfy.desktop.first_use.local_branch_chosen', { choice: 'migrate' })
     emitCompleted('local-migrate')
     emit('chain-migrate', { express: expressInstall.value })
   } else if (hasLegacyDesktop.value && !expressInstall.value) {
@@ -610,6 +619,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // also adds it on first mount, but Set.add is idempotent.
   stepsSeen.add(step.value)
   completedFired = false
+  chainHandoff = false
   // Pre-load existing telemetry preference so the toggle reflects the
   // user's current persisted choice if the takeover is replaying after
   // a mid-flow cancel (the consent step is the only one that can flip
@@ -671,15 +681,38 @@ watch(
 
 onUnmounted(() => {
   clearTimeout(nudgeTimer)
-  // Clear the host's `firstUseMode` whenever the takeover unmounts,
-  // regardless of why (Cloud-branch
-  // completion, Local-branch chain swap, file-menu Skip Onboarding,
-  // OS-chrome window close, dev-tools refresh). The host's
-  // `dismissTakeoverDirect` ALSO pushes `'none'` for the renderer-
-  // internal dismiss path; the duplicate landing here is harmless and
-  // keeps unmount paths that go through useOverlay's silent Tier 3 →
-  // Tier 3 swap (chain-local) covered too.
-  window.api.setFirstUseMode('none')
+  // First-use abandonment: the takeover unmounted without any completion
+  // path having fired. EVERY routing exit (complete-cloud, chain-local,
+  // chain-migrate, complete-skip) calls `emitCompleted(...)` first, so
+  // `completedFired === false` at unmount means the user dropped out —
+  // closed the window, hit dev-tools refresh, or quit mid-flow. This is the
+  // chooser-drop signal: it pairs with `first_use.completed` to give the
+  // onboarding funnel its denominator (started) vs. numerator (finished).
+  // Post-consent so a `'denied'`/`'undecided'` first-ever abandon is still
+  // dropped by the normal consent gate (no pre-consent allow-list entry).
+  if (!completedFired) {
+    const msOnScreen = Date.now() - mountedAt
+    // `reason` is coarse and enum-only: whether the user had crossed the ToS
+    // gate before dropping. `consent_accepted` = they ticked ToS (and so were
+    // one Continue away); `pre_consent` = they bailed on the very first gate.
+    // We can't observe the OS-level "why" (close vs refresh vs quit) here, so
+    // we report the funnel-meaningful split instead of guessing the mechanism.
+    emitTelemetryAction('comfy.desktop.first_use.abandoned', {
+      step: step.value,
+      reason: acceptedTos.value ? 'consent_accepted' : 'pre_consent',
+      ms_on_screen: msOnScreen,
+      had_legacy: hasLegacyDesktop.value
+    })
+  }
+  // Clear the host's `firstUseMode` whenever the takeover unmounts
+  // (Cloud-branch completion, file-menu Skip Onboarding, OS-chrome
+  // window close, dev-tools refresh). The host's `dismissTakeoverDirect`
+  // ALSO pushes `'none'` for the renderer-internal dismiss path; the
+  // duplicate landing here is harmless. Chain handoffs are the
+  // exception: chain-local / chain-migrate assert `'post-consent'`
+  // before this unmount flushes, and pushing `'none'` here would
+  // clobber that and briefly surface the full file menu mid-onboarding.
+  if (!chainHandoff) window.api.setFirstUseMode('none')
 })
 
 /** Host-callable: clears the Continue-button spinner without resetting
@@ -690,6 +723,10 @@ onUnmounted(() => {
  *  user can retry Continue. */
 function resetContinue(): void {
   isContinuing.value = false
+  // The chain was cancelled, so its handoff is off — a later unmount
+  // must clear `firstUseMode` normally instead of honoring a ghost
+  // handoff from the aborted exit.
+  chainHandoff = false
 }
 
 defineExpose({ open, resetContinue })

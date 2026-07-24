@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 
-import { parse as parseYaml } from 'yaml'
 
 import {
   detectDesktopInstall,
@@ -28,9 +27,19 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields } from '../../shared/errorEvent'
+import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
-import { KNOWN_MODEL_FOLDERS } from './models'
+import {
+  KNOWN_MODEL_FOLDERS,
+  parseExtraModelsSections,
+  parseExtraModelsYaml,
+  type ExtraModelsSection,
+} from './models'
+
+// Re-exported from ./models for back-compat with existing importers and tests.
+export { parseExtraModelsSections, parseExtraModelsYaml }
+export type { ExtraModelsSection }
 
 const MARKER_FILE = ADOPT_MARKER_FILE
 const STAGED_SOURCE_REL = path.join('legacy-staging', 'comfyui')
@@ -42,19 +51,29 @@ const SNAPSHOTS_REL = '.snapshots'
 // Keeping the name plain — instead of "Adopted from Legacy Desktop" —
 // matches user expectation that the picker shows their app, not the
 // provenance story.
-const ADOPT_INSTALL_NAME = 'ComfyUI'
+const ADOPT_INSTALL_NAME = DEFAULT_INSTALL_NAME
 const COMFY_SETTINGS_FILE = 'comfy.settings.json'
 const DESKTOP_CONFIG_FILE = 'config.json'
 const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
 const WINDOW_FILE = 'window.json'
 const VENV_VALIDATE_TIMEOUT_MS = 30_000
+const ADOPTED_SETTINGS_VERSION = 1
+
+function legacyComfySettingsPath(basePath: string): string {
+  return path.join(basePath, 'user', 'default', COMFY_SETTINGS_FILE)
+}
+
+interface LegacyComfySettingsRead {
+  settings: Record<string, unknown>
+  status: 'ok' | 'missing' | 'error'
+}
 
 export type AdoptPromptKind = 'tcc' | 'venv-broken' | 'source-missing' | 'confirm-adopt'
 
 export type UserChoice =
   | { kind: 'tcc'; choice: 'continue' | 'denied' }
   | { kind: 'venv-broken'; choice: 'use-anyway' | 'cancel' }
-  | { kind: 'source-missing'; choice: 'switch-to-managed' | 'retry' | 'cancel' }
+  | { kind: 'source-missing'; choice: 'retry' | 'cancel' }
   | { kind: 'confirm-adopt'; choice: 'yes' | 'no' }
 
 export interface AdoptTools {
@@ -203,86 +222,6 @@ export async function cloneSourceFromGitDefault(
   return { ok: true }
 }
 
-/**
- * Keys under a section that are NOT per-type model-folder overrides and must
- * never be treated as model dirs. `custom_nodes` is excluded because pointing
- * the model scanner at a custom-nodes tree would register Python packages as
- * "models"; the other three are metadata legacy desktop wrote per section.
- */
-const NON_MODEL_SECTION_KEYS: ReadonlySet<string> = new Set([
-  'base_path',
-  'is_default',
-  'custom_nodes',
-  'download_model_base'
-])
-
-/** One config group from `extra_models_config.yaml`. */
-export interface ExtraModelsSection {
-  /** Section name (e.g. `comfyui_desktop`, `my_external`). */
-  name: string
-  /** `base_path:` value when present (raw, may be relative). */
-  basePath?: string
-  /** Per-type override key (`checkpoints`, `loras`, …) → path. A value may
-   *  carry multiple newline/pipe-delimited paths in the legacy format; each
-   *  becomes its own entry keyed by the same type. */
-  overrides: Array<{ type: string; path: string }>
-}
-
-/** Coerce a YAML scalar into one or more trimmed, non-empty path strings.
- *  Legacy desktop allows `|`-block and pipe-delimited multi-path values
- *  (e.g. ComfyUI's `text_encoders: models/text_encoders/\nmodels/clip/`). */
-function splitYamlPaths(value: unknown): string[] {
-  if (value == null) return []
-  return String(value)
-    .split(/[\r\n|]+/)
-    .map((s) => s.replace(/#.*$/, '').trim())
-    .filter((s) => s.length > 0)
-}
-
-/**
- * Parse `extra_models_config.yaml` into structured sections, each with its
- * optional `base_path` and every per-type model-folder override. Uses a real
- * YAML parser so `|`-block scalars and pipe-delimited multi-path values (both
- * valid in the legacy format) are handled correctly. Returns `[]` on any parse
- * failure so a malformed legacy file never aborts adoption.
- */
-export function parseExtraModelsSections(content: string): ExtraModelsSection[] {
-  let doc: unknown
-  try {
-    doc = parseYaml(content)
-  } catch {
-    return []
-  }
-  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return []
-
-  const sections: ExtraModelsSection[] = []
-  for (const [name, raw] of Object.entries(doc as Record<string, unknown>)) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-    const group = raw as Record<string, unknown>
-    const section: ExtraModelsSection = { name, overrides: [] }
-    const basePathVals = splitYamlPaths(group['base_path'])
-    if (basePathVals.length > 0) section.basePath = basePathVals[0]
-    for (const [key, value] of Object.entries(group)) {
-      if (NON_MODEL_SECTION_KEYS.has(key)) continue
-      for (const p of splitYamlPaths(value)) {
-        section.overrides.push({ type: key, path: p })
-      }
-    }
-    sections.push(section)
-  }
-  return sections
-}
-
-/**
- * Back-compat: pull out every `base_path:` string value across sections.
- * Retained for callers that only need the bare base paths. Prefer
- * `parseExtraModelsSections` for the full structured view.
- */
-export function parseExtraModelsYaml(content: string): string[] {
-  return parseExtraModelsSections(content)
-    .map((s) => s.basePath)
-    .filter((b): b is string => typeof b === 'string' && b.length > 0)
-}
 
 /**
  * Keys legacy desktop wrote into `Comfy.Server.LaunchArgs` that v2 owns
@@ -375,7 +314,10 @@ function normalizeLaunchValue(value: unknown): string | null {
  * the string and returned in `pathOverrides` so the caller can promote
  * them into the per-install `inputDir` / `outputDir` fields.
  */
-export function deriveLaunchArgs(comfySettings: Record<string, unknown>): DerivedLaunchArgs {
+export function deriveLaunchArgs(
+  comfySettings: Record<string, unknown>,
+  selectedDevice?: string | null
+): DerivedLaunchArgs {
   const asMap = (raw: unknown): Record<string, unknown> =>
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
 
@@ -384,6 +326,8 @@ export function deriveLaunchArgs(comfySettings: Record<string, unknown>): Derive
 
   // ServerConfigValues is the base; LaunchArgs overrides on key conflicts.
   const mergedMap: Record<string, unknown> = { ...serverConfigValues, ...launchArgsMap }
+  // selectedDevice is persisted separately and survives missing or damaged settings files.
+  if (selectedDevice === 'cpu' && !('cpu' in mergedMap)) mergedMap.cpu = true
 
   const parts: string[] = []
   const pathOverrides: DerivedLaunchArgs['pathOverrides'] = {}
@@ -425,15 +369,18 @@ export function deriveLaunchArgs(comfySettings: Record<string, unknown>): Derive
  * Read & coerce the subset of legacy front-end settings the orchestrator
  * actually uses. Missing values fall back to legacy defaults.
  */
-function readLegacyComfySettings(configDir: string): Record<string, unknown> {
+function readLegacyComfySettings(basePath: string): LegacyComfySettingsRead {
   try {
-    const raw = fs.readFileSync(path.join(configDir, COMFY_SETTINGS_FILE), 'utf-8')
+    const raw = fs.readFileSync(legacyComfySettingsPath(basePath), 'utf-8')
     const parsed: unknown = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
+      return { settings: parsed as Record<string, unknown>, status: 'ok' }
     }
-  } catch {}
-  return {}
+    return { settings: {}, status: 'error' }
+  } catch (err) {
+    const status = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'error'
+    return { settings: {}, status }
+  }
 }
 
 function readLegacyComfyPrefs(raw: Record<string, unknown>): LegacyComfySettings {
@@ -596,11 +543,12 @@ function isUnderRoot(child: string, root: string): boolean {
 }
 
 /**
- * Best-effort copy of legacy userData files into a timestamped backup folder.
+ * Best-effort copy of legacy state files into a timestamped backup folder.
  * Logged on failure but never throws so adoption can continue.
  */
 async function backupLegacyState(
   configDir: string,
+  basePath: string,
   timestamp: string,
   sendOutput: (t: string) => void
 ): Promise<void> {
@@ -611,9 +559,13 @@ async function backupLegacyState(
     sendOutput(`Warning: could not create backup dir: ${(err as Error).message}\n`)
     return
   }
-  const files = [DESKTOP_CONFIG_FILE, COMFY_SETTINGS_FILE, EXTRA_MODELS_YAML, WINDOW_FILE]
-  for (const file of files) {
-    const src = path.join(configDir, file)
+  const files = [
+    { file: DESKTOP_CONFIG_FILE, src: path.join(configDir, DESKTOP_CONFIG_FILE) },
+    { file: COMFY_SETTINGS_FILE, src: legacyComfySettingsPath(basePath) },
+    { file: EXTRA_MODELS_YAML, src: path.join(configDir, EXTRA_MODELS_YAML) },
+    { file: WINDOW_FILE, src: path.join(configDir, WINDOW_FILE) }
+  ]
+  for (const { file, src } of files) {
     const dst = path.join(destDir, file)
     try {
       if (fs.existsSync(src)) await fs.promises.copyFile(src, dst)
@@ -677,12 +629,14 @@ interface RequirementsInstallReport {
  * legacy CUDA build.
  *
  * Also installs `pygit2` so:
- *   - ComfyUI-Manager v4 picks the pygit2 backend (gated by
- *     `CM_USE_PYGIT2=1`, which `buildLaunchEnv` already sets for every
- *     `sourceId === 'standalone'` install — adopted included). Without
- *     pygit2 Manager falls back to GitPython, which requires `git` on
- *     PATH — Legacy Desktop never required system git, so adopted users
- *     often don't have it.
+ *   - ComfyUI-Manager v4 has a git backend even when system git is
+ *     absent. Manager prefers system git when present (honoring the
+ *     user's full git config) and falls back to its bundled pygit2
+ *     otherwise; `buildLaunchEnv` only forces the pygit2 backend via
+ *     `CM_USE_PYGIT2=1` when a developer sets `COMFY_FORCE_PYGIT2=1`.
+ *     Legacy Desktop never required system git, so adopted users often
+ *     don't have it — without pygit2 Manager would fall back to
+ *     GitPython, which requires `git` on PATH.
  *   - The launcher-bundled `update_comfyui.py` can run against the
  *     adopted Python (it imports pygit2 unconditionally), which is what
  *     unblocks in-place ComfyUI source updates for adopted installs.
@@ -891,14 +845,16 @@ interface CarryReport {
  */
 function carryLegacySettings(
   basePath: string,
-  configDir: string,
+  configDir: string | null,
   legacy: LegacyComfySettings,
   sendOutput: (t: string) => void
 ): CarryReport {
   let extraYamlContent: string | null = null
-  try {
-    extraYamlContent = fs.readFileSync(path.join(configDir, EXTRA_MODELS_YAML), 'utf-8')
-  } catch {}
+  if (configDir) {
+    try {
+      extraYamlContent = fs.readFileSync(path.join(configDir, EXTRA_MODELS_YAML), 'utf-8')
+    } catch {}
+  }
 
   const currentModelsDirs = (settings.get('modelsDirs') as string[] | undefined) ?? [
     ...settings.defaults.modelsDirs
@@ -962,7 +918,66 @@ function carryLegacySettings(
   tryCarry('inputDir', path.join(basePath, 'input'))
   tryCarry('outputDir', path.join(basePath, 'output'))
 
+  // This flow writes settings.json directly (not via applySettingSet), so refresh
+  // the durable per-setting person properties for what we just changed instead of
+  // waiting for the next boot (issues #1220/#1223). Consent-gated + queued.
+  const changedKeys = additions.length > 0 ? [...carriedKeys, 'modelsDirs'] : carriedKeys
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties(changedKeys)
+  if (Object.keys(trackedProps).length > 0) {
+    telemetry.registerPersonProperties(trackedProps)
+  }
+
   return { addedModelsDirs: additions, carriedKeys, carrySkippedKeys }
+}
+
+/** Restore legacy settings on adopted records that still contain generated defaults. */
+export async function reconcileAdoptedSettings(): Promise<number> {
+  const all = await installations.list()
+  let repaired = 0
+  const generatedDefaultArgs = deriveLaunchArgs({}).launchArgs
+
+  for (const existing of all) {
+    if (existing.adopted !== true || existing.sourceId !== 'standalone') continue
+    if (existing.adoptedSettingsVersion === ADOPTED_SETTINGS_VERSION) continue
+
+    try {
+      const basePath = existing.adoptedBaseDir as string | undefined
+      if (!basePath) continue
+      const selectedDevice = existing.adoptedSelectedDevice as string | undefined
+      const settingsRead = readLegacyComfySettings(basePath)
+      if (settingsRead.status === 'error') continue
+      const rawComfySettings = settingsRead.settings
+      const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
+
+      carryLegacySettings(basePath, null, readLegacyComfyPrefs(rawComfySettings), () => {})
+
+      const patch: Record<string, unknown> = {
+        adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION
+      }
+      // Only generated defaults are safe to replace; preserve launch args edited in v2.
+      if (existing.launchArgs === generatedDefaultArgs) {
+        patch.launchArgs = derived.launchArgs
+      }
+      if (
+        derived.pathOverrides.inputDir &&
+        existing.inputDir === path.join(basePath, 'input')
+      ) {
+        patch.inputDir = derived.pathOverrides.inputDir
+      }
+      if (
+        derived.pathOverrides.outputDir &&
+        existing.outputDir === path.join(basePath, 'output')
+      ) {
+        patch.outputDir = derived.pathOverrides.outputDir
+      }
+
+      if (await installations.update(existing.id, patch)) repaired += 1
+    } catch (err) {
+      console.warn(`Failed to reconcile adopted settings for ${existing.id}:`, err)
+    }
+  }
+
+  return repaired
 }
 
 /**
@@ -1082,15 +1097,9 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     const result = await runAdoption(info, phaseAwareTools, deps)
     return result
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Scrub before slice so the redacted prefix doesn't get truncated
-    // mid-token. The bucket runs on raw text because its regexes don't
-    // care about user paths and would otherwise miss a legitimate match
-    // hidden inside a `[REDACTED]` substitution.
     telemetry.capture('comfy.desktop.adopt.failed', {
       stage: currentPhase,
-      error_bucket: telemetry.bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }
@@ -1125,7 +1134,7 @@ async function runAdoption(
 
   sendProgress('backup', { percent: 0 })
   await telemetry.trackedStep('comfy.desktop.adopt.backup', {}, async () => {
-    await backupLegacyState(info.configDir, timestamp, sendOutput)
+    await backupLegacyState(info.configDir, info.basePath, timestamp, sendOutput)
   })
 
   if (process.platform === 'darwin') {
@@ -1209,13 +1218,13 @@ async function runAdoption(
       message: sourceResult.message,
       attempts: sourceAttempts
     })
-    if (choice.kind !== 'source-missing') break
-    if (choice.choice === 'cancel') {
+    // Only an explicit retry loops. Anything else (cancel, or an
+    // unexpected choice) is a hard failure: adoption cannot continue
+    // without the ComfyUI source. Throw a clear error the dispatcher
+    // surfaces to the user — with a suggestion to do a fresh install —
+    // rather than silently leaving `sourceMode` null.
+    if (!(choice.kind === 'source-missing' && choice.choice === 'retry')) {
       throw new Error(`source-missing: ${sourceResult.message}`)
-    }
-    if (choice.choice === 'switch-to-managed') {
-      // Caller (dispatcher) maps this to the fresh-standalone flow.
-      throw new Error('source-missing-switch-to-managed')
     }
     // 'retry' loops.
   }
@@ -1279,9 +1288,9 @@ async function runAdoption(
     }
   )
 
-  const rawComfySettings = readLegacyComfySettings(info.configDir)
+  const settingsRead = readLegacyComfySettings(info.basePath)
+  const rawComfySettings = settingsRead.settings
   const prefs = readLegacyComfyPrefs(rawComfySettings)
-  const derived = deriveLaunchArgs(rawComfySettings)
   const legacyDesktopConfig = readLegacyDesktopConfig(info.configDir)
   const legacyAppVersion = readLegacyAppVersion(info.executablePath)
   const detectedGpu =
@@ -1292,6 +1301,7 @@ async function runAdoption(
     typeof legacyDesktopConfig['selectedDevice'] === 'string'
       ? (legacyDesktopConfig['selectedDevice'] as string)
       : null
+  const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
 
   sendProgress('settings', { percent: 0 })
   const carry = await telemetry.trackedStep('comfy.desktop.adopt.carry_settings', {}, async () => {
@@ -1318,6 +1328,9 @@ async function runAdoption(
       adoptedBaseDir: info.basePath,
       adoptedPythonPath: pythonPath,
       adoptedSourceMode: sourceMode!,
+      ...(settingsRead.status !== 'error'
+        ? { adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION }
+        : {}),
       ...(legacyAppVersion ? { adoptedFromLegacyVersion: legacyAppVersion } : {}),
       // Hardware hints stashed for a future "rebuild as managed standalone"
       // flow that needs to preselect the right variant — no v2 consumer
@@ -1413,6 +1426,17 @@ async function runAdoption(
     requirements_pygit2_exit: reqReport.pygit2ExitCode,
     gpu: detectedGpu,
     selected_device: selectedDevice
+  })
+
+  // Fire the once-per-install funnel event for the in-place Desktop-1 adoption
+  // path. Only reached on a fresh adoption — the idempotent re-run in
+  // `adoptDesktopInstall` returns the existing record before `runAdoption`, so
+  // this never re-fires for an already-adopted install. Best-effort:
+  // `capture()` swallows its own errors and never aborts adoption.
+  telemetry.captureInstallCompleted({
+    installationId: record.id,
+    method: 'adopt',
+    express: false
   })
 
   sendProgress('done', { percent: 100 })

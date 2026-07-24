@@ -1,4 +1,4 @@
-import { app, Menu, ipcMain, net } from 'electron'
+import { app, Menu, ipcMain, net, dialog, crashReporter, nativeTheme } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
@@ -16,32 +16,44 @@ import * as updater from './lib/updater'
 import * as settings from './settings'
 import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
-import { migrateXdgPaths } from './lib/paths'
+import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import {
   flushLastSessionSync,
   recordDashboardSurface
 } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { initAppLog, flushOperationOutput } from './lib/appLog'
+import { pruneCrashDumps } from './lib/crashDumps'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
-import { openSystemModal, openSystemModalAsync, registerSystemModalIpc } from './popups/systemModal'
+import { openSystemModal, openSystemModalAsync, openSystemModalChoiceAsync, registerSystemModalIpc } from './popups/systemModal'
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
+  openDownloadsTrayForInstall,
   type InstancePickerInstall
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
 import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
-import { isQuitInProgress, setQuitReason } from './lib/quit-state'
+import {
+  clearQuitReason,
+  isQuitInProgress,
+  setQuitReason,
+  setSessionEnding
+} from './lib/quit-state'
+import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
   cleanupTempDownloads,
   downloadEvents,
   getDownloadsTrayState
 } from './lib/comfyDownloadManager'
+import { hasActiveTemplateDownloads, getTemplateDownloadState } from './sources/standalone/templateDownloadTask'
+import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
+import { emitInstanceStartedTelemetry } from './lib/ipc/sessionStartTelemetry'
 import {
   get as getInstallation,
   installationEvents,
@@ -70,7 +82,13 @@ import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
 import {
+  clearPendingDownloadToken,
+  markDownloadTokenAttributed,
+  readPendingDownloadToken
+} from './lib/downloadAttribution'
+import {
   clearPendingAlias,
+  consumeFirstLaunch,
   getDeviceId,
   getIdClass,
   initDeviceId,
@@ -98,6 +116,7 @@ import {
   setHostFactories,
   shouldConfirmKillForEntry
 } from './host/registry'
+import type { ComfyWindowEntry } from './host/registry'
 import {
   applyChooserHostThemeToAll,
   createHostWindow,
@@ -106,7 +125,8 @@ import {
   rebuildComfyViewIfNeeded,
   setHostWindowFactories
 } from './host/createHostWindow'
-import { attachInstall, setAttachFactories } from './host/attach'
+import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
+import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
@@ -131,6 +151,15 @@ import {
 } from './host/panelView'
 
 export type { ComfyPanelKey } from './host/registry'
+
+// Collect native crash minidumps (GPU / renderer / V8 OOM segfaults that
+// never reach a JS handler) into app.getPath('crashDumps'). Kept local — we
+// don't upload, we ask the user to send them. Must start before app ready.
+try {
+  crashReporter.start({ uploadToServer: false })
+} catch {
+  // Never let crash-reporter setup block app startup.
+}
 
 todesktop.init({ autoUpdater: false })
 
@@ -207,6 +236,11 @@ function quitApp(): void {
  *  never reaches the restore handler, so the window can't stay invisible. */
 const STARTUP_RESTORE_REVEAL_BACKSTOP_MS = 10_000
 const pendingStartupRestoreRevealTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+/** A successful startup update install quits the app within a tick. If the quit
+ *  hasn't happened by now the install didn't proceed, so we recover into the
+ *  normal surface rather than leaving the user on the "Updating…" splash. */
+const STARTUP_INSTALL_QUIT_BACKSTOP_MS = 4_000
 
 function clearStartupRestoreRevealTimer(windowKey: number): void {
   const timer = pendingStartupRestoreRevealTimers.get(windowKey)
@@ -332,8 +366,9 @@ const comfyFailRetryTimerCancels = new Map<string, () => void>()
  *  `attachInstall`; reached by the title-bar refresh button's IPC handler. */
 const comfyReloads = new Map<string, () => void>()
 /** comfyView zoom reset (→ 100%) per installation. Registered by
- *  `attachInstall`; reached by the title-bar zoom pill's IPC handler. */
-const comfyZoomResets = new Map<string, () => void>()
+ *  `attachInstall`; reached by the title-bar zoom pill's IPC handler and
+ *  the title menu's "Reset Zoom" entry (`source` distinguishes them). */
+const comfyZoomResets = new Map<string, (source: ZoomResetSource) => void>()
 /** Counter for generating unique relaunch tokens. */
 let relaunchTokenCounter = 0
 /** Per-install token guarding the async splash-then-reveal in the `onLaunch`
@@ -490,6 +525,12 @@ function onLaunch({
     return
   }
 
+  // Re-arm the per-launch canvas-rendered dedup so this launch's first
+  // dom-ready re-fires `canvas_rendered` (the guard otherwise suppresses it
+  // after the first paint of a prior launch on the same id). Fires for every
+  // window path below (reused, claimed, fresh).
+  resetCanvasRendered(installationId)
+
   // Re-launch into an existing window: a previous launch left the comfy
   // window alive (stop / crash leaves the window open with the lifecycle
   // body). Reuse the existing views; just point the comfyView at the new URL
@@ -574,6 +615,7 @@ function onLaunch({
         // Session registry handles state cleanup
       })
     }
+    scheduleTemplateTrayAutoOpen(installationId)
     return
   }
 
@@ -608,6 +650,7 @@ function onLaunch({
             // Session registry handles state cleanup
           })
         }
+        scheduleTemplateTrayAutoOpen(installationId)
         return
       }
       // Attach failed (telemetry-only — every current call site
@@ -679,6 +722,28 @@ function onLaunch({
       // Session registry handles state cleanup
     })
   }
+
+  scheduleTemplateTrayAutoOpen(installationId)
+}
+
+const TEMPLATE_TRAY_AUTO_OPEN_MS = 2500
+
+/**
+ * First launch after picking a starter template: if its models are still
+ * downloading as ComfyUI appears, surface the downloads tray a couple seconds in
+ * so the user notices it. Called on every `onLaunch` reveal path (reuse / chooser
+ * in-place attach / fresh window). Re-checks the download state at fire time (it
+ * may finish in the delay) and the window at open time (it may close).
+ */
+function scheduleTemplateTrayAutoOpen(installationId: string): void {
+  const state = getTemplateDownloadState(installationId)
+  if (!state || isTemplateDownloadTerminal(state.status)) return
+  setTimeout(() => {
+    const cur = getTemplateDownloadState(installationId)
+    if (cur && !isTemplateDownloadTerminal(cur.status)) {
+      openDownloadsTrayForInstall(installationId)
+    }
+  }, TEMPLATE_TRAY_AUTO_OPEN_MS)
 }
 
 ipcMain.handle('quit-app', () => quitApp())
@@ -845,7 +910,7 @@ ipcMain.on('comfy-window:reset-zoom', (event) => {
   if (entry.window.isDestroyed()) return
   const id = entry.installationId
   if (id === null) return
-  comfyZoomResets.get(id)?.()
+  comfyZoomResets.get(id)?.('titlebar')
   focusActiveBody(entry)
 })
 
@@ -984,11 +1049,9 @@ function _broadcastDownloadsToTitleBars(): void {
 function triggerOpenFeedback(entryId: number, source: 'titlebar' | 'menu'): void {
   const parentEntry = comfyWindows.get(entryId)
   if (!parentEntry || parentEntry.window.isDestroyed()) return
-  // Flip into the 'feedback' overlay panel — same pattern as
-  // 'downloads-v2'. setActivePanel lazily ensures the panel view,
-  // makes it visible over comfyView, and broadcasts `panel-switch` to
-  // the renderer. The IPC below carries the click `source` so the
-  // renderer's telemetry payload can distinguish titlebar vs. menu.
+  // Flip into the 'feedback' overlay panel. setActivePanel lazily ensures the
+  // panel view, makes it visible over comfyView, and broadcasts `panel-switch`.
+  // The IPC below carries the click `source` for telemetry (titlebar vs. menu).
   const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'feedback')
   setActivePanel(entryId, 'feedback')
   sendToPanelDeferred(panelView, 'comfy-panel:open-feedback', { source })
@@ -1227,7 +1290,48 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
   }
 
+  // Record OS session-end (Windows shutdown / restart / logoff, also macOS) so
+  // the update install paths can bail out — spawning the installer while the OS
+  // is tearing everything down risks it being force-killed mid-write, which is
+  // the corruption mode behind the "reinstall on every shutdown" reports.
+  // `session-end` is a BrowserWindow event, so attach it to every window as it
+  // is created.
+  app.on('browser-window-created', (_event, window) => {
+    // `query-session-end` (WM_QUERYENDSESSION) fires earlier than `session-end`,
+    // but the shutdown it announces can still be canceled (by us or another app)
+    // — so only suppress install-on-quit here (reversible / re-armed next
+    // launch). Flipping it off now widens the margin to keep the quit handler
+    // electron-updater registered after a download from spawning the installer
+    // the OS is about to kill mid-write.
+    window.on('query-session-end', () => {
+      updater.suppressInstallOnQuit()
+    })
+    // `session-end` (WM_ENDSESSION) means the session ending is finalized and
+    // can't be prevented — only now is it safe to latch `setSessionEnding()`,
+    // which permanently bails the install paths. Latching on the cancellable
+    // query event would brick installs (incl. the "Restart to update" pill) for
+    // the rest of the session if the shutdown were canceled.
+    window.on('session-end', () => {
+      setSessionEnding()
+      updater.suppressInstallOnQuit()
+    })
+  })
+
   app.whenReady().then(async () => {
+    // Open the durable global app log and install the main-process error
+    // handlers before anything else runs, so the earliest console output and
+    // any startup crash are captured.
+    initAppLog()
+    registerProcessErrorHandlers()
+    // Force native surfaces (dialogs, menus) dark before any window opens (see resolveTheme).
+    nativeTheme.themeSource = 'dark'
+    // Bound the local crash-dump folder; Crashpad's own pruning is coarse in
+    // upload-disabled mode and a crash-looping user can pile up multi-MB dumps.
+    pruneCrashDumps()
+    console.info(
+      `App started v${APP_VERSION} pid=${process.pid} platform=${process.platform} crashDumps=${app.getPath('crashDumps')}`
+    )
+
     // Test-only hooks for the E2E suite. Registered before any host
     // opens so seeded state (downloads, install-update overrides,
     // app-update state) is visible to the very first title-bar paint.
@@ -1265,7 +1369,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerPanelViewIpc()
 
     migrateXdgPaths()
-    registerProcessErrorHandlers()
+    persistWinDataRootChoice()
 
     // Strip Electron's default menu before any BrowserWindow opens so
     // OAuth / cloud-login popups (and every other window) can't reach
@@ -1320,15 +1424,37 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     const installationId = getDeviceId()
 
-    // identify() FIRST so distinctId is bound before any capture path
-    // runs (incl. the deferred migration alias's capture below). Without
-    // this the migrated event silently dropped on the !distinctId guard.
+    // Bind the anonymous distinct id before any capture runs. Does NOT
+    // `$identify` the installation_id (that would block the login stitch —
+    // see identity model in lib/telemetry.ts); the props below ship as a
+    // capture-`$set`.
     mainTelemetry.identify(installationId, {
       app_version: APP_VERSION,
       platform: process.platform,
       arch: process.arch,
       id_class: getIdClass()
     })
+
+    // Durable snapshot of the tracked global settings as person properties
+    // (issues #1220/#1223), so adoption of every setting is queryable across the
+    // whole base. Consent-gated: queued until granted. Re-registered on change in
+    // `applySettingSet`.
+    mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
+
+    const isFirstLaunch = consumeFirstLaunch()
+    const pendingDownloadToken = readPendingDownloadToken()
+    if (pendingDownloadToken) {
+      mainTelemetry.deferDownloadTokenAlias({
+        downloadToken: pendingDownloadToken.token,
+        installationId,
+        source: pendingDownloadToken.source,
+        attachToFirstLaunch: isFirstLaunch,
+        onAliased: () => {
+          clearPendingDownloadToken()
+          markDownloadTokenAttributed()
+        }
+      })
+    }
 
     if (legacyId) {
       // Queue the alias instead of awaiting it on the boot critical path.
@@ -1379,6 +1505,33 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)
+
+    // Locale adoption + unsupported-locale demand. `effective_language` is read
+    // after i18n.init so it's the locale the app actually renders (falls back to
+    // 'en' when no bundle exists), distinct from the OS locale and the user's
+    // pick. Not a global setting, but the only place the effective locale is known.
+    mainTelemetry.capture('comfy.desktop.app.language_resolved', {
+      os_locale: app.getLocale(),
+      selected_language: (settings.get('language') as string | undefined) || null,
+      effective_language: i18n.getLocale()
+    })
+
+    // Desktop-side anchor of the website → download → first-launch acquisition
+    // funnel. Fires exactly once per installation, ever (guard file alongside
+    // device-id.txt). app_version / app_channel / platform / arch ride in as
+    // default event properties; id_class + locale are added here.
+    //
+    // `captureFirstLaunch` (not plain `capture`) because this fires on a fresh
+    // install, when consent is still `'undecided'` — a plain capture would be
+    // dropped on the consent gate while the once-ever guard stays burned,
+    // losing the event forever. The deferred path ships it on the first
+    // `undecided → granted` transition and never on a decline.
+    if (isFirstLaunch) {
+      mainTelemetry.captureFirstLaunch({
+        id_class: getIdClass(),
+        locale
+      })
+    }
     registerTitleTooltipIpc({
       findParentByTitleBarSender: (wc) => findEntryByTitleBarSender(wc)?.entry.window ?? null
     })
@@ -1388,32 +1541,87 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         findEntryByHostWindow(parent)?.titleBarView.webContents ?? null
     })
     registerSystemModalIpc()
-    // Swap-in-place contract: when the user picks a different install
-    // from a Comfy-instance window, the picked install replaces the
-    // current install IN THE SAME WINDOW (workflow continuity from the
-    // user's perspective — they stay in the window they were in). The
-    // current install's session is stopped first; on confirm the
-    // window detaches (flips to chooser-shape briefly) and then
-    // re-attaches the picked install via the same in-place attach
-    // claim path the dashboard chooser uses.
-    //
-    // Three exits short-circuit the swap:
-    // - Target already running in another window → focus that
-    // window. Avoids spawning a duplicate session of the same
-    // install and keeps the user's other window intact.
-    // - Target equals the host's own install → no-op. Picker already
-    // dismissed at the IPC boundary; refocusing the window would
-    // be redundant.
-    // - User cancels the swap-confirm dialog → no-op.
-    //
-    // The renderer-side `useLocalInstanceGuard` handles cross-window
-    // local-instance conflicts (port collision on the same port) via
-    // a modal that renders inside the panel — naturally visible after
-    // the detach since the host is now chooser-shape with the panel
-    // on top.
+
+    /**
+     * Land `installationId` into `entry` (which must be chooser-shaped): ensure
+     * the panelView, then defer a `picker-pick-install` overlay until the panel
+     * renderer acks `did-finish-load`. PanelApp's `useDeepLinkRouter` stakes an
+     * attach claim; `onLaunch` consumes it and attaches in place. Shared by the
+     * in-place swap and the new-window paths.
+     */
+    const deliverPickToEntry = (entry: ComfyWindowEntry, installationId: string): void => {
+      if (entry.window.isDestroyed()) return
+      const panelView =
+        entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+      if (panelView.webContents.isDestroyed()) return
+      sendToPanelDeferred(panelView, 'panel-trigger-overlay', {
+        kind: 'picker-pick-install',
+        installationId
+      })
+    }
+
+    /**
+     * Open `installationId` in its OWN window without disturbing the host that
+     * opened the picker: focus its existing window, else spawn a fresh chooser
+     * host and launch into it. `allowDuplicate` permits a second window for an
+     * install that already owns one (cloud-self: two views of one remote
+     * session). Fails closed — a window-construction throw is logged, never
+     * propagated to the IPC listener.
+     */
+    const openInstallInNewWindow = async (
+      installationId: string,
+      opts?: { allowDuplicate?: boolean }
+    ): Promise<void> => {
+      const existing = getEntryByInstallationId(installationId)
+      const willFocusExisting = !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
+      recordIpcInvocation('open-install-new-window', {
+        installationId,
+        allowDuplicate: opts?.allowDuplicate === true,
+        focusedExisting: willFocusExisting
+      })
+      if (willFocusExisting) {
+        existing.window.show()
+        existing.window.focus()
+        return
+      }
+      try {
+        // An open window already proves the install exists; only the spawn path
+        // needs the check. Guards against a stale renderer id leaving a stray
+        // empty chooser window (mirrors `openStartupSurface`'s raced-delete
+        // fallback).
+        const inst = await getInstallation(installationId)
+        if (!inst) {
+          console.error('openInstallInNewWindow: unknown installation, not spawning', { installationId })
+          return
+        }
+        const target = findEntryByHostWindow(openChooserHostWindow())
+        if (!target) {
+          console.error('openInstallInNewWindow: spawned chooser host not in registry', { installationId })
+          return
+        }
+        mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
+          to_installation_id: installationId,
+          method: 'picker'
+        })
+        deliverPickToEntry(target, installationId)
+      } catch (err) {
+        console.error('openInstallInNewWindow failed:', err)
+      }
+    }
+
+    /**
+     * Swap-in-place: picking a different install from a Comfy-instance window
+     * replaces the current install IN THE SAME WINDOW (workflow continuity). The
+     * current session is stopped, the window detaches to chooser-shape, then
+     * re-attaches the picked install via the dashboard chooser's attach-claim
+     * path. Short-circuits: target running elsewhere → focus it; target is the
+     * host's own install → no-op; user cancels the confirm → no-op. Cross-window
+     * port collisions are handled by the renderer's `useLocalInstanceGuard`.
+     */
     const pickInstallFromPicker = async (
       installationId: string,
-      parentEntryId: number
+      parentEntryId: number,
+      opts?: { confirmed?: boolean }
     ): Promise<void> => {
       const existing = getEntryByInstallationId(installationId)
       if (existing && !existing.window.isDestroyed()) {
@@ -1432,10 +1640,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // through the chooser-pick path. Confirm only when the swap will
       // kill a *local* ComfyUI process (issue #654): chooser hosts have
       // nothing to detach and cloud/remote hosts have no local process
-      // at risk, so both skip the modal. The detach itself still runs
-      // for cloud parents so the window is free to re-attach.
+      // at risk, so both skip the modal. `opts.confirmed` means the picker
+      // already prompted in-drawer (and routed any "open in new window"
+      // choice itself), so skip the system modal here.
       if (parentEntry.installationId != null) {
-        if (shouldConfirmKillForEntry(parentEntry)) {
+        if (!opts?.confirmed && shouldConfirmKillForEntry(parentEntry)) {
           let targetName = installationId
           try {
             const target = await getInstallation(installationId)
@@ -1443,7 +1652,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           } catch {
             // Name lookup is cosmetic — fall through with the id as the label.
           }
-          const confirmed = await openSystemModalAsync({
+          // Three-way choice (issue #926, matrix row 9): the current host is a
+          // local install, so the swap would stop its process — offer to keep it
+          // in a separate window instead of only "stop it and switch".
+          // `secondary` routes to `openInstallInNewWindow` (parent untouched);
+          // `confirm` falls through to the in-place swap below.
+          const choice = await openSystemModalChoiceAsync({
             parent: parentEntry.window,
             spec: {
               title: 'Switch instance?',
@@ -1452,18 +1666,23 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
                 {
                   label: 'Heads up',
                   items: [
-                    'The current instance will be stopped and replaced in this window.',
-                    'Any unsaved work in the workflow will be lost.'
+                    'Switch stops the current instance and replaces it in this window.',
+                    'Open in new window keeps the current instance running.'
                   ]
                 }
               ],
               confirmLabel: 'Switch',
+              secondaryLabel: 'Open in new window',
               cancelLabel: 'Cancel',
               confirmStyle: 'primary',
               theme: parentEntry.lastTheme
             }
           })
-          if (!confirmed) return
+          if (choice === 'cancel') return
+          if (choice === 'secondary') {
+            openInstallInNewWindow(installationId)
+            return
+          }
         }
         // Multi-instance validation signal. Fired once per picker swap
         // (with or without a confirm); other paths (fresh chooser pick,
@@ -1482,27 +1701,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         parentEntry.detachInstall()
       }
 
-      // Route through the chooser-pick path. After the detach (or for
-      // a parent that was already chooser-shape), the host is
-      // chooser-shape; PanelApp's `useDeepLinkRouter` branches the
-      // picker-pick-install payload to `handleChooserPick`, which
-      // stakes an attach claim against this same window. `onLaunch`
-      // consumes the claim and runs `attachInstall` against the
-      // existing host — the user perceives one in-place swap, not a
-      // detach + relaunch.
-      //
-      // The newly-remounted panel renderer takes a beat to load + ack
-      // `did-finish-load`. `sendToPanelDeferred` queues the IPC until
-      // that ack arrives so the listener has been registered by the
-      // time the payload fires.
-      const panelView =
-        parentEntry.panelView ??
-        ensurePanelView(parentEntryId, parentEntry, computeBodyMode(parentEntry))
-      if (panelView.webContents.isDestroyed()) return
-      sendToPanelDeferred(panelView, 'panel-trigger-overlay', {
-        kind: 'picker-pick-install',
-        installationId
-      })
+      // Route through the chooser-pick path. After the detach (or for a parent
+      // that was already chooser-shape), the host is chooser-shape and
+      // `deliverPickToEntry` stakes the in-place attach claim — the user
+      // perceives one swap, not a detach + relaunch.
+      deliverPickToEntry(parentEntry, installationId)
     }
 
     registerTitlePopupIpc({
@@ -1513,6 +1716,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseHostWindow,
       setActivePanel,
       triggerOpenFeedback,
+      resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>
         entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry)),
@@ -1736,11 +1940,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           }
           _activeOperationStatus.set(installationId, result)
           triggerPickerSnapshotBroadcast()
-          // Auto-purge the done entry after 15s so a picker re-opened
-          // after the op completes shows the normal settings view again.
+          // Auto-purge successful entries; failed operations retain their action
+          // data so Retry remains functional until the user dismisses them.
           setTimeout(() => {
             const cur = _activeOperationStatus.get(installationId)
-            if (cur?.done) {
+            if (cur?.done && cur.ok) {
               _activeOperationStatus.delete(installationId)
               triggerPickerSnapshotBroadcast()
             }
@@ -1863,6 +2067,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }
       },
       pickInstallFromPicker,
+      openInstallInNewWindow,
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         // Restart: same install, same window. The session is stopped
         // and a fresh launch is triggered; `onLaunch`'s existing-
@@ -1943,10 +2148,13 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     cleanupTempDownloads()
-    ipc.register({
+    await ipc.register({
       onLaunch,
       onStop,
       onComfyExited,
+      onInstanceStarted: (info) => {
+        void emitInstanceStartedTelemetry(info)
+      },
       onComfyRestarted,
       onModelFolderRelaunch,
       onLocaleChanged: updateTrayMenu,
@@ -1975,13 +2183,51 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // and the tray-aware `window-all-closed` gating will all come back
     // when the docked-app flow is reinstated. Until then, see git
     // history for the previous tray construction code.
-    // The install-less chooser host is the primary surface. Each
-    // install gets its own ComfyUI window via openComfyWindow()
-    // when launched, and the chooser host is the entry-point for
-    // picking / creating installs. When the user last left an instance
-    // window (and the reopen setting is on), restore that instance
-    // in-place on top of the freshly-opened chooser host.
-    void openStartupSurface()
+    // Apply a previously-downloaded Desktop update at startup rather than on
+    // quit (installing on quit is what a Windows shutdown interrupts and
+    // corrupts). When an update is staged we show a brief "Updating…" splash
+    // while the bounded check runs; if it commits to installing, the app quits
+    // here and the installer relaunches it — so we skip opening the normal UI.
+    const updateSplash = updater.hasPendingStartupUpdate() ? showUpdateInstallSplash() : undefined
+    // Timestamp the splash so the install can keep it up for a readable minimum
+    // (the bounded check usually resolves instantly, which would otherwise flash
+    // the splash by before the app quits to install).
+    const updateSplashShownAt = updateSplash ? Date.now() : undefined
+    // Track whether the install actually started quitting the app. Quit intent
+    // (`quitReason`) alone isn't proof — `restartAndInstall` can return without
+    // quitting if the staged installer is gone — so key the backstop off a real
+    // `before-quit`.
+    let updateInstallQuitStarted = false
+    const onUpdateInstallQuit = (): void => {
+      updateInstallQuitStarted = true
+    }
+    app.once('before-quit', onUpdateInstallQuit)
+    const installingUpdate = await updater.applyPendingUpdateOnStartup(updateSplashShownAt)
+    if (installingUpdate) {
+      // Safety net: a successful install quits the app within a tick (firing
+      // before-quit). If that didn't happen the install didn't proceed — recover
+      // into the normal surface instead of stranding the user on the splash, and
+      // clear the now-stale 'update-install' quit intent so the next real quit
+      // still runs its cleanup.
+      setTimeout(() => {
+        if (updateInstallQuitStarted) return
+        app.removeListener('before-quit', onUpdateInstallQuit)
+        clearQuitReason()
+        if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
+        mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
+        void openStartupSurface()
+      }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
+    } else {
+      app.removeListener('before-quit', onUpdateInstallQuit)
+      if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
+      // The install-less chooser host is the primary surface. Each
+      // install gets its own ComfyUI window via openComfyWindow()
+      // when launched, and the chooser host is the entry-point for
+      // picking / creating installs. When the user last left an instance
+      // window (and the reopen setting is on), restore that instance
+      // in-place on top of the freshly-opened chooser host.
+      void openStartupSurface()
+    }
 
     // Single subscription rebroadcasts every install-list mutation
     // (add/remove/update/markLaunched/reorder/...) to all renderers as
@@ -2041,7 +2287,25 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }
   })
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    // Template models are still downloading in the background: quitting drops
+    // them (no resume). Warn once and let the user back out. Synchronous dialog
+    // fits before-quit's sync teardown; only gate a real user quit (not an
+    // in-progress relaunch/update quit) and skip once already confirmed.
+    if (!isQuitInProgress() && hasActiveTemplateDownloads()) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'warning',
+        buttons: [i18n.t('templateQuit.quit'), i18n.t('templateQuit.cancel')],
+        defaultId: 1,
+        cancelId: 1,
+        title: i18n.t('templateQuit.title'),
+        message: i18n.t('templateQuit.message'),
+      })
+      if (choice === 1) {
+        event.preventDefault()
+        return
+      }
+    }
     if (!isQuitInProgress()) {
       setQuitReason('user-quit')
       ipc.cancelAll()
@@ -2066,6 +2330,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // restore it. Synchronous: the app exits without awaiting promises, so an
     // async write would be torn down mid-flight and lose a just-made change.
     flushLastSessionSync()
+    flushOperationOutput()
     cleanupTempDownloads()
   })
 

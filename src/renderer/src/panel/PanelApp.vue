@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
-import DownloadsModal from '../components/DownloadsModal.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
@@ -19,6 +18,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
+import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
@@ -32,13 +32,16 @@ import { useChooserHandoff } from './useChooserHandoff'
 import { useFirstUseChain } from './useFirstUseChain'
 import { bindE2EPanelHooks } from './e2eRendererHooks'
 import { resolvePickerTab } from '../lib/pickerTabs'
+import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
+import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import type { Installation } from '../types/ipc'
 
-const { mergeLocaleMessage, locale, t } = useI18n()
+const { t } = useI18n()
+const { syncLocale } = useAppLocale(windowApiLocaleSource())
 useTheme()
 
 const params = new URLSearchParams(window.location.search)
@@ -61,6 +64,9 @@ void launcherPrefs.loadPrefs()
 const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 
 const modal = useModal()
+// Surface main-process mid-operation prompts (e.g. Legacy Desktop adoption)
+// as in-app dialogs above the ProgressModal instead of native OS message boxes.
+useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
 
@@ -152,6 +158,32 @@ const {
   switchPanel
 } = overlays
 
+// Defers only for a running instance, not an open overlay — the picker lives
+// inside the new-install takeover, which is exactly when we want it warm.
+const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
+  isBusy: () => sessionStore.runningTabCount > 0
+})
+
+let warmTemplateThumbnailsOnce: Promise<void> | null = null
+function warmTemplateThumbnails(): Promise<void> {
+  if (firstUseCompleted.value) return Promise.resolve()
+  // Both first-use branches can reach this on one cold start; warm just once.
+  warmTemplateThumbnailsOnce ??= (async () => {
+    try {
+      const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
+      prefetchThumbnails(
+        options.map((o) => {
+          const url = o.data?.thumbnailUrl
+          return typeof url === 'string' ? url : null
+        })
+      )
+    } catch {
+      // Best-effort warm-up; the picker still loads thumbnails on demand.
+    }
+  })()
+  return warmTemplateThumbnailsOnce
+}
+
 // E2E surface: tests drive UI-level flows (e.g. inject a finished
 // failed op to render ProgressModal's error state) by calling into
 // `handleShowProgress` from outside the Vue tree. Gated on the
@@ -216,7 +248,6 @@ if (!installationId) {
 }
 
 let unsubPanel: (() => void) | null = null
-let unsubLocale: (() => void) | null = null
 let unsubCloseRequest: (() => void) | null = null
 let unsubReturnToDashboardRequest: (() => void) | null = null
 let unsubAppUpdatePromptRestart: (() => void) | null = null
@@ -306,34 +337,11 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-async function loadLocale(): Promise<void> {
-  const messages = await window.api.getLocaleMessages()
-  // Merge — not replace — so the renderer-side catalog from
-  // `lib/i18nMessages.ts` (the authoritative en source for keys main
-  // doesn't yet ship in `locales/en.json`, e.g. `downloadsTab.*`,
-  // `downloadsPopup.*`, `fileMenu.*`) survives this layer-on of
-  // main's JSON.
-  mergeLocaleMessage('en', messages)
-  locale.value = 'en'
-}
-
-// `'downloads-v2'` brings the panel forward in an overlay mode; the renderer
-// mounts `DownloadsModal` and dismiss routes back through `closeCurrentPanel`
-// so the body returns to comfy/lifecycle without leaving stale state.
-function closeDownloadsV2(): void {
-  window.api.closeCurrentPanel()
-}
-
-// Toggles transparency rules in the non-scoped <style> block so the
-// live ComfyUI canvas composites through while an overlay panel
-// (downloads-v2 / feedback) is mounted.
+/** Composite the live ComfyUI canvas through while the feedback overlay is mounted. */
 watch(
   activePanel,
   (next) => {
-    document.body.classList.toggle(
-      'panel-overlay-mode',
-      next === 'downloads-v2' || next === 'feedback'
-    )
+    document.body.classList.toggle('panel-overlay-mode', next === 'feedback')
   },
   { immediate: true }
 )
@@ -348,10 +356,6 @@ onMounted(async () => {
   registerMigrateTakeover({
     open: (title, confirmLabel) => migrateTakeoverRef.value!.open(title, confirmLabel),
     update: (opts) => migrateTakeoverRef.value?.update(opts)
-  })
-
-  unsubLocale = window.api.onLocaleChanged((messages) => {
-    mergeLocaleMessage('en', messages as Record<string, unknown>)
   })
 
   // Main can request a panel switch (e.g. from title-bar buttons, or when
@@ -472,6 +476,8 @@ onMounted(async () => {
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
+      // Warm before opening so the prefetch queue is pumping as the picker mounts.
+      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
 
@@ -479,8 +485,8 @@ onMounted(async () => {
       sessionStore.init(),
       installationStore.fetchInstallations(),
       launcherPrefs.loadPrefs(),
-      loadLocale().catch((err) => {
-        console.error('Panel: loadLocale failed', err)
+      syncLocale().catch((err) => {
+        console.error('Panel: syncLocale failed', err)
       })
     ])
 
@@ -499,6 +505,8 @@ onMounted(async () => {
     // `firstUseCompleted` stays false until the explicit completion
     // path runs.
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
+      // Warm before opening so the prefetch queue is pumping as the picker mounts.
+      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
@@ -516,7 +524,6 @@ onMounted(async () => {
 onUnmounted(() => {
   registerMigrateTakeover(null)
   unsubPanel?.()
-  unsubLocale?.()
   unsubCloseRequest?.()
   unsubReturnToDashboardRequest?.()
   unsubAppUpdatePromptRestart?.()
@@ -616,14 +623,6 @@ onUnmounted(() => {
         @chain-migrate="handleFirstUseChainMigrate"
       />
     </template>
-
-    <!-- Brand-redesigned "View All Downloads" surface. Mounts only
-         when main flips us into `'downloads-v2'` mode (from the title-
-         bar downloads popup's footer link). `v-if` mirrors the rest of
-         this file's overlay convention — keeps the store init + body
-         scroll lock out of every PanelApp mount that doesn't open the
-         modal. Dismiss routes back through `closeCurrentPanel()`. -->
-    <DownloadsModal v-if="activePanel === 'downloads-v2'" open @close="closeDownloadsV2" />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
 

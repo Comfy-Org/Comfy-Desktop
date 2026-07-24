@@ -56,6 +56,30 @@ describe('parseHelpOutput', () => {
     expect(byName.has('help')).toBe(false)
   })
 
+  it('parses variadic (nargs */+) flags as multi-value, stripping the ellipsis from the metavar', () => {
+    const help = `usage: main.py [-h] [--cache-ram [GB ...] | --cache-lru CACHE_LRU] [--fast [FAST ...]] [--whitelist-custom-nodes WHITELIST_CUSTOM_NODES [WHITELIST_CUSTOM_NODES ...]]
+
+options:
+  -h, --help            show this help message and exit
+  --cache-ram [GB ...]  Use RAM pressure caching with the given headroom thresholds.
+  --cache-lru CACHE_LRU
+                        Use LRU caching with N node results.
+  --fast [FAST ...]     Enable fast features.
+  --whitelist-custom-nodes WHITELIST_CUSTOM_NODES [WHITELIST_CUSTOM_NODES ...]
+                        Custom nodes to load.
+`
+    const schema = parseHelpOutput(help)
+    const byName = new Map(schema.args.map((a) => [a.name, a]))
+
+    expect(byName.get('cache-ram')?.type).toBe('multi-value')
+    expect(byName.get('cache-ram')?.metavar).toBe('GB')
+    expect(byName.get('fast')?.type).toBe('multi-value')
+    expect(byName.get('whitelist-custom-nodes')?.type).toBe('multi-value')
+
+    // A single-value flag in the same exclusive group stays a plain value flag.
+    expect(byName.get('cache-lru')?.type).toBe('value')
+  })
+
   it('extracts choices for select-style args', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
@@ -96,10 +120,51 @@ describe('parseHelpOutput', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
-    expect(byName.get('port')?.category).toBe('Network')
-    expect(byName.get('listen')?.category).toBe('Network')
-    expect(byName.get('gpu-only')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-manager')?.category).toBe('Manager')
+    expect(byName.get('port')?.category).toBe('network')
+    expect(byName.get('listen')?.category).toBe('network')
+    expect(byName.get('gpu-only')?.category).toBe('gpuVram')
+    expect(byName.get('enable-manager')?.category).toBe('manager')
+  })
+
+  it('categorizes --fast-disk and --enable-triton-backend', () => {
+    const help = `usage: main.py [-h] [--fast-disk] [--enable-triton-backend]
+
+options:
+  -h, --help            show this help message and exit
+  --fast-disk           Prefer disk-backed dynamic loading and offload.
+  --enable-triton-backend
+                        Enable the Triton backend in comfy-kitchen.
+`
+    const schema = parseHelpOutput(help)
+    const byName = new Map(schema.args.map((a) => [a.name, a]))
+    expect(byName.get('fast-disk')?.category).toBe('gpuVram')
+    expect(byName.get('enable-triton-backend')?.category).toBe('performance')
+  })
+
+  it('categorizes newer ComfyUI flags instead of falling to "other"', () => {
+    const help = `usage: main.py [-h] [--vram-headroom VRAM_HEADROOM] [--high-ram] [--models-directory MODELS_DIRECTORY] [--disable-triton-backend] [--enable-asset-hashing] [--debug-hang]
+
+options:
+  -h, --help            show this help message and exit
+  --vram-headroom VRAM_HEADROOM
+                        Extra VRAM headroom for DynamicVRAM.
+  --high-ram            Improve performance on high RAM systems.
+  --models-directory MODELS_DIRECTORY
+                        Set the ComfyUI models directory.
+  --disable-triton-backend
+                        Force-disable the comfy-kitchen Triton backend.
+  --enable-asset-hashing
+                        Compute blake3 content hashes when scanning assets.
+  --debug-hang          Enable stack trace dumps on Ctrl-C for debugging hangs.
+`
+    const schema = parseHelpOutput(help)
+    const byName = new Map(schema.args.map((a) => [a.name, a]))
+    expect(byName.get('vram-headroom')?.category).toBe('gpuVram')
+    expect(byName.get('high-ram')?.category).toBe('cache')
+    expect(byName.get('models-directory')?.category).toBe('paths')
+    expect(byName.get('disable-triton-backend')?.category).toBe('performance')
+    expect(byName.get('enable-asset-hashing')?.category).toBe('features')
+    expect(byName.get('debug-hang')?.category).toBe('logging')
   })
 
   it('handles Windows \\r\\n line endings', () => {
@@ -216,6 +281,22 @@ describe('filterUnsupportedArgs', () => {
     )
     expect(filtered).toEqual(['--port=8188', '--enable-manager'])
   })
+
+  it('keeps all values of a supported multi-value flag', () => {
+    const help = `usage: main.py [-h] [--cache-ram [GB ...]] [--port PORT]
+
+options:
+  -h, --help            show this help message and exit
+  --cache-ram [GB ...]  RAM caching thresholds.
+  --port PORT           Set the listen port.
+`
+    const schema = parseHelpOutput(help)
+    const filtered = filterUnsupportedArgs(
+      ['--cache-ram', '4', '8', '--port', '8188'],
+      schema
+    )
+    expect(filtered).toEqual(['--cache-ram', '4', '8', '--port', '8188'])
+  })
 })
 
 describe('parseExclusiveGroups via parseHelpOutput', () => {
@@ -230,5 +311,27 @@ options:
     const byName = new Map(schema.args.map((a) => [a.name, a]))
     expect(byName.get('aaa')?.exclusiveGroup).toBeDefined()
     expect(byName.get('aaa')?.exclusiveGroup).toBe(byName.get('bbb')?.exclusiveGroup)
+  })
+
+  it('keeps every member of a group whose alternative has a nested optional metavar', () => {
+    // `--cache-ram [GB ...]` embeds brackets that must not close the cache group
+    // early and drop `--cache-none`.
+    const help = `usage: main.py [-h] [--cache-classic | --cache-lru CACHE_LRU | --cache-ram [GB ...] | --cache-none]
+
+options:
+  -h, --help            show this help message and exit
+  --cache-classic       Old caching.
+  --cache-lru CACHE_LRU
+                        LRU caching.
+  --cache-ram [GB ...]  RAM caching.
+  --cache-none          No caching.
+`
+    const schema = parseHelpOutput(help)
+    const byName = new Map(schema.args.map((a) => [a.name, a]))
+    const group = byName.get('cache-classic')?.exclusiveGroup
+    expect(group).toBeDefined()
+    for (const name of ['cache-lru', 'cache-ram', 'cache-none']) {
+      expect(byName.get(name)?.exclusiveGroup).toBe(group)
+    }
   })
 })

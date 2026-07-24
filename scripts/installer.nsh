@@ -99,6 +99,10 @@
 ;
 ; This keeps us on a single ToDesktop Windows build while still allowing
 ; OEM / IT provisioning flows to request machine installs explicitly.
+;
+; customInstallMode runs inside the install-mode page's PRE callback. Setting
+; $isForceMachineInstall / $isForceCurrentInstall makes that PRE re-apply the
+; mode and Abort (skip) the page.
 !macro customInstallMode
   ${GetParameters} $R0
 
@@ -111,6 +115,25 @@
     ${GetOptions} $R0 "/CURRENTUSER" $R1
     ${IfNot} ${Errors}
       StrCpy $isForceCurrentInstall 1
+    ${Else}
+      ; A non-silent update (electron-updater passes --updated but no install-
+      ; mode flag) would otherwise stop on the install-mode page — the one
+      ; pre-progress page electron-builder does NOT auto-skip on update — making
+      ; the user confirm before the progress bar. .onInit's initMultiUser has
+      ; already committed a scope into $installMode (matching the lone detected
+      ; install, or the per-user default for this perMachine:false app when none
+      ; is detected), so on update we force-skip the page using that same scope.
+      ; This never switches a cleanly-detected install's scope. (We intentionally
+      ; key off $installMode rather than the updater's /D= path: reading /D=
+      ; needs electron-builder's GetDParameter macro, which doesn't exist in the
+      ; app-builder-lib version ToDesktop builds with.)
+      ${If} ${isUpdated}
+        ${If} $installMode == "all"
+          StrCpy $isForceMachineInstall 1
+        ${Else}
+          StrCpy $isForceCurrentInstall 1
+        ${EndIf}
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 !macroend
@@ -219,6 +242,71 @@
   Pop $1
 !macroend
 
+!macro persistDownloadTokenFromInstallerName
+  Push $R0
+  Push $R1
+  Push $R2
+  Push $R3
+  Push $R4
+  Push $R5
+
+  ; Windows MVP for GTM-104: the website/download proxy can serve the same
+  ; signed installer binary with a tokenized Content-Disposition filename, e.g.
+  ; Comfy-Desktop-dt_AbC123xYz789.exe. Persist only the 12-char opaque token;
+  ; the app validates the exact token shape before sending anything to telemetry.
+  ;
+  ; The "dt_" search is done inline with StrCpy rather than StrFunc's ${StrStr}:
+  ; StrFunc emits a standalone install function at include time, and electron-
+  ; builder compiles this script a second time for the uninstaller (where the
+  ; customInstall call site is not emitted). In that pass StrStr is unreferenced,
+  ; which trips NSIS warning 6010 — fatal under the release builder's -WX.
+  ${GetBaseName} "$EXEPATH" $R0
+  StrLen $R5 "$R0"
+
+  StrCpy $R1 0
+  StrCpy $R4 ""
+  ${Do}
+    IntOp $R3 $R1 + 3
+    ${If} $R3 > $R5
+      ${ExitDo}
+    ${EndIf}
+    StrCpy $R3 "$R0" 3 $R1
+    ; S== is case-sensitive (LogicLib == is case-insensitive StrCmp); the proxy
+    ; emits a lowercase "dt_" marker, matching StrFunc's case-sensitive StrStr.
+    ${If} $R3 S== "dt_"
+      IntOp $R3 $R1 + 3
+      StrCpy $R4 "$R0" 12 $R3
+      ${ExitDo}
+    ${EndIf}
+    IntOp $R1 $R1 + 1
+  ${Loop}
+
+  StrLen $R3 "$R4"
+  ${If} $R3 == 12
+    ; Matches Electron's packaged userData path documented in README:
+    ; %APPDATA%\Comfy Desktop.
+    SetShellVarContext current
+    StrCpy $R2 "$APPDATA\Comfy Desktop"
+    CreateDirectory "$R2"
+    ClearErrors
+    FileOpen $R3 "$R2\pending-download-token.txt" w
+    ${IfNot} ${Errors}
+      FileWrite $R3 "$R4$\r$\n"
+      FileClose $R3
+      DetailPrint "  Download attribution token stored."
+    ${Else}
+      DetailPrint "  Download attribution token could not be stored."
+    ${EndIf}
+  ${EndIf}
+
+  Pop $R5
+  Pop $R4
+  Pop $R3
+  Pop $R2
+  Pop $R1
+  Pop $R0
+!macroend
+
 !macro customInstall
   ; VC++ Redistributable is now installed by the -VcRedistPreInstall
   ; Section declared in customHeader so it runs BEFORE shortcuts are
@@ -234,6 +322,7 @@
   ; like an install log instead of jumping from "Step 2 — Extracting…"
   ; straight to the Finish page.
   SetDetailsPrint both
+  !insertmacro persistDownloadTokenFromInstallerName
   DetailPrint "  Application files installed to: $INSTDIR"
   DetailPrint "  Registered with Add or Remove Programs"
   DetailPrint "  Start Menu shortcut created"

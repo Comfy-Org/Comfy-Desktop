@@ -2,7 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { EventEmitter } from 'events'
-import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme } from 'electron'
+import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { execFile, spawn, execFileSync } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import sources from '../../sources/index'
@@ -23,14 +23,16 @@ import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
 import { _broadcastToRenderer } from './broadcast'
 import { appendLog } from '../logsBroadcast'
+import { flushOperationOutput } from '../appLog'
+import { stripAnsi } from '../stderrTail'
 import {
   spawnProcess, waitForPort, waitForUrl, killProcessTree, killByPort,
   findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
 } from '../process'
-import { detectGPU, validateHardware, checkNvidiaDriver } from '../gpu'
-import { detectDesktopInstall, stageDesktopSnapshot } from '../desktopDetect'
+import { detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions } from '../gpu'
+import { detectDesktopInstall } from '../desktopDetect'
 import { performLocalMigration, stageLocalSnapshot } from '../localMigration'
 import { getDiskSpace, getDirectorySize, validateInstallPath } from '../disk'
 import { syncOemSeed } from '../oem'
@@ -42,8 +44,8 @@ import * as i18n from '../i18n'
 import { syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath } from '../models'
 import { copyDirWithProgress } from '../copy'
 import { fetchJSON } from '../fetch'
-import { fetchLatestRelease, getLatestStableTag } from '../comfyui-releases'
-import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
+import { fetchLatestRelease, getLatestStableTag, getStableTags } from '../comfyui-releases'
+import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, stageSnapshotEnvelope, loadStagedSnapshotEnvelope, releaseStagedSnapshotEnvelope, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
 import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
@@ -69,16 +71,16 @@ export {
   findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
-  detectGPU, validateHardware, checkNvidiaDriver,
-  detectDesktopInstall, stageDesktopSnapshot,
+  detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions,
+  detectDesktopInstall,
   performLocalMigration, stageLocalSnapshot,
   getDiskSpace, getDirectorySize, validateInstallPath,
   syncOemSeed, formatTime, getActiveDownloads,
   syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
-  copyDirWithProgress, fetchJSON, fetchLatestRelease, getLatestStableTag,
+  copyDirWithProgress, fetchJSON, fetchLatestRelease, getLatestStableTag, getStableTags,
   captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData,
   getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, diffSnapshots,
-  buildExportEnvelope, validateExportEnvelope, importSnapshots, saveSnapshot, statesMatch, deleteSnapshot,
+  buildExportEnvelope, validateExportEnvelope, importSnapshots, stageSnapshotEnvelope, loadStagedSnapshotEnvelope, releaseStagedSnapshotEnvelope, saveSnapshot, statesMatch, deleteSnapshot,
   restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion,
   getVariantLabel, buildPinnedVariant, REQUIRES_STOPPED, findLockingProcesses,
   getComfyArgsSchema, filterUnsupportedArgs,
@@ -98,7 +100,7 @@ export const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 export const UPDATE_CHECK_INTERVAL = 10 * 60 * 1000
 export const IGNORE_FILES = new Set([MARKER_FILE, '.DS_Store', 'Thumbs.db', 'desktop.ini'])
 export const ALL_UPDATE_CHANNELS = ['stable', 'latest']
-export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
+export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', 'PYTHONFAULTHANDLER', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -134,9 +136,19 @@ export interface RestartCallbackInfo {
   process?: ChildProcess
 }
 
+/** Fired from `_addSession` on every ComfyUI instance boot; drives the
+ *  main-process `instance_started` / `snapshot_history` telemetry. */
+export interface InstanceStartedCallbackInfo {
+  installationId: string
+  bootTimeMs?: number
+  portRetries: number
+  rebootRetries: number
+}
+
 export type LaunchCallback = (info: LaunchCallbackInfo) => void
 export type StopCallback = (info: StopCallbackInfo) => void
 export type ExitCallback = (info: ExitCallbackInfo) => void
+export type InstanceStartedCallback = (info: InstanceStartedCallbackInfo) => void
 export type RestartCallback = (info: RestartCallbackInfo) => void
 export type ModelFolderRelaunchCallback = (info: { installationId: string }) => void | Promise<void>
 export type LocaleCallback = () => void
@@ -146,6 +158,7 @@ export interface RegisterCallbacks {
   onLaunch?: LaunchCallback
   onStop?: StopCallback
   onComfyExited?: ExitCallback
+  onInstanceStarted?: InstanceStartedCallback
   onComfyRestarted?: RestartCallback
   onModelFolderRelaunch?: ModelFolderRelaunchCallback
   onLocaleChanged?: LocaleCallback
@@ -161,6 +174,7 @@ export const sourceMap: Record<string, SourcePlugin> = Object.fromEntries(source
 export let _onLaunch: LaunchCallback | null = null
 export let _onStop: StopCallback | null = null
 export let _onComfyExited: ExitCallback | null = null
+export let _onInstanceStarted: InstanceStartedCallback | null = null
 export let _onComfyRestarted: RestartCallback | null = null
 export let _onModelFolderRelaunch: ModelFolderRelaunchCallback | null = null
 export let _onLocaleChanged: LocaleCallback | null = null
@@ -262,6 +276,7 @@ export function setCallbacks(callbacks: RegisterCallbacks): void {
   _onLaunch = callbacks.onLaunch ?? null
   _onStop = callbacks.onStop ?? null
   _onComfyExited = callbacks.onComfyExited ?? null
+  _onInstanceStarted = callbacks.onInstanceStarted ?? null
   _onComfyRestarted = callbacks.onComfyRestarted ?? null
   _onModelFolderRelaunch = callbacks.onModelFolderRelaunch ?? null
   _onLocaleChanged = callbacks.onLocaleChanged ?? null
@@ -284,18 +299,165 @@ export async function syncOemSeedBestEffort(): Promise<void> {
   }
 }
 
-export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
-  if (!dirPath) return true
+/**
+ * Classify an install directory, keeping "gone" distinct from "empty":
+ *  - `missing`      — the path does not exist (ENOENT), e.g. renamed folder or
+ *                     an unplugged removable / disconnected network drive.
+ *  - `no-permission`— the path exists but access is denied (EACCES/EPERM); a
+ *                     real, persistent problem distinct from "not found".
+ *  - `inaccessible` — the path exists but can't be read for a transient reason
+ *                     (I/O error, or a probe that timed out on a slow drive).
+ *  - `empty`        — readable but holds only ignorable bookkeeping files; the
+ *                     leftover of an aborted install, safe to reclaim.
+ *  - `populated`    — readable with real content.
+ *
+ * Only an `empty` dir may be discarded as an aborted install; a `missing`/
+ * `no-permission`/`inaccessible` dir must be kept so a temporarily-offline drive
+ * doesn't lose the tracked instance and its settings (issue #1155).
+ */
+export type InstallDirState = 'missing' | 'no-permission' | 'inaccessible' | 'empty' | 'populated'
+
+/** Shared by the sync and async classifiers so they can't drift. */
+function classifyReadableEntries(entries: string[]): 'empty' | 'populated' {
+  return entries.every((name) => IGNORE_FILES.has(name)) ? 'empty' : 'populated'
+}
+
+/** Map a readdir failure to a dir state. ENOENT means the folder is genuinely
+ *  gone (renamed / unplugged); EACCES/EPERM means it exists but we're denied
+ *  access (a real, persistent problem distinct from "not found"); anything else
+ *  (EIO, EBUSY, a hung network mount surfaced as a timeout, …) is a transient
+ *  `inaccessible` that may clear on its own, so callers must not treat it as
+ *  fatal. Shared by the sync and async classifiers so they can't drift. */
+function classifyDirError(e: unknown): 'missing' | 'no-permission' | 'inaccessible' {
+  const code = (e as NodeJS.ErrnoException | null)?.code
+  if (code === 'ENOENT') return 'missing'
+  if (code === 'EACCES' || code === 'EPERM') return 'no-permission'
+  return 'inaccessible'
+}
+
+export function installDirState(dirPath: string): InstallDirState {
+  if (!dirPath) return 'missing'
   try {
-    const entries = fs.readdirSync(dirPath)
-    return entries.every((name) => IGNORE_FILES.has(name))
+    return classifyReadableEntries(fs.readdirSync(dirPath))
   } catch (e) {
-    if (e && (e as NodeJS.ErrnoException).code === 'ENOENT') return true
-    return false
+    return classifyDirError(e)
   }
 }
 
+export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
+  const state = installDirState(dirPath)
+  return state === 'missing' || state === 'empty'
+}
+
+/** Single source of the "folder is flagged unavailable in the dashboard" rule
+ *  for the renderer's danger pill. Buckets `missing`, `no-permission`, and
+ *  `inaccessible` together; the pill's label/detail still distinguish them.
+ *  NOT the launch-block rule — launch only blocks on the persistent states
+ *  (`missing`/`no-permission`), letting the transient `inaccessible` through. */
+export function isInstallDirUnavailable(state: InstallDirState | undefined): boolean {
+  return state === 'missing' || state === 'inaccessible' || state === 'no-permission'
+}
+
+/** The danger pill the dashboard renders for a dir state. `missing` and the
+ *  transient `inaccessible` share the "not found" pill; `no-permission` gets its
+ *  own. The change-detection in `refreshInstallDirStates()` compares THIS (not
+ *  the unavailable boolean) so a `missing`↔`no-permission` flip — same boolean,
+ *  different pill — still re-broadcasts and updates the label. */
+export type InstallDirDashboardKind = 'available' | 'not-found' | 'no-permission'
+export function installDirDashboardKind(state: InstallDirState | undefined): InstallDirDashboardKind {
+  if (state === 'no-permission') return 'no-permission'
+  if (state === 'missing' || state === 'inaccessible') return 'not-found'
+  return 'available'
+}
+
+/** Async `installDirState` that can't hang the caller on a dead network drive:
+ *  a probe that doesn't settle within the timeout is reported `inaccessible`.
+ *  Generous (8s) because a healthy-but-slow network/removable drive can be slow
+ *  to wake, and a false `inaccessible` timeout is exactly what we want to avoid;
+ *  the only cost is launch waiting this long before proceeding on a truly-dead
+ *  path (which then falls through, never blocks). */
+const _DIR_STATE_PROBE_TIMEOUT_MS = 8000
+export async function installDirStateAsync(dirPath: string): Promise<InstallDirState> {
+  if (!dirPath) return 'missing'
+  const probe = (async (): Promise<InstallDirState> => {
+    try {
+      return classifyReadableEntries(await fs.promises.readdir(dirPath))
+    } catch (e) {
+      return classifyDirError(e)
+    }
+  })()
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<InstallDirState>((resolve) => {
+    timer = setTimeout(() => resolve('inaccessible'), _DIR_STATE_PROBE_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([probe, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Cached availability of each local install's directory, keyed by install id.
+ *  Populated asynchronously by `refreshInstallDirStates()` so the synchronous
+ *  renderer enrichment can surface an "offline" indicator without ever doing a
+ *  (potentially blocking) filesystem read on the UI path. Only local sources
+ *  (`skipInstall !== true`) with an `installPath` are tracked. */
+const _installDirStateCache = new Map<string, InstallDirState>()
+
+export function getCachedInstallDirState(id: string): InstallDirState | undefined {
+  return _installDirStateCache.get(id)
+}
+
+let _refreshInstallDirStatesInFlight: Promise<void> | null = null
+/** Single-flight refresh of `_installDirStateCache` for all local installs;
+ *  broadcasts `installations-changed` only when an install's rendered pill kind
+ *  changes so the dashboard re-pulls and the indicator appears/clears/relabels
+ *  on its own. */
+export function refreshInstallDirStates(): Promise<void> {
+  if (_refreshInstallDirStatesInFlight) return _refreshInstallDirStatesInFlight
+  _refreshInstallDirStatesInFlight = (async (): Promise<void> => {
+    let changed = false
+    try {
+      const all = await installations.list()
+      const local = all.filter((inst) => {
+        const source = sourceMap[inst.sourceId]
+        return source && !source.skipInstall && typeof inst.installPath === 'string' && inst.installPath
+      })
+      // Probe in parallel so a few offline paths don't serialize their timeouts
+      // (worst-case refresh stays ~one timeout, not one per install).
+      const probed = await Promise.all(
+        local.map(async (inst) => ({ id: inst.id, state: await installDirStateAsync(inst.installPath) }))
+      )
+      const tracked = new Set<string>()
+      for (const { id, state } of probed) {
+        tracked.add(id)
+        const prev = _installDirStateCache.get(id)
+        _installDirStateCache.set(id, state)
+        // Compare the rendered pill, not the unavailable boolean: a
+        // missing↔inaccessible flip is the same pill (no broadcast → no refresh
+        // loop), but missing↔no-permission flips the label and must broadcast.
+        if (installDirDashboardKind(prev) !== installDirDashboardKind(state)) changed = true
+      }
+      // Drop cache entries for installs that are gone/no longer local. Their
+      // pill left with them, so this needs no broadcast of its own.
+      for (const id of [..._installDirStateCache.keys()]) {
+        if (!tracked.has(id)) _installDirStateCache.delete(id)
+      }
+    } catch (err) {
+      console.warn('refreshInstallDirStates failed:', err)
+    }
+    if (changed) _broadcastToRenderer('installations-changed', {})
+  })().finally(() => {
+    _refreshInstallDirStatesInFlight = null
+  })
+  return _refreshInstallDirStatesInFlight
+}
+
 export function openPath(targetPath: string): Promise<string> {
+  // E2E asserts the IPC fired, not the OS side effect; skipping the real open
+  // also keeps headless Linux CI from hanging on dbus-send/xdg-open children
+  // that block app exit.
+  if (process.env['E2E'] === '1') return Promise.resolve('')
   if (process.platform === 'linux') {
     return new Promise((resolve) => {
       execFile('dbus-send', [
@@ -347,6 +509,68 @@ export async function copyBrowserPartition(sourceId: string, destId: string, sou
     }
   } catch (err) {
     console.warn('Failed to copy browser partition:', (err as Error).message)
+  }
+}
+
+/** Delete the on-disk browser partition for a deleted install. Unique-partition
+ *  installs each own a `persist:${id}` bucket under userData/Partitions/<id>
+ *  (created lazily by Electron, deep-copied on install-copy); nothing else ever
+ *  reuses it, so it must be removed when the install is deleted or it leaks
+ *  forever. Never touches `persist:shared` (Partitions/shared), the bucket all
+ *  shared-partition installs collectively own. Best-effort: clears the session
+ *  first to release file handles (Windows locks LevelDB/IndexedDB while open). */
+export async function deleteBrowserPartition(id: string, browserPartition?: string): Promise<void> {
+  // Guard the shared bucket explicitly (ids are generated, so this never matches
+  // a real install, but it makes the invariant impossible to violate).
+  if (id === 'shared') return
+  const partitionDir = path.join(app.getPath('userData'), 'Partitions', id)
+  // The browserPartition setting is user-editable, so an install created as
+  // 'unique' (which already created Partitions/<id>) may now read as 'shared'.
+  // Clean up whenever the per-install dir exists, not just when the current
+  // setting is 'unique', or a toggled install's partition leaks forever.
+  if (browserPartition !== 'unique' && !fs.existsSync(partitionDir)) return
+  // Best-effort, fully bounded: this runs after the install record is already
+  // removed, so it must never hang the delete operation or hold its lock.
+  // clearStorageData has no hard completion guarantee, so race it against a
+  // timeout; rm fails fast (force) with a few transient-lock retries.
+  try {
+    const cleared = session.fromPartition(`persist:${id}`).clearStorageData()
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
+    await Promise.race([cleared, timeout])
+  } catch (err) {
+    console.warn('Failed to clear browser partition storage:', (err as Error).message)
+  }
+  try {
+    await fs.promises.rm(partitionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  } catch (err) {
+    console.warn('Failed to delete browser partition:', (err as Error).message)
+  }
+}
+
+/** Reclaim leftover per-install browser partitions at startup. Each unique
+ *  install owns `Partitions/<id>`; deleting an install whose session is still
+ *  alive can't remove that dir on Windows (the live session holds file locks),
+ *  so the inline cleanup in deleteBrowserPartition can leak it. At startup no
+ *  install session exists yet, so removing any `Partitions/inst-*` whose id is
+ *  not a current install reliably reclaims those (and crash leftovers). Only
+ *  touches install-id-shaped dirs; never `shared` (the collective bucket) or any
+ *  other session dir. */
+export function sweepOrphanPartitions(knownIds: ReadonlySet<string>): void {
+  const partitionsDir = path.join(app.getPath('userData'), 'Partitions')
+  let names: string[]
+  try {
+    names = fs.readdirSync(partitionsDir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!name.startsWith('inst-')) continue // only per-install partitions
+    if (knownIds.has(name)) continue
+    try {
+      fs.rmSync(path.join(partitionsDir, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    } catch (err) {
+      console.warn('Failed to sweep orphan browser partition:', name, (err as Error).message)
+    }
   }
 }
 
@@ -472,8 +696,21 @@ export function buildLaunchEnv(inst: InstallationRecord, sessionPath?: string): 
     ...process.env,
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
+    // Install CPython's fatal-fault handler so a native crash (segfault /
+    // access violation in a C-extension) dumps the Python traceback — i.e. the
+    // import that died — to stderr instead of vanishing behind a bare
+    // `0xC0000005` exit code. We capture that stderr into the crash buffer.
+    // Cost is one-time handler install; zero overhead on the normal path.
+    PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
-    ...(inst.sourceId === 'standalone' ? { CM_USE_PYGIT2: '1' } : {}),
+    // Only force ComfyUI-Manager onto the pygit2 backend when a developer
+    // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
+    // unset so Manager's git_compat prefers system git when available (honoring
+    // the user's full git config: proxy, insteadOf, ssh keys), and auto-falls
+    // back to its bundled pygit2 only when system git is absent.
+    ...(inst.sourceId === 'standalone' && process.env.COMFY_FORCE_PYGIT2 === '1'
+      ? { CM_USE_PYGIT2: '1' }
+      : {}),
   }
 }
 
@@ -498,13 +735,42 @@ export function _releasePort(port: number): void {
 // whole IPC handler universe.
 export { _registerExtraBroadcastTarget, _unregisterExtraBroadcastTarget, _broadcastToRenderer } from './broadcast'
 
-export function _addSession(installationId: string, { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>, bootTimeMs?: number): void {
+export function _addSession(
+  installationId: string,
+  { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>,
+  bootTimeMs?: number,
+  /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
+   *  renderer's `instance_started` telemetry can carry them without a
+   *  separate `server_ready` event. Omitted for the remote / skip-port paths
+   *  (no spawn retry there). */
+  retries?: { portRetries: number; rebootRetries: number },
+): void {
   _runningSessions.set(installationId, { proc, port, url, mode, installationName, startedAt: Date.now() })
   // Clear the launching marker first so subscribers never double-count this id across the
   // transition.
   _launchingInstances.delete(installationId)
-  _broadcastToRenderer('instance-started', { installationId, port, url, mode, installationName, bootTimeMs })
+  _broadcastToRenderer('instance-started', {
+    installationId,
+    port,
+    url,
+    mode,
+    installationName,
+    bootTimeMs,
+    portRetries: retries?.portRetries ?? 0,
+    rebootRetries: retries?.rebootRetries ?? 0,
+  })
   sessionLifecycleEvents.emit('changed')
+  // Per-instance-boot telemetry (instance_started / snapshot_history), emitted
+  // from main since Desktop 2 tears the panel down before the old renderer
+  // callback could fire. Fire-and-forget; never blocks the launch.
+  if (_onInstanceStarted) {
+    _onInstanceStarted({
+      installationId,
+      bootTimeMs,
+      portRetries: retries?.portRetries ?? 0,
+      rebootRetries: retries?.rebootRetries ?? 0,
+    })
+  }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations.markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
@@ -516,6 +782,10 @@ export function _addSession(installationId: string, { proc, port, url, mode, ins
 export function _removeSession(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (!session) return
+  // The session's output stream has ended: flush its buffered tail so a final
+  // unterminated line is durable and a later run for this id can't be appended
+  // onto it.
+  flushOperationOutput(installationId)
   if (session.port) removePortLock(session.port)
   _runningSessions.delete(installationId)
   _broadcastToRenderer('instance-stopped', { installationId })
@@ -531,6 +801,141 @@ export function _getPublicSessions(): Record<string, unknown>[] {
     installationName: s.installationName,
     startedAt: s.startedAt,
   }))
+}
+
+/**
+ * Build the installation snapshot/disk context for the
+ * `get-installation-dd-context` IPC handler and the main-process
+ * `instance_started` / `snapshot_history` telemetry. Returns the full latest
+ * snapshot plus reconstructable per-transition diffs (capped to
+ * `MAX_CONTEXT_BYTES`); callers scrub PII at the emit site. `null` when the
+ * install is missing or has no install path.
+ */
+export async function buildInstallationDdContext(installationId: string) {
+  const MAX_CONTEXT_BYTES = 200 * 1024
+  const inst = await installations.get(installationId)
+  if (!inst || !inst.installPath) return null
+
+  const entries = await listSnapshots(inst.installPath)
+  const latest = entries.length > 0 ? entries[0]!.snapshot : null
+
+  const copiedFrom = inst.copiedFrom as string | undefined
+  const copyReason = inst.copyReason as string | undefined
+
+  let diskFreeGb: number | null = null
+  let diskTotalGb: number | null = null
+  try {
+    const disk = await getDiskSpace(inst.installPath)
+    diskFreeGb = Math.round(disk.free / 1073741824)
+    diskTotalGb = Math.round(disk.total / 1073741824)
+  } catch {}
+
+  const result = {
+    installation_id: inst.id,
+    variant: (inst.variant as string) || '',
+    source_id: (inst.sourceId as string) || '',
+    update_channel: (inst.updateChannel as string) || 'stable',
+    comfyui_version: (inst.comfyuiVersion as string) || '',
+    ...(copiedFrom ? { copied_from: copiedFrom } : {}),
+    ...(copyReason ? { copy_reason: copyReason } : {}),
+    snapshot_count: entries.length,
+    disk_free_gb: diskFreeGb,
+    disk_total_gb: diskTotalGb,
+    latest_snapshot: latest
+      ? {
+          createdAt: latest.createdAt,
+          trigger: latest.trigger,
+          label: latest.label,
+          comfyui: {
+            // `ref`/`releaseTag` are static manifest values (the version the env
+            // shipped with) and don't move on in-place updates; read
+            // `formattedVersion` (resolved from `commit`) for what's running.
+            ref: latest.comfyui.ref,
+            commit: latest.comfyui.commit,
+            releaseTag: latest.comfyui.releaseTag,
+            variant: latest.comfyui.variant,
+            baseTag: latest.comfyui.baseTag ?? null,
+            commitsAhead: latest.comfyui.commitsAhead ?? null,
+            formattedVersion: formatSnapshotVersion(latest.comfyui, 'detail')
+          },
+          customNodes: latest.customNodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            dirName: n.dirName,
+            enabled: n.enabled,
+            version: n.version,
+            commit: n.commit
+          })),
+          pipPackages: latest.pipPackages,
+          pythonVersion: latest.pythonVersion,
+          updateChannel: latest.updateChannel
+        }
+      : null,
+    snapshot_diffs: [] as Array<Record<string, unknown>>
+  }
+
+  let runningSize = JSON.stringify(result).length
+  for (let i = 0; i < entries.length - 1; i++) {
+    const newer = entries[i]!.snapshot
+    const older = entries[i + 1]!.snapshot
+    const diff = diffSnapshots(older, newer)
+    const entry: Record<string, unknown> = {
+      createdAt: newer.createdAt,
+      trigger: newer.trigger,
+      label: newer.label,
+      nodesAdded: diff.nodesAdded.map((n) => ({
+        id: n.id,
+        type: n.type,
+        dirName: n.dirName,
+        enabled: n.enabled,
+        version: n.version,
+        commit: n.commit
+      })),
+      nodesRemoved: diff.nodesRemoved.map((n) => ({
+        id: n.id,
+        type: n.type,
+        dirName: n.dirName,
+        enabled: n.enabled,
+        version: n.version,
+        commit: n.commit
+      })),
+      nodesChanged: diff.nodesChanged.map((n) => ({ id: n.id, from: n.from, to: n.to })),
+      pipsAdded: diff.pipsAdded,
+      pipsRemoved: diff.pipsRemoved,
+      pipsChanged: diff.pipsChanged,
+      comfyuiChanged: diff.comfyuiChanged,
+      updateChannelChanged: diff.updateChannelChanged
+    }
+    if (diff.comfyui) {
+      // `formattedVersion` is the resolved version per side; `ref` is the static
+      // manifest value. See the latest-snapshot comfyui note above.
+      entry.comfyui = {
+        from: {
+          ref: diff.comfyui.from.ref,
+          commit: diff.comfyui.from.commit,
+          baseTag: diff.comfyui.from.baseTag ?? null,
+          commitsAhead: diff.comfyui.from.commitsAhead ?? null,
+          formattedVersion: diff.comfyui.from.formattedVersion
+        },
+        to: {
+          ref: diff.comfyui.to.ref,
+          commit: diff.comfyui.to.commit,
+          baseTag: diff.comfyui.to.baseTag ?? null,
+          commitsAhead: diff.comfyui.to.commitsAhead ?? null,
+          formattedVersion: diff.comfyui.to.formattedVersion
+        }
+      }
+    }
+    if (diff.updateChannel) {
+      entry.updateChannel = diff.updateChannel
+    }
+    const entrySize = JSON.stringify(entry).length + 1
+    if (runningSize + entrySize > MAX_CONTEXT_BYTES) break
+    result.snapshot_diffs.push(entry)
+    runningSize += entrySize
+  }
+
+  return result
 }
 
 export async function _fetchAndResolveLatestTags(
@@ -674,12 +1079,9 @@ export async function migrateDefaults(): Promise<void> {
   }
 }
 
-const VALID_THEMES: readonly string[] = ['system', 'dark', 'light'] satisfies readonly Theme[]
-
 export function resolveTheme(): ResolvedTheme {
-  const raw = settings.get('theme') as string | undefined
-  const theme: Theme = raw && VALID_THEMES.includes(raw) ? (raw as Theme) : 'system'
-  return theme === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : theme
+  // App is dark-only — ignore the `theme` setting and OS appearance.
+  return 'dark'
 }
 
 // Single-flight: overlapping calls (boot, periodic timer, manual refresh) share one run
@@ -731,8 +1133,11 @@ export function makeSendProgress(sender: Electron.WebContents, installationId: s
 /** Helper to create a sendOutput callback from an IPC event sender */
 export function makeSendOutput(sender: Electron.WebContents, installationId: string): (text: string) => void {
   return (text: string): void => {
-    try { if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text }) } catch {}
-    appendLog(installationId, text)
+    // Strip ANSI: these are plain-text surfaces. The xterm.js terminal keeps
+    // its colors via the separate `terminal-output` channel.
+    const clean = stripAnsi(text)
+    try { if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text: clean }) } catch {}
+    appendLog(installationId, clean)
   }
 }
 
@@ -760,6 +1165,9 @@ export async function stopRunning(
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
     }
+    // Flush after the kill so shutdown output emitted while dying is captured
+    // and can't bleed into the next run for this id.
+    flushOperationOutput(installationId)
     _stoppingInstallationIds.delete(installationId)
     _broadcastToRenderer('instance-stopped', { installationId })
     sessionLifecycleEvents.emit('changed')
@@ -781,6 +1189,11 @@ export async function stopRunning(
       }
     }
     await Promise.all(kills)
+    // Flush after the kills so shutdown output is captured and can't bleed
+    // into the next run for these ids.
+    for (const [id] of sessions) {
+      flushOperationOutput(id)
+    }
     for (const [id] of sessions) {
       _stoppingInstallationIds.delete(id)
       _broadcastToRenderer('instance-stopped', { installationId: id })
@@ -795,6 +1208,14 @@ export function hasRunningSessions(): boolean {
 
 export function getSessionProcess(installationId: string): ChildProcess | null {
   return _runningSessions.get(installationId)?.proc ?? null
+}
+
+/** Epoch ms when the running session was registered (`_addSession`), i.e. the
+ *  server-ready moment. Used by the canvas-rendered telemetry to measure
+ *  server-ready → first canvas paint. `null` if no session is running for the
+ *  id (e.g. the page reloaded after a stop). */
+export function getSessionStartedAt(installationId: string): number | null {
+  return _runningSessions.get(installationId)?.startedAt ?? null
 }
 
 export function hasActiveOperations(): boolean {

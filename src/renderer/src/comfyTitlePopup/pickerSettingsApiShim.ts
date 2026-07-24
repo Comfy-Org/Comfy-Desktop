@@ -7,15 +7,20 @@
  */
 
 import type { ComfyTitlePopupBridge } from '../../../preload/comfyTitlePopupPreload'
+import type { LocaleSource } from '../lib/useAppLocale'
 
 const API_MAP = {
   getDetailSections: 'pickerSettingsGetDetailSections',
   getDiskSpace: 'pickerSettingsGetDiskSpace',
+  // Open a folder in the OS file manager (clickable storage path rows). Reuses
+  // the popup's existing globalSettings open-path bridge.
+  openPath: 'globalSettingsOpenPath',
   updateInstallation: 'pickerSettingsUpdateInstallation',
   runAction: 'pickerSettingsRunAction',
   getFieldOptions: 'pickerSettingsGetFieldOptions',
   getInstallations: 'pickerSettingsGetInstallations',
   getStableTags: 'pickerSettingsGetStableTags',
+  getUniqueName: 'pickerSettingsGetUniqueName',
   getInstallationSize: 'pickerSettingsGetInstallationSize',
   stopComfyUI: 'pickerSettingsStopComfyUI',
   cancelOperation: 'pickerSettingsCancelOperation',
@@ -29,7 +34,6 @@ const API_MAP = {
   importSnapshotsConfirm: 'pickerSettingsImportSnapshotsConfirm',
   previewSnapshotFile: 'pickerSettingsPreviewSnapshotFile',
   getComfyArgs: 'pickerSettingsGetComfyArgs',
-  previewDesktopMigration: 'pickerSettingsPreviewDesktopMigration',
   previewLocalMigration: 'pickerSettingsPreviewLocalMigration',
   onReleaseCacheEnriched: 'pickerSettingsOnReleaseCacheEnriched',
   terminalSubscribe: 'terminalSubscribe',
@@ -79,19 +83,16 @@ export function installPickerSettingsApiShim(): void {
 }
 
 /**
- * Merge main's i18n catalog on top of the popup's static catalog. The caller
- * should cache the returned promise so concurrent expands share one IPC.
+ * `LocaleSource` for `useAppLocale`, backed by the popup's bridge. Syncs lazily
+ * when the expanded settings UI opens, and live-updates when main switches
+ * locale (the language picker lives in this popup).
  */
-export async function mergePanelLocaleIntoPopup(
-  mergeLocaleMessage: (locale: string, messages: Record<string, unknown>) => void,
-): Promise<void> {
+export function popupLocaleSource(): LocaleSource {
   const bridge = (window as unknown as { __comfyTitlePopup?: ComfyTitlePopupBridge })
     .__comfyTitlePopup
-  if (!bridge) return
-  try {
-    const messages = await bridge.pickerSettingsGetLocaleMessages()
-    mergeLocaleMessage('en', messages)
-  } catch (err) {
-    console.warn('Picker: locale merge failed', err)
+  return {
+    getLocale: () => bridge?.pickerSettingsGetLocale?.() ?? Promise.resolve('en'),
+    getMessages: () => bridge?.pickerSettingsGetLocaleMessages?.() ?? Promise.resolve({}),
+    subscribe: (cb) => bridge?.pickerSettingsOnLocaleChanged?.(cb) ?? (() => {})
   }
 }

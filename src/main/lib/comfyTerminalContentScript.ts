@@ -3,11 +3,12 @@
  * served ComfyUI frontend, for the window between our frontend/backend terminal
  * PRs landing and a stable release shipping them.
  *
- * It is injected (via `webContents.executeJavaScript`) only for STANDALONE
- * installs whose ComfyUI does not yet advertise the `supports_terminal` feature
- * flag — i.e. exactly when the real, flag-gated frontend tab cannot appear, so
- * there is never a duplicate. Delete this module (and its call site in
- * `attach.ts`) once stable ships the official tab.
+ * It is injected (via `webContents.executeJavaScript`) for local managed
+ * installs that back a per-install shell (standalone, portable, git). It runs
+ * always-on and dedupes in JS: the script bails before registering if it sees
+ * an existing native `command-terminal` tab, so a frontend that ships the real
+ * flag-gated tab never ends up with a duplicate. Delete this module (and its
+ * call site in `attach.ts`) once stable ships the official tab.
  *
  * The transport is the already-injected `window.__comfyDesktop2.Terminal`
  * bridge (see `comfyPreload.ts`). xterm isn't exposed on `window.comfyAPI`, so
@@ -20,6 +21,7 @@
 
 import { createRequire } from 'module'
 import { readFileSync } from 'fs'
+import { decideTerminalKeyAction } from '../../shared/terminalShortcuts'
 
 // The main bundle is CommonJS, so `__filename` is the right anchor for
 // require.resolve (import.meta.url is unavailable there).
@@ -45,6 +47,24 @@ function stripSourceMapComment(source: string): string {
 const TERMINAL_TAB_MAIN_JS = `
 var STATE = window.__comfyDesktopTerminalStopgap;
 var mounted = null;
+
+// Coarse OS bucket for the copy/paste shortcut matrix (mirrors the desktop
+// console's terminalShortcuts.ts). navigator.userAgent is reliable in Electron.
+var TERM_PLATFORM = (function () {
+  var ua = (navigator.userAgent || '').toLowerCase();
+  if (ua.indexOf('mac') !== -1) return 'mac';
+  if (ua.indexOf('win') !== -1) return 'windows';
+  return 'linux';
+})();
+
+// Single source of truth for the shortcut matrix: this injected terminal and
+// the desktop console (ConsoleTerminalPane.vue) both use
+// src/shared/terminalShortcuts.ts, embedded here verbatim via .toString() so
+// the two can't drift. decideTermKeyAction just binds the detected platform.
+var decideTerminalKeyAction = ${decideTerminalKeyAction.toString()};
+function decideTermKeyAction(e, hasSelection) {
+  return decideTerminalKeyAction(e, TERM_PLATFORM, hasSelection);
+}
 
 function destroyTerminal() {
   if (!mounted) return;
@@ -128,6 +148,25 @@ function renderTerminal(container) {
     window.requestAnimationFrame(function () { doFit(true); });
   }
 
+  // Copy/paste shortcuts: intercept before xterm forwards keys to the PTY so
+  // e.g. Ctrl+C can copy a selection instead of always sending SIGINT.
+  term.attachCustomKeyEventHandler(function (e) {
+    var action = decideTermKeyAction(e, term.hasSelection());
+    if (action === 'copy') {
+      var text = term.getSelection();
+      // writeText is async: also swallow promise rejections, not just sync throws.
+      if (text) { try { navigator.clipboard.writeText(text).catch(function () {}); } catch (err) {} }
+      return false;
+    }
+    if (action === 'paste') {
+      // xterm pastes natively via the browser's paste event; just swallow the
+      // keydown so no stray ^V is sent. A manual paste here would double-paste.
+      return false;
+    }
+    if (action === 'swallow') return false;
+    return true;
+  });
+
   m.onData = term.onData(function (d) { try { bridge.write(d); } catch (e) {} });
   m.offOutput = bridge.onOutput(function (msg) {
     if (m.disposed) return;
@@ -166,12 +205,31 @@ function renderTerminal(container) {
   }).catch(function () {});
 }
 
+// True if a bottom-panel tab with this id is already registered in the
+// frontend store. This is where the native frontend registers both its Logs
+// ('logs-terminal') and Terminal ('command-terminal') tabs.
+function bottomPanelHasTab(app, id) {
+  try {
+    var bp = app && app.extensionManager && app.extensionManager.bottomPanel;
+    var terminalPanel = bp && bp.panels && bp.panels.terminal;
+    var tabs = terminalPanel && terminalPanel.tabs;
+    if (tabs) {
+      for (var i = 0; i < tabs.length; i++) {
+        if (tabs[i] && tabs[i].id === id) return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
 // Dedupe guard. The frontend ships a native flag-gated 'command-terminal'
 // bottom-panel tab via the companion ComfyUI_frontend PR; when that lands
 // it registers itself before we tick. Bail out if we see it so the user
-// never gets two tabs with the same id. Defensive over both shapes that
-// ComfyUI exposes (an extensions array, and a future-proof tab registry).
+// never gets two tabs with the same id. Defensive over the shapes ComfyUI
+// exposes: the bottom-panel store, an extensions array, and a future-proof
+// tab registry.
 function alreadyHasTerminalTab(app) {
+  if (bottomPanelHasTab(app, 'command-terminal')) return true;
   try {
     var exts = (app && app.extensions) || [];
     for (var i = 0; i < exts.length; i++) {
@@ -196,17 +254,7 @@ function alreadyHasTerminalTab(app) {
 // and Terminal lands second, matching the native frontend ordering (the store
 // makes the first-registered tab the default active one).
 function hasLogsTab(app) {
-  try {
-    var bp = app && app.extensionManager && app.extensionManager.bottomPanel;
-    var terminalPanel = bp && bp.panels && bp.panels.terminal;
-    var tabs = terminalPanel && terminalPanel.tabs;
-    if (tabs) {
-      for (var i = 0; i < tabs.length; i++) {
-        if (tabs[i] && tabs[i].id === 'logs-terminal') return true;
-      }
-    }
-  } catch (e) {}
-  return false;
+  return bottomPanelHasTab(app, 'logs-terminal');
 }
 
 function waitForRegister(timeoutMs) {

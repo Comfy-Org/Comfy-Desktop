@@ -616,3 +616,84 @@ describe('installations.enforceCloudName', () => {
     await expect(installations.enforceCloudName()).resolves.toBeUndefined()
   })
 })
+
+describe('installations.clearPendingTemplateOpen', () => {
+  it('clears the one-shot flag once, then is a no-op on the cleared record', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'With Template',
+      installPath: path.join(tmpRoot, 't'),
+      sourceId: 'standalone',
+      status: 'installed',
+      bundledTemplateId: 'flux_schnell',
+      pendingTemplateOpen: 'flux_schnell',
+      downloadTemplateModels: true,
+    })
+
+    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(true)
+    expect((await installations.get(entry.id))!.pendingTemplateOpen).toBeNull()
+    // Already clear → no second mutation.
+    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
+  })
+
+  it('is a no-op for a legacy record with no template fields (migration-safe)', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Legacy',
+      installPath: path.join(tmpRoot, 'legacy'),
+      sourceId: 'standalone',
+      status: 'installed',
+    })
+    expect(entry.pendingTemplateOpen).toBeUndefined()
+    expect(entry.bundledTemplateId).toBeUndefined()
+    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
+  })
+
+  it('returns false when the install is gone', async () => {
+    const installations = await loadInstallations()
+    expect(await installations.clearPendingTemplateOpen('does-not-exist')).toBe(false)
+  })
+})
+
+describe('installations.uniqueName', () => {
+  const recs = (...names: string[]): InstallationRecord[] =>
+    names.map((name, i) => ({ id: `id-${i}`, name }) as InstallationRecord)
+
+  it('returns the base name unchanged when it is free', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI', recs('Other'))).toBe('ComfyUI')
+  })
+
+  it('appends " (1)" when the base name is taken', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI', recs('ComfyUI'))).toBe('ComfyUI (1)')
+  })
+
+  it('finds the next free suffix when lower ones are taken', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI', recs('ComfyUI', 'ComfyUI (1)', 'ComfyUI (2)'))).toBe('ComfyUI (3)')
+  })
+
+  it('renumbers an already-suffixed name instead of compounding it', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI (1)', recs('ComfyUI', 'ComfyUI (1)'))).toBe('ComfyUI (2)')
+  })
+
+  it('does not compound even after repeated chaining of the deduped name', async () => {
+    const { uniqueName } = await loadInstallations()
+    const first = uniqueName('ComfyUI', recs('ComfyUI')) // "ComfyUI (1)"
+    // Feeding the deduped name back in while it is now taken must not nest.
+    expect(uniqueName(first, recs('ComfyUI', 'ComfyUI (1)'))).toBe('ComfyUI (2)')
+  })
+
+  it('preserves an intentional " (N)" name when it is actually free', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI (1)', recs('ComfyUI'))).toBe('ComfyUI (1)')
+  })
+
+  it('excludes the renamed install from the conflict set', async () => {
+    const { uniqueName } = await loadInstallations()
+    const existing = recs('ComfyUI') // id-0
+    expect(uniqueName('ComfyUI', existing, 'id-0')).toBe('ComfyUI')
+  })
+})
