@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   parseNvidiaDriverVersion,
   isVirtualGpu,
-  selectPrimaryGpu,
+  promoteGpuController,
   parseAmdSmiDriverVersion,
   parseRocmSmiDriverVersion,
   parseWmiDriverVersions,
@@ -67,68 +67,72 @@ describe('isVirtualGpu', () => {
   })
 })
 
-describe('selectPrimaryGpu', () => {
-  it('returns null for an empty list', () => {
-    expect(selectPrimaryGpu([], 'nvidia')).toBeNull()
-  })
+describe('promoteGpuController', () => {
+  const emptyEnrichment = {
+    model: null,
+    vram_mb: null,
+    vram_gb: null,
+    tier: null,
+    driver_version: null
+  }
 
-  it('skips a leading virtual display in favour of the real GPU', () => {
+  it('promotes one non-virtual controller matching the detected vendor', () => {
     const gpus = [
       gpu('Microsoft', 'Microsoft Basic Render Driver', null),
+      gpu('Intel Corporation', 'Intel UHD Graphics 770', 128),
       gpu('NVIDIA', 'NVIDIA GeForce RTX 4090', 24576, '591.59')
     ]
-    expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('NVIDIA GeForce RTX 4090')
+    expect(promoteGpuController(gpus, 'nvidia')).toEqual({
+      model: 'NVIDIA GeForce RTX 4090',
+      vram_mb: 24576,
+      vram_gb: 24,
+      tier: 'high',
+      driver_version: '591.59'
+    })
   })
 
-  it('prefers the controller matching the detected vendor', () => {
+  it('does not promote a cross-vendor controller', () => {
     const gpus = [
       gpu('Intel Corporation', 'Intel UHD Graphics 770', 128),
-      gpu('NVIDIA', 'NVIDIA GeForce RTX 4080', 16384)
-    ]
-    expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('NVIDIA GeForce RTX 4080')
-    expect(selectPrimaryGpu(gpus, 'intel')?.model).toBe('Intel UHD Graphics 770')
-  })
-
-  it('breaks ties on VRAM within the matched vendor', () => {
-    const gpus = [
-      gpu('NVIDIA', 'NVIDIA RTX A2000', 6144),
-      gpu('NVIDIA', 'NVIDIA GeForce RTX 4090', 24576)
-    ]
-    expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('NVIDIA GeForce RTX 4090')
-  })
-
-  it('falls back to highest-VRAM real GPU when vendor does not match', () => {
-    const gpus = [
-      gpu('Microsoft', 'Microsoft Basic Render Driver', null),
-      gpu('AMD', 'AMD Radeon RX 6600', 8192),
       gpu('AMD', 'AMD Radeon RX 7900 XTX', 24576)
     ]
-    expect(selectPrimaryGpu(gpus, null)?.model).toBe('AMD Radeon RX 7900 XTX')
+    expect(promoteGpuController(gpus, 'nvidia')).toEqual(emptyEnrichment)
   })
 
-  it('falls back to a virtual adapter only when nothing else exists', () => {
-    const gpus = [gpu('Microsoft', 'Microsoft Basic Render Driver', null)]
-    expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('Microsoft Basic Render Driver')
+  it('does not promote virtual-only controller data', () => {
+    const gpus = [
+      gpu('NVIDIA', 'Parsec Virtual Display Adapter', 24576, '591.59'),
+      gpu('Microsoft', 'Microsoft Basic Render Driver', null)
+    ]
+    expect(promoteGpuController(gpus, 'nvidia')).toEqual(emptyEnrichment)
+  })
+
+  it('does not select the highest-VRAM controller among same-vendor matches', () => {
+    const gpus = [
+      gpu('NVIDIA', 'NVIDIA RTX A2000', 6144, '550.00'),
+      gpu('NVIDIA', 'NVIDIA GeForce RTX 4090', 24576, '591.59')
+    ]
+    expect(promoteGpuController(gpus, 'nvidia')).toEqual(emptyEnrichment)
+  })
+
+  it('does not promote enrichment without controller or detector data', () => {
+    expect(promoteGpuController([], 'nvidia')).toEqual(emptyEnrichment)
+    expect(
+      promoteGpuController([gpu('NVIDIA', 'NVIDIA GeForce RTX 4090', 24576)], null)
+    ).toEqual(emptyEnrichment)
   })
 
   it('matches the detected vendor via the model name when vendor is empty', () => {
     const gpus = [
       gpu('Microsoft', 'Microsoft Basic Render Driver', null),
-      gpu('', 'Intel UHD Graphics 770', 2048),
       gpu('', 'NVIDIA GeForce RTX 4090', 24576)
     ]
-    // Without model matching, the empty-vendor NVIDIA card would be skipped and
-    // the higher-VRAM card picked by tie-break regardless of vendor.
-    expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('NVIDIA GeForce RTX 4090')
-    expect(selectPrimaryGpu(gpus, 'intel')?.model).toBe('Intel UHD Graphics 770')
+    expect(promoteGpuController(gpus, 'nvidia').model).toBe('NVIDIA GeForce RTX 4090')
   })
 
   it('matches AMD via Radeon-branded model with empty vendor', () => {
-    const gpus = [
-      gpu('', 'NVIDIA GeForce RTX 4090', 24576),
-      gpu('', 'Radeon RX 7900 XTX', 24576)
-    ]
-    expect(selectPrimaryGpu(gpus, 'amd')?.model).toBe('Radeon RX 7900 XTX')
+    const gpus = [gpu('', 'Radeon RX 7900 XTX', 24576)]
+    expect(promoteGpuController(gpus, 'amd').model).toBe('Radeon RX 7900 XTX')
   })
 })
 

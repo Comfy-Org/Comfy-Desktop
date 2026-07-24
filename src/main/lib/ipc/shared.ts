@@ -31,7 +31,7 @@ import {
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
 } from '../process'
-import { detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions } from '../gpu'
+import { detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, promoteGpuController, getWindowsGpuDriverVersions } from '../gpu'
 import { detectDesktopInstall, stageDesktopSnapshot } from '../desktopDetect'
 import { performLocalMigration, stageLocalSnapshot } from '../localMigration'
 import { getDiskSpace, getDirectorySize, validateInstallPath } from '../disk'
@@ -71,7 +71,7 @@ export {
   findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
   findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
-  detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions,
+  detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, promoteGpuController, getWindowsGpuDriverVersions,
   detectDesktopInstall, stageDesktopSnapshot,
   performLocalMigration, stageLocalSnapshot,
   getDiskSpace, getDirectorySize, validateInstallPath,

@@ -624,11 +624,11 @@ export interface SystemInfo {
   gpu_vendor: string | null
   gpu_label: string | null
   gpu_model: string | null
-  /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
+  /** VRAM promoted from one unique controller matching `gpu_vendor`. */
   gpu_vram_mb: number | null
-  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  /** Rounded promoted VRAM, in GiB. */
   gpu_vram_gb: number | null
-  gpu_tier: GpuTier
+  gpu_tier: GpuTier | null
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null

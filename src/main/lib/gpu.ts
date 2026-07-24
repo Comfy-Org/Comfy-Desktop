@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
-import type { HardwareValidation, NvidiaDriverCheck } from '../../types/ipc'
+import type { GpuTier, HardwareValidation, NvidiaDriverCheck } from '../../types/ipc'
+import { deriveGpuTier } from '../../shared/gpuTier'
 
 type GpuId = 'nvidia' | 'amd' | 'intel' | 'mps'
 
@@ -276,6 +277,14 @@ export interface SystemGpuEntry {
   driver_version: string | null
 }
 
+export interface PromotedGpuEnrichment {
+  model: string | null
+  vram_mb: number | null
+  vram_gb: number | null
+  tier: GpuTier | null
+  driver_version: string | null
+}
+
 /**
  * Display adapters that are not real compute GPUs: virtual monitors,
  * remote-display drivers, hypervisor framebuffers. On Windows
@@ -336,31 +345,34 @@ export function vendorMatches(id: GpuId, ...parts: (string | null | undefined)[]
   }
 }
 
-/**
- * Choose the real compute GPU from the systeminformation controller list.
- *
- * `controllers[0]` is unreliable: on Windows the list includes virtual
- * display adapters in no guaranteed order. We instead drop virtual adapters,
- * prefer the controller whose vendor matches the PCI-derived `detectGPU()`
- * result, and break ties on VRAM. Falls back to the highest-VRAM non-virtual
- * controller, then to the first entry, so we always return something when any
- * controller exists. The caller keeps the full unfiltered array for
- * retroactive analysis; this only picks the promoted "primary".
- */
-export function selectPrimaryGpu(
+/** Promote controller data only when it unambiguously matches the detected vendor. */
+export function promoteGpuController(
   gpus: SystemGpuEntry[],
   detectedVendor: GpuId | null
-): SystemGpuEntry | null {
-  if (gpus.length === 0) return null
-  const real = gpus.filter((g) => !isVirtualGpu(g.model))
-  const pool = real.length > 0 ? real : gpus
-  const byVramDesc = (a: SystemGpuEntry, b: SystemGpuEntry): number =>
-    (b.vram_mb ?? 0) - (a.vram_mb ?? 0)
-  if (detectedVendor) {
-    const matching = pool.filter((g) => vendorMatches(detectedVendor, g.vendor, g.model))
-    if (matching.length > 0) return [...matching].sort(byVramDesc)[0]!
+): PromotedGpuEnrichment {
+  const empty: PromotedGpuEnrichment = {
+    model: null,
+    vram_mb: null,
+    vram_gb: null,
+    tier: null,
+    driver_version: null
   }
-  return [...pool].sort(byVramDesc)[0]!
+  if (!detectedVendor) return empty
+
+  const matching = gpus.filter(
+    (gpu) => !isVirtualGpu(gpu.model) && vendorMatches(detectedVendor, gpu.vendor, gpu.model)
+  )
+  if (matching.length !== 1) return empty
+
+  const gpu = matching[0]!
+  const vramGb = gpu.vram_mb != null ? Math.round(gpu.vram_mb / 1024) : null
+  return {
+    model: gpu.model || null,
+    vram_mb: gpu.vram_mb,
+    vram_gb: vramGb,
+    tier: deriveGpuTier({ vendor: detectedVendor, vramGb }),
+    driver_version: gpu.driver_version
+  }
 }
 
 /**

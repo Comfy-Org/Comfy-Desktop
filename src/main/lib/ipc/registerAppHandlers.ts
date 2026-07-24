@@ -17,8 +17,7 @@ import {
   validateHardware,
   checkNvidiaDriver,
   checkAmdDriver,
-  selectPrimaryGpu,
-  vendorMatches,
+  promoteGpuController,
   getWindowsGpuDriverVersions,
   sourceMap,
   getAppVersion,
@@ -35,7 +34,6 @@ import { getDeviceId } from '../deviceId'
 import { getCloudCapacityStatusAsync } from '../cloudCapacity'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
-import { deriveGpuTier } from '../../../shared/gpuTier'
 
 export function registerAppHandlers(): void {
   // App version
@@ -252,40 +250,26 @@ export function registerAppHandlers(): void {
       }
     }
 
-    // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
-    // Apple Silicon) — its `model` field is hardcoded null. Pick the real
-    // compute GPU from the systeminformation `controllers[]` instead of
-    // blindly trusting `controllers[0]`: virtual display adapters are not
-    // promoted. The full `allGpus` array is still returned unfiltered for
-    // retroactive analysis. Empty strings from the lib normalise to null so
-    // cohort filters on "is set" work consistently.
-    const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
-    const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
-    const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
-    const primaryGpuVramGb = primaryGpuVramMb != null ? Math.round(primaryGpuVramMb / 1024) : null
-    const gpuTier = deriveGpuTier({ vendor: gpu?.id, vramGb: primaryGpuVramGb })
-    // Only trust the primary controller's driver string when it actually
-    // matches the detected compute vendor; selectPrimaryGpu may fall back to a
-    // non-matching controller, which would otherwise mislabel the driver.
-    const primaryGpuMatchesAmd = vendorMatches('amd', primaryGpu?.vendor, primaryGpu?.model)
-    const primaryGpuMatchesIntel = vendorMatches('intel', primaryGpu?.vendor, primaryGpu?.model)
+    // Keep the full inventory for analysis, but only promote one unique
+    // non-virtual controller that matches detectGPU().
+    const promotedGpu = promoteGpuController(allGpus, gpu?.id ?? null)
     // AMD: prefer the ROCm-reported version (compute-relevant); on Windows
     // there is no rocm-smi, so fall back to the controller's WMI driver.
     const amdDriver =
       gpu?.id === 'amd'
-        ? (amdDriverVersion ?? (primaryGpuMatchesAmd ? primaryGpu?.driver_version : null) ?? null)
+        ? (amdDriverVersion ?? promotedGpu.driver_version)
         : null
     // Intel has no dedicated CLI; the controller driver (WMI on Windows,
     // si on Linux) is the best available signal.
     const intelDriver =
-      gpu?.id === 'intel' && primaryGpuMatchesIntel ? (primaryGpu?.driver_version ?? null) : null
+      gpu?.id === 'intel' ? promotedGpu.driver_version : null
     return {
       gpu_vendor: gpu?.id ?? null,
       gpu_label: gpu?.label ?? null,
-      gpu_model: primaryGpuModel,
-      gpu_vram_mb: primaryGpuVramMb,
-      gpu_vram_gb: primaryGpuVramGb,
-      gpu_tier: gpuTier,
+      gpu_model: promotedGpu.model,
+      gpu_vram_mb: promotedGpu.vram_mb,
+      gpu_vram_gb: promotedGpu.vram_gb,
+      gpu_tier: promotedGpu.tier,
       gpus: allGpus,
       nvidia_driver_version: nvidiaCheck?.driverVersion ?? null,
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,
