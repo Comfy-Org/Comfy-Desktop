@@ -130,8 +130,15 @@ const forkChoiceInteracted = ref(false)
 const detectedGpuTier = ref<GpuTier | null>(null)
 
 function selectForkChoice(choice: 'cloud' | 'local'): void {
+  if (choice === 'cloud' && cloudCapacity.isDisabled()) return
   forkChoiceInteracted.value = true
   pickedChoice.value = choice
+}
+
+function forkChoiceTabIndex(choice: 'cloud' | 'local'): number {
+  return pickedChoice.value === choice || (pickedChoice.value === null && choice === 'local')
+    ? 0
+    : -1
 }
 
 // Capacity-protection switch for Cloud (PostHog flag
@@ -184,20 +191,10 @@ async function loadForkExperimentVariant(): Promise<ForkVariant> {
   return variant
 }
 
-/** Apply the resolved default to the picker state, respecting hard
- *  gates, explicit interaction, poor hardware, and then the experiment.
- *  Idempotent — safe to call as each async input resolves and from
- *  `open()` on takeover replay. */
+/** Apply the resolved default to the picker state, respecting capacity,
+ *  explicit interaction, legacy installs, poor hardware, and then the
+ *  experiment. Idempotent across async resolution and takeover replay. */
 function applyForkExperimentDefault(variant: ForkVariant): void {
-  // Migration flow always wins. Returning Desktop-1 users land on
-  // Local with the migrate-existing checkbox pre-ticked — that's the
-  // whole point of the legacy-detection branch. The experiment never
-  // overrides it.
-  if (hasLegacyDesktop.value) {
-    pickedChoice.value = 'local'
-    initialDefaultChoice.value = 'local'
-    return
-  }
   // Capacity kill-switch also forces Local: cloud can't be booked, so
   // there's no point pre-selecting it.
   if (cloudCapacity.isDisabled()) {
@@ -206,6 +203,13 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
     return
   }
   if (forkChoiceInteracted.value) return
+  // Returning Desktop-1 users initially land on Local with migration
+  // pre-ticked, but an explicit Cloud choice must remain authoritative.
+  if (hasLegacyDesktop.value) {
+    pickedChoice.value = 'local'
+    initialDefaultChoice.value = 'local'
+    return
+  }
   if (
     !skipPick.value &&
     (detectedGpuTier.value === 'sub_low' || detectedGpuTier.value === 'cpu_only')
@@ -406,6 +410,9 @@ async function onContinue(): Promise<void> {
   // commit. The button is already :disabled in this state, but guard
   // defensively so a programmatic click can't bypass.
   if (pickedChoice.value === null) return
+  // Lock before hardware detection so repeated activation cannot start
+  // duplicate telemetry or routing work while the IPC is pending.
+  isContinuing.value = true
   // Hardware normally resolves before the user reaches Continue. If it
   // has not, wait before committing an untouched default so poor
   // hardware cannot slip through without the required explicit choice.
@@ -415,7 +422,10 @@ async function onContinue(): Promise<void> {
     } catch {
       // Preserve the existing default when hardware detection fails.
     }
-    if (pickedChoice.value === null) return
+    if (pickedChoice.value === null) {
+      isContinuing.value = false
+      return
+    }
   }
   forkChoiceInteracted.value = true
   // Keep `isContinuing` true past `routePostStart()` because the chain
@@ -423,8 +433,6 @@ async function onContinue(): Promise<void> {
   // either unmount this takeover or swap to a sub-step within ms. The
   // China-mirrors branch is the only path that lingers on this component
   // post-Continue, so it explicitly clears the flag on its return.
-  isContinuing.value = true
-
   await window.api.setSetting('telemetryEnabled', telemetryEnabled.value)
 
   emitTelemetryAction('comfy.desktop.first_use.consent_decision', {
@@ -578,7 +586,10 @@ function chooseMigrate(): void {
 function onStartCardsKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[role="radio"]')) return
-  const order = ['cloud', 'local'] as const
+  const group = e.currentTarget as HTMLElement | null
+  const order: Array<'cloud' | 'local'> = cloudCapacity.isDisabled()
+    ? ['local']
+    : ['cloud', 'local']
   const currentIndex = pickedChoice.value === null ? -1 : order.indexOf(pickedChoice.value)
   let next: number
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -593,10 +604,10 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   e.preventDefault()
   selectForkChoice(nextChoice)
   void nextTick(() => {
-    const radios = (e.currentTarget as HTMLElement | null)?.querySelectorAll<HTMLElement>(
-      '[role="radio"]'
+    const radio = group?.querySelector<HTMLElement>(
+      `[data-testid="first-use-pick-${nextChoice}"]`
     )
-    radios?.[next]?.focus()
+    radio?.focus()
   })
 }
 
@@ -794,6 +805,7 @@ defineExpose({ open, resetContinue })
             :class="{ 'start-card-cloud--capacity-disabled': cloudCapacity.isDisabled() }"
             selectable
             :selected="pickedChoice === 'cloud'"
+            :tabindex="forkChoiceTabIndex('cloud')"
             :aria-disabled="cloudCapacity.isDisabled() ? true : undefined"
             glow
             :label="$t('cloud.label')"
@@ -806,7 +818,7 @@ defineExpose({ open, resetContinue })
             "
             :description="$t(cloudDescriptionKey)"
             data-testid="first-use-pick-cloud"
-            @click="cloudCapacity.isDisabled() ? null : selectForkChoice('cloud')"
+            @click="selectForkChoice('cloud')"
           >
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
@@ -825,6 +837,7 @@ defineExpose({ open, resetContinue })
           <ChoiceCard
             selectable
             :selected="pickedChoice === 'local'"
+            :tabindex="forkChoiceTabIndex('local')"
             :label="$t('firstUse.localLabel')"
             :tagline="$t('firstUse.localTagline')"
             :description="$t('firstUse.localDesc')"

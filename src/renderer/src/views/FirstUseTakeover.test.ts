@@ -34,8 +34,13 @@ vi.mock('../components/ModalShell.vue', () => ({
 }))
 vi.mock('../components/ChoiceCard.vue', () => ({
   default: {
+    props: {
+      selectable: { type: Boolean, default: false },
+      selected: { type: Boolean, default: false },
+    },
+    emits: ['click'],
     template:
-      '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot /></div>',
+      '<button data-testid="stub-choice-card" :role="selectable ? \'radio\' : undefined" :aria-checked="selectable ? selected : undefined" :tabindex="selectable ? (selected ? 0 : -1) : undefined" @click="$emit(\'click\')"><slot name="label-trailing" /><slot /></button>',
   },
 }))
 vi.mock('../components/WhyTryCloudModal.vue', () => ({
@@ -62,6 +67,7 @@ vi.mock('../components/BrandTakeoverLayout.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import { emitTelemetryAction } from '../lib/telemetry'
 
 const i18n = createI18n({
   legacy: false,
@@ -72,6 +78,7 @@ const i18n = createI18n({
 })
 
 beforeEach(() => {
+  vi.mocked(emitTelemetryAction).mockClear()
   capacityMock.status = 'normal'
   capacityMock.tier = 'unknown'
   window.api = {
@@ -98,6 +105,24 @@ function mountTakeover() {
   })
 }
 
+type SystemInfoResult = Awaited<ReturnType<typeof window.api.getSystemInfo>>
+
+function deferSystemInfo() {
+  let resolvePromise!: (info: SystemInfoResult) => void
+  let rejectPromise!: (error: Error) => void
+  ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+    new Promise<SystemInfoResult>((resolve, reject) => {
+      resolvePromise = resolve
+      rejectPromise = reject
+    }),
+  )
+  return {
+    resolve: (info: Pick<SystemInfoResult, 'gpu_label' | 'gpu_tier'>) =>
+      resolvePromise(info as SystemInfoResult),
+    reject: rejectPromise,
+  }
+}
+
 describe('FirstUseTakeover start step', () => {
   it.each(['sub_low', 'cpu_only'] as const)(
     'requires an explicit choice for %s hardware',
@@ -114,6 +139,8 @@ describe('FirstUseTakeover start step', () => {
 
       const btn = wrapper.find('[data-testid="first-use-continue"]')
       expect(btn.attributes('disabled')).toBeDefined()
+      expect(wrapper.find('[data-testid="first-use-pick-cloud"]').attributes('tabindex')).toBe('-1')
+      expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('tabindex')).toBe('0')
       await btn.trigger('click')
       expect(wrapper.emitted('chain-local')).toBeFalsy()
       expect(wrapper.emitted('complete-cloud')).toBeFalsy()
@@ -145,21 +172,14 @@ describe('FirstUseTakeover start step', () => {
   )
 
   it('does not replace a choice made before hardware detection resolves', async () => {
-    let resolveSystemInfo:
-      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
-      | undefined
-    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
-      new Promise((resolve) => {
-        resolveSystemInfo = resolve
-      }),
-    )
+    const systemInfo = deferSystemInfo()
     const wrapper = mountTakeover()
     await wrapper.find('[data-testid="first-use-pick-cloud"]').trigger('click')
 
-    resolveSystemInfo?.({
+    systemInfo.resolve({
       gpu_label: 'NVIDIA',
       gpu_tier: 'sub_low',
-    } as Awaited<ReturnType<typeof window.api.getSystemInfo>>)
+    })
     await flushPromises()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -171,15 +191,30 @@ describe('FirstUseTakeover start step', () => {
     expect(wrapper.emitted('complete-cloud')).toBeTruthy()
   })
 
+  it('preserves an explicit Cloud choice for a legacy install when hardware resolves late', async () => {
+    const systemInfo = deferSystemInfo()
+    const wrapper = mountTakeover()
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({ hasLegacyDesktop: true })
+    await wrapper.find('[data-testid="first-use-pick-cloud"]').trigger('click')
+
+    systemInfo.resolve({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'sub_low',
+    })
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    expect(wrapper.emitted('complete-cloud')).toHaveLength(1)
+    expect(wrapper.emitted('chain-migrate')).toBeFalsy()
+  })
+
   it('waits for hardware detection before committing an untouched default', async () => {
-    let resolveSystemInfo:
-      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
-      | undefined
-    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
-      new Promise((resolve) => {
-        resolveSystemInfo = resolve
-      }),
-    )
+    const systemInfo = deferSystemInfo()
     const wrapper = mountTakeover()
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -187,16 +222,69 @@ describe('FirstUseTakeover start step', () => {
 
     const btn = wrapper.find('[data-testid="first-use-continue"]')
     const clickPromise = btn.trigger('click')
-    resolveSystemInfo?.({
+    await wrapper.vm.$nextTick()
+    expect(btn.text()).toBe('firstUse.startContinueBusy')
+    expect(btn.attributes('aria-busy')).toBe('true')
+
+    systemInfo.resolve({
       gpu_label: 'NVIDIA',
       gpu_tier: 'sub_low',
-    } as Awaited<ReturnType<typeof window.api.getSystemInfo>>)
+    })
     await clickPromise
     await flushPromises()
 
     expect(btn.attributes('disabled')).toBeDefined()
+    expect(btn.text()).toBe('firstUse.startContinue')
+    expect(btn.attributes('aria-busy')).toBe('false')
     expect(wrapper.emitted('chain-local')).toBeFalsy()
     expect(wrapper.emitted('complete-cloud')).toBeFalsy()
+  })
+
+  it('continues once with the existing default when system-info rejects', async () => {
+    const systemInfo = deferSystemInfo()
+    const wrapper = mountTakeover()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    const clickPromise = wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    systemInfo.reject(new Error('system-info unavailable'))
+    await clickPromise
+    await flushPromises()
+
+    expect(wrapper.emitted('chain-local')).toHaveLength(1)
+    expect(window.api.setSetting).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores Continue re-entry while system-info is pending', async () => {
+    const systemInfo = deferSystemInfo()
+    const wrapper = mountTakeover()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    const btn = wrapper.find('[data-testid="first-use-continue"]')
+    const firstClick = btn.trigger('click')
+    const secondClick = btn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(btn.text()).toBe('firstUse.startContinueBusy')
+    expect(btn.attributes('disabled')).toBeDefined()
+
+    systemInfo.resolve({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'mid',
+    })
+    await Promise.all([firstClick, secondClick])
+    await flushPromises()
+
+    expect(wrapper.emitted('chain-local')).toHaveLength(1)
+    expect(window.api.setSetting).toHaveBeenCalledTimes(1)
+    expect(
+      vi
+        .mocked(emitTelemetryAction)
+        .mock.calls.filter(([event]) => event === 'comfy.desktop.first_use.fork_chosen'),
+    ).toHaveLength(1)
   })
 
   it('keeps the legacy-desktop Local default on poor hardware', async () => {
@@ -230,6 +318,25 @@ describe('FirstUseTakeover start step', () => {
       .setValue(true)
 
     expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('keeps keyboard navigation on Local when Cloud capacity is disabled', async () => {
+    capacityMock.status = 'disabled'
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    const cloud = wrapper.find('[data-testid="first-use-pick-cloud"]')
+    const local = wrapper.find('[data-testid="first-use-pick-local"]')
+    const focusLocal = vi.spyOn(local.element as HTMLElement, 'focus')
+    expect(cloud.attributes('aria-checked')).toBe('false')
+    expect(local.attributes('aria-checked')).toBe('true')
+
+    await local.trigger('keydown', { key: 'ArrowRight' })
+    await wrapper.vm.$nextTick()
+
+    expect(cloud.attributes('aria-checked')).toBe('false')
+    expect(local.attributes('aria-checked')).toBe('true')
+    expect(focusLocal).toHaveBeenCalledOnce()
   })
 
   it('Continue triggers a nudge shake on the ToS row when terms are not accepted', async () => {
