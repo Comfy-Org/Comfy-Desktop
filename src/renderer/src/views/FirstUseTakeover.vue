@@ -329,6 +329,7 @@ function loadSystemInfo(): Promise<SystemInfo | null> {
  *  the models people actually want (integrated, or discrete under 6 GB).
  *  `apple` and `low`+ run local fine. */
 const RECO_GPU_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['sub_low', 'cpu_only'])
+const CLOUD_RECO_REASON_ID = 'first-use-cloud-reco-reason'
 /** Starts `false` to match its fail-closed direction, so the pill never
  *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
@@ -672,7 +673,7 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   // Walk at most `order.length` steps so an all-disabled group (not
   // reachable today, but the loop shouldn't depend on that) terminates.
   let next = currentIndex
-  for (let step = 0; step < order.length; step++) {
+  for (let stepIndex = 0; stepIndex < order.length; stepIndex++) {
     next =
       next < 0
         ? forward
@@ -905,6 +906,7 @@ defineExpose({ open, resetContinue })
             selectable
             :selected="pickedChoice === 'cloud'"
             :tab-stop="pickedChoice === null && keyboardEntryChoice === 'cloud'"
+            :aria-describedby="hardwareRecommendsCloud ? CLOUD_RECO_REASON_ID : undefined"
             :aria-disabled="cloudCapacity.isDisabled() ? true : undefined"
             glow
             :label="$t('cloud.label')"
@@ -975,6 +977,13 @@ defineExpose({ open, resetContinue })
             @click="pickChoice('local')"
           />
         </div>
+        <span
+          v-if="hardwareRecommendsCloud"
+          :id="CLOUD_RECO_REASON_ID"
+          class="start-cloud-reco__reason"
+        >
+          {{ $t('firstUse.cloudRecommendedForHardwareTooltip') }}
+        </span>
         <!-- Modifier checkboxes (Migrate + Express). Wrapped in a
              fit-content container so the two labels share the same
              left edge and read as left-aligned peers — without the
@@ -1365,6 +1374,17 @@ defineExpose({ open, resetContinue })
 .start-cloud-reco__info {
   opacity: 0.7;
   flex-shrink: 0;
+}
+.start-cloud-reco__reason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Modifier-checkbox container. Both rows (Migrate + Express) live

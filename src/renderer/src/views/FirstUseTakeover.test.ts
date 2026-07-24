@@ -621,6 +621,15 @@ describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
     expect(badge(await mountWithTier(tier)).exists()).toBe(true)
   })
 
+  it('exposes the recommendation reason as the Cloud radio description', async () => {
+    const wrapper = await mountWithTier('cpu_only', null)
+    const cloudCard = wrapper.find('[data-testid="first-use-pick-cloud"]')
+    const reasonId = cloudCard.attributes('aria-describedby')
+
+    expect(reasonId).toBe('first-use-cloud-reco-reason')
+    expect(wrapper.find(`#${reasonId}`).text()).toBe('firstUse.cloudRecommendedForHardwareTooltip')
+  })
+
   it.each<GpuTier>(['high', 'mid', 'low', 'apple'])('leaves the %s tier alone', async (tier) => {
     const wrapper = await mountWithTier(tier)
     expect(badge(wrapper).exists()).toBe(false)
