@@ -1145,17 +1145,15 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   )!
   const target = { value: targetValue, label: LEVEL_LABELS[targetValue]! }
 
-  // The level is per-install now; the global settings store must not be
-  // touched by the picker edit. Snapshot (rather than assert emptiness)
-  // so a profile reused from a run of the old global design - which may
-  // carry a stale settings.json key - can't flake this.
+  // The level is per-install; the picker edit must leave the global
+  // settings store untouched. Snapshot (rather than assert emptiness) so
+  // a reused profile carrying a stray settings.json key can't flake this.
   const globalBefore = await ctx.panel.evaluate<string | null>(
     `window.api.getSetting('managerSecurityLevel')`,
   )
 
-  // Real entry: running host title pill -> picker Startup Args tab (the
-  // per-install surface this setting lives on since it moved off Global
-  // Settings -> Advanced).
+  // Real entry: running host title pill -> picker Startup Args tab, the
+  // per-install surface this setting lives on.
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
 
   // The Startup Args tab hosts several BaseSelects (launch mode, browser

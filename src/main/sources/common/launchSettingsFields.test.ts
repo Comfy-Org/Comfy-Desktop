@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import type * as ModelsModule from '../../lib/models'
 import type { ResolvedExtraPath } from '../../lib/models'
+import { lookupEnMessage } from '../../lib/localeTestHelper'
 
 // `buildExtraModelPathsView` groups the flat per-type dirs from
 // `resolveExtraModelPaths` (tested in models.test.ts) by section, and stamps
@@ -18,23 +19,12 @@ vi.mock('../../lib/paths', () => ({
 }))
 
 // Real English strings so label/tooltip assertions catch missing locale keys
-// (the real i18n resolves locales relative to the build output, not src).
-const enMessages = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../../../../locales/en.json'), 'utf-8')
-) as Record<string, unknown>
-
-function lookup(key: string): string {
-  let val: unknown = enMessages
-  for (const part of key.split('.')) {
-    if (val == null || typeof val !== 'object') return key
-    val = (val as Record<string, unknown>)[part]
-  }
-  return typeof val === 'string' ? val : key
-}
-
-vi.mock('../../lib/i18n', () => ({
-  t: (key: string) => lookup(key),
-}))
+// (see lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so
+// they can't reference top-level static imports.
+vi.mock('../../lib/i18n', async () => {
+  const { lookupEnMessage } = await import('../../lib/localeTestHelper')
+  return { t: (key: string) => lookupEnMessage(key) }
+})
 
 vi.mock('../../lib/models', async (importOriginal) => {
   const actual = await importOriginal<typeof ModelsModule>()
@@ -145,7 +135,7 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
     ])
     expect(field.label).toBe('Manager Security Level')
     // Guard against a raw key leaking into the UI if the locale entry is removed.
-    expect(field.tooltip).toBe(lookup('tooltips.managerSecurityLevel'))
+    expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerSecurityLevel'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
   })
 
@@ -153,7 +143,7 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
     const field = managerField({})
     for (const opt of field.options ?? []) {
       expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
-      expect(opt.description).toBe(lookup(`common.managerSecurityLevel_${opt.value}_desc`))
+      expect(opt.description).toBe(lookupEnMessage(`common.managerSecurityLevel_${opt.value}_desc`))
       // Guard against a raw key leaking into the UI if the locale entry is removed.
       expect(opt.description).not.toContain('common.')
       expect(opt.description).toContain('--listen')

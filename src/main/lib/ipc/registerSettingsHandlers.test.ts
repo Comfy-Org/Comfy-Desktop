@@ -1,40 +1,30 @@
-import fs from 'fs'
-import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
-
-// Real English strings so label assertions catch missing locale keys.
-const enMessages = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../../../../locales/en.json'), 'utf-8')
-) as Record<string, unknown>
-
-function lookup(key: string): string {
-  let val: unknown = enMessages
-  for (const part of key.split('.')) {
-    if (val == null || typeof val !== 'object') return key
-    val = (val as Record<string, unknown>)[part]
-  }
-  return typeof val === 'string' ? val : key
-}
 
 // Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
 
-vi.mock('./shared', () => ({
-  ipcMain: { handle: vi.fn(), on: vi.fn() },
-  nativeTheme: {},
-  sources: [],
-  settings: { getAll: () => mockSettings },
-  i18n: {
-    t: (key: string) => lookup(key),
-    getLocale: () => 'en',
-    getAvailableLocales: () => [{ value: 'en', label: 'English' }]
-  },
-  getAppVersion: () => '0.0.0-test',
-  resolveTheme: vi.fn(),
-  _onLocaleChanged: vi.fn(),
-  _onThemeChanged: vi.fn(),
-  _broadcastToRenderer: vi.fn()
-}))
+// Real English strings so label assertions catch missing locale keys (see
+// lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so they
+// can't reference top-level static imports.
+vi.mock('./shared', async () => {
+  const { lookupEnMessage } = await import('../localeTestHelper')
+  return {
+    ipcMain: { handle: vi.fn(), on: vi.fn() },
+    nativeTheme: {},
+    sources: [],
+    settings: { getAll: () => mockSettings },
+    i18n: {
+      t: (key: string) => lookupEnMessage(key),
+      getLocale: () => 'en',
+      getAvailableLocales: () => [{ value: 'en', label: 'English' }]
+    },
+    getAppVersion: () => '0.0.0-test',
+    resolveTheme: vi.fn(),
+    _onLocaleChanged: vi.fn(),
+    _onThemeChanged: vi.fn(),
+    _broadcastToRenderer: vi.fn()
+  }
+})
 vi.mock('../titleBarOverlay', () => ({ updateTitleBarOverlay: vi.fn() }))
 vi.mock('../telemetry', () => ({}))
 vi.mock('../firstUseDetection', () => ({ detectFirstUseState: vi.fn() }))
@@ -50,7 +40,7 @@ import { buildSettingsSections } from './registerSettingsHandlers'
 
 describe('buildSettingsSections', () => {
   it('does not offer the Manager security level globally (it is per-install)', () => {
-    // The level moved to each install's Startup Args tab
+    // The level is per-install, on each install's Startup Args tab
     // (buildLaunchSettingsFields); a global field silently overriding every
     // install's config.ini is the regression this pins against.
     const fields = buildSettingsSections().flatMap(
