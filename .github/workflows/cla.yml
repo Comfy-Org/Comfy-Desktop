@@ -3,6 +3,8 @@ name: CLA Assistant
 on:
   issue_comment:
     types: [created]
+  merge_group:
+    types: [checks_requested]
   pull_request_target:
     types: [opened, synchronize, closed]
 
@@ -16,6 +18,10 @@ jobs:
   cla-assistant:
     runs-on: ubuntu-latest
     steps:
+      - name: Preserve the PR CLA admission gate for merge groups
+        if: github.event_name == 'merge_group'
+        run: echo "CLA was required before each pull request entered the merge queue."
+
       # The CLA action normally requires every commit author in a PR to sign.
       # We only want the PR author to sign, so we allowlist all other committers
       # by computing them from the PR's commits and excluding the PR author.
