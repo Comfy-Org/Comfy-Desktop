@@ -58,6 +58,8 @@ import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import InlineRichText from '../components/InlineRichText.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
+import type { GpuTier } from '../../../shared/gpuTier'
+import type { SystemInfo } from '../../../types/ipc'
 
 type Step = 'start' | 'mirrors' | 'localBranch'
 
@@ -123,6 +125,12 @@ const forkExperimentVariant = ref<ForkVariant | null>(null)
  *  Continue activates). Cloud is rendered as an equal-weight peer
  *  card regardless; users can flip between cards before Continue. */
 const pickedChoice = ref<'cloud' | 'local' | null>('local')
+/** True once the user actively chose a card, as opposed to being shown a
+ *  pre-seeded default. Late signals that re-seed the picker must not
+ *  overwrite a deliberate choice, and "still equals the seeded default?"
+ *  can't tell the two apart — in the control arm, clicking Local lands on
+ *  exactly the seeded value. Reset per `open()`. */
+const userHasPicked = ref(false)
 
 // Capacity-protection switch for Cloud (PostHog flag
 // `desktop-cloud-capacity`). At first-use, we follow the flag
@@ -149,6 +157,11 @@ function mapFlagToVariant(flagValue: string | boolean | null | undefined): ForkV
   if (flagValue === 'none') return 'no-default'
   return 'control'
 }
+/** Source tag for the deferred exposure event: 'cache' when the on-disk
+ *  experiment-flags.json had a value we recognised, 'fallback' when
+ *  nothing usable came back (first-ever boot with no network, network
+ *  failure, or unrecognised payload). */
+let forkExposureSource: 'cache' | 'fallback' | null = null
 async function loadForkExperimentVariant(): Promise<ForkVariant> {
   let flagValue: string | boolean | null | undefined
   try {
@@ -156,37 +169,48 @@ async function loadForkExperimentVariant(): Promise<ForkVariant> {
   } catch {
     flagValue = undefined
   }
-  const variant = mapFlagToVariant(flagValue)
-  // Fire exposure exactly once per process via main's per-session dedup.
-  // Source: 'cache' when the on-disk experiment-flags.json had a value
-  // we recognised, 'fallback' when nothing usable came back (first-ever
-  // boot with no network, network failure, or unrecognised payload).
+  forkExposureSource = typeof flagValue === 'string' ? 'cache' : 'fallback'
+  return mapFlagToVariant(flagValue)
+}
+
+/** Deferred until the hardware tier and reco kill switch settle, then
+ *  skipped entirely for the recommendation cohort: the GPU override
+ *  replaces their arm's default with "nothing selected", so they never
+ *  experienced the arm and counting them would bias the readout. That
+ *  cohort is analysed via `reco_shown` / `gpu_tier` on the outcome events
+ *  instead. Fires at most once per mount; main dedups per session too. */
+let forkExposureRecorded = false
+function maybeRecordForkExposure(): void {
+  if (forkExposureRecorded) return
+  const variant = forkExperimentVariant.value
+  if (!variant || !forkExposureSource) return
+  // Both inputs to `hardwareRecommendsCloud` must have landed, or we'd
+  // record an exposure for a user the override is about to remove.
+  if (!hardwareChecked.value || !recoFlagResolved.value) return
+  forkExposureRecorded = true
+  if (hardwareRecommendsCloud.value) return
   try {
     window.api.telemetryRecordExposure({
       experimentKey: FORK_DEFAULT_EXPERIMENT_KEY,
       variant,
-      source: typeof flagValue === 'string' ? 'cache' : 'fallback'
+      source: forkExposureSource
     })
   } catch {
     // best-effort
   }
-  return variant
 }
 
-/** Ops kill switch for the whole GPU-Aware Cloud Upsell surface (Slack
- *  thread, 2026-07-24 — Deep: "reuse the free tier quota flag that we've
- *  on ui / backend? In case we ever need to shut it down, would be nice
- *  to remove the badge from our end"). Reuses the same boot-time flag
- *  fetch as the fork-default experiment above rather than a new IPC
- *  method — this is a kill switch only, not a variant assigner, so it
- *  fails OPEN: a missing cache entry, unrecognised value, or network
- *  failure keeps the feature on. Only an explicit `'off'` / `false`
- *  turns it off. Matches the Notion plan's `desktop-cloud-reco` spec. */
-const CLOUD_RECO_KILL_SWITCH_KEY = 'desktop-cloud-reco'
+/** Ops kill switch for the whole GPU-Aware Cloud Upsell surface (badge,
+ *  free-runs pill, no-preselect) — Slack thread, 2026-07-24.
+ *
+ *  Uses the ops-flag path (`cloudReco.ts`), NOT
+ *  `telemetryGetExperimentFlag`: the experiments cache is consent-gated
+ *  and this surface only renders while consent is `'undecided'`, so that
+ *  path would leave the flag permanently unresolved and the switch unable
+ *  to fire. Same plumbing as `desktop-cloud-capacity`. Fails open. */
 async function loadCloudRecoEnabled(): Promise<boolean> {
   try {
-    const flagValue = await window.api.telemetryGetExperimentFlag(CLOUD_RECO_KILL_SWITCH_KEY)
-    return flagValue !== 'off' && flagValue !== false
+    return await window.api.getCloudRecoEnabled()
   } catch {
     return true
   }
@@ -232,8 +256,8 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
   // "nothing selected" instead. Conditioned like this rather than made the
   // global baseline, so everyone outside the target tier keeps today's
   // default behavior untouched. `hardwareRecommendsCloud` isn't known yet
-  // this early (GPU detection resolves later in `open()`), so this also
-  // reruns reactively via the watcher below once detection lands.
+  // this early (system info resolves later in `open()`), so this also
+  // reruns reactively via the watcher below once the tier lands.
   if (hardwareRecommendsCloud.value) {
     pickedChoice.value = null
     initialDefaultChoice.value = null
@@ -251,6 +275,7 @@ onMounted(async () => {
   ])
   forkExperimentVariant.value = variant
   cloudRecoEnabled.value = recoEnabled
+  recoFlagResolved.value = true
   applyForkExperimentDefault(variant)
   capacityReady.value = true
 })
@@ -280,52 +305,80 @@ const expressInstall = ref(false)
  *  returning Desktop users land on the migration path by default. */
 const migrateExisting = ref(true)
 const showMigrateExisting = computed(() => pickedChoice.value === 'local' && hasLegacyDesktop.value)
-/** Detected GPU vendor — populated by `window.api.detectGPU()` on
- *  `open()`. Surfaces as an inline confirmation line under the Express
- *  checkbox so users on the wrong hardware can untick Express before
- *  the install kicks off. `null` when detection fails or returns no
- *  supported GPU; in that case the hint is suppressed and Express
- *  behaves as before (recommended-first picks downstream). */
+/** Detected GPU vendor — `get-system-info`'s `gpu_label`, which is the
+ *  same memoized `detectGPU()` result main serves, so reading it here
+ *  costs one fewer IPC round trip than calling `detectGPU()` separately.
+ *  Surfaces as an inline confirmation line under the Express checkbox so
+ *  users on the wrong hardware can untick Express before the install
+ *  kicks off. `null` when detection fails or returns no supported GPU;
+ *  the hint is then suppressed and Express behaves as before
+ *  (recommended-first picks downstream). */
 const detectedGpuLabel = ref<string | null>(null)
 const showGpuHint = computed(
   () => pickedChoice.value === 'local' && expressInstall.value && detectedGpuLabel.value !== null
 )
-/** True once `detectGPU()` has resolved (success or failure) — gates
- *  `hardwareRecommendsCloud` so the reco badge never flashes before we
- *  actually know. */
-const gpuChecked = ref(false)
+/** Shared hardware tier from `get-system-info` (`deriveGpuTier`, the same
+ *  classifier telemetry cohorts on). `null` until it resolves, and left
+ *  `null` when the IPC fails — the recommendation fails CLOSED, because
+ *  the alternative is telling someone with a 4090 that they have no
+ *  dedicated GPU. */
+const gpuTier = ref<GpuTier | null>(null)
+/** True once the system-info query has settled either way — gates
+ *  `hardwareRecommendsCloud` so the badge never flashes before we know. */
+const hardwareChecked = ref(false)
+/** One system-info request per instance, reused across `open()` replays:
+ *  `get-system-info` runs a full OS/CPU/GPU scan whose answer can't change
+ *  between a cancel and a replay. `async` wrapper rather than `.catch()`
+ *  so a synchronous throw (missing preload method on an old host) also
+ *  resolves to `null` — failing closed — instead of escaping as an
+ *  unhandled rejection and aborting the rest of `open()`. */
+let systemInfoPromise: Promise<SystemInfo | null> | null = null
+function loadSystemInfo(): Promise<SystemInfo | null> {
+  systemInfoPromise ??= (async () => {
+    try {
+      return await window.api.getSystemInfo()
+    } catch {
+      return null
+    }
+  })()
+  return systemInfoPromise
+}
+/** Tiers that get the recommendation: no usable GPU, or one too weak for
+ *  the models people actually want (integrated, or discrete under 6 GB).
+ *  `apple` and `low`+ run local fine. */
+const RECO_GPU_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['sub_low', 'cpu_only'])
 /** `desktop-cloud-reco` kill switch — see `loadCloudRecoEnabled` above.
  *  Starts `true` (fail-open) so nothing flashes off then on while the
- *  boot-time fetch is still in flight. */
+ *  boot fetch is in flight; `recoFlagResolved` is what tells the exposure
+ *  logic the real value landed. */
 const cloudRecoEnabled = ref(true)
-/** Whether this machine's hardware nudges the merged start screen toward
- *  recommending Cloud — GPU-Aware Cloud Upsell (Slack thread + Notion plan,
- *  2026-07-24). Placeholder for the real `gpu_tier` classifier (sub_low /
- *  cpu_only) described in the plan: until that VRAM-aware classifier lands,
- *  "no supported GPU detected" is used as a conservative stand-in for
- *  cpu_only only — deliberately narrower than the full target tier so we
- *  never over-claim. Gated on `cloudRecoEnabled` so ops can pull the whole
- *  surface (badge, pill, no-preselect) without a redeploy. */
+const recoFlagResolved = ref(false)
+/** Whether this machine's hardware nudges toward Cloud — GPU-Aware Cloud
+ *  Upsell (Slack thread + Notion plan, 2026-07-24). Suppressed when Cloud
+ *  is capacity-disabled: that card is unclickable, so recommending it and
+ *  advertising free runs on it would be a dead end. */
 const hardwareRecommendsCloud = computed(
-  () => cloudRecoEnabled.value && gpuChecked.value && detectedGpuLabel.value === null
+  () =>
+    cloudRecoEnabled.value &&
+    hardwareChecked.value &&
+    gpuTier.value !== null &&
+    RECO_GPU_TIERS.has(gpuTier.value) &&
+    !cloudCapacity.isDisabled()
 )
-// GPU-Aware Cloud Upsell (Slack thread, 2026-07-24): on hardware where we'd
-// recommend Cloud, don't pre-select either card — force an explicit pick
-// instead of defaulting to Local. Only overrides while the picker still
-// shows whatever it was seeded with (fork-experiment default or the
-// hard-coded Local baseline); if the user already acted, their choice wins.
-// GPU detection resolves after `open()` returns, so this has to be a watcher
-// rather than folded into `applyForkExperimentDefault`.
+// On recommended hardware, pre-select neither card — force an explicit
+// pick instead of defaulting to Local. A watcher rather than part of
+// `applyForkExperimentDefault` because system info resolves after `open()`
+// returns.
 watch(hardwareRecommendsCloud, (recommends) => {
-  if (
-    recommends &&
-    !hasLegacyDesktop.value &&
-    !cloudCapacity.isDisabled() &&
-    pickedChoice.value === initialDefaultChoice.value
-  ) {
+  if (recommends && !userHasPicked.value && !hasLegacyDesktop.value) {
     pickedChoice.value = null
     initialDefaultChoice.value = null
   }
+})
+// One watcher covers every ordering of the two async inputs. See
+// `maybeRecordForkExposure`.
+watch([hardwareChecked, recoFlagResolved, forkExperimentVariant], () => {
+  maybeRecordForkExposure()
 })
 /** Funnel-completion bookkeeping for `comfy.desktop.first_use.completed`.
  *  `mountedAt` is reset in `open()` so a takeover replay measures
@@ -365,7 +418,12 @@ function emitCompleted(exitPath: 'cloud' | 'local-new' | 'local-migrate' | 'skip
     // even when fork_chosen rate looks better. Carry the same
     // variant tag through so the funnel can be sliced per arm.
     experiment_key: FORK_DEFAULT_EXPERIMENT_KEY,
-    experiment_variant: forkExperimentVariant.value
+    experiment_variant: forkExperimentVariant.value,
+    // Same split as `fork_chosen`, on the funnel's completion side: a
+    // recommendation that lifts cloud picks but tanks completion is a
+    // regression, and without these the two cohorts are pooled.
+    reco_shown: hardwareRecommendsCloud.value,
+    gpu_tier: gpuTier.value
   })
 }
 /** When the host detects prior usage of the launcher (any
@@ -476,7 +534,14 @@ async function onContinue(): Promise<void> {
     // bounce-after-cloud rate per variant. The key is captured too so
     // future experiments running concurrently can be split apart.
     experiment_key: FORK_DEFAULT_EXPERIMENT_KEY,
-    experiment_variant: forkExperimentVariant.value
+    experiment_variant: forkExperimentVariant.value,
+    // GPU-Aware Cloud Upsell readout: `reco_shown` splits cloud-pick rate
+    // by whether the badge was actually seen, `gpu_tier` slices that per
+    // hardware bucket. Also how the recommendation cohort gets analysed,
+    // since it's excluded from the fork-default exposure — see
+    // `maybeRecordForkExposure`.
+    reco_shown: hardwareRecommendsCloud.value,
+    gpu_tier: gpuTier.value
   })
 
   if (isChinese.value) {
@@ -579,8 +644,9 @@ function onWhyCloudTryCloud(): void {
   // "Try Cloud" inside the explainer modal flips the start-screen
   // selection to Cloud but leaves the user on the screen so they can
   // accept T&C and press Continue. The legal gate is non-negotiable —
-  // we can't auto-commit on the user's behalf.
-  pickedChoice.value = 'cloud'
+  // we can't auto-commit on the user's behalf. Counts as an explicit
+  // pick: the user clicked a button labelled "Try Cloud".
+  pickChoice('cloud')
 }
 
 function chooseMigrate(): void {
@@ -592,29 +658,57 @@ function chooseMigrate(): void {
   emit('chain-migrate', { express: false })
 }
 
+/** Commit a card selection made by the user (as opposed to a default the
+ *  picker seeded for them). Flipping `userHasPicked` is what stops the
+ *  late hardware-tier watcher from clearing a deliberate choice. */
+function pickChoice(choice: 'cloud' | 'local'): void {
+  if (choice === 'cloud' && cloudCapacity.isDisabled()) return
+  userHasPicked.value = true
+  pickedChoice.value = choice
+}
+
+/** Which card holds the radiogroup's tab stop while nothing is selected.
+ *  Without one the group leaves the tab order entirely and — with
+ *  Continue gated on an explicit pick — keyboard users are stuck. Cloud
+ *  is the entry point (first in DOM order, and the recommended card in
+ *  this state); Local takes over when Cloud is unselectable. */
+const keyboardEntryChoice = computed<'cloud' | 'local'>(() =>
+  cloudCapacity.isDisabled() ? 'local' : 'cloud'
+)
+
 /** Radiogroup arrow-key handler for the Cloud / Local cards.
  *  WAI-ARIA APG §3.15: arrow keys cycle the checked radio and move DOM
  *  focus along with it. When `pickedChoice` is `null` (the no-default
- *  experiment arm before the user has touched the picker), arrow-down
- *  enters at Cloud and arrow-up enters at Local so keyboard users can
- *  make a pick without reaching for the mouse. */
+ *  experiment arm, or recommended hardware, before the user has touched
+ *  the picker), arrow-down enters at Cloud and arrow-up enters at Local
+ *  so keyboard users can make a pick without reaching for the mouse.
+ *  Capacity-disabled Cloud is skipped rather than selected — the pointer
+ *  path can't select it either. */
 function onStartCardsKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[role="radio"]')) return
   const order = ['cloud', 'local'] as const
   const currentIndex = pickedChoice.value === null ? -1 : order.indexOf(pickedChoice.value)
-  let next: number
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-    next = currentIndex < 0 ? 0 : (currentIndex + 1) % order.length
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-    next = currentIndex < 0 ? order.length - 1 : (currentIndex - 1 + order.length) % order.length
-  } else {
-    return
+  const forward = e.key === 'ArrowRight' || e.key === 'ArrowDown'
+  const backward = e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+  if (!forward && !backward) return
+  // Walk at most `order.length` steps so an all-disabled group (not
+  // reachable today, but the loop shouldn't depend on that) terminates.
+  let next = currentIndex
+  for (let step = 0; step < order.length; step++) {
+    next =
+      next < 0
+        ? forward
+          ? 0
+          : order.length - 1
+        : (next + (forward ? 1 : -1) + order.length) % order.length
+    const candidate = order[next]
+    if (candidate && !(candidate === 'cloud' && cloudCapacity.isDisabled())) break
   }
   const nextChoice = order[next]
-  if (!nextChoice) return
+  if (!nextChoice || (nextChoice === 'cloud' && cloudCapacity.isDisabled())) return
   e.preventDefault()
-  pickedChoice.value = nextChoice
+  pickChoice(nextChoice)
   void nextTick(() => {
     const radios = (e.currentTarget as HTMLElement | null)?.querySelectorAll<HTMLElement>(
       '[role="radio"]'
@@ -661,6 +755,9 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // variant hasn't resolved yet on first mount.
   pickedChoice.value = 'local'
   initialDefaultChoice.value = 'local'
+  // A replay is a fresh decision — whatever the user clicked last time
+  // no longer protects the picker from being re-seeded.
+  userHasPicked.value = false
   // Re-apply the experiment variant on every replay so a user who
   // cancelled mid-flow lands back on the same default they saw the
   // first time. `forkExperimentVariant.value` is locked at boot — on
@@ -695,8 +792,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // a destructive default).
   const existing = (await window.api.getSetting('telemetryEnabled')) as boolean | undefined
   telemetryEnabled.value = existing !== false
-  // Locale + GPU detection run non-blocking so the start hero paints on
-  // the first frame even if main is slow to resolve (e.g. cold IPC, no
+  // Locale + hardware detection run non-blocking so the start hero paints
+  // on the first frame even if main is slow to resolve (e.g. cold IPC, no
   // GPU on CI). Sensible defaults (`'en'`, `null`) are already in place;
   // the reactive updates surface the real values when they arrive.
   void window.api
@@ -705,17 +802,16 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
-  gpuChecked.value = false
-  void window.api
-    .detectGPU()
-    .then((g) => {
-      detectedGpuLabel.value = g?.label ?? null
-    })
-    .catch(() => {
-      detectedGpuLabel.value = null
+  hardwareChecked.value = false
+  void loadSystemInfo()
+    .then((info) => {
+      detectedGpuLabel.value = info?.gpu_label ?? null
+      // Stays `null` when the IPC failed, which keeps
+      // `hardwareRecommendsCloud` false — fail closed.
+      gpuTier.value = info?.gpu_tier ?? null
     })
     .finally(() => {
-      gpuChecked.value = true
+      hardwareChecked.value = true
     })
 }
 
@@ -830,8 +926,8 @@ defineExpose({ open, resetContinue })
               'start-card-cloud--reco-dimmed': hardwareRecommendsCloud && pickedChoice === 'local'
             }"
             selectable
-            hide-radio
             :selected="pickedChoice === 'cloud'"
+            :tab-stop="pickedChoice === null && keyboardEntryChoice === 'cloud'"
             :aria-disabled="cloudCapacity.isDisabled() ? true : undefined"
             glow
             :label="$t('cloud.label')"
@@ -844,7 +940,7 @@ defineExpose({ open, resetContinue })
             "
             :description="$t(cloudDescriptionKey)"
             data-testid="first-use-pick-cloud"
-            @click="cloudCapacity.isDisabled() ? null : (pickedChoice = 'cloud')"
+            @click="pickChoice('cloud')"
           >
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
@@ -861,12 +957,17 @@ defineExpose({ open, resetContinue })
               <!-- 'unknown' tier means this device has never authenticated
                    with Cloud (useCloudCapacity docs the tri-state) — the
                    trial pill is for people who haven't tried it yet, not a
-                   permanent fixture on the card. Also behind the
+                   permanent fixture on the card. Behind the
                    `desktop-cloud-reco` kill switch — the "5 free runs"
-                   claim depends on the quota actually being live, so ops
-                   needs the same off-switch it has for the badge. -->
+                   claim depends on the quota being live, so ops needs the
+                   same off-switch it has for the badge — and suppressed
+                   when Cloud is capacity-disabled and unclickable. -->
               <span
-                v-if="cloudRecoEnabled && cloudCapacity.tier.value === 'unknown'"
+                v-if="
+                  cloudRecoEnabled &&
+                  !cloudCapacity.isDisabled() &&
+                  cloudCapacity.tier.value === 'unknown'
+                "
                 class="start-cloud-runs-pill"
                 data-testid="first-use-cloud-runs-pill"
                 >{{ $t('firstUse.cloudFreeRunsPill') }}</span
@@ -886,13 +987,13 @@ defineExpose({ open, resetContinue })
           </ChoiceCard>
           <ChoiceCard
             selectable
-            hide-radio
             :selected="pickedChoice === 'local'"
+            :tab-stop="pickedChoice === null && keyboardEntryChoice === 'local'"
             :label="$t('firstUse.localLabel')"
             :tagline="$t('firstUse.localTagline')"
             :description="$t('firstUse.localDesc')"
             data-testid="first-use-pick-local"
-            @click="pickedChoice = 'local'"
+            @click="pickChoice('local')"
           />
         </div>
         <!-- Modifier checkboxes (Migrate + Express). Wrapped in a
@@ -1232,26 +1333,6 @@ defineExpose({ open, resetContinue })
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
-/* ChoiceCard's own label-trailing wrapper has no gap — fine for its single
- * default child (the info button), but ours now carries the runs pill too. */
-.start-card-cloud :deep(.choice-card__label-trailing) {
-  gap: 8px;
-}
-/* ChoiceCard's default label gap (8px) reads as too much air between
- * "Cloud" and the (i) info icon now that it's the first trailing item —
- * tighten it just on this card rather than changing the shared default. */
-.start-card-cloud :deep(.choice-card__label) {
-  gap: 4px;
-}
-/* More breathing room above the reco badge than ChoiceCard's default 6px —
- * bumped here, on the wrapper, instead of `.start-cloud-reco` itself: a
- * margin on the badge sits *inside* the Tooltip's trigger element, which
- * inflates the box the tooltip measures itself against and pushes the
- * bubble further away than intended (see the fix a commit up). */
-.start-card-cloud :deep(.choice-card__desc-trailing) {
-  margin-top: 14px;
-}
-
 /* "5 FREE RUNS" trial pill. Same solid-chip shape as the Why-Cloud modal's
  * credits pill (.why-cloud-pill), scaled down for the label row, but in
  * the brand-yellow CTA color instead of neutral — Deep's thread feedback
@@ -1289,10 +1370,10 @@ defineExpose({ open, resetContinue })
   align-items: center;
   gap: 4px;
   /* No margin-top here — `.choice-card__desc-trailing` (ChoiceCard.vue)
-     already adds 6px of separation from the description above. Stacking
-     an extra margin here was also getting picked up by the wrapping
-     Tooltip's trigger measurement, pushing the tooltip bubble noticeably
-     further from the badge than intended. */
+     owns the separation from the description above. A margin on the badge
+     itself sits *inside* the wrapping Tooltip's trigger element, which
+     inflates the box the tooltip measures against and pushes the bubble
+     noticeably further from the badge than intended. */
   padding: 5px 9px;
   border-radius: 999px;
   background: color-mix(in oklab, var(--neutral-100) 12%, transparent);

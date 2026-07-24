@@ -626,7 +626,7 @@
     "cloudDesc": "Best for **most users** who want powerful GPUs and popular custom nodes, ready anywhere.",
     "cloudFreeRunsPill": "5 FREE RUNS",
     "cloudRecommendedForHardware": "Recommended for your hardware",
-    "cloudRecommendedForHardwareTooltip": "No dedicated GPU detected on this device. Cloud runs your workflows on hosted GPUs instead.",
+    "cloudRecommendedForHardwareTooltip": "This device doesn't have a GPU powerful enough for most workflows. Cloud runs them on hosted GPUs instead.",
     "localLabel": "Local",
     "localTagline": "Full control. Your hardware.",
     "localDesc": "Best for people who want **full manual control** with versions, custom nodes, and offline workflows.",

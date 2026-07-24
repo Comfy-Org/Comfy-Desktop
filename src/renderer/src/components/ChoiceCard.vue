@@ -9,14 +9,19 @@ withDefaults(
     tagline?: string
     disabled?: boolean
     glow?: boolean
-    /** Renders as a radio option (left indicator, no arrow); click selects
-     *  rather than commits, leaving the commit to a parent Continue button. */
+    /** Renders as a radio option (no arrow); click selects rather than
+     *  commits, leaving the commit to a parent Continue button. Selection
+     *  reads from the card border/background — there is no radio glyph. */
     selectable?: boolean
     selected?: boolean
-    /** Suppress the radio-dot indicator even when selectable — selection
-     *  reads purely from the card border/background instead of a glyph.
-     *  role="radio"/aria-checked stay intact for a11y. */
-    hideRadio?: boolean
+    /** Hold the radiogroup's single tab stop even though this card isn't
+     *  selected. WAI-ARIA APG §3.15: a radiogroup with nothing checked
+     *  still needs exactly one Tab-reachable radio, otherwise the whole
+     *  group drops out of the tab order and keyboard users can't pick at
+     *  all. The parent decides which card that is — see
+     *  `keyboardEntryChoice` in FirstUseTakeover. Ignored when `selected`
+     *  is already true (that card is the tab stop by definition). */
+    tabStop?: boolean
   }>(),
   {
     tagline: '',
@@ -24,7 +29,7 @@ withDefaults(
     glow: false,
     selectable: false,
     selected: false,
-    hideRadio: false
+    tabStop: false
   }
 )
 
@@ -40,15 +45,12 @@ defineEmits<{ click: [] }>()
     ]"
     :role="selectable ? 'radio' : undefined"
     :aria-checked="selectable ? selected : undefined"
-    :tabindex="selectable ? (selected ? 0 : -1) : undefined"
+    :tabindex="selectable ? (selected || tabStop ? 0 : -1) : undefined"
     :disabled="disabled"
     @click="$emit('click')"
   >
     <div v-if="tagline" class="choice-card__tagline">{{ tagline }}</div>
     <div class="choice-card__body">
-      <span v-if="selectable && !hideRadio" class="choice-card__radio" aria-hidden="true">
-        <span v-if="selected" class="choice-card__radio-dot" />
-      </span>
       <div class="choice-card__text">
         <div class="choice-card__label">
           <span class="choice-card__label-text">{{ label }}</span>
@@ -119,31 +121,7 @@ defineEmits<{ click: [] }>()
 }
 .choice-card--selected:hover:not(:disabled) {
   border-color: color-mix(in oklab, var(--neutral-100) 75%, transparent);
-  background: color-mix(in oklab, var(--accent-primary) 9%, rgba(137, 137, 137, 0.13));
-}
-.choice-card__radio {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  border: 1.5px solid var(--brand-surface-border-hover);
-  background: rgba(0, 0, 0, 0.1);
-  transition:
-    border-color 120ms ease,
-    background 120ms ease;
-}
-.choice-card--selected .choice-card__radio {
-  border-color: var(--accent-primary);
-  background: transparent;
-}
-.choice-card__radio-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--accent-primary);
+  background: color-mix(in oklab, var(--neutral-100) 9%, rgba(137, 137, 137, 0.13));
 }
 
 .choice-card__tagline {
@@ -180,7 +158,9 @@ defineEmits<{ click: [] }>()
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
+  /* Tight against the label text: the first trailing item is an inline
+   * (i) affordance that belongs to the title, not a separate column. */
+  gap: 4px;
   width: 100%;
   font-family: var(--font-sans);
   font-size: var(--takeover-fs-lead);
@@ -192,13 +172,16 @@ defineEmits<{ click: [] }>()
 .choice-card__label-text {
   flex: 0 0 auto;
 }
+/* Trailing items separate from each other more than they do from the
+ * label — an (i) icon and a badge are peers, not one run of text. */
 .choice-card__label-trailing {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
 }
 .choice-card__desc-trailing {
-  margin-top: 6px;
+  margin-top: 14px;
 }
 .choice-card__desc {
   font-family: var(--font-sans);

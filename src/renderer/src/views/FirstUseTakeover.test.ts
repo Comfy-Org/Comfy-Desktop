@@ -13,9 +13,32 @@ vi.mock('../components/TakeoverHeader.vue', () => ({
 vi.mock('../components/ModalShell.vue', () => ({
   default: { template: '<div data-testid="stub-modal-shell"><slot /></div>' }
 }))
+// Surfaces `selected` / `tabStop` as attributes so this file can assert
+// which card the view designates as the radiogroup's tab stop. That the
+// prop then produces `tabindex="0"` is ChoiceCard's own contract, covered
+// in ChoiceCard.test.ts — asserted there against the real component
+// rather than re-implemented in this stub.
 vi.mock('../components/ChoiceCard.vue', () => ({
   default: {
-    template: '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot /></div>'
+    // Boolean-typed, not array-declared: a bare `selectable` attribute
+    // arrives as `""` without a declared type, which is falsy and would
+    // silently drop `role="radio"` off the stub.
+    props: {
+      label: null,
+      description: null,
+      tagline: null,
+      disabled: Boolean,
+      glow: Boolean,
+      selectable: Boolean,
+      selected: Boolean,
+      tabStop: Boolean
+    },
+    // `role="radio"` is reproduced because the view's arrow-key handler
+    // delegates off it (`target.closest('[role="radio"]')`); without it the
+    // keyboard tests would pass through a hole that doesn't exist in the
+    // real component.
+    template:
+      '<div :role="selectable ? \'radio\' : undefined" :data-selected="String(!!selected)" :data-tab-stop="String(!!tabStop)"><slot name="label-trailing" /><slot name="desc-trailing" /><slot /></div>'
   }
 }))
 vi.mock('../components/WhyTryCloudModal.vue', () => ({
@@ -41,6 +64,8 @@ vi.mock('../components/BrandTakeoverLayout.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import { emitTelemetryAction } from '../lib/telemetry'
+import type { GpuTier } from '../../../shared/gpuTier'
 
 const i18n = createI18n({
   legacy: false,
@@ -50,17 +75,28 @@ const i18n = createI18n({
   fallbackWarn: false
 })
 
+/** `get-system-info` payload trimmed to the two fields this view reads.
+ *  `gpu_tier` drives the Cloud recommendation, `gpu_label` the Express
+ *  install hint. */
+function systemInfo(tier: GpuTier, label: string | null = 'NVIDIA') {
+  return { gpu_tier: tier, gpu_label: label }
+}
+
 beforeEach(() => {
+  // Telemetry assertions look for a single call by event name, so calls
+  // must not leak in from the previous test.
+  vi.mocked(emitTelemetryAction).mockClear()
   window.api = {
     setSetting: vi.fn().mockResolvedValue(undefined),
     getSetting: vi.fn().mockResolvedValue(true),
     getLocale: vi.fn().mockResolvedValue('en'),
-    // A detected GPU by default, so these baseline tests exercise the
+    // A capable GPU by default, so these baseline tests exercise the
     // fork-experiment default in isolation from the GPU-Aware Cloud Upsell
-    // override (`hardwareRecommendsCloud`) below, which treats "no
-    // supported GPU" as its own signal. Tests for that feature set this to
-    // `null` explicitly per-case.
-    detectGPU: vi.fn().mockResolvedValue({ id: 'nvidia', label: 'NVIDIA', model: null }),
+    // override (`hardwareRecommendsCloud`), which only fires on the
+    // `sub_low` / `cpu_only` tiers. Tests for that feature set a poor tier
+    // explicitly per-case.
+    getSystemInfo: vi.fn().mockResolvedValue(systemInfo('high')),
+    getCloudRecoEnabled: vi.fn().mockResolvedValue(true),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
     // Default to undefined so the existing tests exercise the control
@@ -520,5 +556,200 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     await btn.trigger('click')
     // Default opts: Migrate + Express both pre-ticked → chain-migrate.
     expect(wrapper.emitted('chain-migrate')).toBeTruthy()
+  })
+})
+
+/**
+ * GPU-Aware Cloud Upsell. The recommendation reads the shared `gpu_tier`
+ * classifier (`deriveGpuTier`, via `get-system-info`) — the same signal
+ * telemetry cohorts on — rather than re-deriving hardware capability here.
+ */
+describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
+  const badge = (w: ReturnType<typeof mountTakeover>) =>
+    w.find('[data-testid="first-use-cloud-reco"]')
+  const pill = (w: ReturnType<typeof mountTakeover>) =>
+    w.find('[data-testid="first-use-cloud-runs-pill"]')
+  // The view's own `data-testid` wins over the stub's via attribute
+  // fallthrough, so select on those rather than the stub's placeholder.
+  const cards = (w: ReturnType<typeof mountTakeover>) =>
+    w.findAll('[data-testid="first-use-pick-cloud"], [data-testid="first-use-pick-local"]')
+
+  async function mountWithTier(tier: GpuTier, label: string | null = 'NVIDIA') {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      systemInfo(tier, label)
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+    return wrapper
+  }
+
+  // `sub_low` is the cohort the old `detectGPU()`-based stand-in missed
+  // entirely: an Intel iGPU or a <6GB discrete card reports a GPU label,
+  // so "no supported GPU detected" read it as capable hardware.
+  it.each<GpuTier>(['cpu_only', 'sub_low'])('recommends Cloud on the %s tier', async (tier) => {
+    expect(badge(await mountWithTier(tier)).exists()).toBe(true)
+  })
+
+  it.each<GpuTier>(['high', 'mid', 'low', 'apple'])('leaves the %s tier alone', async (tier) => {
+    const wrapper = await mountWithTier(tier)
+    expect(badge(wrapper).exists()).toBe(false)
+    // Local stays pre-selected — the control default is untouched.
+    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
+      'true'
+    )
+  })
+
+  it('fails closed when the system-info IPC rejects', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('nope'))
+    const wrapper = mountTakeover()
+    await flushPromises()
+    // Silence beats guessing: an unreachable classifier must not tell
+    // someone with a 4090 that their hardware is inadequate.
+    expect(badge(wrapper).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
+      'true'
+    )
+  })
+
+  it('pre-selects neither card, gates Continue, and stays keyboard-reachable', async () => {
+    const wrapper = await mountWithTier('cpu_only', null)
+    for (const card of cards(wrapper)) expect(card.attributes('data-selected')).toBe('false')
+    // Exactly one tab stop: without it the radiogroup is all
+    // `tabindex="-1"` and, with Continue gated below, a keyboard-only user
+    // has no way through at all.
+    expect(cards(wrapper).filter((c) => c.attributes('data-tab-stop') === 'true')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="first-use-pick-cloud"]').attributes('data-tab-stop')).toBe(
+      'true'
+    )
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('arrow keys enter the group when nothing is selected', async () => {
+    const wrapper = await mountWithTier('cpu_only', null)
+    await wrapper
+      .find('[data-testid="first-use-pick-cloud"]')
+      .trigger('keydown', { key: 'ArrowDown' })
+    expect(wrapper.find('[data-testid="first-use-pick-cloud"]').attributes('data-selected')).toBe(
+      'true'
+    )
+  })
+
+  it('preserves an explicit Local click made before the tier resolves', async () => {
+    let resolveInfo: (v: unknown) => void = () => {}
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((r) => {
+        resolveInfo = r
+      })
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
+    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
+      'true'
+    )
+
+    // Late classifier result must not yank the selection out from under a
+    // user who already decided — Local IS the seeded default here, so
+    // "still equals the default" can't distinguish this from untouched.
+    resolveInfo(systemInfo('cpu_only', null))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
+      'true'
+    )
+    expect(badge(wrapper).exists()).toBe(true)
+  })
+
+  it('kill switch off restores the shipped default and hides badge + pill', async () => {
+    ;(window.api.getCloudRecoEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
+    const wrapper = await mountWithTier('cpu_only', null)
+    expect(badge(wrapper).exists()).toBe(false)
+    expect(pill(wrapper).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
+      'true'
+    )
+    // Read via the ops-flag path. The experiments cache is consent-gated
+    // and this screen renders pre-consent, so routing it there would leave
+    // ops holding a switch that can never fire.
+    expect(window.api.getCloudRecoEnabled).toHaveBeenCalled()
+    expect(window.api.telemetryGetExperimentFlag).not.toHaveBeenCalledWith('desktop-cloud-reco')
+  })
+
+  it('fails open when the kill-switch IPC rejects', async () => {
+    ;(window.api.getCloudRecoEnabled as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('nope')
+    )
+    expect(badge(await mountWithTier('cpu_only', null)).exists()).toBe(true)
+  })
+
+  it('reuses one system-info request across open() replays', async () => {
+    const wrapper = await mountWithTier('cpu_only', null)
+    await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    // A full OS/CPU/GPU scan whose answer cannot change between a cancel
+    // and a replay.
+    expect(window.api.getSystemInfo).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('FirstUseTakeover recommendation telemetry', () => {
+  async function commitWith(tier: GpuTier, pick: 'cloud' | 'local') {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      systemInfo(tier, null)
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+    await wrapper.find(`[data-testid="first-use-pick-${pick}"]`).trigger('click')
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  function forkChosenProps() {
+    const call = vi
+      .mocked(emitTelemetryAction)
+      .mock.calls.find(([name]) => name === 'comfy.desktop.first_use.fork_chosen')
+    return call?.[1] as Record<string, unknown> | undefined
+  }
+
+  // `reco_shown` splits cloud-pick rate by whether the badge was seen —
+  // without it there's no way to tell whether the badge does anything.
+  it.each([
+    ['cpu_only' as GpuTier, 'cloud' as const, true],
+    ['high' as GpuTier, 'local' as const, false]
+  ])('tags fork_chosen on %s with reco_shown=%s', async (tier, pick, shown) => {
+    await commitWith(tier, pick)
+    expect(forkChosenProps()).toMatchObject({ choice: pick, reco_shown: shown, gpu_tier: tier })
+  })
+
+  // The recommendation cohort had its assigned arm overridden to "nothing
+  // selected", so it never experienced the arm; recording exposure would
+  // bias the readout. `reco_shown` on the outcome events covers them.
+  it.each([
+    ['cpu_only' as GpuTier, false],
+    ['high' as GpuTier, true]
+  ])('records fork-default exposure on %s: %s', async (tier, recorded) => {
+    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('cloud')
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      systemInfo(tier, null)
+    )
+    mountTakeover()
+    await flushPromises()
+    const call = vi.mocked(window.api.telemetryRecordExposure).mock.calls.length > 0
+    expect(call).toBe(recorded)
+    if (recorded) {
+      expect(window.api.telemetryRecordExposure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          experimentKey: 'desktop-first-use-fork-default',
+          variant: 'cloud-default'
+        })
+      )
+    }
   })
 })

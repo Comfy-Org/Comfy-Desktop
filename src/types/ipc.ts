@@ -1290,6 +1290,12 @@ export interface ElectronApi {
    *  unavailable. Renderers consume this via `useCloudCapacity`. */
   getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Ops kill switch for the GPU-aware Cloud recommendation on the
+   *  first-use picker. Resolved at boot from the `desktop-cloud-reco`
+   *  PostHog flag via the consent-bypassing ops-flag path (the surface
+   *  renders pre-consent, so the experiments cache can't serve it).
+   *  Fails OPEN — only an explicit `'off'` / `false` returns false. */
+  getCloudRecoEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
