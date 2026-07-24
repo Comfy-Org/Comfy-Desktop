@@ -14,6 +14,10 @@
  * The per-status action contract itself lives in the plugin unit test, which
  * pins it without needing a seeded record.
  *
+ * Tagged @windows @macos only: seeding install records does not work under the
+ * linux CI project (every other seeding test in this directory is lifecycle-only,
+ * and lifecycle is not in the CI matrix), so the tiles never render there.
+ *
  * The seeded venv python exits immediately, so the launch is attempted and
  * then fails at the boot wait. Attempted-vs-never-attempted is the whole
  * discriminator here; a real ComfyUI boot is not.
@@ -126,7 +130,7 @@ test.afterAll(async () => {
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
 })
 
-test('clicking an installed ComfyBuilder tile launches it instead of opening the new-install wizard @windows @macos @linux', async () => {
+test('clicking an installed ComfyBuilder tile launches it instead of opening the new-install wizard @windows @macos', async () => {
   await resetIpcInvocations(ctx.app)
   await clickInstallTile(ctx.panel, INSTALLED.name)
 
@@ -145,7 +149,7 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
 })
 
-test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos @linux', async () => {
+test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos', async () => {
   await clickInstallTile(ctx.panel, FAILED.name)
 
   // `useListAction` short-circuits a disabled action into an alert, so the
