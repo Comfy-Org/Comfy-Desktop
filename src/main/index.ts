@@ -2112,7 +2112,14 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         // Stop is idempotent — awaiting ensures the process is fully
         // gone before the re-launch so the new session doesn't race a
         // port that's still bound.
+        // A restart during the boot window has no registered session to
+        // stop - the booting process belongs to the in-flight launch
+        // operation, so cancel that first. Without it, stop no-ops and
+        // the relaunch below is rejected by the in-flight guard, making
+        // restart-during-boot a silent no-op.
         try {
+          const cancelled = await ipc.cancelLaunching(installationId)
+          recordIpcInvocation('picker-restart:cancel-launching', { installationId, cancelled })
           await ipc.stopRunning(installationId)
         } catch (err) {
           console.error(`Picker restart: stop failed for ${installationId}:`, err)

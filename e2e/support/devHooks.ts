@@ -233,6 +233,21 @@ export async function hasActiveOperation(
   }, installationId))
 }
 
+/** Whether main currently holds the launching marker for `installationId`,
+ *  i.e. the install is inside the boot window (spawned, not yet port-ready). */
+export async function isInstallLaunching(
+  app: ElectronApplication,
+  installationId: string,
+): Promise<boolean> {
+  return await evalWithRetry(() => app.evaluate((_electron, id) => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { isLaunching: (id: string) => boolean }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.isLaunching(id)
+  }, installationId))
+}
+
 /** Read the `checkedAt` ms timestamp of the shared release-cache entry
  *  for `(repo, channel)`. Returns `null` when no entry exists yet. */
 export async function getReleaseCacheCheckedAt(

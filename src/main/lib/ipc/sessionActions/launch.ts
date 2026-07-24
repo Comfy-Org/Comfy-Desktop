@@ -891,8 +891,23 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         }),
         earlyExitPromise,
       ])
+      // The port wait can resolve successfully even after an abort (a probe
+      // already in flight when the signal fired still calls back). Returning
+      // ok would register the cancelled process as a running session, so
+      // route it through the abort teardown in the catch below instead.
+      if (abort.signal.aborted) throw new Error('Launch cancelled')
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
+      // A user abort (cancel, or restart-during-boot) is terminal: kill the
+      // spawn and WAIT for it to die before returning, so the launching
+      // marker and operation slot are only cleared after the process has
+      // released its port and a caller like `cancelLaunching` can relaunch
+      // safely. Checked before the retry paths below - an aborted boot must
+      // never respawn via the reboot/port retries.
+      if (abort.signal.aborted) {
+        await killProcessTree(spawned.proc)
+        return { ok: false, message: (err as Error).message, cancelled: true, stderr: spawned.getStderr(), exitCode, signal: exitSignal }
+      }
       killProcessTree(spawned.proc)
       if (checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
         rebootRetries++
@@ -917,7 +932,6 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // report the actual error. The buffer lives in main (survives a hard
       // child crash) but was previously discarded on the failure path.
       const failureStderr = spawned.getStderr()
-      if (abort.signal.aborted) return { ok: false, message: (err as Error).message, cancelled: true, stderr: failureStderr, exitCode, signal: exitSignal }
       return { ok: false, message: (err as Error).message, stderr: failureStderr, exitCode, signal: exitSignal }
     }
   }
@@ -926,7 +940,8 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   if (!launchResult.ok) {
     logStream.end()
     _releasePort(launchCmd.port!)
-    _operationAborts.delete(installationId)
+    // Ownership-guarded: never evict a slot a newer operation already claimed.
+    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
@@ -978,7 +993,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   let { proc } = launchResult
 
   _pendingPorts.delete(launchCmd.port!)
-  _operationAborts.delete(installationId)
+  if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   const mode = (inst.launchMode as string | undefined) || 'window'
   const bootTimeMs = Date.now() - launchStartedAt
   _addSession(

@@ -33,6 +33,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
+import net from 'node:net'
 import path from 'node:path'
 import { resolve } from 'node:path'
 import { test, expect } from '@playwright/test'
@@ -49,6 +50,7 @@ import {
   getIpcInvocations,
   getRunningSessionSnapshot,
   hasActiveOperation,
+  isInstallLaunching,
   resetIpcInvocations,
 } from './support/devHooks'
 import {
@@ -1704,6 +1706,253 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
       return after.startedAt > (beforeSnapshot?.startedAt ?? 0)
     }, { timeout: 180_000, intervals: [1_000, 2_000] })
     .toBe(true)
+  await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
+  await closeTitlePopupIfOpen(ctx.app)
+})
+
+// ---------------------------------------------------------------------------
+// Boot-window settings edits (issue #1300) + restart-during-boot.
+//
+// The spawned ComfyUI process consumes its launch configuration at spawn,
+// so an edit made while it boots (spawn -> port-ready) is not reflected in
+// that process. Two real-process regressions, using --port as the queryable
+// startup argument (the relaunched server must answer on the edited port):
+//
+// 1. An edit during the boot window surfaces "Restart to apply changes"
+//    once the instance is running, and the CTA restart actually applies it.
+// 2. A restart clicked while STILL booting cancels the in-flight boot and
+//    relaunches on the edited config. This used to be a silent no-op:
+//    `stopRunning` had no registered session to stop and the relaunch was
+//    rejected by the in-flight-operation guard.
+// ---------------------------------------------------------------------------
+
+/** A currently-free loopback TCP port, probed from the test process. Both
+ *  probe ranges sit far above the launcher's 8188..+1000 conflict-retry
+ *  range, so a dynamically-picked port can never collide by chance. */
+async function findFreeLoopbackPort(start: number): Promise<number> {
+  for (let port = start; port < start + 200; port++) {
+    const free = await new Promise<boolean>((resolve) => {
+      const srv = net.createServer()
+      srv.once('error', () => resolve(false))
+      srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(true)))
+    })
+    if (free) return port
+  }
+  throw new Error(`no free loopback port found in [${start}, ${start + 200})`)
+}
+
+/** The persisted launchArgs string for the suite's install, straight from
+ *  the installations record. */
+function readRecordLaunchArgs(): Promise<string> {
+  return ctx.panel.evaluate<string>(
+    `window.api.getInstallations().then((list) => {
+      const inst = list.find((i) => i.id === ${JSON.stringify(_updateInstallId)})
+      return (inst && inst.launchArgs) || ''
+    })`,
+  )
+}
+
+/** Set `--port <port>` in the Startup Args raw input of the OPEN picker
+ *  popup (config tab) through the real input pipeline, replacing any prior
+ *  --port. The raw input commits on the native change event, so the edit is
+ *  committed by blurring, then confirmed against the persisted record. */
+async function setPortArgViaPicker(popup: WebContentsPage, port: number): Promise<void> {
+  const rawSel = '.args-raw-input input'
+  await popup.waitForVisible(rawSel, { timeout: 15_000 })
+  const before = await popup.evaluate<string>(
+    `document.querySelector(${JSON.stringify(rawSel)}).value`,
+  )
+  const withoutPort = before.replace(/--port(?:[ =]\S+)?/g, ' ').replace(/\s+/g, ' ').trim()
+  await popup.fill(rawSel, `${withoutPort} --port ${port}`.trim())
+  await popup.evaluate<boolean>(
+    `(() => { document.querySelector(${JSON.stringify(rawSel)}).blur(); return true })()`,
+  )
+  await expect
+    .poll(readRecordLaunchArgs, { timeout: 10_000, intervals: [100, 250] })
+    .toContain(`--port ${port}`)
+}
+
+/** Drive the open picker's primary CTA through its in-drawer confirm and
+ *  wait for main to hide the popup (it does so before firing the restart). */
+async function confirmPickerRestart(popup: WebContentsPage): Promise<void> {
+  await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 10_000, intervals: [100, 200],
+    })
+    .toBe(false)
+}
+
+/** Restart the running install via the picker CTA and wait for the boot
+ *  window to open: no registered session, launch operation armed. */
+async function openBootWindowViaPickerRestart(): Promise<void> {
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+  await confirmPickerRestart(popup)
+  await expect
+    .poll(async () => (await getRunningSessionSnapshot(ctx.app, _updateInstallId)) === null, {
+      timeout: 60_000, intervals: [250, 500],
+    })
+    .toBe(true)
+  await expect
+    .poll(() => hasActiveOperation(ctx.app, _updateInstallId), {
+      timeout: 60_000, intervals: [250, 500],
+    })
+    .toBe(true)
+}
+
+test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @lifecycle', async () => {
+  test.setTimeout(600_000)
+  await waitForOperationDrain(_updateInstallId)
+
+  let before: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
+  await expect
+    .poll(async () => {
+      before = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+      return before
+    }, { timeout: 120_000, intervals: [1_000, 2_000] })
+    .not.toBeNull()
+  const targetPort = await findFreeLoopbackPort(19100)
+  expect(targetPort, 'target port must differ from the current one').not.toBe(before!.port)
+
+  // Restart through the real picker CTA to open a boot window, then edit
+  // the args MID-BOOT through the picker's Startup Args raw input.
+  await openBootWindowViaPickerRestart()
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+  await setPortArgViaPicker(popup, targetPort)
+
+  // The edit only proves anything if it landed inside the boot window -
+  // boots take tens of seconds, the UI edit a couple. Fail loudly if not.
+  expect(
+    await getRunningSessionSnapshot(ctx.app, _updateInstallId),
+    'boot completed before the boot-window edit landed - cannot exercise issue #1300',
+  ).toBeNull()
+
+  // The in-flight boot consumed its pre-edit config: it must come up on a
+  // port that is NOT the just-persisted target...
+  let booted: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
+  await expect
+    .poll(async () => {
+      booted = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+      return booted
+    }, { timeout: 300_000, intervals: [1_000, 2_000] })
+    .not.toBeNull()
+  expect(
+    booted!.port,
+    'the in-flight boot must come up on the pre-edit port, not pick up an edit made after it spawned',
+  ).toBe(before!.port)
+
+  // ...and the popup (kept open across the boot - pending-restart state is
+  // renderer-local) must flip its CTA to "Restart to apply changes".
+  await expect
+    .poll(() => popup.textOf(byTestId(TID.pickerPrimaryCta)), {
+      timeout: 30_000, intervals: [250, 500],
+    })
+    .toContain('Restart to apply')
+
+  // Restart through the CTA: the relaunch must ACTUALLY apply the edit.
+  await confirmPickerRestart(popup)
+  await expect
+    .poll(async () => {
+      const after = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+      if (!after || after.startedAt <= booted!.startedAt) return null
+      return after.port
+    }, { timeout: 300_000, intervals: [1_000, 2_000] })
+    .toBe(targetPort)
+
+  // The queryable proof against the live server, not just the session record.
+  await expect
+    .poll(async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${targetPort}/system_stats`, {
+          signal: AbortSignal.timeout(5_000),
+        })
+        return res.status
+      } catch { return 0 }
+    }, { timeout: 60_000, intervals: [1_000] })
+    .toBe(200)
+  await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
+  await closeTitlePopupIfOpen(ctx.app)
+})
+
+test('restart clicked during boot cancels the in-flight boot and applies the edited --port @lifecycle', async () => {
+  test.setTimeout(600_000)
+  await waitForOperationDrain(_updateInstallId)
+
+  await expect
+    .poll(async () => getRunningSessionSnapshot(ctx.app, _updateInstallId), {
+      timeout: 120_000, intervals: [1_000, 2_000],
+    })
+    .not.toBeNull()
+  // A different probe range than the sibling test above, so this target
+  // can never equal the port the install is currently running on.
+  const targetPort = await findFreeLoopbackPort(19400)
+
+  // Boot window + mid-boot edit, as above.
+  await openBootWindowViaPickerRestart()
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+  await setPortArgViaPicker(popup, targetPort)
+  expect(
+    await getRunningSessionSnapshot(ctx.app, _updateInstallId),
+    'boot completed before the boot-window edit landed - cannot exercise restart-during-boot',
+  ).toBeNull()
+
+  // THE regression: restart while STILL booting. Pre-fix this was a silent
+  // no-op (no session for stopRunning; relaunch rejected by the in-flight
+  // guard) and the instance came up on the stale pre-edit config. The CTA
+  // and in-drawer confirm are clicked inline (not via confirmPickerRestart)
+  // so the boot window can be proven open right before the confirm click -
+  // otherwise a fast boot would silently degrade this into an ordinary
+  // running restart that passes without exercising the cancellation path.
+  await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  expect(
+    await isInstallLaunching(ctx.app, _updateInstallId),
+    'boot finished before the restart click - this run did not exercise restart-during-boot',
+  ).toBe(true)
+  expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
+  await resetIpcInvocations(ctx.app, 'picker-restart:cancel-launching')
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 10_000, intervals: [100, 200],
+    })
+    .toBe(false)
+
+  // Decisive proof the boot-window path ran: main's restart handler must
+  // report the in-flight launch was actually cancelled. `cancelled: false`
+  // means the boot finished before the click landed and this run silently
+  // exercised the ordinary running-restart path instead.
+  await expect
+    .poll(async () => {
+      const calls = (await getIpcInvocations(ctx.app, 'picker-restart:cancel-launching')) as
+        Array<{ installationId?: string; cancelled?: boolean }>
+      return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
+    }, { timeout: 60_000, intervals: [250, 500] })
+    .toBe(true)
+
+  // The cancelled boot never registers; the relaunch must come up on the
+  // edited port. If the cancel regressed into a no-op, the surviving boot
+  // registers on the pre-edit port and this poll times out on it.
+  await expect
+    .poll(async () => {
+      const after = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+      return after?.port ?? null
+    }, { timeout: 300_000, intervals: [1_000, 2_000] })
+    .toBe(targetPort)
+  await expect
+    .poll(async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${targetPort}/system_stats`, {
+          signal: AbortSignal.timeout(5_000),
+        })
+        return res.status
+      } catch { return 0 }
+    }, { timeout: 60_000, intervals: [1_000] })
+    .toBe(200)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
   await closeTitlePopupIfOpen(ctx.app)
 })

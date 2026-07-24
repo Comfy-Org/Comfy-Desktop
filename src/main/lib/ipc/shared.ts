@@ -1202,6 +1202,41 @@ export async function stopRunning(
   }
 }
 
+/**
+ * Abort an in-flight launch (the boot window between spawn and port-ready)
+ * and wait for its teardown to drain. Restart flows need this: `stopRunning`
+ * only knows registered sessions, so a booting install has nothing to stop -
+ * its process is owned by the launch operation, which must be aborted and
+ * allowed to kill the process tree and release its port before a relaunch
+ * can pass the in-flight-operation guard in `handleLaunch`.
+ *
+ * Returns true when a launch was cancelled and fully torn down, false when
+ * the install was not launching (already running, stopped, or a non-launch
+ * operation owns the abort slot - a restart must not cancel those). The
+ * launching marker is only set after the launch registers its abort
+ * controller, so "marker present" implies the slot belongs to the launch.
+ */
+export async function cancelLaunching(installationId: string, timeoutMs = 60_000): Promise<boolean> {
+  if (!_launchingInstances.has(installationId)) return false
+  const abort = _operationAborts.get(installationId)
+  if (!abort) return false
+  abort.abort()
+  // The launch's abort path awaits its process-tree kill and only then - in
+  // one synchronous cleanup block - clears its abort slot and the launching
+  // marker, so THIS controller leaving the slot is the teardown-complete
+  // signal. Waiting on the launching marker too would race a new operation
+  // claiming the install after teardown (a generation this caller must not
+  // wait on, or worse, abort).
+  const deadline = Date.now() + timeoutMs
+  while (_operationAborts.get(installationId) === abort) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for the cancelled launch of ${installationId} to wind down`)
+    }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return true
+}
+
 export function hasRunningSessions(): boolean {
   return _runningSessions.size > 0
 }
