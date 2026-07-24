@@ -847,6 +847,17 @@ defineExpose({ open, resetContinue })
             @click="cloudCapacity.isDisabled() ? null : (pickedChoice = 'cloud')"
           >
             <template #label-trailing>
+              <Tooltip :text="$t('firstUse.whyTryCloud')">
+                <button
+                  type="button"
+                  class="start-cloud-info"
+                  :aria-label="$t('firstUse.whyTryCloud')"
+                  data-testid="first-use-why-cloud"
+                  @click.stop="openWhyCloud"
+                >
+                  <Info :size="14" />
+                </button>
+              </Tooltip>
               <!-- 'unknown' tier means this device has never authenticated
                    with Cloud (useCloudCapacity docs the tri-state) — the
                    trial pill is for people who haven't tried it yet, not a
@@ -860,17 +871,6 @@ defineExpose({ open, resetContinue })
                 data-testid="first-use-cloud-runs-pill"
                 >{{ $t('firstUse.cloudFreeRunsPill') }}</span
               >
-              <Tooltip :text="$t('firstUse.whyTryCloud')">
-                <button
-                  type="button"
-                  class="start-cloud-info"
-                  :aria-label="$t('firstUse.whyTryCloud')"
-                  data-testid="first-use-why-cloud"
-                  @click.stop="openWhyCloud"
-                >
-                  <Info :size="14" />
-                </button>
-              </Tooltip>
             </template>
             <template v-if="hardwareRecommendsCloud" #desc-trailing>
               <!-- Deep's thread feedback: the badge on its own doesn't say
@@ -1237,6 +1237,12 @@ defineExpose({ open, resetContinue })
 .start-card-cloud :deep(.choice-card__label-trailing) {
   gap: 8px;
 }
+/* ChoiceCard's default label gap (8px) reads as too much air between
+ * "Cloud" and the (i) info icon now that it's the first trailing item —
+ * tighten it just on this card rather than changing the shared default. */
+.start-card-cloud :deep(.choice-card__label) {
+  gap: 4px;
+}
 
 /* "5 FREE RUNS" trial pill. Same solid-chip shape as the Why-Cloud modal's
  * credits pill (.why-cloud-pill), scaled down for the label row, but in
@@ -1274,7 +1280,11 @@ defineExpose({ open, resetContinue })
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: 8px;
+  /* No margin-top here — `.choice-card__desc-trailing` (ChoiceCard.vue)
+     already adds 6px of separation from the description above. Stacking
+     an extra margin here was also getting picked up by the wrapping
+     Tooltip's trigger measurement, pushing the tooltip bubble noticeably
+     further from the badge than intended. */
   padding: 3px 9px;
   border-radius: 999px;
   border: 1px solid color-mix(in oklab, var(--neutral-100) 55%, transparent);
