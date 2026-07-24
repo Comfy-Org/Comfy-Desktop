@@ -243,11 +243,72 @@ test.beforeAll(async () => {
   }
 })
 
+/** Install trees created by THIS run (fresh install + real-UI copies).
+ *  A green run removes all of them through the real UI (the copy-cleanup
+ *  and final Delete tests), so the afterAll sweep below is a no-op; it
+ *  exists so aborted/failed runs don't orphan multi-hundred-MB trees under
+ *  the installs root, which lives OUTSIDE the harness profile dir and is
+ *  therefore untouched by harness teardown. Hydrated (reused) installs are
+ *  never registered. */
+const _runCreatedInstallPaths = new Set<string>()
+
+/** The isolated profile's installations.json, or null on macOS where the
+ *  harness cannot isolate userData (Application Support ignores HOME) and
+ *  the store may list real installs that must never be swept. Mirrors
+ *  `dataDir()` in src/main/lib/paths.ts under the harness's env overrides
+ *  (APPDATA / XDG_DATA_HOME redirected into homeDir). */
+function isolatedInstallationsStorePath(homeDir: string): string | null {
+  if (process.platform === 'win32') {
+    return path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2', 'installations.json')
+  }
+  if (process.platform === 'linux') {
+    return path.join(homeDir, '.local', 'share', 'comfyui-desktop-2', 'installations.json')
+  }
+  return null
+}
+
 test.afterAll(async () => {
   // ctx is unassigned when beforeAll throws before launching the app
   // (e.g. the nvidia-smi preflight) - don't bury that error under a
   // TypeError from teardown.
-  if (typeof ctx !== 'undefined') await ctx.cleanup()
+  if (typeof ctx === 'undefined') return
+
+  // Before teardown deletes the isolated profile, collect every local
+  // install it recorded: a fresh profile can only contain records this
+  // run created, so this also catches installs orphaned by an abort
+  // before any path-capturing test ran (e.g. mid-download).
+  if (!process.env['LIFECYCLE_REUSE_DIR']) {
+    const storePath = isolatedInstallationsStorePath(ctx.homeDir)
+    if (storePath) {
+      try {
+        const records = JSON.parse(readFileSync(storePath, 'utf-8')) as { installPath?: unknown }[]
+        for (const r of records) {
+          if (typeof r.installPath === 'string' && path.isAbsolute(r.installPath)) {
+            _runCreatedInstallPaths.add(r.installPath)
+          }
+        }
+      } catch { /* store never materialized - run aborted before any install */ }
+    }
+  }
+
+  await ctx.cleanup()
+
+  // Best-effort sweep, after the app is closed so nothing holds file
+  // locks. `force` tolerates trees the suite already deleted via the
+  // real UI. LIFECYCLE_REUSE_DIR preserves everything for greped
+  // re-runs, mirroring the harness's profile preservation.
+  if (!process.env['LIFECYCLE_REUSE_DIR']) {
+    if (_runCreatedInstallPaths.size > 0) {
+      console.log(`[lifecycle] afterAll sweep over ${_runCreatedInstallPaths.size} run-created install path(s): ${[..._runCreatedInstallPaths].join(', ')}`)
+    }
+    for (const p of _runCreatedInstallPaths) {
+      try {
+        rmSync(p, { recursive: true, force: true })
+      } catch (err) {
+        console.log(`[lifecycle] afterAll sweep failed to remove ${p}: ${(err as Error).message}`)
+      }
+    }
+  }
 })
 
 /** True iff a webContents with a localhost URL exists and is loaded. */
@@ -743,6 +804,7 @@ test('captures install metadata for the update tests @lifecycle', async () => {
   const inst = installs[0]!
   _updateInstallId = inst.id
   _updateInstallPath = inst.installPath
+  _runCreatedInstallPaths.add(_updateInstallPath)
   _comfyUIDir = path.join(_updateInstallPath, 'ComfyUI')
 
   // The install setup in test 2 pins the second-newest stable tag,
@@ -1602,6 +1664,7 @@ test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycl
   const copyRecord = await waitForCopyRegistered(newName)
   _copyInstallId = copyRecord.id
   _copyInstallPath = copyRecord.installPath
+  _runCreatedInstallPaths.add(_copyInstallPath)
   await waitForOperationDrain(_updateInstallId)
 
   // Disk shape: copy is a full standalone tree (ComfyUI/.git +
@@ -1702,6 +1765,7 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @lifecycle'
   const copyRecord = await waitForCopyRegistered(newName)
   _kebabCopyInstallId = copyRecord.id
   _kebabCopyInstallPath = copyRecord.installPath
+  _runCreatedInstallPaths.add(_kebabCopyInstallPath)
   await waitForOperationDrain(_updateInstallId)
 
   // Disk shape: kebab copy materializes the same standalone tree the
