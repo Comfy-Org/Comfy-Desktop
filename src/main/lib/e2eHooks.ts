@@ -28,6 +28,7 @@ import {
 } from './e2eOverrides'
 import {
   _runningSessions,
+  _operationAborts,
   _test_addRunningSession,
   _test_clearRunningSessions,
 } from './ipc/shared'
@@ -71,6 +72,8 @@ export interface E2EHelpers {
   clearRunningSessions(): void
   /** Snapshot the live `_runningSessions` entry (real or seeded), or `null` if none. */
   getRunningSessionSnapshot(installationId: string): RunningSessionSnapshot | null
+  /** Whether a background operation currently holds the per-install abort slot. */
+  hasActiveOperation(installationId: string): boolean
   /** `checkedAt` ms from the shared release cache entry, or `null` if absent. */
   getReleaseCacheCheckedAt(repo: string, channel: string): number | null
   /** Force every release-cache entry to `maxCheckedAt` so the renderer's stale-cache watcher
@@ -120,6 +123,9 @@ export function registerE2EHooks(): void {
         port: session.port,
         url: session.url,
       }
+    },
+    hasActiveOperation(installationId) {
+      return _operationAborts.has(installationId)
     },
     getReleaseCacheCheckedAt(repo, channel) {
       return _releaseCacheGet(repo, channel)?.checkedAt ?? null

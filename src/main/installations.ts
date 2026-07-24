@@ -1,7 +1,9 @@
 import path from 'path'
+import fs from 'fs'
 import { EventEmitter } from 'events'
+import { app } from 'electron'
 import { dataDir } from './lib/paths'
-import { readFileSafeAsync, writeFileSafeAsync } from './lib/safe-file'
+import { readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './lib/safe-file'
 import type { ComfyVersion } from './lib/version'
 
 /** Event bus for installation lifecycle changes. `'updated'`(record) fires on
@@ -112,7 +114,34 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   return p
 }
 
+/** E2E-only: write `E2E_INSTALLATIONS_SEED` to installations.json before the
+ *  first read, so the harness needn't guess the platform-specific data dir
+ *  (XDG on Linux, userData elsewhere). Seeding before the first `load()` also
+ *  guarantees the boot-time cloud-entry `ensureExists` merges on top of the
+ *  seed and the renderer's one-shot store hydration sees it — a post-launch
+ *  file write raced both. Runs at most once per process. */
+let e2eSeedApplied = false
+function maybeSeedFromEnv(): void {
+  if (e2eSeedApplied) return
+  e2eSeedApplied = true
+  // Hard guard: never run in production builds.
+  if (app.isPackaged) return
+  if (process.env['E2E'] !== '1') return
+  const seed = process.env['E2E_INSTALLATIONS_SEED']
+  if (!seed) return
+  // Drop the env var so the payload doesn't leak into child processes.
+  delete process.env['E2E_INSTALLATIONS_SEED']
+  try {
+    JSON.parse(seed) // validate before writing
+    fs.mkdirSync(path.dirname(dataPath), { recursive: true })
+    writeFileSafe(dataPath, seed, true)
+  } catch (err) {
+    console.warn('Installations: failed to apply E2E_INSTALLATIONS_SEED:', (err as Error).message)
+  }
+}
+
 async function load(): Promise<InstallationRecord[]> {
+  maybeSeedFromEnv()
   const raw = await readFileSafeAsync(dataPath)
   if (raw) {
     try {

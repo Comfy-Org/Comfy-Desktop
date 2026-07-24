@@ -757,6 +757,7 @@ async function handleImport(): Promise<void> {
               type="button"
               class="snapshots-rail-cta"
               :aria-label="t('snapshots.createSnapshot', 'Create Snapshot')"
+              :data-testid="TID.snapshotsSaveCta"
               @click="handleSave"
             >
               <span>{{ t('snapshots.createNew', 'Create Snapshot') }}</span>

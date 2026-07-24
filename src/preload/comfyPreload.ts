@@ -86,8 +86,15 @@ const Telemetry: ComfyDesktop2TelemetryBridge = {
   }
 }
 
+type ComfyDesktop2BridgeWithModelAccess = ComfyDesktop2Bridge & {
+  openModelAccessPage: (url: string) => Promise<boolean>
+}
+
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
+  openModelAccessPage: (url: string): Promise<boolean> => {
+    return ipcRenderer.invoke('desktop2-open-model-access-page', { url })
+  },
   downloadModel: (url: string, filename: string, directory: string): Promise<boolean> => {
     return ipcRenderer.invoke('desktop2-download-model', { url, filename, directory })
   },
@@ -119,6 +126,6 @@ const bridge = {
   Terminal,
   Logs,
   Telemetry
-} satisfies ComfyDesktop2Bridge
+} satisfies ComfyDesktop2BridgeWithModelAccess
 
 contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

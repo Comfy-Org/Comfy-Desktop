@@ -12,7 +12,13 @@ export function findWebContentsId(
   app: ElectronApplication,
   marker: string,
 ): Promise<number | null> {
-  return evalWithRetry(() => app.evaluate(({ webContents }, m) => {
+  return evalWithRetry(() => app.evaluate(({ BrowserWindow, WebContentsView, webContents }, m) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      for (const child of win.contentView.children) {
+        if (!(child instanceof WebContentsView) || !child.getVisible()) continue
+        if (child.webContents.getURL().includes(m)) return child.webContents.id
+      }
+    }
     for (const wc of webContents.getAllWebContents()) {
       if (wc.getURL().includes(m)) return wc.id
     }
@@ -112,6 +118,55 @@ export class WebContentsPage {
     })()`)
   }
 
+  /** Click the nth (0-based) element matching `selector`. Returns false
+   *  if fewer than `index + 1` elements match. */
+  clickNth(selector: string, index: number): Promise<boolean> {
+    return this.wcEval<boolean>(`(() => {
+      const els = document.querySelectorAll(${JSON.stringify(selector)})
+      const el = els[${index}]
+      if (!el) return false
+      el.click()
+      return true
+    })()`)
+  }
+
+  /**
+   * Fill an input through Electron's real text-input pipeline: focus +
+   * select-all in the page, then `webContents.insertText`, which routes
+   * through the renderer's IME/input path and fires real `beforeinput` /
+   * `input` events - unlike assigning `.value` and dispatching synthetic
+   * events, which bypasses the browser's input handling entirely.
+   */
+  async fill(selector: string, text: string): Promise<void> {
+    // Each retry attempt re-focuses and re-selects before inserting so a
+    // retried insert replaces the previous attempt's text instead of
+    // appending to it, then verifies the resulting value.
+    await evalWithRetry(async () => {
+      const focused = await this.wcEval<boolean>(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (!el) return false
+        el.focus()
+        if (typeof el.select === 'function') el.select()
+        return document.activeElement === el
+      })()`)
+      if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
+      const id = await findWebContentsId(this.app, this.marker)
+      if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+      await this.app.evaluate(async ({ webContents }, payload) => {
+        const wc = webContents.fromId(payload.id)
+        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+        await wc.insertText(payload.text)
+      }, { id, text })
+      const value = await this.wcEval<string | null>(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        return el && 'value' in el ? el.value : null
+      })()`)
+      if (value !== text) {
+        throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
+      }
+    })
+  }
+
   /**
    * Click the first element matching `selector` whose textContent contains
    * `textSubstring` (case-insensitive). Returns false if no match.
@@ -162,6 +217,44 @@ export class WebContentsPage {
       message: `selector ${selector} did not become visible`,
     })
   }
+
+  /** Click a toggle `trigger` until `result` becomes visible. A DOM
+   *  `.click()` can dispatch before the component's handler is attached
+   *  (or while the trigger is still disabled) on slow hosted CI runners,
+   *  silently swallowing the click on overflow menus and expandable rows.
+   *  The re-click decision reads the trigger's `aria-expanded` state
+   *  (accordion bodies stay mounted while collapsed, so result-in-DOM is
+   *  not proof the click landed), falling back to result DOM presence for
+   *  triggers without the attribute. Never re-clicks an open toggle, so
+   *  it cannot toggle one shut. */
+  async clickUntilVisible(
+    trigger: string,
+    result: string,
+    opts: { timeout?: number } = {},
+  ): Promise<void> {
+    const deadline = Date.now() + (opts.timeout ?? 30_000)
+    for (;;) {
+      const state = await this.wcEval<'missing' | 'open' | 'closed'>(`(() => {
+        const t = document.querySelector(${JSON.stringify(trigger)})
+        if (!t) return 'missing'
+        const expanded = t.getAttribute('aria-expanded')
+        if (expanded !== null) return expanded === 'true' ? 'open' : 'closed'
+        return document.querySelector(${JSON.stringify(result)}) ? 'open' : 'closed'
+      })()`)
+      if (state === 'missing') {
+        throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
+      }
+      if (state === 'closed') await this.click(trigger)
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        throw new Error(`clickUntilVisible: ${result} did not become visible after clicking ${trigger}`)
+      }
+      try {
+        await this.waitForVisible(result, { timeout: Math.min(2_000, remaining) })
+        return
+      } catch { /* re-evaluate the toggle state and retry until deadline */ }
+    }
+  }
 }
 
 /** WebContentsPage for the chooser/lifecycle/etc panel body. */
@@ -204,6 +297,9 @@ export function isPopupVisible(
     }
     return false
   }, marker)
+    // A popup/webContents torn down mid-evaluate destroys the execution
+    // context; treat that as "not visible" rather than failing the test.
+    .catch(() => false)
 }
 
 /** Force-close the title popup via its bridge if it is currently visible. */
@@ -215,6 +311,9 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return
     return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
+  }).catch(() => {
+    // Popup dismissed between the visibility check and the close call —
+    // already in the desired state.
   })
   await expect.poll(
     () => isPopupVisible(app, 'comfyTitlePopup.html'),

@@ -326,10 +326,6 @@ export interface ComfyTitlePopupBridge {
   ): Promise<{ args: Record<string, unknown>[]; error?: string } | null>
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
   pickerSettingsCancelOperation(installationId: string): Promise<void>
-  pickerSettingsPreviewDesktopMigration(
-    installationId: string,
-    desktopId: string,
-  ): Promise<Record<string, unknown>>
   pickerSettingsPreviewLocalMigration(
     installationId: string,
   ): Promise<Record<string, unknown>>
@@ -689,8 +685,6 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.browseFolder, { defaultPath: opts?.defaultPath }),
   pickerSettingsCancelOperation: (installationId) =>
     ipcRenderer.invoke(CH.cancelOperation, { installationId }),
-  pickerSettingsPreviewDesktopMigration: (installationId, desktopId) =>
-    ipcRenderer.invoke(CH.previewDesktopMigration, { installationId, desktopId }),
   pickerSettingsPreviewLocalMigration: (installationId) =>
     ipcRenderer.invoke(CH.previewLocalMigration, { installationId }),
   terminalSubscribe: (installationId) =>

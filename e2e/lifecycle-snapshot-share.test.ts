@@ -188,9 +188,10 @@ test('picker footer More → Share exports the latest snapshot @lifecycle', asyn
   const popup = titlePopupPage(ctx.app)
 
   // Open the footer "More" overflow menu, then click the Share action.
-  await popup.waitForVisible('[data-more-trigger]', { timeout: 15_000 })
-  expect(await popup.click('[data-more-trigger]')).toBe(true)
-  await popup.waitForVisible(byTestId(TID.pinBottomAction('share')), { timeout: 10_000 })
+  // (`[data-more-trigger]` also matches the window-options caret, so
+  // target the explicit footer test id.)
+  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('share')), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.pinBottomAction('share')))).toBe(true)
 
   expectLatestEnvelope(await readSharedEnvelope())
