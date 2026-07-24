@@ -979,10 +979,13 @@ test('captures a snapshot for the picker-driven restore test @lifecycle', async 
 // Manager security level: a per-install selection on the picker's Startup
 // Args tab must reach the config.ini ComfyUI-Manager actually reads, via a
 // real stop -> relaunch (handleLaunch's reconcile pass runs before every
-// local launch with the launched install's own record value).
+// local launch with the launched install's own record value). Beyond the
+// file check, the live server is probed through Manager's real HTTP API
+// to confirm the running Manager *enforces* the level, not just that the
+// value sits in a file.
 // ---------------------------------------------------------------------------
 
-test('per-install Manager security level lands in Manager config.ini after relaunch @lifecycle', async () => {
+test('per-install Manager security level lands in Manager config.ini and is enforced after relaunch @lifecycle', async () => {
   test.setTimeout(600_000)
   expect(_updateInstallPath, 'install path not captured').toBeTruthy()
 
@@ -1015,6 +1018,42 @@ test('per-install Manager security level lands in Manager config.ini after relau
       })`,
     )
 
+  /** Origin of the running ComfyUI server, from the loaded frontend webContents. */
+  const comfyOrigin = async (): Promise<string> => {
+    const origin = await ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()))
+      return wc ? new URL(wc.getURL()).origin : null
+    })
+    expect(origin, 'no running ComfyUI frontend to derive the server origin from').toBeTruthy()
+    return origin!
+  }
+  // Enforcement probe against the LIVE server: POST the packaged Manager's
+  // middle-risk /v2/snapshot/remove with a snapshot name that cannot exist.
+  // Manager checks is_allowed_security_level('middle') before touching
+  // anything and removing a nonexistent snapshot is a no-op, so the call
+  // observes enforcement without mutating the install: 403 iff the running
+  // Manager loaded `strong` (the security gate is this route's only 403 -
+  // its CSRF content-type rejection returns 400), 200 otherwise. A 404/405
+  // means Manager isn't serving its API at all and fails the probe loudly.
+  // The middle gate is the level's only clean observable here - git-url/pip
+  // installs are gated by dedicated config flags, and the high gate also
+  // depends on --listen exposure.
+  const managerBlocksMiddleRisk = async (): Promise<boolean> => {
+    const res = await fetch(
+      `${await comfyOrigin()}/api/v2/snapshot/remove?target=lifecycle-enforcement-probe-does-not-exist`,
+      { method: 'POST', signal: AbortSignal.timeout(15_000) },
+    )
+    if (res.status !== 403) {
+      expect(res.status, `unexpected snapshot/remove probe status ${res.status}`).toBe(200)
+      return false
+    }
+    return true
+  }
+  /** Whether Manager's middle-risk gate blocks at a given level. */
+  const middleBlockedAt = (level: string | null): boolean => level === 'strong'
+
   // Production degrades an unrecognized record value to the default, so
   // normalize the same way before deriving the expected trigger label.
   const storedRaw = await readRecordLevel()
@@ -1024,8 +1063,10 @@ test('per-install Manager security level lands in Manager config.ini after relau
   // the on-disk config currently says - otherwise a broken/no-op launch
   // reconciliation could pass vacuously against a config that already
   // carried the target. Four levels guarantee a distinct pick exists.
+  // `strong` is preferred so the usual (fresh-profile) run lands on the
+  // level whose enforcement is observable through the middle-risk probe.
   const configLevelBefore = readConfigLevel()
-  const targetValue = (['weak', 'strong', 'normal-'] as const).find(
+  const targetValue = (['strong', 'weak', 'normal-'] as const).find(
     (v) => v !== storedBefore && v !== configLevelBefore,
   )!
   const target = { value: targetValue, label: LEVEL_LABELS[targetValue]! }
@@ -1084,6 +1125,19 @@ test('per-install Manager security level lands in Manager config.ini after relau
     'Manager config changed before relaunch - reconcile must only run on launch',
   ).toBe(configLevelBefore)
 
+  // The still-running server must keep enforcing its LAUNCH-time level:
+  // Manager reads config.ini once at startup, so the picker edit alone
+  // must not change live behavior. Every launch in this suite reconciles
+  // the config first, so the running level equals the pre-edit file
+  // content; skip when that content is unrecognizable (hand-mutated
+  // reused profile), since production would have degraded it at launch.
+  if (configLevelBefore === null || configLevelBefore in LEVEL_LABELS) {
+    expect(
+      await managerBlocksMiddleRisk(),
+      'live Manager enforcement changed before relaunch - the level must only apply at startup',
+    ).toBe(middleBlockedAt(configLevelBefore))
+  }
+
   // Full real stop -> relaunch so handleLaunch's reconcile pass runs
   // against the on-disk install.
   await stopAndReturnToDashboardViaUI()
@@ -1103,6 +1157,17 @@ test('per-install Manager security level lands in Manager config.ini after relau
     `[default] security_level = ${target.value} missing from Manager config:\n`
       + readFileSync(configPath, 'utf-8'),
   ).toBe(target.value)
+
+  // The file check alone would pass even if Manager ignored the config -
+  // probe the relaunched server's real API to confirm the running Manager
+  // enforces the selected level (403 on middle-risk actions at `strong`,
+  // allowed otherwise). With the strong-first target pick, the normal
+  // fresh-profile run exercises the blocked arm - a genuine behavioral
+  // flip from the pre-relaunch probe above.
+  expect(
+    await managerBlocksMiddleRisk(),
+    `running Manager does not enforce security level "${target.value}"`,
+  ).toBe(middleBlockedAt(target.value))
 
   // The extra relaunch must not have disturbed the installed torch build.
   expectTorchFamilyUnchanged('manager security-level relaunch changed the installed torch family')
