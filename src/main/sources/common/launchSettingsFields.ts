@@ -223,18 +223,22 @@ export function buildLaunchSettingsFields(
         description: t(`common.managerNetworkMode_${mode}_desc`),
       })), tooltip: t('tooltips.managerNetworkMode'), requiresRestart: true,
       rowGroup: 'manager' },
+    // Paired on one row (like the Manager fields above) to keep the tab
+    // compact and leave more room for the env-var rows below.
     { id: 'launchMode', label: t('common.launchMode'),
       value: (installation.launchMode as string | undefined) || defaultLaunchMode,
       editable: true, editType: 'select', options: [
         { value: 'window', label: t('common.launchModeWindow') },
         { value: 'console', label: t('common.launchModeConsole') },
-      ], tooltip: t('tooltips.launchMode'), requiresRestart: true },
+      ], tooltip: t('tooltips.launchMode'), requiresRestart: true,
+      rowGroup: 'launch-window' },
     { id: 'browserPartition', label: t('common.browserPartition'),
       value: (installation.browserPartition as string | undefined) || defaultBrowserPartition,
       editable: true, editType: 'select', options: [
         { value: 'shared', label: t('common.partitionShared') },
         { value: 'unique', label: t('common.partitionUnique') },
-      ], tooltip: t('tooltips.browserPartition'), requiresRestart: true },
+      ], tooltip: t('tooltips.browserPartition'), requiresRestart: true,
+      rowGroup: 'launch-window' },
     { id: 'portConflict', label: t('common.portConflict'),
       value: (installation.portConflict as string | undefined) || defaultPortConflict,
       editable: true, editType: 'select', options: [

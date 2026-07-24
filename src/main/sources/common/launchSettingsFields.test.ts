@@ -239,4 +239,18 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
     expect(security?.rowGroup).toBeTruthy()
     expect(network?.rowGroup).toBe(security?.rowGroup)
   })
+
+  it('pairs Launch Mode with Browser Cache on one row, distinct from the Manager row', () => {
+    const fields = buildLaunchSettingsFields({} as never, OPTS)
+    const ids = fields.map((f) => f.id)
+    expect(ids.indexOf('browserPartition')).toBe(ids.indexOf('launchMode') + 1)
+    const launchMode = fields.find((f) => f.id === 'launchMode')
+    const partition = fields.find((f) => f.id === 'browserPartition')
+    expect(launchMode?.rowGroup).toBeTruthy()
+    expect(partition?.rowGroup).toBe(launchMode?.rowGroup)
+    // A shared name across both pairs would merge them into one 4-wide row
+    // if they ever became adjacent.
+    const security = fields.find((f) => f.id === 'managerSecurityLevel')
+    expect(launchMode?.rowGroup).not.toBe(security?.rowGroup)
+  })
 })
