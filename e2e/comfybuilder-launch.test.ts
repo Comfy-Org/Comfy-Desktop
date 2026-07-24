@@ -1,5 +1,5 @@
 /**
- * Lifecycle E2E: launching a ComfyBuilder distribution from the chooser.
+ * E2E: launching a ComfyBuilder distribution from the chooser.
  *
  * The renderer resolves launch ONLY from `get-list-actions`
  * (`performChooserLaunch`), so a source plugin without `getListActions`
@@ -130,7 +130,7 @@ test.afterAll(async () => {
 })
 
 for (const dist of NOT_READY) {
-  test(`ComfyBuilder distribution in ${dist.status} exposes a disabled launch action @lifecycle`, async () => {
+  test(`ComfyBuilder distribution in ${dist.status} exposes a disabled launch action @windows @macos @linux`, async () => {
     const actions = await ctx.panel.evaluate<ListActionShape[]>(
       `window.api.getListActions(${JSON.stringify(dist.id)})`,
     )
@@ -141,7 +141,7 @@ for (const dist of NOT_READY) {
   })
 }
 
-test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @lifecycle', async () => {
+test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos @linux', async () => {
   await clickInstallTile(ctx.panel, FAILED.name)
 
   // `useListAction` short-circuits a disabled action into an alert, so the
@@ -154,7 +154,7 @@ test('clicking a not-ready ComfyBuilder tile explains itself instead of opening 
   await expectChooserVisible(ctx.panel)
 })
 
-test('clicking an installed ComfyBuilder tile launches it instead of opening the new-install wizard @lifecycle', async () => {
+test('clicking an installed ComfyBuilder tile launches it instead of opening the new-install wizard @windows @macos @linux', async () => {
   await resetIpcInvocations(ctx.app)
   await clickInstallTile(ctx.panel, INSTALLED.name)
 
