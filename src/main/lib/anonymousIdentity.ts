@@ -5,6 +5,7 @@ import { configDir } from './paths'
 import { writeFileSafe } from './safe-file'
 
 const ANONYMOUS_DISTINCT_ID_FILE = 'posthog-anonymous-distinct-id.txt'
+const UNMERGEABLE_EPOCH_FILE = 'posthog-anonymous-epoch-unmergeable'
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/
 
 export function normalizeAnonymousDistinctId(value: unknown): string | null {
@@ -49,4 +50,40 @@ export function getOrCreateAnonymousDistinctId(): string {
 export function rotatePersistedAnonymousDistinctId(): string | null {
   const anonymousDistinctId = randomUUID()
   return persistAnonymousDistinctId(anonymousDistinctId) ? anonymousDistinctId : null
+}
+
+function unmergeableEpochPath(): string {
+  return path.join(configDir(), UNMERGEABLE_EPOCH_FILE)
+}
+
+export function hasPersistedUnmergeableAnonymousEpoch(): boolean {
+  try {
+    return fs.readFileSync(unmergeableEpochPath(), 'utf-8') === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Persist taint, or delete the reusable identity as a fail-safe fallback. */
+export function persistUnmergeableAnonymousEpoch(): boolean {
+  try {
+    writeFileSafe(unmergeableEpochPath(), '1')
+    return true
+  } catch {
+    try {
+      fs.rmSync(anonymousDistinctIdPath(), { force: true })
+      return !fs.existsSync(anonymousDistinctIdPath())
+    } catch {
+      return false
+    }
+  }
+}
+
+export function clearPersistedUnmergeableAnonymousEpoch(): boolean {
+  try {
+    fs.rmSync(unmergeableEpochPath(), { force: true })
+    return true
+  } catch {
+    return false
+  }
 }

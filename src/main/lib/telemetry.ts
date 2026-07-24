@@ -118,8 +118,13 @@ import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
 import { buildErrorFields } from '../../shared/errorEvent'
 import { scrubAll } from '../../shared/piiScrub'
-import { rotatePersistedAnonymousDistinctId } from './anonymousIdentity'
-import { normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import {
+  clearPersistedUnmergeableAnonymousEpoch,
+  hasPersistedUnmergeableAnonymousEpoch,
+  persistUnmergeableAnonymousEpoch,
+  rotatePersistedAnonymousDistinctId
+} from './anonymousIdentity'
+import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
 import {
   clearPendingIdentityMerges,
   type PendingIdentityProperties,
@@ -771,7 +776,8 @@ function applyFirebaseUserBinding(
   const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
   // Reject early rather than burn an anonymous rotation on an identify that
   // can never merge.
-  if (!normalizedUserId || consentState === 'denied') return
+  if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
+  if (consentState === 'denied') return
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
     queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
@@ -894,9 +900,27 @@ export function applyFirebaseAnonymousConsensus(): void {
   distinctId = safeAnonymousId
 }
 
-/** Compatibility path for legacy IPC callers. */
-export function unbindUserId(): void {
+/**
+ * Replace an anonymous epoch that observed conflicting resolved auth states.
+ * Returns false when the clean identity could not be persisted; callers must
+ * keep the process anonymous and retry before any later Firebase bind.
+ */
+export function discardUnmergeableAnonymousEpoch(): boolean {
   applyFirebaseAnonymousConsensus()
+  const cleanAnonymousId = rotatePersistedAnonymousDistinctId()
+  if (!cleanAnonymousId) return false
+  anonymousDistinctId = cleanAnonymousId
+  distinctId = cleanAnonymousId
+  nextAnonymousDistinctId = null
+  return clearPersistedUnmergeableAnonymousEpoch()
+}
+
+export function hasUnmergeableAnonymousEpoch(): boolean {
+  return hasPersistedUnmergeableAnonymousEpoch()
+}
+
+export function markAnonymousEpochUnmergeable(): boolean {
+  return persistUnmergeableAnonymousEpoch()
 }
 
 /**

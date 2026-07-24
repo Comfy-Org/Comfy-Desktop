@@ -1,5 +1,6 @@
 import type { BrowserWindow, WebContents } from 'electron'
 
+import { bindMainVerifiedFirebaseUser } from '../../lib/firebaseAuthIdentity'
 import * as mainTelemetry from '../../lib/telemetry'
 import { extractErrorClass } from '../../../shared/errorEvent'
 
@@ -59,8 +60,8 @@ export function emitSignInFailure(
   return failure
 }
 
-/** Bind the anonymous installation to the resolved Firebase user. */
-export function bindSignedInUser(user: Record<string, unknown>, _source: WebContents): void {
+/** Submit a Desktop-verified Firebase user to the process-wide identity consensus. */
+export function bindSignedInUser(user: Record<string, unknown>, source: WebContents): void {
   try {
     const uid = typeof user.uid === 'string' && user.uid.length > 0 ? user.uid : null
     if (!uid) return
@@ -73,7 +74,7 @@ export function bindSignedInUser(user: Record<string, unknown>, _source: WebCont
     }
     if (email) properties.email = email
     if (emailDomain) properties.email_domain = emailDomain
-    mainTelemetry.bindUserId(uid, properties)
+    bindMainVerifiedFirebaseUser(uid, properties, source)
   } catch {
     // Telemetry must never break the auth flow.
   }

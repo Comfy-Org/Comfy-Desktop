@@ -1478,18 +1478,6 @@ export interface ElectronApi {
    */
   registerTelemetryProperties(properties: Record<string, unknown>): void
   /**
-   * Bind a user_id on the current PostHog identity after a successful login.
-   * Main identifies the user with the active anonymous ID, sets
-   * `is_authenticated: true`, and fires `app:user_logged_in`.
-   * The renderer remains responsible for Datadog `setUser` on its own SDK.
-   */
-  telemetryBindUserId(payload: { userId: string; properties?: Record<string, unknown> }): void
-  /**
-   * Unbind user_id on logout and adopt the fresh anonymous ID reserved before
-   * the binding. Renderer also clears Datadog setUser.
-   */
-  telemetryUnbindUserId(): void
-  /**
    * Look up an A/B experiment / feature-flag variant for this user.
    * Returns the cached value (string for multivariate, boolean for a
    * single-flag rollout) or `null` if the flag is not present in the

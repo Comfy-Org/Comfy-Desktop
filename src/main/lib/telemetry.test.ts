@@ -823,7 +823,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     telemetry.registerPersonProperties({ gpu_tier: 'high' })
     telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
 
-    telemetry.unbindUserId()
+    telemetry.applyFirebaseAnonymousConsensus()
 
     expect(anonymousIdentityMock.index).toBe(0)
     expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toBeUndefined()
@@ -968,10 +968,6 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
 
     telemetry.bindUserId('bridge-user', { plan: 'pro' })
     expect(identifies).toHaveLength(1)
-
-    telemetry.unbindUserId()
-    telemetry.capture('after.unbind')
-    expect(captured.at(-1)?.distinctId).toBe('anonymous-next-1')
   })
 
   it('fails closed without identifying when the next D cannot be persisted', () => {

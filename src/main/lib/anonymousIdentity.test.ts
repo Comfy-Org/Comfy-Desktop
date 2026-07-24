@@ -24,9 +24,12 @@ vi.mock('./safe-file', async (importOriginal) => {
 
 import {
   anonymousDistinctIdPath,
+  clearPersistedUnmergeableAnonymousEpoch,
   getOrCreateAnonymousDistinctId,
+  hasPersistedUnmergeableAnonymousEpoch,
   normalizeAnonymousDistinctId,
   persistAnonymousDistinctId,
+  persistUnmergeableAnonymousEpoch,
   readPersistedAnonymousDistinctId,
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
@@ -77,6 +80,26 @@ describe('anonymousIdentity', () => {
 
     expect(rotatePersistedAnonymousDistinctId()).toBeNull()
     expect(readPersistedAnonymousDistinctId()).toBe(ANONYMOUS_ID_1)
+  })
+
+  it('persists an unmergeable epoch across restarts until a clean rotation clears it', () => {
+    expect(persistAnonymousDistinctId(ANONYMOUS_ID_1)).toBe(true)
+    expect(persistUnmergeableAnonymousEpoch()).toBe(true)
+
+    expect(hasPersistedUnmergeableAnonymousEpoch()).toBe(true)
+    expect(readPersistedAnonymousDistinctId()).toBe(ANONYMOUS_ID_1)
+    expect(rotatePersistedAnonymousDistinctId()).not.toBeNull()
+    expect(clearPersistedUnmergeableAnonymousEpoch()).toBe(true)
+    expect(hasPersistedUnmergeableAnonymousEpoch()).toBe(false)
+  })
+
+  it('deletes the reusable identity if the taint marker cannot be written', () => {
+    expect(persistAnonymousDistinctId(ANONYMOUS_ID_1)).toBe(true)
+    safeFileMock.failWrites = true
+
+    expect(persistUnmergeableAnonymousEpoch()).toBe(true)
+    expect(readPersistedAnonymousDistinctId()).toBeNull()
+    expect(hasPersistedUnmergeableAnonymousEpoch()).toBe(false)
   })
 })
 

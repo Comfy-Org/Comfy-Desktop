@@ -414,20 +414,6 @@ export function buildElectronApi(): ElectronApi {
         // ignore
       }
     },
-    telemetryBindUserId: (payload) => {
-      try {
-        ipcRenderer.send('telemetry:bindUserId', payload)
-      } catch {
-        // ignore
-      }
-    },
-    telemetryUnbindUserId: () => {
-      try {
-        ipcRenderer.send('telemetry:unbindUserId')
-      } catch {
-        // ignore
-      }
-    },
     telemetryGetExperimentFlag: (key) => ipcRenderer.invoke('telemetry:getExperimentFlag', key),
     telemetryRecordExposure: (payload) => {
       try {
