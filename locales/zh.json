@@ -1142,8 +1142,7 @@
     "distribution": {
       "availablePill": "可安装",
       "menuInstall": "安装",
-      "updatedLabel": "更新于",
-      "installTileMeta": "尚未安装",
+      "distVersion": "分发版 v{version}",
       "emptyTitle": "此工作区尚未发布任何分发版本。",
       "installFailed": "无法开始安装，请重试。",
       "states": {

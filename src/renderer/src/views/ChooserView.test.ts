@@ -63,8 +63,7 @@ const messages = {
       distribution: {
         availablePill: 'Available',
         menuInstall: 'Install',
-        updatedLabel: 'Updated',
-        installTileMeta: 'Not installed yet',
+        distVersion: 'Dist v{version}',
         states: {
           noBuild: 'No build',
           platformMismatch: 'Not for this machine',
@@ -73,9 +72,10 @@ const messages = {
           installed: 'Installed',
         },
         blockedReason: {
-          noBuild: 'This distribution has no completed build yet.',
-          platformMismatch: 'No build for this platform.',
-          needsDesktopUpdate: 'Requires Desktop {version}.',
+          noBuild: 'This distribution has no successful build yet.',
+          platformMismatch:
+            'The latest build has no artifact for this operating system and GPU.',
+          needsDesktopUpdate: 'This distribution needs Comfy Desktop {version} or newer.',
         },
       },
     },
@@ -560,6 +560,55 @@ describe('ChooserView', () => {
       .find((m) => m.props('open') === true)!
     const items = menu.props('items') as { id: string; disabled?: boolean }[]
     expect(items[0]!.disabled).toBe(true)
+  })
+
+  it('labels the distribution version so it cannot be read as a ComfyUI version', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'd3', name: 'Versioned', version: '2' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const card = wrapper.find('[data-testid="chooser-dist-tile-d3"]')
+    expect(card.find('.chooser-tile-meta-line').text()).toContain('Dist v2')
+  })
+
+  it('puts a blocked reason in the footer status slot, not the kebab corner', async () => {
+    installMockApiSignedIn(
+      [],
+      [makeDist({ id: 'd4', name: 'Blocked', state: 'platform-mismatch', version: '5' })],
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    const card = wrapper.find('[data-testid="chooser-dist-tile-d4"]')
+
+    // State reads in the footer's right slot; the facts keep the left.
+    expect(card.find('.dist-tile-state-tag').text()).toBe('Not for this machine')
+    expect(card.find('.chooser-tile-meta-line').text()).toContain('Dist v5')
+    // The corner holds the kebab and nothing else.
+    const corner = card.find('.chooser-tile-actions')
+    expect(corner.findAll('.chooser-tile-pill').length).toBe(0)
+    expect(corner.find('.chooser-tile-kebab').exists()).toBe(true)
+    // Blocked tiles recede but stay readable, and explain themselves on hover.
+    expect(card.classes()).toContain('dist-tile--blocked')
+    expect(card.attributes('title')).toContain('operating system')
+  })
+
+  it('never renders both an action pill and a state tag', async () => {
+    installMockApiSignedIn(
+      [],
+      [
+        makeDist({ id: 'a', name: 'Available', state: 'installable' }),
+        makeDist({ id: 'b', name: 'Updatable', state: 'update-available' }),
+      ],
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    for (const id of ['a', 'b']) {
+      const card = wrapper.find(`[data-testid="chooser-dist-tile-${id}"]`)
+      expect(card.findAll('.chooser-tile-pill-action').length).toBe(1)
+    }
+    // Update is the actionable one, so it takes the blue pill.
+    const updatable = wrapper.find('[data-testid="chooser-dist-tile-b"]')
+    expect(updatable.find('.chooser-tile-pill-update').exists()).toBe(true)
+    expect(updatable.find('.dist-tile-state-tag').exists()).toBe(false)
   })
 
   it('has no Desktop entry in the filter state', async () => {

@@ -1142,8 +1142,7 @@
     "distribution": {
       "availablePill": "Available",
       "menuInstall": "Install",
-      "updatedLabel": "Updated",
-      "installTileMeta": "Not installed yet",
+      "distVersion": "Dist v{version}",
       "emptyTitle": "No distributions published to this workspace yet.",
       "installFailed": "Could not start the install. Try again.",
       "states": {
