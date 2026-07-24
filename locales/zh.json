@@ -265,9 +265,13 @@
     "envVars": "环境变量",
     "managerSecurityLevel": "管理器安全级别",
     "managerSecurityLevel_strong": "严格",
+    "managerSecurityLevel_strong_desc": "阻止所有节点包的安装、更新和卸载。无论是否使用 --listen，管理器均为只读。",
     "managerSecurityLevel_normal": "标准（推荐）",
+    "managerSecurityLevel_normal_desc": "允许安装、更新和移除已注册的节点包。即使未使用 --listen，也会阻止来自未注册来源（如任意 git URL）的安装。",
     "managerSecurityLevel_normal-": "宽松",
+    "managerSecurityLevel_normal-_desc": "同标准，但当 ComfyUI 仅限本机访问时，额外允许未注册来源的安装。使用 --listen 启动时将再次阻止。",
     "managerSecurityLevel_weak": "无限制",
+    "managerSecurityLevel_weak_desc": "允许所有操作，包括未注册来源的安装，即使 ComfyUI 已通过 --listen 暴露到网络。",
     "copyError": "复制错误详情",
     "clear": "清除"
   },

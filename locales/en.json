@@ -265,9 +265,13 @@
     "envVars": "Environment Variables",
     "managerSecurityLevel": "Manager security level",
     "managerSecurityLevel_strong": "Strict",
+    "managerSecurityLevel_strong_desc": "Blocks all node pack installs, updates, and uninstalls. Manager is read-only, with or without --listen.",
     "managerSecurityLevel_normal": "Standard (recommended)",
+    "managerSecurityLevel_normal_desc": "Allows installing, updating, and removing registered node packs. Blocks installs from unregistered sources (e.g. arbitrary git URLs), even without --listen.",
     "managerSecurityLevel_normal-": "Relaxed",
+    "managerSecurityLevel_normal-_desc": "Like Standard, but also allows unregistered-source installs while ComfyUI is reachable only from this machine. Launching with --listen blocks them again.",
     "managerSecurityLevel_weak": "Permissive",
+    "managerSecurityLevel_weak_desc": "Allows everything, including unregistered-source installs, even when ComfyUI is exposed to your network with --listen.",
     "copyError": "Copy error details",
     "clear": "Clear"
   },

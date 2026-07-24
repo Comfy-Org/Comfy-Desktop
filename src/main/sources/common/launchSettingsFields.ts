@@ -229,6 +229,7 @@ export function buildLaunchSettingsFields(
         : DEFAULT_MANAGER_SECURITY_LEVEL,
       editable: true, editType: 'select', options: MANAGER_SECURITY_LEVELS.map((level) => ({
         value: level, label: t(`common.managerSecurityLevel_${level}`),
+        description: t(`common.managerSecurityLevel_${level}_desc`),
       })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true },
   )
 

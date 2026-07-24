@@ -121,7 +121,9 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
       (f) => f.id === 'managerSecurityLevel'
     )
     expect(field, 'managerSecurityLevel field missing from launch settings').toBeTruthy()
-    return field as Record<string, unknown> & { options?: { value: string; label: string }[] }
+    return field as Record<string, unknown> & {
+      options?: { value: string; label: string; description?: string }[]
+    }
   }
 
   it('is an editable select defaulting to normal when the install never chose', () => {
@@ -145,6 +147,17 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
     // Guard against a raw key leaking into the UI if the locale entry is removed.
     expect(field.tooltip).toBe(lookup('tooltips.managerSecurityLevel'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
+  })
+
+  it('gives every option a real description explaining its --listen behavior', () => {
+    const field = managerField({})
+    for (const opt of field.options ?? []) {
+      expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
+      expect(opt.description).toBe(lookup(`common.managerSecurityLevel_${opt.value}_desc`))
+      // Guard against a raw key leaking into the UI if the locale entry is removed.
+      expect(opt.description).not.toContain('common.')
+      expect(opt.description).toContain('--listen')
+    }
   })
 
   it('reads each install\'s own persisted level (per-install isolation)', () => {
