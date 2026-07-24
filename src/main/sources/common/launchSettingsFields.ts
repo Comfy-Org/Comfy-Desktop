@@ -9,6 +9,11 @@ import {
   resolveExtraModelPaths,
 } from '../../lib/models'
 import type { InstallationRecord } from '../../installations'
+import {
+  DEFAULT_MANAGER_SECURITY_LEVEL,
+  MANAGER_SECURITY_LEVELS,
+  isManagerSecurityLevel,
+} from '../../lib/managerConfig'
 
 /** One resolved per-type dir in an `extra_model_paths.yaml` section.
  *  `dirExists` lets the UI flag missing folders. */
@@ -215,6 +220,16 @@ export function buildLaunchSettingsFields(
       value: (installation.envVars as Record<string, string> | undefined) ?? {},
       editable: true, editType: 'env-vars', tooltip: t('tooltips.envVars'),
       requiresRestart: true },
+    // Not a CLI argument: Manager reads `security_level` from its config.ini,
+    // which launch reconciles from this per-install value before every local
+    // start (see reconcileManagerConfigForLaunch).
+    { id: 'managerSecurityLevel', label: t('common.managerSecurityLevel'),
+      value: isManagerSecurityLevel(installation.managerSecurityLevel)
+        ? installation.managerSecurityLevel
+        : DEFAULT_MANAGER_SECURITY_LEVEL,
+      editable: true, editType: 'select', options: MANAGER_SECURITY_LEVELS.map((level) => ({
+        value: level, label: t(`common.managerSecurityLevel_${level}`),
+      })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true },
   )
 
   return fields

@@ -4,7 +4,6 @@ import { app } from 'electron'
 import { configDir, homeDir, defaultDataRoot, defaultDownloadCacheDir, builtinDefaultInstallDir, setInstallDirResolver } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
-import { MANAGER_SECURITY_LEVELS, type ManagerSecurityLevel } from './lib/managerConfig'
 
 export interface KnownSettings {
   cacheDir: string
@@ -38,11 +37,6 @@ export interface KnownSettings {
   pypiMirror?: string
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
-  /** ComfyUI-Manager `security_level`, written to its config.ini before launch.
-   *  Manager has no runtime API to change this (a remote --listen client could
-   *  otherwise relax security), so Desktop owns it. Absent => Manager's default
-   *  (`normal`). Takes effect on the next launch. */
-  managerSecurityLevel?: ManagerSecurityLevel
   telemetryEnabled?: boolean
   /** `true` once the first-use takeover is finished. Mid-flow cancel does NOT
    *  flip this, so the takeover replays from step 1 next launch. */
@@ -224,20 +218,6 @@ const SETTINGS_SCHEMA = {
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
   },
   chineseMirrorsPrompted: { nullable: false, telemetry: { policy: 'omit' } },
-  // What the user actually selected (null = never chose; the install's own
-  // Manager config prevails). Validate the enum so a hand-edited settings.json
-  // can't leak a free-form string.
-  managerSecurityLevel: {
-    nullable: false,
-    telemetry: {
-      policy: 'value',
-      prop: 'setting_manager_security_level_selected',
-      toTelemetry: (raw) =>
-        (MANAGER_SECURITY_LEVELS as readonly string[]).includes(raw as string)
-          ? (raw as ManagerSecurityLevel)
-          : null,
-    },
-  },
   // Consent gate, not a durable trackable setting: once disabled we can't emit a
   // fresh `false` without violating the consent gate, so the value would go stale.
   telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },

@@ -17,6 +17,25 @@ vi.mock('../../lib/paths', () => ({
   dataDir: () => os.tmpdir(),
 }))
 
+// Real English strings so label/tooltip assertions catch missing locale keys
+// (the real i18n resolves locales relative to the build output, not src).
+const enMessages = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../../../../locales/en.json'), 'utf-8')
+) as Record<string, unknown>
+
+function lookup(key: string): string {
+  let val: unknown = enMessages
+  for (const part of key.split('.')) {
+    if (val == null || typeof val !== 'object') return key
+    val = (val as Record<string, unknown>)[part]
+  }
+  return typeof val === 'string' ? val : key
+}
+
+vi.mock('../../lib/i18n', () => ({
+  t: (key: string) => lookup(key),
+}))
+
 vi.mock('../../lib/models', async (importOriginal) => {
   const actual = await importOriginal<typeof ModelsModule>()
   return {
@@ -26,7 +45,7 @@ vi.mock('../../lib/models', async (importOriginal) => {
   }
 })
 
-const { buildExtraModelPathsView } = await import('./launchSettingsFields')
+const { buildExtraModelPathsView, buildLaunchSettingsFields } = await import('./launchSettingsFields')
 
 let tmp: string
 
@@ -91,5 +110,49 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(view.sections[0]!.basePathExists).toBe(false)
     expect(view.sections[0]!.dirs).toHaveLength(2) // both 'first' entries grouped
     expect(view.sections[1]!.dirs).toHaveLength(1)
+  })
+})
+
+describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () => {
+  const OPTS = { defaultLaunchArgs: '' }
+
+  function managerField(installation: Record<string, unknown>) {
+    const field = buildLaunchSettingsFields(installation as never, OPTS).find(
+      (f) => f.id === 'managerSecurityLevel'
+    )
+    expect(field, 'managerSecurityLevel field missing from launch settings').toBeTruthy()
+    return field as Record<string, unknown> & { options?: { value: string; label: string }[] }
+  }
+
+  it('is an editable select defaulting to normal when the install never chose', () => {
+    const field = managerField({})
+    expect(field.editable).toBe(true)
+    expect(field.editType).toBe('select')
+    expect(field.value).toBe('normal')
+    expect(field.requiresRestart).toBe(true)
+  })
+
+  it('offers exactly the four Manager levels in order with real locale labels', () => {
+    const field = managerField({})
+    expect(field.options?.map((o) => o.value)).toEqual(['strong', 'normal', 'normal-', 'weak'])
+    expect(field.options?.map((o) => o.label)).toEqual([
+      'Strict',
+      'Standard (recommended)',
+      'Relaxed',
+      'Permissive',
+    ])
+    expect(field.label).toBe('Manager security level')
+    // Guard against a raw key leaking into the UI if the locale entry is removed.
+    expect(field.tooltip).toBe(lookup('tooltips.managerSecurityLevel'))
+    expect(String(field.tooltip)).not.toContain('tooltips.')
+  })
+
+  it('reads each install\'s own persisted level (per-install isolation)', () => {
+    expect(managerField({ managerSecurityLevel: 'weak' }).value).toBe('weak')
+    expect(managerField({ managerSecurityLevel: 'strong' }).value).toBe('strong')
+  })
+
+  it('degrades a hand-edited bogus record value to the default', () => {
+    expect(managerField({ managerSecurityLevel: 'bogus' }).value).toBe('normal')
   })
 })

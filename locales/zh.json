@@ -263,6 +263,11 @@
     "tabSettings": "设置",
     "loading": "正在加载…",
     "envVars": "环境变量",
+    "managerSecurityLevel": "管理器安全级别",
+    "managerSecurityLevel_strong": "严格",
+    "managerSecurityLevel_normal": "标准（推荐）",
+    "managerSecurityLevel_normal-": "宽松",
+    "managerSecurityLevel_weak": "无限制",
     "copyError": "复制错误详情",
     "clear": "清除"
   },
@@ -504,12 +509,6 @@
     "pypiMirrorPlaceholder": "例如 https://mirrors.aliyun.com/pypi/simple/",
     "useChineseMirrors": "使用中国镜像（Git 和 PyPI）",
     "chineseMirrorsDescription": "Git 仓库会从 gitcode.com 克隆，而不是 github.com。PyPI 包会从 mirrors.aliyun.com 和 mirrors.cloud.tencent.com 获取，而不是 pypi.org。",
-    "managerSecurityLevel": "管理器安全级别",
-    "managerSecurityLevelDescription": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。",
-    "managerSecurityLevel_strong": "严格",
-    "managerSecurityLevel_normal": "标准（推荐）",
-    "managerSecurityLevel_normal-": "宽松",
-    "managerSecurityLevel_weak": "无限制",
     "chineseMirrorsSuggestTitle": "启用中国镜像？",
     "chineseMirrorsSuggestMessage": "你的系统语言看起来是中文。如果你位于中国，启用中国镜像将使用本地镜像服务器而不是 github.com 和 pypi.org，从而显著加快下载速度。",
     "chineseMirrorsSuggestConfirm": "启用镜像",
@@ -1211,7 +1210,8 @@
     "pipPackages": "环境中安装的 Python 包。自定义节点通常会安装自己的 pip 依赖。",
     "updateNow": "就地更新此实例。",
     "copyAndUpdate": "复制此实例并更新副本。原实例不会被修改。",
-    "envVars": "ComfyUI 启动时传入的自定义环境变量。警告：这些值会以未加密形式存储在配置文件中——不要添加 API 密钥、令牌或其他敏感信息。"
+    "envVars": "ComfyUI 启动时传入的自定义环境变量。警告：这些值会以未加密形式存储在配置文件中——不要添加 API 密钥、令牌或其他敏感信息。",
+    "managerSecurityLevel": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。"
   },
   "envVars": {
     "name": "名称",

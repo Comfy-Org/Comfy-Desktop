@@ -11,7 +11,8 @@ vi.mock('./telemetry', () => ({
   capture: vi.fn()
 }))
 
-vi.mock('./managerConfig', () => ({
+vi.mock('./managerConfig', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   ensureManagerConfig: vi.fn(async () => {})
 }))
 
@@ -33,10 +34,12 @@ describe('reconcileManagerConfigForLaunch', () => {
     expect(mockEnsure).not.toHaveBeenCalled()
   })
 
-  it('reconciles local launches with the current settings values', async () => {
-    mockSettings = { useChineseMirrors: true, managerSecurityLevel: 'weak' }
+  it('passes the launched install\'s own level (mirrors stay a global setting)', async () => {
+    mockSettings = { useChineseMirrors: true }
 
-    await reconcileManagerConfigForLaunch({ remote: false, installPath: '/inst' })
+    await reconcileManagerConfigForLaunch({
+      remote: false, installPath: '/inst', securityLevel: 'weak'
+    })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
       useChineseMirrors: true,
@@ -44,8 +47,35 @@ describe('reconcileManagerConfigForLaunch', () => {
     })
   })
 
+  it('keeps per-install levels isolated between launches', async () => {
+    await reconcileManagerConfigForLaunch({
+      remote: false, installPath: '/inst-a', securityLevel: 'strong'
+    })
+    await reconcileManagerConfigForLaunch({
+      remote: false, installPath: '/inst-b', securityLevel: 'normal-'
+    })
+
+    expect(mockEnsure).toHaveBeenNthCalledWith(1, '/inst-a', {
+      useChineseMirrors: false, securityLevel: 'strong'
+    })
+    expect(mockEnsure).toHaveBeenNthCalledWith(2, '/inst-b', {
+      useChineseMirrors: false, securityLevel: 'normal-'
+    })
+  })
+
   it('passes mirror=false and no level when the user never opted into either', async () => {
     await reconcileManagerConfigForLaunch({ remote: false, installPath: '/inst' })
+
+    expect(mockEnsure).toHaveBeenCalledWith('/inst', {
+      useChineseMirrors: false,
+      securityLevel: undefined
+    })
+  })
+
+  it('degrades a hand-edited bogus level to undefined instead of leaking it', async () => {
+    await reconcileManagerConfigForLaunch({
+      remote: false, installPath: '/inst', securityLevel: 'bogus'
+    })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
       useChineseMirrors: false,

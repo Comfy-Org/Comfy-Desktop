@@ -370,6 +370,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   await reconcileManagerConfigForLaunch({
     remote: Boolean(launchCmd.remote),
     installPath: inst.installPath,
+    securityLevel: inst.managerSecurityLevel,
   })
 
   // Shared models and shared input/output are independent flags.

@@ -17,7 +17,7 @@ export type ManagerSecurityLevel = (typeof MANAGER_SECURITY_LEVELS)[number]
 // config never relies on Manager's implicit fallback.
 export const DEFAULT_MANAGER_SECURITY_LEVEL: ManagerSecurityLevel = 'normal'
 
-function isManagerSecurityLevel(value: unknown): value is ManagerSecurityLevel {
+export function isManagerSecurityLevel(value: unknown): value is ManagerSecurityLevel {
   return (
     typeof value === 'string' && (MANAGER_SECURITY_LEVELS as readonly string[]).includes(value)
   )

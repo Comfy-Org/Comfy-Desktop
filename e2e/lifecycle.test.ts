@@ -976,20 +976,21 @@ test('captures a snapshot for the picker-driven restore test @lifecycle', async 
 })
 
 // ---------------------------------------------------------------------------
-// Manager security level: a Global Settings UI selection must reach the
-// config.ini ComfyUI-Manager actually reads, via a real stop -> relaunch
-// (handleLaunch's reconcile pass runs before every local launch).
+// Manager security level: a per-install selection on the picker's Startup
+// Args tab must reach the config.ini ComfyUI-Manager actually reads, via a
+// real stop -> relaunch (handleLaunch's reconcile pass runs before every
+// local launch with the launched install's own record value).
 // ---------------------------------------------------------------------------
 
-test('global-settings Manager security level lands in Manager config.ini after relaunch @lifecycle', async () => {
+test('per-install Manager security level lands in Manager config.ini after relaunch @lifecycle', async () => {
   test.setTimeout(600_000)
   expect(_updateInstallPath, 'install path not captured').toBeTruthy()
 
   // English labels for the four levels, keyed by stored value. A fresh
-  // profile has no stored value and must render the pinned default
+  // record has no stored value and must render the pinned default
   // (normal); a reused profile may carry a level from a prior run, so
   // derive both the expected initial label and a distinct target from
-  // the persisted setting instead of hardcoding them.
+  // the persisted record instead of hardcoding them.
   const LEVEL_LABELS: Record<string, string> = {
     strong: 'Strict',
     normal: 'Standard (recommended)',
@@ -1005,12 +1006,21 @@ test('global-settings Manager security level lands in Manager config.ini after r
       .split(/^\[/m).find((s) => s.startsWith('default]')) ?? ''
     return /^\s*security_level = (\S+)\s*$/m.exec(section)?.[1] ?? null
   }
+  /** The install's own persisted level, straight from its record. */
+  const readRecordLevel = (): Promise<string | null> =>
+    ctx.panel.evaluate<string | null>(
+      `window.api.getInstallations().then((list) => {
+        const inst = list.find((i) => i.id === ${JSON.stringify(_updateInstallId)})
+        return (inst && inst.managerSecurityLevel) || null
+      })`,
+    )
 
-  const storedBefore = await ctx.panel.evaluate<string | null>(
-    `window.api.getSetting('managerSecurityLevel')`,
-  )
+  // Production degrades an unrecognized record value to the default, so
+  // normalize the same way before deriving the expected trigger label.
+  const storedRaw = await readRecordLevel()
+  const storedBefore = storedRaw != null && storedRaw in LEVEL_LABELS ? storedRaw : null
   const initialLabel = LEVEL_LABELS[storedBefore ?? 'normal']!
-  // The target must differ from BOTH the persisted setting and whatever
+  // The target must differ from BOTH the persisted record and whatever
   // the on-disk config currently says - otherwise a broken/no-op launch
   // reconciliation could pass vacuously against a config that already
   // carried the target. Four levels guarantee a distinct pick exists.
@@ -1020,30 +1030,25 @@ test('global-settings Manager security level lands in Manager config.ini after r
   )!
   const target = { value: targetValue, label: LEVEL_LABELS[targetValue]! }
 
-  // Open Global Settings through the same `panel-trigger-overlay` IPC a
-  // `comfy://open-settings?tab=global` deep link dispatches into the
-  // panel renderer (see deep-links.test.ts).
-  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
-    if (!wc) throw new Error('panel webContents not found')
-    wc.send('panel-trigger-overlay', { kind: 'open-settings', settingsTab: 'global' })
-  }))
-  await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 15_000, intervals: [100, 250],
-    })
-    .toBe(true)
-  const popup = titlePopupPage(ctx.app)
+  // The level is per-install now; the global settings store must not be
+  // touched by the picker edit. Snapshot (rather than assert emptiness)
+  // so a profile reused from a run of the old global design - which may
+  // carry a stale settings.json key - can't flake this.
+  const globalBefore = await ctx.panel.evaluate<string | null>(
+    `window.api.getSetting('managerSecurityLevel')`,
+  )
 
-  // The manager security select lives on the Advanced tab.
-  await popup.waitForVisible('#gs-tab-advanced', { timeout: 15_000 })
-  expect(await popup.click('#gs-tab-advanced')).toBe(true)
+  // Real entry: running host title pill -> picker Startup Args tab (the
+  // per-install surface this setting lives on since it moved off Global
+  // Settings -> Advanced).
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
 
-  // Advanced hosts a single BaseSelect; its trigger must show the level
-  // matching the persisted setting - the pinned default on a fresh
-  // profile (guards against grabbing the wrong control as much as
-  // against a wrong default).
-  const trigger = '#gs-panel-advanced button.ui-select-trigger'
+  // The Startup Args tab hosts several BaseSelects (launch mode, browser
+  // partition, port conflict); the aria-label pins the manager one. Its
+  // trigger must show the level matching the persisted record - the
+  // pinned default on a fresh profile (guards against grabbing the wrong
+  // control as much as against a wrong default).
+  const trigger = 'button.ui-select-trigger[aria-label="Manager security level"]'
   await popup.waitForVisible(trigger, { timeout: 15_000 })
   expect(await popup.textOf(trigger)).toContain(initialLabel)
 
@@ -1058,14 +1063,17 @@ test('global-settings Manager security level lands in Manager config.ini after r
     .poll(() => popup.textOf(trigger), { timeout: 10_000, intervals: [100, 250] })
     .toContain(target.label)
 
-  // The field handler persists through the real settings store; wait for
-  // the write so the relaunch below cannot race it.
+  // The picker field handler persists through the real installations
+  // store; wait for the write so the relaunch below cannot race it.
   await expect
-    .poll(
-      () => ctx.panel.evaluate<string | null>(`window.api.getSetting('managerSecurityLevel')`),
-      { timeout: 10_000, intervals: [100, 250] },
-    )
+    .poll(readRecordLevel, { timeout: 10_000, intervals: [100, 250] })
     .toBe(target.value)
+  // Per-install means per-install: the global settings store must not
+  // change as a side effect of the picker edit.
+  expect(
+    await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerSecurityLevel')`),
+    'managerSecurityLevel leaked into the global settings store',
+  ).toBe(globalBefore)
   await closeTitlePopupIfOpen(ctx.app)
 
   // Changing the setting alone must NOT touch the config - only the
@@ -1158,8 +1166,13 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   // Drafting a non-current channel mutates `state.draft` but does not
   // commit — the per-channel `selectedActions` switch to the drafted
   // channel's `{ update-comfyui, copy-update, switch-channel }` set.
-  await popup.waitForSelector('button[role="combobox"]', { timeout: 60_000 })
-  expect(await popup.click('button[role="combobox"]')).toBe(true)
+  // The aria-label scopes to the channel select: the popup remembers its
+  // last tab (e.g. Startup Args, which hosts several other comboboxes),
+  // so an unscoped combobox match can race the tab-content swap and grab
+  // a launch-settings select instead.
+  const channelSelect = 'button[role="combobox"][aria-label="Update Channel"]'
+  await popup.waitForSelector(channelSelect, { timeout: 60_000 })
+  expect(await popup.click(channelSelect)).toBe(true)
   await popup.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
   expect(
     await popup.clickByText('[role="listbox"] [role="option"]', 'Latest on GitHub'),
