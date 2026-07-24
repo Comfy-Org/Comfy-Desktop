@@ -5,14 +5,21 @@
  * / host-matching / sign-in all happen in the dev-platform IPC layer; by the
  * time an install record reaches here it already carries the chosen artifact's
  * identity (id + os/gpu/accel + sha256). `install()` hands that artifact to the
- * library's `installArtifact` (download → verify sha → extract into the install
+ * library's `installArtifact` (download, verify sha, extract into the install
  * dir), and `getLaunchCommand()` drives the extracted `venv/` via
  * `buildLaunchSpec`. There is no adopt/probe path: a ComfyBuilder install is
  * only ever created by the dev-platform flow, never discovered on disk.
+ *
+ * Launch parity matters as much as install: the renderer discovers whether an
+ * install can run from `getListActions`, so omitting it silently downgrades a
+ * distribution to "not launchable" and bounces a tile click into the
+ * new-install wizard. That is why `getListActions` below exists even though it
+ * looks like boilerplate.
  */
 import { installArtifact, buildLaunchSpec } from '../../comfybuilder'
 import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
+import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { t } from '../../lib/i18n'
 import type { InstallationRecord } from '../../installations'
@@ -65,8 +72,13 @@ export const comfybuilder: SourcePlugin = {
     return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
   },
 
+  // The tile prefers this over the source label, and the install is named after
+  // the distribution, so returning the name here would echo the tile title and
+  // hide the one label marking this as a distribution. Surface it only once a
+  // rename has made the two differ.
   getListPreview(installation: InstallationRecord): string | null {
-    return (installation.distributionName as string) || null
+    const distributionName = (installation.distributionName as string) || ''
+    return distributionName && distributionName !== installation.name ? distributionName : null
   },
 
   getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {
@@ -75,6 +87,15 @@ export const comfybuilder: SourcePlugin = {
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
+  },
+
+  // Launch is discovered through this list, not through `getLaunchCommand`: a
+  // plugin without it hands the renderer an empty action array, which reads as
+  // "this install cannot launch" and bounces a tile click into the new-install
+  // wizard. Distributions launch like any other local install.
+  getListActions(installation: InstallationRecord): Record<string, unknown>[] {
+    const installed = installation.status === 'installed'
+    return [launchAction(installed, !installed ? t('errors.installNotReady') : undefined)]
   },
 
   getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
@@ -99,8 +120,9 @@ export const comfybuilder: SourcePlugin = {
 
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
     const artifact = artifactFromRecord(installation)
-    // `installArtifact` fails closed on a missing/blank sha256 (invalid-artifact)
-    // and on a byte mismatch (checksum-mismatch): we do NOT relax that here.
+    // `installArtifact` verifies the sha256 when the artifact carries one and
+    // fails on a byte mismatch. A missing hash is skipped for the initial rollout
+    // (see the TODO there) until the builder populates it.
     await installArtifact({
       artifact,
       client: getBuilderClient(),

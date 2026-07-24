@@ -167,8 +167,8 @@ export function registerDevPlatformHandlers(): void {
           artifactOs: artifact.os,
           artifactGpu: artifact.gpu,
           artifactAccelVariant: artifact.accelVariant,
-          // May be absent on staging until the builder populates it: carried
-          // through verbatim so `installArtifact` can fail closed at install time.
+          // May be absent until the builder populates it: carried through
+          // verbatim so `installArtifact` verifies whenever a hash is present.
           ...(artifact.outputSha256 ? { artifactSha256: artifact.outputSha256 } : {}),
           launchArgs: COMFYBUILDER_LAUNCH_ARGS,
           launchMode: 'window',

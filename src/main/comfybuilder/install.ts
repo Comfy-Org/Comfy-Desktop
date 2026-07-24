@@ -1,5 +1,5 @@
 /**
- * Install — the write side of the functionality library.
+ * Install: the write side of the functionality library.
  *
  * Given a chosen {@link Artifact}, turn it into a runnable install directory:
  * resolve the presigned URL, download, verify sha256, extract, validate the
@@ -7,9 +7,10 @@
  * `ComfyUI/` (a ready, relocatable env), so there is no post-extract env build;
  * launch drives that `venv/` directly (see `./launch`).
  *
- * Integrity is mandatory: the artifact must carry a valid `outputSha256`, and
- * the bytes must match, or nothing is extracted (the builder is responsible for
- * populating the hash). The archive downloads to a per-run temp under `cacheDir`
+ * Integrity: when the artifact carries an `outputSha256` the bytes must match or
+ * nothing is extracted. A MISSING hash is currently installed unverified because
+ * the builder does not populate it yet (see the TODO in `installArtifact`); that
+ * becomes fail-closed once it does. The archive downloads to a per-run temp under `cacheDir`
  * so concurrent installs of the same artifact cannot corrupt each other, and on
  * any failure only files THIS run created are cleaned up: a failed re-install
  * never destroys a previously-working environment.
@@ -107,11 +108,13 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
   const { artifact, client, installPath, cacheDir, onProgress, signal } = opts
   if (!artifact?.id) throw new ComfyBuilderInstallError('invalid-artifact', 'No artifact id was provided.')
 
-  // Fail closed: a missing/blank/malformed hash means we cannot verify the bytes,
-  // so refuse rather than install unverified content.
+  // A hash that IS present is always enforced (see the compare below).
+  // TODO: fail closed on a missing hash too. The builder does not populate
+  // outputSha256 yet, so for the initial rollout a missing hash installs
+  // unverified rather than blocking every install.
   const expected = artifact.outputSha256?.replace(/^sha256:/i, '').trim().toLowerCase()
   if (!expected) {
-    throw new ComfyBuilderInstallError('invalid-artifact', 'artifact is missing a valid outputSha256; refusing to install unverified bytes')
+    console.warn('[comfybuilder] artifact has no outputSha256; installing without integrity verification')
   }
 
   onProgress?.({ phase: 'resolve', percent: 0 })
@@ -126,9 +129,11 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
     onProgress?.({ phase: 'download', percent: 0 })
     await download(url, archivePath, (p: DownloadProgress) => onProgress?.({ phase: 'download', percent: p.percent, detail: `${p.receivedMB} / ${p.totalMB} MB` }), signal ? { signal } : {})
 
-    const actual = await sha256File(archivePath)
-    if (actual !== expected) {
-      throw new ComfyBuilderInstallError('checksum-mismatch', `Artifact checksum mismatch: expected ${expected}, got ${actual}`)
+    if (expected) {
+      const actual = await sha256File(archivePath)
+      if (actual !== expected) {
+        throw new ComfyBuilderInstallError('checksum-mismatch', `Artifact checksum mismatch: expected ${expected}, got ${actual}`)
+      }
     }
 
     if (signal?.aborted) throw new Error('Cancelled')
