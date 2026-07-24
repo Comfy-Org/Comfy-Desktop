@@ -80,6 +80,12 @@ describe('shared ops-switch plumbing', () => {
     expect(getOpsFlag).toHaveBeenCalledWith(CLOUD_FREE_RUNS_FLAG_KEY, 'anon', expect.any(Number))
   })
 
+  it('the pill reads cloud’s free-tier flag, not a desktop mirror', async () => {
+    // Tracking the real rollout means there's nothing to keep in sync: the
+    // pill appears when free-tier submission actually becomes available.
+    expect(CLOUD_FREE_RUNS_FLAG_KEY).toBe('free_tier_workflow_submission_enabled')
+  })
+
   it('the two switches are independent', async () => {
     // Retiring the GPU upsell must not silently pull a live free-tier
     // offer, and vice versa.

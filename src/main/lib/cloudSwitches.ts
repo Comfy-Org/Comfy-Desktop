@@ -10,10 +10,11 @@
  * `experiments.ts` cache stays empty until consent is `'granted'` — routing either
  * through it would leave ops holding a switch that could never fire.
  *
- * For the same reason both are evaluated ANONYMOUSLY: at first use there is no Cloud
- * session, so a flag whose release conditions depend on person properties (email,
- * cohort) cannot resolve here. Keep the release conditions of these two keys
- * property-free — a percentage or property rollout would silently mis-target.
+ * Both are evaluated ANONYMOUSLY: at first use there is no Cloud session, so any
+ * release condition keyed on person properties (email, cohort) cannot match here. That
+ * is deliberate for the free-runs switch — see its note below — but it means
+ * `desktop-cloud-reco`'s conditions must stay property-free, or the recommendation
+ * would silently mis-target.
  *
  * Fetched once at boot; picked up on restart.
  */
@@ -81,16 +82,30 @@ export const cloudRecoSwitch = createOpsSwitch(CLOUD_RECO_FLAG_KEY, true)
 /**
  * "5 FREE RUNS" trial pill.
  *
- * Fails CLOSED, unlike the recommendation: the pill asserts a live entitlement, and
- * advertising free runs that aren't being granted is worse than showing nothing. An
- * unreachable flag means we can't confirm the offer, so we don't make it.
+ * Reads the CLOUD-owned flag rather than a desktop mirror, so the pill tracks the real
+ * free-tier rollout with nothing to keep in sync. `free_tier_workflow_submission_enabled`
+ * is a flag-dependency on `free_tier_job_allowance_enabled` (the BE-1304 ramp), so the
+ * pill appears exactly when free-tier workflow submission actually becomes available.
  *
- * NOTE: deliberately NOT the cloud repo's `free_tier_job_allowance_enabled`. That is a
- * per-user backend rollout gate whose release conditions are `email icontains
- * @comfy.org` at 100% and everyone else at 0%, so it evaluates false for every
- * anonymous desktop client — wiring the pill to it would hide the pill in production.
- * This key is the client-side mirror; ops flips it in tandem with the cloud
- * `FreeTierJobAllowanceEnabled` dynamic config.
+ * Free tier is NOT live for general users as of 2026-07-24: the parent flag's only
+ * property-free release condition sits at 0% rollout, so this resolves `false` for every
+ * anonymous caller and the pill stays hidden. That is the correct state, not a
+ * misconfiguration — there is no offer to advertise yet. When the ramp raises that
+ * condition the flag flips on its own and the pill appears; no desktop release needed.
+ *
+ * Evaluated remotely and anonymously (`getOpsFlag` sends no person properties and
+ * desktop sets no personal API key), which is what lets PostHog resolve the dependency
+ * chain server-side. Verified: an anonymous distinct id returns `false` with reason
+ * `no_condition_match`.
+ *
+ * CAVEAT during a partial ramp: bucketing uses whatever distinct id we pass, which here
+ * is the anonymous installation id — not the user id the grant is later keyed to. At 0%
+ * and 100% that's exact; at intermediate percentages pill visibility and actual grant
+ * eligibility are independently sampled. Fail-closed keeps that error on the safe side
+ * (under-show rather than over-promise).
+ *
+ * Fails CLOSED, unlike the recommendation: the pill asserts a live entitlement, and
+ * advertising free runs that aren't being granted is worse than showing nothing.
  */
-export const CLOUD_FREE_RUNS_FLAG_KEY = 'desktop-cloud-free-runs'
+export const CLOUD_FREE_RUNS_FLAG_KEY = 'free_tier_workflow_submission_enabled'
 export const cloudFreeRunsSwitch = createOpsSwitch(CLOUD_FREE_RUNS_FLAG_KEY, false)

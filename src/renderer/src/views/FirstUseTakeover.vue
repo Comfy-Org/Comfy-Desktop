@@ -216,12 +216,12 @@ async function loadCloudRecoEnabled(): Promise<boolean> {
   }
 }
 
-/** Ops switch for the "5 free runs" trial pill — `desktop-cloud-free-runs`,
- *  independent of the recommendation above because the free tier is its own
- *  offer: it should disappear when the free tier goes down, not when the GPU
- *  upsell is retired. Fails CLOSED (see `cloudSwitches.ts`): the pill asserts
- *  a live entitlement, and advertising runs that aren't being granted is
- *  worse than showing nothing. */
+/** Ops switch for the "5 free runs" trial pill — cloud's own
+ *  `free_tier_workflow_submission_enabled`, independent of the
+ *  recommendation above because the free tier is its own offer: the pill
+ *  should follow the free tier, not the GPU upsell. Resolves false while
+ *  free tier isn't live, and flips on its own when the ramp lands. Fails
+ *  CLOSED (see `cloudSwitches.ts`). */
 async function loadCloudFreeRunsEnabled(): Promise<boolean> {
   try {
     return await window.api.getCloudFreeRunsEnabled()
@@ -977,12 +977,13 @@ defineExpose({ open, resetContinue })
               <!-- 'unknown' tier means this device has never authenticated
                    with Cloud (useCloudCapacity docs the tri-state) — the
                    trial pill is for people who haven't tried it yet, not a
-                   permanent fixture on the card. Gated on its OWN switch
-                   (`desktop-cloud-free-runs`), not the recommendation's:
-                   the free tier is an independent offer, so the pill
-                   should follow the free tier down, not the GPU upsell.
-                   Also suppressed when Cloud is capacity-disabled and the
-                   card is unclickable. -->
+                   permanent fixture on the card. Gated on cloud's own
+                   free-tier flag, not the recommendation's switch: the
+                   free tier is an independent offer, so the pill follows
+                   the free tier rather than the GPU upsell. Hidden today
+                   because free tier isn't live yet. Also suppressed when
+                   Cloud is capacity-disabled and the card is
+                   unclickable. -->
               <span
                 v-if="
                   cloudFreeRunsEnabled &&
