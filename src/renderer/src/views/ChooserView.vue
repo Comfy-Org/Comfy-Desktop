@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef, watch } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -17,6 +17,7 @@ import ChooserInstallTile from './chooser/ChooserInstallTile.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformDistributionCard from './devplatform/DevPlatformDistributionCard.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
+import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
@@ -189,6 +190,50 @@ async function handleDistributionActivate(dist: Distribution): Promise<void> {
     autoLaunchOnFinish: true,
     opKind: 'install'
   })
+}
+
+// --- Distribution kebab menu ---
+//
+// Distribution cards carry the same top-right kebab as install tiles, so the
+// corner means one thing across the grid. Install is the only action a
+// distribution supports today; blocked states keep the item visible but
+// disabled rather than presenting an empty menu, which reads as a bug.
+const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  dist: null
+})
+
+const distMenuItems = computed<ContextMenuItem[]>(() => {
+  const dist = distMenu.value.dist
+  if (!dist) return []
+  return [
+    {
+      id: 'install',
+      label: t('devPlatform.distribution.menuInstall'),
+      disabled: dist.state !== 'installable' && dist.state !== 'update-available'
+    }
+  ]
+})
+
+function openDistKebabMenu(event: MouseEvent, dist: Distribution): void {
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect?.()
+  // Right-aligned drop, matching the install-tile kebab. ContextMenu clamps to
+  // the viewport, so a negative x is safe.
+  const x = rect ? rect.right - 180 : event.clientX
+  const y = (rect?.bottom ?? event.clientY) + 4
+  distMenu.value = { open: true, x, y, dist }
+}
+
+function closeDistMenu(): void {
+  distMenu.value = { open: false, x: 0, y: 0, dist: null }
+}
+
+function handleDistMenuSelect(itemId: string): void {
+  const dist = distMenu.value.dist
+  closeDistMenu()
+  if (itemId === 'install' && dist) void handleDistributionActivate(dist)
 }
 
 // --- Cluster top offset ---
@@ -407,6 +452,7 @@ function handleNewInstallClick(): void {
           :key="`dist:${dist.id}`"
           :distribution="dist"
           @select="handleDistributionActivate(dist)"
+          @open-kebab-menu="(event) => openDistKebabMenu(event, dist)"
         />
       </TransitionGroup>
 
@@ -419,6 +465,15 @@ function handleNewInstallClick(): void {
         :items="ctxMenuItems"
         @close="closeMenu"
         @select="handleCtxMenuSelect"
+      />
+
+      <ContextMenu
+        :open="distMenu.open"
+        :x="distMenu.x"
+        :y="distMenu.y"
+        :items="distMenuItems"
+        @close="closeDistMenu"
+        @select="handleDistMenuSelect"
       />
     </div>
   </BrandBackground>

@@ -1141,6 +1141,7 @@
     },
     "distribution": {
       "availablePill": "可安装",
+      "menuInstall": "安装",
       "updatedLabel": "更新于",
       "installTileMeta": "尚未安装",
       "emptyTitle": "此工作区尚未发布任何分发版本。",

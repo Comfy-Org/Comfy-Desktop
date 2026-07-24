@@ -15,7 +15,7 @@
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, Package } from 'lucide-vue-next'
+import { AlertCircle, ArrowDownToLine, MoreVertical, Package } from 'lucide-vue-next'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { formatBytesCoarse } from '../../lib/formatting'
 import { formatRelativeFromMs } from '../../lib/datetime'
@@ -28,6 +28,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** The user activated the tile: the host starts the install flow. */
   select: []
+  /** Kebab pressed: the host opens the distribution menu at this anchor. */
+  'open-kebab-menu': [event: MouseEvent]
 }>()
 
 const { t } = useI18n()
@@ -146,6 +148,23 @@ function onActivate(): void {
       <span v-else-if="showAvailablePill" class="chooser-tile-pill dist-tile-pill--available">
         {{ t('devPlatform.distribution.availablePill') }}
       </span>
+
+      <!-- Same corner affordance as an install tile. Always present, blocked
+           or not: a card whose kebab comes and goes reads as broken, and the
+           menu still has something honest to say while blocked. -->
+      <button
+        type="button"
+        class="chooser-tile-kebab"
+        :title="t('chooser.moreActions')"
+        :aria-label="t('chooser.moreActions')"
+        :data-testid="`chooser-dist-tile-kebab-${distribution.id}`"
+        @click.stop="emit('open-kebab-menu', $event)"
+        @contextmenu.stop.prevent="emit('open-kebab-menu', $event)"
+        @keydown.enter.stop
+        @keydown.space.stop
+      >
+        <MoreVertical :size="16" />
+      </button>
     </div>
 
     <div class="chooser-tile-body">

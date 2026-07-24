@@ -1141,6 +1141,7 @@
     },
     "distribution": {
       "availablePill": "Available",
+      "menuInstall": "Install",
       "updatedLabel": "Updated",
       "installTileMeta": "Not installed yet",
       "emptyTitle": "No distributions published to this workspace yet.",

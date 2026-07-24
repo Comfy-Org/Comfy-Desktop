@@ -5,11 +5,16 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import ChooserView from './ChooserView.vue'
 import { useSessionStore } from '../stores/sessionStore'
-import type { Installation } from '../types/ipc'
+import type { DevPlatformDistribution, Installation } from '../types/ipc'
 
-// Stub the heavy ContextMenu child — we don't exercise menu interactions here.
+// Stub the heavy ContextMenu child. Props are declared so tests can assert what
+// the view HANDED the menu without rendering (or clicking through) the real one.
 vi.mock('../components/ContextMenu.vue', () => ({
-  default: { name: 'ContextMenu', template: '<div data-testid="context-menu" />' },
+  default: {
+    name: 'ContextMenu',
+    props: ['open', 'x', 'y', 'items'],
+    template: '<div data-testid="context-menu" />',
+  },
 }))
 
 // Test-controllable `useModal` mock — `viewError` routes its readable
@@ -53,6 +58,26 @@ const messages = {
       errorTitle: 'Error',
       updatePill: 'Update',
       migratePill: 'Migrate',
+    },
+    devPlatform: {
+      distribution: {
+        availablePill: 'Available',
+        menuInstall: 'Install',
+        updatedLabel: 'Updated',
+        installTileMeta: 'Not installed yet',
+        states: {
+          noBuild: 'No build',
+          platformMismatch: 'Not for this machine',
+          needsDesktopUpdate: 'Update required',
+          updateAvailable: 'Update',
+          installed: 'Installed',
+        },
+        blockedReason: {
+          noBuild: 'This distribution has no completed build yet.',
+          platformMismatch: 'No build for this platform.',
+          needsDesktopUpdate: 'Requires Desktop {version}.',
+        },
+      },
     },
   },
 }
@@ -106,6 +131,26 @@ function makeInstall(overrides: Partial<Installation>): Installation {
     sourceCategory: 'local',
     ...overrides,
   } as unknown as Installation
+}
+
+function makeDist(overrides: Partial<DevPlatformDistribution>): DevPlatformDistribution {
+  return {
+    id: 'dist-x',
+    name: 'Dist X',
+    state: 'installable',
+    ...overrides,
+  }
+}
+
+/** Sign in and publish `dists` to the workspace, so distribution cards render. */
+function installMockApiSignedIn(
+  installs: Installation[],
+  dists: DevPlatformDistribution[],
+): MockApi {
+  const api = installMockApi(installs)
+  api.comfybuilder.getAuthStatus.mockResolvedValue({ signedIn: true })
+  api.comfybuilder.listDistributions.mockResolvedValue(dists)
+  return api
 }
 
 function mountChooser() {
@@ -472,6 +517,49 @@ describe('ChooserView', () => {
     expect(labels.some((l) => l.includes('LocalThing'))).toBe(true)
     expect(labels.some((l) => l.includes('LegacyDesktopThing'))).toBe(true)
     expect(labels.some((l) => l.includes('RemoteThing'))).toBe(false)
+  })
+
+  it('gives distribution cards the same kebab as install tiles, opening an Install menu', async () => {
+    const api = installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })])
+    api.comfybuilder.installDistribution.mockResolvedValue({
+      ok: true,
+      entry: { id: 'new-inst', name: 'Alpha Dist' },
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const kebab = wrapper.find('[data-testid="chooser-dist-tile-kebab-d1"]')
+    expect(kebab.exists()).toBe(true)
+    await kebab.trigger('click')
+
+    const menu = wrapper
+      .findAllComponents({ name: 'ContextMenu' })
+      .find((m) => m.props('open') === true)!
+    expect(menu).toBeTruthy()
+    const items = menu.props('items') as { id: string; label: string; disabled?: boolean }[]
+    expect(items.map((i) => i.id)).toEqual(['install'])
+    expect(items[0]!.disabled).toBe(false)
+
+    // Selecting Install runs the same flow the card's own activation does.
+    menu.vm.$emit('select', 'install')
+    await flushPromises()
+    expect(api.comfybuilder.installDistribution).toHaveBeenCalledWith('d1')
+  })
+
+  it('keeps the kebab on a blocked distribution but disables Install', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'd2', name: 'Blocked Dist', state: 'no-build' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const kebab = wrapper.find('[data-testid="chooser-dist-tile-kebab-d2"]')
+    expect(kebab.exists()).toBe(true)
+    await kebab.trigger('click')
+
+    const menu = wrapper
+      .findAllComponents({ name: 'ContextMenu' })
+      .find((m) => m.props('open') === true)!
+    const items = menu.props('items') as { id: string; disabled?: boolean }[]
+    expect(items[0]!.disabled).toBe(true)
   })
 
   it('has no Desktop entry in the filter state', async () => {
