@@ -207,15 +207,24 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
     pickedChoice.value = 'local'
     initialDefaultChoice.value = 'local'
   }
+  // GPU-Aware Cloud Upsell (Slack thread, 2026-07-24 — Deep's ask, scoped
+  // to "ONLY users in this constraint of recommended"): hardware that
+  // nudges toward Cloud overrides whatever the experiment just picked to
+  // "nothing selected" instead. Conditioned like this rather than made the
+  // global baseline, so everyone outside the target tier keeps today's
+  // default behavior untouched. `hardwareRecommendsCloud` isn't known yet
+  // this early (GPU detection resolves later in `open()`), so this also
+  // reruns reactively via the watcher below once detection lands.
+  if (hardwareRecommendsCloud.value) {
+    pickedChoice.value = null
+    initialDefaultChoice.value = null
+  }
 }
 
 onMounted(async () => {
   // Capacity + experiment in parallel; both are best-effort and
   // fail-closed so the picker still works if either errors.
-  const [variant] = await Promise.all([
-    loadForkExperimentVariant(),
-    cloudCapacity.whenReady()
-  ])
+  const [variant] = await Promise.all([loadForkExperimentVariant(), cloudCapacity.whenReady()])
   forkExperimentVariant.value = variant
   applyForkExperimentDefault(variant)
   capacityReady.value = true
@@ -245,9 +254,7 @@ const expressInstall = ref(false)
  *  install is brought over instead of installing fresh. Pre-ticked so
  *  returning Desktop users land on the migration path by default. */
 const migrateExisting = ref(true)
-const showMigrateExisting = computed(
-  () => pickedChoice.value === 'local' && hasLegacyDesktop.value
-)
+const showMigrateExisting = computed(() => pickedChoice.value === 'local' && hasLegacyDesktop.value)
 /** Detected GPU vendor — populated by `window.api.detectGPU()` on
  *  `open()`. Surfaces as an inline confirmation line under the Express
  *  checkbox so users on the wrong hardware can untick Express before
@@ -258,6 +265,36 @@ const detectedGpuLabel = ref<string | null>(null)
 const showGpuHint = computed(
   () => pickedChoice.value === 'local' && expressInstall.value && detectedGpuLabel.value !== null
 )
+/** True once `detectGPU()` has resolved (success or failure) — gates
+ *  `hardwareRecommendsCloud` so the reco badge never flashes before we
+ *  actually know. */
+const gpuChecked = ref(false)
+/** Whether this machine's hardware nudges the merged start screen toward
+ *  recommending Cloud — GPU-Aware Cloud Upsell (Slack thread + Notion plan,
+ *  2026-07-24). Placeholder for the real `gpu_tier` classifier (sub_low /
+ *  cpu_only) described in the plan: until that VRAM-aware classifier lands,
+ *  "no supported GPU detected" is used as a conservative stand-in for
+ *  cpu_only only — deliberately narrower than the full target tier so we
+ *  never over-claim. */
+const hardwareRecommendsCloud = computed(() => gpuChecked.value && detectedGpuLabel.value === null)
+// GPU-Aware Cloud Upsell (Slack thread, 2026-07-24): on hardware where we'd
+// recommend Cloud, don't pre-select either card — force an explicit pick
+// instead of defaulting to Local. Only overrides while the picker still
+// shows whatever it was seeded with (fork-experiment default or the
+// hard-coded Local baseline); if the user already acted, their choice wins.
+// GPU detection resolves after `open()` returns, so this has to be a watcher
+// rather than folded into `applyForkExperimentDefault`.
+watch(hardwareRecommendsCloud, (recommends) => {
+  if (
+    recommends &&
+    !hasLegacyDesktop.value &&
+    !cloudCapacity.isDisabled() &&
+    pickedChoice.value === initialDefaultChoice.value
+  ) {
+    pickedChoice.value = null
+    initialDefaultChoice.value = null
+  }
+})
 /** Funnel-completion bookkeeping for `comfy.desktop.first_use.completed`.
  *  `mountedAt` is reset in `open()` so a takeover replay measures
  *  duration from the replay, not from the original mount.
@@ -584,12 +621,12 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   whyCloudOpen.value = false
   termsDoc.value = null
   acceptedTos.value = false
-  // Safe baseline: Local pre-selected. The variant-aware apply call
-  // below overrides to Cloud (`'cloud-default'` arm) or null
-  // (`'no-default'` arm) when neither hard gate (legacy-desktop,
-  // capacity-disabled) applies. Reset unconditionally first so the
-  // takeover-replay path lands on a clean slate even if the variant
-  // hasn't resolved yet on first mount.
+  // Safe baseline: Local pre-selected. The variant-aware apply call below
+  // overrides to Cloud (`'cloud-default'` arm), null (`'no-default'` arm,
+  // or the hardware-recommends-cloud override), when neither hard gate
+  // (legacy-desktop, capacity-disabled) applies. Reset unconditionally
+  // first so the takeover-replay path lands on a clean slate even if the
+  // variant hasn't resolved yet on first mount.
   pickedChoice.value = 'local'
   initialDefaultChoice.value = 'local'
   // Re-apply the experiment variant on every replay so a user who
@@ -636,12 +673,18 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
+  gpuChecked.value = false
   void window.api
     .detectGPU()
     .then((g) => {
       detectedGpuLabel.value = g?.label ?? null
     })
-    .catch(() => {})
+    .catch(() => {
+      detectedGpuLabel.value = null
+    })
+    .finally(() => {
+      gpuChecked.value = true
+    })
 }
 
 onMounted(() => {
@@ -750,8 +793,12 @@ defineExpose({ open, resetContinue })
         >
           <ChoiceCard
             class="start-card-cloud"
-            :class="{ 'start-card-cloud--capacity-disabled': cloudCapacity.isDisabled() }"
+            :class="{
+              'start-card-cloud--capacity-disabled': cloudCapacity.isDisabled(),
+              'start-card-cloud--reco-dimmed': hardwareRecommendsCloud && pickedChoice === 'local'
+            }"
             selectable
+            hide-radio
             :selected="pickedChoice === 'cloud'"
             :aria-disabled="cloudCapacity.isDisabled() ? true : undefined"
             glow
@@ -768,6 +815,16 @@ defineExpose({ open, resetContinue })
             @click="cloudCapacity.isDisabled() ? null : (pickedChoice = 'cloud')"
           >
             <template #label-trailing>
+              <!-- 'unknown' tier means this device has never authenticated
+                   with Cloud (useCloudCapacity docs the tri-state) — the
+                   trial pill is for people who haven't tried it yet, not a
+                   permanent fixture on the card. -->
+              <span
+                v-if="cloudCapacity.tier.value === 'unknown'"
+                class="start-cloud-runs-pill"
+                data-testid="first-use-cloud-runs-pill"
+                >{{ $t('firstUse.cloudFreeRunsPill') }}</span
+              >
               <Tooltip :text="$t('firstUse.whyTryCloud')">
                 <button
                   type="button"
@@ -780,9 +837,15 @@ defineExpose({ open, resetContinue })
                 </button>
               </Tooltip>
             </template>
+            <template v-if="hardwareRecommendsCloud" #desc-trailing>
+              <span class="start-cloud-reco" data-testid="first-use-cloud-reco">
+                {{ $t('firstUse.cloudRecommendedForHardware') }}
+              </span>
+            </template>
           </ChoiceCard>
           <ChoiceCard
             selectable
+            hide-radio
             :selected="pickedChoice === 'local'"
             :label="$t('firstUse.localLabel')"
             :tagline="$t('firstUse.localTagline')"
@@ -798,55 +861,55 @@ defineExpose({ open, resetContinue })
              independently, so a longer description text would push
              one row off-axis from the other. -->
         <div class="start-modifiers">
-        <label
-          v-if="hasLegacyDesktop"
-          class="brand-checkbox start-migrate-existing"
-          :class="{ 'start-migrate-existing--hidden': !showMigrateExisting }"
-          :aria-hidden="!showMigrateExisting"
-          data-testid="first-use-migrate-existing"
-        >
-          <input
-            v-model="migrateExisting"
-            type="checkbox"
-            :tabindex="showMigrateExisting ? 0 : -1"
-          />
-          <span class="start-migrate-existing__body">
-            <span class="start-migrate-existing__label">
-              {{ $t('firstUse.migrateExistingLine') }}
+          <label
+            v-if="hasLegacyDesktop"
+            class="brand-checkbox start-migrate-existing"
+            :class="{ 'start-migrate-existing--hidden': !showMigrateExisting }"
+            :aria-hidden="!showMigrateExisting"
+            data-testid="first-use-migrate-existing"
+          >
+            <input
+              v-model="migrateExisting"
+              type="checkbox"
+              :tabindex="showMigrateExisting ? 0 : -1"
+            />
+            <span class="start-migrate-existing__body">
+              <span class="start-migrate-existing__label">
+                {{ $t('firstUse.migrateExistingLine') }}
+              </span>
+              <span class="start-migrate-existing__desc">
+                <InlineRichText :text="$t('firstUse.migrateExistingDesc')" />
+              </span>
             </span>
-            <span class="start-migrate-existing__desc">
-              <InlineRichText :text="$t('firstUse.migrateExistingDesc')" />
+          </label>
+          <label
+            class="brand-checkbox start-express"
+            :class="{ 'start-express--hidden': pickedChoice !== 'local' }"
+            :aria-hidden="pickedChoice !== 'local'"
+            data-testid="first-use-express-install"
+          >
+            <input
+              v-model="expressInstall"
+              type="checkbox"
+              :tabindex="pickedChoice === 'local' ? 0 : -1"
+            />
+            <span class="start-express__body">
+              <span class="start-express__label">{{ $t('firstUse.expressInstallLine') }}</span>
+              <span
+                class="start-express__gpu-hint"
+                :class="{ 'start-express__gpu-hint--hidden': !showGpuHint }"
+                :aria-hidden="!showGpuHint"
+                data-testid="first-use-express-gpu-hint"
+              >
+                <template v-if="detectedGpuLabel">
+                  {{ $t('firstUse.expressGpuHintPrefix')
+                  }}<span class="start-express__gpu-vendor">{{ detectedGpuLabel }}</span
+                  >{{ $t('firstUse.expressGpuHintSuffix') }}
+                </template>
+                <template v-else>&nbsp;</template>
+              </span>
             </span>
-          </span>
-        </label>
-        <label
-          class="brand-checkbox start-express"
-          :class="{ 'start-express--hidden': pickedChoice !== 'local' }"
-          :aria-hidden="pickedChoice !== 'local'"
-          data-testid="first-use-express-install"
-        >
-          <input
-            v-model="expressInstall"
-            type="checkbox"
-            :tabindex="pickedChoice === 'local' ? 0 : -1"
-          />
-          <span class="start-express__body">
-            <span class="start-express__label">{{ $t('firstUse.expressInstallLine') }}</span>
-            <span
-              class="start-express__gpu-hint"
-              :class="{ 'start-express__gpu-hint--hidden': !showGpuHint }"
-              :aria-hidden="!showGpuHint"
-              data-testid="first-use-express-gpu-hint"
-            >
-              <template v-if="detectedGpuLabel">
-                {{ $t('firstUse.expressGpuHintPrefix')
-                }}<span class="start-express__gpu-vendor">{{ detectedGpuLabel }}</span
-                >{{ $t('firstUse.expressGpuHintSuffix') }}
-              </template>
-              <template v-else>&nbsp;</template>
-            </span>
-          </span>
-        </label>
+          </label>
         </div>
       </div>
       <div class="start-bottom">
@@ -1096,6 +1159,14 @@ defineExpose({ open, resetContinue })
   cursor: not-allowed;
   pointer-events: none;
 }
+/* The card border's only job is showing which card is selected (Choice
+ * Card's `--selected` state) — it never carries the hardware-recommendation
+ * signal, so there's nothing recommendation-specific to add here. When the
+ * user picks Local instead of the recommended Cloud, the reco badge dims
+ * to 70% instead: still visible, de-emphasized rather than nagging. */
+.start-card-cloud--reco-dimmed .start-cloud-reco {
+  opacity: 0.7;
+}
 .start-cloud-info {
   display: inline-flex;
   align-items: center;
@@ -1119,6 +1190,53 @@ defineExpose({ open, resetContinue })
 .start-cloud-info:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+/* ChoiceCard's own label-trailing wrapper has no gap — fine for its single
+ * default child (the info button), but ours now carries the runs pill too. */
+.start-card-cloud :deep(.choice-card__label-trailing) {
+  gap: 8px;
+}
+
+/* "5 FREE RUNS" trial pill — same solid-chip language as the Why-Cloud
+ * modal's credits pill (.why-cloud-pill), scaled down for the label row.
+ * Surfaces the trial incentive up front per nav's thread feedback, without
+ * waiting for the user to open the info tooltip to learn Cloud is free to
+ * try. */
+.start-cloud-runs-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--neutral-100);
+  color: var(--neutral-900);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: normal;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Hardware-recommendation badge — GPU-Aware Cloud Upsell. Stroke + a tinted
+ * fill (not a solid one) so it reads as a distinct chip rather than just an
+ * outline sitting on the card background. No check glyph, and the card
+ * border itself is selection-only (see `.start-card-cloud--reco-dimmed`
+ * above) — this badge is the sole carrier of the "recommended" signal.
+ * Neutral-100, matching the card border, rather than a success-green accent.
+ * Copy is intentionally generic (no GPU model/VRAM claim) pending the
+ * DES-548 design/copy pass referenced in the Notion plan. */
+.start-cloud-reco {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--neutral-100) 55%, transparent);
+  background: color-mix(in oklab, var(--neutral-100) 12%, transparent);
+  color: var(--neutral-100);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: normal;
 }
 
 /* Modifier-checkbox container. Both rows (Migrate + Express) live

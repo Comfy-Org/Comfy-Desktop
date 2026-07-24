@@ -4,42 +4,40 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
 vi.mock('../lib/telemetry', () => ({
-  emitTelemetryAction: vi.fn(),
+  emitTelemetryAction: vi.fn()
 }))
 
 vi.mock('../components/TakeoverHeader.vue', () => ({
-  default: { template: '<div data-testid="stub-takeover-header"><slot /></div>' },
+  default: { template: '<div data-testid="stub-takeover-header"><slot /></div>' }
 }))
 vi.mock('../components/ModalShell.vue', () => ({
-  default: { template: '<div data-testid="stub-modal-shell"><slot /></div>' },
+  default: { template: '<div data-testid="stub-modal-shell"><slot /></div>' }
 }))
 vi.mock('../components/ChoiceCard.vue', () => ({
   default: {
-    template:
-      '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot /></div>',
-  },
+    template: '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot /></div>'
+  }
 }))
 vi.mock('../components/WhyTryCloudModal.vue', () => ({
-  default: { template: '<div data-testid="stub-why-cloud" />' },
+  default: { template: '<div data-testid="stub-why-cloud" />' }
 }))
 vi.mock('../components/ui/Tooltip.vue', () => ({
   default: {
     name: 'Tooltip',
     props: ['text', 'side', 'align', 'delayMs', 'disabled'],
-    template:
-      '<span data-testid="stub-tooltip-wrap" :data-text="text"><slot /></span>',
-  },
+    template: '<span data-testid="stub-tooltip-wrap" :data-text="text"><slot /></span>'
+  }
 }))
 vi.mock('../components/TermsModal.vue', () => ({
   default: {
     props: ['doc'],
-    template: '<div data-testid="stub-terms-modal" :data-doc="doc" />',
-  },
+    template: '<div data-testid="stub-terms-modal" :data-doc="doc" />'
+  }
 }))
 vi.mock('../components/BrandTakeoverLayout.vue', () => ({
   default: {
-    template: '<div data-testid="stub-brand-layout"><slot /></div>',
-  },
+    template: '<div data-testid="stub-brand-layout"><slot /></div>'
+  }
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
@@ -49,7 +47,7 @@ const i18n = createI18n({
   locale: 'en',
   messages: { en: {} },
   missingWarn: false,
-  fallbackWarn: false,
+  fallbackWarn: false
 })
 
 beforeEach(() => {
@@ -57,20 +55,25 @@ beforeEach(() => {
     setSetting: vi.fn().mockResolvedValue(undefined),
     getSetting: vi.fn().mockResolvedValue(true),
     getLocale: vi.fn().mockResolvedValue('en'),
-    detectGPU: vi.fn().mockResolvedValue(null),
+    // A detected GPU by default, so these baseline tests exercise the
+    // fork-experiment default in isolation from the GPU-Aware Cloud Upsell
+    // override (`hardwareRecommendsCloud`) below, which treats "no
+    // supported GPU" as its own signal. Tests for that feature set this to
+    // `null` explicitly per-case.
+    detectGPU: vi.fn().mockResolvedValue({ id: 'nvidia', label: 'NVIDIA', model: null }),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
     // Default to undefined so the existing tests exercise the control
     // branch (Local-default). Tests that need the treatment arm mutate
     // this per-case before mounting.
     telemetryGetExperimentFlag: vi.fn().mockResolvedValue(undefined),
-    telemetryRecordExposure: vi.fn(),
+    telemetryRecordExposure: vi.fn()
   } as unknown as typeof window.api
 })
 
 function mountTakeover() {
   return mount(FirstUseTakeover, {
-    global: { plugins: [i18n] },
+    global: { plugins: [i18n] }
   })
 }
 
@@ -115,7 +118,7 @@ describe('FirstUseTakeover start step', () => {
     const infoBtn = wrapper.find('[data-testid="first-use-why-cloud"]')
     expect(infoBtn.exists()).toBe(true)
     const tooltip = infoBtn.element.closest(
-      '[data-testid="stub-tooltip-wrap"]',
+      '[data-testid="stub-tooltip-wrap"]'
     ) as HTMLElement | null
     expect(tooltip).not.toBeNull()
     expect(tooltip?.getAttribute('data-text')).toBe('firstUse.whyTryCloud')
@@ -123,6 +126,11 @@ describe('FirstUseTakeover start step', () => {
 
   it('Express-install checkbox is visible on the default Local pick and hides only when Cloud is picked', async () => {
     const wrapper = mountTakeover()
+    // Let the boot-time fork-experiment/capacity resolution (async,
+    // resolves on the mocked promises) settle before interacting — a click
+    // landing mid-resolution races against `applyForkExperimentDefault`
+    // re-seeding `pickedChoice`, same as the fork-experiment tests below.
+    await flushPromises()
     // The row stays mounted (reserved layout space, no jump on swap)
     // but is visually + a11y hidden whenever Cloud is the active pick.
     const express = () => wrapper.find('[data-testid="first-use-express-install"]')
@@ -172,8 +180,10 @@ describe('FirstUseTakeover start step', () => {
 
   it('hasLegacyDesktop + Express OFF + migrate OFF routes to the localBranch sub-step', async () => {
     const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
-      hasLegacyDesktop: true,
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({
+      hasLegacyDesktop: true
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -203,16 +213,20 @@ describe('FirstUseTakeover start step', () => {
     // After the host plumbs the detected legacy install in, the
     // checkbox mounts as a peer of Express. Visibility is then driven
     // by the Local pick via the hidden-class pattern.
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
-      hasLegacyDesktop: true,
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({
+      hasLegacyDesktop: true
     })
     expect(wrapper.find('[data-testid="first-use-migrate-existing"]').exists()).toBe(true)
   })
 
   it('routes Local + migrate-existing + Express to `chain-migrate` with express: true', async () => {
     const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
-      hasLegacyDesktop: true,
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({
+      hasLegacyDesktop: true
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -237,8 +251,10 @@ describe('FirstUseTakeover start step', () => {
 
   it('routes Local + migrate-existing + Express OFF to `chain-migrate` with express: false (confirm surface still shown by host)', async () => {
     const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
-      hasLegacyDesktop: true,
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({
+      hasLegacyDesktop: true
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -258,8 +274,10 @@ describe('FirstUseTakeover start step', () => {
 
   it('routes Local + Express + migrate-existing OFF to `chain-local` (fresh express install)', async () => {
     const wrapper = mountTakeover()
-    await (wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }).open({
-      hasLegacyDesktop: true,
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({
+      hasLegacyDesktop: true
     })
     await wrapper
       .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
@@ -437,7 +455,9 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
   })
 
   it("treats any other flag value ('control', unknown string, true) as control", async () => {
-    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('control')
+    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'control'
+    )
     const wrapper = mountTakeover()
     await flushPromises()
     await wrapper

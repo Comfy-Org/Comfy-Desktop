@@ -13,13 +13,18 @@ withDefaults(
      *  rather than commits, leaving the commit to a parent Continue button. */
     selectable?: boolean
     selected?: boolean
+    /** Suppress the radio-dot indicator even when selectable — selection
+     *  reads purely from the card border/background instead of a glyph.
+     *  role="radio"/aria-checked stay intact for a11y. */
+    hideRadio?: boolean
   }>(),
   {
     tagline: '',
     disabled: false,
     glow: false,
     selectable: false,
-    selected: false
+    selected: false,
+    hideRadio: false
   }
 )
 
@@ -41,7 +46,7 @@ defineEmits<{ click: [] }>()
   >
     <div v-if="tagline" class="choice-card__tagline">{{ tagline }}</div>
     <div class="choice-card__body">
-      <span v-if="selectable" class="choice-card__radio" aria-hidden="true">
+      <span v-if="selectable && !hideRadio" class="choice-card__radio" aria-hidden="true">
         <span v-if="selected" class="choice-card__radio-dot" />
       </span>
       <div class="choice-card__text">
@@ -105,15 +110,15 @@ defineEmits<{ click: [] }>()
   opacity: 0.5;
   cursor: not-allowed;
 }
-/* Selected uses brand blue, not yellow, so the radio doesn't compete with
- * the yellow Continue CTA for attention. */
+/* Selected uses neutral-100, not blue or yellow — border-only selection
+ * language, no accent color competing with the yellow Continue CTA. */
 .choice-card--selected {
-  border-color: color-mix(in oklab, var(--accent-primary) 60%, transparent);
-  background: color-mix(in oklab, var(--accent-primary) 6%, var(--brand-surface-bg-hover));
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-primary) 40%, transparent) inset;
+  border-color: color-mix(in oklab, var(--neutral-100) 60%, transparent);
+  background: color-mix(in oklab, var(--neutral-100) 6%, var(--brand-surface-bg-hover));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--neutral-100) 40%, transparent) inset;
 }
 .choice-card--selected:hover:not(:disabled) {
-  border-color: color-mix(in oklab, var(--accent-primary) 75%, transparent);
+  border-color: color-mix(in oklab, var(--neutral-100) 75%, transparent);
   background: color-mix(in oklab, var(--accent-primary) 9%, rgba(137, 137, 137, 0.13));
 }
 .choice-card__radio {
