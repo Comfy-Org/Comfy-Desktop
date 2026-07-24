@@ -1276,14 +1276,14 @@ defineExpose({ open, resetContinue })
   white-space: nowrap;
 }
 
-/* Hardware-recommendation badge — GPU-Aware Cloud Upsell. Stroke + a tinted
- * fill (not a solid one) so it reads as a distinct chip rather than just an
- * outline sitting on the card background. No check glyph, and the card
- * border itself is selection-only (see `.start-card-cloud--reco-dimmed`
- * above) — this badge is the sole carrier of the "recommended" signal.
- * Neutral-100, matching the card border, rather than a success-green accent.
- * Copy is intentionally generic (no GPU model/VRAM claim) pending the
- * DES-548 design/copy pass referenced in the Notion plan. */
+/* Hardware-recommendation badge — GPU-Aware Cloud Upsell. Tinted fill only,
+ * no stroke — reads as a soft chip rather than an outlined pill. No check
+ * glyph, and the card border itself is selection-only (see
+ * `.start-card-cloud--reco-dimmed` above) — this badge is the sole carrier
+ * of the "recommended" signal. Neutral-100, matching the card border,
+ * rather than a success-green accent. Copy is intentionally generic (no
+ * GPU model/VRAM claim) pending the DES-548 design/copy pass referenced in
+ * the Notion plan. */
 .start-cloud-reco {
   display: inline-flex;
   align-items: center;
@@ -1295,7 +1295,6 @@ defineExpose({ open, resetContinue })
      further from the badge than intended. */
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 55%, transparent);
   background: color-mix(in oklab, var(--neutral-100) 12%, transparent);
   color: var(--neutral-100);
   font-size: 12px;
