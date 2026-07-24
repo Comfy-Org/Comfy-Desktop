@@ -7,6 +7,25 @@ vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
 }))
 
+const capacityMock = vi.hoisted(() => ({
+  status: 'normal' as 'normal' | 'degraded' | 'disabled',
+  tier: 'unknown' as 'free' | 'paid' | 'unknown',
+}))
+
+vi.mock('../composables/useCloudCapacity', async () => {
+  const { computed } = await import('vue')
+  return {
+    useCloudCapacity: () => ({
+      status: computed(() => capacityMock.status),
+      tier: computed(() => capacityMock.tier),
+      whenReady: vi.fn().mockResolvedValue(undefined),
+      isDisabled: () => capacityMock.status === 'disabled',
+      isDegraded: () => capacityMock.status === 'degraded',
+      confirmEntry: vi.fn().mockResolvedValue(true),
+    }),
+  }
+})
+
 vi.mock('../components/TakeoverHeader.vue', () => ({
   default: { template: '<div data-testid="stub-takeover-header"><slot /></div>' },
 }))
@@ -53,11 +72,16 @@ const i18n = createI18n({
 })
 
 beforeEach(() => {
+  capacityMock.status = 'normal'
+  capacityMock.tier = 'unknown'
   window.api = {
     setSetting: vi.fn().mockResolvedValue(undefined),
     getSetting: vi.fn().mockResolvedValue(true),
     getLocale: vi.fn().mockResolvedValue('en'),
-    detectGPU: vi.fn().mockResolvedValue(null),
+    getSystemInfo: vi.fn().mockResolvedValue({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'mid',
+    }),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
     // Default to undefined so the existing tests exercise the control
@@ -75,6 +99,139 @@ function mountTakeover() {
 }
 
 describe('FirstUseTakeover start step', () => {
+  it.each(['sub_low', 'cpu_only'] as const)(
+    'requires an explicit choice for %s hardware',
+    async (gpuTier) => {
+      ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+        gpu_label: gpuTier === 'cpu_only' ? null : 'NVIDIA',
+        gpu_tier: gpuTier,
+      })
+      const wrapper = mountTakeover()
+      await flushPromises()
+      await wrapper
+        .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+        .setValue(true)
+
+      const btn = wrapper.find('[data-testid="first-use-continue"]')
+      expect(btn.attributes('disabled')).toBeDefined()
+      await btn.trigger('click')
+      expect(wrapper.emitted('chain-local')).toBeFalsy()
+      expect(wrapper.emitted('complete-cloud')).toBeFalsy()
+
+      await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
+      expect(btn.attributes('disabled')).toBeUndefined()
+    },
+  )
+
+  it.each(['low', 'mid', 'high', 'apple'] as const)(
+    'preserves the Local default for %s hardware',
+    async (gpuTier) => {
+      ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+        gpu_label: gpuTier === 'apple' ? 'Apple Silicon' : 'NVIDIA',
+        gpu_tier: gpuTier,
+      })
+      const wrapper = mountTakeover()
+      await flushPromises()
+      await wrapper
+        .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+        .setValue(true)
+
+      const btn = wrapper.find('[data-testid="first-use-continue"]')
+      expect(btn.attributes('disabled')).toBeUndefined()
+      await btn.trigger('click')
+      expect(wrapper.emitted('chain-local')).toBeTruthy()
+      expect(wrapper.emitted('complete-cloud')).toBeFalsy()
+    },
+  )
+
+  it('does not replace a choice made before hardware detection resolves', async () => {
+    let resolveSystemInfo:
+      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
+      | undefined
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSystemInfo = resolve
+      }),
+    )
+    const wrapper = mountTakeover()
+    await wrapper.find('[data-testid="first-use-pick-cloud"]').trigger('click')
+
+    resolveSystemInfo?.({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'sub_low',
+    } as Awaited<ReturnType<typeof window.api.getSystemInfo>>)
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    const btn = wrapper.find('[data-testid="first-use-continue"]')
+    expect(btn.attributes('disabled')).toBeUndefined()
+    await btn.trigger('click')
+    expect(wrapper.emitted('complete-cloud')).toBeTruthy()
+  })
+
+  it('waits for hardware detection before committing an untouched default', async () => {
+    let resolveSystemInfo:
+      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
+      | undefined
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSystemInfo = resolve
+      }),
+    )
+    const wrapper = mountTakeover()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    const btn = wrapper.find('[data-testid="first-use-continue"]')
+    const clickPromise = btn.trigger('click')
+    resolveSystemInfo?.({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'sub_low',
+    } as Awaited<ReturnType<typeof window.api.getSystemInfo>>)
+    await clickPromise
+    await flushPromises()
+
+    expect(btn.attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('chain-local')).toBeFalsy()
+    expect(wrapper.emitted('complete-cloud')).toBeFalsy()
+  })
+
+  it('keeps the legacy-desktop Local default on poor hardware', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({ hasLegacyDesktop: true })
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="first-use-migrate-existing"]').exists()).toBe(true)
+  })
+
+  it('keeps the capacity-disabled Local default on poor hardware', async () => {
+    capacityMock.status = 'disabled'
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('Continue triggers a nudge shake on the ToS row when terms are not accepted', async () => {
     const wrapper = mountTakeover()
     const tosRow = wrapper.find('[data-testid="first-use-consent-tos"]')
@@ -402,6 +559,21 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
       variant: 'cloud-default',
       source: 'cache'
     })
+  })
+
+  it('overrides the cloud-default experiment for poor hardware', async () => {
+    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('cloud')
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_label: 'NVIDIA',
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeDefined()
   })
 
   it("pre-selects nothing when the flag returns 'none' (no-default arm) and disables Continue until a card is picked", async () => {

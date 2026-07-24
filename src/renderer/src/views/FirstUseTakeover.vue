@@ -58,6 +58,8 @@ import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import InlineRichText from '../components/InlineRichText.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
+import type { GpuTier } from '../../../shared/gpuTier'
+import type { SystemInfo } from '../../../types/ipc'
 
 type Step = 'start' | 'mirrors' | 'localBranch'
 
@@ -120,9 +122,17 @@ const forkExperimentVariant = ref<ForkVariant | null>(null)
  *  "Download Local" upstream, so honor that intent unless the
  *  experiment overrides it: `'cloud-default'` pre-selects Cloud,
  *  `'no-default'` pre-selects neither (user must click a card before
- *  Continue activates). Cloud is rendered as an equal-weight peer
- *  card regardless; users can flip between cards before Continue. */
+ *  Continue activates). Poor hardware also starts without a default.
+ *  Cloud is rendered as an equal-weight peer card regardless; users
+ *  can flip between cards before Continue. */
 const pickedChoice = ref<'cloud' | 'local' | null>('local')
+const forkChoiceInteracted = ref(false)
+const detectedGpuTier = ref<GpuTier | null>(null)
+
+function selectForkChoice(choice: 'cloud' | 'local'): void {
+  forkChoiceInteracted.value = true
+  pickedChoice.value = choice
+}
 
 // Capacity-protection switch for Cloud (PostHog flag
 // `desktop-cloud-capacity`). At first-use, we follow the flag
@@ -137,7 +147,8 @@ const capacityReady = ref(false)
  *  used to split `fork_chosen` conversion by signal-vs-defaulting: a
  *  user keeping the default pick is different from a user actively
  *  flipping the card. `null` for the `'no-default'` variant, where
- *  Continue is gated on an explicit pick so every commit is signal. */
+ *  Continue is gated on an explicit pick so every commit is signal,
+ *  and for poor hardware where the same explicit choice is required. */
 const initialDefaultChoice = ref<'cloud' | 'local' | null>('local')
 
 /** Read the experiment variant (boot-time cache, sync once main is
@@ -173,11 +184,10 @@ async function loadForkExperimentVariant(): Promise<ForkVariant> {
   return variant
 }
 
-/** Apply the resolved variant to the picker state, respecting the
- *  hard precedence rules (legacy-desktop > capacity-disabled >
- *  experiment). Idempotent — safe to call from `onMounted` and from
- *  `open()` on takeover replay. Always lands on a terminal state for
- *  both refs so the caller doesn't need to seed defaults first. */
+/** Apply the resolved default to the picker state, respecting hard
+ *  gates, explicit interaction, poor hardware, and then the experiment.
+ *  Idempotent — safe to call as each async input resolves and from
+ *  `open()` on takeover replay. */
 function applyForkExperimentDefault(variant: ForkVariant): void {
   // Migration flow always wins. Returning Desktop-1 users land on
   // Local with the migrate-existing checkbox pre-ticked — that's the
@@ -193,6 +203,15 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
   if (cloudCapacity.isDisabled()) {
     pickedChoice.value = 'local'
     initialDefaultChoice.value = 'local'
+    return
+  }
+  if (forkChoiceInteracted.value) return
+  if (
+    !skipPick.value &&
+    (detectedGpuTier.value === 'sub_low' || detectedGpuTier.value === 'cpu_only')
+  ) {
+    pickedChoice.value = null
+    initialDefaultChoice.value = null
     return
   }
   if (variant === 'cloud-default') {
@@ -248,7 +267,7 @@ const migrateExisting = ref(true)
 const showMigrateExisting = computed(
   () => pickedChoice.value === 'local' && hasLegacyDesktop.value
 )
-/** Detected GPU vendor — populated by `window.api.detectGPU()` on
+/** Detected GPU vendor — populated from the shared system-info IPC on
  *  `open()`. Surfaces as an inline confirmation line under the Express
  *  checkbox so users on the wrong hardware can untick Express before
  *  the install kicks off. `null` when detection fails or returns no
@@ -258,6 +277,21 @@ const detectedGpuLabel = ref<string | null>(null)
 const showGpuHint = computed(
   () => pickedChoice.value === 'local' && expressInstall.value && detectedGpuLabel.value !== null
 )
+let systemInfoPromise: Promise<SystemInfo> | null = null
+
+function loadSystemInfo(): Promise<SystemInfo> {
+  systemInfoPromise ??= window.api.getSystemInfo().catch((error) => {
+    systemInfoPromise = null
+    throw error
+  })
+  return systemInfoPromise
+}
+
+function applySystemInfo(info: SystemInfo): void {
+  detectedGpuLabel.value = info.gpu_label
+  detectedGpuTier.value = info.gpu_tier
+  applyForkExperimentDefault(forkExperimentVariant.value ?? 'control')
+}
 /** Funnel-completion bookkeeping for `comfy.desktop.first_use.completed`.
  *  `mountedAt` is reset in `open()` so a takeover replay measures
  *  duration from the replay, not from the original mount.
@@ -368,10 +402,22 @@ async function onContinue(): Promise<void> {
     nudgeTos()
     return
   }
-  // No-default experiment arm: until the user clicks a card, there's
-  // no pick to commit. The button is already :disabled in this state,
-  // but guard defensively so a programmatic click can't bypass.
+  // Until an experiment cohort clicks a card, there is no pick to
+  // commit. The button is already :disabled in this state, but guard
+  // defensively so a programmatic click can't bypass.
   if (pickedChoice.value === null) return
+  // Hardware normally resolves before the user reaches Continue. If it
+  // has not, wait before committing an untouched default so poor
+  // hardware cannot slip through without the required explicit choice.
+  if (!forkChoiceInteracted.value && detectedGpuTier.value === null) {
+    try {
+      applySystemInfo(await loadSystemInfo())
+    } catch {
+      // Preserve the existing default when hardware detection fails.
+    }
+    if (pickedChoice.value === null) return
+  }
+  forkChoiceInteracted.value = true
   // Keep `isContinuing` true past `routePostStart()` because the chain
   // handlers (express prep, cloud auto-launch, new-install swap) all
   // either unmount this takeover or swap to a sub-step within ms. The
@@ -511,7 +557,7 @@ function onWhyCloudTryCloud(): void {
   // selection to Cloud but leaves the user on the screen so they can
   // accept T&C and press Continue. The legal gate is non-negotiable —
   // we can't auto-commit on the user's behalf.
-  pickedChoice.value = 'cloud'
+  selectForkChoice('cloud')
 }
 
 function chooseMigrate(): void {
@@ -525,10 +571,10 @@ function chooseMigrate(): void {
 
 /** Radiogroup arrow-key handler for the Cloud / Local cards.
  *  WAI-ARIA APG §3.15: arrow keys cycle the checked radio and move DOM
- *  focus along with it. When `pickedChoice` is `null` (the no-default
- *  experiment arm before the user has touched the picker), arrow-down
- *  enters at Cloud and arrow-up enters at Local so keyboard users can
- *  make a pick without reaching for the mouse. */
+ *  focus along with it. When `pickedChoice` is `null` before the user
+ *  has touched the picker, arrow-down enters at Cloud and arrow-up
+ *  enters at Local so keyboard users can make a pick without reaching
+ *  for the mouse. */
 function onStartCardsKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[role="radio"]')) return
@@ -545,7 +591,7 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   const nextChoice = order[next]
   if (!nextChoice) return
   e.preventDefault()
-  pickedChoice.value = nextChoice
+  selectForkChoice(nextChoice)
   void nextTick(() => {
     const radios = (e.currentTarget as HTMLElement | null)?.querySelectorAll<HTMLElement>(
       '[role="radio"]'
@@ -584,12 +630,12 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   whyCloudOpen.value = false
   termsDoc.value = null
   acceptedTos.value = false
+  forkChoiceInteracted.value = false
   // Safe baseline: Local pre-selected. The variant-aware apply call
   // below overrides to Cloud (`'cloud-default'` arm) or null
-  // (`'no-default'` arm) when neither hard gate (legacy-desktop,
-  // capacity-disabled) applies. Reset unconditionally first so the
-  // takeover-replay path lands on a clean slate even if the variant
-  // hasn't resolved yet on first mount.
+  // (`'no-default'` or poor-hardware cohort) when neither hard gate
+  // (legacy-desktop, capacity-disabled) applies. Reset unconditionally
+  // first so the takeover-replay path lands on a clean slate.
   pickedChoice.value = 'local'
   initialDefaultChoice.value = 'local'
   // Re-apply the experiment variant on every replay so a user who
@@ -598,9 +644,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // first mount it may still be null if `loadForkExperimentVariant`
   // hasn't resolved yet, which is fine: onMounted applies it once it
   // does.
-  if (forkExperimentVariant.value) {
-    applyForkExperimentDefault(forkExperimentVariant.value)
-  }
+  applyForkExperimentDefault(forkExperimentVariant.value ?? 'control')
   expressInstall.value = false
   migrateExisting.value = true
   // `onContinue` keeps `isContinuing` true past `routePostStart()`
@@ -626,7 +670,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // a destructive default).
   const existing = (await window.api.getSetting('telemetryEnabled')) as boolean | undefined
   telemetryEnabled.value = existing !== false
-  // Locale + GPU detection run non-blocking so the start hero paints on
+  // Locale + hardware detection run non-blocking so the start hero paints on
   // the first frame even if main is slow to resolve (e.g. cold IPC, no
   // GPU on CI). Sensible defaults (`'en'`, `null`) are already in place;
   // the reactive updates surface the real values when they arrive.
@@ -636,11 +680,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
-  void window.api
-    .detectGPU()
-    .then((g) => {
-      detectedGpuLabel.value = g?.label ?? null
-    })
+  void loadSystemInfo()
+    .then(applySystemInfo)
     .catch(() => {})
 }
 
@@ -765,7 +806,7 @@ defineExpose({ open, resetContinue })
             "
             :description="$t(cloudDescriptionKey)"
             data-testid="first-use-pick-cloud"
-            @click="cloudCapacity.isDisabled() ? null : (pickedChoice = 'cloud')"
+            @click="cloudCapacity.isDisabled() ? null : selectForkChoice('cloud')"
           >
             <template #label-trailing>
               <Tooltip :text="$t('firstUse.whyTryCloud')">
@@ -788,7 +829,7 @@ defineExpose({ open, resetContinue })
             :tagline="$t('firstUse.localTagline')"
             :description="$t('firstUse.localDesc')"
             data-testid="first-use-pick-local"
-            @click="pickedChoice = 'local'"
+            @click="selectForkChoice('local')"
           />
         </div>
         <!-- Modifier checkboxes (Migrate + Express). Wrapped in a
