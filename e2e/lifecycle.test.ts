@@ -146,6 +146,9 @@ test.beforeAll(async () => {
         }).trim()
       } catch { /* partial hydration — git dir may not exist on a half-built profile */ }
       try {
+        _installedTorchSignature = queryTorchSignature()
+      } catch { /* partial hydration - venv may not exist on a half-built profile */ }
+      try {
         const list = await ctx.panel.evaluate<SnapshotListLite>(
           `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
         )
@@ -533,6 +536,45 @@ let _updateInstallId = ''
 let _updateInstallPath = ''
 let _comfyUIDir = ''
 let _installedCommit = ''
+let _installedTorchSignature: TorchSignature | null = null
+
+interface TorchSignature {
+  torch: string
+  /** `torch.version.cuda` - null on CPU/MPS builds, e.g. "12.8" on CUDA builds. */
+  cuda: string | null
+  torchvision: string | null
+  torchaudio: string | null
+  torchsde: string | null
+}
+
+/** Import torch through the install's REAL venv python and return the
+ *  torch-family version signature. An actual import proves the package
+ *  is intact (DLLs load), not merely that a dist-info directory exists;
+ *  the sibling packages are read via importlib.metadata so an isolated
+ *  torchvision/torchaudio/torchsde change is caught too. Used as a
+ *  guard that update/restore requirements installs never touch the
+ *  torch family (the PYTORCH_RE filter in src/main/lib/pip.ts): a past
+ *  regression passed --upgrade to the requirements pip call, silently
+ *  replacing the variant-matched torch build and breaking CUDA on
+ *  Windows. */
+function queryTorchSignature(): TorchSignature {
+  const venvPython = process.platform === 'win32'
+    ? path.join(_comfyUIDir, '.venv', 'Scripts', 'python.exe')
+    : path.join(_comfyUIDir, '.venv', 'bin', 'python3')
+  const probe = [
+    'import json, torch',
+    'from importlib import metadata',
+    'def v(p):',
+    '    try: return metadata.version(p)',
+    '    except Exception: return None',
+    'print(json.dumps({"torch": torch.__version__, "cuda": torch.version.cuda,'
+      + ' "torchvision": v("torchvision"), "torchaudio": v("torchaudio"), "torchsde": v("torchsde")}))',
+  ].join('\n')
+  const out = execFileSync(venvPython, ['-c', probe], {
+    encoding: 'utf-8', windowsHide: true, timeout: 120_000,
+  }).trim()
+  return JSON.parse(out) as TorchSignature
+}
 
 /** Stop the running install and land back on the dashboard through the
  *  REAL production controls: title-bar install pill -> picker footer More
@@ -637,6 +679,20 @@ test('captures install metadata for the update tests @lifecycle', async () => {
     cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
   }).trim()
   expect(_installedCommit).toMatch(/^[a-f0-9]{40}$/)
+
+  // Baseline torch for the update/restore guards below: the install +
+  // successful startup must have left a working, variant-matched torch.
+  _installedTorchSignature = queryTorchSignature()
+  expect(_installedTorchSignature.torch, 'torch failed to import from the installed venv').toBeTruthy()
+  // The chain forces the CPU variant on Windows (test 2) -
+  // `torch.version.cuda` must be null (a bare version string can still
+  // be a CUDA build, so the build tag alone is not authoritative).
+  if (process.platform === 'win32') {
+    expect(
+      _installedTorchSignature.cuda,
+      `CPU-variant install must not carry a CUDA torch build (torch ${_installedTorchSignature.torch}, cuda ${_installedTorchSignature.cuda})`,
+    ).toBeNull()
+  }
 })
 
 test('update-comfyui drives the real updater and moves HEAD forward @lifecycle', async () => {
@@ -682,6 +738,15 @@ test('update-comfyui drives the real updater and moves HEAD forward @lifecycle',
     cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
   }).trim()
   expect(parseInt(aheadCount, 10), `post-update HEAD ${headAfter} is not ahead of installed commit ${_installedCommit}`).toBeGreaterThan(0)
+
+  // The updater's requirements install must never touch the torch
+  // family: an accidental --upgrade would replace the variant-matched
+  // build.
+  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
+  expect(
+    queryTorchSignature(),
+    'update-comfyui changed the installed torch family',
+  ).toEqual(_installedTorchSignature)
 })
 
 test('re-launch ComfyUI after update validates the updated install runs @lifecycle', async () => {
@@ -932,6 +997,14 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   expect(headAfter, 'cross-channel update did not move HEAD').not.toBe(headBefore)
   expect(headAfter).toMatch(/^[a-f0-9]{40}$/)
 
+  // The cross-channel updater's requirements install must never touch
+  // the torch family (same guard as the stopped-path update test).
+  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
+  expect(
+    queryTorchSignature(),
+    'cross-channel update-comfyui changed the installed torch family',
+  ).toEqual(_installedTorchSignature)
+
   // Inline-picker routing keeps the popup open on its success screen;
   // close it so the next test's title-pill entry opens the picker
   // instead of toggling it shut.
@@ -995,6 +1068,15 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle'
     cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
   }).trim()
   expect(headAfter).toMatch(/^[a-f0-9]{40}$/)
+
+  // Restore runs the REAL pip-sync phase against this env (unlike the
+  // snapshot-restore fixture spec) - it must never touch the torch
+  // family either.
+  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
+  expect(
+    queryTorchSignature(),
+    'snapshot restore (incl. pip sync) changed the installed torch family',
+  ).toEqual(_installedTorchSignature)
 
   // Inline-picker routing keeps the popup open on its success screen;
   // close it so the next test's title-pill entry opens the picker
