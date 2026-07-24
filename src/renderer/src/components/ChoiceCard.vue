@@ -14,13 +14,10 @@ withDefaults(
      *  reads from the card border/background — there is no radio glyph. */
     selectable?: boolean
     selected?: boolean
-    /** Hold the radiogroup's single tab stop even though this card isn't
-     *  selected. WAI-ARIA APG §3.15: a radiogroup with nothing checked
-     *  still needs exactly one Tab-reachable radio, otherwise the whole
-     *  group drops out of the tab order and keyboard users can't pick at
-     *  all. The parent decides which card that is — see
-     *  `keyboardEntryChoice` in FirstUseTakeover. Ignored when `selected`
-     *  is already true (that card is the tab stop by definition). */
+    /** Hold the group's tab stop while unselected. A radiogroup with
+     *  nothing checked still needs one Tab-reachable radio (WAI-ARIA APG
+     *  §3.15) or it drops out of the tab order entirely; the parent picks
+     *  which card — see `keyboardEntryChoice` in FirstUseTakeover. */
     tabStop?: boolean
   }>(),
   {
@@ -158,8 +155,7 @@ defineEmits<{ click: [] }>()
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
-  /* Tight against the label text: the first trailing item is an inline
-   * (i) affordance that belongs to the title, not a separate column. */
+  /* Tight: the first trailing item is an (i) that belongs to the title. */
   gap: 4px;
   width: 100%;
   font-family: var(--font-sans);
@@ -172,8 +168,8 @@ defineEmits<{ click: [] }>()
 .choice-card__label-text {
   flex: 0 0 auto;
 }
-/* Trailing items separate from each other more than they do from the
- * label — an (i) icon and a badge are peers, not one run of text. */
+/* Trailing items separate more from each other than from the label — an
+ * (i) and a badge are peers, not one run of text. */
 .choice-card__label-trailing {
   display: inline-flex;
   align-items: center;

@@ -125,11 +125,10 @@ const forkExperimentVariant = ref<ForkVariant | null>(null)
  *  Continue activates). Cloud is rendered as an equal-weight peer
  *  card regardless; users can flip between cards before Continue. */
 const pickedChoice = ref<'cloud' | 'local' | null>('local')
-/** True once the user actively chose a card, as opposed to being shown a
- *  pre-seeded default. Late signals that re-seed the picker must not
- *  overwrite a deliberate choice, and "still equals the seeded default?"
- *  can't tell the two apart — in the control arm, clicking Local lands on
- *  exactly the seeded value. Reset per `open()`. */
+/** True once the user actively chose a card, rather than being shown a
+ *  default. Needed because "still equals the seeded default?" can't tell
+ *  the two apart — in the control arm, clicking Local lands on exactly
+ *  the seeded value. Reset per `open()`. */
 const userHasPicked = ref(false)
 
 // Capacity-protection switch for Cloud (PostHog flag
@@ -158,9 +157,7 @@ function mapFlagToVariant(flagValue: string | boolean | null | undefined): ForkV
   return 'control'
 }
 /** Source tag for the deferred exposure event: 'cache' when the on-disk
- *  experiment-flags.json had a value we recognised, 'fallback' when
- *  nothing usable came back (first-ever boot with no network, network
- *  failure, or unrecognised payload). */
+ *  flag file had a value we recognised, 'fallback' otherwise. */
 let forkExposureSource: 'cache' | 'fallback' | null = null
 async function loadForkExperimentVariant(): Promise<ForkVariant> {
   let flagValue: string | boolean | null | undefined
@@ -173,12 +170,11 @@ async function loadForkExperimentVariant(): Promise<ForkVariant> {
   return mapFlagToVariant(flagValue)
 }
 
-/** Deferred until the hardware tier and reco kill switch settle, then
- *  skipped entirely for the recommendation cohort: the GPU override
- *  replaces their arm's default with "nothing selected", so they never
- *  experienced the arm and counting them would bias the readout. That
- *  cohort is analysed via `reco_shown` / `gpu_tier` on the outcome events
- *  instead. Fires at most once per mount; main dedups per session too. */
+/** Deferred until the tier and kill switch settle, then skipped for the
+ *  recommendation cohort: the override replaced their arm's default, so
+ *  they never experienced it and counting them would bias the readout.
+ *  They're analysed via `reco_shown` / `gpu_tier` instead. Once per
+ *  mount; main dedups per session too. */
 let forkExposureRecorded = false
 function maybeRecordForkExposure(): void {
   if (forkExposureRecorded) return
@@ -200,14 +196,10 @@ function maybeRecordForkExposure(): void {
   }
 }
 
-/** Ops kill switch for the whole GPU-Aware Cloud Upsell surface (badge,
- *  free-runs pill, no-preselect) — Slack thread, 2026-07-24.
- *
- *  Uses the ops-flag path (`cloudReco.ts`), NOT
- *  `telemetryGetExperimentFlag`: the experiments cache is consent-gated
- *  and this surface only renders while consent is `'undecided'`, so that
- *  path would leave the flag permanently unresolved and the switch unable
- *  to fire. Same plumbing as `desktop-cloud-capacity`. Fails open. */
+/** Ops kill switch for the badge + no-preselect. Deliberately the
+ *  ops-flag path and not `telemetryGetExperimentFlag` — that cache is
+ *  consent-gated and this screen renders pre-consent. Fails open; see
+ *  `cloudSwitches.ts`. */
 async function loadCloudRecoEnabled(): Promise<boolean> {
   try {
     return await window.api.getCloudRecoEnabled()
@@ -216,12 +208,9 @@ async function loadCloudRecoEnabled(): Promise<boolean> {
   }
 }
 
-/** Ops switch for the "5 free runs" trial pill — cloud's own
- *  `free_tier_workflow_submission_enabled`, independent of the
- *  recommendation above because the free tier is its own offer: the pill
- *  should follow the free tier, not the GPU upsell. Resolves false while
- *  free tier isn't live, and flips on its own when the ramp lands. Fails
- *  CLOSED (see `cloudSwitches.ts`). */
+/** Ops switch for the trial pill. Separate from the recommendation
+ *  because the free tier is its own offer, and reads cloud's own flag so
+ *  it tracks the real rollout. Fails closed; see `cloudSwitches.ts`. */
 async function loadCloudFreeRunsEnabled(): Promise<boolean> {
   try {
     return await window.api.getCloudFreeRunsEnabled()
@@ -264,14 +253,10 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
     pickedChoice.value = 'local'
     initialDefaultChoice.value = 'local'
   }
-  // GPU-Aware Cloud Upsell (Slack thread, 2026-07-24 — Deep's ask, scoped
-  // to "ONLY users in this constraint of recommended"): hardware that
-  // nudges toward Cloud overrides whatever the experiment just picked to
-  // "nothing selected" instead. Conditioned like this rather than made the
-  // global baseline, so everyone outside the target tier keeps today's
-  // default behavior untouched. `hardwareRecommendsCloud` isn't known yet
-  // this early (system info resolves later in `open()`), so this also
-  // reruns reactively via the watcher below once the tier lands.
+  // Recommended hardware overrides whatever the experiment just picked to
+  // "nothing selected". Scoped to the target tier so everyone else keeps
+  // today's behavior. Still false this early — system info resolves later
+  // in `open()` — so the watcher below reruns it once the tier lands.
   if (hardwareRecommendsCloud.value) {
     pickedChoice.value = null
     initialDefaultChoice.value = null
@@ -279,9 +264,8 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 }
 
 onMounted(async () => {
-  // Capacity + experiment + reco kill-switch in parallel; all best-effort
-  // and fail (open or closed, per their own docs above) so the picker
-  // still works if any of them errors.
+  // All best-effort and independently fail-safe, so the picker still
+  // works if any of them errors.
   const [variant, , recoEnabled, freeRunsEnabled] = await Promise.all([
     loadForkExperimentVariant(),
     cloudCapacity.whenReady(),
@@ -321,33 +305,28 @@ const expressInstall = ref(false)
  *  returning Desktop users land on the migration path by default. */
 const migrateExisting = ref(true)
 const showMigrateExisting = computed(() => pickedChoice.value === 'local' && hasLegacyDesktop.value)
-/** Detected GPU vendor — `get-system-info`'s `gpu_label`, which is the
- *  same memoized `detectGPU()` result main serves, so reading it here
- *  costs one fewer IPC round trip than calling `detectGPU()` separately.
- *  Surfaces as an inline confirmation line under the Express checkbox so
- *  users on the wrong hardware can untick Express before the install
- *  kicks off. `null` when detection fails or returns no supported GPU;
- *  the hint is then suppressed and Express behaves as before
- *  (recommended-first picks downstream). */
+/** Detected GPU vendor — `get-system-info`'s `gpu_label`, the same
+ *  memoized `detectGPU()` result main serves, so this costs no extra IPC.
+ *  Surfaces under the Express checkbox so users on the wrong hardware can
+ *  untick it before the install starts. `null` when detection fails or
+ *  finds no supported GPU; the hint is then suppressed. */
 const detectedGpuLabel = ref<string | null>(null)
 const showGpuHint = computed(
   () => pickedChoice.value === 'local' && expressInstall.value && detectedGpuLabel.value !== null
 )
 /** Shared hardware tier from `get-system-info` (`deriveGpuTier`, the same
- *  classifier telemetry cohorts on). `null` until it resolves, and left
- *  `null` when the IPC fails — the recommendation fails CLOSED, because
- *  the alternative is telling someone with a 4090 that they have no
- *  dedicated GPU. */
+ *  classifier telemetry cohorts on). Stays `null` when the IPC fails, so
+ *  the recommendation fails closed — the alternative is telling someone
+ *  with a 4090 their hardware is inadequate. */
 const gpuTier = ref<GpuTier | null>(null)
 /** True once the system-info query has settled either way — gates
  *  `hardwareRecommendsCloud` so the badge never flashes before we know. */
 const hardwareChecked = ref(false)
-/** One system-info request per instance, reused across `open()` replays:
- *  `get-system-info` runs a full OS/CPU/GPU scan whose answer can't change
- *  between a cancel and a replay. `async` wrapper rather than `.catch()`
- *  so a synchronous throw (missing preload method on an old host) also
- *  resolves to `null` — failing closed — instead of escaping as an
- *  unhandled rejection and aborting the rest of `open()`. */
+/** One request per instance, reused across `open()` replays: the scan is
+ *  expensive and its answer can't change between a cancel and a replay.
+ *  `async` wrapper rather than `.catch()` so a synchronous throw (missing
+ *  preload method) also fails closed instead of escaping as an unhandled
+ *  rejection and aborting the rest of `open()`. */
 let systemInfoPromise: Promise<SystemInfo | null> | null = null
 function loadSystemInfo(): Promise<SystemInfo | null> {
   systemInfoPromise ??= (async () => {
@@ -363,15 +342,13 @@ function loadSystemInfo(): Promise<SystemInfo | null> {
  *  the models people actually want (integrated, or discrete under 6 GB).
  *  `apple` and `low`+ run local fine. */
 const RECO_GPU_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['sub_low', 'cpu_only'])
-/** `desktop-cloud-reco` kill switch — see `loadCloudRecoEnabled` above.
- *  Starts `true` (fail-open) so nothing flashes off then on while the
- *  boot fetch is in flight; `recoFlagResolved` is what tells the exposure
- *  logic the real value landed. */
+/** Starts `true` to match its fail-open direction, so nothing flashes off
+ *  then on while the boot fetch is in flight; `recoFlagResolved` is what
+ *  tells the exposure logic the real value landed. */
 const cloudRecoEnabled = ref(true)
 const recoFlagResolved = ref(false)
-/** `desktop-cloud-free-runs` switch. Starts `false` — matching its
- *  fail-closed direction — so the pill never flashes in and back out
- *  while the boot fetch is still in flight. */
+/** Starts `false` to match its fail-closed direction, so the pill never
+ *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
 /** Whether this machine's hardware nudges toward Cloud — GPU-Aware Cloud
  *  Upsell (Slack thread + Notion plan, 2026-07-24). Suppressed when Cloud
