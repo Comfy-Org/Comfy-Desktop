@@ -32,12 +32,6 @@ vi.mock('../components/TakeoverHeader.vue', () => ({
 vi.mock('../components/ModalShell.vue', () => ({
   default: { template: '<div data-testid="stub-modal-shell"><slot /></div>' },
 }))
-vi.mock('../components/ChoiceCard.vue', () => ({
-  default: {
-    template:
-      '<div data-testid="stub-choice-card"><slot name="label-trailing" /><slot name="desc-trailing" /><slot /></div>',
-  },
-}))
 vi.mock('../components/WhyTryCloudModal.vue', () => ({
   default: { template: '<div data-testid="stub-why-cloud" />' },
 }))
@@ -133,9 +127,19 @@ describe('FirstUseTakeover start step', () => {
         .setValue(true)
       const btn = wrapper.find('[data-testid="first-use-continue"]')
       expect(btn.attributes('disabled')).toBeDefined()
+      const cloudChoice = wrapper.find('[data-testid="first-use-pick-cloud"]')
+      const localChoice = wrapper.find('[data-testid="first-use-pick-local"]')
+      expect(cloudChoice.attributes()).toMatchObject({
+        role: 'radio',
+        'aria-checked': 'false',
+        tabindex: '0',
+      })
+      expect(localChoice.attributes('tabindex')).toBe('-1')
 
-      await wrapper.find('[data-testid="first-use-pick-local"]').trigger('click')
+      await localChoice.trigger('click')
       expect(btn.attributes('disabled')).toBeUndefined()
+      expect(cloudChoice.attributes('tabindex')).toBe('-1')
+      expect(localChoice.attributes('tabindex')).toBe('0')
     },
   )
 
@@ -319,6 +323,75 @@ describe('FirstUseTakeover start step', () => {
     expect(emitTelemetryAction).not.toHaveBeenCalledWith(
       'comfy.desktop.first_use.gpu_reco_shown',
       expect.anything(),
+    )
+  })
+
+  it('does not track a recommendation that resolves after Continue starts', async () => {
+    let resolveSystemInfo:
+      | ((info: Awaited<ReturnType<typeof window.api.getSystemInfo>>) => void)
+      | undefined
+    let resolveSetting: (() => void) | undefined
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSystemInfo = resolve
+      }),
+    )
+    ;(window.api.setSetting as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveSetting = resolve
+      }),
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+    await wrapper.find('[data-testid="first-use-continue"]').trigger('click')
+
+    resolveSystemInfo?.({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(false)
+    expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+      'comfy.desktop.first_use.gpu_reco_shown',
+      expect.anything(),
+    )
+
+    resolveSetting?.()
+    await flushPromises()
+    expect(emitTelemetryAction).toHaveBeenCalledWith(
+      'comfy.desktop.first_use.fork_chosen',
+      expect.objectContaining({ gpu_tier: 'sub_low', reco_shown: false }),
+    )
+  })
+
+  it('uses no default for recommended hardware with a legacy install', async () => {
+    ;(window.api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce GTX 1650',
+      gpu_vram_gb: 4,
+      gpu_tier: 'sub_low',
+    })
+    const wrapper = mountTakeover()
+    await (
+      wrapper.vm as unknown as { open: (opts: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({ hasLegacyDesktop: true })
+    await flushPromises()
+    await wrapper
+      .find('[data-testid="first-use-consent-tos"] input[type="checkbox"]')
+      .setValue(true)
+
+    expect(wrapper.find('[data-testid="first-use-gpu-recommendation"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="first-use-continue"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="first-use-migrate-existing"]').attributes('aria-hidden')).toBe(
+      'true',
     )
   })
 

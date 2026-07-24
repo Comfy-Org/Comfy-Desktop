@@ -13,13 +13,16 @@ withDefaults(
      *  rather than commits, leaving the commit to a parent Continue button. */
     selectable?: boolean
     selected?: boolean
+    /** Keeps an unselected radio in the tab order when its group has no selection. */
+    tabStop?: boolean
   }>(),
   {
     tagline: '',
     disabled: false,
     glow: false,
     selectable: false,
-    selected: false
+    selected: false,
+    tabStop: false
   }
 )
 
@@ -35,7 +38,7 @@ defineEmits<{ click: [] }>()
     ]"
     :role="selectable ? 'radio' : undefined"
     :aria-checked="selectable ? selected : undefined"
-    :tabindex="selectable ? (selected ? 0 : -1) : undefined"
+    :tabindex="selectable ? (selected || tabStop ? 0 : -1) : undefined"
     :disabled="disabled"
     @click="$emit('click')"
   >

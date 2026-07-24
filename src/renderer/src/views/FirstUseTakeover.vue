@@ -125,6 +125,7 @@ const forkExperimentVariant = ref<ForkVariant | null>(null)
  *  card regardless; users can flip between cards before Continue. */
 const pickedChoice = ref<'cloud' | 'local' | null>('local')
 const forkChoiceInteracted = ref(false)
+const forkChoiceCommitted = ref(false)
 
 function selectForkChoice(choice: 'cloud' | 'local'): void {
   forkChoiceInteracted.value = true
@@ -324,6 +325,7 @@ const showGpuRecommendation = computed(() => {
   return (
     step.value === 'start' &&
     !skipPick.value &&
+    !forkChoiceCommitted.value &&
     capacityReady.value &&
     cloudCapacity.status.value === 'normal' &&
     (tier === 'sub_low' || tier === 'cpu_only')
@@ -430,6 +432,7 @@ async function onContinue(): Promise<void> {
   // but guard defensively so a programmatic click can't bypass.
   if (pickedChoice.value === null) return
   forkChoiceInteracted.value = true
+  forkChoiceCommitted.value = true
   // Keep `isContinuing` true past `routePostStart()` because the chain
   // handlers (express prep, cloud auto-launch, new-install swap) all
   // either unmount this takeover or swap to a sub-step within ms. The
@@ -647,6 +650,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   termsDoc.value = null
   acceptedTos.value = false
   forkChoiceInteracted.value = false
+  forkChoiceCommitted.value = false
   // Safe baseline: Local pre-selected. The variant-aware apply call
   // below overrides to Cloud (`'cloud-default'` arm) or null
   // (`'no-default'` arm) when neither hard gate (legacy-desktop,
@@ -817,6 +821,7 @@ defineExpose({ open, resetContinue })
             :class="{ 'start-card-cloud--capacity-disabled': cloudCapacity.isDisabled() }"
             selectable
             :selected="pickedChoice === 'cloud'"
+            :tab-stop="pickedChoice === null"
             :aria-disabled="cloudCapacity.isDisabled() ? true : undefined"
             glow
             :label="$t('cloud.label')"
