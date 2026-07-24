@@ -1039,16 +1039,19 @@ test('captures a snapshot for the picker-driven restore test @lifecycle', async 
 })
 
 // ---------------------------------------------------------------------------
-// Manager security level: a per-install selection on the picker's Startup
-// Args tab must reach the config.ini ComfyUI-Manager actually reads, via a
-// real stop -> relaunch (handleLaunch's reconcile pass runs before every
-// local launch with the launched install's own record value). Beyond the
-// file check, the live server is probed through Manager's real HTTP API
-// to confirm the running Manager *enforces* the level, not just that the
-// value sits in a file.
+// Manager security level + network mode: the per-install selections on the
+// picker's Startup Args tab must reach the config.ini ComfyUI-Manager
+// actually reads, via a real stop -> relaunch (handleLaunch's reconcile pass
+// runs before every local launch with the launched install's own record
+// values). Beyond the file check, the live server is probed through
+// Manager's real HTTP API to confirm the running Manager *enforces* the
+// security level, and the launched server's own startup log is checked to
+// confirm the running Manager *loaded* the network mode (its middle+
+// network-position gate only differs behind a non-loopback --listen, which
+// this loopback-bound suite cannot probe).
 // ---------------------------------------------------------------------------
 
-test('per-install Manager security level lands in Manager config.ini and is enforced after relaunch @lifecycle', async () => {
+test('per-install Manager security level + network mode land in Manager config.ini and apply after relaunch @lifecycle', async () => {
   test.setTimeout(600_000)
   expect(_updateInstallPath, 'install path not captured').toBeTruthy()
 
@@ -1063,26 +1066,40 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
     'normal-': 'Relaxed',
     weak: 'Permissive',
   }
+  // English labels for the four Manager v4 network modes, keyed likewise.
+  const MODE_LABELS: Record<string, string> = {
+    public: 'Public (default)',
+    private: 'Private',
+    offline: 'Offline',
+    personal_cloud: 'Personal cloud',
+  }
   // The file ComfyUI-Manager actually reads (modern system-user-api path).
   const configPath = path.join(_updateInstallPath, 'ComfyUI', 'user', '__manager', 'config.ini')
-  /** `security_level` inside `[default]`, or null when the file/key is absent. */
-  const readConfigLevel = (): string | null => {
+  /** A `[default]` option's value, or null when the file/key is absent. */
+  const readConfigOption = (key: string): string | null => {
     if (!existsSync(configPath)) return null
     const section = readFileSync(configPath, 'utf-8')
       .split(/^\[/m).find((s) => s.startsWith('default]')) ?? ''
     // Option keys are matched case-insensitively with flexible delimiters,
     // mirroring Python configparser (section names stay case-sensitive:
-    // Manager only reads the exact `[default]`).
-    return /^\s*security_level\s*[=:]\s*(\S+)\s*$/im.exec(section)?.[1] ?? null
+    // Manager only reads the exact `[default]`). Take the LAST match:
+    // Manager parses with strict=False, where later duplicates win, so a
+    // first-match read could hide a bad reconciliation.
+    const matches = [...section.matchAll(new RegExp(`^\\s*${key}\\s*[=:]\\s*(\\S+)\\s*$`, 'gim'))]
+    return matches.at(-1)?.[1] ?? null
   }
-  /** The install's own persisted level, straight from its record. */
-  const readRecordLevel = (): Promise<string | null> =>
+  const readConfigLevel = (): string | null => readConfigOption('security_level')
+  const readConfigMode = (): string | null => readConfigOption('network_mode')
+  /** An install-record field's persisted value, straight from the record. */
+  const readRecordField = (field: string): Promise<string | null> =>
     ctx.panel.evaluate<string | null>(
       `window.api.getInstallations().then((list) => {
         const inst = list.find((i) => i.id === ${JSON.stringify(_updateInstallId)})
-        return (inst && inst.managerSecurityLevel) || null
+        return (inst && inst[${JSON.stringify(field)}]) || null
       })`,
     )
+  const readRecordLevel = (): Promise<string | null> => readRecordField('managerSecurityLevel')
+  const readRecordMode = (): Promise<string | null> => readRecordField('managerNetworkMode')
 
   /** Origin of the running ComfyUI server, from the loaded frontend webContents. */
   const comfyOrigin = async (): Promise<string> => {
@@ -1145,11 +1162,32 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   )!
   const target = { value: targetValue, label: LEVEL_LABELS[targetValue]! }
 
-  // The level is per-install; the picker edit must leave the global
+  // Same discipline for the network mode: normalize the persisted record
+  // the way production does, then pick a target differing from BOTH the
+  // record and the current config so the post-relaunch assertion observes
+  // a real disk transition. `personal_cloud` is preferred - it is the mode
+  // Desktop users actually need (installs under a non-loopback --listen)
+  // and, like every mode here, changes nothing else on a loopback bind.
+  // `offline` is never picked: it would disable Manager's registry fetch
+  // for later suite runs against a reused profile.
+  const storedModeRaw = await readRecordMode()
+  const storedModeBefore =
+    storedModeRaw != null && Object.hasOwn(MODE_LABELS, storedModeRaw) ? storedModeRaw : null
+  const initialModeLabel = MODE_LABELS[storedModeBefore ?? 'public']!
+  const configModeBefore = readConfigMode()
+  const targetModeValue = (['personal_cloud', 'private', 'public'] as const).find(
+    (v) => v !== storedModeBefore && v !== configModeBefore,
+  )!
+  const targetMode = { value: targetModeValue, label: MODE_LABELS[targetModeValue]! }
+
+  // Both settings are per-install; the picker edits must leave the global
   // settings store untouched. Snapshot (rather than assert emptiness) so
   // a reused profile carrying a stray settings.json key can't flake this.
   const globalBefore = await ctx.panel.evaluate<string | null>(
     `window.api.getSetting('managerSecurityLevel')`,
+  )
+  const globalModeBefore = await ctx.panel.evaluate<string | null>(
+    `window.api.getSetting('managerNetworkMode')`,
   )
 
   // Real entry: running host title pill -> picker Startup Args tab, the
@@ -1181,21 +1219,48 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   await expect
     .poll(readRecordLevel, { timeout: 10_000, intervals: [100, 250] })
     .toBe(target.value)
+
+  // Same real gesture on the paired Manager Network Mode select, which
+  // shares the security level's row in the Startup Args tab.
+  const modeTrigger = 'button.ui-select-trigger[aria-label="Manager Network Mode"]'
+  await popup.waitForVisible(modeTrigger, { timeout: 15_000 })
+  expect(await popup.textOf(modeTrigger)).toContain(initialModeLabel)
+  expect(await popup.click(modeTrigger)).toBe(true)
+  await popup.waitForVisible('.ui-select-listbox [role="option"]', { timeout: 10_000 })
+  expect(
+    await popup.clickByText('.ui-select-option', targetMode.label),
+    `"${targetMode.label}" option missing from the network-mode listbox`,
+  ).toBe(true)
+  await expect
+    .poll(() => popup.textOf(modeTrigger), { timeout: 10_000, intervals: [100, 250] })
+    .toContain(targetMode.label)
+  await expect
+    .poll(readRecordMode, { timeout: 10_000, intervals: [100, 250] })
+    .toBe(targetMode.value)
+
   // Per-install means per-install: the global settings store must not
-  // change as a side effect of the picker edit.
+  // change as a side effect of the picker edits.
   expect(
     await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerSecurityLevel')`),
     'managerSecurityLevel leaked into the global settings store',
   ).toBe(globalBefore)
+  expect(
+    await ctx.panel.evaluate<string | null>(`window.api.getSetting('managerNetworkMode')`),
+    'managerNetworkMode leaked into the global settings store',
+  ).toBe(globalModeBefore)
   await closeTitlePopupIfOpen(ctx.app)
 
-  // Changing the setting alone must NOT touch the config - only the
+  // Changing the settings alone must NOT touch the config - only the
   // launch-time reconcile pass may. This pins that the assertion after
   // relaunch observes a real disk transition, not pre-existing content.
   expect(
     readConfigLevel(),
     'Manager config changed before relaunch - reconcile must only run on launch',
   ).toBe(configLevelBefore)
+  expect(
+    readConfigMode(),
+    'Manager network_mode changed before relaunch - reconcile must only run on launch',
+  ).toBe(configModeBefore)
 
   // The still-running server must keep enforcing its LAUNCH-time level:
   // Manager reads config.ini once at startup, so the picker edit alone
@@ -1220,8 +1285,8 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
   expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
 
-  // The chosen level must land in [default] of the file Manager actually
-  // reads - a genuine disk transition, since the target was picked to
+  // The chosen values must land in [default] of the file Manager actually
+  // reads - genuine disk transitions, since both targets were picked to
   // differ from the pre-relaunch config content.
   expect(existsSync(configPath), `Manager config not written at ${configPath}`).toBe(true)
   expect(
@@ -1229,6 +1294,11 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
     `[default] security_level = ${target.value} missing from Manager config:\n`
       + readFileSync(configPath, 'utf-8'),
   ).toBe(target.value)
+  expect(
+    readConfigMode(),
+    `[default] network_mode = ${targetMode.value} missing from Manager config:\n`
+      + readFileSync(configPath, 'utf-8'),
+  ).toBe(targetMode.value)
 
   // The file check alone would pass even if Manager ignored the config -
   // probe the relaunched server's real API to confirm the running Manager
@@ -1240,6 +1310,27 @@ test('per-install Manager security level lands in Manager config.ini and is enfo
     await managerBlocksMiddleRisk(),
     `running Manager does not enforce security level "${target.value}"`,
   ).toBe(middleBlockedAt(target.value))
+
+  // Same idea for the network mode: prove the RUNNING Manager loaded it,
+  // not just that the file carries it. Manager v4 logs its loaded mode at
+  // import ("[ComfyUI-Manager] network_mode: <mode>", from config, not the
+  // file path Desktop wrote), and the launcher pipes the server's stdout to
+  // a per-launch logs/comfyui.log (flags 'w', so no stale line from an
+  // earlier launch can satisfy this). The mode's behavioral gate (middle+
+  // actions behind a non-loopback --listen) cannot flip on this suite's
+  // loopback bind, so the loaded-config log is the strongest live signal.
+  const serverLogPath = path.join(_updateInstallPath, 'logs', 'comfyui.log')
+  // Exact line match (not substring): a duplicate/malformed config could make
+  // Manager log a mode that merely starts with the expected value.
+  const expectedModeLine = `[ComfyUI-Manager] network_mode: ${targetMode.value}`
+  await expect
+    .poll(
+      () => existsSync(serverLogPath)
+        && readFileSync(serverLogPath, 'utf-8').split(/\r?\n/)
+          .some((l) => l.trim().endsWith(expectedModeLine)),
+      { timeout: 30_000, intervals: [500, 1_000] },
+    )
+    .toBe(true)
 
   // The extra relaunch must not have disturbed the installed torch build.
   expectTorchFamilyUnchanged('manager security-level relaunch changed the installed torch family')

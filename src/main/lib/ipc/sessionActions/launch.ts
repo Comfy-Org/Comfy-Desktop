@@ -371,6 +371,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     remote: Boolean(launchCmd.remote),
     installPath: inst.installPath,
     securityLevel: inst.managerSecurityLevel,
+    networkMode: inst.managerNetworkMode,
   })
 
   // Shared models and shared input/output are independent flags.

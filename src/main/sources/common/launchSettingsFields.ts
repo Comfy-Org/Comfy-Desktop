@@ -13,6 +13,9 @@ import {
   DEFAULT_MANAGER_SECURITY_LEVEL,
   MANAGER_SECURITY_LEVELS,
   isManagerSecurityLevel,
+  DEFAULT_MANAGER_NETWORK_MODE,
+  MANAGER_NETWORK_MODES,
+  isManagerNetworkMode,
 } from '../../lib/managerConfig'
 
 /** One resolved per-type dir in an `extra_model_paths.yaml` section.
@@ -198,9 +201,10 @@ export function buildLaunchSettingsFields(
       value: (installation.launchArgs as string | undefined) ?? defaultLaunchArgs,
       editable: true, editType: 'args-builder', tooltip: t('tooltips.startupArgs'),
       requiresRestart: true },
-    // Not a CLI argument: Manager reads `security_level` from its config.ini,
-    // which launch reconciles from this per-install value before every local
-    // start (see reconcileManagerConfigForLaunch).
+    // Not CLI arguments: Manager reads `security_level` / `network_mode` from
+    // its config.ini, which launch reconciles from these per-install values
+    // before every local start (see reconcileManagerConfigForLaunch). The
+    // shared rowGroup renders them side-by-side in one row.
     { id: 'managerSecurityLevel', label: t('common.managerSecurityLevel'),
       value: isManagerSecurityLevel(installation.managerSecurityLevel)
         ? installation.managerSecurityLevel
@@ -208,7 +212,17 @@ export function buildLaunchSettingsFields(
       editable: true, editType: 'select', options: MANAGER_SECURITY_LEVELS.map((level) => ({
         value: level, label: t(`common.managerSecurityLevel_${level}`),
         description: t(`common.managerSecurityLevel_${level}_desc`),
-      })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true },
+      })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true,
+      rowGroup: 'manager' },
+    { id: 'managerNetworkMode', label: t('common.managerNetworkMode'),
+      value: isManagerNetworkMode(installation.managerNetworkMode)
+        ? installation.managerNetworkMode
+        : DEFAULT_MANAGER_NETWORK_MODE,
+      editable: true, editType: 'select', options: MANAGER_NETWORK_MODES.map((mode) => ({
+        value: mode, label: t(`common.managerNetworkMode_${mode}`),
+        description: t(`common.managerNetworkMode_${mode}_desc`),
+      })), tooltip: t('tooltips.managerNetworkMode'), requiresRestart: true,
+      rowGroup: 'manager' },
     { id: 'launchMode', label: t('common.launchMode'),
       value: (installation.launchMode as string | undefined) || defaultLaunchMode,
       editable: true, editType: 'select', options: [

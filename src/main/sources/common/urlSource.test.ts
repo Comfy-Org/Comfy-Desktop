@@ -68,5 +68,6 @@ describe('createUrlSource - settings fields', () => {
       (s) => ((s.fields as { id?: string }[] | undefined) ?? []).map((f) => f.id)
     )
     expect(fieldIds).not.toContain('managerSecurityLevel')
+    expect(fieldIds).not.toContain('managerNetworkMode')
   })
 })

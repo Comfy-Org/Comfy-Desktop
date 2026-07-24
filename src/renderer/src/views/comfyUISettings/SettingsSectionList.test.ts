@@ -92,6 +92,52 @@ describe('SettingsSectionList', () => {
     })
   })
 
+  // Fields sharing a rowGroup render side-by-side inside one paired row;
+  // everything else keeps its own full-width (layout-transparent) row.
+  describe('rowGroup pairing', () => {
+    const select = (id: string, rowGroup?: string): DetailField => ({
+      id,
+      label: id,
+      value: 'a',
+      editable: true,
+      editType: 'select',
+      options: [{ value: 'a', label: 'A' }],
+      ...(rowGroup ? { rowGroup } : {}),
+    })
+
+    it('wraps consecutive same-rowGroup fields in one paired row', () => {
+      const wrapper = mountList([
+        select('managerSecurityLevel', 'manager'),
+        select('managerNetworkMode', 'manager'),
+        select('launchMode'),
+      ])
+      const rows = wrapper.findAll('.settings-v2-field-row')
+      expect(rows.length).toBe(2)
+      const paired = rows[0]!
+      expect(paired.classes()).toContain('is-paired')
+      expect(paired.findAll('.settings-v2-field').length).toBe(2)
+      expect(rows[1]!.classes()).not.toContain('is-paired')
+      expect(rows[1]!.findAll('.settings-v2-field').length).toBe(1)
+    })
+
+    it('does not pair non-adjacent fields even when they share a rowGroup', () => {
+      const wrapper = mountList([
+        select('first', 'g'),
+        select('between'),
+        select('second', 'g'),
+      ])
+      expect(wrapper.findAll('.settings-v2-field-row.is-paired').length).toBe(0)
+      expect(wrapper.findAll('.settings-v2-field-row').length).toBe(3)
+    })
+
+    it('renders every field in its own row when no rowGroup is set', () => {
+      const wrapper = mountList([select('one'), select('two')])
+      const rows = wrapper.findAll('.settings-v2-field-row')
+      expect(rows.length).toBe(2)
+      for (const row of rows) expect(row.classes()).not.toContain('is-paired')
+    })
+  })
+
   // Readonly path values render as a clickable open-folder button, keeping the
   // copy button, and only fire `open-path` for real filesystem paths.
   describe('readonly path rows', () => {

@@ -44,9 +44,25 @@ describe('ensureManagerConfig', () => {
       expect(written).not.toContain('bypass_ssl')
     })
 
-    it('writes nothing when neither a mirror nor a security level is requested', async () => {
+    it('writes nothing when neither a mirror nor a Manager option is requested', async () => {
       await ensureManagerConfig(tmpRoot, { useChineseMirrors: false })
       expect(fs.existsSync(_internals.modernConfigPath(tmpRoot))).toBe(false)
+    })
+
+    it('seeds a config from a network mode alone, pinning the default security level', async () => {
+      await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, networkMode: 'personal_cloud' })
+      const written = readModern()
+      expect(written).toContain('network_mode = personal_cloud')
+      expect(written).toContain('security_level = normal')
+    })
+
+    it('writes both chosen Manager options together', async () => {
+      await ensureManagerConfig(tmpRoot, {
+        useChineseMirrors: false, securityLevel: 'weak', networkMode: 'offline'
+      })
+      const written = readModern()
+      expect(written).toContain('security_level = weak')
+      expect(written).toContain('network_mode = offline')
     })
 
     it('creates intermediate directories', async () => {
@@ -95,6 +111,33 @@ describe('ensureManagerConfig', () => {
       // @ts-expect-error -- exercising runtime guard against a bad persisted value
       await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, securityLevel: 'bogus' })
       expect(readModern()).toBe(original)
+    })
+
+    it('ignores an invalid network mode', async () => {
+      const original = '[default]\nnetwork_mode = public\n'
+      seed(original)
+      // @ts-expect-error -- exercising runtime guard against a bad persisted value
+      await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, networkMode: 'bogus' })
+      expect(readModern()).toBe(original)
+    })
+
+    it('reconciles both options in one pass, preserving everything else', async () => {
+      seed('[default]\nchannel_url = keep\nsecurity_level = normal\nnetwork_mode = public\n')
+      await ensureManagerConfig(tmpRoot, {
+        useChineseMirrors: false, securityLevel: 'strong', networkMode: 'personal_cloud'
+      })
+      const written = readModern()
+      expect(written).toContain('channel_url = keep')
+      expect(written).toContain('security_level = strong')
+      expect(written).toContain('network_mode = personal_cloud')
+    })
+
+    it('updates network_mode without touching an unchosen security_level', async () => {
+      seed('[default]\nsecurity_level = weak\n')
+      await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, networkMode: 'private' })
+      const written = readModern()
+      expect(written).toContain('security_level = weak')
+      expect(written).toContain('network_mode = private')
     })
   })
 
@@ -159,47 +202,49 @@ describe('ensureManagerConfig', () => {
     })
   })
 
-  describe('withSecurityLevel', () => {
+  describe('withDefaultOption', () => {
     it('replaces an existing key', () => {
-      expect(_internals.withSecurityLevel('[default]\nsecurity_level = normal\n', 'weak')).toBe(
-        '[default]\nsecurity_level = weak\n'
-      )
+      expect(
+        _internals.withDefaultOption('[default]\nsecurity_level = normal\n', 'security_level', 'weak')
+      ).toBe('[default]\nsecurity_level = weak\n')
     })
 
     it('inserts under [default] when the key is missing', () => {
-      expect(_internals.withSecurityLevel('[default]\nchannel_url = x\n', 'strong')).toBe(
-        '[default]\nsecurity_level = strong\nchannel_url = x\n'
-      )
+      expect(
+        _internals.withDefaultOption('[default]\nchannel_url = x\n', 'security_level', 'strong')
+      ).toBe('[default]\nsecurity_level = strong\nchannel_url = x\n')
     })
 
     it('creates a [default] section when none exists', () => {
-      expect(_internals.withSecurityLevel('', 'normal')).toBe('[default]\nsecurity_level = normal\n')
+      expect(_internals.withDefaultOption('', 'security_level', 'normal')).toBe(
+        '[default]\nsecurity_level = normal\n'
+      )
     })
 
     it('only touches the key inside [default], not a same-named key in another section', () => {
       const content = '[other]\nsecurity_level = normal\n\n[default]\nsecurity_level = weak\n'
-      expect(_internals.withSecurityLevel(content, 'strong')).toBe(
+      expect(_internals.withDefaultOption(content, 'security_level', 'strong')).toBe(
         '[other]\nsecurity_level = normal\n\n[default]\nsecurity_level = strong\n'
       )
     })
 
     it('inserts into [default] when the key exists only in another section', () => {
       const content = '[other]\nsecurity_level = normal\n\n[default]\nchannel_url = x\n'
-      expect(_internals.withSecurityLevel(content, 'strong')).toBe(
+      expect(_internals.withDefaultOption(content, 'security_level', 'strong')).toBe(
         '[other]\nsecurity_level = normal\n\n[default]\nsecurity_level = strong\nchannel_url = x\n'
       )
     })
 
     it('ignores a same-named key in a section after [default]', () => {
       const content = '[default]\nchannel_url = x\n\n[other]\nsecurity_level = normal\n'
-      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+      expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
         '[default]\nsecurity_level = weak\nchannel_url = x\n\n[other]\nsecurity_level = normal\n'
       )
     })
 
     it('preserves CRLF line endings when replacing', () => {
       const content = '[default]\r\nsecurity_level = normal\r\nchannel_url = x\r\n'
-      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+      expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
         '[default]\r\nsecurity_level = weak\r\nchannel_url = x\r\n'
       )
     })
@@ -207,14 +252,14 @@ describe('ensureManagerConfig', () => {
     // configparser lowercases option keys, so Manager reads `Security_Level`
     // as security_level - replace it instead of adding a duplicate.
     it('replaces a mixed-case key (configparser keys are case-insensitive)', () => {
-      expect(_internals.withSecurityLevel('[default]\nSecurity_Level = normal\n', 'weak')).toBe(
-        '[default]\nsecurity_level = weak\n'
-      )
+      expect(
+        _internals.withDefaultOption('[default]\nSecurity_Level = normal\n', 'security_level', 'weak')
+      ).toBe('[default]\nsecurity_level = weak\n')
     })
 
     it('collapses case-variant duplicate keys to one canonical line', () => {
       const content = '[default]\nSecurity_Level = normal\nchannel_url = x\nsecurity_level = strong\n'
-      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+      expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
         '[default]\nsecurity_level = weak\nchannel_url = x\n'
       )
     })
@@ -224,9 +269,48 @@ describe('ensureManagerConfig', () => {
     // never reads - write a real [default] instead of editing it.
     it('does not treat [Default] as the default section (configparser sections are case-sensitive)', () => {
       const content = '[Default]\nsecurity_level = normal\n'
-      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+      expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
         '[Default]\nsecurity_level = normal\n[default]\nsecurity_level = weak\n'
       )
+    })
+
+    it('reconciles network_mode with the same rules (mixed-case replace)', () => {
+      expect(
+        _internals.withDefaultOption(
+          '[default]\nNetwork_Mode = public\nsecurity_level = normal\n',
+          'network_mode',
+          'personal_cloud'
+        )
+      ).toBe('[default]\nnetwork_mode = personal_cloud\nsecurity_level = normal\n')
+    })
+
+    it('does not clobber other keys sharing a prefix with the target key', () => {
+      const content = '[default]\nnetwork_mode_extra = x\n'
+      expect(_internals.withDefaultOption(content, 'network_mode', 'offline')).toBe(
+        '[default]\nnetwork_mode = offline\nnetwork_mode_extra = x\n'
+      )
+    })
+
+    // configparser also accepts `key: value` - a hand-written colon line must
+    // be replaced, not shadowed (Manager parses with strict=False, where the
+    // later duplicate wins).
+    it('replaces a colon-delimited key (configparser accepts both = and :)', () => {
+      expect(
+        _internals.withDefaultOption('[default]\nnetwork_mode: public\n', 'network_mode', 'personal_cloud')
+      ).toBe('[default]\nnetwork_mode = personal_cloud\n')
+    })
+
+    it('collapses mixed = / : duplicates to one canonical line', () => {
+      const content = '[default]\nsecurity_level = normal\nchannel_url = x\nsecurity_level: strong\n'
+      expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
+        '[default]\nsecurity_level = weak\nchannel_url = x\n'
+      )
+    })
+
+    it('replaces a mixed-case colon-delimited key', () => {
+      expect(
+        _internals.withDefaultOption('[default]\nSecurity_Level: normal\n', 'security_level', 'weak')
+      ).toBe('[default]\nsecurity_level = weak\n')
     })
   })
 })

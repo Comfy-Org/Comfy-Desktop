@@ -272,6 +272,15 @@
     "managerSecurityLevel_normal-_desc": "Like Standard, but also allows unregistered-source installs while ComfyUI is reachable only from this machine. Launching with --listen blocks them again.",
     "managerSecurityLevel_weak": "Permissive",
     "managerSecurityLevel_weak_desc": "Allows everything, including unregistered-source installs, even when ComfyUI is exposed to your network with --listen.",
+    "managerNetworkMode": "Manager Network Mode",
+    "managerNetworkMode_public": "Public (default)",
+    "managerNetworkMode_public_desc": "Normal online mode: Manager uses the public node registry over the internet. Installs are blocked while ComfyUI is exposed with --listen.",
+    "managerNetworkMode_private": "Private",
+    "managerNetworkMode_private_desc": "For closed networks: Manager uses a private node database instead of the public registry.",
+    "managerNetworkMode_offline": "Offline",
+    "managerNetworkMode_offline_desc": "Manager makes no external network connections. Installs and updates that require downloads are unavailable.",
+    "managerNetworkMode_personal_cloud": "Personal cloud",
+    "managerNetworkMode_personal_cloud_desc": "Treats this machine as your own trusted remote box: allows node pack installs even when ComfyUI is exposed with --listen. Only use on a personal machine you control - it relaxes protections meant for shared or public hosts.",
     "copyError": "Copy error details",
     "clear": "Clear"
   },
@@ -1215,7 +1224,8 @@
     "updateNow": "Update this instance in-place.",
     "copyAndUpdate": "Copy this instance and update the copy. The original is untouched.",
     "envVars": "Custom environment variables passed to ComfyUI when it starts. Warning: values are stored unencrypted in the configuration file — do not add API keys, tokens, or other sensitive information.",
-    "managerSecurityLevel": "Controls which node packs ComfyUI-Manager allows installing for this install. Stricter levels block higher-risk installs, especially when ComfyUI is exposed to your network with --listen. Applies the next time you launch."
+    "managerSecurityLevel": "Controls which node packs ComfyUI-Manager allows installing for this install. Stricter levels block higher-risk installs, especially when ComfyUI is exposed to your network with --listen. Applies the next time you launch.",
+    "managerNetworkMode": "Controls how ComfyUI-Manager reaches the network for this install. Choose Personal cloud to allow node pack installs while ComfyUI is exposed with --listen (e.g. your own cloud GPU machine). Applies the next time you launch."
   },
   "envVars": {
     "name": "Name",

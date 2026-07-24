@@ -164,3 +164,79 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
     expect(ids.indexOf('managerSecurityLevel')).toBe(ids.indexOf('launchArgs') + 1)
   })
 })
+
+describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
+  const OPTS = { defaultLaunchArgs: '' }
+
+  function networkField(installation: Record<string, unknown>) {
+    const field = buildLaunchSettingsFields(installation as never, OPTS).find(
+      (f) => f.id === 'managerNetworkMode'
+    )
+    expect(field, 'managerNetworkMode field missing from launch settings').toBeTruthy()
+    return field as Record<string, unknown> & {
+      options?: { value: string; label: string; description?: string }[]
+    }
+  }
+
+  it('is an editable select defaulting to public when the install never chose', () => {
+    const field = networkField({})
+    expect(field.editable).toBe(true)
+    expect(field.editType).toBe('select')
+    expect(field.value).toBe('public')
+    expect(field.requiresRestart).toBe(true)
+  })
+
+  it('offers exactly the four Manager modes in order with real locale labels', () => {
+    const field = networkField({})
+    expect(field.options?.map((o) => o.value)).toEqual([
+      'public',
+      'private',
+      'offline',
+      'personal_cloud',
+    ])
+    expect(field.options?.map((o) => o.label)).toEqual([
+      'Public (default)',
+      'Private',
+      'Offline',
+      'Personal cloud',
+    ])
+    expect(field.label).toBe('Manager Network Mode')
+    // Guard against a raw key leaking into the UI if the locale entry is removed.
+    expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerNetworkMode'))
+    expect(String(field.tooltip)).not.toContain('tooltips.')
+  })
+
+  it('gives every option a real description', () => {
+    const field = networkField({})
+    for (const opt of field.options ?? []) {
+      expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
+      expect(opt.description).toBe(lookupEnMessage(`common.managerNetworkMode_${opt.value}_desc`))
+      // Guard against a raw key leaking into the UI if the locale entry is removed.
+      expect(opt.description).not.toContain('common.')
+    }
+  })
+
+  it('explains that personal_cloud unblocks installs under --listen', () => {
+    const desc = networkField({}).options?.find((o) => o.value === 'personal_cloud')?.description
+    expect(desc).toContain('--listen')
+  })
+
+  it('reads each install\'s own persisted mode (per-install isolation)', () => {
+    expect(networkField({ managerNetworkMode: 'personal_cloud' }).value).toBe('personal_cloud')
+    expect(networkField({ managerNetworkMode: 'offline' }).value).toBe('offline')
+  })
+
+  it('degrades a hand-edited bogus record value to the default', () => {
+    expect(networkField({ managerNetworkMode: 'bogus' }).value).toBe('public')
+  })
+
+  it('sits directly after Manager Security Level, sharing its rowGroup for the paired row', () => {
+    const fields = buildLaunchSettingsFields({} as never, OPTS)
+    const ids = fields.map((f) => f.id)
+    expect(ids.indexOf('managerNetworkMode')).toBe(ids.indexOf('managerSecurityLevel') + 1)
+    const security = fields.find((f) => f.id === 'managerSecurityLevel')
+    const network = fields.find((f) => f.id === 'managerNetworkMode')
+    expect(security?.rowGroup).toBeTruthy()
+    expect(network?.rowGroup).toBe(security?.rowGroup)
+  })
+})

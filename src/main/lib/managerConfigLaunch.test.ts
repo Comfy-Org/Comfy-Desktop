@@ -43,7 +43,8 @@ describe('reconcileManagerConfigForLaunch', () => {
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
       useChineseMirrors: true,
-      securityLevel: 'weak'
+      securityLevel: 'weak',
+      networkMode: undefined
     })
   })
 
@@ -56,30 +57,44 @@ describe('reconcileManagerConfigForLaunch', () => {
     })
 
     expect(mockEnsure).toHaveBeenNthCalledWith(1, '/inst-a', {
-      useChineseMirrors: false, securityLevel: 'strong'
+      useChineseMirrors: false, securityLevel: 'strong', networkMode: undefined
     })
     expect(mockEnsure).toHaveBeenNthCalledWith(2, '/inst-b', {
-      useChineseMirrors: false, securityLevel: 'normal-'
+      useChineseMirrors: false, securityLevel: 'normal-', networkMode: undefined
     })
   })
 
-  it('passes mirror=false and no level when the user never opted into either', async () => {
+  it('passes the launched install\'s own network mode', async () => {
+    await reconcileManagerConfigForLaunch({
+      remote: false, installPath: '/inst', securityLevel: 'normal', networkMode: 'personal_cloud'
+    })
+
+    expect(mockEnsure).toHaveBeenCalledWith('/inst', {
+      useChineseMirrors: false,
+      securityLevel: 'normal',
+      networkMode: 'personal_cloud'
+    })
+  })
+
+  it('passes mirror=false and no options when the user never opted into any', async () => {
     await reconcileManagerConfigForLaunch({ remote: false, installPath: '/inst' })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
       useChineseMirrors: false,
-      securityLevel: undefined
+      securityLevel: undefined,
+      networkMode: undefined
     })
   })
 
-  it('degrades a hand-edited bogus level to undefined instead of leaking it', async () => {
+  it('degrades hand-edited bogus values to undefined instead of leaking them', async () => {
     await reconcileManagerConfigForLaunch({
-      remote: false, installPath: '/inst', securityLevel: 'bogus'
+      remote: false, installPath: '/inst', securityLevel: 'bogus', networkMode: 'bogus'
     })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
       useChineseMirrors: false,
-      securityLevel: undefined
+      securityLevel: undefined,
+      networkMode: undefined
     })
   })
 
