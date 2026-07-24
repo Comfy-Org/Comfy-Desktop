@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
   net: { request: vi.fn() },
 }))
 
-import { comfybuilder } from './index'
+import { comfybuilder, withAccelArgs } from './index'
 import type { InstallationRecord } from '../../installations'
 
 const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
@@ -59,5 +59,36 @@ describe('comfybuilder.getListPreview', () => {
   it('surfaces the distribution once a rename has made the two differ', () => {
     expect(comfybuilder.getListPreview!(record({ name: 'My Renamed Install' })))
       .toBe('desktop-4target-stg-v0190')
+  })
+})
+
+describe('comfybuilder.withAccelArgs', () => {
+  // The flag tracks the INSTALLED ARTIFACT, not the host. `selectArtifactForHost`
+  // treats a cpu build as the universal fallback, so an nvidia machine lands on
+  // a cpu artifact whenever the distribution has no nvidia build: that torch is
+  // still CPU-only and ComfyUI would assert "Torch not compiled with CUDA
+  // enabled" without --cpu. nvidia/amd/mps builds bring their own accelerated
+  // torch and are auto-detected, so they take no flag.
+  it.each([
+    ['cpu build', 'cpu', 'cpu', '--enable-manager --cpu'],
+    ['cpu build on an nvidia host (no nvidia build published)', 'cpu', 'cpu', '--enable-manager --cpu'],
+    ['nvidia build', 'nvidia', 'cu128', '--enable-manager'],
+    ['amd build', 'amd', 'rocm6.2', '--enable-manager'],
+    ['mps build', 'mps', 'mps', '--enable-manager'],
+  ])('%s', (_name, artifactGpu, artifactAccelVariant, expected) => {
+    expect(withAccelArgs(record({ artifactGpu, artifactAccelVariant }), '--enable-manager')).toBe(expected)
+  })
+
+  it('falls back to accelVariant when the gpu field is absent', () => {
+    expect(withAccelArgs(record({ artifactGpu: undefined, artifactAccelVariant: 'cpu' }), '--enable-manager'))
+      .toBe('--enable-manager --cpu')
+  })
+
+  it.each(['--cpu', '--enable-manager --cpu', '--cpu --listen'])('does not double up on %s', (args) => {
+    expect(withAccelArgs(record({ artifactGpu: 'cpu' }), args)).toBe(args)
+  })
+
+  it('does not mistake --cpu-vae for the cpu flag', () => {
+    expect(withAccelArgs(record({ artifactGpu: 'cpu' }), '--cpu-vae')).toBe('--cpu-vae --cpu')
   })
 })

@@ -44,6 +44,22 @@ function artifactFromRecord(inst: InstallationRecord): Artifact {
   }
 }
 
+/**
+ * Pin the accelerator args the installed artifact implies.
+ *
+ * A CPU artifact ships a CPU-only torch, and ComfyUI defaults to probing CUDA:
+ * without `--cpu` it dies at import with "Torch not compiled with CUDA enabled".
+ * Which artifact got installed is a property of the machine, not a user
+ * preference, so it is pinned here rather than baked into the editable launch
+ * args. Skipped when the user already passed `--cpu` themselves. nvidia/amd/mps
+ * need no flag: torch and ComfyUI detect those on their own.
+ */
+export function withAccelArgs(installation: InstallationRecord, launchArgs: string): string {
+  const isCpu = installation.artifactGpu === 'cpu' || installation.artifactAccelVariant === 'cpu'
+  if (!isCpu || /(?:^|\s)--cpu(?:\s|$)/.test(launchArgs)) return launchArgs
+  return `${launchArgs} --cpu`.trim()
+}
+
 export const comfybuilder: SourcePlugin = {
   id: 'comfybuilder',
   label: 'ComfyBuilder',
@@ -83,7 +99,7 @@ export const comfybuilder: SourcePlugin = {
 
   getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {
     const spec = buildLaunchSpec(installation.installPath, {
-      launchArgs: ((installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS),
+      launchArgs: withAccelArgs(installation, (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS),
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
