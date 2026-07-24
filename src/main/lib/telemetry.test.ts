@@ -50,12 +50,6 @@ interface CapturedCall {
 }
 const captured: CapturedCall[] = []
 
-interface AliasCall {
-  distinctId: string
-  alias: string
-}
-const aliases: AliasCall[] = []
-
 interface IdentifyCall {
   distinctId: string
   properties?: {
@@ -81,8 +75,7 @@ const featureFlagCalls: Array<{
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
   failNextFlushes: 0,
-  autoFailNextIdentifies: 0,
-  failNextAliases: 0
+  autoFailNextIdentifies: 0
 }))
 
 vi.mock('posthog-node', () => ({
@@ -118,14 +111,6 @@ vi.mock('posthog-node', () => ({
         distinct_id: call.distinctId,
         properties: call.properties
       })
-    }
-    aliasImmediate(call: AliasCall): Promise<void> {
-      aliases.push(call)
-      if (posthogClientMock.failNextAliases > 0) {
-        posthogClientMock.failNextAliases--
-        return Promise.reject(new Error('alias failed'))
-      }
-      return Promise.resolve()
     }
     captureException(
       error: unknown,
@@ -240,7 +225,6 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
     appEnv = 'test'
   } = options
   captured.length = 0
-  aliases.length = 0
   identifies.length = 0
   exceptions.length = 0
   featureFlagCalls.length = 0
@@ -260,7 +244,6 @@ afterEach(() => {
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
   posthogClientMock.autoFailNextIdentifies = 0
-  posthogClientMock.failNextAliases = 0
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
@@ -721,18 +704,10 @@ describe('telemetry consent state (3-state)', () => {
   it('discards deferred data when consent is denied', () => {
     telemetry.setConsentState('undecided')
     bindTestAnonymous('anonymous-id')
-    const onDiscarded = vi.fn()
 
     telemetry.registerPersonProperties({ plan: 'pro' })
     telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
     telemetry.captureFirstLaunch({ id_class: 'random_uuid' })
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'installation-id',
-      source: 'windows_installer_filename',
-      onAliased: vi.fn(),
-      onDiscarded
-    })
     telemetry.setConsentState('denied')
 
     telemetry.registerPersonProperties({ locale: 'en' })
@@ -740,7 +715,6 @@ describe('telemetry consent state (3-state)', () => {
     telemetry.setConsentState('granted')
     telemetry.applyFirebaseUserConsensus('firebase-user')
 
-    expect(onDiscarded).toHaveBeenCalledOnce()
     expect(captured.some((call) => call.event === 'comfy.desktop.app.first_launch')).toBe(false)
     expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('plan')
     expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('locale')
@@ -809,80 +783,6 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
 
     const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
     expect(ev?.properties).toMatchObject({ id_class: 'random_uuid', locale: 'fr' })
-  })
-})
-
-describe('telemetry legacy download-token bridge', () => {
-  beforeEach(() => {
-    setupTelemetry({ consent: null, bind: null })
-  })
-
-  it('aliases the token into the active anonymous identity after consent', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.bindAnonymousId('anonymous-start', 'installation-id-fake')
-    captured.length = 0
-    aliases.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'installation-id-fake',
-      source: 'windows_installer_filename',
-      onAliased
-    })
-    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
-    telemetry.capture('comfy.desktop.first_use.consent_decision', {
-      decision: 'accept',
-      telemetry_enabled: true
-    })
-
-    expect(captured).toHaveLength(1)
-    expect(captured[0]?.properties).not.toHaveProperty('download_token')
-    expect(aliases).toHaveLength(0)
-
-    telemetry.setConsentState('granted')
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(aliases).toEqual([{ distinctId: 'anonymous-start', alias: 'AbC123xYz789' }])
-    expect(
-      captured.find((call) => call.event === 'comfy.desktop.identity.download_attributed')
-        ?.properties
-    ).toMatchObject({
-      installation_id: 'installation-id-fake',
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
-    })
-    expect(
-      captured.find((call) => call.event === 'comfy.desktop.app.first_launch')?.properties
-    ).toMatchObject({
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
-    })
-    expect(
-      captured.find((call) => call.event === 'comfy.desktop.session.started')?.properties
-    ).not.toHaveProperty('download_token')
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps persisted retry state when the alias request fails', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.bindAnonymousId('anonymous-start', 'installation-id-fake')
-    posthogClientMock.failNextAliases = 1
-    const onAliased = vi.fn()
-
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'installation-id-fake',
-      source: 'windows_installer_filename',
-      attachToFirstLaunch: false,
-      onAliased
-    })
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(aliases).toEqual([{ distinctId: 'anonymous-start', alias: 'AbC123xYz789' }])
-    expect(onAliased).not.toHaveBeenCalled()
   })
 })
 

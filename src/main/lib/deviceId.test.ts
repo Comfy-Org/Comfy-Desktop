@@ -56,6 +56,14 @@ describe('deviceId', () => {
   })
 
   describe('initDeviceId — fresh install (no existing file)', () => {
+    it('detects existing app state before initialization creates the device file', () => {
+      expect(mod.hasPersistedDeviceId()).toBe(false)
+
+      fs.writeFileSync(path.join(testUserData, 'device-id.txt'), 'legacy-install-state')
+
+      expect(mod.hasPersistedDeviceId()).toBe(true)
+    })
+
     it('derives installation_id from machine_id and writes device-id.txt', async () => {
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()

@@ -87,19 +87,16 @@ import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
 import {
-  clearPendingDownloadToken,
-  markDownloadTokenAttributed,
-  readPendingDownloadToken
-} from './lib/downloadAttribution'
-import {
   clearLegacyIdentityRetryMarker,
   consumeFirstLaunch,
   getDeviceId,
   getIdClass,
+  hasCompletedFirstLaunch,
+  hasPersistedDeviceId,
   initDeviceId,
   markIdentityMigrationCompleted
 } from './lib/deviceId'
-import { getOrCreateAnonymousDistinctId } from './lib/anonymousIdentity'
+import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudCapacity } from './lib/cloudCapacity'
@@ -1421,10 +1418,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.installAppHooks()
 
     // installation_id is an event/person property, never a PostHog identity.
+    const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
-    const anonymousDistinctId = recoverPendingIdentityRotation(getOrCreateAnonymousDistinctId())
+    // A fresh Windows install may adopt the website anonymous ID carried in
+    // the installer filename; see websiteAnonymousIdentity.ts.
+    const anonymousDistinctId = recoverPendingIdentityRotation(
+      getInitialAnonymousDistinctId(existingInstallation)
+    )
 
     mainTelemetry.bindAnonymousId(anonymousDistinctId, installationId, {
       app_version: APP_VERSION,
@@ -1440,21 +1442,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
 
     const isFirstLaunch = consumeFirstLaunch()
-    const pendingDownloadToken = readPendingDownloadToken()
-    if (pendingDownloadToken) {
-      mainTelemetry.deferDownloadTokenAlias({
-        downloadToken: pendingDownloadToken.token,
-        installationId,
-        source: pendingDownloadToken.source,
-        attachToFirstLaunch: isFirstLaunch,
-        onAliased: () => {
-          clearPendingDownloadToken()
-          markDownloadTokenAttributed()
-        },
-        onDiscarded: clearPendingDownloadToken
-      })
-    }
-
     if (legacyId) {
       // Historical random installation ids are reconciled directly in
       // PostHog, not by Desktop alias writes. Complete only the local migration.

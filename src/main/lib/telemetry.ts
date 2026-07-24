@@ -182,8 +182,6 @@ export function _resetForTest(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingUserBinding = null
-  pendingDownloadTokenAlias = null
-  pendingDownloadTokenEventProperties = null
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
@@ -595,18 +593,6 @@ interface PendingUserBinding {
 }
 
 let pendingUserBinding: PendingUserBinding | null = null
-let pendingDownloadTokenAlias: {
-  downloadToken: string
-  anonymousId: string
-  installationId: string
-  source: string
-  onAliased: () => void
-  onDiscarded?: () => void
-} | null = null
-let pendingDownloadTokenEventProperties: {
-  download_token: string
-  download_token_source: string
-} | null = null
 
 /**
  * `anonymousDistinctId` is the active W/D for the current anonymous period.
@@ -620,29 +606,12 @@ let installationIdProperty: string | null = null
 let pendingIdentityMergeFlush: Promise<void> | null = null
 const queuedPendingIdentityMergeIds = new Set<string>()
 
-function takeDownloadTokenEventProperties(properties: TelemetryContext): TelemetryContext {
-  if (!pendingDownloadTokenEventProperties) return properties
-  const tokenProperties = pendingDownloadTokenEventProperties
-  pendingDownloadTokenEventProperties = null
-  return { ...properties, ...tokenProperties }
-}
-
-function applyDownloadTokenToPendingFirstLaunch(): void {
-  if (!pendingFirstLaunch || !pendingDownloadTokenEventProperties) return
-  pendingFirstLaunch = { ...pendingFirstLaunch, ...pendingDownloadTokenEventProperties }
-  pendingDownloadTokenEventProperties = null
-}
-
 function discardDeferredTelemetry(): void {
   pendingSessionStart = null
   pendingFirstLaunch = null
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingUserBinding = null
-  pendingDownloadTokenEventProperties = null
-  const pendingAlias = pendingDownloadTokenAlias
-  pendingDownloadTokenAlias = null
-  pendingAlias?.onDiscarded?.()
 }
 
 function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
@@ -718,23 +687,6 @@ function flushPendingIdentityMerges(): Promise<void> {
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
   if (consentState !== 'granted') return
-  if (pendingDownloadTokenAlias) {
-    const pending = pendingDownloadTokenAlias
-    pendingDownloadTokenAlias = null
-    void (async () => {
-      if (!(await aliasImmediateInternal(pending.anonymousId, pending.downloadToken))) return
-      capture('comfy.desktop.identity.download_attributed', {
-        installation_id: pending.installationId,
-        download_token: pending.downloadToken,
-        download_token_source: pending.source
-      })
-      try {
-        pending.onAliased()
-      } catch {
-        // Persisted retry state remains authoritative when cleanup fails.
-      }
-    })()
-  }
   if (boundUserId && (pendingPersonSet || pendingPersonSetOnce)) {
     if (capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)) {
       pendingPersonSet = null
@@ -776,49 +728,6 @@ export function bindAnonymousId(
   }
   if (!canEmit()) return
   tryFlushDeferred()
-}
-
-/** Bridge a Windows download token into the active anonymous identity. */
-export function deferDownloadTokenAlias(opts: {
-  downloadToken: string
-  installationId: string
-  source: string
-  attachToFirstLaunch?: boolean
-  onAliased: () => void
-  onDiscarded?: () => void
-}): void {
-  if (!opts.downloadToken || !anonymousDistinctId) return
-  if (consentState === 'denied') {
-    opts.onDiscarded?.()
-    return
-  }
-  pendingDownloadTokenAlias = {
-    downloadToken: opts.downloadToken,
-    anonymousId: anonymousDistinctId,
-    installationId: opts.installationId,
-    source: opts.source,
-    onAliased: opts.onAliased,
-    onDiscarded: opts.onDiscarded
-  }
-  pendingDownloadTokenEventProperties =
-    opts.attachToFirstLaunch === false
-      ? null
-      : {
-          download_token: opts.downloadToken,
-          download_token_source: opts.source
-        }
-  applyDownloadTokenToPendingFirstLaunch()
-  tryFlushDeferred()
-}
-
-async function aliasImmediateInternal(distinctId: string, alias: string): Promise<boolean> {
-  if (!canEmit() || consentState !== 'granted') return false
-  try {
-    await client!.aliasImmediate({ distinctId, alias })
-    return true
-  } catch {
-    return false
-  }
 }
 
 /**
@@ -1092,16 +1001,15 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
   if (consentState === 'denied') return
-  const eventProperties = takeDownloadTokenEventProperties(properties)
   if (
     !canEmit() ||
     !distinctId ||
     consentState !== 'granted' ||
-    !capture('comfy.desktop.app.first_launch', eventProperties)
+    !capture('comfy.desktop.app.first_launch', properties)
   ) {
     // Not admitted (deferred or dropped): the on-disk guard is already
     // burned, so keep the payload queued for the next flush trigger.
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
+    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
   }
 }
 
