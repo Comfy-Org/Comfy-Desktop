@@ -96,7 +96,6 @@ beforeEach(() => {
     // `sub_low` / `cpu_only` tiers. Tests for that feature set a poor tier
     // explicitly per-case.
     getSystemInfo: vi.fn().mockResolvedValue(systemInfo('high')),
-    getCloudRecoEnabled: vi.fn().mockResolvedValue(true),
     getCloudFreeRunsEnabled: vi.fn().mockResolvedValue(true),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
@@ -664,39 +663,13 @@ describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
     expect(badge(wrapper).exists()).toBe(true)
   })
 
-  it('kill switch off restores the shipped default and hides badge + pill', async () => {
-    ;(window.api.getCloudRecoEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
-    const wrapper = await mountWithTier('cpu_only', null)
-    expect(badge(wrapper).exists()).toBe(false)
-    expect(wrapper.find('[data-testid="first-use-pick-local"]').attributes('data-selected')).toBe(
-      'true'
-    )
-    // Read via the ops-flag path. The experiments cache is consent-gated
-    // and this screen renders pre-consent, so routing it there would leave
-    // ops holding a switch that can never fire.
-    expect(window.api.getCloudRecoEnabled).toHaveBeenCalled()
-    expect(window.api.telemetryGetExperimentFlag).not.toHaveBeenCalledWith('desktop-cloud-reco')
-  })
-
-  it('fails open when the reco kill-switch IPC rejects', async () => {
-    ;(window.api.getCloudRecoEnabled as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error('nope')
-    )
-    expect(badge(await mountWithTier('cpu_only', null)).exists()).toBe(true)
-  })
-
-  // The two offers are independent: the GPU upsell and the free tier can be
-  // retired separately, so neither switch may drag the other down with it.
-  it('keeps the free-runs pill on its own switch, not the recommendation’s', async () => {
-    ;(window.api.getCloudRecoEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
-    const recoOff = await mountWithTier('cpu_only', null)
-    expect(badge(recoOff).exists()).toBe(false)
-    expect(pill(recoOff).exists()).toBe(true)
-    ;(window.api.getCloudRecoEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(true)
+  // The pill follows the free tier; the recommendation follows hardware.
+  // Neither may drag the other down with it.
+  it('hides the pill when free tier is off, leaving the recommendation alone', async () => {
     ;(window.api.getCloudFreeRunsEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
-    const freeRunsOff = await mountWithTier('cpu_only', null)
-    expect(badge(freeRunsOff).exists()).toBe(true)
-    expect(pill(freeRunsOff).exists()).toBe(false)
+    const wrapper = await mountWithTier('cpu_only', null)
+    expect(pill(wrapper).exists()).toBe(false)
+    expect(badge(wrapper).exists()).toBe(true)
   })
 
   it('fails closed when the free-runs IPC rejects', async () => {

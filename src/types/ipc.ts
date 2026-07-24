@@ -139,16 +139,16 @@ export interface DetailField {
   value: string | boolean | number | string[] | Record<string, string> | null
   editable?: boolean
   editType?:
-  | 'select'
-  | 'boolean'
-  | 'text'
-  | 'number'
-  | 'path'
-  | 'channel-cards'
-  | 'args-builder'
-  | 'env-vars'
-  | 'model-dirs'
-  | 'hidden'
+    | 'select'
+    | 'boolean'
+    | 'text'
+    | 'number'
+    | 'path'
+    | 'channel-cards'
+    | 'args-builder'
+    | 'env-vars'
+    | 'model-dirs'
+    | 'hidden'
   options?: DetailFieldOption[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
@@ -1290,19 +1290,11 @@ export interface ElectronApi {
    *  unavailable. Renderers consume this via `useCloudCapacity`. */
   getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
-  /** Ops kill switch for the GPU-aware Cloud recommendation on the
-   *  first-use picker. Resolved at boot from the `desktop-cloud-reco`
-   *  PostHog flag via the consent-bypassing ops-flag path (the surface
-   *  renders pre-consent, so the experiments cache can't serve it).
-   *  Fails OPEN — only an explicit `'off'` / `false` returns false. */
-  getCloudRecoEnabled(): Promise<boolean>
-  /** Ops switch for the "5 free runs" trial pill, read from cloud's own
-   *  `free_tier_workflow_submission_enabled` flag so the pill tracks the
-   *  real free-tier rollout. Separate from the recommendation switch —
-   *  the free tier is an independent offer. Currently false for everyone
-   *  (free tier isn't live), and flips on its own when the BE-1304 ramp
-   *  lands. Fails CLOSED: the pill asserts a live entitlement, so an
-   *  unresolvable flag means we don't make the claim. */
+  /** Whether the free tier is live, for the "5 free runs" trial pill.
+   *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
+   *  tracks the real rollout. False for everyone today; flips on its own
+   *  when the ramp lands. Fails CLOSED — the pill asserts a live
+   *  entitlement, so an unresolvable flag means we don't claim it. */
   getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
@@ -1368,9 +1360,7 @@ export interface ElectronApi {
    *  reaches the launching window). Lets any open dashboard show the red
    *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
-  onTerminalOutput(
-    callback: (data: { installationId: string; data: string }) => void
-  ): Unsubscribe
+  onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): Unsubscribe
   onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
   onComfyBootLog(callback: (data: ComfyBootLogData) => void): Unsubscribe
   onInstanceLaunching(
@@ -1540,13 +1530,13 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-      | 'install-update'
-      | 'app-update-restart-prompt'
-      | 'app-update-download-prompt'
-      | 'open-settings'
-      | 'picker-pick-install'
-      | 'picker-install-action'
-      | 'picker-show-progress'
+        | 'install-update'
+        | 'app-update-restart-prompt'
+        | 'app-update-download-prompt'
+        | 'open-settings'
+        | 'picker-pick-install'
+        | 'picker-install-action'
+        | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>

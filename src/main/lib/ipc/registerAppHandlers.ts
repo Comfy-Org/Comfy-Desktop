@@ -33,7 +33,7 @@ import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudCapacityStatusAsync } from '../cloudCapacity'
-import { cloudRecoSwitch, cloudFreeRunsSwitch } from '../cloudSwitches'
+import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
@@ -59,13 +59,10 @@ export function registerAppHandlers(): void {
   // every cloud webContents `dom-ready`. See `userTier.ts`.
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
 
-  // Ops switches for the first-use picker. Both bypass the consent gate so
-  // they resolve pre-consent, the only state that surface renders in. The
-  // recommendation (badge + no-preselect) fails OPEN; the free-runs pill
-  // fails CLOSED because it asserts a live entitlement. See
-  // `cloudSwitches.ts`.
-  ipcMain.handle('get-cloud-reco-enabled', () => cloudRecoSwitch.getAsync())
-  ipcMain.handle('get-cloud-free-runs-enabled', () => cloudFreeRunsSwitch.getAsync())
+  // Whether the free tier is live, for the first-use trial pill. Bypasses
+  // the consent gate so it resolves pre-consent, the only state that
+  // surface renders in; fails CLOSED. See `cloudFreeRuns.ts`.
+  ipcMain.handle('get-cloud-free-runs-enabled', () => getCloudFreeRunsEnabledAsync())
 
   // Sources
   ipcMain.handle('get-sources', () =>
@@ -256,7 +253,9 @@ export function registerAppHandlers(): void {
       const wmiDrivers = await getWindowsGpuDriverVersions()
       if (wmiDrivers.size > 0) {
         allGpus = allGpus.map((g) =>
-          g.driver_version ? g : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
+          g.driver_version
+            ? g
+            : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
         )
       }
     }

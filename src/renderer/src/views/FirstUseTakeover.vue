@@ -180,9 +180,9 @@ function maybeRecordForkExposure(): void {
   if (forkExposureRecorded) return
   const variant = forkExperimentVariant.value
   if (!variant || !forkExposureSource) return
-  // Both inputs to `hardwareRecommendsCloud` must have landed, or we'd
-  // record an exposure for a user the override is about to remove.
-  if (!hardwareChecked.value || !recoFlagResolved.value) return
+  // The tier must have landed, or we'd record an exposure for a user the
+  // override is about to remove.
+  if (!hardwareChecked.value) return
   forkExposureRecorded = true
   if (hardwareRecommendsCloud.value) return
   try {
@@ -196,21 +196,9 @@ function maybeRecordForkExposure(): void {
   }
 }
 
-/** Ops kill switch for the badge + no-preselect. Deliberately the
- *  ops-flag path and not `telemetryGetExperimentFlag` — that cache is
- *  consent-gated and this screen renders pre-consent. Fails open; see
- *  `cloudSwitches.ts`. */
-async function loadCloudRecoEnabled(): Promise<boolean> {
-  try {
-    return await window.api.getCloudRecoEnabled()
-  } catch {
-    return true
-  }
-}
-
-/** Ops switch for the trial pill. Separate from the recommendation
- *  because the free tier is its own offer, and reads cloud's own flag so
- *  it tracks the real rollout. Fails closed; see `cloudSwitches.ts`. */
+/** Whether the free tier is live, for the trial pill. Reads cloud's own
+ *  flag so it tracks the real rollout. Fails closed; see
+ *  `cloudFreeRuns.ts`. */
 async function loadCloudFreeRunsEnabled(): Promise<boolean> {
   try {
     return await window.api.getCloudFreeRunsEnabled()
@@ -266,16 +254,13 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 onMounted(async () => {
   // All best-effort and independently fail-safe, so the picker still
   // works if any of them errors.
-  const [variant, , recoEnabled, freeRunsEnabled] = await Promise.all([
+  const [variant, , freeRunsEnabled] = await Promise.all([
     loadForkExperimentVariant(),
     cloudCapacity.whenReady(),
-    loadCloudRecoEnabled(),
     loadCloudFreeRunsEnabled()
   ])
   forkExperimentVariant.value = variant
-  cloudRecoEnabled.value = recoEnabled
   cloudFreeRunsEnabled.value = freeRunsEnabled
-  recoFlagResolved.value = true
   applyForkExperimentDefault(variant)
   capacityReady.value = true
 })
@@ -342,21 +327,14 @@ function loadSystemInfo(): Promise<SystemInfo | null> {
  *  the models people actually want (integrated, or discrete under 6 GB).
  *  `apple` and `low`+ run local fine. */
 const RECO_GPU_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['sub_low', 'cpu_only'])
-/** Starts `true` to match its fail-open direction, so nothing flashes off
- *  then on while the boot fetch is in flight; `recoFlagResolved` is what
- *  tells the exposure logic the real value landed. */
-const cloudRecoEnabled = ref(true)
-const recoFlagResolved = ref(false)
 /** Starts `false` to match its fail-closed direction, so the pill never
  *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
-/** Whether this machine's hardware nudges toward Cloud — GPU-Aware Cloud
- *  Upsell (Slack thread + Notion plan, 2026-07-24). Suppressed when Cloud
- *  is capacity-disabled: that card is unclickable, so recommending it and
- *  advertising free runs on it would be a dead end. */
+/** Whether this machine's hardware nudges toward Cloud. Suppressed when
+ *  Cloud is capacity-disabled: that card is unclickable, so recommending
+ *  it would be a dead end. */
 const hardwareRecommendsCloud = computed(
   () =>
-    cloudRecoEnabled.value &&
     hardwareChecked.value &&
     gpuTier.value !== null &&
     RECO_GPU_TIERS.has(gpuTier.value) &&
@@ -374,7 +352,7 @@ watch(hardwareRecommendsCloud, (recommends) => {
 })
 // One watcher covers every ordering of the two async inputs. See
 // `maybeRecordForkExposure`.
-watch([hardwareChecked, recoFlagResolved, forkExperimentVariant], () => {
+watch([hardwareChecked, forkExperimentVariant], () => {
   maybeRecordForkExposure()
 })
 /** Funnel-completion bookkeeping for `comfy.desktop.first_use.completed`.
