@@ -101,8 +101,8 @@ async function cleanupCreated(installPath: string, preexisting: ReadonlySet<stri
 
 /**
  * Download + verify + extract + validate an artifact into `installPath`. Throws
- * {@link ComfyBuilderInstallError} on a bad artifact (incl. missing sha256),
- * checksum mismatch, or bad extracted layout.
+ * {@link ComfyBuilderInstallError} on a bad artifact, a checksum mismatch, or a
+ * bad extracted layout. A missing hash is a warning, not an error: see above.
  */
 export async function installArtifact(opts: InstallArtifactOptions): Promise<void> {
   const { artifact, client, installPath, cacheDir, onProgress, signal } = opts
