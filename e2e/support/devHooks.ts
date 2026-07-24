@@ -217,6 +217,22 @@ export async function getRunningSessionSnapshot(
   }, installationId))
 }
 
+/** Whether main still holds the per-install background-operation slot
+ *  (`_operationAborts`) for `installationId`. Poll to `false` before
+ *  triggering a new picker op, since main rejects overlapping ops. */
+export async function hasActiveOperation(
+  app: ElectronApplication,
+  installationId: string,
+): Promise<boolean> {
+  return await evalWithRetry(() => app.evaluate((_electron, id) => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { hasActiveOperation: (id: string) => boolean }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.hasActiveOperation(id)
+  }, installationId))
+}
+
 /** Read the `checkedAt` ms timestamp of the shared release-cache entry
  *  for `(repo, channel)`. Returns `null` when no entry exists yet. */
 export async function getReleaseCacheCheckedAt(

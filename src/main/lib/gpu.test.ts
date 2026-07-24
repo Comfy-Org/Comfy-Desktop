@@ -99,6 +99,18 @@ describe('promoteGpuController', () => {
     expect(promoteGpuController(gpus, 'nvidia')).toEqual(emptyEnrichment)
   })
 
+  it('does not match AMD through "Corporation" in another vendor name', () => {
+    expect(
+      promoteGpuController([gpu('Intel Corporation', 'Intel UHD Graphics 770', 128)], 'amd')
+    ).toEqual(emptyEnrichment)
+    expect(
+      promoteGpuController(
+        [gpu('NVIDIA Corporation', 'NVIDIA GeForce RTX 4090', 24576)],
+        'amd'
+      )
+    ).toEqual(emptyEnrichment)
+  })
+
   it('does not promote virtual-only controller data', () => {
     const gpus = [
       gpu('NVIDIA', 'Parsec Virtual Display Adapter', 24576, '591.59'),

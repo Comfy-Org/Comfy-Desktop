@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
-import type { GpuTier, HardwareValidation, NvidiaDriverCheck } from '../../types/ipc'
-import { deriveGpuTier } from '../../shared/gpuTier'
+import type { HardwareValidation, NvidiaDriverCheck } from '../../types/ipc'
+import { deriveGpuTier, type GpuTier } from '../../shared/gpuTier'
 
 type GpuId = 'nvidia' | 'amd' | 'intel' | 'mps'
 
@@ -335,7 +335,7 @@ export function vendorMatches(id: GpuId, ...parts: (string | null | undefined)[]
       return (
         v.includes('amd') ||
         v.includes('advanced micro') ||
-        v.includes('ati') ||
+        /\bati\b/.test(v) ||
         v.includes('radeon')
       )
     case 'intel':
