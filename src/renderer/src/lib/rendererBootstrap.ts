@@ -26,7 +26,6 @@
 import { datadogRum, type RumBeforeSend } from '@datadog/browser-rum'
 import { normalizeRumErrorEvent } from './datadogPathNormalization'
 import {
-  deriveGpuTier,
   TELEMETRY_ACTION_EVENT_NAME,
   type TelemetryActionEventDetail,
   type TelemetryContext
@@ -438,19 +437,16 @@ async function initializeProviders(): Promise<void> {
       // - nvidia_driver_version / nvidia_driver_supported
       // - cpu_manufacturer / cpu_physical_cores / cpu_speed_ghz
       // - os_arch
-      // Forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
-      // / `gpu_count` / `gpu_driver_version` for cohort filtering. Main has
+      // Forward the full payload and derive `gpu_count` / `gpu_driver_version`
+      // for cohort filtering. Main has
       // already selected the real compute GPU (`gpu_model` / `gpu_vram_mb` /
       // per-vendor driver), so we use those instead of re-picking `gpus[0]`,
       // which can be a virtual display adapter.
-      const gpuVramMb = info.gpu_vram_mb
-      const gpuVramGb = gpuVramMb != null ? Math.round(gpuVramMb / 1024) : null
       const gpuDriverVersion =
         info.nvidia_driver_version ??
         info.amd_driver_version ??
         info.intel_driver_version ??
         null
-      const gpuTier = deriveGpuTier({ vendor: info.gpu_vendor, vramGb: gpuVramGb })
       // `gpus` / `installations` are arrays of objects. The telemetry IPC
       // bridge only accepts scalars and arrays of scalars, so a native array
       // of objects is silently dropped before it reaches PostHog. Serialize
@@ -461,11 +457,8 @@ async function initializeProviders(): Promise<void> {
       const installationsJson = serializeForTelemetry(installations)
       const enriched: Record<string, string | number | boolean | null | undefined> = {
         ...(infoRest as unknown as Record<string, string | number | boolean | null | undefined>),
-        gpu_vram_mb: gpuVramMb,
-        gpu_vram_gb: gpuVramGb,
         gpu_count: gpus.length,
         gpu_driver_version: gpuDriverVersion,
-        gpu_tier: gpuTier,
         gpus_json: gpusJson.json,
         gpus_json_truncated: gpusJson.truncated,
         installations_json: installationsJson.json,
@@ -486,10 +479,10 @@ async function initializeProviders(): Promise<void> {
           os_arch: info.os_arch,
           gpu_vendor: info.gpu_vendor,
           gpu_model: info.gpu_model,
-          gpu_vram_gb: gpuVramGb,
+          gpu_vram_gb: info.gpu_vram_gb,
           gpu_count: info.gpus.length,
           gpu_driver_version: gpuDriverVersion,
-          gpu_tier: gpuTier,
+          gpu_tier: info.gpu_tier,
           nvidia_driver_supported: info.nvidia_driver_supported,
           total_memory_gb: info.total_memory_gb,
           cpu_model: info.cpu_model,
