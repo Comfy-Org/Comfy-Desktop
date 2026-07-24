@@ -108,8 +108,7 @@ const {
   activeFilter,
   visibleInstalls,
   showEmptyHint,
-  matchesQuery,
-  lastLaunchedLabel
+  matchesQuery
 } = useInstallList({ installations: installationsRef })
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
@@ -391,7 +390,6 @@ function handleNewInstallClick(): void {
           :key="inst.id"
           :installation="inst"
           :is-stopped-action-gated="isStoppedActionGated(inst)"
-          :last-launched-label="lastLaunchedLabel(inst)"
           @pick="pickInstall"
           @open-card-menu="openCardMenu"
           @open-kebab-menu="openKebabMenu"

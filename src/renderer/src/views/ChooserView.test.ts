@@ -332,7 +332,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toHaveLength(1)
   })
 
-  it('shows a relative recency line for a booted install and "not launched yet" for a fresh one', async () => {
+  it('gives install tiles two lines — no launch-recency row, booted or not', async () => {
     installMockApi([
       makeInstall({ id: 'booted', name: 'Booted', lastLaunchedAt: Date.now() - 2 * 60_000 }),
       makeInstall({ id: 'fresh', name: 'Fresh' }),
@@ -342,8 +342,10 @@ describe('ChooserView', () => {
     const tiles = wrapper.findAll('.chooser-tile')
     const bootedTile = tiles.find((t) => t.text().includes('Booted'))!
     const freshTile = tiles.find((t) => t.text().includes('Fresh'))!
-    expect(bootedTile.find('.chooser-tile-recency-text').text()).toContain('Launched')
-    expect(freshTile.find('.chooser-tile-recency-text').text()).toBe('Not launched yet')
+    expect(bootedTile.find('.chooser-tile-recency-text').exists()).toBe(false)
+    expect(freshTile.find('.chooser-tile-recency-text').exists()).toBe(false)
+    // The facts that survive keep their row.
+    expect(bootedTile.find('.chooser-tile-meta-line').exists()).toBe(true)
   })
 
   it('renders the update affordance as a bare "Update" pill — the target version lives in the meta line', async () => {
