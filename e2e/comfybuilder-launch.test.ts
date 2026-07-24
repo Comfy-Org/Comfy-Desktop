@@ -32,6 +32,9 @@ import { byTestId, TID } from './support/testIds'
  *  used to bounce the user into. */
 const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
 
+/** Same tile-name selector `clickInstallTile` matches against. */
+const TILE_NAME_SELECTOR = '.chooser-tile:not(.chooser-tile-new):not(.chooser-tile-cloud) .chooser-tile-name'
+
 interface DistributionCase {
   id: string
   name: string
@@ -46,14 +49,16 @@ const INSTALLED: DistributionCase = {
   installPath: '',
 }
 
-/** `installing` never reaches the chooser (`enrichInstallationsForRenderer`
- *  filters it out), so only the `failed` row also renders as a tile. */
-const NOT_READY: DistributionCase[] = [
-  { id: 'inst-comfybuilder-installing', name: 'desktop-4target-stg-v0191', status: 'installing', installPath: '' },
-  { id: 'inst-comfybuilder-failed', name: 'desktop-4target-stg-v0192', status: 'failed', installPath: '' },
-]
-
-const FAILED = NOT_READY[1]!
+/** `failed` is the only not-installed status that renders a tile:
+ *  `enrichInstallationsForRenderer` filters `installing` out. The per-status
+ *  action contract is pinned deterministically by the plugin unit test; here we
+ *  only cover what a user can actually click. */
+const FAILED: DistributionCase = {
+  id: 'inst-comfybuilder-failed',
+  name: 'desktop-4target-stg-v0192',
+  status: 'failed',
+  installPath: '',
+}
 
 interface ListActionShape {
   id: string
@@ -111,7 +116,7 @@ async function writeDistributionLayout(installPath: string): Promise<void> {
 
 test.beforeAll(async () => {
   rootDir = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-comfybuilder-e2e-'))
-  const cases = [INSTALLED, ...NOT_READY]
+  const cases = [INSTALLED, FAILED]
   for (const dist of cases) {
     dist.installPath = path.join(rootDir, dist.id)
     await writeDistributionLayout(dist.installPath)
@@ -129,17 +134,25 @@ test.afterAll(async () => {
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
 })
 
-for (const dist of NOT_READY) {
-  test(`ComfyBuilder distribution in ${dist.status} exposes a disabled launch action @windows @macos @linux`, async () => {
-    const actions = await ctx.panel.evaluate<ListActionShape[]>(
-      `window.api.getListActions(${JSON.stringify(dist.id)})`,
-    )
-    expect(actions.map((a) => a.id)).toContain('launch')
-    const launch = actions.find((a) => a.id === 'launch')!
-    expect(launch.enabled).toBe(false)
-    expect(launch.disabledMessage).toBe(en.errors.installNotReady)
-  })
-}
+test('a not-ready ComfyBuilder distribution exposes a disabled launch action @windows @macos @linux', async () => {
+  // The harness seeds installations.json AFTER launch, so wait for the tile:
+  // its presence is the proof that main has re-read the record, which a bare
+  // `getListActions(id)` probe would otherwise race (returning [] for an
+  // unknown id and looking exactly like the bug this file pins).
+  await ctx.panel.waitFor(
+    async () => (await ctx.panel.allText(TILE_NAME_SELECTOR))
+      .some((t) => t.toLowerCase().includes(FAILED.name.toLowerCase())),
+    { timeout: 15_000, message: `Tile for "${FAILED.name}" never appeared` },
+  )
+
+  const actions = await ctx.panel.evaluate<ListActionShape[]>(
+    `window.api.getListActions(${JSON.stringify(FAILED.id)})`,
+  )
+  expect(actions.map((a) => a.id)).toContain('launch')
+  const launch = actions.find((a) => a.id === 'launch')!
+  expect(launch.enabled).toBe(false)
+  expect(launch.disabledMessage).toBe(en.errors.installNotReady)
+})
 
 test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos @linux', async () => {
   await clickInstallTile(ctx.panel, FAILED.name)
