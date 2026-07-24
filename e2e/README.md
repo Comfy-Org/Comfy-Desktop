@@ -98,7 +98,7 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `lifecycle-snapshot.test.ts` | `@lifecycle` | Yes (light) | Real snapshot capture driven through the picker save CTA and prompt UI; asserted via the rendered snapshot row plus read-only backend queries. Picker opened via direct `openInstancePicker`, not a UI entry control. |
 | `lifecycle-startup-update-check.test.ts` | `@lifecycle` | Yes | One real `git ls-remote` to github.com per startup. |
 | `lifecycle-update-check.test.ts` | `@lifecycle` | Yes (light) | Live `git ls-remote --tags` against Comfy-Org/ComfyUI, triggered by the real Check for Update button and Update-tab clicks; `ageReleaseCache` is time scaffolding. Picker opened via direct `openInstancePicker`, not a UI entry control. |
-| `lifecycle.test.ts` | `@lifecycle` | Yes | Real ~500 MB install driven through the UI; every picker flow enters through a real control (dashboard kebab -> Manage, or the running host's title-bar install pill), stop + return drives the stopped card's Return to Dashboard button, snapshot capture goes through the Snapshots tab Save CTA, and both deletes run the kebab -> Delete -> confirm chain. Torch guard: after install the venv's real python imports torch and records the family signature (torch/torchvision/torchaudio/torchsde versions + `torch.version.cuda`, asserted null for the Windows CPU variant), re-checked unchanged after both updater runs and the snapshot restore - catches any requirements install touching the torch family (e.g. a stray `--upgrade`). Remaining scaffolding: a panel remount (`ensureInstallPanelView`) so read-only `window.api` assertions stay reachable, and closing the extra window the multi-window test opened. |
+| `lifecycle.test.ts` | `@lifecycle` | Yes | Real ~500 MB install driven through the UI; every picker flow enters through a real control (dashboard kebab -> Manage, or the running host's title-bar install pill), stop + return drives the stopped card's Return to Dashboard button, snapshot capture goes through the Snapshots tab Save CTA, and both deletes run the kebab -> Delete -> confirm chain. Torch guard: after install the venv's real python imports torch and records the family signature (torch/torchvision/torchaudio/torchsde versions + `torch.version.cuda` + `torch.cuda.is_available()`, asserted to match the `LIFECYCLE_VARIANT` install variant - null/false for CPU, non-null/true for NVIDIA), re-checked unchanged after both updater runs and the snapshot restore - catches any requirements install touching the torch family (e.g. a stray `--upgrade`). Remaining scaffolding: a panel remount (`ensureInstallPanelView`) so read-only `window.api` assertions stay reachable, and closing the extra window the multi-window test opened. |
 | `nav-matrix-cloud.test.ts` | platform | n/a | Seeded cloud record; `clearRunningSessions` dev hook between tests; asserts IPC dispatch + window count. No real cloud attach (that is `lifecycle-cloud.test.ts`). |
 | `nav-matrix-dashboard.test.ts` | platform | n/a | `seedRunningSession`; asserts window/IPC behavior. |
 | `nav-matrix-instance.test.ts` | platform | n/a | `seedRunningSession`; asserts window/IPC behavior. |
@@ -133,5 +133,33 @@ The harness prints the per-run profile directory
 (`[lifecycle-harness] fresh profile dir: …`); re-export it as `LIFECYCLE_REUSE_DIR` to
 re-run individual tests against that profile.
 
+### Install variants (`LIFECYCLE_VARIANT`)
+
+`lifecycle.test.ts` drives the install wizard's variant row from the
+`LIFECYCLE_VARIANT` environment variable:
+
+- `cpu` (default on Windows) - deterministic CPU torch build; the post-install
+  torch probe asserts `torch.version.cuda` is null and `torch.cuda.is_available()`
+  is false.
+- `nvidia` - selects the CUDA build (multi-GB download). Refuses to start unless
+  `nvidia-smi -L` succeeds, and after install + successful startup asserts the venv
+  carries a CUDA torch build with `torch.cuda.is_available() === true`, so the run
+  can never pass vacuously on a machine without a working GPU.
+- unset on macOS/Linux - trusts the wizard's recommended pick (macOS only
+  publishes `mac-mps`; there is no `linux-cpu` variant).
+
+```powershell
+# NVIDIA lifecycle run on a GPU machine (PowerShell):
+$env:LIFECYCLE_VARIANT = 'nvidia'
+pnpm run test:e2e:lifecycle
+Remove-Item Env:\LIFECYCLE_VARIANT
+```
+
+A profile reused via `LIFECYCLE_REUSE_DIR` must match the requested variant; the
+harness fails fast on a CPU-profile/`nvidia` (or vice versa) mismatch.
+
 In CI, the lifecycle project runs nightly and on demand via the **Lifecycle Tests**
-workflow (`.github/workflows/lifecycle.yml`). It is not PR-blocking.
+workflow (`.github/workflows/lifecycle.yml`), always with the CPU variant (hosted
+runners have no GPU). It can also be run on a specific PR by adding the
+`run-lifecycle` label (remove and re-add the label to re-run). It is opt-in and not
+PR-blocking.

@@ -99,9 +99,48 @@ async function waitForConfigContinueEnabled(message: string): Promise<void> {
  */
 let HYDRATED = false
 
+/** Install variant the chain drives through the REAL install wizard,
+ *  from `LIFECYCLE_VARIANT`:
+ *  - 'cpu'     - deterministic CPU torch build (default on Windows).
+ *  - 'nvidia'  - CUDA torch build; refuses to run without a working
+ *                NVIDIA driver so it can never pass vacuously.
+ *  - 'default' - no explicit pick; trust the form's recommended
+ *                variant (macOS only publishes `mac-mps`, Linux
+ *                publishes no `linux-cpu`).
+ */
+function resolveLifecycleVariant(): 'cpu' | 'nvidia' | 'default' {
+  const raw = (process.env['LIFECYCLE_VARIANT'] ?? '').toLowerCase()
+  if (raw === '') return process.platform === 'win32' ? 'cpu' : 'default'
+  if (raw === 'nvidia') {
+    if (process.platform === 'darwin') {
+      throw new Error('LIFECYCLE_VARIANT=nvidia is not supported on macOS (only mac-mps is published)')
+    }
+    return 'nvidia'
+  }
+  if (raw === 'cpu') {
+    if (process.platform !== 'win32') {
+      throw new Error('LIFECYCLE_VARIANT=cpu is only published for Windows (no linux-cpu / mac-cpu variant)')
+    }
+    return 'cpu'
+  }
+  throw new Error(`Unsupported LIFECYCLE_VARIANT "${process.env['LIFECYCLE_VARIANT']}" - use "cpu" or "nvidia"`)
+}
+const LIFECYCLE_VARIANT = resolveLifecycleVariant()
+
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
+  // Fail fast on machines that cannot honor an NVIDIA run: without a
+  // working driver the CUDA install would only fail (or worse, pass
+  // vacuously) after the multi-GB torch download.
+  if (LIFECYCLE_VARIANT === 'nvidia') {
+    try {
+      execFileSync('nvidia-smi', ['-L'], { encoding: 'utf-8', windowsHide: true, timeout: 30_000 })
+    } catch {
+      throw new Error('LIFECYCLE_VARIANT=nvidia requires a working NVIDIA driver (`nvidia-smi -L` failed); refusing to run the CUDA lifecycle on this machine')
+    }
+  }
+
   if (!process.env['GITHUB_TOKEN']) {
     for (let depth = 2; depth <= 8; depth++) {
       const segments = Array(depth).fill('..')
@@ -148,6 +187,18 @@ test.beforeAll(async () => {
       try {
         _installedTorchSignature = queryTorchSignature()
       } catch { /* partial hydration - venv may not exist on a half-built profile */ }
+      // A reused profile must match the requested variant - rerunning
+      // the CUDA suite against a CPU profile (or vice versa) would
+      // assert against the wrong torch build.
+      if (_installedTorchSignature && LIFECYCLE_VARIANT !== 'default') {
+        const isCudaBuild = _installedTorchSignature.cuda !== null
+        if ((LIFECYCLE_VARIANT === 'nvidia') !== isCudaBuild) {
+          throw new Error(
+            `LIFECYCLE_VARIANT=${LIFECYCLE_VARIANT} but the reused profile carries a ${isCudaBuild ? 'CUDA' : 'CPU'} torch build`
+            + ' - point LIFECYCLE_REUSE_DIR at a matching profile or unset it',
+          )
+        }
+      }
       try {
         const list = await ctx.panel.evaluate<SnapshotListLite>(
           `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
@@ -192,7 +243,10 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  await ctx.cleanup()
+  // ctx is unassigned when beforeAll throws before launching the app
+  // (e.g. the nvidia-smi preflight) - don't bury that error under a
+  // TypeError from teardown.
+  if (typeof ctx !== 'undefined') await ctx.cleanup()
 })
 
 /** True iff a webContents with a localhost URL exists and is loaded. */
@@ -315,28 +369,31 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // come back enabled before moving on.
   await waitForConfigContinueEnabled('Continue button never re-enabled after picking the older stable tag')
 
-  // On Windows, force the CPU variant so the test is deterministic
-  // across runners (NVIDIA hosts would otherwise download a multi-GB
-  // GPU payload). macOS only publishes `mac-mps` and Linux publishes
-  // no `linux-cpu` variant, so on those platforms we trust the
-  // recommended pick the form already made.
-  if (process.platform === 'win32') {
+  // Drive the variant row to the requested LIFECYCLE_VARIANT. CPU is
+  // the Windows default so the chain stays deterministic across
+  // runners (NVIDIA hosts would otherwise download a multi-GB GPU
+  // payload); 'nvidia' selects the CUDA build explicitly. macOS only
+  // publishes `mac-mps` and Linux publishes no `linux-cpu` variant,
+  // so with no explicit variant those platforms trust the recommended
+  // pick the form already made.
+  if (LIFECYCLE_VARIANT !== 'default') {
+    const rowLabel = LIFECYCLE_VARIANT === 'nvidia' ? 'NVIDIA' : 'CPU'
     await ctx.panel.waitForSelector('.brand-variant-row', { timeout: 5_000 })
     expect(
-      await ctx.panel.clickByText('.brand-variant-row', 'CPU'),
-      'CPU variant row clicked',
+      await ctx.panel.clickByText('.brand-variant-row', rowLabel),
+      `${rowLabel} variant row clicked`,
     ).toBe(true)
-    // Confirm the CPU row is the selected one before continuing —
+    // Confirm the requested row is the selected one before continuing —
     // otherwise a label-substring miss (e.g. an i18n change) would
-    // silently fall back to the recommended GPU variant.
+    // silently fall back to the recommended variant.
     await ctx.panel.waitFor(
       async () => ctx.panel.evaluate<boolean>(
         `(() => {
           const sel = document.querySelector('.brand-variant-row--selected .brand-variant-row__label')
-          return !!sel && /CPU/i.test(sel.textContent || '')
+          return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
         })()`,
       ),
-      { timeout: 5_000, message: 'CPU variant did not become the selected variant row' },
+      { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` },
     )
   }
 })
@@ -542,6 +599,10 @@ interface TorchSignature {
   torch: string
   /** `torch.version.cuda` - null on CPU/MPS builds, e.g. "12.8" on CUDA builds. */
   cuda: string | null
+  /** `torch.cuda.is_available()` - proves the CUDA runtime actually
+   *  initializes against the local driver on NVIDIA installs (a CUDA
+   *  build with a broken/missing driver still reports a cuda version). */
+  cudaAvailable: boolean
   torchvision: string | null
   torchaudio: string | null
   torchsde: string | null
@@ -568,12 +629,25 @@ function queryTorchSignature(): TorchSignature {
     '    try: return metadata.version(p)',
     '    except Exception: return None',
     'print(json.dumps({"torch": torch.__version__, "cuda": torch.version.cuda,'
+      + ' "cudaAvailable": torch.cuda.is_available(),'
       + ' "torchvision": v("torchvision"), "torchaudio": v("torchaudio"), "torchsde": v("torchsde")}))',
   ].join('\n')
   const out = execFileSync(venvPython, ['-c', probe], {
     encoding: 'utf-8', windowsHide: true, timeout: 120_000,
   }).trim()
   return JSON.parse(out) as TorchSignature
+}
+
+/** Assert the installed torch package family is identical to the
+ *  baseline captured after install. `cudaAvailable` is excluded from
+ *  the equality: it is runtime driver state, not package state, and a
+ *  transient driver hiccup on a GPU machine must not masquerade as a
+ *  requirements install touching the torch family. */
+function expectTorchFamilyUnchanged(message: string): void {
+  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
+  const { cudaAvailable: _base, ...baseline } = _installedTorchSignature!
+  const { cudaAvailable: _cur, ...current } = queryTorchSignature()
+  expect(current, message).toEqual(baseline)
 }
 
 /** Stop the running install and land back on the dashboard through the
@@ -684,14 +758,29 @@ test('captures install metadata for the update tests @lifecycle', async () => {
   // successful startup must have left a working, variant-matched torch.
   _installedTorchSignature = queryTorchSignature()
   expect(_installedTorchSignature.torch, 'torch failed to import from the installed venv').toBeTruthy()
-  // The chain forces the CPU variant on Windows (test 2) -
-  // `torch.version.cuda` must be null (a bare version string can still
-  // be a CUDA build, so the build tag alone is not authoritative).
-  if (process.platform === 'win32') {
+  // The installed torch build must match the variant the wizard was
+  // driven to in test 2. `torch.version.cuda` distinguishes the build
+  // (a bare version string can still be a CUDA build, so the build tag
+  // alone is not authoritative); `torch.cuda.is_available()` proves the
+  // CUDA runtime actually initializes against the local driver.
+  if (LIFECYCLE_VARIANT === 'nvidia') {
+    expect(
+      _installedTorchSignature.cuda,
+      `NVIDIA-variant install must carry a CUDA torch build (torch ${_installedTorchSignature.torch})`,
+    ).not.toBeNull()
+    expect(
+      _installedTorchSignature.cudaAvailable,
+      `torch.cuda.is_available() must be true on an NVIDIA-variant install (torch ${_installedTorchSignature.torch}, cuda ${_installedTorchSignature.cuda})`,
+    ).toBe(true)
+  } else if (LIFECYCLE_VARIANT === 'cpu') {
     expect(
       _installedTorchSignature.cuda,
       `CPU-variant install must not carry a CUDA torch build (torch ${_installedTorchSignature.torch}, cuda ${_installedTorchSignature.cuda})`,
     ).toBeNull()
+    expect(
+      _installedTorchSignature.cudaAvailable,
+      'CPU-variant install must not initialize a CUDA runtime',
+    ).toBe(false)
   }
 })
 
@@ -742,11 +831,7 @@ test('update-comfyui drives the real updater and moves HEAD forward @lifecycle',
   // The updater's requirements install must never touch the torch
   // family: an accidental --upgrade would replace the variant-matched
   // build.
-  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
-  expect(
-    queryTorchSignature(),
-    'update-comfyui changed the installed torch family',
-  ).toEqual(_installedTorchSignature)
+  expectTorchFamilyUnchanged('update-comfyui changed the installed torch family')
 })
 
 test('re-launch ComfyUI after update validates the updated install runs @lifecycle', async () => {
@@ -999,11 +1084,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
 
   // The cross-channel updater's requirements install must never touch
   // the torch family (same guard as the stopped-path update test).
-  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
-  expect(
-    queryTorchSignature(),
-    'cross-channel update-comfyui changed the installed torch family',
-  ).toEqual(_installedTorchSignature)
+  expectTorchFamilyUnchanged('cross-channel update-comfyui changed the installed torch family')
 
   // Inline-picker routing keeps the popup open on its success screen;
   // close it so the next test's title-pill entry opens the picker
@@ -1072,11 +1153,7 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle'
   // Restore runs the REAL pip-sync phase against this env (unlike the
   // snapshot-restore fixture spec) - it must never touch the torch
   // family either.
-  expect(_installedTorchSignature, 'baseline torch signature not captured').not.toBeNull()
-  expect(
-    queryTorchSignature(),
-    'snapshot restore (incl. pip sync) changed the installed torch family',
-  ).toEqual(_installedTorchSignature)
+  expectTorchFamilyUnchanged('snapshot restore (incl. pip sync) changed the installed torch family')
 
   // Inline-picker routing keeps the popup open on its success screen;
   // close it so the next test's title-pill entry opens the picker
