@@ -217,6 +217,44 @@ export class WebContentsPage {
       message: `selector ${selector} did not become visible`,
     })
   }
+
+  /** Click a toggle `trigger` until `result` becomes visible. A DOM
+   *  `.click()` can dispatch before the component's handler is attached
+   *  (or while the trigger is still disabled) on slow hosted CI runners,
+   *  silently swallowing the click on overflow menus and expandable rows.
+   *  The re-click decision reads the trigger's `aria-expanded` state
+   *  (accordion bodies stay mounted while collapsed, so result-in-DOM is
+   *  not proof the click landed), falling back to result DOM presence for
+   *  triggers without the attribute. Never re-clicks an open toggle, so
+   *  it cannot toggle one shut. */
+  async clickUntilVisible(
+    trigger: string,
+    result: string,
+    opts: { timeout?: number } = {},
+  ): Promise<void> {
+    const deadline = Date.now() + (opts.timeout ?? 30_000)
+    for (;;) {
+      const state = await this.wcEval<'missing' | 'open' | 'closed'>(`(() => {
+        const t = document.querySelector(${JSON.stringify(trigger)})
+        if (!t) return 'missing'
+        const expanded = t.getAttribute('aria-expanded')
+        if (expanded !== null) return expanded === 'true' ? 'open' : 'closed'
+        return document.querySelector(${JSON.stringify(result)}) ? 'open' : 'closed'
+      })()`)
+      if (state === 'missing') {
+        throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
+      }
+      if (state === 'closed') await this.click(trigger)
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        throw new Error(`clickUntilVisible: ${result} did not become visible after clicking ${trigger}`)
+      }
+      try {
+        await this.waitForVisible(result, { timeout: Math.min(2_000, remaining) })
+        return
+      } catch { /* re-evaluate the toggle state and retry until deadline */ }
+    }
+  }
 }
 
 /** WebContentsPage for the chooser/lifecycle/etc panel body. */

@@ -663,8 +663,7 @@ async function stopAndReturnToDashboardViaUI(): Promise<void> {
   }
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  expect(await popup.click(byTestId(TID.pickerMoreTrigger))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.pinBottomAction('stop')), { timeout: 10_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('stop')), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
@@ -1118,8 +1117,11 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle'
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
   // Expand the snapshot row to reveal Restore.
   await popup.waitForSelector(byTestId(TID.snapshotRow(_restoreSnapshotFilename)), { timeout: 30_000 })
-  expect(await popup.click(byTestId(TID.snapshotRow(_restoreSnapshotFilename)))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.snapshotRowRestore(_restoreSnapshotFilename)), { timeout: 10_000 })
+  await popup.clickUntilVisible(
+    byTestId(TID.snapshotRow(_restoreSnapshotFilename)),
+    byTestId(TID.snapshotRowRestore(_restoreSnapshotFilename)),
+    { timeout: 30_000 },
+  )
   expect(await popup.click(byTestId(TID.snapshotRowRestore(_restoreSnapshotFilename)))).toBe(true)
 
   // SnapshotsView builds a diff-preview confirm. When the snapshot's
@@ -1186,7 +1188,16 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @lifecycle
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  const beforeSnapshot = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+  // The restore's IN_PLACE_RELAUNCH registers the fresh session after
+  // the frontend reloads - poll instead of a one-shot read so a slow
+  // relaunch (hosted CI runners) cannot race this test's precondition.
+  let beforeSnapshot: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
+  await expect
+    .poll(async () => {
+      beforeSnapshot = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+      return beforeSnapshot
+    }, { timeout: 120_000, intervals: [1_000, 2_000] })
+    .not.toBeNull()
   expect(beforeSnapshot, 'expected a running session before Restart').not.toBeNull()
 
   // Open the picker through the running host's title pill — it seeds
@@ -1269,8 +1280,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
 
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  expect(await popup.click(byTestId(TID.pickerMoreTrigger))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.pinBottomAction('stop')), { timeout: 10_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('stop')), { timeout: 30_000 })
   // The primary CTA owns launch/restart; neither may leak into the menu.
   expect(await popup.exists(byTestId(TID.pinBottomAction('launch'))), 'launch must not render in the More menu').toBe(false)
   expect(await popup.exists(byTestId(TID.pinBottomAction('restart'))), 'restart must not render in the More menu').toBe(false)
@@ -1359,8 +1369,7 @@ test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycl
   // Open the footer "More" overflow menu → click Copy. (`[data-more-trigger]`
   // also matches the window-options caret, so target the explicit test id.)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  expect(await popup.click(byTestId(TID.pickerMoreTrigger))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.pinBottomAction('copy')), { timeout: 10_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('copy')), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.pinBottomAction('copy')))).toBe(true)
 
   // Prompt for the copy's new name. The picker drives dialogs through
