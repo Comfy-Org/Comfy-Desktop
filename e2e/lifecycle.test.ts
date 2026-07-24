@@ -976,6 +976,131 @@ test('captures a snapshot for the picker-driven restore test @lifecycle', async 
 })
 
 // ---------------------------------------------------------------------------
+// Manager security level: a Global Settings UI selection must reach the
+// config.ini ComfyUI-Manager actually reads, via a real stop -> relaunch
+// (handleLaunch's reconcile pass runs before every local launch).
+// ---------------------------------------------------------------------------
+
+test('global-settings Manager security level lands in Manager config.ini after relaunch @lifecycle', async () => {
+  test.setTimeout(600_000)
+  expect(_updateInstallPath, 'install path not captured').toBeTruthy()
+
+  // English labels for the four levels, keyed by stored value. A fresh
+  // profile has no stored value and must render the pinned default
+  // (normal); a reused profile may carry a level from a prior run, so
+  // derive both the expected initial label and a distinct target from
+  // the persisted setting instead of hardcoding them.
+  const LEVEL_LABELS: Record<string, string> = {
+    strong: 'Strict',
+    normal: 'Standard (recommended)',
+    'normal-': 'Relaxed',
+    weak: 'Permissive',
+  }
+  // The file ComfyUI-Manager actually reads (modern system-user-api path).
+  const configPath = path.join(_updateInstallPath, 'ComfyUI', 'user', '__manager', 'config.ini')
+  /** `security_level` inside `[default]`, or null when the file/key is absent. */
+  const readConfigLevel = (): string | null => {
+    if (!existsSync(configPath)) return null
+    const section = readFileSync(configPath, 'utf-8')
+      .split(/^\[/m).find((s) => s.startsWith('default]')) ?? ''
+    return /^\s*security_level = (\S+)\s*$/m.exec(section)?.[1] ?? null
+  }
+
+  const storedBefore = await ctx.panel.evaluate<string | null>(
+    `window.api.getSetting('managerSecurityLevel')`,
+  )
+  const initialLabel = LEVEL_LABELS[storedBefore ?? 'normal']!
+  // The target must differ from BOTH the persisted setting and whatever
+  // the on-disk config currently says - otherwise a broken/no-op launch
+  // reconciliation could pass vacuously against a config that already
+  // carried the target. Four levels guarantee a distinct pick exists.
+  const configLevelBefore = readConfigLevel()
+  const targetValue = (['weak', 'strong', 'normal-'] as const).find(
+    (v) => v !== storedBefore && v !== configLevelBefore,
+  )!
+  const target = { value: targetValue, label: LEVEL_LABELS[targetValue]! }
+
+  // Open Global Settings through the same `panel-trigger-overlay` IPC a
+  // `comfy://open-settings?tab=global` deep link dispatches into the
+  // panel renderer (see deep-links.test.ts).
+  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
+    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
+    if (!wc) throw new Error('panel webContents not found')
+    wc.send('panel-trigger-overlay', { kind: 'open-settings', settingsTab: 'global' })
+  }))
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 15_000, intervals: [100, 250],
+    })
+    .toBe(true)
+  const popup = titlePopupPage(ctx.app)
+
+  // The manager security select lives on the Advanced tab.
+  await popup.waitForVisible('#gs-tab-advanced', { timeout: 15_000 })
+  expect(await popup.click('#gs-tab-advanced')).toBe(true)
+
+  // Advanced hosts a single BaseSelect; its trigger must show the level
+  // matching the persisted setting - the pinned default on a fresh
+  // profile (guards against grabbing the wrong control as much as
+  // against a wrong default).
+  const trigger = '#gs-panel-advanced button.ui-select-trigger'
+  await popup.waitForVisible(trigger, { timeout: 15_000 })
+  expect(await popup.textOf(trigger)).toContain(initialLabel)
+
+  // Real DOM gesture: open the listbox, pick the target level.
+  expect(await popup.click(trigger)).toBe(true)
+  await popup.waitForVisible('.ui-select-listbox [role="option"]', { timeout: 10_000 })
+  expect(
+    await popup.clickByText('.ui-select-option', target.label),
+    `"${target.label}" option missing from the security-level listbox`,
+  ).toBe(true)
+  await expect
+    .poll(() => popup.textOf(trigger), { timeout: 10_000, intervals: [100, 250] })
+    .toContain(target.label)
+
+  // The field handler persists through the real settings store; wait for
+  // the write so the relaunch below cannot race it.
+  await expect
+    .poll(
+      () => ctx.panel.evaluate<string | null>(`window.api.getSetting('managerSecurityLevel')`),
+      { timeout: 10_000, intervals: [100, 250] },
+    )
+    .toBe(target.value)
+  await closeTitlePopupIfOpen(ctx.app)
+
+  // Changing the setting alone must NOT touch the config - only the
+  // launch-time reconcile pass may. This pins that the assertion after
+  // relaunch observes a real disk transition, not pre-existing content.
+  expect(
+    readConfigLevel(),
+    'Manager config changed before relaunch - reconcile must only run on launch',
+  ).toBe(configLevelBefore)
+
+  // Full real stop -> relaunch so handleLaunch's reconcile pass runs
+  // against the on-disk install.
+  await stopAndReturnToDashboardViaUI()
+  await clickInstallTile(ctx.panel, 'ComfyUI')
+  await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] }).toBe(true)
+  // Same lazy panel remount dance as the snapshot test above - the
+  // chooser-pick attach destroyed the install-backed panel webContents.
+  expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
+  await waitForWebContents(ctx.app, 'panel.html')
+
+  // The chosen level must land in [default] of the file Manager actually
+  // reads - a genuine disk transition, since the target was picked to
+  // differ from the pre-relaunch config content.
+  expect(existsSync(configPath), `Manager config not written at ${configPath}`).toBe(true)
+  expect(
+    readConfigLevel(),
+    `[default] security_level = ${target.value} missing from Manager config:\n`
+      + readFileSync(configPath, 'utf-8'),
+  ).toBe(target.value)
+
+  // The extra relaunch must not have disturbed the installed torch build.
+  expectTorchFamilyUnchanged('manager security-level relaunch changed the installed torch family')
+})
+
+// ---------------------------------------------------------------------------
 // Picker-driven update — driven through the picker's ChannelPicker.
 // Drafts a non-current channel ('latest') in the BaseSelect, clicks the
 // per-channel Update Now button, and waits for the IN_PLACE_RELAUNCH

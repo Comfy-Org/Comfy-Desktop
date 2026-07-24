@@ -54,7 +54,7 @@ import {
   flushBootPhasesOnFailure,
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
-import { ensureManagerConfig, type ManagerSecurityLevel } from '../../managerConfig'
+import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
@@ -367,21 +367,10 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     }
   }
 
-  if (!launchCmd.remote) {
-    try {
-      await ensureManagerConfig(inst.installPath, {
-        useChineseMirrors: settings.get('useChineseMirrors') === true,
-        securityLevel: settings.get('managerSecurityLevel') as
-          | ManagerSecurityLevel
-          | undefined,
-      })
-    } catch (err) {
-      console.warn('Failed to reconcile ComfyUI-Manager config:', err)
-      telemetry.capture('comfy.desktop.manager.config_seed_failed', {
-        ...buildErrorFields(err),
-      })
-    }
-  }
+  await reconcileManagerConfigForLaunch({
+    remote: Boolean(launchCmd.remote),
+    installPath: inst.installPath,
+  })
 
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
