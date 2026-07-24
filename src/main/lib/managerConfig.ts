@@ -57,11 +57,18 @@ function buildManagerConfig(opts: {
 // Manager) wrote. A same-named key in another section is left alone. Returns
 // the original string unchanged when the value already matches, so we avoid
 // pointless rewrites.
+//
+// Case rules mirror Python's configparser, which Manager uses: section names
+// are case-sensitive (Manager indexes config['default'], so `[Default]` is a
+// different, unread section), while option keys are case-insensitive
+// (optionxform lowercases them, so `Security_Level` IS security_level).
+// Case-variant duplicates are collapsed to one canonical line - Manager's
+// migration path parses with strict=True, where such duplicates raise.
 function withSecurityLevel(content: string, level: ManagerSecurityLevel): string {
   const line = `security_level = ${level}`
   const isHeader = (l: string) => /^[ \t]*\[[^\]]*\][ \t]*\r?$/.test(l)
   const isDefaultHeader = (l: string) => /^[ \t]*\[default\][ \t]*\r?$/.test(l)
-  const isSecurityKey = (l: string) => /^[ \t]*security_level[ \t]*=/.test(l)
+  const isSecurityKey = (l: string) => /^[ \t]*security_level[ \t]*=/i.test(l)
 
   const lines = content.split('\n')
   const start = lines.findIndex(isDefaultHeader)
@@ -76,14 +83,22 @@ function withSecurityLevel(content: string, level: ManagerSecurityLevel): string
       break
     }
   }
+  let replaced = false
   for (let i = start + 1; i < end; i++) {
     const current = lines[i] ?? ''
-    if (isSecurityKey(current)) {
+    if (!isSecurityKey(current)) continue
+    if (!replaced) {
       lines[i] = line + (current.endsWith('\r') ? '\r' : '')
-      return lines.join('\n')
+      replaced = true
+    } else {
+      lines.splice(i, 1)
+      i--
+      end--
     }
   }
-  lines.splice(start + 1, 0, line + ((lines[start] ?? '').endsWith('\r') ? '\r' : ''))
+  if (!replaced) {
+    lines.splice(start + 1, 0, line + ((lines[start] ?? '').endsWith('\r') ? '\r' : ''))
+  }
   return lines.join('\n')
 }
 

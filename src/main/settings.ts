@@ -4,7 +4,7 @@ import { app } from 'electron'
 import { configDir, homeDir, defaultDataRoot, defaultDownloadCacheDir, builtinDefaultInstallDir, setInstallDirResolver } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
-import type { ManagerSecurityLevel } from './lib/managerConfig'
+import { MANAGER_SECURITY_LEVELS, type ManagerSecurityLevel } from './lib/managerConfig'
 
 export interface KnownSettings {
   cacheDir: string
@@ -233,7 +233,9 @@ const SETTINGS_SCHEMA = {
       policy: 'value',
       prop: 'setting_manager_security_level_selected',
       toTelemetry: (raw) =>
-        raw === 'strong' || raw === 'normal' || raw === 'normal-' || raw === 'weak' ? raw : null,
+        (MANAGER_SECURITY_LEVELS as readonly string[]).includes(raw as string)
+          ? (raw as ManagerSecurityLevel)
+          : null,
     },
   },
   // Consent gate, not a durable trackable setting: once disabled we can't emit a

@@ -203,5 +203,30 @@ describe('ensureManagerConfig', () => {
         '[default]\r\nsecurity_level = weak\r\nchannel_url = x\r\n'
       )
     })
+
+    // configparser lowercases option keys, so Manager reads `Security_Level`
+    // as security_level - replace it instead of adding a duplicate.
+    it('replaces a mixed-case key (configparser keys are case-insensitive)', () => {
+      expect(_internals.withSecurityLevel('[default]\nSecurity_Level = normal\n', 'weak')).toBe(
+        '[default]\nsecurity_level = weak\n'
+      )
+    })
+
+    it('collapses case-variant duplicate keys to one canonical line', () => {
+      const content = '[default]\nSecurity_Level = normal\nchannel_url = x\nsecurity_level = strong\n'
+      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+        '[default]\nsecurity_level = weak\nchannel_url = x\n'
+      )
+    })
+
+    // configparser section names are case-sensitive: Manager indexes
+    // config['default'], so a hand-written `[Default]` is a section Manager
+    // never reads - write a real [default] instead of editing it.
+    it('does not treat [Default] as the default section (configparser sections are case-sensitive)', () => {
+      const content = '[Default]\nsecurity_level = normal\n'
+      expect(_internals.withSecurityLevel(content, 'weak')).toBe(
+        '[Default]\nsecurity_level = normal\n[default]\nsecurity_level = weak\n'
+      )
+    })
   })
 })
