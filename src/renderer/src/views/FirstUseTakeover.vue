@@ -229,6 +229,8 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
     initialDefaultChoice.value = 'local'
     return
   }
+  if (userHasPicked.value) return
+
   if (variant === 'cloud-default') {
     pickedChoice.value = 'cloud'
     initialDefaultChoice.value = 'cloud'
@@ -634,8 +636,8 @@ function chooseMigrate(): void {
 }
 
 /** Commit a card selection made by the user (as opposed to a default the
- *  picker seeded for them). Flipping `userHasPicked` is what stops the
- *  late hardware-tier watcher from clearing a deliberate choice. */
+ *  picker seeded for them). Flipping `userHasPicked` stops late boot
+ *  defaults and hardware results from replacing a deliberate choice. */
 function pickChoice(choice: 'cloud' | 'local'): void {
   if (choice === 'cloud' && cloudCapacity.isDisabled()) return
   userHasPicked.value = true

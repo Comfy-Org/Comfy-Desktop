@@ -82,6 +82,14 @@ function systemInfo(tier: GpuTier, label: string | null = 'NVIDIA') {
   return { gpu_tier: tier, gpu_label: label }
 }
 
+function deferred<T>() {
+  let resolve: (value: T | PromiseLike<T>) => void = () => {}
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   // Telemetry assertions look for a single call by event name, so calls
   // must not leak in from the previous test.
@@ -162,10 +170,8 @@ describe('FirstUseTakeover start step', () => {
 
   it('Express-install checkbox is visible on the default Local pick and hides only when Cloud is picked', async () => {
     const wrapper = mountTakeover()
-    // Let the boot-time fork-experiment/capacity resolution (async,
-    // resolves on the mocked promises) settle before interacting — a click
-    // landing mid-resolution races against `applyForkExperimentDefault`
-    // re-seeding `pickedChoice`, same as the fork-experiment tests below.
+    // Let the boot-time defaults settle so this test isolates the modifier
+    // visibility transitions.
     await flushPromises()
     // The row stays mounted (reserved layout space, no jump on swap)
     // but is visually + a11y hidden whenever Cloud is the active pick.
@@ -415,6 +421,31 @@ describe('FirstUseTakeover start step', () => {
 })
 
 describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
+  it.each([
+    ['Cloud', 'cloud' as const, undefined],
+    ['Local', 'local' as const, 'cloud']
+  ])(
+    'preserves an explicit %s choice while boot defaults are still resolving',
+    async (_label, choice, flagValue) => {
+      const freeRuns = deferred<boolean>()
+      ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue(
+        flagValue
+      )
+      ;(window.api.getCloudFreeRunsEnabled as ReturnType<typeof vi.fn>).mockReturnValue(
+        freeRuns.promise
+      )
+      const wrapper = mountTakeover()
+
+      await wrapper.find(`[data-testid="first-use-pick-${choice}"]`).trigger('click')
+      freeRuns.resolve(true)
+      await flushPromises()
+
+      expect(
+        wrapper.find(`[data-testid="first-use-pick-${choice}"]`).attributes('data-selected')
+      ).toBe('true')
+    }
+  )
+
   it('keeps Local as the default when the flag is missing (control / fallback)', async () => {
     const wrapper = mountTakeover()
     await flushPromises()
