@@ -1048,7 +1048,7 @@ test('per-install Manager security level lands in Manager config.ini after relau
   // trigger must show the level matching the persisted record - the
   // pinned default on a fresh profile (guards against grabbing the wrong
   // control as much as against a wrong default).
-  const trigger = 'button.ui-select-trigger[aria-label="Manager security level"]'
+  const trigger = 'button.ui-select-trigger[aria-label="Manager Security Level"]'
   await popup.waitForVisible(trigger, { timeout: 15_000 })
   expect(await popup.textOf(trigger)).toContain(initialLabel)
 

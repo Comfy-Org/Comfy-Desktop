@@ -198,6 +198,17 @@ export function buildLaunchSettingsFields(
       value: (installation.launchArgs as string | undefined) ?? defaultLaunchArgs,
       editable: true, editType: 'args-builder', tooltip: t('tooltips.startupArgs'),
       requiresRestart: true },
+    // Not a CLI argument: Manager reads `security_level` from its config.ini,
+    // which launch reconciles from this per-install value before every local
+    // start (see reconcileManagerConfigForLaunch).
+    { id: 'managerSecurityLevel', label: t('common.managerSecurityLevel'),
+      value: isManagerSecurityLevel(installation.managerSecurityLevel)
+        ? installation.managerSecurityLevel
+        : DEFAULT_MANAGER_SECURITY_LEVEL,
+      editable: true, editType: 'select', options: MANAGER_SECURITY_LEVELS.map((level) => ({
+        value: level, label: t(`common.managerSecurityLevel_${level}`),
+        description: t(`common.managerSecurityLevel_${level}_desc`),
+      })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true },
     { id: 'launchMode', label: t('common.launchMode'),
       value: (installation.launchMode as string | undefined) || defaultLaunchMode,
       editable: true, editType: 'select', options: [
@@ -220,17 +231,6 @@ export function buildLaunchSettingsFields(
       value: (installation.envVars as Record<string, string> | undefined) ?? {},
       editable: true, editType: 'env-vars', tooltip: t('tooltips.envVars'),
       requiresRestart: true },
-    // Not a CLI argument: Manager reads `security_level` from its config.ini,
-    // which launch reconciles from this per-install value before every local
-    // start (see reconcileManagerConfigForLaunch).
-    { id: 'managerSecurityLevel', label: t('common.managerSecurityLevel'),
-      value: isManagerSecurityLevel(installation.managerSecurityLevel)
-        ? installation.managerSecurityLevel
-        : DEFAULT_MANAGER_SECURITY_LEVEL,
-      editable: true, editType: 'select', options: MANAGER_SECURITY_LEVELS.map((level) => ({
-        value: level, label: t(`common.managerSecurityLevel_${level}`),
-        description: t(`common.managerSecurityLevel_${level}_desc`),
-      })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true },
   )
 
   return fields

@@ -263,7 +263,7 @@
     "tabSettings": "Settings",
     "loading": "Loading…",
     "envVars": "Environment Variables",
-    "managerSecurityLevel": "Manager security level",
+    "managerSecurityLevel": "Manager Security Level",
     "managerSecurityLevel_strong": "Strict",
     "managerSecurityLevel_strong_desc": "Blocks all node pack installs, updates, and uninstalls. Manager is read-only, with or without --listen.",
     "managerSecurityLevel_normal": "Standard (recommended)",

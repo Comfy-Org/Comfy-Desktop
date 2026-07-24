@@ -143,7 +143,7 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
       'Relaxed',
       'Permissive',
     ])
-    expect(field.label).toBe('Manager security level')
+    expect(field.label).toBe('Manager Security Level')
     // Guard against a raw key leaking into the UI if the locale entry is removed.
     expect(field.tooltip).toBe(lookup('tooltips.managerSecurityLevel'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
@@ -167,5 +167,10 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
 
   it('degrades a hand-edited bogus record value to the default', () => {
     expect(managerField({ managerSecurityLevel: 'bogus' }).value).toBe('normal')
+  })
+
+  it('sits directly below Startup Arguments', () => {
+    const ids = buildLaunchSettingsFields({} as never, OPTS).map((f) => f.id)
+    expect(ids.indexOf('managerSecurityLevel')).toBe(ids.indexOf('launchArgs') + 1)
   })
 })
