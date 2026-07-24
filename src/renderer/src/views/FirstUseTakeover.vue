@@ -173,6 +173,25 @@ async function loadForkExperimentVariant(): Promise<ForkVariant> {
   return variant
 }
 
+/** Ops kill switch for the whole GPU-Aware Cloud Upsell surface (Slack
+ *  thread, 2026-07-24 — Deep: "reuse the free tier quota flag that we've
+ *  on ui / backend? In case we ever need to shut it down, would be nice
+ *  to remove the badge from our end"). Reuses the same boot-time flag
+ *  fetch as the fork-default experiment above rather than a new IPC
+ *  method — this is a kill switch only, not a variant assigner, so it
+ *  fails OPEN: a missing cache entry, unrecognised value, or network
+ *  failure keeps the feature on. Only an explicit `'off'` / `false`
+ *  turns it off. Matches the Notion plan's `desktop-cloud-reco` spec. */
+const CLOUD_RECO_KILL_SWITCH_KEY = 'desktop-cloud-reco'
+async function loadCloudRecoEnabled(): Promise<boolean> {
+  try {
+    const flagValue = await window.api.telemetryGetExperimentFlag(CLOUD_RECO_KILL_SWITCH_KEY)
+    return flagValue !== 'off' && flagValue !== false
+  } catch {
+    return true
+  }
+}
+
 /** Apply the resolved variant to the picker state, respecting the
  *  hard precedence rules (legacy-desktop > capacity-disabled >
  *  experiment). Idempotent — safe to call from `onMounted` and from
@@ -222,10 +241,16 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 }
 
 onMounted(async () => {
-  // Capacity + experiment in parallel; both are best-effort and
-  // fail-closed so the picker still works if either errors.
-  const [variant] = await Promise.all([loadForkExperimentVariant(), cloudCapacity.whenReady()])
+  // Capacity + experiment + reco kill-switch in parallel; all best-effort
+  // and fail (open or closed, per their own docs above) so the picker
+  // still works if any of them errors.
+  const [variant, , recoEnabled] = await Promise.all([
+    loadForkExperimentVariant(),
+    cloudCapacity.whenReady(),
+    loadCloudRecoEnabled()
+  ])
   forkExperimentVariant.value = variant
+  cloudRecoEnabled.value = recoEnabled
   applyForkExperimentDefault(variant)
   capacityReady.value = true
 })
@@ -269,14 +294,21 @@ const showGpuHint = computed(
  *  `hardwareRecommendsCloud` so the reco badge never flashes before we
  *  actually know. */
 const gpuChecked = ref(false)
+/** `desktop-cloud-reco` kill switch — see `loadCloudRecoEnabled` above.
+ *  Starts `true` (fail-open) so nothing flashes off then on while the
+ *  boot-time fetch is still in flight. */
+const cloudRecoEnabled = ref(true)
 /** Whether this machine's hardware nudges the merged start screen toward
  *  recommending Cloud — GPU-Aware Cloud Upsell (Slack thread + Notion plan,
  *  2026-07-24). Placeholder for the real `gpu_tier` classifier (sub_low /
  *  cpu_only) described in the plan: until that VRAM-aware classifier lands,
  *  "no supported GPU detected" is used as a conservative stand-in for
  *  cpu_only only — deliberately narrower than the full target tier so we
- *  never over-claim. */
-const hardwareRecommendsCloud = computed(() => gpuChecked.value && detectedGpuLabel.value === null)
+ *  never over-claim. Gated on `cloudRecoEnabled` so ops can pull the whole
+ *  surface (badge, pill, no-preselect) without a redeploy. */
+const hardwareRecommendsCloud = computed(
+  () => cloudRecoEnabled.value && gpuChecked.value && detectedGpuLabel.value === null
+)
 // GPU-Aware Cloud Upsell (Slack thread, 2026-07-24): on hardware where we'd
 // recommend Cloud, don't pre-select either card — force an explicit pick
 // instead of defaulting to Local. Only overrides while the picker still
@@ -818,9 +850,12 @@ defineExpose({ open, resetContinue })
               <!-- 'unknown' tier means this device has never authenticated
                    with Cloud (useCloudCapacity docs the tri-state) — the
                    trial pill is for people who haven't tried it yet, not a
-                   permanent fixture on the card. -->
+                   permanent fixture on the card. Also behind the
+                   `desktop-cloud-reco` kill switch — the "5 free runs"
+                   claim depends on the quota actually being live, so ops
+                   needs the same off-switch it has for the badge. -->
               <span
-                v-if="cloudCapacity.tier.value === 'unknown'"
+                v-if="cloudRecoEnabled && cloudCapacity.tier.value === 'unknown'"
                 class="start-cloud-runs-pill"
                 data-testid="first-use-cloud-runs-pill"
                 >{{ $t('firstUse.cloudFreeRunsPill') }}</span
@@ -838,9 +873,15 @@ defineExpose({ open, resetContinue })
               </Tooltip>
             </template>
             <template v-if="hardwareRecommendsCloud" #desc-trailing>
-              <span class="start-cloud-reco" data-testid="first-use-cloud-reco">
-                {{ $t('firstUse.cloudRecommendedForHardware') }}
-              </span>
+              <!-- Deep's thread feedback: the badge on its own doesn't say
+                   *why* Cloud is recommended. Tooltip carries the reason
+                   instead of lengthening the badge text itself. -->
+              <Tooltip :text="$t('firstUse.cloudRecommendedForHardwareTooltip')">
+                <span class="start-cloud-reco" data-testid="first-use-cloud-reco">
+                  {{ $t('firstUse.cloudRecommendedForHardware') }}
+                  <Info :size="12" class="start-cloud-reco__info" aria-hidden="true" />
+                </span>
+              </Tooltip>
             </template>
           </ChoiceCard>
           <ChoiceCard
@@ -1197,9 +1238,13 @@ defineExpose({ open, resetContinue })
   gap: 8px;
 }
 
-/* "5 FREE RUNS" trial pill — same solid-chip language as the Why-Cloud
- * modal's credits pill (.why-cloud-pill), scaled down for the label row.
- * Surfaces the trial incentive up front per nav's thread feedback, without
+/* "5 FREE RUNS" trial pill. Same solid-chip shape as the Why-Cloud modal's
+ * credits pill (.why-cloud-pill), scaled down for the label row, but in
+ * the brand-yellow CTA color instead of neutral — Deep's thread feedback
+ * was that this needed to "pop" more; yellow is otherwise reserved for the
+ * primary Continue button, so borrowing it here is a deliberate way to
+ * make the incentive read as the one other "notice me" element on the
+ * card. Surfaces the trial up front per nav's thread feedback, without
  * waiting for the user to open the info tooltip to learn Cloud is free to
  * try. */
 .start-cloud-runs-pill {
@@ -1207,7 +1252,7 @@ defineExpose({ open, resetContinue })
   align-items: center;
   padding: 3px 8px;
   border-radius: 999px;
-  background: var(--neutral-100);
+  background: var(--comfy-yellow);
   color: var(--neutral-900);
   font-size: 10px;
   font-weight: 700;
@@ -1228,6 +1273,7 @@ defineExpose({ open, resetContinue })
 .start-cloud-reco {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   margin-top: 8px;
   padding: 3px 9px;
   border-radius: 999px;
@@ -1237,6 +1283,11 @@ defineExpose({ open, resetContinue })
   font-size: 12px;
   font-weight: 600;
   line-height: normal;
+  cursor: default;
+}
+.start-cloud-reco__info {
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 
 /* Modifier-checkbox container. Both rows (Migrate + Express) live

@@ -626,6 +626,7 @@
     "cloudDesc": "最适合希望随时随地工作，并使用已验证商业许可模型的**大多数用户**。",
     "cloudFreeRunsPill": "5次免费运行",
     "cloudRecommendedForHardware": "推荐用于你的硬件",
+    "cloudRecommendedForHardwareTooltip": "未检测到独立显卡 — Cloud 会在托管 GPU 上运行你的工作流。",
     "localLabel": "本地",
     "localTagline": "完全控制。使用你的硬件。",
     "localDesc": "最适合希望管理版本、自定义节点和离线工作流的**高级用户**。",
