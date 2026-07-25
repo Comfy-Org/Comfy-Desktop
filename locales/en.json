@@ -875,6 +875,8 @@
     "python": "Python",
     "pytorch": "PyTorch",
     "pytorchSection": "PyTorch",
+    "pytorchSeriesLabel": "Backend",
+    "pytorchSeriesDefault": "Default",
     "pytorchUnknown": "PyTorch (not detected)",
     "pytorchObservedDesc": "Installed outside the app — not a known official build. Pick a version below to switch to an official build.",
     "pytorchDownloadSize": "{size} GB download",

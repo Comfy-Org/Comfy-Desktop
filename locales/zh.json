@@ -875,6 +875,8 @@
     "python": "Python",
     "pytorch": "PyTorch",
     "pytorchSection": "PyTorch",
+    "pytorchSeriesLabel": "后端",
+    "pytorchSeriesDefault": "默认",
     "pytorchUnknown": "PyTorch（未检测到）",
     "pytorchObservedDesc": "在应用外安装 — 不是已知的官方构建。在下方选择一个版本以切换到官方构建。",
     "pytorchDownloadSize": "下载 {size} GB",

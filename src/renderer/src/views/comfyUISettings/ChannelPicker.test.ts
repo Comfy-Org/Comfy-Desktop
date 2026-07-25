@@ -119,3 +119,145 @@ describe('ChannelPicker — headline product + version', () => {
     expect(wrapper.find('.channel-picker-headline-version').text()).toBe('v0.3.75')
   })
 })
+
+describe('ChannelPicker — cascading group dropdowns', () => {
+  const cu130 = { id: 'cu130', label: 'CUDA 13.0 (cu130)' }
+  const cu128 = { id: 'cu128', label: 'CUDA 12.8 (cu128)' }
+
+  function groupedField(value = 's-cu130-2.9'): DetailField {
+    return {
+      id: 'pytorchStack',
+      label: 'PyTorch',
+      value,
+      editable: true,
+      editType: 'channel-cards',
+      groupLabels: ['Backend'],
+      options: [
+        {
+          value: 's-cu130-2.10',
+          label: 'PyTorch 2.10.0+cu130',
+          groupPath: [cu130],
+          data: { productName: 'PyTorch', installedVersion: '2.9.1+cu130', latestVersion: '2.10.0+cu130', updateAvailable: true }
+        },
+        {
+          value: 's-cu130-2.9',
+          label: 'PyTorch 2.9.1+cu130',
+          groupPath: [cu130],
+          data: { productName: 'PyTorch', installedVersion: '2.9.1+cu130', updateAvailable: false }
+        },
+        {
+          value: 's-cu128-2.11',
+          label: 'PyTorch 2.11.0+cu128',
+          groupPath: [cu128],
+          data: { productName: 'PyTorch', installedVersion: '2.9.1+cu130', latestVersion: '2.11.0+cu128', updateAvailable: true }
+        }
+      ]
+    } as DetailField
+  }
+
+  function selects(wrapper: ReturnType<typeof mountPicker>) {
+    return wrapper.findAllComponents({ name: 'BaseSelect' })
+  }
+
+  it('renders a single dropdown when options carry no groupPath (flat picker unchanged)', () => {
+    const wrapper = mountPicker(
+      field([
+        { value: 'stable', label: 'Stable' },
+        { value: 'latest', label: 'Latest' }
+      ])
+    )
+    const all = selects(wrapper)
+    expect(all).toHaveLength(1)
+    expect((all[0].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
+      'stable',
+      'latest'
+    ])
+  })
+
+  it('renders one group dropdown per path level plus the concrete dropdown, following field.value', () => {
+    const wrapper = mountPicker(groupedField())
+    const all = selects(wrapper)
+    expect(all).toHaveLength(2)
+    // Group dropdown lists the unique series and follows the current value's path.
+    expect(all[0].props('modelValue')).toBe('cu130')
+    expect((all[0].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
+      'cu130',
+      'cu128'
+    ])
+    // Concrete dropdown only shows the selected group's options.
+    expect(all[1].props('modelValue')).toBe('s-cu130-2.9')
+    expect((all[1].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
+      's-cu130-2.10',
+      's-cu130-2.9'
+    ])
+  })
+
+  it('selecting another group jumps to its first (newest) concrete option', async () => {
+    const wrapper = mountPicker(groupedField())
+    await selects(wrapper)[0].vm.$emit('update:modelValue', 'cu128')
+    const all = selects(wrapper)
+    expect(all[1].props('modelValue')).toBe('s-cu128-2.11')
+    // Preview follows the concrete selection.
+    expect(wrapper.find('.channel-picker-headline-version').text()).toBe('v2.11.0+cu128')
+  })
+
+  it('changing the concrete dropdown updates preview and actions to that exact option', async () => {
+    const wrapper = mountPicker(groupedField())
+    await selects(wrapper)[1].vm.$emit('update:modelValue', 's-cu130-2.10')
+    expect(wrapper.find('.channel-picker-headline-version').text()).toBe('v2.10.0+cu130')
+  })
+
+  it('resynchronizes the cascade when the committed field value changes', async () => {
+    const wrapper = mountPicker(groupedField())
+    await wrapper.setProps({ field: groupedField('s-cu128-2.11') })
+    const all = selects(wrapper)
+    expect(all[0].props('modelValue')).toBe('cu128')
+    expect(all[1].props('modelValue')).toBe('s-cu128-2.11')
+  })
+
+  it('keeps the cascade coherent when the field value matches no option', () => {
+    // e.g. the draft's option vanished in an options refresh: every surface
+    // (group dropdown, concrete dropdown, preview) must agree on the
+    // fallback (first) option instead of showing a blank concrete select.
+    const wrapper = mountPicker(groupedField('gone-stack'))
+    const all = selects(wrapper)
+    expect(all[0].props('modelValue')).toBe('cu130')
+    expect(all[1].props('modelValue')).toBe('s-cu130-2.10')
+    expect(wrapper.find('.channel-picker-headline-version').text()).toBe('v2.10.0+cu130')
+  })
+
+  it('falls back to the flat picker when paths are mixed (some options ungrouped)', () => {
+    const f = groupedField()
+    delete f.options![1].groupPath
+    const wrapper = mountPicker(f)
+    const all = selects(wrapper)
+    expect(all).toHaveLength(1)
+    expect((all[0].props('options') as Array<{ value: string }>).length).toBe(3)
+  })
+
+  it('supports arbitrary nesting depth with prefix-filtered levels', async () => {
+    const wrapper = mountPicker({
+      id: 'pytorchStack',
+      label: 'PyTorch',
+      value: 'a1',
+      editable: true,
+      editType: 'channel-cards',
+      groupLabels: ['Vendor', 'Series'],
+      options: [
+        { value: 'a1', label: 'A1', groupPath: [{ id: 'nv', label: 'NVIDIA' }, cu130] },
+        { value: 'a2', label: 'A2', groupPath: [{ id: 'nv', label: 'NVIDIA' }, cu128] },
+        { value: 'b1', label: 'B1', groupPath: [{ id: 'amd', label: 'AMD' }, { id: 'rocm7', label: 'ROCm 7' }] }
+      ]
+    } as DetailField)
+    const all = selects(wrapper)
+    expect(all).toHaveLength(3)
+    expect((all[0].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual(['nv', 'amd'])
+    // Second level only shows series under the selected vendor.
+    expect((all[1].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual(['cu130', 'cu128'])
+    // Switching the outermost level cascades to a concrete option.
+    await all[0].vm.$emit('update:modelValue', 'amd')
+    const after = selects(wrapper)
+    expect(after[1].props('modelValue')).toBe('rocm7')
+    expect(after[2].props('modelValue')).toBe('b1')
+  })
+})

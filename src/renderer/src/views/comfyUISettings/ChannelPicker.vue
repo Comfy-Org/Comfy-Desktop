@@ -45,16 +45,49 @@ watch(
 
 const currentValue = computed(() => String(props.field.value ?? ''))
 
-const selectedOption = computed<DetailFieldOption | undefined>(() => {
-  return props.field.options?.find((o) => o.value === state.draft)
+// --- Cascading group dropdowns (generic, driven by `groupPath`) ---
+// Options sharing a path prefix sit behind one dropdown per level (e.g.
+// PyTorch backend series -> version). Every group selection maps to a
+// concrete option so preview/actions always describe a real choice.
+
+const groupDepth = computed(() => {
+  let depth = 0
+  for (const opt of props.field.options ?? []) {
+    depth = Math.max(depth, opt.groupPath?.length ?? 0)
+  }
+  return depth
 })
+
+// Cascade only when every option carries a full-depth path; mixed or partial
+// paths fall back to the flat picker so no option becomes unreachable.
+const cascadeActive = computed(
+  () =>
+    groupDepth.value > 0 &&
+    (props.field.options ?? []).every((o) => (o.groupPath?.length ?? 0) === groupDepth.value)
+)
+
+const selectedOption = computed<DetailFieldOption | undefined>(() => {
+  const opts = props.field.options ?? []
+  const exact = opts.find((o) => o.value === state.draft)
+  // In cascade mode an unknown draft (e.g. the value vanished in an options
+  // refresh) falls back to the first option so the group dropdowns, concrete
+  // dropdown, preview, and actions all describe the same real choice; flat
+  // mode keeps exact-match semantics.
+  return exact ?? (cascadeActive.value ? opts[0] : undefined)
+})
+
+/** The value the concrete dropdown displays: the effective (possibly
+ *  fallen-back) selection in cascade mode, the raw draft when flat. */
+const concreteValue = computed(() =>
+  cascadeActive.value ? (selectedOption.value?.value ?? state.draft) : state.draft
+)
 
 const selectedActions = computed<ActionDef[]>(() => {
   const data = selectedOption.value?.data as Record<string, unknown> | undefined
   return (data?.actions as ActionDef[] | undefined) ?? []
 })
 
-const draftIsCurrent = computed(() => state.draft === currentValue.value)
+const draftIsCurrent = computed(() => concreteValue.value === currentValue.value)
 
 interface PreviewData {
   /** What this card updates ("ComfyUI", "PyTorch"); keeps the headline
@@ -318,13 +351,69 @@ function optionLabel(opt: DetailFieldOption): string {
   return opt.label
 }
 
-const selectOptions = computed<BaseSelectOption[]>(() =>
-  (props.field.options ?? []).map((opt) => ({
-    value: opt.value,
-    label: optionLabel(opt),
-    description: opt.description
-  }))
-)
+function toSelectOption(opt: DetailFieldOption): BaseSelectOption {
+  return { value: opt.value, label: optionLabel(opt), description: opt.description }
+}
+
+/** Group-id path of the selected option; anchors every level dropdown.
+ *  `selectedOption` already falls back to the first option in cascade mode,
+ *  so a transiently unknown draft can't blank the cascade. */
+const selectedPath = computed<string[]>(() => {
+  if (!cascadeActive.value) return []
+  return (selectedOption.value?.groupPath ?? []).map((g) => g.id)
+})
+
+interface CascadeLevel {
+  label?: string
+  selected: string
+  options: BaseSelectOption[]
+}
+
+const cascadeLevels = computed<CascadeLevel[]>(() => {
+  if (!cascadeActive.value) return []
+  const opts = props.field.options ?? []
+  const path = selectedPath.value
+  const levels: CascadeLevel[] = []
+  for (let level = 0; level < groupDepth.value; level++) {
+    const prefix = path.slice(0, level)
+    const groups = new Map<string, string>()
+    for (const opt of opts) {
+      const gp = opt.groupPath ?? []
+      const entry = gp[level]
+      if (!entry) continue
+      if (prefix.every((id, i) => gp[i]?.id === id) && !groups.has(entry.id)) {
+        groups.set(entry.id, entry.label)
+      }
+    }
+    levels.push({
+      label: props.field.groupLabels?.[level],
+      selected: path[level] ?? '',
+      options: [...groups].map(([value, label]) => ({ value, label }))
+    })
+  }
+  return levels
+})
+
+/** Selecting a group jumps to the first (newest - main emits newest-first)
+ *  concrete option under the new prefix, keeping preview/actions real. */
+function selectCascadeGroup(level: number, groupId: string): void {
+  const prefix = [...selectedPath.value.slice(0, level), groupId]
+  const match = (props.field.options ?? []).find((opt) =>
+    prefix.every((id, i) => opt.groupPath?.[i]?.id === id)
+  )
+  if (match) state.draft = match.value
+}
+
+/** Options for the final (concrete) dropdown: the whole list when flat, only
+ *  the selected group's options when cascading. */
+const selectOptions = computed<BaseSelectOption[]>(() => {
+  const opts = props.field.options ?? []
+  if (!cascadeActive.value) return opts.map(toSelectOption)
+  const path = selectedPath.value
+  return opts
+    .filter((opt) => path.every((id, i) => opt.groupPath?.[i]?.id === id))
+    .map(toSelectOption)
+})
 </script>
 
 <template>
@@ -399,8 +488,22 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
       </div>
 
       <div class="channel-picker-channel">
+        <div
+          v-for="(level, i) in cascadeLevels"
+          :key="i"
+          class="channel-picker-cascade-level"
+          :data-testid="TID.channelGroupSelect(i)"
+        >
+          <span v-if="level.label" class="channel-picker-field-label">{{ level.label }}</span>
+          <BaseSelect
+            :model-value="level.selected"
+            :options="level.options"
+            :aria-label="level.label ?? field.label"
+            @update:model-value="selectCascadeGroup(i, $event)"
+          />
+        </div>
         <BaseSelect
-          :model-value="state.draft"
+          :model-value="concreteValue"
           :options="selectOptions"
           :aria-label="field.label"
           @update:model-value="state.draft = $event"
@@ -555,6 +658,12 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.channel-picker-cascade-level {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .channel-picker-field-label {

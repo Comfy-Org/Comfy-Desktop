@@ -52,7 +52,7 @@ import { getDetailSections, getEffectiveChannel } from './updateSections'
 interface UpdateAction {
   id: string
   progressTitle: string
-  data?: { channel?: string; isDowngrade?: boolean }
+  data?: { channel?: string; isDowngrade?: boolean; stackId?: string }
   confirm?: { title?: string; message?: string }
   prompt?: { defaultValue?: string; uniquifyDefault?: boolean }
 }
@@ -255,16 +255,25 @@ describe('updateSections — PyTorch picker', () => {
   interface PytorchOption {
     value: string
     description?: string
+    groupPath?: Array<{ id: string; label: string }>
     data?: { actions?: UpdateAction[] }
+  }
+  interface PytorchField {
+    id: string
+    options: PytorchOption[]
+    groupLabels?: string[]
+  }
+
+  function getPytorchField(installation: InstallationRecord): PytorchField | undefined {
+    const sections = getDetailSections(installation) as unknown as UpdateSection[]
+    return sections
+      .filter((s) => s.tab === 'update')
+      .flatMap((s) => s.fields ?? [])
+      .find((f) => f.id === 'pytorchStack') as unknown as PytorchField | undefined
   }
 
   function getPytorchOptions(installation: InstallationRecord): PytorchOption[] {
-    const sections = getDetailSections(installation) as unknown as UpdateSection[]
-    const field = sections
-      .filter((s) => s.tab === 'update')
-      .flatMap((s) => s.fields ?? [])
-      .find((f) => f.id === 'pytorchStack')
-    return (field?.options ?? []) as unknown as PytorchOption[]
+    return getPytorchField(installation)?.options ?? []
   }
 
   function indexEntry(overrides: Partial<TorchStackEntry> = {}): TorchStackEntry {
@@ -318,5 +327,131 @@ describe('updateSections — PyTorch picker', () => {
     })])
     const option = getIndexOption()
     expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
+  })
+
+  describe('backend-series grouping (cascading dropdowns)', () => {
+    const install = (): InstallationRecord => baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
+
+    function cudaEntry(tag: string, torch: string): TorchStackEntry {
+      return indexEntry({
+        stackId: `pytorch-index:${tag}:${torch}`,
+        packages: { torch: `${torch}+${tag}`, torchvision: `0.26.0+${tag}`, torchaudio: `${torch}+${tag}` },
+        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: tag },
+      })
+    }
+
+    it('emits one groupPath level per option when the catalog spans several CUDA series', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu130', '2.10.0'),
+        cudaEntry('cu128', '2.11.0'),
+      ])
+      const field = getPytorchField(install())!
+      expect(field.groupLabels).toEqual(['standalone.pytorchSeriesLabel'])
+      const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
+      const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+      expect(cu130!.groupPath).toEqual([{ id: 'cu130', label: 'CUDA 13.0 (cu130)' }])
+      expect(cu128!.groupPath).toEqual([{ id: 'cu128', label: 'CUDA 12.8 (cu128)' }])
+    })
+
+    it('places multiple versions of the same series in one group', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu130', '2.10.0'),
+        cudaEntry('cu130', '2.9.1'),
+        cudaEntry('cu128', '2.11.0'),
+      ])
+      const options = getPytorchOptions(install())
+      const ids = options
+        .filter((o) => o.value.includes('cu130'))
+        .map((o) => o.groupPath?.[0]?.id)
+      expect(ids).toEqual(['cu130', 'cu130'])
+    })
+
+    it('keeps the flat picker (no groupPath, no groupLabels) for a single series', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu130', '2.10.0'),
+        cudaEntry('cu130', '2.9.1'),
+      ])
+      const field = getPytorchField(install())!
+      expect(field.groupLabels).toBeUndefined()
+      for (const o of field.options) expect(o.groupPath).toBeUndefined()
+    })
+
+    it('gives the synthetic current entry a full path so the cascade stays coherent', () => {
+      // No installed torch is detected in tests, so the synthetic entry lands
+      // in the untagged "Default" series while real stacks keep theirs.
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu130', '2.10.0'),
+        cudaEntry('cu128', '2.11.0'),
+      ])
+      const options = getPytorchOptions(install())
+      const synthetic = options.find((o) => o.value === 'pytorch-current')
+      expect(synthetic!.groupPath).toEqual([
+        { id: 'default', label: 'standalone.pytorchSeriesDefault' },
+      ])
+    })
+
+    it('orders grouped options newest-first across sources (bundle vs index)', () => {
+      // The catalog concatenates bundle stacks before index stacks; grouped
+      // mode must re-sort by date so group-switching (first match) lands on
+      // the newest build, not on an older bundle.
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        indexEntry({
+          stackId: 'bundle:cu130:2.9.0',
+          packages: { torch: '2.9.0+cu130', torchvision: '0.24.0+cu130', torchaudio: '2.9.0+cu130' },
+          source: { kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v1' },
+          date: '2026-01-01',
+        }),
+        { ...cudaEntry('cu130', '2.10.0'), date: '2026-03-25' },
+        { ...cudaEntry('cu128', '2.11.0'), date: '2026-03-25' },
+      ])
+      const options = getPytorchOptions(install())
+      const cu130Values = options
+        .filter((o) => o.groupPath?.[0]?.id === 'cu130')
+        .map((o) => o.value)
+      expect(cu130Values).toEqual(['pytorch-index:cu130:2.10.0', 'bundle:cu130:2.9.0'])
+    })
+
+    it('puts the synthetic current entry last in grouped mode, first in flat mode', () => {
+      const stacks = [cudaEntry('cu130', '2.10.0'), cudaEntry('cu128', '2.11.0')]
+      vi.mocked(getCachedTorchStacks).mockReturnValue(stacks)
+      const grouped = getPytorchOptions(install())
+      expect(grouped[grouped.length - 1]!.value).toBe('pytorch-current')
+
+      vi.mocked(getCachedTorchStacks).mockReturnValue([stacks[0]!])
+      const flat = getPytorchOptions(install())
+      expect(flat[0]!.value).toBe('pytorch-current')
+    })
+
+    it('grouped options still carry the opaque stackId in their action payload', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu130', '2.10.0'),
+        cudaEntry('cu128', '2.11.0'),
+      ])
+      for (const option of getPytorchOptions(install())) {
+        const action = option.data?.actions?.find((a) => a.id === 'change-pytorch')
+        if (!action) continue // synthetic current entry has no action
+        expect(action.data?.stackId).toBe(option.value)
+      }
+    })
+
+    it('labels ROCm series by their runtime version', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        indexEntry({
+          stackId: 'pytorch-index:rocm7.2.1:2.10.0',
+          variant: 'linux-amd',
+          packages: { torch: '2.10.0+rocm7.2.1', torchvision: '0.26.0+rocm7.2.1', torchaudio: '2.10.0+rocm7.2.1' },
+          source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm7.2.1' },
+        }),
+        indexEntry({
+          stackId: 'pytorch-index:rocm6.4:2.9.0',
+          variant: 'linux-amd',
+          packages: { torch: '2.9.0+rocm6.4', torchvision: '0.25.0+rocm6.4', torchaudio: '2.9.0+rocm6.4' },
+          source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm6.4' },
+        }),
+      ])
+      const options = getPytorchOptions(baseInstall({ variant: 'linux-amd' } as Partial<InstallationRecord>))
+      const newer = options.find((o) => o.value === 'pytorch-index:rocm7.2.1:2.10.0')
+      expect(newer!.groupPath).toEqual([{ id: 'rocm7.2.1', label: 'ROCm 7.2.1' }])
+    })
   })
 })

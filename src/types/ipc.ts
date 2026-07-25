@@ -112,11 +112,22 @@ export interface DetailItem {
   actions?: ActionDef[]
 }
 
+/** One level of a cascading picker path (id is stable, label is display). */
+export interface DetailOptionGroup {
+  id: string
+  label: string
+}
+
 export interface DetailFieldOption {
   value: string
   label: string
   description?: string
   recommended?: boolean
+  /** Cascading picker path for `channel-cards`: options sharing a path
+   *  prefix sit behind one dropdown per level (e.g. PyTorch backend series
+   *  -> version). The field builder emits it only when it distinguishes
+   *  (two or more groups); absent = today's flat single dropdown. */
+  groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
 }
 
@@ -150,6 +161,9 @@ export interface DetailField {
   | 'model-dirs'
   | 'hidden'
   options?: DetailFieldOption[]
+  /** Display names for each `groupPath` level of a cascading `channel-cards`
+   *  picker (e.g. ["Backend"]); indexes match `groupPath` depth. */
+  groupLabels?: string[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
    *  (e.g. switching update channel triggers `check-update`). */

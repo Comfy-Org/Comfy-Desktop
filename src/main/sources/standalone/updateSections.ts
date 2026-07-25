@@ -10,7 +10,7 @@ import { deleteAction, untrackAction, launchAction, openFolderAction, renameActi
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
 import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
-import { torchTupleMatches, stackAppliesViaPip } from './torchStackTypes'
+import { torchTupleMatches, stackAppliesViaPip, torchLocalTag } from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
@@ -59,6 +59,22 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
   return undefined
 }
 
+/** Backend series a torch build belongs to, derived from its PEP 440 local
+ *  tag (`cu130` -> CUDA 13.0, `rocm7.2.1` -> ROCm 7.2.1). Untagged builds
+ *  (PyPI / mac MPS) share one "Default" series. Presentation only - actions
+ *  still carry the opaque stackId. */
+function torchSeriesGroup(torch: string | null | undefined): { id: string; label: string } {
+  const tag = torchLocalTag(torch)
+  const cu = /^cu(\d{2,})$/.exec(tag)?.[1]
+  if (cu) return { id: tag, label: `CUDA ${cu.slice(0, -1)}.${cu.slice(-1)} (${tag})` }
+  const rocm = /^rocm([\d.]+)$/.exec(tag)?.[1]
+  if (rocm) return { id: tag, label: `ROCm ${rocm}` }
+  if (tag === 'xpu') return { id: 'xpu', label: 'Intel XPU' }
+  if (tag === 'cpu') return { id: 'cpu', label: 'CPU' }
+  if (tag === '') return { id: 'default', label: t('standalone.pytorchSeriesDefault') }
+  return { id: tag, label: tag }
+}
+
 /**
  * The PyTorch stack picker on the Update tab. Uses the synchronously cached
  * catalog (refreshed by check-update); hidden entirely until the cache has
@@ -81,18 +97,35 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   const current = currentTorch ? stacks.find((s) => torchTupleMatches(s.packages, installedTuple)) : undefined
   const fieldValue = current ? current.stackId : 'pytorch-current'
 
+  // Split the picker by backend series (CUDA 13.0 vs 12.8, ROCm x.y) only
+  // when the filtered catalog actually spans several series; a single-series
+  // list keeps today's flat dropdown. The synthetic "current" entry never
+  // forces grouping but joins its derived series so the cascade stays
+  // coherent (every option carries a full path or none does).
+  const grouped = new Set(stacks.map((s) => torchSeriesGroup(s.packages.torch).id)).size >= 2
+
+  // Grouped pickers list each series newest-first regardless of source: the
+  // cached catalog concatenates bundle stacks before index stacks, so without
+  // a global date sort an older bundle could precede a newer index build and
+  // group-switching (which lands on the first match) would pick it.
+  const ordered = grouped
+    ? [...stacks].sort((a, b) => b.date.localeCompare(a.date))
+    : stacks
+
   const options: Record<string, unknown>[] = []
-  if (!current) {
-    // The installed torch doesn't match any catalog stack (manual install or
-    // catalog gap): surface it as a read-only "current" entry.
-    options.push({
-      value: 'pytorch-current',
-      label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
-      description: t('standalone.pytorchObservedDesc'),
-      data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false },
-    })
+  // The installed torch doesn't match any catalog stack (manual install or
+  // catalog gap): surface it as a read-only "current" entry. It leads the
+  // flat list, but in grouped mode it goes last so switching back to its
+  // series still lands on the newest real stack first.
+  const syntheticCurrent = current ? null : {
+    value: 'pytorch-current',
+    label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
+    description: t('standalone.pytorchObservedDesc'),
+    ...(grouped ? { groupPath: [torchSeriesGroup(currentTorch)] } : {}),
+    data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false },
   }
-  for (const s of stacks) {
+  if (syntheticCurrent && !grouped) options.push(syntheticCurrent)
+  for (const s of ordered) {
     const isCurrent = s.stackId === current?.stackId
     // Pip-applied entries (adopted installs, index-served stacks) download
     // wheels via pip — the bundle size is not what downloads (index entries
@@ -134,6 +167,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       value: s.stackId,
       label: `PyTorch ${s.packages.torch}`,
       description: parts.join('  ·  '),
+      ...(grouped ? { groupPath: [torchSeriesGroup(s.packages.torch)] } : {}),
       data: {
         productName: 'PyTorch',
         installedVersion: currentTorch ?? '—',
@@ -143,6 +177,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       },
     })
   }
+  if (syntheticCurrent && grouped) options.push(syntheticCurrent)
 
   return {
     tab: 'update',
@@ -150,6 +185,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     fields: [{
       id: 'pytorchStack', label: t('standalone.pytorch'), value: fieldValue, editable: true,
       refreshSection: true, editType: 'channel-cards', options, tooltip: t('tooltips.pytorchStack'),
+      ...(grouped ? { groupLabels: [t('standalone.pytorchSeriesLabel')] } : {}),
     }],
   }
 }
