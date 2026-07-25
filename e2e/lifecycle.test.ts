@@ -1781,15 +1781,18 @@ async function confirmPickerRestart(popup: WebContentsPage): Promise<void> {
 async function openBootWindowViaPickerRestart(): Promise<void> {
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
   await confirmPickerRestart(popup)
+  // One combined predicate: the boot window is open when the old session is
+  // gone AND the relaunch operation is active. Two sequential polls would be
+  // order-dependent - a relaunch that registers before the second poll starts
+  // sampling could never be observed and would burn the full timeout.
   await expect
-    .poll(async () => (await getRunningSessionSnapshot(ctx.app, _updateInstallId)) === null, {
-      timeout: 60_000, intervals: [250, 500],
-    })
-    .toBe(true)
-  await expect
-    .poll(() => hasActiveOperation(ctx.app, _updateInstallId), {
-      timeout: 60_000, intervals: [250, 500],
-    })
+    .poll(async () => {
+      const [session, active] = await Promise.all([
+        getRunningSessionSnapshot(ctx.app, _updateInstallId),
+        hasActiveOperation(ctx.app, _updateInstallId),
+      ])
+      return session === null && active
+    }, { timeout: 60_000, intervals: [250, 500] })
     .toBe(true)
 }
 
@@ -1921,7 +1924,10 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
       const calls = (await getIpcInvocations(ctx.app, 'picker-restart:cancel-launching')) as
         Array<{ installationId?: string; cancelled?: boolean }>
       return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
-    }, { timeout: 60_000, intervals: [250, 500] })
+      // Must exceed cancelLaunching's own 60s deadline: the invocation is
+      // only recorded once that call resolves, and a slow-but-successful
+      // Windows process-tree kill can use most of it.
+    }, { timeout: 90_000, intervals: [250, 500] })
     .toBe(true)
 
   // The cancelled boot never registers; the relaunch must come up on the
@@ -2018,7 +2024,9 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
         const calls = (await getIpcInvocations(ctx.app, 'picker-restart:cancel-launching')) as
           Array<{ installationId?: string; cancelled?: boolean }>
         return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
-      }, { timeout: 60_000, intervals: [250, 500] })
+        // Headroom past cancelLaunching's own 60s deadline (see the
+        // attached-window variant above).
+      }, { timeout: 90_000, intervals: [250, 500] })
       .toBe(true)
     // The cancel must have released the hold through the launch's abort
     // signal - the parked boot unwound instead of proceeding to spawn.
