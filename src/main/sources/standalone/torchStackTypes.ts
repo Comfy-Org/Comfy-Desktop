@@ -113,27 +113,52 @@ export function stackVersionMatches(a: string, b: string): boolean {
 }
 
 const TORCH_INDEX_BASE = 'https://download.pytorch.org/whl'
+const TORCH_NIGHTLY_INDEX_BASE = 'https://download.pytorch.org/whl/nightly'
+
+/** PEP 440 dev release (`2.13.0.dev20260720+cu132`): a nightly build, served
+ *  by the `whl/nightly/<tag>` index namespace, never the stable one. Covers
+ *  the accepted PEP 440 spellings (`.dev20260720`, bare `.dev`, compact
+ *  `dev1`) while requiring a digit or separator before `dev` so labels
+ *  merely containing those letters are not misclassified. Dated
+ *  nightlies are purged from the index after roughly 60 days, so these
+ *  tuples are reacquirable only within that window - after it, pip fails
+ *  cleanly and the tuple degrades to the non-reacquirable path. */
+export function isDevVersion(v: string): boolean {
+  return /(\d|[._-])dev\d*$/i.test(publicVersion(v))
+}
 
 /** pip index that serves a torch build, derived from its local tag: the
  *  pytorch.org index for `cu*`/`rocm*`/`xpu`/`cpu` builds, default PyPI
- *  (null) for untagged builds (mac/MPS and PyPI-default wheels). Returns
+ *  (null) for untagged builds (mac/MPS and PyPI-default wheels). Nightly
+ *  (dev) versions map to the same tag under the nightly namespace; untagged
+ *  nightlies (mac) live under `nightly/cpu`. Returns
  *  null for tags no trusted index serves: custom builds, and `rocm*` on
  *  Windows (pytorch.org publishes no Windows ROCm wheels — those builds
  *  come from AMD's own channels). */
 export function torchIndexUrlFor(packages: TorchStackPackages): string | null {
+  const dev = isDevVersion(packages.torch)
+  const base = dev ? TORCH_NIGHTLY_INDEX_BASE : TORCH_INDEX_BASE
   const tag = torchLocalTag(packages.torch)
-  if (!tag) return null
+  if (!tag) {
+    if (!dev) return null // stable untagged: default PyPI
+    // pytorch.org leaves the local tag off nightly/cpu wheels only for
+    // macOS; an untagged dev build anywhere else has no trusted provenance.
+    return process.platform === 'darwin' ? `${TORCH_NIGHTLY_INDEX_BASE}/cpu` : null
+  }
   if (tag.startsWith('rocm') && process.platform === 'win32') return null
-  if (/^(cu\d+|rocm[\d.]+|xpu|cpu)$/.test(tag)) return `${TORCH_INDEX_BASE}/${tag}`
+  if (/^(cu\d+|rocm[\d.]+|xpu|cpu)$/.test(tag)) return `${base}/${tag}`
   // Unknown local tag (custom build) — no index we can trust to serve it.
   return null
 }
 
 /** Whether a pip re-acquisition can actually honour the tuple: untagged
- *  versions resolve from PyPI, tagged ones need `torchIndexUrlFor` to name
- *  a trusted index that serves them. */
+ *  stable versions resolve from PyPI, everything else needs
+ *  `torchIndexUrlFor` to name a trusted index that serves it. */
 export function torchTupleReacquirable(packages: TorchStackPackages): boolean {
-  return torchLocalTag(packages.torch) === '' || torchIndexUrlFor(packages) !== null
+  if (torchIndexUrlFor(packages) !== null) return true
+  // Untagged stable versions fall back to default PyPI; PyPI carries no
+  // dev builds, so untagged nightlies get no such fallback.
+  return torchLocalTag(packages.torch) === '' && !isDevVersion(packages.torch)
 }
 
 /** Accelerator-evidence variant base expected for a torch build, judged by

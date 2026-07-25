@@ -36,7 +36,7 @@ import { writeFileSafe } from '../../lib/safe-file'
 import { fetchJSON } from '../../lib/fetch'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
 import { stripPlatform } from './envPaths'
-import { makeIndexStackId, torchIndexUrlFor, torchLocalTag } from './torchStackTypes'
+import { isDevVersion, makeIndexStackId, torchIndexUrlFor, torchLocalTag } from './torchStackTypes'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 
@@ -140,6 +140,13 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   if (typeof pkgs.torch !== 'string' || !SAFE_VERSION.test(pkgs.torch)) return null
   for (const opt of ['torchvision', 'torchaudio'] as const) {
     if (pkgs[opt] !== undefined && (typeof pkgs[opt] !== 'string' || !SAFE_VERSION.test(pkgs[opt] as string))) return null
+  }
+  // Nightly (dev) tuples live in a separate index namespace with ~60-day
+  // retention - a decaying promise schema 1 cannot express. A future kind
+  // (with refresh automation behind it) can; until then reject rather than
+  // publish an entry whose install source and lifetime are both wrong.
+  for (const v of [pkgs.torch, pkgs.torchvision, pkgs.torchaudio]) {
+    if (typeof v === 'string' && isDevVersion(v)) return null
   }
   // One coherent source per accelerator: the accel must name an index tag it
   // can actually be served from, and the torch local tag must agree with it

@@ -201,6 +201,26 @@ describe('remote manifest', () => {
     expect(nvidiaTags()).toEqual(['cu130'])
   })
 
+  it('drops nightly (dev) entries - schema 1 has no way to express their retention', async () => {
+    const nightlyTorch = {
+      ...cu130Entry,
+      indexTag: 'cu132',
+      packages: { torch: '2.13.0.dev20260720+cu132' },
+    }
+    const nightlyCompanion = {
+      ...cu130Entry,
+      packages: { torch: '2.11.0+cu130', torchvision: '0.26.0.dev20260720+cu130' },
+    }
+    // PEP 440 implicit-zero dev spelling must not slip through either
+    const implicitZeroDev = {
+      ...cu130Entry,
+      packages: { torch: '2.11.0+cu130', torchaudio: '2.11.0.dev+cu130' },
+    }
+    vi.mocked(fetchJSON).mockResolvedValue(doc([nightlyTorch, nightlyCompanion, implicitZeroDev, cu130Entry]))
+    await refreshRemoteIndexStacks()
+    expect(nvidiaTags()).toEqual(['cu130'])
+  })
+
   it('drops entries whose accel, mechanism, and index tag are not one coherent source', async () => {
     const amdFromCpuIndex = {
       ...cu130Entry, indexTag: 'cpu', accel: 'amd', platforms: ['linux'],

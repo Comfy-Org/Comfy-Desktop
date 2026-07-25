@@ -68,6 +68,51 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
     expect(torchIndexUrlFor({ torch: '2.9.1+rocm7.2.1' })).toBeNull()
     expect(torchTupleReacquirable({ torch: '2.9.1+rocm7.2.1' })).toBe(false)
   })
+
+  it('maps tagged nightly (dev) versions to the nightly index namespace', () => {
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+cu132' })).toBe(
+      'https://download.pytorch.org/whl/nightly/cu132'
+    )
+    expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720+cu132' })).toBe(true)
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+xpu' })).toBe('https://download.pytorch.org/whl/nightly/xpu')
+    setPlatform('linux')
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+rocm7.2' })).toBe(
+      'https://download.pytorch.org/whl/nightly/rocm7.2'
+    )
+  })
+
+  it('maps untagged nightly versions to the nightly cpu index only on mac', () => {
+    // pytorch.org leaves the local tag off nightly/cpu wheels only for
+    // macOS; untagged dev builds elsewhere have no trusted provenance and
+    // must not fall back to PyPI (it carries no dev builds).
+    setPlatform('darwin')
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720' })).toBe('https://download.pytorch.org/whl/nightly/cpu')
+    expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720' })).toBe(true)
+    for (const platform of ['win32', 'linux'] as const) {
+      setPlatform(platform)
+      expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720' })).toBeNull()
+      expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720' })).toBe(false)
+    }
+  })
+
+  it('still rejects nightly builds no trusted index serves', () => {
+    setPlatform('win32')
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+rocm7.2' })).toBeNull()
+    expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720+rocm7.2' })).toBe(false)
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+internal1' })).toBeNull()
+    expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720+internal1' })).toBe(false)
+  })
+
+  it('recognises all PEP 440 dev spellings but not rc/post releases', () => {
+    // implicit-zero and compact dev forms are still nightlies
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev+cu132' })).toBe('https://download.pytorch.org/whl/nightly/cu132')
+    expect(torchIndexUrlFor({ torch: '2.13.0dev1+cu132' })).toBe('https://download.pytorch.org/whl/nightly/cu132')
+    // rc and post releases are stable-index builds, not nightlies
+    expect(torchIndexUrlFor({ torch: '2.13.0rc1+cu130' })).toBe('https://download.pytorch.org/whl/cu130')
+    expect(torchIndexUrlFor({ torch: '2.13.0.post1+cu130' })).toBe('https://download.pytorch.org/whl/cu130')
+    expect(torchIndexUrlFor({ torch: '2.13.0.post1' })).toBeNull()
+    expect(torchTupleReacquirable({ torch: '2.13.0.post1' })).toBe(true)
+  })
 })
 
 describe('parseIndexStackId / makeIndexStackId', () => {
