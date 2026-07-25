@@ -89,7 +89,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       value: 'pytorch-current',
       label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
       description: t('standalone.pytorchObservedDesc'),
-      data: { installedVersion: currentTorch ?? '—', updateAvailable: false },
+      data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false },
     })
   }
   for (const s of stacks) {
@@ -129,6 +129,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       label: `PyTorch ${s.packages.torch}`,
       description: parts.join('  ·  '),
       data: {
+        productName: 'PyTorch',
         installedVersion: currentTorch ?? '—',
         latestVersion: s.packages.torch,
         updateAvailable: !isCurrent,

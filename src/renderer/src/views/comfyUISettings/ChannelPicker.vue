@@ -57,6 +57,9 @@ const selectedActions = computed<ActionDef[]>(() => {
 const draftIsCurrent = computed(() => state.draft === currentValue.value)
 
 interface PreviewData {
+  /** What this card updates ("ComfyUI", "PyTorch"); keeps the headline
+   *  self-identifying when the Update tab shows several update cards. */
+  productName?: string
   installedVersion?: string
   latestVersion?: string
   lastChecked?: string
@@ -71,6 +74,7 @@ const preview = computed<PreviewData | null>(() => {
   const data = selectedOption.value?.data as PreviewData | undefined
   if (!data) return null
   return {
+    productName: data.productName,
     installedVersion: data.installedVersion,
     latestVersion: data.latestVersion,
     lastChecked: data.lastChecked,
@@ -136,10 +140,11 @@ const versionsMatch = computed(() => {
   return installed === latest
 })
 
-const headline = computed(() => {
-  if (preview.value?.installedVersion) {
-    return formatVersionLabel(preview.value.installedVersion)
-  }
+/** Product prefix ("ComfyUI", "PyTorch") so multiple update cards on the
+ *  same tab each say what they update. */
+const headlineProduct = computed(() => preview.value?.productName ?? '')
+
+const headlineVersion = computed(() => {
   if (!preview.value) {
     return draftIsCurrent.value
       ? t('channelCards.upToDate', 'Up to date')
@@ -147,7 +152,9 @@ const headline = computed(() => {
   }
   if (preview.value.updateAvailable) {
     const ver = preview.value.latestVersion
-    return ver ? formatVersionLabel(ver) : t('channelCards.updateAvailable', 'Update available')
+    return ver && ver !== '—'
+      ? formatVersionLabel(ver)
+      : t('channelCards.updateAvailable', 'Update available')
   }
   return formatVersionLabel(preview.value.installedVersion)
 })
@@ -324,11 +331,16 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
   <div class="channel-picker">
     <div class="channel-picker-status">
       <div class="channel-picker-headline-row">
-        <p
-          class="channel-picker-headline"
-          :class="{ 'is-update-available': preview?.updateAvailable }"
-        >
-          {{ headline }}
+        <p class="channel-picker-headline">
+          <span v-if="headlineProduct" class="channel-picker-headline-product">
+            {{ headlineProduct }}
+          </span>
+          <span
+            class="channel-picker-headline-version"
+            :class="{ 'is-update-available': preview?.updateAvailable }"
+          >
+            {{ headlineVersion }}
+          </span>
         </p>
         <span v-if="statusBadge && preview" class="channel-picker-badge" :class="statusBadgeTone">
           {{ statusBadge }}
@@ -445,14 +457,19 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
 
 .channel-picker-headline {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   font-size: 18px;
   font-weight: 600;
   line-height: 24px;
   color: var(--text);
 }
 
-.channel-picker-headline.is-update-available {
-  color: var(--accent);
+.channel-picker-headline-version.is-update-available {
+  color: var(--success, #4ade80);
+  font-weight: 700;
 }
 
 .channel-picker-badge {
