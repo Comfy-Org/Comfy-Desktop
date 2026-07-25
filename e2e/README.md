@@ -175,7 +175,7 @@ channel tip; and `delete` consumes the reusable profile (it removes the
 install but leaves `firstUseCompleted` persisted, so the app boots to an
 empty chooser instead of the first-use screen the setup spine expects) -
 delete the reuse directory or point `LIFECYCLE_REUSE_DIR` somewhere fresh
-afterwards.
+afterward.
 
 ### Install variants (`LIFECYCLE_VARIANT`)
 
