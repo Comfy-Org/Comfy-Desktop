@@ -10,8 +10,9 @@
 /** Where a managed stack can be re-acquired. Only trusted, typed sources —
  *  never a raw URL from the renderer or a snapshot. `comfy-bundle` entries
  *  come from the R2 release catalog; `pytorch-index` / `pypi` entries come
- *  from the curated in-app manifest (see `torchIndexManifest.ts`) and are
- *  pip-applied from the trusted index the tuple's local tag names. */
+ *  from the validated remote manifest (in-app fallback, see
+ *  `torchIndexManifest.ts`) and are pip-applied from the trusted index the
+ *  tuple's local tag names. */
 export type TorchStackSource =
   | { kind: 'comfy-bundle'; variant: string; bundleTag: string }
   | { kind: 'pytorch-index'; backend: 'cuda' | 'xpu' | 'rocm' | 'cpu'; indexTag: string }

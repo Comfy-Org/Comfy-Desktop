@@ -101,7 +101,13 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     const parts: string[] = []
     if (s.packages.torchvision) parts.push(`torchvision ${s.packages.torchvision}`)
     if (s.packages.torchaudio) parts.push(`torchaudio ${s.packages.torchaudio}`)
-    if (s.noteKey) parts.push(t(`standalone.${s.noteKey}`))
+    // Localized note when this app version has the key; remote-manifest
+    // entries may carry a newer key, falling back to their plain-text note
+    // (t() returns the key itself when the translation is missing).
+    const noteKey = s.noteKey ? `standalone.${s.noteKey}` : null
+    const localizedNote = noteKey ? t(noteKey) : null
+    if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
+    else if (s.note) parts.push(s.note)
     const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
     if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
     const confirmMessage = viaPip

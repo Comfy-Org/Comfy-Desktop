@@ -22,7 +22,10 @@ import {
   torchTupleMatches, torchLocalTag, accelBaseForTag, torchTupleReacquirable,
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
-import { indexStacksForVariant, refreshComputeCaps, ensureComputeCaps } from './torchIndexManifest'
+import {
+  indexStacksForVariant, refreshComputeCaps, ensureComputeCaps,
+  refreshRemoteIndexStacks, ensureRemoteIndexStacks,
+} from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 
 /** A resolvable catalog entry: managed ref + acquisition info. Bundle
@@ -37,6 +40,12 @@ export type TorchStackEntry = PersistedTorchStack & {
   /** i18n key suffix under `standalone.` describing an index-served entry
    *  (e.g. which GPU generations its kernels cover). */
   noteKey?: string
+  /** Plain-text description fallback for remote-manifest entries whose
+   *  `noteKey` this app version doesn't have. */
+  note?: string
+  /** Python ABIs (`major.minor`) the entry's index publishes wheels for;
+   *  absent = any Python (pip fails cleanly and rolls back otherwise). */
+  pythonAbis?: string[]
 }
 
 const CACHE_FILE = path.join(dataDir(), 'torch-stack-cache.json')
@@ -164,17 +173,28 @@ function installPython(installation: InstallationRecord): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined
 }
 
+/** Whether an entry's declared Python ABI constraint admits the install's
+ *  Python. No declaration = any Python (pip fails cleanly and rolls back);
+ *  a declared constraint with an unknown install Python is a mismatch. */
+function entryPythonCompatible(installation: InstallationRecord, e: TorchStackEntry): boolean {
+  if (!e.pythonAbis || e.pythonAbis.length === 0) return true
+  const python = installPython(installation)
+  return e.pythonAbis.some((abi) => pythonAbiCompatible(python, abi))
+}
+
 /** Per-install filter applied at read time: bundle-managed installs receive
  *  the bundle's interpreter payload, so its Python must match; adopted
  *  installs are pip-applied against their own Python, but only tuples a
  *  trusted index can serve are switchable (e.g. Windows ROCm builds have no
  *  pip source). Index-served entries pip-apply on every install type and
- *  are pre-filtered by the manifest (platform, index, GPU), so no per-
- *  install constraint applies. Deduplication runs after filtering so an
- *  entry dropped here can't shadow a compatible duplicate. */
+ *  are pre-filtered by the manifest (platform, index, GPU); the only per-
+ *  install constraint is a declared Python ABI list (indexes that publish
+ *  wheels for specific Pythons only, e.g. AMD's universal ROCm package).
+ *  Deduplication runs after filtering so an entry dropped here can't shadow
+ *  a compatible duplicate. */
 function filterStacksForInstall(installation: InstallationRecord, stacks: TorchStackEntry[]): TorchStackEntry[] {
   const filtered = stacks.filter((e) => {
-    if (e.source.kind !== 'comfy-bundle') return true
+    if (e.source.kind !== 'comfy-bundle') return entryPythonCompatible(installation, e)
     return installation.adopted === true
       ? torchTupleReacquirable(e.packages)
       : pythonAbiCompatible(installPython(installation), e.pythonVersion)
@@ -197,9 +217,11 @@ function withIndexStacks(variant: string, bundleStacks: TorchStackEntry[]): Torc
 export async function refreshTorchStackCatalog(installation: InstallationRecord): Promise<TorchStackEntry[]> {
   const variant = installVariant(installation)
   if (!variant) return []
-  // GPU probe first (best-effort, local): the R2 fetch below may throw, and
-  // index-entry filtering should still have fresh capabilities.
+  // GPU probe and remote-manifest refresh first (both best-effort): the R2
+  // releases fetch below may throw, and index-entry filtering should still
+  // have fresh capabilities and manifest entries.
   await refreshComputeCaps()
+  await refreshRemoteIndexStacks()
   const releases = await fetchR2VendorReleases(variant)
   const stacks = filterCompatibleStacks(variant, undefined, releases, { requirePythonAbi: false })
   _ensureLoaded()
@@ -231,13 +253,17 @@ export async function resolveTorchStack(
   const variant = installVariant(installation)
   if (!variant) return null
 
-  // Index-served stacks resolve against the in-app manifest (already trusted
-  // and machine-filtered) — no remote fetch involved. Probe the GPU first if
-  // it never ran: cap-constrained entries are hidden pre-probe, and an exact
-  // restore must not be rejected just because no check-update ran yet.
+  // Index-served stacks resolve against the validated manifest (machine-
+  // filtered). Probe the GPU and load the remote manifest first if they
+  // never ran: cap-constrained and remote-only entries are hidden before
+  // that, and an exact restore must not be rejected just because no
+  // check-update ran yet.
   if (parseIndexStackId(stackId)) {
     await ensureComputeCaps()
-    return indexStacksForVariant(variant).find((e) => e.stackId === stackId) ?? null
+    await ensureRemoteIndexStacks()
+    const entry = indexStacksForVariant(variant).find((e) => e.stackId === stackId) ?? null
+    if (!entry || !entryPythonCompatible(installation, entry)) return null
+    return entry
   }
 
   const parsed = parseBundleStackId(stackId)

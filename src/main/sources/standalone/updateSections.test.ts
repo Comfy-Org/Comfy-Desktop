@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import fs from 'fs'
 import type { InstallationRecord } from '../../installations'
+import type * as I18nModule from '../../lib/i18n'
 
 // `getDetailSections` transitively imports `electron` (via paths/settings).
 vi.mock('electron', () => ({
@@ -31,6 +32,17 @@ vi.mock('../../lib/git', () => ({
 vi.mock('./torchStackCatalog', () => ({
   getCachedTorchStacks: vi.fn(() => []),
 }))
+// No locale is loaded in tests, so the real t() returns the bare key — the
+// same signal production uses for "unknown key". Translate exactly one note
+// key so the known-noteKey path is exercisable too.
+vi.mock('../../lib/i18n', async (importOriginal) => {
+  const mod = await importOriginal<typeof I18nModule>()
+  return {
+    ...mod,
+    t: (key: string, params?: Record<string, string | number>) =>
+      key === 'standalone.pytorchIndexNoteCu128' ? 'Requires CUDA 12.8 drivers' : mod.t(key, params),
+  }
+})
 
 import * as releaseCache from '../../lib/release-cache'
 import { getCachedTorchStacks } from './torchStackCatalog'
@@ -255,8 +267,8 @@ describe('updateSections — PyTorch picker', () => {
     return (field?.options ?? []) as unknown as PytorchOption[]
   }
 
-  it('renders an index-served entry as a pip apply: note shown, no bundle size, pip confirm copy', () => {
-    vi.mocked(getCachedTorchStacks).mockReturnValue([{
+  function indexEntry(overrides: Partial<TorchStackEntry> = {}): TorchStackEntry {
+    return {
       stackId: 'pytorch-index:cu128:2.11.0',
       variant: 'win-nvidia',
       pythonVersion: '',
@@ -264,16 +276,47 @@ describe('updateSections — PyTorch picker', () => {
       source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' },
       date: '2026-03-25',
       comfyuiVersion: '',
-      noteKey: 'pytorchIndexNoteCu128',
-    } satisfies TorchStackEntry])
+      ...overrides,
+    }
+  }
+
+  function getIndexOption(): PytorchOption | undefined {
     const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
-    const option = options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+    return options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+  }
+
+  it('renders an index-served entry as a pip apply: localized note shown, no bundle size, pip confirm copy', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
+      noteKey: 'pytorchIndexNoteCu128',
+      note: 'remote plain-text fallback',
+    })])
+    const option = getIndexOption()
     expect(option).toBeDefined()
-    // t() returns bare keys here, so assert on the keys the copy is built from.
-    expect(option!.description).toContain('standalone.pytorchIndexNoteCu128')
+    // The known noteKey wins over the remote plain-text fallback.
+    expect(option!.description).toContain('Requires CUDA 12.8 drivers')
+    expect(option!.description).not.toContain('remote plain-text fallback')
     expect(option!.description).not.toContain('pytorchDownloadSize')
     const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
     expect(action).toBeDefined()
+    // t() returns bare keys here, so assert on the key the copy is built from.
     expect(action!.confirm?.message).toContain('standalone.pytorchConfirmMessagePip')
+  })
+
+  it('falls back to the plain-text note when the noteKey is unknown to this app version', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
+      noteKey: 'pytorchIndexNoteFromNewerManifest',
+      note: 'Newest CUDA build.',
+    })])
+    const option = getIndexOption()
+    expect(option!.description).toContain('Newest CUDA build.')
+    expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
+  })
+
+  it('omits the note cleanly when the noteKey is unknown and no plain-text note exists', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
+      noteKey: 'pytorchIndexNoteFromNewerManifest',
+    })])
+    const option = getIndexOption()
+    expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
   })
 })
