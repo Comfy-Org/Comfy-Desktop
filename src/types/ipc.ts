@@ -4,6 +4,49 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 export type { FirstUseMode }
 
+// Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
+// from the cloud library so the renderer imports them from one place; tokens
+// are never part of these shapes.
+import type { AuthStatus, Workspace } from '../main/cloud/types'
+export type { AuthStatus, Workspace }
+
+/** Every state a distribution tile can be in. The first four are pre-install;
+ *  the last two are local (renderer-owned via de-dup against installs). */
+export type DevPlatformDistributionState =
+  | 'installable'
+  | 'no-build'
+  | 'platform-mismatch'
+  | 'needs-desktop-update'
+  | 'installed'
+  | 'update-available'
+
+/** One distribution as a renderer-safe display row. The install-decision fields
+ *  (artifact id / download ref) stay main-side; the renderer installs by id. */
+export interface DevPlatformDistribution {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  /** ISO 8601 finish stamp of the latest complete build. */
+  finishedAt?: string
+  sizeBytes?: number
+  numCustomNodes?: number
+  state: DevPlatformDistributionState
+  /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
+  blockedReason?: string
+  minDesktopVersion?: string
+  /** Local-only: present for installed / update-available. */
+  installedVersion?: string
+}
+
+/** Kickoff result of `installDistribution`: mirrors `addInstallation` so the
+ *  renderer drives the same `installInstance` + progress flow. */
+export interface InstallDistributionResult {
+  ok: boolean
+  message?: string
+  entry?: { id: string; name: string }
+}
+
 // Unsubscribe function returned by event listeners
 export type Unsubscribe = () => void
 
@@ -1299,6 +1342,21 @@ export interface ElectronApi {
    *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
+
+  // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
+  // for this flow. Access/refresh tokens never cross IPC: every method returns
+  // or observes a renderer-safe AuthStatus / Workspace / distribution row.
+  comfybuilder: {
+    signIn(): Promise<AuthStatus>
+    signOut(): Promise<AuthStatus>
+    getAuthStatus(): Promise<AuthStatus>
+    onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
+    listWorkspaces(): Promise<Workspace[]>
+    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    listDistributions(): Promise<DevPlatformDistribution[]>
+    installDistribution(distributionId: string): Promise<InstallDistributionResult>
+    updateDistribution(distributionId: string): Promise<InstallDistributionResult>
+  }
 
   // Updates
   checkForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>

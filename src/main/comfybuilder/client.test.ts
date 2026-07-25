@@ -44,6 +44,16 @@ describe('ComfyBuilderClient', () => {
     expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/ver-9/manifest')
   })
 
+  it('getVersion surfaces the wire archiveSha256/archiveRef so the archive can be verified', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, {
+      version: 3,
+      artifacts: [{ id: 'a1', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveRef: 'blob/a1', archiveSha256: 'deadbeef' }],
+    }))
+    const { version, artifacts } = await new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')
+    expect(version).toBe(3)
+    expect(artifacts[0]).toMatchObject({ id: 'a1', archiveSha256: 'deadbeef', archiveRef: 'blob/a1' })
+  })
+
   it('throws unauthorized (no network) when signed out', async () => {
     const f = mockFetch(200, {})
     vi.stubGlobal('fetch', f)

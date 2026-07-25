@@ -17,11 +17,6 @@ import type { ModelManifest } from './types'
 
 const EMPTY: ModelManifest = { models: [], modelPolicy: null, partnerNodePolicy: null }
 
-// A version whose build finished, matching the set the install artifact was
-// selected from, so the manifest is read off the same version the archive came
-// from (never a failed row that shares the number).
-const COMPLETE_VERSION_STATUSES = new Set(['complete', 'completed', 'ready', 'succeeded', 'success'])
-
 /** Parse an override that is inline JSON (`{...}`) or a path to a JSON file. */
 function loadOverride(value: string): ModelManifest {
   const raw = value.trimStart().startsWith('{') ? value : fs.readFileSync(value, 'utf8')
@@ -33,19 +28,17 @@ function loadOverride(value: string): ModelManifest {
   }
 }
 
-/** Map a version NUMBER to the id of its COMPLETE version, or null. */
+/** Map a version NUMBER to the id of its complete version, or null. `complete`
+ *  is the only terminal status in the builder's closed enum (queued | building
+ *  | complete), so the manifest is read off the same version the archive came
+ *  from (never a failed row that shares the number). */
 async function resolveVersionId(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
   distributionId: string,
   versionNumber: string,
 ): Promise<string | null> {
   const versions = await client.listVersions(distributionId)
-  const match = versions.find(
-    (v) =>
-      String(v.version) === versionNumber &&
-      typeof v.status === 'string' &&
-      COMPLETE_VERSION_STATUSES.has(v.status.toLowerCase()),
-  )
+  const match = versions.find((v) => String(v.version) === versionNumber && v.status === 'complete')
   return match?.id ?? null
 }
 
