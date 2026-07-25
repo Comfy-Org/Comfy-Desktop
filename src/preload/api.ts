@@ -162,7 +162,6 @@ export function buildElectronApi(): ElectronApi {
     importSnapshotsConfirm: (installationId: string) =>
       ipcRenderer.invoke('import-snapshots-confirm', installationId),
     previewSnapshotFile: () => ipcRenderer.invoke('preview-snapshot-file'),
-    previewDesktopMigration: () => ipcRenderer.invoke('preview-desktop-migration'),
     previewLocalMigration: (installationId: string) =>
       ipcRenderer.invoke('preview-local-migration', installationId),
     previewSnapshotPath: (filePath: string) =>

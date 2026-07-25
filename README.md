@@ -125,10 +125,13 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 | `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
 | `pnpm run test:integration`      | Integration suite                                                     |
 | `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
+| `pnpm run test:e2e:lifecycle`    | Lifecycle Playwright project (real installs/downloads; see `e2e/README.md`) |
 | `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
 | `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
 | `pnpm run format`                | Format (Prettier)                                                     |
 | `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
+
+For the test categories, how to run each, and which one a new test belongs in, see [`TESTING.md`](TESTING.md).
 
 ### Project structure
 

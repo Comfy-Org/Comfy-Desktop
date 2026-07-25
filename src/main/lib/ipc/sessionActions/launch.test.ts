@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // Stub the electron surface ../shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
@@ -16,7 +16,14 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
 }))
 
-import { desktopFeatureFlags, isCrashedExit } from './launch'
+import { desktopFeatureFlags, isCrashedExit, _cleanupFailedLaunchSetup } from './launch'
+import {
+  _getLaunchingInstallationIds,
+  _markLaunching,
+  _operationAborts,
+  _pendingPorts,
+  _reservePort,
+} from '../shared'
 import type { InstallationRecord } from '../shared'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
@@ -70,5 +77,51 @@ describe('isCrashedExit', () => {
     // Windows force-kill reports a large unsigned code; signal is always null.
     expect(isCrashedExit(4294967295, null)).toBe(true)
     expect(isCrashedExit(0xc0000005, null)).toBe(true)
+  })
+})
+
+describe('_cleanupFailedLaunchSetup', () => {
+  const INSTALL = 'cleanup-under-test'
+  const PORT = 59_311
+
+  afterEach(() => {
+    _operationAborts.delete(INSTALL)
+    _pendingPorts.delete(PORT)
+  })
+
+  it('releases the port, clears the launching marker, frees the slot, and aborts', () => {
+    const abort = new AbortController()
+    _reservePort(PORT, 'Cleanup Test')
+    _markLaunching(INSTALL, 'Cleanup Test')
+    _operationAborts.set(INSTALL, abort)
+
+    _cleanupFailedLaunchSetup(INSTALL, abort, { port: PORT })
+
+    expect(_pendingPorts.has(PORT)).toBe(false)
+    expect(_getLaunchingInstallationIds()).not.toContain(INSTALL)
+    expect(_operationAborts.has(INSTALL)).toBe(false)
+    expect(abort.signal.aborted).toBe(true)
+  })
+
+  it('ends the log stream when one was opened', () => {
+    const end = vi.fn()
+    _cleanupFailedLaunchSetup(INSTALL, new AbortController(), { logStream: { end } })
+    expect(end).toHaveBeenCalledTimes(1)
+  })
+
+  it('never evicts an operation slot a newer operation already claimed', () => {
+    const stale = new AbortController()
+    const newer = new AbortController()
+    _operationAborts.set(INSTALL, newer)
+
+    _cleanupFailedLaunchSetup(INSTALL, stale)
+
+    expect(_operationAborts.get(INSTALL)).toBe(newer)
+    expect(newer.signal.aborted).toBe(false)
+    expect(stale.signal.aborted).toBe(true)
+  })
+
+  it('is safe when nothing was acquired yet', () => {
+    expect(() => _cleanupFailedLaunchSetup(INSTALL, new AbortController())).not.toThrow()
   })
 })

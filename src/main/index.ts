@@ -2123,8 +2123,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return
         // Restart is always same-install/same-window — a stale renderer
-        // pick shouldn't be able to restart a different install.
-        if (parentEntry.installationId !== installationId) return
+        // pick shouldn't be able to restart a different install. During a
+        // FRESH boot the window is not attached yet (`attachInstall` runs
+        // at port-ready in onLaunch) and only carries the chooser's staked
+        // preview claim - the same state the picker CTA derives its
+        // "Restart" label from (`activeInstallationId` folds in
+        // `previewInstallationId`), so it must be accepted here too or a
+        // restart clicked during a first boot is a silent no-op.
+        const boundInstallationId =
+          parentEntry.installationId ?? parentEntry.previewInstallationId
+        if (boundInstallationId !== installationId) return
         // Confirm only when the restart will kill a local process
         // (issue #654). Cloud/remote restarts skip the modal.
         //
@@ -2159,7 +2167,14 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         // Stop is idempotent — awaiting ensures the process is fully
         // gone before the re-launch so the new session doesn't race a
         // port that's still bound.
+        // A restart during the boot window has no registered session to
+        // stop - the booting process belongs to the in-flight launch
+        // operation, so cancel that first. Without it, stop no-ops and
+        // the relaunch below is rejected by the in-flight guard, making
+        // restart-during-boot a silent no-op.
         try {
+          const cancelled = await ipc.cancelLaunching(installationId)
+          recordIpcInvocation('picker-restart:cancel-launching', { installationId, cancelled })
           await ipc.stopRunning(installationId)
         } catch (err) {
           console.error(`Picker restart: stop failed for ${installationId}:`, err)

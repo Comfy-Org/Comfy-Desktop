@@ -22,7 +22,6 @@
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { titlePopupPage } from './support/cdpPages'
@@ -134,6 +133,27 @@ async function findExportedFile(prefix: string): Promise<string | null> {
   return match ? path.join(exportDir, match) : null
 }
 
+/** Wait for an exported `<prefix>*.json` to land AND parse. The file entry
+ *  appears before `writeFile` finishes flushing, so polling on existence
+ *  alone can read an empty/partial file ("Unexpected end of JSON input"). */
+async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    const match = await findExportedFile(prefix)
+    if (match) {
+      try {
+        return JSON.parse(await readFile(match, 'utf-8')) as T
+      } catch {
+        // still being written - keep polling
+      }
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`exported ${prefix}*.json did not appear (or never parsed) within 10s`)
+    }
+    await new Promise((r) => setTimeout(r, 200))
+  }
+}
+
 test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () => {
   const popup = await openSnapshotsTab()
 
@@ -154,26 +174,13 @@ test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () 
 
   expect(await popup.click(byTestId(TID.snapshotRowExport(firstFilename)))).toBe(true)
 
-  // Wait for the file to land. The handler's `defaultPath` starts
-  // with `snapshot-` and is unique per install/trigger/date.
-  const exportedPath = await new Promise<string>((resolve, reject) => {
-    const deadline = Date.now() + 10_000
-    const poll = async (): Promise<void> => {
-      const match = await findExportedFile('snapshot-')
-      if (match) return resolve(match)
-      if (Date.now() > deadline) return reject(new Error('exported file did not appear within 10s'))
-      setTimeout(poll, 200)
-    }
-    void poll()
-  })
-
-  expect(existsSync(exportedPath)).toBe(true)
-  const content = await readFile(exportedPath, 'utf-8')
-  const envelope = JSON.parse(content) as {
+  // Wait for the file to land and parse. The handler's `defaultPath`
+  // starts with `snapshot-` and is unique per install/trigger/date.
+  const envelope = await waitForExportedEnvelope<{
     type?: string
     installationName?: string
     snapshots?: Array<{ label?: string; trigger?: string; comfyui?: { commit?: string } }>
-  }
+  }>('snapshot-')
   expect(envelope.type).toBe('comfyui-desktop-2-snapshot')
   expect(envelope.installationName).toBe(INSTALL_NAME)
   expect(envelope.snapshots?.length).toBe(1)
@@ -189,23 +196,11 @@ test('Export All writes an envelope containing every seeded snapshot @lifecycle'
   await popup.waitForVisible(byTestId(TID.snapshotsExportAll), { timeout: 5_000 })
   expect(await popup.click(byTestId(TID.snapshotsExportAll))).toBe(true)
 
-  const exportedPath = await new Promise<string>((resolve, reject) => {
-    const deadline = Date.now() + 10_000
-    const poll = async (): Promise<void> => {
-      const match = await findExportedFile('snapshots-')
-      if (match) return resolve(match)
-      if (Date.now() > deadline) return reject(new Error('export-all file did not appear within 10s'))
-      setTimeout(poll, 200)
-    }
-    void poll()
-  })
-
-  const content = await readFile(exportedPath, 'utf-8')
-  const envelope = JSON.parse(content) as {
+  const envelope = await waitForExportedEnvelope<{
     type?: string
     installationName?: string
     snapshots?: Array<{ label?: string }>
-  }
+  }>('snapshots-')
   expect(envelope.type).toBe('comfyui-desktop-2-snapshot')
   expect(envelope.installationName).toBe(INSTALL_NAME)
   expect(envelope.snapshots?.length).toBe(2)

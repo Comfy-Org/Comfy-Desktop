@@ -744,6 +744,55 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  // The Update-tab auto-refresh must fire only against genuinely stale
+  // channel-card data. The picker rebuilds its settings pane on every open,
+  // so without the time gate each open fires a check-update IPC.
+  describe('Update-tab auto-refresh staleness gate', () => {
+    async function checkUpdateFireCount(lastCheckedAt?: number): Promise<number> {
+      const priorSections = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        {
+          tab: 'update',
+          fields: [
+            {
+              id: 'channel',
+              editType: 'channel-cards',
+              value: 'stable',
+              options: [{ value: 'stable', label: 'Stable', data: { lastCheckedAt } }],
+            },
+          ],
+          actions: [{ id: 'check-update', label: 'Check for update', data: {} }],
+        },
+      ]
+      useComfyUISettingsState.sectionsFresh.value = true
+      useComfyUISettingsState.runActionStub.mockClear()
+
+      await mountContent({ initialTab: 'update' })
+
+      const count = useComfyUISettingsState.runActionStub.mock.calls.filter(
+        (c) => (c[0] as { id?: string } | undefined)?.id === 'check-update',
+      ).length
+      useComfyUISettingsState.sections.value = priorSections
+      return count
+    }
+
+    it('does NOT fire check-update when the selected card is fresh', async () => {
+      expect(await checkUpdateFireCount(Date.now())).toBe(0)
+    })
+
+    // Components mounted by earlier tests stay alive and their watchers can
+    // also fire against the shared sections state, so the stale cases assert
+    // "fired at all" rather than an exact count. The fresh case stays exact:
+    // the gate must silence every instance.
+    it('fires check-update when the selected card is older than the staleness window', async () => {
+      expect(await checkUpdateFireCount(Date.now() - 16 * 60 * 1000)).toBeGreaterThanOrEqual(1)
+    })
+
+    it('fires check-update when the selected card has never been checked', async () => {
+      expect(await checkUpdateFireCount(undefined)).toBeGreaterThanOrEqual(1)
+    })
+  })
+
   // Each pane is keyed by install id so `<Transition>` fires on install switch
   // even when the same tab persists; pinned by asserting the pane element is
   // replaced.
