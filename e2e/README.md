@@ -133,6 +133,50 @@ The harness prints the per-run profile directory
 (`[lifecycle-harness] fresh profile dir: …`); re-export it as `LIFECYCLE_REUSE_DIR` to
 re-run individual tests against that profile.
 
+### Running a section of the main chained suite
+
+`lifecycle.test.ts` is a serial chain whose tests hand state to each other, so
+individual tests cannot be cherry-picked freely. Instead every test carries a
+`@sec-<name>` tag grouping it with the tests it shares state with, and each
+section has an npm script that runs it together with the setup spine
+(`@sec-setup`, the first-use + install chain) and the metadata capture
+(`@sec-meta`):
+
+```powershell
+pnpm run test:e2e:lifecycle:install       # setup spine only (install + validation)
+pnpm run test:e2e:lifecycle:update        # stop -> update-comfyui -> relaunch
+pnpm run test:e2e:lifecycle:crosschannel  # stable -> latest channel switch
+pnpm run test:e2e:lifecycle:snapshot      # snapshot capture + restore
+pnpm run test:e2e:lifecycle:manager       # Manager security level / network mode
+pnpm run test:e2e:lifecycle:picker        # picker Restart / Stop / Relaunch CTAs
+pnpm run test:e2e:lifecycle:bootwindow    # restart-during-boot regressions
+pnpm run test:e2e:lifecycle:copy          # copy / untrack / cleanup chain
+pnpm run test:e2e:lifecycle:delete        # real delete (destroys the install)
+```
+
+On a fresh profile each script builds the real install first, then runs just
+its section. To pay the install cost once across many section runs, set
+`LIFECYCLE_REUSE_DIR`: the setup spine self-skips on the hydrated profile and
+`@sec-meta` plus the selected section execute. (Not supported on macOS, where
+Electron resolves userData outside the isolated profile dir - the harness
+fails fast there.)
+
+```powershell
+$env:LIFECYCLE_REUSE_DIR = "$env:TEMP\comfyui-lifecycle-reuse"
+pnpm run test:e2e:lifecycle:install      # first run: builds the persistent install
+pnpm run test:e2e:lifecycle:bootwindow   # subsequent runs: section only
+Remove-Item Env:\LIFECYCLE_REUSE_DIR
+```
+
+Caveats: `crosschannel` is one-shot per profile (it requires
+`updateChannel=stable` and leaves it on `latest`); `update` requires an
+available stable-channel update and fails when the profile is already at the
+channel tip; and `delete` consumes the reusable profile (it removes the
+install but leaves `firstUseCompleted` persisted, so the app boots to an
+empty chooser instead of the first-use screen the setup spine expects) -
+delete the reuse directory or point `LIFECYCLE_REUSE_DIR` somewhere fresh
+afterwards.
+
 ### Install variants (`LIFECYCLE_VARIANT`)
 
 `lifecycle.test.ts` drives the install wizard's variant row from the

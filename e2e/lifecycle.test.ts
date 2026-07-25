@@ -88,20 +88,41 @@ async function waitForConfigContinueEnabled(message: string): Promise<void> {
 
 /** True after `beforeAll` if an install record was hydrated from disk.
  *  Setup tests (consent / first-use / completes-install / post-install
- *  verification) skip themselves when this is set so the user can
- *  `--grep` a single later test against a reused profile.
+ *  verification) skip themselves when this is set so a subset of the
+ *  suite can run against a reused profile.
+ *
+ *  SECTIONS: every test carries a `@sec-<name>` tag grouping it with the
+ *  tests it shares state with. Each section is self-sufficient when run
+ *  as `@sec-setup|@sec-meta|@sec-<name>`: on a fresh profile the setup
+ *  spine builds the install first; on a hydrated profile the spine
+ *  self-skips and only the section runs. `@sec-meta` (captures install
+ *  id/path + the torch baseline) is cheap and must always be included.
+ *  The `test:e2e:lifecycle:<section>` npm scripts encode these patterns.
+ *
+ *    setup        first-use consent, install wizard, auto-launch checks
+ *    meta         install id/path + torch-family baseline capture
+ *    update       stop -> update-comfyui -> relaunch (needs update work
+ *                 to exist; may no-op on an already-updated profile)
+ *    crosschannel stable -> latest channel switch (one-shot per profile:
+ *                 requires updateChannel=stable and leaves it on latest)
+ *    snapshot     snapshot capture + picker-driven restore
+ *    manager      per-install Manager security level / network mode
+ *    picker       picker Restart / Stop / Relaunch CTAs
+ *    bootwindow   restart-during-boot regressions (run as a group: the
+ *                 fresh-chooser test consumes the siblings' --port edit)
+ *    copy         picker + kebab copies, untrack, and their cleanup
+ *    delete       stops comfy and DELETES the install (consumes a reused
+ *                 profile - reset the reuse dir before running setup again)
  *
  *  Usage:
- *    # First run: name a persistent dir so the profile survives cleanup.
+ *    # One section on a throwaway profile (builds the real install first):
+ *    pnpm run test:e2e:lifecycle:bootwindow
+ *
+ *    # Fast repeated section runs: persist the profile across runs.
  *    $env:LIFECYCLE_REUSE_DIR = "$env:TEMP\comfyui-lifecycle-reuse"
- *    pnpm exec playwright test e2e/lifecycle.test.ts --project=lifecycle \
- *      --reporter=list                                  # full suite, ~5-10 min
- *
- *    # Subsequent runs against the same dir: HYDRATED flips true,
- *    # setup tests skip, --grep picks what to re-run.
- *    pnpm exec playwright test e2e/lifecycle.test.ts --project=lifecycle \
- *      --grep "snapshot-restore" --reporter=list
- *
+ *    pnpm run test:e2e:lifecycle:install     # first run builds the install
+ *    pnpm run test:e2e:lifecycle:bootwindow  # setup skips, section only
+ *    pnpm run test:e2e:lifecycle:manager     # ditto
  *    Remove-Item Env:\LIFECYCLE_REUSE_DIR
  */
 let HYDRATED = false
@@ -330,7 +351,7 @@ async function comfyFrontendIsLoaded(): Promise<boolean> {
 // First-use takeover → New Install takeover
 // ---------------------------------------------------------------------------
 
-test('cold start lands on first-use start screen @lifecycle', async () => {
+test('cold start lands on first-use start screen @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
   // The first-use takeover gates the chooser body until consent +
   // cloud/local pick + Continue are completed on the merged start
@@ -341,7 +362,7 @@ test('cold start lands on first-use start screen @lifecycle', async () => {
   await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
 })
 
-test('accept ToS + pick local (non-express) opens New Install takeover with form pre-filled @lifecycle', async () => {
+test('accept ToS + pick local (non-express) opens New Install takeover with form pre-filled @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
 
   // Pick Local — reveals the Express-Install modifier. We want the
@@ -466,7 +487,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   }
 })
 
-test('completes install (auto-launches via brand chrome) @lifecycle', async () => {
+test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
   // The CPU-variant pick at the end of the previous test re-fires the
   // variant option reload, which transiently disables Continue
@@ -485,7 +506,7 @@ test('completes install (auto-launches via brand chrome) @lifecycle', async () =
   await expect.poll(comfyFrontendIsLoaded, { timeout: 480_000, intervals: [1_000, 2_000] }).toBe(true)
 })
 
-test('first-use Local chain marks firstUseCompleted once and cycles firstUseMode @lifecycle', async () => {
+test('first-use Local chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use IPC log only exists on the boot that drove the chain')
   // Asserts the chain bookkeeping the auto-launch above relied on:
   //   - `markFirstUseCompleted` (set-setting firstUseCompleted=true)
@@ -509,7 +530,7 @@ test('first-use Local chain marks firstUseCompleted once and cycles firstUseMode
 // Launch & verify split-view + dark background
 // ---------------------------------------------------------------------------
 
-test('auto-launch landed on a single host window (in-place attach) @lifecycle', async () => {
+test('auto-launch landed on a single host window (in-place attach) @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install was not auto-launched on this boot')
   // In-place attach guard: the redesigned install flow has
   // `autoLaunchOnFinish: true`, so the chooser host transforms into
@@ -538,7 +559,7 @@ test('auto-launch landed on a single host window (in-place attach) @lifecycle', 
  * BrowserWindow background is dark (#171717) so no white frame flashes
  * pre-load.
  */
-test('ComfyUI window has dark background and split-view architecture @lifecycle', async () => {
+test('ComfyUI window has dark background and split-view architecture @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: comfy is not auto-running on this boot')
   const arch = await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -577,7 +598,39 @@ test('ComfyUI window has dark background and split-view architecture @lifecycle'
 // Dashboard navigation from a running install
 // ---------------------------------------------------------------------------
 
-test('picker Dashboard opens a chooser without stopping the running install @lifecycle', async () => {
+/** Close every window except the one hosting the live ComfyUI frontend,
+ *  then wait until it is the only window left. With more than one window
+ *  open, marker-based facades (panel/title-bar) can bind to the wrong
+ *  window's panel.html, so any test that opens an extra window must call
+ *  this before handing off. Keep whichever window owns the live comfy
+ *  frontend rather than trusting window ordering. The comfy frontend
+ *  lives in a child WebContentsView, so identify the host by inspecting
+ *  `contentView.children` (BrowserWindow.fromWebContents returns null
+ *  for child-view webContents). */
+async function closeExtraWindowsKeepComfyHost(): Promise<void> {
+  await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
+    const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
+    const comfyHost = wins.find((w) =>
+      w.contentView.children.some((v) =>
+        v instanceof WebContentsView &&
+        /^http:\/\/(127\.0\.0\.1|localhost):/.test(v.webContents.getURL()),
+      ),
+    )
+    if (!comfyHost) throw new Error('running comfy host window not found')
+    for (const win of wins) {
+      if (win.id !== comfyHost.id) win.close()
+    }
+  }))
+  // Wait until only the comfy host remains so the marker-based
+  // panel/title-bar facades resolve unambiguously.
+  await expect
+    .poll(() => evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
+    )), { timeout: 15_000, intervals: [200, 500] })
+    .toBe(1)
+}
+
+test('picker Dashboard opens a chooser without stopping the running install @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: no running install-backed host exists')
   const before = await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) => {
     const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
@@ -608,6 +661,20 @@ test('picker Dashboard opens a chooser without stopping the running install @lif
   expect(after.count).toBe(before.count + 1)
   expect(before.ids).toContain(after.comfyHostId)
 
+  // Close the extra chooser window before handing off: later tests (and
+  // section-subset runs that skip the update section entirely) must find
+  // exactly one window so panel/title-bar facades bind to the comfy host.
+  // Capture the install id THROUGH the extra chooser's panel first - the
+  // comfy host's own panel view was destroyed by the launch attach, so
+  // after the close no panel.html exists until it is remounted.
+  const installs = await ctx.panel.evaluate<Array<{ id: string }>>(`window.api.getInstallations()`)
+  expect(installs.length, 'no tracked installation to remount the panel for').toBeGreaterThan(0)
+  await closeExtraWindowsKeepComfyHost()
+  // Remount the install-backed panel (production mounts it lazily) so the
+  // following tests can keep reading state via `ctx.panel.evaluate`. Same
+  // dance the snapshot-capture and relaunch tests already do.
+  expect(await ensureInstallPanelView(ctx.app, installs[0]!.id)).toBe(true)
+  await waitForWebContents(ctx.app, 'panel.html')
 })
 
 // ---------------------------------------------------------------------------
@@ -765,44 +832,17 @@ async function stopAndReturnToDashboardViaUI(): Promise<void> {
     .toBe(true)
 }
 
-test('stop ComfyUI again so update-comfyui (requires stopped) can run @lifecycle', async () => {
+test('stop ComfyUI again so update-comfyui (requires stopped) can run @sec-update @lifecycle', async () => {
   test.setTimeout(300_000)
 
-  // Close the extra dashboard window the multi-window test opened FIRST,
-  // so the single remaining window is the comfy host and every
-  // marker-based facade (panel/title-bar) resolves to it unambiguously.
-  // Keep whichever window owns the live comfy frontend rather than
-  // trusting window ordering. Test-stage teardown, not a flow under test.
-  // The comfy frontend lives in a child WebContentsView, so identify
-  // the host by inspecting `contentView.children` (BrowserWindow
-  // .fromWebContents returns null for child-view webContents).
-  await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
-    const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
-    const comfyHost = wins.find((w) =>
-      w.contentView.children.some((v) =>
-        v instanceof WebContentsView &&
-        /^http:\/\/(127\.0\.0\.1|localhost):/.test(v.webContents.getURL()),
-      ),
-    )
-    if (!comfyHost) throw new Error('running comfy host window not found')
-    for (const win of wins) {
-      if (win.id !== comfyHost.id) win.close()
-    }
-  }))
-  // Wait until only the comfy host remains so the marker-based
-  // panel/title-bar facades resolve unambiguously.
-  await expect
-    .poll(() => evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
-    )), { timeout: 15_000, intervals: [200, 500] })
-    .toBe(1)
-
   // Full real-UI stop + return: pill -> picker Stop -> confirm ->
-  // stopped card -> Return to Dashboard.
+  // stopped card -> Return to Dashboard. The multi-window test closes
+  // its own extra window, so exactly one window (the comfy host) exists
+  // here and the panel/title-bar facades resolve to it.
   await stopAndReturnToDashboardViaUI()
 })
 
-test('captures install metadata for the update tests @lifecycle', async () => {
+test('captures install metadata for the update tests @sec-meta @lifecycle', async () => {
   const installs = await ctx.panel.evaluate<InstallationLite[]>(
     `window.api.getInstallations()`,
   )
@@ -852,7 +892,7 @@ test('captures install metadata for the update tests @lifecycle', async () => {
   }
 })
 
-test('update-comfyui drives the real updater and moves HEAD forward @lifecycle', async () => {
+test('update-comfyui drives the real updater and moves HEAD forward @sec-update @lifecycle', async () => {
   // Real update can run pip-install if requirements.txt changed
   // between the older stable tag we installed on and the
   // latest stable tag. Stretch the per-test timeout to cover that.
@@ -902,7 +942,7 @@ test('update-comfyui drives the real updater and moves HEAD forward @lifecycle',
   expectTorchFamilyUnchanged('update-comfyui changed the installed torch family')
 })
 
-test('re-launch ComfyUI after update validates the updated install runs @lifecycle', async () => {
+test('re-launch ComfyUI after update validates the updated install runs @sec-update @lifecycle', async () => {
   await clickInstallTile(ctx.panel, 'ComfyUI')
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
 })
@@ -987,7 +1027,7 @@ async function waitForOperationDrain(installationId: string, timeout = 300_000):
 let _restoreSnapshotFilename = ''
 let _snapshotHeadAtCapture = ''
 
-test('captures a snapshot for the picker-driven restore test @lifecycle', async () => {
+test('captures a snapshot for the picker-driven restore test @sec-snapshot @lifecycle', async () => {
   // ComfyUI is running from the prior re-launch test. Captured label
   // gives us a stable filename to grab in the restore test below.
   expect(_updateInstallId, 'update install id not captured').toBeTruthy()
@@ -1057,7 +1097,7 @@ test('captures a snapshot for the picker-driven restore test @lifecycle', async 
 // this loopback-bound suite cannot probe).
 // ---------------------------------------------------------------------------
 
-test('per-install Manager security level + network mode land in Manager config.ini and apply after relaunch @lifecycle', async () => {
+test('per-install Manager security level + network mode land in Manager config.ini and apply after relaunch @sec-manager @lifecycle', async () => {
   test.setTimeout(600_000)
   expect(_updateInstallPath, 'install path not captured').toBeTruthy()
 
@@ -1352,7 +1392,7 @@ test('per-install Manager security level + network mode land in Manager config.i
 // beyond what's asserted below.
 // ---------------------------------------------------------------------------
 
-test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RELAUNCH while running @lifecycle', async () => {
+test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RELAUNCH while running @sec-crosschannel @lifecycle', async () => {
   // Real cross-channel update: switches the install's `updateChannel`
   // from `stable` to `latest`, runs the master-branch update, then
   // relaunches in place. Stretch the timeout to cover a possible
@@ -1449,7 +1489,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle', async () => {
+test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @sec-snapshot @lifecycle', async () => {
   test.setTimeout(600_000)
   expect(_restoreSnapshotFilename, 'restore-target snapshot not captured').toBeTruthy()
 
@@ -1536,7 +1576,7 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @lifecycle'
 // invocation count for `stop-comfyui` stays at zero.
 // ---------------------------------------------------------------------------
 
-test('picker primary CTA Restart drives in-drawer confirm + re-launch @lifecycle', async () => {
+test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picker @lifecycle', async () => {
   test.setTimeout(300_000)
 
   // The restore op ahead of us keeps its slot past the frontend-load
@@ -1623,7 +1663,7 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @lifecycle
 // running install to the tests downstream.
 // ---------------------------------------------------------------------------
 
-test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores it @lifecycle', async () => {
+test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores it @sec-picker @lifecycle', async () => {
   test.setTimeout(300_000)
 
   // Sanity: the prior Restart test left ComfyUI running.
@@ -1796,7 +1836,7 @@ async function openBootWindowViaPickerRestart(): Promise<void> {
     .toBe(true)
 }
 
-test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @lifecycle', async () => {
+test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @sec-bootwindow @lifecycle', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
@@ -1870,7 +1910,7 @@ test('boot-window --port edit surfaces Restart-to-apply and the restart applies 
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restart clicked during boot cancels the in-flight boot and applies the edited --port @lifecycle', async () => {
+test('restart clicked during boot cancels the in-flight boot and applies the edited --port @sec-bootwindow @lifecycle', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
@@ -1953,7 +1993,7 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restart clicked during a FRESH chooser boot (unattached window) cancels it and applies the edited --port @lifecycle', async () => {
+test('restart clicked during a FRESH chooser boot (unattached window) cancels it and applies the edited --port @sec-bootwindow @lifecycle', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
@@ -2075,7 +2115,7 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
 let _copyInstallId = ''
 let _copyInstallPath = ''
 
-test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycle', async () => {
+test('picker pin-bottom Copy creates a real ~500MB copy of the install @sec-copy @lifecycle', async () => {
   test.setTimeout(600_000)
 
   // Copy is REQUIRES_STOPPED — stop comfy through the real UI (pill ->
@@ -2096,7 +2136,9 @@ test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycl
   // Prompt for the copy's new name. The picker drives dialogs through
   // `useDialogs` → DialogHost → BasePrompt, so the surface carries the
   // base-prompt test ids (not ModalDialog's modal-prompt ones).
-  const newName = 'ComfyUI Copy E2E'
+  // Random suffix so a reused profile carrying a same-named copy from an
+  // aborted prior run can't satisfy `waitForCopyRegistered` vacuously.
+  const newName = `ComfyUI Copy E2E ${randomUUID().slice(0, 8)}`
   await submitCopyNamePrompt(popup, newName)
 
   await waitForProgressTakeoverAfterPopupClose()
@@ -2124,7 +2166,7 @@ test('picker pin-bottom Copy creates a real ~500MB copy of the install @lifecycl
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('cleans up the copy install before the original delete test runs @lifecycle', async () => {
+test('cleans up the copy install before the original delete test runs @sec-copy @lifecycle', async () => {
   test.setTimeout(300_000)
   expect(_copyInstallId, 'no copy install id captured to clean up').toBeTruthy()
 
@@ -2173,7 +2215,7 @@ test('cleans up the copy install before the original delete test runs @lifecycle
 let _kebabCopyInstallId = ''
 let _kebabCopyInstallPath = ''
 
-test('dashboard kebab "Copy Installation" creates a real ~500MB copy @lifecycle', async () => {
+test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @lifecycle', async () => {
   test.setTimeout(600_000)
 
   // The prior cleanup test ran direct `runAction('delete')` against
@@ -2199,7 +2241,8 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @lifecycle'
   // prompt for the new install name (BasePrompt via useDialogs).
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
-  const newName = 'ComfyUI Kebab Copy E2E'
+  // Random suffix: see the picker-copy test above.
+  const newName = `ComfyUI Kebab Copy E2E ${randomUUID().slice(0, 8)}`
   await submitCopyNamePrompt(popup, newName)
 
   // Copy op renders inline in the picker's right pane (same
@@ -2234,7 +2277,7 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @lifecycle'
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('dashboard kebab "Untrack" removes the install from the registry without touching disk @lifecycle', async () => {
+test('dashboard kebab "Untrack" removes the install from the registry without touching disk @sec-copy @lifecycle', async () => {
   test.setTimeout(60_000)
   expect(_kebabCopyInstallId, 'no kebab-copy install id to untrack').toBeTruthy()
   expect(_kebabCopyInstallPath, 'no kebab-copy install path captured').toBeTruthy()
@@ -2282,7 +2325,7 @@ test('dashboard kebab "Untrack" removes the install from the registry without to
   expect(remaining.find((i) => i.id === _updateInstallId), 'untrack must not affect the original install').toBeDefined()
 })
 
-test('cleans up the untracked kebab-copy on disk before the final Delete test runs @lifecycle', async () => {
+test('cleans up the untracked kebab-copy on disk before the final Delete test runs @sec-copy @lifecycle', async () => {
   test.setTimeout(120_000)
   expect(_kebabCopyInstallPath, 'no kebab-copy install path to clean up').toBeTruthy()
   expect(existsSync(_kebabCopyInstallPath), 'kebab-copy dir already gone — Untrack test invariant violated').toBe(true)
@@ -2319,7 +2362,7 @@ test('cleans up the untracked kebab-copy on disk before the final Delete test ru
 let _deleteInstallId = ''
 let _deleteInstallPath = ''
 
-test('stops comfy and captures the installed dir state before driving delete @lifecycle', async () => {
+test('stops comfy and captures the installed dir state before driving delete @sec-delete @lifecycle', async () => {
   // delete is in REQUIRES_STOPPED — stop comfy through the real UI
   // (pill -> picker Stop -> confirm -> stopped card -> Return to
   // Dashboard) so the IPC handler doesn't bail on us. The return
@@ -2342,7 +2385,7 @@ test('stops comfy and captures the installed dir state before driving delete @li
   expect(existsSync(path.join(_deleteInstallPath, '.comfyui-desktop-2')), 'installed dir missing .comfyui-desktop-2 marker').toBe(true)
 })
 
-test('real delete wipes the fully-installed ~500MB tree off disk @lifecycle', async () => {
+test('real delete wipes the fully-installed ~500MB tree off disk @sec-delete @lifecycle', async () => {
   // Recursive delete of a full standalone install can take a while on
   // Windows when files are large (the .venv ships thousands of small
   // files plus a few hundred-MB torch wheels). Stretch the timeout.
