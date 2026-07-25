@@ -1272,10 +1272,13 @@ export async function cancelLaunching(installationId: string, timeoutMs = 60_000
   if (!launch || _runningSessions.has(installationId)) return false
   launch.abort.abort()
   const timedOut = Symbol('timeout')
+  let timer: ReturnType<typeof setTimeout> | undefined
   const outcome = await Promise.race([
     launch.settled,
-    new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), timeoutMs)),
-  ])
+    new Promise<typeof timedOut>((resolve) => {
+      timer = setTimeout(() => resolve(timedOut), timeoutMs)
+    }),
+  ]).finally(() => clearTimeout(timer))
   if (outcome === timedOut) {
     throw new Error(`Timed out waiting for the cancelled launch of ${installationId} to wind down`)
   }

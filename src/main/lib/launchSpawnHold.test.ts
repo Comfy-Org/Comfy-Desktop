@@ -53,7 +53,7 @@ describe('waitLaunchSpawnHold', () => {
     expect(isLaunchSpawnHeld()).toBe(true)
 
     releaseLaunchSpawnHold()
-    await expect(settlesWithin(held, 1000)).resolves.toBe(true)
+    await held // deterministic: the release guarantees resolution
     expect(isLaunchSpawnHeld()).toBe(false)
   })
 
@@ -64,7 +64,7 @@ describe('waitLaunchSpawnHold', () => {
     await expect(settlesWithin(held, 50)).resolves.toBe(false)
 
     abort.abort()
-    await expect(settlesWithin(held, 1000)).resolves.toBe(true)
+    await held // deterministic: the abort guarantees resolution
     expect(isLaunchSpawnHeld()).toBe(false)
   })
 
@@ -87,7 +87,7 @@ describe('waitLaunchSpawnHold', () => {
     await expect(settlesWithin(waitLaunchSpawnHold(second.signal), 50)).resolves.toBe(true)
 
     releaseLaunchSpawnHold()
-    await expect(settlesWithin(held, 1000)).resolves.toBe(true)
+    await held // deterministic: the release guarantees resolution
   })
 
   it('re-arming while a launch is parked throws instead of orphaning the waiter', async () => {
@@ -99,7 +99,7 @@ describe('waitLaunchSpawnHold', () => {
     expect(() => armLaunchSpawnHold()).toThrow(/already parked/)
 
     releaseLaunchSpawnHold()
-    await expect(settlesWithin(held, 1000)).resolves.toBe(true)
+    await held // deterministic: the release guarantees resolution
   })
 
   it('release before any launch consumes the hold just disarms it', async () => {

@@ -270,7 +270,9 @@ export class WebContentsPage {
   ): Promise<void> {
     const deadline = Date.now() + (opts.timeout ?? 15_000)
     for (;;) {
-      if ((await this.textOf(trigger))?.includes(optionLabel)) return
+      // Exact (trimmed) match: the trigger renders only the selected label,
+      // and a substring check would let a prefix look-alike pass for it.
+      if ((await this.textOf(trigger))?.trim() === optionLabel) return
       const state = await this.wcEval<'missing' | 'open' | 'closed'>(`(() => {
         const t = document.querySelector(${JSON.stringify(trigger)})
         if (!t) return 'missing'
