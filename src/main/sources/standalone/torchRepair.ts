@@ -1,13 +1,13 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
 import { stripPlatform, findSitePackages, getTorchVersion } from './envPaths'
-import { getActiveVenvDir, getActivePythonPath, getActiveUvPath } from '../../lib/pythonEnv'
-import { stackVersionMatches, torchIndexUrlFor, torchTupleReacquirable } from './torchStackTypes'
+import { getActiveVenvDir } from '../../lib/pythonEnv'
+import { torchTupleReacquirable } from './torchStackTypes'
 import { getLastVerifiedTorchStack } from './torchStackCatalog'
-import type { TorchStackPackages, PersistedTorchStack } from './torchStackTypes'
+import { preparePipStack, applyTorchStackTransaction, preflightDiskSpace, DiskSpaceError } from './torchStackTransaction'
+import { copyTorchFamily, recoverTorchFamilyBackups } from './torchFamilyFs'
+import type { PersistedTorchStack } from './torchStackTypes'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
-import { copyDirWithProgress } from '../../lib/copy'
 import { createCache } from '../../lib/cache'
 import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
@@ -25,13 +25,6 @@ const EXPECTED_FAMILY: Record<string, string> = {
   'intel-xpu': 'xpu',
 }
 
-// Top-level entries that make up an accelerated torch stack — the torch packages
-// plus their bundled GPU runtime deps. Matched after normalizing '-' → '_' so
-// import dirs (nvidia_cudnn_cu12), dist-info dirs (torch-2.10.0+cu128.dist-info),
-// and auditwheel sidecars (torch.libs) all hit.
-const TORCH_FAMILY_PREFIXES = ['torch', 'torio', 'functorch', 'nvidia', 'triton', 'pytorch_triton', 'cuda', 'rocm']
-const STAGING_PREFIX = '.torchrepair-'
-
 export interface TorchMismatch {
   /** Vendor key, e.g. 'nvidia' | 'amd' | 'intel-xpu'. */
   variantBase: string
@@ -41,22 +34,6 @@ export interface TorchMismatch {
   installedVersion: string
   /** Local-version tag, e.g. 'cu128' | 'cpu' | '' (bare). */
   installedTag: string
-}
-
-function isTorchFamilyEntry(name: string): boolean {
-  const norm = name.toLowerCase().replace(/-/g, '_')
-  return TORCH_FAMILY_PREFIXES.some((p) => norm.startsWith(p))
-}
-
-/** Project key of a site-packages entry, so a versioned dist-info maps to the
- *  same key as its package dir (torch-2.12.0.dist-info → torch). */
-function packageKey(entry: string): string {
-  const base = entry.endsWith('.dist-info') ? entry.slice(0, -'.dist-info'.length) : entry
-  // dist-info names are `<name>-<version>` and `<name>` never contains '-', so
-  // the first '-' splits name from version. Non-dist-info entries have no '-'.
-  const dash = base.indexOf('-')
-  const name = dash >= 0 && entry.endsWith('.dist-info') ? base.slice(0, dash) : base
-  return name.toLowerCase().replace(/-/g, '_')
 }
 
 interface AcceleratorEvidence {
@@ -155,101 +132,34 @@ export interface TorchRepairTools {
 }
 
 /**
- * Replace the bundle-provided torch-family packages in dstSite with the copies
- * from srcSite. Staged-then-swapped: the new packages are copied in full under
- * temp names before any old package is removed, so an interruption can't leave
- * the venv with no torch. Only packages the bundle actually ships are removed —
- * unrelated torch-adjacent deps a custom node installed (e.g. torchmetrics) are
- * left untouched.
- */
-export async function copyTorchFamily(srcSite: string, dstSite: string, signal?: AbortSignal): Promise<void> {
-  const srcEntries = fs.readdirSync(srcSite, { withFileTypes: true }).filter((e) => isTorchFamilyEntry(e.name))
-  const providedKeys = new Set(srcEntries.map((e) => packageKey(e.name)))
-
-  // Clear any staging leftovers from a prior interrupted run.
-  for (const entry of fs.readdirSync(dstSite)) {
-    if (entry.startsWith(STAGING_PREFIX)) {
-      await fs.promises.rm(path.join(dstSite, entry), { recursive: true, force: true })
-    }
-  }
-
-  // 1. Stage full copies under temp names (old torch stays live meanwhile).
-  const staged: Array<{ name: string; tmp: string }> = []
-  for (const e of srcEntries) {
-    if (signal?.aborted) throw new Error('Cancelled')
-    const from = path.join(srcSite, e.name)
-    const tmp = path.join(dstSite, `${STAGING_PREFIX}${e.name}`)
-    if (e.isDirectory()) await copyDirWithProgress(from, tmp, null, { signal })
-    else await fs.promises.copyFile(from, tmp)
-    staged.push({ name: e.name, tmp })
-  }
-
-  // 2. Remove the old copies of bundle-provided packages, then 3. swap staged
-  //    into place. Both are fast metadata ops, keeping the unsafe window tiny.
-  for (const entry of fs.readdirSync(dstSite)) {
-    if (entry.startsWith(STAGING_PREFIX)) continue
-    if (isTorchFamilyEntry(entry) && providedKeys.has(packageKey(entry))) {
-      await fs.promises.rm(path.join(dstSite, entry), { recursive: true, force: true })
-    }
-  }
-  for (const s of staged) {
-    const final = path.join(dstSite, s.name)
-    await fs.promises.rm(final, { recursive: true, force: true })
-    await fs.promises.rename(s.tmp, final)
-  }
-}
-
-function streamPip(cmd: string, args: string[], tools: TorchRepairTools): Promise<void> {
-  tools.sendOutput?.(`\n$ ${path.basename(cmd)} ${args.join(' ')}\n`)
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { windowsHide: true, signal: tools.signal })
-    child.stdout.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
-    child.stderr.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`PyTorch package install failed (exit code ${code})`))
-    })
-  })
-}
-
-/**
- * Re-acquire a verified index-served stack via pip: install the exact tuple
- * from the trusted index its local tag names, directly into the live venv
- * (pip replaces the damaged CPU packages in place — same blast radius as the
- * bundle path's torch-family copy).
+ * Re-acquire a verified index-served stack via pip, through the journaled
+ * whole-venv transaction: repair runs against the LIVE venv, and an in-place
+ * pip install interrupted by a cancelled launch could remove the remaining
+ * torch packages with no rollback. The transaction mutates a copy, verifies
+ * it, and restores the original on any failure.
  */
 async function repairTorchViaPip(
   installation: InstallationRecord,
-  packages: TorchStackPackages,
+  verifiedRef: PersistedTorchStack,
   tools: TorchRepairTools,
 ): Promise<{ ok: boolean; message: string }> {
+  const packages = verifiedRef.packages
   if (!torchTupleReacquirable(packages)) {
     return { ok: false, message: `no trusted index serves torch ${packages.torch}` }
   }
-  const python = getActivePythonPath(installation)
-  if (!python || !fs.existsSync(python)) {
-    return { ok: false, message: 'could not locate the installation python' }
+  try {
+    await preflightDiskSpace(installation, null, tools.signal)
+  } catch (err) {
+    if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
+    throw err
   }
-  const specs = [`torch==${packages.torch}`]
-  if (packages.torchvision) specs.push(`torchvision==${packages.torchvision}`)
-  if (packages.torchaudio) specs.push(`torchaudio==${packages.torchaudio}`)
-  const indexUrl = torchIndexUrlFor(packages)
-  const indexArgs = indexUrl ? ['--index-url', indexUrl] : []
-
   tools.sendProgress('torchRepair', { percent: -1 })
-  const uv = getActiveUvPath(installation)
-  const [cmd, args] = fs.existsSync(uv)
-    ? [uv, ['pip', 'install', '--python', python, ...indexArgs, ...specs]] as const
-    : [python, ['-m', 'pip', 'install', ...indexArgs, ...specs]] as const
-  await streamPip(cmd, [...args], tools)
-
-  const dstSite = findSitePackages(getActiveVenvDir(installation))
-  const after = dstSite ? readTorchVersionFromSite(dstSite) : null
-  if (!after || !stackVersionMatches(after, packages.torch)) {
-    return { ok: false, message: `PyTorch is "${after ?? 'absent'}" after install, expected "${packages.torch}"` }
-  }
-  return { ok: true, message: `restored PyTorch ${after}` }
+  const prepared = preparePipStack(packages, { ...verifiedRef, date: '', comfyuiVersion: '' })
+  const result = await applyTorchStackTransaction(installation, prepared, tools)
+  // Cancellation surfaces as a throw so the caller doesn't count it as a
+  // failed repair attempt (the transaction already rolled the venv back).
+  if (!result.ok && tools.signal?.aborted) throw new Error('Cancelled')
+  return result
 }
 
 export interface TorchRepairResult {
@@ -285,7 +195,7 @@ export async function repairTorch(
 
   // Index-served stacks have no bundle at all — pip is their only source.
   if (verifiedRef && verifiedRef.source.kind !== 'comfy-bundle') {
-    const result = await repairTorchViaPip(installation, verifiedRef.packages, tools)
+    const result = await repairTorchViaPip(installation, verifiedRef, tools)
     return result.ok ? { ...result, restoredRef: verifiedRef } : result
   }
 
@@ -391,6 +301,22 @@ export async function maybeRepairTorch(
   // Best-effort sweep of a multi-GB temp extraction orphaned by a hard kill.
   const orphan = path.join(installation.installPath, '.torch-repair-tmp')
   if (fs.existsSync(orphan)) await fs.promises.rm(orphan, { recursive: true, force: true }).catch(() => {})
+
+  // Recover from a swap that died mid-way: an uncommitted swap's backups hold
+  // the only good copies, and mismatch detection below bails when torch is
+  // unreadable. The launch path already runs this recovery hard-gated (a
+  // failed rollback fails the launch); this retry covers non-launch callers
+  // and is best-effort - the marker survives a failure, so the next gated
+  // recovery attempt retries the rollback.
+  const liveSite = findSitePackages(getActiveVenvDir(installation))
+  if (liveSite) {
+    try {
+      await recoverTorchFamilyBackups(liveSite)
+    } catch (err) {
+      tools.sendOutput?.(`\nWARNING: could not recover PyTorch packages from an interrupted repair: ${(err as Error).message}\n`)
+      telemetry.emit('comfy.desktop.torch_repair.recovery_failed', { ...buildErrorFields(err) })
+    }
+  }
 
   // A completed repair must not latch repair off forever: new damage after a
   // successful repair is a new incident, so the attempt budget resets. Only a

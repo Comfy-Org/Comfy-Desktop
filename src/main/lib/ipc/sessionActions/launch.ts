@@ -395,6 +395,20 @@ async function runLaunch(
       console.warn('PyTorch stack transaction recovery failed:', err)
       return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
     }
+    // Recover a torch-family swap (startup repair) that died mid-rename: an
+    // uncommitted swap's backups hold the only good copies of the live venv's
+    // torch packages, so a failed rollback fails the launch closed too - the
+    // marker stays behind for the next attempt.
+    try {
+      const { recoverTorchFamilyBackups } = await import('../../../sources/standalone/torchFamilyFs')
+      const { findSitePackages } = await import('../../../sources/standalone/envPaths')
+      const { getActiveVenvDir } = await import('../../pythonEnv')
+      const liveSite = findSitePackages(getActiveVenvDir(inst))
+      if (liveSite) await recoverTorchFamilyBackups(liveSite)
+    } catch (err) {
+      console.warn('PyTorch family swap recovery failed:', err)
+      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+    }
     // Reconcile the persisted stack state with what's actually in the venv
     // (e.g. a manual terminal install). Never mutates the venv; must run
     // before repair so repair sees up-to-date verified/observed state. If it

@@ -16,17 +16,27 @@ import type { InstallationRecord } from '../../installations'
 import type { ComfyVersion } from '../version'
 import * as settings from '../../settings'
 
-/** Packages never modified during snapshot restore (Manager's skip list plus core tooling). */
-const PROTECTED_EXACT = new Set(['pip', 'setuptools', 'wheel', 'uv'])
-// Plain prefixes: 'torch' must also cover torchvision/torchaudio/torchsde,
-// 'nvidia' covers nvidia-cublas-cu12 etc., 'triton' covers triton-windows,
-// 'cuda' covers cuda-bindings.
-const PROTECTED_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
+/** Packages never modified during snapshot restore: core tooling plus the
+ *  torch stack itself (owned by the torch transaction, not pip sync). Stack
+ *  packages are named EXACTLY — ordinary torch-ecosystem deps a snapshot can
+ *  restore fine (torchsde, torchmetrics, torchdiffeq…) must stay managed by
+ *  the pip sync, or v1 snapshots could never fully restore. */
+const PROTECTED_EXACT = new Set([
+  'pip', 'setuptools', 'wheel', 'uv',
+  'torch', 'torchvision', 'torchaudio', 'torio', 'functorch', 'triton',
+])
+// Prefixes matched as `<prefix>` / `<prefix>-*` / `<prefix>_*` (never a bare
+// substring — 'torchsde' must not match 'torch'): torch-tensorrt and
+// torch_scatter compile against torch's ABI, 'nvidia' covers
+// nvidia-cublas-cu12 etc., 'triton' covers triton-windows,
+// 'pytorch-triton' covers pytorch-triton-rocm, 'cuda' covers cuda-bindings.
+const PROTECTED_PREFIXES = ['torch', 'nvidia', 'triton', 'pytorch-triton', 'cuda', 'rocm']
 
 export function isProtectedPackage(name: string): boolean {
   const lower = name.toLowerCase()
   if (PROTECTED_EXACT.has(lower)) return true
-  return PROTECTED_PREFIXES.some((prefix) => lower.startsWith(prefix))
+  return PROTECTED_PREFIXES.some((prefix) =>
+    lower === prefix || lower.startsWith(`${prefix}-`) || lower.startsWith(`${prefix}_`))
 }
 
 /** Constraint pins for the currently installed protected packages. Only plain
@@ -37,6 +47,55 @@ export function buildProtectedConstraints(freeze: Record<string, string>): strin
   return Object.entries(freeze)
     .filter(([name, version]) => isProtectedPackage(name) && /^\d/.test(version) && !version.includes('://'))
     .map(([name, version]) => `${name}==${version}`)
+}
+
+export interface ProtectedDriftEntry {
+  name: string
+  /** Version the snapshot records; null when the package is not in the snapshot. */
+  target: string | null
+  /** Version installed now; null when the package is absent. */
+  live: string | null
+}
+
+/**
+ * Protected packages whose live version differs from the snapshot's freeze.
+ * The exact pip sync never mutates protected packages (torch stack, CUDA
+ * runtime, core tooling), so after a restore this diff is what tells the
+ * caller whether the live state actually reached the snapshot's recorded
+ * state — the torch transaction reconciles the stack itself, but e.g. a v1
+ * snapshot with a different torchvision has no stack record to reconcile it.
+ */
+export async function protectedPackageDrift(
+  installation: InstallationRecord,
+  targetPips: Record<string, string>,
+): Promise<ProtectedDriftEntry[]> {
+  const uvPath = getActiveUvPath(installation)
+  const pythonPath = getActivePythonPath(installation)
+  // Throw rather than return [] — "can't measure" must surface as unknown
+  // drift, never as known-zero.
+  if (!pythonPath || !fs.existsSync(uvPath)) {
+    throw new Error('Python environment or uv not found')
+  }
+  const live = await pipFreeze(uvPath, pythonPath)
+  // Compare under PEP 503 canonical names — distribution names are
+  // case-insensitive and treat -/_/. as equivalent, so snapshot `Torch` and
+  // live `torch` are the same package, not one missing and one extra.
+  const canon = (name: string): string => name.toLowerCase().replace(/[-_.]+/g, '-')
+  const liveByCanon = new Map(Object.entries(live).map(([name, version]) => [canon(name), { name, version }]))
+  const targetByCanon = new Map(Object.entries(targetPips).map(([name, version]) => [canon(name), { name, version }]))
+  const drift: ProtectedDriftEntry[] = []
+  for (const [key, target] of targetByCanon) {
+    if (!isProtectedPackage(key)) continue
+    const lv = liveByCanon.get(key)
+    if ((lv?.version ?? null) !== target.version) {
+      drift.push({ name: target.name, target: target.version, live: lv?.version ?? null })
+    }
+  }
+  for (const [key, lv] of liveByCanon) {
+    if (!isProtectedPackage(key)) continue
+    if (!targetByCanon.has(key)) drift.push({ name: lv.name, target: null, live: lv.version })
+  }
+  return drift
 }
 
 /** Normalize a package name for dist-info directory matching (PEP 503). */

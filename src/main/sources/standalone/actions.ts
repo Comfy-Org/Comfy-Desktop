@@ -17,7 +17,7 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { publicVersion, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseIndexStackId } from './torchStackTypes'
+import { stackVersionMatches, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseIndexStackId } from './torchStackTypes'
 import type { TorchStackPackages } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
@@ -180,12 +180,18 @@ export async function handleAction(
       }
     } else if (snapTorch?.kind === 'observed' && snapTorch.torchVersion) {
       // Older snapshots record torch alone; only full-tuple records can be
-      // compared (and restored) as a stack.
+      // compared (and restored) as a stack. The partial comparison is
+      // tag-aware (2.4.1+cu121 vs 2.4.1+cpu differ) - but when torch itself
+      // matches, a partial record proceeds even in exact mode: the snapshot
+      // recorded nothing else to verify, and rejecting would make every
+      // legacy snapshot unrestorable in the default mode. Any accompanying
+      // torchvision/torchaudio drift from the snapshot's freeze is still
+      // measured and disclosed after the pip sync below.
       const full = hasFullObservedTuple(snapTorch)
       const tuple = observedTuple(snapTorch)
       const differs = full
         ? !torchTupleMatches(tuple, installedTorch)
-        : (!torchBefore || publicVersion(snapTorch.torchVersion) !== publicVersion(torchBefore))
+        : (!torchBefore || !stackVersionMatches(torchBefore, snapTorch.torchVersion))
       if (differs) {
         // An observed tuple can be re-acquired from the index its local tag
         // names — the snapshot IS the recipe — on any install type: the
@@ -200,6 +206,11 @@ export async function handleAction(
             if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
             throw err
           }
+        } else if (mode === 'exact') {
+          // Exact mode promises the recorded stack: an unrestorable observed
+          // tuple (partial record, or no trusted index serves it) aborts
+          // before anything is mutated, same as an unavailable managed stack.
+          return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.torchVersion }) }
         } else {
           // Not re-acquirable — reported instead of silently skipped.
           torchNote = t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
@@ -436,6 +447,27 @@ export async function handleAction(
         }
       }
 
+      // The exact pip sync never mutates protected packages, and the torch
+      // transaction only reconciles the stack the snapshot names — so protected
+      // packages can still differ from the snapshot's freeze afterwards (e.g. a
+      // v1 snapshot recording a different torchvision, which has no stack
+      // record to reconcile it). Measure the drift so exact mode can report it
+      // and no imported envelope commits a state that was never reached.
+      // Measured unconditionally after any pip sync: even with nothing
+      // protected-skipped, the unconstrained bulk install can pull a protected
+      // package along as a dependency, so "no skips" does not prove no drift.
+      let protectedDrift: snapshots.ProtectedDriftEntry[] = []
+      let protectedDriftUnknown = false
+      if (!targetSnapshot.skipPipSync && !signal?.aborted && !torchFailure) {
+        try {
+          protectedDrift = await snapshots.protectedPackageDrift(installation, targetSnapshot.pipPackages)
+        } catch (err) {
+          // Unknown drift must not commit an envelope, but is not a failure.
+          protectedDriftUnknown = true
+          console.warn('Protected package drift check failed:', err)
+        }
+      }
+
       const summary: string[] = []
 
       if (comfyResult.changed) {
@@ -477,6 +509,23 @@ export async function handleAction(
         summary.push(torchNote)
       }
 
+      let protectedDriftNote: string | null = null
+      if (protectedDrift.length > 0) {
+        protectedDriftNote = t('standalone.snapshotProtectedDrift', { count: protectedDrift.length })
+        const detail = protectedDrift
+          .map((d) => `  ${d.name}: ${d.live ?? '(absent)'} (snapshot: ${d.target ?? '(absent)'})`)
+          .join('\n')
+        sendOutput(`\n${protectedDriftNote}\n${detail}\n`)
+        summary.push(protectedDriftNote)
+      } else if (protectedDriftUnknown) {
+        // Unknown drift blocks staged-envelope commits below; in-history and
+        // compatible restores must disclose WHY the check produced nothing
+        // instead of staying silent.
+        protectedDriftNote = t('standalone.snapshotProtectedDriftUnknown')
+        sendOutput(`\n${protectedDriftNote}\n`)
+        summary.push(protectedDriftNote)
+      }
+
       // comfyResult.error and pip/abort failures already returned above; only
       // best-effort custom-node failures and a rolled-back torch swap can reach
       // here. In exact mode a staged import whose recorded torch stack was
@@ -485,8 +534,17 @@ export async function handleAction(
       // a skipped/kept-local torch stack is a disclosed adaptation, not a
       // failure — but it still disqualifies the envelope from being committed.
       const torchSkippedForImport = Boolean(stagedEnvelope && torchNote && mode === 'exact')
+      // A staged import in exact mode whose protected packages still differ
+      // from the snapshot's freeze — or could not be verified — did not
+      // provably reach its recorded state. Like a skipped torch stack, that is
+      // a failure and the envelope must not be committed (#1137). In-history
+      // exact restores and compatible mode disclose the drift instead:
+      // protected packages are skipped by design, so failing them would make
+      // e.g. v1 snapshots permanently unrestorable.
+      const protectedDriftForImport = Boolean(stagedEnvelope && mode === 'exact' &&
+        (protectedDrift.length > 0 || protectedDriftUnknown))
       const totalFailures = nodeResult.failed.length + nodeResult.unreportable.length +
-        (torchFailure ? 1 : 0) + (torchSkippedForImport ? 1 : 0)
+        (torchFailure ? 1 : 0) + (torchSkippedForImport ? 1 : 0) + (protectedDriftForImport ? 1 : 0)
 
       // Collect specific failures so the error surface explains WHY a restore
       // failed instead of a bare "N operation(s) failed".
@@ -496,6 +554,14 @@ export async function handleAction(
       for (const e of pipResult.errors) failureDetails.push(e)
       if (torchFailure) failureDetails.push(`PyTorch: ${torchFailure}`)
       if (torchSkippedForImport && torchNote) failureDetails.push(torchNote)
+      if (protectedDriftForImport) {
+        if (protectedDriftUnknown) {
+          failureDetails.push(t('standalone.snapshotProtectedDriftUnknown'))
+        }
+        for (const d of protectedDrift) {
+          failureDetails.push(`${d.name}: installed ${d.live ?? '(absent)'}, snapshot records ${d.target ?? '(absent)'}`)
+        }
+      }
       const failMessage = (headline: string): string =>
         failureDetails.length > 0 ? `${headline}\n\n${failureDetails.join('\n')}` : headline
 
@@ -525,20 +591,33 @@ export async function handleAction(
       }
       await update(restoreState)
 
+      // Reload the record first: the torch transaction persisted
+      // `lastVerifiedTorchStack` through `update`, and classifying the
+      // post-restore snapshot from the stale local object would record the
+      // freshly applied managed stack as merely observed.
+      const freshInst = (await installations.get(installation.id)) || installation
+
+      // An abort landing anywhere after the last explicit check - during the
+      // non-cancellable torch swap, the drift measurement, or the record
+      // reload above - must neither commit a staged envelope to history nor
+      // release it (the retry target stays staged for a retry). Sampled AFTER
+      // the last await above so a late abort cannot slip past a stale reading.
+      if (signal?.aborted) {
+        await ensureLiveStateOnTop()
+        sendOutput('\nCancelled; completed changes stand.\n')
+        return { ok: false, cancelled: true, message: MSG_CANCELLED }
+      }
+
       // Best-effort node failures don't roll the source back, so the live state
-      // is the (partially) restored one — it does NOT match the imported target.
+      // is the (partially) restored one - it does NOT match the imported target.
       // Compatible-mode adaptations (kept-local torch, requirements repair
       // drift or repair errors) also mean the target state was not literally
       // reached, so the imported envelope must not be committed even though the
       // restore is reported as successful; the post-restore snapshot records
       // reality.
       const reachedTarget = totalFailures === 0 && !torchNote &&
-        repairResult.changed.length === 0 && repairResult.errors.length === 0
-      // Reload the record first: the torch transaction persisted
-      // `lastVerifiedTorchStack` through `update`, and classifying the
-      // post-restore snapshot from the stale local object would record the
-      // freshly applied managed stack as merely observed.
-      const freshInst = (await installations.get(installation.id)) || installation
+        repairResult.changed.length === 0 && repairResult.errors.length === 0 &&
+        protectedDrift.length === 0 && !protectedDriftUnknown
       const updatedInstallation = {
         ...freshInst,
         ...restoreState,
@@ -618,6 +697,7 @@ export async function handleAction(
       // transient notice (ok + navigate:'detail' + message → flashNotice).
       const adaptations: string[] = []
       if (torchNote) adaptations.push(torchNote)
+      if (protectedDriftNote && !protectedDriftForImport) adaptations.push(protectedDriftNote)
       if (repairResult.changed.length > 0) adaptations.push(t('standalone.snapshotRepairAdjusted', { count: repairResult.changed.length }))
       if (repairResult.errors.length > 0) adaptations.push(t('standalone.snapshotRepairWarnings', { count: repairResult.errors.length }))
       return { ok: totalFailures === 0, navigate: 'detail',

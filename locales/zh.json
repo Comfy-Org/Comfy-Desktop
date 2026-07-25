@@ -902,6 +902,8 @@
     "snapshotRepairWarnings": "{count} 个依赖修复警告——请查看日志。",
     "snapshotRepairAdjusted": "依赖修复调整了 {count} 个软件包。",
     "pytorchSnapshotObservedSkip": "快照中的 PyTorch {version} 不是已知的官方构建，无法自动重新安装；已保留当前的 PyTorch。",
+    "snapshotProtectedDrift": "{count} 个受保护的包（PyTorch/CUDA 系列）与快照不一致；快照还原不会修改它们。",
+    "snapshotProtectedDriftUnknown": "无法根据快照验证受保护的包（PyTorch/CUDA 系列）。",
     "pythonEnvs": "Python 环境",
     "activeEnv": "当前：{env}",
     "noEnvs": "尚未创建虚拟环境。",

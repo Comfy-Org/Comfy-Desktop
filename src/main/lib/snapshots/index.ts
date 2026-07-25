@@ -42,8 +42,9 @@ export {
   frozenSnapshotInstallOverrides,
   restorePipPackages,
   restoreCustomNodes,
-  repairNodeRequirements
+  repairNodeRequirements,
+  protectedPackageDrift
 } from './restore'
-export type { RequirementsRepairResult } from './restore'
+export type { RequirementsRepairResult, ProtectedDriftEntry } from './restore'
 
 export { getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious } from './tabData'

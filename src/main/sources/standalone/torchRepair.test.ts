@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => '' },
 }))
 
-import { getTorchVendorMismatch, copyTorchFamily, repairTorch } from './torchRepair'
+import { getTorchVendorMismatch, repairTorch } from './torchRepair'
 import type { InstallationRecord } from '../../installations'
 
 let tmpDir: string
@@ -156,50 +156,6 @@ describe('getTorchVendorMismatch', () => {
   })
 })
 
-describe('copyTorchFamily', () => {
-  it('replaces torch-family entries from src and leaves unrelated packages intact', async () => {
-    const src = path.join(tmpDir, 'src')
-    const dst = path.join(tmpDir, 'dst')
-    fs.mkdirSync(src, { recursive: true })
-    fs.mkdirSync(dst, { recursive: true })
-
-    // Helper: a package dir always has at least one file (copyDir skips empty dirs).
-    const pkg = (root: string, name: string, content: string): void => {
-      fs.mkdirSync(path.join(root, name), { recursive: true })
-      fs.writeFileSync(path.join(root, name, 'FILE'), content)
-    }
-
-    // Source bundle: GPU torch stack.
-    pkg(src, 'torch', "__version__ = '2.10.0+cu128'")
-    pkg(src, 'torch-2.10.0+cu128.dist-info', 'METADATA')
-    pkg(src, 'nvidia_cudnn_cu12', 'lib')
-    pkg(src, 'triton', 'lib')
-
-    // Destination venv: CPU torch stack, an unrelated package, and a
-    // torch-adjacent custom-node dep the bundle does NOT ship.
-    pkg(dst, 'torch', "__version__ = '2.12.0'")
-    pkg(dst, 'torch-2.12.0.dist-info', 'METADATA')
-    pkg(dst, 'numpy', 'keep me')
-    pkg(dst, 'torchmetrics', 'custom node dep')
-    pkg(dst, 'torchmetrics-1.4.0.dist-info', 'METADATA')
-
-    await copyTorchFamily(src, dst)
-
-    // GPU torch copied in, stale CPU dist-info removed, numpy untouched.
-    expect(fs.readFileSync(path.join(dst, 'torch', 'FILE'), 'utf-8')).toContain('cu128')
-    expect(fs.existsSync(path.join(dst, 'torch-2.10.0+cu128.dist-info'))).toBe(true)
-    expect(fs.existsSync(path.join(dst, 'torch-2.12.0.dist-info'))).toBe(false)
-    expect(fs.existsSync(path.join(dst, 'nvidia_cudnn_cu12'))).toBe(true)
-    expect(fs.existsSync(path.join(dst, 'triton'))).toBe(true)
-    expect(fs.readFileSync(path.join(dst, 'numpy', 'FILE'), 'utf-8')).toBe('keep me')
-    // A torch-adjacent dep the bundle doesn't provide must be preserved.
-    expect(fs.readFileSync(path.join(dst, 'torchmetrics', 'FILE'), 'utf-8')).toBe('custom node dep')
-    expect(fs.existsSync(path.join(dst, 'torchmetrics-1.4.0.dist-info'))).toBe(true)
-    // No staging leftovers.
-    expect(fs.readdirSync(dst).some((e) => e.startsWith('.torchrepair-'))).toBe(false)
-  })
-})
-
 describe('repairTorch dispatch', () => {
   const tools = {
     sendProgress: (): void => {},
@@ -217,12 +173,13 @@ describe('repairTorch dispatch', () => {
         source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' },
       },
     })
-    // No venv exists in tmpDir, so the pip path fails at its python lookup —
-    // proving dispatch reached pip instead of the bundle re-download (whose
-    // failure message names missing bundle download info).
+    // No venv exists in tmpDir, so the pip path (routed through the journaled
+    // stack transaction) fails at its venv check — proving dispatch reached
+    // pip instead of the bundle re-download (whose failure message names
+    // missing bundle download info).
     const result = await repairTorch(inst, tools)
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('could not locate the installation python')
+    expect(result.message).toContain('installation venv not found')
   })
 
   it('falls through to the bundle path when no verified index stack exists', async () => {
@@ -245,6 +202,6 @@ describe('repairTorch dispatch', () => {
       source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu126' },
     })
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('could not locate the installation python')
+    expect(result.message).toContain('installation venv not found')
   })
 })

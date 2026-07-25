@@ -1076,6 +1076,29 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
       return target ?? null
     }, { timeout: 30_000, intervals: [500, 1_000] })
     .not.toBeNull()
+
+  // Capture a second snapshot on top so the restore target is never the
+  // newest row: SnapshotsView hides Restore on the latest snapshot
+  // (restoring it is a no-op). The full chain gets this for free from the
+  // cross-channel update's pre/post-update snapshots, but the @sec-snapshot
+  // subset runs capture -> restore directly and must not depend on other
+  // suites having run in between.
+  await popup.waitForVisible(byTestId(TID.snapshotsSaveCta), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
+  await popup.fill(byTestId(TID.basePromptInput), 'lifecycle-latest-marker')
+  expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
+  await expect
+    .poll(async () => {
+      const list = await ctx.panel.evaluate<SnapshotListLite>(
+        `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`,
+      )
+      return list.snapshots.find(
+        (s) => s.label === 'lifecycle-latest-marker' && !filenamesBefore.has(s.filename),
+      ) ?? null
+    }, { timeout: 30_000, intervals: [500, 1_000] })
+    .not.toBeNull()
+
   await closeTitlePopupIfOpen(ctx.app)
   _restoreSnapshotFilename = target!.filename
   _snapshotHeadAtCapture = execFileSync('git', ['rev-parse', 'HEAD'], {

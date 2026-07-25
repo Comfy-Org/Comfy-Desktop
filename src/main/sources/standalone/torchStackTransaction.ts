@@ -35,7 +35,7 @@ import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
-import { copyTorchFamily } from './torchRepair'
+import { copyTorchFamily, removeTorchFamilyPackages } from './torchFamilyFs'
 import { stackVersionMatches, torchLocalTag, torchIndexUrlFor, accelBaseForTag } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 import type { TorchStackPackages } from './torchStackTypes'
@@ -347,20 +347,30 @@ const PIP_FAMILY_OPTIONAL = ['torchvision', 'torchaudio'] as const
 /** Family packages installed in `site` but not declared by the tuple — the
  *  pip path must remove them (a torchvision built against a different torch
  *  would break at import), and verification asserts they stayed gone. */
-function undeclaredFamilyPackages(packages: TorchStackPackages, site: string | null): string[] {
+export function undeclaredFamilyPackages(packages: TorchStackPackages, site: string | null): string[] {
   if (!site) return []
   return PIP_FAMILY_OPTIONAL.filter((pkg) => !packages[pkg] && readDistInfoVersion(site, pkg) !== null)
 }
 
-function runStreamed(cmd: string, args: string[], failMessage: string, tools: TorchStackTools): Promise<void> {
+export function runStreamed(cmd: string, args: string[], failMessage: string, tools: TorchStackTools): Promise<void> {
   tools.sendOutput?.(`\n$ ${path.basename(cmd)} ${args.join(' ')}\n`)
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { windowsHide: true, signal: tools.signal })
     child.stdout.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
     child.stderr.on('data', (d: Buffer) => tools.sendOutput?.(d.toString()))
-    child.on('error', reject)
+    // Settle only once the process has actually exited: rejecting on 'error'
+    // (an abort) while the child is still dying would let rollback race a
+    // live pip/uv holding locks inside the venv it is about to replace.
+    // 'close' always follows for a spawned child; only a spawn failure
+    // (no pid) never emits it.
+    let failure: Error | null = null
+    child.on('error', (err) => {
+      failure = err
+      if (child.pid === undefined) reject(err)
+    })
     child.on('close', (code) => {
-      if (code === 0) resolve()
+      if (failure) reject(failure)
+      else if (code === 0) resolve()
       else reject(new Error(`${failMessage} (exit code ${code})`))
     })
   })
@@ -479,21 +489,33 @@ export async function applyTorchStackTransaction(
       // packages (bundle-managed installs) or pip-install the exact tuple
       // from the derived index (adopted installs).
       tools.sendProgress('torch-swap', { percent: 65, status: 'Installing PyTorch packages…' })
+      let bundleRemoved: string[] = []
       if (prepared.kind === 'bundle') {
         const dstSite = findSitePackages(venvPath)
         if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
         await copyTorchFamily(prepared.srcSite, dstSite)
+        // The graft only replaces packages the bundle ships — an optional
+        // family package the target omits (e.g. the previous stack's
+        // torchvision, built against the old torch) would survive the swap
+        // and break at import. Remove the survivors from the candidate.
+        // Ship-list is the bundle itself, not the catalog tuple: a package
+        // the bundle ships stays even if the tuple metadata omits it.
+        bundleRemoved = undeclaredFamilyPackages(packages, dstSite)
+          .filter((pkg) => readDistInfoVersion(prepared.srcSite, pkg) === null)
+        if (bundleRemoved.length > 0) {
+          await removeTorchFamilyPackages(dstSite, bundleRemoved)
+        }
       } else {
         await runPipTorchInstall(installation, prepared, venvPath, backupPath, tools)
       }
 
-      // 6. Verify before committing. The pip path also asserts that family
-      // packages the tuple omits are absent (bundle grafts can't remove
-      // packages the bundle doesn't ship, so absence is only promised there).
+      // 6. Verify before committing. Family packages the target omits must be
+      // absent: the pip path asserts every optional package the tuple omits,
+      // the bundle path asserts the survivors it just removed.
       tools.sendProgress('torch-swap', { percent: 85, status: 'Verifying PyTorch…' })
       const expectAbsent = prepared.kind === 'pip'
         ? PIP_FAMILY_OPTIONAL.filter((pkg) => !packages[pkg])
-        : []
+        : bundleRemoved
       const verifyErr = await verifyStack(installation, packages, accelVariant, { expectAbsent })
       if (verifyErr) throw new Error(`verification failed: ${verifyErr}`)
 

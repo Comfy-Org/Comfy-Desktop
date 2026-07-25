@@ -898,6 +898,8 @@
     "pytorchSnapshotStackUnavailable": "This snapshot's PyTorch build ({version}) is no longer available for this installation. Nothing was changed.",
     "pytorchSnapshotStackKeptLocal": "The snapshot's PyTorch build ({version}) is not available for this machine; the current PyTorch was kept.",
     "pytorchSnapshotObservedSkip": "PyTorch {version} in the snapshot is not a known official build and cannot be reinstalled automatically; the current PyTorch was kept.",
+    "snapshotProtectedDrift": "{count} protected package(s) (PyTorch/CUDA family) still differ from the snapshot; snapshot restore does not modify them.",
+    "snapshotProtectedDriftUnknown": "Protected packages (PyTorch/CUDA family) could not be verified against the snapshot.",
     "snapshotRepairPhase": "Repairing node requirements",
     "snapshotRestoreAfterInstallFailed": "ComfyUI was installed and can be launched, but the snapshot could not be fully applied: {message}",
     "snapshotRepairWarnings": "{count} requirements repair warning(s) — see logs.",

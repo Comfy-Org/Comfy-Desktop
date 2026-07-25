@@ -16,11 +16,12 @@ import {
   restoreComfyUIVersion,
   buildPostRestoreState,
   frozenSnapshotInstallOverrides,
-  repairNodeRequirements
+  repairNodeRequirements,
+  protectedPackageDrift
 } from './snapshots'
 import type { Snapshot, RequirementsRepairResult } from './snapshots'
 import { getInstalledTorchTuple } from '../sources/standalone/envPaths'
-import { torchTupleMatches, publicVersion, observedTuple, hasFullObservedTuple } from '../sources/standalone/torchStackTypes'
+import { torchTupleMatches, stackVersionMatches, observedTuple, hasFullObservedTuple } from '../sources/standalone/torchStackTypes'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -162,10 +163,11 @@ function torchSubstitutionNote(installation: InstallationRecord, targetSnapshot:
   if (snapTorch.torchVersion) {
     // Full-tuple observed records compare as a stack: matching torch alone is
     // not "reached" when torchvision/torchaudio differ. Partial (legacy)
-    // records can only compare torch.
+    // records can only compare torch - tag-aware, so 2.4.1+cu121 and
+    // 2.4.1+cpu are different stacks, not a match.
     const matches = hasFullObservedTuple(snapTorch)
       ? torchTupleMatches(observedTuple(snapTorch), installed)
-      : Boolean(installed.torch && publicVersion(snapTorch.torchVersion) === publicVersion(installed.torch))
+      : Boolean(installed.torch && stackVersionMatches(installed.torch, snapTorch.torchVersion))
     if (matches) return null
     return i18n.t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
   }
@@ -285,6 +287,33 @@ export async function restoreSnapshotIntoInstallation(
     const torchNote = coreOk ? torchSubstitutionNote(freshInst, targetSnapshot) : null
     if (torchNote) sendOutput(`\n${torchNote}\n`)
 
+    // The pip sync never mutates protected packages (torch/CUDA family, core
+    // tooling), and a fresh bundle can share the snapshot's torch tuple while
+    // differing in nvidia-*/triton/tooling versions — so measure the drift:
+    // an envelope must not be committed as reached when protected packages
+    // still differ ("can't measure" counts as unknown, not zero). Measured
+    // whenever the sync ran — even with nothing protected-skipped, the
+    // unconstrained bulk install can pull a protected package along as a
+    // dependency, so "no skips" does not prove no drift.
+    let protectedDriftCount = 0
+    let protectedDriftUnknown = false
+    if (coreOk && !signal.aborted && !targetSnapshot.skipPipSync && pipResult) {
+      try {
+        const drift = await protectedPackageDrift(freshInst, targetSnapshot.pipPackages)
+        protectedDriftCount = drift.length
+        if (drift.length > 0) {
+          const note = i18n.t('standalone.snapshotProtectedDrift', { count: drift.length })
+          sendOutput(`\n${note}\n${drift.map((d) => `  ${d.name}: ${d.live ?? '(absent)'} (snapshot: ${d.target ?? '(absent)'})`).join('\n')}\n`)
+        }
+      } catch (err) {
+        // Unknown drift blocks the envelope commit below; disclose WHY the
+        // imported history was not kept instead of staying silent.
+        protectedDriftUnknown = true
+        console.warn('Protected package drift check failed:', err)
+        sendOutput(`\n${i18n.t('standalone.snapshotProtectedDriftUnknown')}\n`)
+      }
+    }
+
     // Update installation state with restored version/channel metadata
     const restoreState = buildPostRestoreState(
       targetSnapshot,
@@ -312,7 +341,8 @@ export async function restoreSnapshotIntoInstallation(
     // install never reached exactly the recorded state — the envelope must not
     // be committed.
     const reachedTarget = restoreSucceeded && !torchNote &&
-      repairResult.changed.length === 0 && repairResult.errors.length === 0
+      repairResult.changed.length === 0 && repairResult.errors.length === 0 &&
+      protectedDriftCount === 0 && !protectedDriftUnknown
 
     const updatedInst = { ...freshInst, ...restoreState }
     currentForSnapshot = updatedInst
