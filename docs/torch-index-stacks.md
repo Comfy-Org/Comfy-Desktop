@@ -4,7 +4,7 @@ The app offers index-served PyTorch stacks (pip-applied tuples with no bundle
 artifact) in the Update tab's PyTorch picker. The list of stacks comes from a
 remote manifest so new stacks can ship **without an app release**:
 
-```
+```text
 https://desktop-assets.comfy.org/standalone-environments/torch-index-stacks.json
 ```
 

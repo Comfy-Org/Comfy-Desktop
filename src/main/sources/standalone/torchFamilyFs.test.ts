@@ -295,6 +295,17 @@ describe('recoverTorchFamilyBackups', () => {
 
     expect(read(site, 'torch')).toBe('fine')
   })
+
+  it('is a no-op when site-packages does not exist (must not throw ENOENT)', async () => {
+    // findSitePackages can return an unchecked Lib\site-packages path on
+    // Windows; launch treats a recovery throw as launch-blocking, so an
+    // absent venv must read as "nothing to recover", not a failed rollback.
+    const site = path.join(tmpDir, 'does-not-exist', 'Lib', 'site-packages')
+
+    await expect(recoverTorchFamilyBackups(site)).resolves.toBeUndefined()
+
+    expect(fs.existsSync(site)).toBe(false)
+  })
 })
 
 describe('removeTorchFamilyPackages', () => {

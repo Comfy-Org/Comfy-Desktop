@@ -99,6 +99,10 @@ async function writeSwapMarker(site: string, marker: SwapMarker): Promise<void> 
  * unreadable) and at the start of every swap.
  */
 export async function recoverTorchFamilyBackups(site: string): Promise<void> {
+  // A venv without site-packages has no marker and no backups - nothing to
+  // recover. Some callers (the launch gate) treat a recovery failure as
+  // launch-blocking, so a benign absence must not read as a failed rollback.
+  if (!fs.existsSync(site)) return
   const marker = readSwapMarker(site)
   const backupEntries = fs.readdirSync(site).filter((e) => e.startsWith(BACKUP_PREFIX))
 
