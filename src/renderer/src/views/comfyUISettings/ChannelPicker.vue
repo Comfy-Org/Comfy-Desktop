@@ -374,6 +374,7 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
           :class="{ 'is-running': isActionRunning(checkUpdateAction.id) }"
           :disabled="checkUpdateAction.enabled === false || isActionRunning(checkUpdateAction.id)"
           :title="checkUpdateAction.tooltip"
+          :data-testid="TID.updateActionButton(checkUpdateAction.id)"
           @click="emit('action', checkUpdateAction)"
         >
           <Loader2

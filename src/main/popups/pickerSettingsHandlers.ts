@@ -138,17 +138,6 @@ export function registerPickerSettingsIpc(): void {
     dispatchInvoke('browse-folder', event, payload?.defaultPath),
   )
 
-  ipcMain.handle(
-    CH.previewDesktopMigration,
-    (event, payload: { installationId?: unknown; desktopId?: unknown }) =>
-      dispatchInvoke(
-        'preview-desktop-migration',
-        event,
-        payload?.installationId,
-        payload?.desktopId,
-      ),
-  )
-
   ipcMain.handle(CH.previewLocalMigration, (event, payload: { installationId?: unknown }) =>
     dispatchInvoke('preview-local-migration', event, payload?.installationId),
   )

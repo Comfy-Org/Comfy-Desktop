@@ -1,23 +1,9 @@
 /**
- * Lifecycle E2E: plain Copy action (no chained update).
+ * Lifecycle E2E: picker-driven plain Copy action (no chained update).
  *
- * `handleCopy` is the only copy-family handler that has no chained
- * follow-up — `handleCopyUpdate` and `handleReleaseUpdate` both wrap
- * `performCopy` with an update step on top, and both already have
- * lifecycle coverage. Plain copy was the missing piece: nothing pinned
- * the contract that:
- *
- *   - `runAction(id, 'copy', { name })` returns `{ ok: true,
- *     newInstallationId, navigate: 'list' }`,
- *   - the destination directory exists with a fresh MARKER_FILE
- *     containing the new install id,
- *   - the new id is enumerated by `getInstallations`,
- *   - the source directory + its marker are untouched.
- *
- * Drives the IPC directly via `panel.evaluate(...)` so this stays focused
- * on the handler — the renderer-side `handleDone` →
- * `open-install-window` branch is already covered by
- * `copy-update-destination.test.ts`.
+ * Drives the instance picker's Settings footer More menu and copy prompt,
+ * then verifies that the destination is registered and copied on disk with
+ * a fresh marker while the source remains untouched.
  */
 
 import os from 'node:os'
@@ -26,6 +12,8 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promise
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let sourcePath: string
@@ -43,13 +31,6 @@ interface InstallationLike {
   id: string
   name: string
   installPath?: string
-}
-
-interface CopyResult {
-  ok: boolean
-  message?: string
-  navigate?: string
-  newInstallationId?: string
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -93,14 +74,53 @@ test.afterAll(async () => {
 })
 
 test('Copy creates a new install on disk + in the registry, source untouched @lifecycle', async () => {
-  const result = await ctx.panel.evaluate<CopyResult>(
-    `window.api.runAction(${JSON.stringify(SOURCE_ID)}, 'copy', { name: ${JSON.stringify(COPY_NAME)} })`,
+  await ctx.panel.evaluate<boolean>(
+    `(() => {
+      window.api.openInstancePicker({
+        installationId: ${JSON.stringify(SOURCE_ID)},
+        initialTab: 'settings',
+      })
+      return true
+    })()`,
   )
-  expect(result.ok, `runAction('copy') failed: ${result.message ?? ''}`).toBe(true)
-  expect(result.navigate, 'plain copy must navigate to list (chooser)').toBe('list')
-  expect(typeof result.newInstallationId).toBe('string')
-  expect(result.newInstallationId).not.toBe(SOURCE_ID)
-  const newId = result.newInstallationId!
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+
+  await popup.waitForVisible('button.settings-v2-more', { timeout: 30_000 })
+  // Opening Update can start its stale-channel refresh on the next tick. Let
+  // that settle, then require the real control to be enabled before clicking.
+  await popup.evaluate<void>('new Promise((resolve) => setTimeout(resolve, 1000))')
+  await popup.waitFor(
+    () => popup.evaluate<boolean>(
+      `document.querySelector('button.settings-v2-more')?.hasAttribute('disabled') === false`,
+    ),
+    { timeout: 30_000, message: 'Settings More button did not become enabled' },
+  )
+  expect(await popup.click('button.settings-v2-more')).toBe(true)
+  const copyAction = byTestId(TID.pinBottomAction('copy'))
+  await popup.waitForVisible(copyAction, { timeout: 10_000 })
+  expect(await popup.click(copyAction)).toBe(true)
+
+  const promptInput = byTestId(TID.basePromptInput)
+  const promptAction = byTestId(TID.basePromptAction)
+  await popup.waitForVisible(promptInput, { timeout: 10_000 })
+  expect(await popup.evaluate<boolean>(`(() => {
+    const el = document.querySelector(${JSON.stringify(promptInput)})
+    if (!(el instanceof HTMLInputElement)) return false
+    el.value = ${JSON.stringify(COPY_NAME)}
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`)).toBe(true)
+  expect(await popup.click(promptAction)).toBe(true)
+
+  await expect.poll(
+    async () => {
+      const current = await ctx.panel.evaluate<InstallationLike[]>('window.api.getInstallations()')
+      return current.some((installation) =>
+        installation.id !== SOURCE_ID && installation.name === COPY_NAME)
+    },
+    { timeout: 60_000, intervals: [500, 1_000] },
+  ).toBe(true)
 
   // Registry: getInstallations() now enumerates the new entry alongside
   // the source. Name is uniqueified by `uniqueName` — first use of the
@@ -109,11 +129,12 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
   const installations = await ctx.panel.evaluate<InstallationLike[]>(
     'window.api.getInstallations()',
   )
-  const newEntry = installations.find((i) => i.id === newId)
-  expect(newEntry, 'new install id not enumerated after copy').toBeDefined()
+  const newEntry = installations.find((i) => i.id !== SOURCE_ID && i.name === COPY_NAME)
+  expect(newEntry, 'new install not enumerated after copy').toBeDefined()
   expect(newEntry?.name).toBe(COPY_NAME)
   expect(newEntry?.installPath, 'new install must have a destination path').toBeTruthy()
   expect(installations.find((i) => i.id === SOURCE_ID), 'source install dropped after copy').toBeDefined()
+  const newId = newEntry!.id
 
   // Disk: destination dir exists, contains the user-data file copied
   // from source, AND the marker file was rewritten with the NEW id (not
@@ -141,4 +162,5 @@ test('Copy creates a new install on disk + in the registry, source untouched @li
   // `ctx.cleanup`, but `parentDir` is `os.tmpdir()` so leftover dirs
   // would accumulate across reruns).
   await rm(destPath, { recursive: true, force: true })
+  await closeTitlePopupIfOpen(ctx.app)
 })

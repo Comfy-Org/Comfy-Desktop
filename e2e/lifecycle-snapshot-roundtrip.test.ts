@@ -1,5 +1,5 @@
 /**
- * Lifecycle E2E: snapshot export → import round-trip end-to-end
+ * Lifecycle E2E: snapshot export -> import round-trip end-to-end
  * (lifecycle audit followup).
  *
  * The standalone export and import tests cover each direction
@@ -17,16 +17,16 @@
  *     envelope via the toolbar Import button (stubbed
  *     `dialog.showOpenDialog` returns the path saved by the save
  *     stub, shared via a globalThis property),
- *   - both seeded labels end up on B's snapshot list, proving the
+ *   - the import preview modal lists BOTH seeded labels, proving the
  *     full envelope (not just the newest entry) round-trips through
- *     the real production code paths.
+ *     the real production parse/preview code paths.
  *
- * The follow-on `snapshot-restore` runAction that fires after
- * import-confirm is out of scope (covered by
- * lifecycle-snapshot-restore.test.ts); the count + label assertions
- * race against the restore op intentionally — both poll/read on
- * `getSnapshots`, which returns the registry's view of disk before
- * restore touches anything that would interfere.
+ * Importing stages the envelope as a restore target; it only becomes
+ * history once a restore from it succeeds (#1137). B has no git repos,
+ * so the follow-on `snapshot-restore` fails for real and B's history
+ * must stay free of the imported entries. Successful in-history restore
+ * mechanics are covered by lifecycle-snapshot-restore.test.ts; the
+ * commit-on-success leg of a staged import has no e2e coverage yet.
  */
 
 import os from 'node:os'
@@ -34,7 +34,7 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { titlePopupPage } from './support/cdpPages'
+import { closeTitlePopupIfOpen, titlePopupPage } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -142,6 +142,9 @@ test.afterAll(async () => {
 })
 
 async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof titlePopupPage>> {
+  const expectedCount = await ctx.panel.evaluate<number>(
+    `window.api.getSnapshots(${JSON.stringify(installId)}).then(d => d.snapshots.length)`,
+  )
   await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({
@@ -153,6 +156,10 @@ async function openSnapshotsTab(installId: string): Promise<ReturnType<typeof ti
   )
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible(byTestId(TID.snapshotsImport), { timeout: 15_000 })
+  await popup.waitFor(() => popup.count('.snapshot-row').then((count) => count === expectedCount), {
+    timeout: 15_000,
+    message: `snapshots for ${installId} did not finish loading`,
+  })
   return popup
 }
 
@@ -193,9 +200,11 @@ test('Export All from A writes an envelope containing both seeded snapshots @lif
   const labels = envelope.snapshots?.map((s) => s.label) ?? []
   expect(labels).toContain(LABEL_FIRST)
   expect(labels).toContain(LABEL_SECOND)
+
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('Import into B consumes the envelope and writes both snapshots @lifecycle', async () => {
+test('Import into B previews the full envelope and stages it without committing history @lifecycle', async () => {
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.length)`,
   )
@@ -205,32 +214,35 @@ test('Import into B consumes the envelope and writes both snapshots @lifecycle',
 
   expect(await popup.click(byTestId(TID.snapshotsImport))).toBe(true)
 
-  // Simple confirms route through BaseAlert (`base-alert-action`);
-  // rich confirms keep the legacy ModalDialog path (`modal-confirm-button`).
-  const confirmSelector =
-    `${byTestId(TID.modalConfirm)}, ${byTestId(TID.baseAlertAction)}`
-  await popup.waitForVisible(confirmSelector, { timeout: 10_000 })
-  expect(await popup.click(confirmSelector)).toBe(true)
-
-  // importSnapshots writes one file per envelope entry, so the count
-  // must advance from 0 to 2. The follow-on snapshot-restore op fires
-  // after import-confirm; it operates on git repos we never seeded,
-  // so it fails silently in the background — the count assertion
-  // races it but lands first because the registry refresh follows
-  // the file writes synchronously.
-  await expect
-    .poll(
-      async () =>
-        ctx.panel.evaluate<number>(
-          `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.length)`,
-        ),
-      { timeout: 15_000, intervals: [250, 500] },
-    )
-    .toBe(2)
-
-  const labels = await ctx.panel.evaluate<Array<string | null>>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.map(s => s.label))`,
+  // The preview confirm modal lists BOTH exported labels - the proof that
+  // the envelope written by `buildExportEnvelope` round-trips through
+  // `validateExportEnvelope` into the import preview.
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  await popup.waitFor(
+    async () => {
+      const body = (await popup.textOf('body')) ?? ''
+      return body.includes(LABEL_FIRST) && body.includes(LABEL_SECOND)
+    },
+    { timeout: 10_000, message: 'preview modal did not list both exported labels' },
   )
-  expect(labels).toContain(LABEL_FIRST)
-  expect(labels).toContain(LABEL_SECOND)
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+
+  // Import-confirm stages the envelope and fires the follow-on
+  // `snapshot-restore` op. B has no git repos, so the real restore fails;
+  // the persistent error op card (with its Try again button) is the
+  // terminal signal. Scope the retry button to the error rail state so a
+  // cancelled op can never satisfy the wait.
+  await popup.waitForVisible(
+    `.snapshots-rail-save-box.is-op-error ${byTestId(TID.snapshotsOpCardRetry)}`,
+    { timeout: 60_000 },
+  )
+
+  // Staging must not commit the envelope into B's history (#1137). A failed
+  // restore may write a live-state `post-restore` correction snapshot on
+  // top, so assert on the imported labels and trigger, not on the raw count.
+  const snapshots = await ctx.panel.evaluate<Array<{ label: string | null; trigger?: string }>>(
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.map(s => ({ label: s.label, trigger: s.trigger })))`,
+  )
+  expect(snapshots.some((s) => s.label === LABEL_FIRST || s.label === LABEL_SECOND)).toBe(false)
+  expect(snapshots.some((s) => s.trigger === 'manual')).toBe(false)
 })

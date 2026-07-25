@@ -3,9 +3,9 @@
  * git remote.
  *
  * Pre-stages a fake standalone install record pinned to an OLD baseTag,
- * then drives `runAction('check-update')` and asserts that the release
- * cache picked up the current latest tag from GitHub and the channel
- * cards report an update is available.
+ * then clicks the real "Check for Update" button in the picker's Update
+ * tab and asserts that the release cache picked up the current latest
+ * tag from GitHub and the channel cards report an update is available.
  *
  * This is intentionally a network-touching test: it is the only e2e
  * proof that `fetchLatestRelease` (`git ls-remote --tags`) and the
@@ -21,8 +21,9 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { closeTitlePopupIfOpen, waitForWebContents } from './support/cdpPages'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { ageReleaseCache, getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let stagedInstallPath = ''
@@ -69,11 +70,6 @@ interface DetailSection {
   title?: string
   fields?: DetailField[]
   actions?: unknown[]
-}
-
-interface RunActionResult {
-  ok: boolean
-  message?: string
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -127,36 +123,80 @@ test.afterAll(async () => {
   if (stagedInstallPathB) await rm(stagedInstallPathB, { recursive: true, force: true })
 })
 
-test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer release @lifecycle', async () => {
-  const result = await ctx.panel.evaluate<RunActionResult>(
-    `window.api.runAction(${JSON.stringify(INSTALL_ID)}, 'check-update')`,
-  )
-  expect(result.ok, `check-update failed (network/auth issue?): ${result.message ?? ''}`).toBe(true)
-
-  // After check-update the channel cards should expose the latest stable
-  // release the remote actually serves. Read it back via getDetailSections
-  // — same path the renderer uses for the Update tab.
+/** Read the stable/latest channel cards back via getDetailSections — the
+ *  same (read-only) path the renderer uses for the Update tab. */
+async function getChannelField(installationId: string): Promise<DetailField> {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
-    `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`,
+    `window.api.getDetailSections(${JSON.stringify(installationId)})`,
   )
   const updateSection = sections.find((s) => s.tab === 'update')
   expect(updateSection, 'no update section in detail sections').toBeDefined()
   const channelField = updateSection!.fields!.find((f) => f.id === 'updateChannel')
   expect(channelField?.options, 'update channel field missing options').toBeDefined()
-  const stableCard = channelField!.options!.find((o) => o.value === 'stable')
-  expect(stableCard, 'stable channel card missing').toBeDefined()
-  expect(stableCard!.data, 'stable channel card has no data — release cache empty?').toBeDefined()
+  return channelField!
+}
 
-  // The latest stable tag advertised by the remote should look like a real
-  // semver-ish ComfyUI tag (e.g. v0.3.59). Don't pin a specific value;
-  // the upstream ships releases continuously.
-  expect(stableCard!.data!.latestVersion, 'latest stable version not populated from remote').toMatch(/v\d+\.\d+/)
+test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer release @lifecycle', async () => {
+  // Open the picker on the Update tab and click the real Check for Update
+  // button. (Opening the Update tab with a never-checked cache also fires
+  // the auto-refresh watcher — that's the production path too; the manual
+  // click on top of it must still succeed.)
+  await openPickerOnUpdateTab(INSTALL_ID)
+  const popup = titlePopupPage(ctx.app)
+
+  const checkButton = byTestId(TID.updateActionButton('check-update'))
+  await popup.waitForVisible(checkButton, { timeout: 15_000 })
+  const waitForCheckButtonEnabled = (message: string): Promise<void> =>
+    popup.waitFor(
+      () => popup.evaluate<boolean>(
+        `(() => { const el = document.querySelector('${checkButton}'); return !!el && !el.disabled })()`,
+      ),
+      { timeout: 30_000, message },
+    )
+  // The auto-refresh fired on tab open may still be running (button
+  // disabled + spinner). Wait for it to settle so the click lands.
+  await waitForCheckButtonEnabled('check-update button never became enabled')
+  // Drop the auto-refresh's recorded dispatch so the polls below verify
+  // the MANUAL check itself — otherwise the channel-card assertion could
+  // be satisfied by data the auto-refresh already landed, silently
+  // skipping the button-driven path this test exists to prove.
+  await resetIpcInvocations(ctx.app, 'run-action')
+  expect(await popup.click(checkButton)).toBe(true)
+
+  // The click must dispatch its own check-update run-action…
+  await expect
+    .poll(async () => countAutoCheckUpdateCalls(
+      await getIpcInvocations(ctx.app, 'run-action'),
+      INSTALL_ID,
+    ), { timeout: 10_000, intervals: [200, 500] })
+    .toBeGreaterThanOrEqual(1)
+  // …and that manual check must finish (the button re-enables when its
+  // operation drains) before the popup can be safely closed below.
+  await waitForCheckButtonEnabled('check-update button never re-enabled after the manual check')
+
+  // The check runs a real `git ls-remote` (~hundreds of ms). Poll the
+  // channel cards until the remote's data lands.
+  await expect
+    .poll(async () => {
+      const channelField = await getChannelField(INSTALL_ID)
+      const stableCard = channelField.options!.find((o) => o.value === 'stable')
+      return stableCard?.data?.latestVersion ?? ''
+    }, { timeout: 30_000, intervals: [250, 500, 1_000] })
+    // The latest stable tag advertised by the remote should look like a real
+    // semver-ish ComfyUI tag (e.g. v0.3.59). Don't pin a specific value;
+    // the upstream ships releases continuously.
+    .toMatch(/v\d+\.\d+/)
+
+  const channelField = await getChannelField(INSTALL_ID)
+  const stableCard = channelField.options!.find((o) => o.value === 'stable')
   // The seeded comfyVersion is at v0.1.0 — anything currently-published is
   // newer, so the channel card should report an update available.
   expect(
     stableCard!.data!.updateAvailable,
     `stable card did not flag update available against seeded baseTag ${SEEDED_BASE_TAG}; got latestVersion=${stableCard!.data!.latestVersion}`,
   ).toBe(true)
+
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
 test('cross-channel fetch populates the latest channel card too @lifecycle', async () => {
@@ -204,6 +244,26 @@ async function openPickerOnUpdateTab(installationId: string): Promise<void> {
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
 }
 
+/** Open the picker on the Settings tab (navigation staging), then activate
+ *  the Update tab by clicking its real tab button — the actual user gesture
+ *  the auto-refresh watcher keys on. */
+async function clickToUpdateTab(installationId: string): Promise<void> {
+  await ctx.panel.evaluate<boolean>(
+    `(() => {
+      window.api.openInstancePicker({
+        installationId: ${JSON.stringify(installationId)},
+        initialTab: 'settings',
+      })
+      return true
+    })()`,
+  )
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  const updateTab = byTestId(TID.settingsTab('update'))
+  await popup.waitForVisible(updateTab, { timeout: 15_000 })
+  expect(await popup.click(updateTab)).toBe(true)
+}
+
 function countAutoCheckUpdateCalls(calls: unknown[], installationId: string): number {
   return (calls as { installationId?: string; actionId?: string }[])
     .filter((c) => c.installationId === installationId && c.actionId === 'check-update')
@@ -212,11 +272,11 @@ function countAutoCheckUpdateCalls(calls: unknown[], installationId: string): nu
 
 test('Update tab does NOT auto-refresh when the channel data is fresh @lifecycle', async () => {
   // The previous tests just ran check-update — both cache entries are
-  // seconds old, well inside the 15min freshness window. Opening the
-  // picker on the Update tab must NOT fire an extra check-update IPC.
+  // seconds old, well inside the 15min freshness window. Clicking onto
+  // the Update tab must NOT fire an extra check-update IPC.
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  await openPickerOnUpdateTab(INSTALL_ID)
+  await clickToUpdateTab(INSTALL_ID)
 
   // Give the renderer a beat to mount + run the watcher. 1.5s is well
   // past the watcher's synchronous fire path; if it were going to fire,
@@ -258,18 +318,19 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
   const staleChannelField = staleUpdateSection.fields!.find((f) => f.id === 'updateChannel')!
   const staleCard = staleChannelField.options!.find((o) => o.value === staleChannelField.value)
   expect(
-    (staleCard?.data as { checkedAt?: number } | undefined)?.checkedAt,
+    (staleCard?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt,
     'ageReleaseCache hook did not mutate the in-memory map main reads from',
   ).toBe(stalenessTs)
 
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  // Open the picker for INSTALL_ID_B — its ComfyUISettingsContent has
-  // never been mounted before, so the watcher fires its `immediate: true`
-  // callback against the staled shared cache. (Re-opening for INSTALL_ID
-  // would keep the same Vue component instance + stale-relative-to-renderer
-  // sections.value, so the watcher's reactive deps wouldn't re-fire.)
-  await openPickerOnUpdateTab(INSTALL_ID_B)
+  // Open the picker for INSTALL_ID_B and click onto the Update tab — the
+  // real user gesture. INSTALL_ID_B's ComfyUISettingsContent has never
+  // been mounted before, so the watcher fires against the staled shared
+  // cache. (Re-opening for INSTALL_ID would keep the same Vue component
+  // instance + stale-relative-to-renderer sections.value, so the watcher's
+  // reactive deps wouldn't re-fire.)
+  await clickToUpdateTab(INSTALL_ID_B)
 
   // The watcher fires after sections load + Update tab activates; the
   // IPC then runs the GitHub fetch (~hundreds of ms) before the
@@ -295,7 +356,7 @@ test('Update tab auto-refreshes when channel data is stale @lifecycle', async ()
       const updateSection = sections.find((s) => s.tab === 'update')!
       const channelField = updateSection.fields!.find((f) => f.id === 'updateChannel')!
       const card = channelField.options!.find((o) => o.value === channelField.value)
-      const checkedAt = (card?.data as { checkedAt?: number } | undefined)?.checkedAt
+      const checkedAt = (card?.data as { lastCheckedAt?: number } | undefined)?.lastCheckedAt
       return typeof checkedAt === 'number' && checkedAt > stalenessTs
     }, { timeout: 15_000, intervals: [250, 500, 1_000] })
     .toBe(true)

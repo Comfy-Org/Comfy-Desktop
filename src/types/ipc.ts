@@ -2,6 +2,7 @@
 // This file is the single source of truth — do not duplicate these types elsewhere.
 
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
 // Unsubscribe function returned by event listeners
@@ -161,6 +162,11 @@ export interface DetailField {
    *  nesting from the field id, since ids like `outputDir` are reused
    *  for equal-weight rows in the Shared Directories section. */
   nested?: boolean
+  /** Consecutive fields sharing the same rowGroup render side-by-side in one
+   *  row (equal widths, stacking again on narrow layouts) instead of each
+   *  taking the full width. Set by the field builder; the renderer only
+   *  groups adjacent fields so unrelated fields never merge. */
+  rowGroup?: string
   tooltip?: string
   /** Marks fields that only take effect on next process start.
    *  Renderer shows a per-field tag + promotes the footer Restart
@@ -625,6 +631,9 @@ export interface SystemInfo {
   gpu_model: string | null
   /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
   gpu_vram_mb: number | null
+  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  gpu_vram_gb: number | null
+  gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
@@ -1241,12 +1250,6 @@ export interface ElectronApi {
     installationId: string
   ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
-  previewDesktopMigration(): Promise<{
-    ok: boolean
-    message?: string
-    preview?: SnapshotFilePreview
-    snapshotPath?: string
-  }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string
@@ -1613,7 +1616,6 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
-  previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
