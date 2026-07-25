@@ -19,6 +19,7 @@ vi.mock('../../comfybuilder', () => ({
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
 
+import { promises as fsp } from 'fs'
 import { installArtifact, stageModels, resolveModelManifest } from '../../comfybuilder'
 import { comfybuilder, withAccelArgs } from './index'
 import type { InstallationRecord } from '../../installations'
@@ -51,6 +52,23 @@ function fakeTools(signal?: AbortSignal): InstallTools & { sent: Array<{ phase: 
 
 describe('comfybuilder.install wiring', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('wipes the venv before extracting so a re-install/update lays down a clean env', async () => {
+    const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
+    try {
+      await comfybuilder.install!(record(), fakeTools())
+      expect(rm).toHaveBeenCalledWith(
+        expect.stringContaining('venv'),
+        expect.objectContaining({ recursive: true, force: true }),
+      )
+      // The venv must be gone before the archive lays down a fresh one.
+      const rmOrder = rm.mock.invocationCallOrder[0]!
+      const installOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+      expect(rmOrder).toBeLessThan(installOrder)
+    } finally {
+      rm.mockRestore()
+    }
+  })
 
   it('installs the archive, then resolves the manifest, then stages models', async () => {
     const tools = fakeTools()

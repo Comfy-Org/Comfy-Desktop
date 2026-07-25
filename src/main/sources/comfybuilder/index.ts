@@ -16,6 +16,8 @@
  * new-install wizard. That is why `getListActions` below exists even though it
  * looks like boilerplate.
  */
+import { promises as fs } from 'fs'
+import path from 'path'
 import { installArtifact, buildLaunchSpec, stageModels, resolveModelManifest } from '../../comfybuilder'
 import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress, StageProgress } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
@@ -138,6 +140,11 @@ export const comfybuilder: SourcePlugin = {
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
     const artifact = artifactFromRecord(installation)
     const client = getBuilderClient()
+    // A venv can't be overlaid (leftover site-packages from the old version break
+    // Python), so remove it before extracting. No-op on a first install; on an
+    // update/retry it guarantees a clean environment. The archive lays down a
+    // fresh venv; staged models under ComfyUI/models are left untouched.
+    await fs.rm(path.join(installation.installPath, 'venv'), { recursive: true, force: true })
     // Phase 1: archive (code + environment). `installArtifact` verifies the
     // sha256 when the artifact carries one and fails on a byte mismatch. A
     // missing hash is skipped for the initial rollout (see the TODO there).

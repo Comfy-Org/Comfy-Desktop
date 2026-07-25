@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   resolveHostArtifact: vi.fn(),
   // installations + shared helpers
   add: vi.fn(),
+  list: vi.fn(async () => [] as Record<string, unknown>[]),
+  update: vi.fn(),
   uniqueName: vi.fn(async (n: string) => n),
   sanitizeDirName: vi.fn((n: string) => n),
   allocateUniqueDir: vi.fn((parent: string, dir: string) => `${parent}/${dir}`),
@@ -49,7 +51,7 @@ vi.mock('../../devplatform/distributions', () => ({
 }))
 
 vi.mock('./shared', () => ({
-  installations: { add: mocks.add },
+  installations: { add: mocks.add, list: mocks.list, update: mocks.update },
   uniqueName: mocks.uniqueName,
   sanitizeDirName: mocks.sanitizeDirName,
   allocateUniqueDir: mocks.allocateUniqueDir,
@@ -167,6 +169,66 @@ describe('registerDevPlatformHandlers', () => {
   it('installDistribution refuses when signed out', async () => {
     mocks.isSignedIn.mockReturnValue(false)
     const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    expect(result).toMatchObject({ ok: false })
+    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
+  })
+
+  it('listDistributions passes the installed-version map built from comfybuilder installs', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.list.mockResolvedValue([
+      { id: 'i1', sourceId: 'comfybuilder', distributionId: 'd1', version: '3' },
+      { id: 'i2', sourceId: 'standalone', distributionId: 'ignored', version: '9' } // non-builder: excluded
+    ])
+    mocks.listDistributionRows.mockResolvedValue([])
+    await handler('comfybuilder:listDistributions')({})
+    const installed = mocks.listDistributionRows.mock.calls[0]![2] as Map<string, number>
+    expect(installed.get('d1')).toBe(3)
+    expect(installed.has('ignored')).toBe(false)
+  })
+
+  it('updateDistribution re-points the existing install at the new version + artifact', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue({
+      version: 9,
+      artifact: { id: 'art-new', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveSha256: 'newhash' }
+    })
+    mocks.list.mockResolvedValue([
+      { id: 'inst-1', name: 'Image', sourceId: 'comfybuilder', distributionId: 'd1', version: '7' }
+    ])
+    mocks.update.mockResolvedValue({ id: 'inst-1', name: 'Image' })
+
+    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
+    expect(result).toEqual({ ok: true, entry: { id: 'inst-1', name: 'Image' } })
+    expect(mocks.update).toHaveBeenCalledWith(
+      'inst-1',
+      expect.objectContaining({ version: '9', artifactId: 'art-new', artifactSha256: 'newhash', status: 'installing' })
+    )
+    expect(mocks.add).not.toHaveBeenCalled() // updates in place, never a new record
+  })
+
+  it('updateDistribution refuses when the distribution is not installed', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue({
+      version: 9,
+      artifact: { id: 'a', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready' }
+    })
+    mocks.list.mockResolvedValue([]) // nothing installed
+    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
+    expect(result).toMatchObject({ ok: false })
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
+
+  it('updateDistribution refuses when no host artifact resolves', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue(null)
+    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
+    expect(result).toMatchObject({ ok: false })
+    expect(mocks.list).not.toHaveBeenCalled()
+  })
+
+  it('updateDistribution refuses when signed out', async () => {
+    mocks.isSignedIn.mockReturnValue(false)
+    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
     expect(result).toMatchObject({ ok: false })
     expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
   })

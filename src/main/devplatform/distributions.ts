@@ -9,9 +9,10 @@
  * The renderer renders the row and, on click, asks main to install by id: the
  * chosen artifact (and its download ref) never leaves the main process.
  *
- * `installed` / `update-available` are LOCAL states owned by the renderer (it
- * de-dupes against the installations store), so they are deliberately absent
- * here.
+ * `update-available` also lives here: given the installed version (passed in by
+ * the handler from the installations store), a row whose newer complete version
+ * has a host-runnable artifact is marked updatable. Plain `installed` (up to date)
+ * stays a renderer concern: it de-dupes those tiles out of the grid.
  */
 // Import from the library's leaf modules (not its barrel): these are pure and
 // pull no Electron/filesystem side effects, so this policy module stays cheap to
@@ -21,8 +22,17 @@ import type { Artifact, Distribution, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPU } from '../lib/gpu'
 
-/** The pre-install states this layer can decide from the catalog alone. */
-export type DistributionRowState = 'installable' | 'no-build' | 'platform-mismatch'
+/**
+ * Distribution tile states. `installable` / `no-build` / `platform-mismatch` are
+ * decided from the catalog alone; `update-available` also needs the installed
+ * version (passed in), and only fires when the newer version has a host-runnable
+ * artifact (you can never "update" to a build with nothing for this machine).
+ */
+export type DistributionRowState =
+  | 'installable'
+  | 'no-build'
+  | 'platform-mismatch'
+  | 'update-available'
 
 /** One renderer-safe distribution tile row. Field names mirror the renderer's
  *  `devplatform/types.ts` so swapping mocks for this stays mechanical. */
@@ -34,6 +44,9 @@ export interface DistributionRow {
   finishedAt?: string
   numCustomNodes?: number
   state: DistributionRowState
+  /** The installed version of this distribution, when one backs it. Set for both
+   *  an up-to-date install and an `update-available` one; absent when not installed. */
+  installedVersion?: number
   /** i18n suffix explaining a blocked state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
 }
@@ -72,6 +85,7 @@ async function buildRow(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
   dist: Distribution,
+  installed?: ReadonlyMap<string, number>,
 ): Promise<DistributionRow> {
   const base: DistributionRow = {
     id: dist.id,
@@ -84,15 +98,21 @@ async function buildRow(
   const latest = latestCompleteVersion(await client.listVersions(dist.id))
   if (!latest) return { ...base, state: 'no-build', blockedReason: 'buildFailed' }
 
+  const installedVersion = installed?.get(dist.id)
   const withVersion: DistributionRow = {
     ...base,
     version: String(latest.version),
     ...(latest.createdAt ? { finishedAt: latest.createdAt } : {}),
+    ...(installedVersion !== undefined ? { installedVersion } : {}),
   }
 
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
   if (!artifact) return { ...withVersion, state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' }
+  // Installed at an older version, and the newer one runs here: offer the update.
+  if (installedVersion !== undefined && latest.version > installedVersion) {
+    return { ...withVersion, state: 'update-available' }
+  }
   return { ...withVersion, state: 'installable' }
 }
 
@@ -101,9 +121,13 @@ async function buildRow(
  * distribution whose version lookup fails is dropped for THIS list rather than
  * failing the whole grid.
  */
-export async function listDistributionRows(client: ComfyBuilderClient, host: Host): Promise<DistributionRow[]> {
+export async function listDistributionRows(
+  client: ComfyBuilderClient,
+  host: Host,
+  installed?: ReadonlyMap<string, number>,
+): Promise<DistributionRow[]> {
   const dists = await client.listDistributions()
-  const results = await Promise.allSettled(dists.map((d) => buildRow(client, host, d)))
+  const results = await Promise.allSettled(dists.map((d) => buildRow(client, host, d, installed)))
   return results
     .filter((r): r is PromiseFulfilledResult<DistributionRow> => {
       if (r.status === 'rejected') console.error('[devplatform] failed to resolve distribution row:', r.reason)

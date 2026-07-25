@@ -217,7 +217,9 @@ export function buildElectronApi(): ElectronApi {
         ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
       listDistributions: () => ipcRenderer.invoke('comfybuilder:listDistributions'),
       installDistribution: (distributionId) =>
-        ipcRenderer.invoke('comfybuilder:installDistribution', distributionId)
+        ipcRenderer.invoke('comfybuilder:installDistribution', distributionId),
+      updateDistribution: (distributionId) =>
+        ipcRenderer.invoke('comfybuilder:updateDistribution', distributionId)
     },
 
     // Model downloads

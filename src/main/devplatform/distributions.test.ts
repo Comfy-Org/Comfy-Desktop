@@ -70,6 +70,48 @@ describe('listDistributionRows', () => {
     expect(row).toMatchObject({ version: '3', state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' })
   })
 
+  it('marks update-available when installed older and the newer build runs here', async () => {
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'Image' }],
+      versionsByDist: { d1: [version(1, 'complete'), version(2, 'complete')] },
+      artifactsByVersion: { v2: [artifact()] },
+    })
+    const rows = await listDistributionRows(client as never, HOST, new Map([['d1', 1]]))
+    expect(rows[0]).toMatchObject({ version: '2', installedVersion: 1, state: 'update-available' })
+  })
+
+  it('stays installable (not update-available) when installed at the latest version', async () => {
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'Image' }],
+      versionsByDist: { d1: [version(2, 'complete')] },
+      artifactsByVersion: { v2: [artifact()] },
+    })
+    const rows = await listDistributionRows(client as never, HOST, new Map([['d1', 2]]))
+    expect(rows[0]).toMatchObject({ version: '2', installedVersion: 2, state: 'installable' })
+  })
+
+  it('does NOT offer an update when the newer version has no host artifact', async () => {
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'WinOnly' }],
+      versionsByDist: { d1: [version(2, 'complete')] },
+      artifactsByVersion: { v2: [artifact({ os: 'windows' })] }, // no linux/nvidia build
+    })
+    const rows = await listDistributionRows(client as never, HOST, new Map([['d1', 1]]))
+    expect(rows[0]).toMatchObject({ state: 'platform-mismatch' })
+    expect(rows[0]!.state).not.toBe('update-available')
+  })
+
+  it('leaves installedVersion unset for a distribution that is not installed', async () => {
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'Image' }],
+      versionsByDist: { d1: [version(2, 'complete')] },
+      artifactsByVersion: { v2: [artifact()] },
+    })
+    const rows = await listDistributionRows(client as never, HOST, new Map())
+    expect(rows[0]!.installedVersion).toBeUndefined()
+    expect(rows[0]!.state).toBe('installable')
+  })
+
   it('drops a distribution whose version lookup fails without failing the whole grid', async () => {
     const client = stubClient({
       distributions: [{ id: 'ok', name: 'Ok' }, { id: 'bad', name: 'Bad' }],

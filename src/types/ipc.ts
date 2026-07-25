@@ -1355,6 +1355,7 @@ export interface ElectronApi {
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listDistributions(): Promise<DevPlatformDistribution[]>
     installDistribution(distributionId: string): Promise<InstallDistributionResult>
+    updateDistribution(distributionId: string): Promise<InstallDistributionResult>
   }
 
   // Updates
