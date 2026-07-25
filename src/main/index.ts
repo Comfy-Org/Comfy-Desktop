@@ -2076,8 +2076,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return
         // Restart is always same-install/same-window — a stale renderer
-        // pick shouldn't be able to restart a different install.
-        if (parentEntry.installationId !== installationId) return
+        // pick shouldn't be able to restart a different install. During a
+        // FRESH boot the window is not attached yet (`attachInstall` runs
+        // at port-ready in onLaunch) and only carries the chooser's staked
+        // preview claim - the same state the picker CTA derives its
+        // "Restart" label from (`activeInstallationId` folds in
+        // `previewInstallationId`), so it must be accepted here too or a
+        // restart clicked during a first boot is a silent no-op.
+        const boundInstallationId =
+          parentEntry.installationId ?? parentEntry.previewInstallationId
+        if (boundInstallationId !== installationId) return
         // Confirm only when the restart will kill a local process
         // (issue #654). Cloud/remote restarts skip the modal.
         //

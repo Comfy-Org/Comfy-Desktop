@@ -255,6 +255,41 @@ export class WebContentsPage {
       } catch { /* re-evaluate the toggle state and retry until deadline */ }
     }
   }
+
+  /** Drive a BaseSelect until the selection actually lands: open the
+   *  trigger's listbox (via `aria-expanded`), click the option whose text
+   *  contains `optionLabel`, and confirm the trigger text reflects it. The
+   *  option click is a raw DOM `.click()`; a store-driven re-render can swap
+   *  the option node between query and dispatch and silently swallow the
+   *  selection, so the whole open-then-pick cycle retries until the trigger
+   *  proves the selection landed. */
+  async selectOption(
+    trigger: string,
+    optionLabel: string,
+    opts: { timeout?: number } = {},
+  ): Promise<void> {
+    const deadline = Date.now() + (opts.timeout ?? 15_000)
+    for (;;) {
+      if ((await this.textOf(trigger))?.includes(optionLabel)) return
+      const state = await this.wcEval<'missing' | 'open' | 'closed'>(`(() => {
+        const t = document.querySelector(${JSON.stringify(trigger)})
+        if (!t) return 'missing'
+        return t.getAttribute('aria-expanded') === 'true' ? 'open' : 'closed'
+      })()`)
+      if (state === 'missing') {
+        throw new Error(`selectOption: trigger ${trigger} not found`)
+      }
+      if (state === 'closed') {
+        await this.click(trigger)
+      } else {
+        await this.clickByText('.ui-select-option', optionLabel)
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`selectOption: "${optionLabel}" did not land on ${trigger}`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+  }
 }
 
 /** WebContentsPage for the chooser/lifecycle/etc panel body. */

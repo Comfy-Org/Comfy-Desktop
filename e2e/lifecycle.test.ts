@@ -46,11 +46,15 @@ import {
   openPickerViaTitlePill,
 } from './support/chooserHelpers'
 import {
+  armLaunchSpawnHold,
   ensureInstallPanelView,
   getIpcInvocations,
   getRunningSessionSnapshot,
+  hasActiveLaunch,
   hasActiveOperation,
   isInstallLaunching,
+  isLaunchSpawnHeld,
+  releaseLaunchSpawnHold,
   resetIpcInvocations,
 } from './support/devHooks'
 import {
@@ -1205,16 +1209,10 @@ test('per-install Manager security level + network mode land in Manager config.i
   await popup.waitForVisible(trigger, { timeout: 15_000 })
   expect(await popup.textOf(trigger)).toContain(initialLabel)
 
-  // Real DOM gesture: open the listbox, pick the target level.
-  expect(await popup.click(trigger)).toBe(true)
-  await popup.waitForVisible('.ui-select-listbox [role="option"]', { timeout: 10_000 })
-  expect(
-    await popup.clickByText('.ui-select-option', target.label),
-    `"${target.label}" option missing from the security-level listbox`,
-  ).toBe(true)
-  await expect
-    .poll(() => popup.textOf(trigger), { timeout: 10_000, intervals: [100, 250] })
-    .toContain(target.label)
+  // Real DOM gestures: open the listbox and pick the target level. Retried
+  // as a whole cycle - a store-driven re-render can swap the option node
+  // between query and click and silently swallow a single raw click.
+  await popup.selectOption(trigger, target.label)
 
   // The picker field handler persists through the real installations
   // store; wait for the write so the relaunch below cannot race it.
@@ -1227,15 +1225,7 @@ test('per-install Manager security level + network mode land in Manager config.i
   const modeTrigger = 'button.ui-select-trigger[aria-label="Manager Network Mode"]'
   await popup.waitForVisible(modeTrigger, { timeout: 15_000 })
   expect(await popup.textOf(modeTrigger)).toContain(initialModeLabel)
-  expect(await popup.click(modeTrigger)).toBe(true)
-  await popup.waitForVisible('.ui-select-listbox [role="option"]', { timeout: 10_000 })
-  expect(
-    await popup.clickByText('.ui-select-option', targetMode.label),
-    `"${targetMode.label}" option missing from the network-mode listbox`,
-  ).toBe(true)
-  await expect
-    .poll(() => popup.textOf(modeTrigger), { timeout: 10_000, intervals: [100, 250] })
-    .toContain(targetMode.label)
+  await popup.selectOption(modeTrigger, targetMode.label)
   await expect
     .poll(readRecordMode, { timeout: 10_000, intervals: [100, 250] })
     .toBe(targetMode.value)
@@ -1955,6 +1945,114 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
     .toBe(200)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
   await closeTitlePopupIfOpen(ctx.app)
+})
+
+test('restart clicked during a FRESH chooser boot (unattached window) cancels it and applies the edited --port @lifecycle', async () => {
+  test.setTimeout(600_000)
+  await waitForOperationDrain(_updateInstallId)
+
+  // Fresh-boot precondition: stop and return to the chooser, so the next
+  // launch comes from an UNATTACHED chooser host. `attachInstall` only sets
+  // `entry.installationId` at port-ready, so for the whole boot the window
+  // carries nothing but the chooser's staked `previewInstallationId` - the
+  // exact state in which main's restart identity guard used to discard the
+  // IPC, making restart-during-first-boot a silent no-op. (The sibling tests
+  // above restart an already-ATTACHED window, so they can never catch this.)
+  await stopAndReturnToDashboardViaUI()
+
+  const targetPort = await findFreeLoopbackPort(19700)
+  // The port the in-flight boot would come up on (persisted by the sibling
+  // test's edit) - must differ from the target so "the relaunch applied the
+  // mid-boot edit" is distinguishable from "the old boot survived".
+  const staleArgs = await readRecordLaunchArgs()
+  const staleMatch = /--port[ =](\d+)/.exec(staleArgs)
+  expect(staleMatch, `expected a persisted --port in launchArgs (got "${staleArgs}")`).not.toBeNull()
+  const stalePort = Number(staleMatch![1])
+  expect(stalePort).not.toBe(targetPort)
+
+  try {
+    // Park the NEXT launch at the spawn hold (launching marker set, port
+    // reserved, no process yet), then launch through the real chooser tile.
+    // The hold makes the boot window deterministic - every step below lands
+    // inside it by construction instead of racing real boot speed.
+    await armLaunchSpawnHold(ctx.app)
+    await clickInstallTile(ctx.panel, 'ComfyUI')
+    await expect
+      .poll(() => isLaunchSpawnHeld(ctx.app), { timeout: 120_000, intervals: [250, 500] })
+      .toBe(true)
+    expect(await hasActiveLaunch(ctx.app, _updateInstallId)).toBe(true)
+    expect(await isInstallLaunching(ctx.app, _updateInstallId)).toBe(true)
+    expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
+
+    // Mid-boot --port edit through the real picker, opened from the pill of
+    // the booting, preview-attached window.
+    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    await setPortArgViaPicker(popup, targetPort)
+
+    // The CTA must offer Restart even though the window is only preview-
+    // attached (`useInstallCta` folds the preview claim into the active id).
+    await expect
+      .poll(() => popup.textOf(byTestId(TID.pickerPrimaryCta)), {
+        timeout: 15_000, intervals: [250, 500],
+      })
+      .toContain('Restart')
+
+    await resetIpcInvocations(ctx.app, 'picker-restart:cancel-launching')
+    expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+    await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+    // Still parked: the confirm below provably lands inside the boot window.
+    expect(await isLaunchSpawnHeld(ctx.app)).toBe(true)
+    expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+    await expect
+      .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+        timeout: 10_000, intervals: [100, 200],
+      })
+      .toBe(false)
+
+    // Decisive main-side proof: the restart handler accepted the preview-
+    // attached window AND cancelled the in-flight launch. Pre-fix, the
+    // identity guard returned before cancelLaunching, so this channel
+    // recorded no invocation at all and this poll times out.
+    await expect
+      .poll(async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'picker-restart:cancel-launching')) as
+          Array<{ installationId?: string; cancelled?: boolean }>
+        return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
+      }, { timeout: 60_000, intervals: [250, 500] })
+      .toBe(true)
+    // The cancel must have released the hold through the launch's abort
+    // signal - the parked boot unwound instead of proceeding to spawn.
+    await expect
+      .poll(() => isLaunchSpawnHeld(ctx.app), { timeout: 10_000, intervals: [100, 250] })
+      .toBe(false)
+
+    // The relaunch is a REAL boot and must come up on the edited port.
+    await expect
+      .poll(async () => {
+        const after = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
+        return after?.port ?? null
+      }, { timeout: 300_000, intervals: [1_000, 2_000] })
+      .toBe(targetPort)
+    await expect
+      .poll(async () => {
+        try {
+          const res = await fetch(`http://127.0.0.1:${targetPort}/system_stats`, {
+            signal: AbortSignal.timeout(5_000),
+          })
+          return res.status
+        } catch { return 0 }
+      }, { timeout: 60_000, intervals: [1_000] })
+      .toBe(200)
+    // The cancelled boot never spawned, so nothing may serve the stale port.
+    await expect(
+      fetch(`http://127.0.0.1:${stalePort}/system_stats`, { signal: AbortSignal.timeout(3_000) }),
+    ).rejects.toThrow()
+    await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
+    await closeTitlePopupIfOpen(ctx.app)
+  } finally {
+    // Idempotent; a failed assertion must not leave a launch parked forever.
+    await releaseLaunchSpawnHold(ctx.app)
+  }
 })
 
 // ---------------------------------------------------------------------------

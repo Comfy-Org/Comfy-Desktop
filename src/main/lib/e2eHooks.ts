@@ -25,11 +25,15 @@ import {
   resetIpcInvocations,
   getShellOpenExternalCalls,
   resetShellOpenExternalCalls,
+  armLaunchSpawnHold,
+  releaseLaunchSpawnHold,
+  isLaunchSpawnHeld,
 } from './e2eOverrides'
 import {
   _runningSessions,
   _operationAborts,
   _getLaunchingInstallationIds,
+  _hasActiveLaunch,
   _test_addRunningSession,
   _test_clearRunningSessions,
 } from './ipc/shared'
@@ -77,6 +81,16 @@ export interface E2EHelpers {
   hasActiveOperation(installationId: string): boolean
   /** Whether the install is in the boot window (launching marker set, no session yet). */
   isLaunching(installationId: string): boolean
+  /** Whether a launch handler is in flight for the install - covers the whole
+   *  handler, including pre-marker prep. */
+  hasActiveLaunch(installationId: string): boolean
+  /** Arm a one-shot hold that parks the NEXT launch right before it spawns
+   *  ComfyUI - launching marker set, port reserved, no process yet. */
+  armLaunchSpawnHold(): void
+  /** Release a held launch (and disarm a not-yet-consumed hold). */
+  releaseLaunchSpawnHold(): void
+  /** Whether a launch is currently parked at the spawn hold. */
+  isLaunchSpawnHeld(): boolean
   /** `checkedAt` ms from the shared release cache entry, or `null` if absent. */
   getReleaseCacheCheckedAt(repo: string, channel: string): number | null
   /** Force every release-cache entry to `maxCheckedAt` so the renderer's stale-cache watcher
@@ -133,6 +147,12 @@ export function registerE2EHooks(): void {
     isLaunching(installationId) {
       return _getLaunchingInstallationIds().includes(installationId)
     },
+    hasActiveLaunch(installationId) {
+      return _hasActiveLaunch(installationId)
+    },
+    armLaunchSpawnHold,
+    releaseLaunchSpawnHold,
+    isLaunchSpawnHeld,
     getReleaseCacheCheckedAt(repo, channel) {
       return _releaseCacheGet(repo, channel)?.checkedAt ?? null
     },

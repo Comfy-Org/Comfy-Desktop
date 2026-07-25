@@ -194,6 +194,48 @@ export const _pendingPorts = new Map<number, string>()
 const _launchingInstances = new Map<string, { installationName: string }>()
 
 /**
+ * Launch operations currently in flight, keyed by installation id, covering the
+ * ENTIRE `handleLaunch` handler - from entry (before any prep work) until the
+ * session registers or the handler returns. `_launchingInstances` only covers
+ * the spawn->port-ready window; the handler does seconds of cancellable prep
+ * (dir checks, interrupted-op recovery, arg-schema discovery, port probes)
+ * before that marker, and a restart clicked in that window must still be able
+ * to cancel the launch. `abort` is the launch's own controller (the same one
+ * stored in `_operationAborts` once the launch claims the slot); `settled`
+ * resolves when the handler has fully unwound - process killed, port
+ * released, markers cleared - so `cancelLaunching` can await a safe relaunch.
+ */
+interface ActiveLaunch {
+  abort: AbortController
+  settled: Promise<void>
+  _resolveSettled: () => void
+}
+const _activeLaunches = new Map<string, ActiveLaunch>()
+
+/** Register a launch operation at handler entry. Caller must pair with `_endLaunch`. */
+export function _beginLaunch(installationId: string): { abort: AbortController } {
+  let resolveSettled!: () => void
+  const settled = new Promise<void>((resolve) => { resolveSettled = resolve })
+  const launch: ActiveLaunch = { abort: new AbortController(), settled, _resolveSettled: resolveSettled }
+  _activeLaunches.set(installationId, launch)
+  return launch
+}
+
+/** Unregister a launch operation; ownership-guarded and idempotent, so the
+ *  success-path early end and the handler's finally can both call it. */
+export function _endLaunch(installationId: string, launch: { abort: AbortController }): void {
+  const current = _activeLaunches.get(installationId)
+  if (current && current.abort === launch.abort) {
+    _activeLaunches.delete(installationId)
+    current._resolveSettled()
+  }
+}
+
+export function _hasActiveLaunch(installationId: string): boolean {
+  return _activeLaunches.has(installationId)
+}
+
+/**
  * Internal bus emitted whenever the launching set or `_runningSessions` mutates, so the
  * picker popup repaints its "Current" pill / running-dot live during the launching window.
  */
@@ -1203,36 +1245,39 @@ export async function stopRunning(
 }
 
 /**
- * Abort an in-flight launch (the boot window between spawn and port-ready)
- * and wait for its teardown to drain. Restart flows need this: `stopRunning`
- * only knows registered sessions, so a booting install has nothing to stop -
- * its process is owned by the launch operation, which must be aborted and
- * allowed to kill the process tree and release its port before a relaunch
- * can pass the in-flight-operation guard in `handleLaunch`.
+ * Abort an in-flight launch operation and wait for its teardown to drain.
+ * Restart flows need this: `stopRunning` only knows registered sessions, so a
+ * booting install has nothing to stop - its process is owned by the launch
+ * operation, which must be aborted and allowed to kill the process tree and
+ * release its port before a relaunch can pass the in-flight-operation guard
+ * in `handleLaunch`.
+ *
+ * Targets `_activeLaunches`, which covers the ENTIRE launch handler - a
+ * restart clicked during pre-spawn prep (dir checks, recovery, arg-schema
+ * discovery, port probes) cancels just as reliably as one clicked during the
+ * spawn->port-ready wait. It never touches `_operationAborts` directly, so a
+ * non-launch operation (install / update / delete) can never be aborted by a
+ * restart.
  *
  * Returns true when a launch was cancelled and fully torn down, false when
- * the install was not launching (already running, stopped, or a non-launch
- * operation owns the abort slot - a restart must not cancel those). The
- * launching marker is only set after the launch registers its abort
- * controller, so "marker present" implies the slot belongs to the launch.
+ * no launch was in flight (already running, or stopped). `settled` resolves
+ * only after the handler has fully unwound - process killed, port released,
+ * markers cleared - so a caller can relaunch immediately on true.
  */
 export async function cancelLaunching(installationId: string, timeoutMs = 60_000): Promise<boolean> {
-  if (!_launchingInstances.has(installationId)) return false
-  const abort = _operationAborts.get(installationId)
-  if (!abort) return false
-  abort.abort()
-  // The launch's abort path awaits its process-tree kill and only then - in
-  // one synchronous cleanup block - clears its abort slot and the launching
-  // marker, so THIS controller leaving the slot is the teardown-complete
-  // signal. Waiting on the launching marker too would race a new operation
-  // claiming the install after teardown (a generation this caller must not
-  // wait on, or worse, abort).
-  const deadline = Date.now() + timeoutMs
-  while (_operationAborts.get(installationId) === abort) {
-    if (Date.now() > deadline) {
-      throw new Error(`Timed out waiting for the cancelled launch of ${installationId} to wind down`)
-    }
-    await new Promise((r) => setTimeout(r, 100))
+  const launch = _activeLaunches.get(installationId)
+  // A registered session means the boot already completed - the launch
+  // handler may still be running post-launch work, but the restart path
+  // owns a running session via `stopRunning`, not via launch cancellation.
+  if (!launch || _runningSessions.has(installationId)) return false
+  launch.abort.abort()
+  const timedOut = Symbol('timeout')
+  const outcome = await Promise.race([
+    launch.settled,
+    new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), timeoutMs)),
+  ])
+  if (outcome === timedOut) {
+    throw new Error(`Timed out waiting for the cancelled launch of ${installationId} to wind down`)
   }
   return true
 }
