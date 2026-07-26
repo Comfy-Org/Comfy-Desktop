@@ -329,6 +329,45 @@ describe('updateSections — PyTorch picker', () => {
     expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
   })
 
+  it('warns when a stack omits torchaudio: switching would uninstall it', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
+      stackId: 'pytorch-index:cu130:2.13.0',
+      packages: { torch: '2.13.0+cu130', torchvision: '0.28.0+cu130' },
+      source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
+    })])
+    const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
+    const option = options.find((o) => o.value === 'pytorch-index:cu130:2.13.0')
+    expect(option).toBeDefined()
+    expect(option!.description).toContain('standalone.pytorchNoTorchaudioNote')
+  })
+
+  it('does not show the torchaudio warning on full-tuple stacks', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry()])
+    const option = getIndexOption()
+    expect(option!.description).not.toContain('standalone.pytorchNoTorchaudioNote')
+  })
+
+  it('does not warn on the CURRENT stack when it omits torchaudio: nothing gets removed', () => {
+    // Installed tuple (dist-info dirs) matches the no-torchaudio stack.
+    const readdir = vi.spyOn(fs, 'readdirSync').mockReturnValue([
+      'torch-2.13.0+cu130.dist-info', 'torchvision-0.28.0+cu130.dist-info',
+    ] as unknown as ReturnType<typeof fs.readdirSync>)
+    try {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
+        stackId: 'pytorch-index:cu130:2.13.0',
+        packages: { torch: '2.13.0+cu130', torchvision: '0.28.0+cu130' },
+        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
+      })])
+      const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
+      const option = options.find((o) => o.value === 'pytorch-index:cu130:2.13.0')
+      expect(option).toBeDefined()
+      expect(option!.description).not.toContain('standalone.pytorchNoTorchaudioNote')
+      expect(option!.data?.actions).toBeUndefined()
+    } finally {
+      readdir.mockRestore()
+    }
+  })
+
   it('surfaces a compute-cap mismatch in the description and the confirm dialog, still selectable', () => {
     vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
       capWarning: { min: 7.5, max: 12.0, detected: [6.1] },

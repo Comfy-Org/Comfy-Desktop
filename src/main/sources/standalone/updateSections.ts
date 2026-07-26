@@ -152,6 +152,9 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     const localizedNote = noteKey ? t(noteKey) : null
     if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
     else if (s.note) parts.push(s.note)
+    // Switching to a stack that omits torchaudio uninstalls it, so warn on
+    // every such target regardless of what the manifest notes say.
+    if (!s.packages.torchaudio && !isCurrent) parts.push(t('standalone.pytorchNoTorchaudioNote'))
     // Standing warning on every nightly, independent of manifest notes: the
     // build is unstable and its wheels expire from PyTorch's index.
     if (isDevVersion(s.packages.torch)) parts.push(t('standalone.pytorchNightlyNote'))
