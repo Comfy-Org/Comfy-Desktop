@@ -877,6 +877,8 @@
     "pytorchSection": "PyTorch",
     "pytorchSeriesLabel": "Backend",
     "pytorchSeriesDefault": "Default",
+    "pytorchSeriesNightly": "{series} Nightly (unstable)",
+    "pytorchNightlyNote": "Nightly build: unstable, and installable for only about 60 days after publication",
     "pytorchUnknown": "PyTorch (not detected)",
     "pytorchObservedDesc": "Installed outside the app — not a known official build. Pick a version below to switch to an official build.",
     "pytorchDownloadSize": "{size} GB download",

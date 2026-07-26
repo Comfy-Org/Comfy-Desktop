@@ -10,7 +10,7 @@ import { deleteAction, untrackAction, launchAction, openFolderAction, renameActi
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
 import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
-import { torchTupleMatches, stackAppliesViaPip, torchLocalTag } from './torchStackTypes'
+import { torchTupleMatches, stackAppliesViaPip, torchLocalTag, isDevVersion } from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
@@ -64,6 +64,17 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
  *  (PyPI / mac MPS) share one "Default" series. Presentation only - actions
  *  still carry the opaque stackId. */
 function torchSeriesGroup(torch: string | null | undefined): { id: string; label: string } {
+  const base = torchSeriesBase(torch)
+  // Nightly (dev) builds form their own series per tag: picking one must be
+  // a deliberate step past a clearly-labeled fork, never something the
+  // cascade lands on while browsing stable builds of the same tag.
+  if (torch && isDevVersion(torch)) {
+    return { id: `nightly-${base.id}`, label: t('standalone.pytorchSeriesNightly', { series: base.label }) }
+  }
+  return base
+}
+
+function torchSeriesBase(torch: string | null | undefined): { id: string; label: string } {
   const tag = torchLocalTag(torch)
   const cu = /^cu(\d{2,})$/.exec(tag)?.[1]
   if (cu) return { id: tag, label: `CUDA ${cu.slice(0, -1)}.${cu.slice(-1)} (${tag})` }
@@ -141,6 +152,9 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     const localizedNote = noteKey ? t(noteKey) : null
     if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
     else if (s.note) parts.push(s.note)
+    // Standing warning on every nightly, independent of manifest notes: the
+    // build is unstable and its wheels expire from PyTorch's index.
+    if (isDevVersion(s.packages.torch)) parts.push(t('standalone.pytorchNightlyNote'))
     const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
     if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
     const confirmMessage = viaPip

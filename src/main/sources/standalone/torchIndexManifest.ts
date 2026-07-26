@@ -36,7 +36,7 @@ import { writeFileSafe } from '../../lib/safe-file'
 import { fetchJSON } from '../../lib/fetch'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
 import { stripPlatform } from './envPaths'
-import { isDevVersion, makeIndexStackId, torchIndexUrlFor, torchLocalTag } from './torchStackTypes'
+import { isDevVersion, makeIndexStackId, publicVersion, torchIndexUrlFor, torchLocalTag } from './torchStackTypes'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 
@@ -52,8 +52,13 @@ export interface TorchIndexStackDef {
   platforms: readonly NodeJS.Platform[]
   /** Exact tuple with local tags, so pip installs the exact same builds. */
   packages: TorchStackPackages
-  /** Upstream release date (ISO), for display ordering. */
+  /** Upstream release date (ISO), for display ordering. For nightly
+   *  entries this is the wheel date the freshness gate keys on. */
   date: string
+  /** Present on nightly entries; must survive the disk cache round-trip so
+   *  re-validation on load still applies the nightly rules (a cached
+   *  nightly re-parsed as stable would be dropped for its dev versions). */
+  kind?: 'pytorch-nightly-index'
   /** Inclusive compute-capability range the wheels ship kernels for
    *  (NVIDIA only). Omit when the build has no such constraint. */
   computeCap?: { min: number; max: number }
@@ -110,6 +115,9 @@ const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+]*$/
 const PYTHON_ABI = /^\d+\.\d+$/
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
+/** Dated nightly spelling the refresh automation publishes; the date is
+ *  what the freshness gates key on. Matched against the public version. */
+const NIGHTLY_DEV_DATE = /\.dev(\d{8})$/
 const ACCELS: readonly IndexAccel[] = ['nvidia', 'amd', 'intel-xpu', 'cpu', 'mps']
 const PLATFORMS: readonly NodeJS.Platform[] = ['win32', 'linux', 'darwin']
 const NOTE_MAX_LENGTH = 300
@@ -128,11 +136,18 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   const r = v as Record<string, unknown>
   if (typeof r.indexTag !== 'string' || !SAFE_SEGMENT.test(r.indexTag)) return null
   if (typeof r.accel !== 'string' || !ACCELS.includes(r.accel as IndexAccel)) return null
-  // `kind` must match the mechanism this app derives from the accelerator
-  // (`sourceFor`). A future manifest can introduce a new kind (e.g. AMD's
-  // own Windows channel) and older app versions drop those entries instead
-  // of misapplying them through the wrong mechanism.
-  if ('kind' in r && r.kind !== (r.accel === 'mps' ? 'pypi' : 'pytorch-index')) return null
+  // `kind` must match a mechanism this app has. Stable entries use the kind
+  // `sourceFor` derives from the accelerator; `pytorch-nightly-index` marks
+  // dev tuples served from the nightly namespace (`torchIndexUrlFor` derives
+  // that from the version itself, so the source stays `pytorch-index`).
+  // A future manifest can introduce another kind (e.g. AMD's own Windows
+  // channel) and older app versions drop those entries instead of
+  // misapplying them through the wrong mechanism.
+  const stableKind = r.accel === 'mps' ? 'pypi' : 'pytorch-index'
+  const nightly = r.kind === 'pytorch-nightly-index'
+  if ('kind' in r && !nightly && r.kind !== stableKind) return null
+  // PyPI serves no dev builds, so an MPS nightly has no install source.
+  if (nightly && r.accel === 'mps') return null
   if (!Array.isArray(r.platforms) || r.platforms.length === 0) return null
   if (!r.platforms.every((p) => PLATFORMS.includes(p as NodeJS.Platform))) return null
   const pkgs = r.packages as Record<string, unknown> | undefined
@@ -141,12 +156,37 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   for (const opt of ['torchvision', 'torchaudio'] as const) {
     if (pkgs[opt] !== undefined && (typeof pkgs[opt] !== 'string' || !SAFE_VERSION.test(pkgs[opt] as string))) return null
   }
-  // Nightly (dev) tuples live in a separate index namespace with ~60-day
-  // retention - a decaying promise schema 1 cannot express. A future kind
-  // (with refresh automation behind it) can; until then reject rather than
-  // publish an entry whose install source and lifetime are both wrong.
+  // The kind and the versions must agree. Stable entries reject dev
+  // versions: nightlies live in a separate index namespace with ~60-day
+  // retention, and a stable entry claiming one would lie about both its
+  // install source and its lifetime. Nightly entries require dev versions
+  // throughout - a stable version under the nightly kind would dodge the
+  // freshness gate that keeps decaying entries out of the picker.
   for (const v of [pkgs.torch, pkgs.torchvision, pkgs.torchaudio]) {
-    if (typeof v === 'string' && isDevVersion(v)) return null
+    if (typeof v === 'string' && isDevVersion(v) !== nightly) return null
+  }
+  // Nightly versions must be the dated spelling sharing ONE wheel date, and
+  // `date` must be exactly that real, non-future UTC date - the freshness
+  // gate trusts `date`, and R2 is untrusted, so a fabricated date must not
+  // let a decaying pin dodge the dead-man's switch below.
+  if (nightly) {
+    const wheelDates = new Set<string>()
+    for (const v of [pkgs.torch, pkgs.torchvision, pkgs.torchaudio]) {
+      if (typeof v !== 'string') continue
+      const day = NIGHTLY_DEV_DATE.exec(publicVersion(v))?.[1]
+      if (!day) return null
+      wheelDates.add(day)
+    }
+    if (wheelDates.size !== 1) return null
+    const [d] = wheelDates
+    if (!d) return null
+    const iso = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
+    if (r.date !== iso) return null
+    const parsed = Date.parse(`${iso}T00:00:00Z`)
+    if (!Number.isFinite(parsed)) return null
+    // round-trip catches non-dates like 2026-02-31 that Date.parse coerces
+    if (new Date(parsed).toISOString().slice(0, 10) !== iso) return null
+    if (parsed - Date.now() > 24 * 60 * 60 * 1000) return null
   }
   // One coherent source per accelerator: the accel must name an index tag it
   // can actually be served from, and the torch local tag must agree with it
@@ -195,6 +235,7 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   return {
     indexTag: r.indexTag,
     accel: r.accel as IndexAccel,
+    ...(nightly ? { kind: 'pytorch-nightly-index' as const } : {}),
     platforms: r.platforms as NodeJS.Platform[],
     packages: {
       torch: pkgs.torch,
@@ -417,16 +458,34 @@ function entryFromDef(def: TorchIndexStackDef, variant: string): TorchStackEntry
   }
 }
 
+/** How long a nightly entry stays offered after its wheel date. PyTorch
+ *  purges dated nightlies from the index after roughly 60 days; stopping
+ *  well short of that avoids offering installs about to 404, and doubles
+ *  as a dead-man's switch - if the manifest refresh automation stalls, the
+ *  picker quietly stops offering nightlies instead of serving dying pins.
+ *  Already-installed nightlies are unaffected (they stay pinned; only
+ *  reacquisition eventually fails, cleanly). */
+const NIGHTLY_MAX_AGE_MS = 45 * 24 * 60 * 60 * 1000
+
+function nightlyFresh(def: TorchIndexStackDef): boolean {
+  if (def.kind !== 'pytorch-nightly-index') return true
+  // The parser guaranteed date is the tuple's real, non-future wheel date.
+  const wheelDate = Date.parse(`${def.date}T00:00:00Z`)
+  return Number.isFinite(wheelDate) && Date.now() - wheelDate <= NIGHTLY_MAX_AGE_MS
+}
+
 /**
  * Index-served stacks available to a variant on this machine: accelerator
- * matches, the platform has wheels, a trusted index serves the tuple, and a
- * detected GPU (if any) has kernels in the build. Newest first.
+ * matches, the platform has wheels, a trusted index serves the tuple, a
+ * nightly entry is still young enough to install, and a detected GPU (if
+ * any) has kernels in the build. Newest first.
  */
 export function indexStacksForVariant(variant: string): TorchStackEntry[] {
   const accel = stripPlatform(variant)
   return activeDefs()
     .filter((def) => def.accel === accel)
     .filter((def) => def.platforms.includes(process.platform))
+    .filter(nightlyFresh)
     // Only tuples a trusted index serves; MPS is PyPI-served and must be
     // untagged (a tagged build has no PyPI source).
     .filter((def) => torchIndexUrlFor(def.packages) !== null

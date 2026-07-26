@@ -353,6 +353,34 @@ describe('updateSections — PyTorch picker', () => {
       expect(cu128!.groupPath).toEqual([{ id: 'cu128', label: 'CUDA 12.8 (cu128)' }])
     })
 
+    it('splits nightly (dev) builds into their own clearly-labeled series with a standing warning', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu132', '2.13.0.dev20260720'),
+        cudaEntry('cu130', '2.10.0'),
+      ])
+      const field = getPytorchField(install())!
+      const nightly = field.options.find((o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720')
+      const stable = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
+      // A nightly never shares a series with stable builds - selecting one
+      // must be a deliberate step past a labeled fork in the first dropdown.
+      expect(nightly!.groupPath?.[0]?.id).toBe('nightly-cu132')
+      expect(nightly!.groupPath?.[0]?.label).toContain('pytorchSeriesNightly')
+      expect(stable!.groupPath).toEqual([{ id: 'cu130', label: 'CUDA 13.0 (cu130)' }])
+      expect(nightly!.description).toContain('standalone.pytorchNightlyNote')
+      expect(stable!.description).not.toContain('standalone.pytorchNightlyNote')
+    })
+
+    it('a nightly and a stable build of the same tag still fork into two series', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu132', '2.13.0.dev20260720'),
+        cudaEntry('cu132', '2.12.0'),
+      ])
+      const field = getPytorchField(install())!
+      const ids = field.options.map((o) => o.groupPath?.[0]?.id)
+      expect(ids).toContain('nightly-cu132')
+      expect(ids).toContain('cu132')
+    })
+
     it('places multiple versions of the same series in one group', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
