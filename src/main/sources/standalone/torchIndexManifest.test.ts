@@ -17,7 +17,7 @@ vi.mock('../../lib/paths', async () => {
 import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import {
-  indexStacksForVariant, ensureComputeCaps, refreshRemoteIndexStacks, ensureRemoteIndexStacks,
+  indexStacksForVariant, refreshComputeCaps, refreshRemoteIndexStacks, ensureRemoteIndexStacks,
   _setComputeCapsForTest, _setComputeCapProbeForTest, _setRemoteDefsForTest, _resetRemoteForTest,
 } from './torchIndexManifest'
 
@@ -39,48 +39,56 @@ afterEach(() => {
 })
 
 describe('indexStacksForVariant', () => {
-  it('serves NVIDIA index stacks on Windows with a mid-range GPU', () => {
+  function entryByTag(variant: string, tag: string) {
+    return indexStacksForVariant(variant).find(
+      (e) => (e.source as { indexTag?: string }).indexTag === tag
+    )
+  }
+
+  it('serves NVIDIA index stacks on Windows with a mid-range GPU, unannotated', () => {
     setPlatform('win32')
     _setComputeCapsForTest([8.9]) // RTX 40-series — inside both cu126 and cu128 ranges
-    const tags = indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
-    expect(tags).toContain('cu126')
-    expect(tags).toContain('cu128')
+    expect(entryByTag('win-nvidia', 'cu126')?.capWarning).toBeUndefined()
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toBeUndefined()
   })
 
-  it('hides stacks whose wheels lack kernels for the detected GPU', () => {
+  it('annotates (never hides) stacks whose wheels lack kernels for the detected GPU', () => {
     setPlatform('win32')
     _setComputeCapsForTest([12.0]) // Blackwell — beyond cu126's sm range
-    const tags = indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
-    expect(tags).not.toContain('cu126')
-    expect(tags).toContain('cu128')
+    expect(entryByTag('win-nvidia', 'cu126')?.capWarning)
+      .toEqual({ min: 5.0, max: 9.0, detected: [12.0] })
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toBeUndefined()
   })
 
-  it('serves the legacy build to a Pascal GPU that newer builds dropped', () => {
+  it('warns a Pascal GPU about the builds that dropped it, not the legacy build', () => {
     setPlatform('win32')
     _setComputeCapsForTest([6.1]) // GTX 10-series
-    const tags = indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
-    expect(tags).toContain('cu126')
-    expect(tags).not.toContain('cu128')
+    expect(entryByTag('win-nvidia', 'cu126')?.capWarning).toBeUndefined()
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning)
+      .toEqual({ min: 7.5, max: 12.0, detected: [6.1] })
   })
 
-  it('keeps any stack serving at least one of multiple GPUs', () => {
+  it('a stack serving at least one of multiple GPUs carries no warning', () => {
     setPlatform('win32')
     _setComputeCapsForTest([6.1, 12.0])
-    const tags = indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
-    expect(tags).toContain('cu126')
-    expect(tags).toContain('cu128')
+    expect(entryByTag('win-nvidia', 'cu126')?.capWarning).toBeUndefined()
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toBeUndefined()
   })
 
-  it('hides cap-constrained stacks before the first GPU probe', () => {
+  it('serves cap-constrained stacks before the first GPU probe, without warnings', () => {
     setPlatform('win32')
     _setComputeCapsForTest(undefined)
-    expect(indexStacksForVariant('win-nvidia')).toEqual([])
+    const entries = indexStacksForVariant('win-nvidia')
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.every((e) => e.capWarning === undefined)).toBe(true)
   })
 
-  it('does not filter when the probe failed', () => {
+  it('serves everything without warnings when the probe failed', () => {
     setPlatform('win32')
     _setComputeCapsForTest(null)
-    expect(indexStacksForVariant('win-nvidia').length).toBeGreaterThan(0)
+    const entries = indexStacksForVariant('win-nvidia')
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.every((e) => e.capWarning === undefined)).toBe(true)
   })
 
   it('serves nothing to non-matching accelerators or platforms', () => {
@@ -91,23 +99,14 @@ describe('indexStacksForVariant', () => {
     expect(indexStacksForVariant('mac')).toEqual([])
   })
 
-  it('ensureComputeCaps unhides entries after a failed probe (never-probed → probed-failed)', async () => {
+  it('refreshComputeCaps turns probe results into warnings on later reads', async () => {
     setPlatform('win32')
     _setComputeCapsForTest(undefined)
-    _setComputeCapProbeForTest(async () => null) // deterministic probe failure
-    expect(indexStacksForVariant('win-nvidia')).toEqual([])
-    await ensureComputeCaps()
-    expect(indexStacksForVariant('win-nvidia').length).toBeGreaterThan(0)
-  })
-
-  it('ensureComputeCaps never overwrites an existing probe result', async () => {
-    setPlatform('win32')
-    _setComputeCapsForTest([6.1])
-    _setComputeCapProbeForTest(async () => null) // a re-probe would clear the caps → unfiltered
-    await ensureComputeCaps() // must be a no-op
-    const tags = indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
-    expect(tags).toContain('cu126')
-    expect(tags).not.toContain('cu128')
+    _setComputeCapProbeForTest(async () => [6.1])
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toBeUndefined()
+    await refreshComputeCaps()
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning)
+      .toEqual({ min: 7.5, max: 12.0, detected: [6.1] })
   })
 
   it('produces resolvable pip-applied entries with no bundle', () => {

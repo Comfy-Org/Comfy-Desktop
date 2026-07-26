@@ -329,6 +329,25 @@ describe('updateSections — PyTorch picker', () => {
     expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
   })
 
+  it('surfaces a compute-cap mismatch in the description and the confirm dialog, still selectable', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
+      capWarning: { min: 7.5, max: 12.0, detected: [6.1] },
+    })])
+    const option = getIndexOption()
+    expect(option!.description).toContain('standalone.pytorchCapWarning')
+    const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
+    expect(action).toBeDefined() // informational: the change stays offered
+    expect(action!.confirm?.message).toContain('standalone.pytorchCapConfirmWarning')
+  })
+
+  it('shows no compute-cap warning on a compatible entry', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({})])
+    const option = getIndexOption()
+    expect(option!.description).not.toContain('standalone.pytorchCapWarning')
+    const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
+    expect(action!.confirm?.message).not.toContain('standalone.pytorchCapConfirmWarning')
+  })
+
   describe('backend-series grouping (cascading dropdowns)', () => {
     const install = (): InstallationRecord => baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
 

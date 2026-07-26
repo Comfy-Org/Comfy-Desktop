@@ -895,6 +895,8 @@
     "pytorchCatalogError": "Could not check PyTorch availability: {message}",
     "pytorchStackUnavailable": "This PyTorch version is no longer available for this installation.",
     "pytorchAlreadyInstalled": "PyTorch {version} is already installed.",
+    "pytorchCapConfirmWarning": "**Warning:** this build has no kernels for the detected GPU (compute capability {detected}; this build covers {required}). PyTorch may fail to run on the GPU after the change. Continue only if you know your GPU is supported (e.g. the detection is wrong or another GPU will be used).",
+    "pytorchCapWarning": "May not support this machine’s GPU — needs compute capability {required}, detected {detected}",
     "pytorchDownloadFailed": "PyTorch download failed: {message}",
     "pytorchIndexNoteCu126": "CUDA 12.6 — installed from the official PyTorch index; supports older GPUs (GTX 900/10-series and newer)",
     "pytorchIndexNoteCu128": "CUDA 12.8 — installed from the official PyTorch index; for RTX 20-series and newer on CUDA 12.x drivers",

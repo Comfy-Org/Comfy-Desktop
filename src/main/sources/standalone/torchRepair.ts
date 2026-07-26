@@ -349,7 +349,7 @@ export async function maybeRepairTorch(
       torchRepair: { status: 'done', attempts, at: Date.now() },
       // Re-persist the ref repair restored: reconciliation cleared it when it
       // saw the damaged tuple, and the cached catalog may not re-adopt it
-      // (index entries are hidden until a GPU probe runs).
+      // (remote-only index entries are absent until a check-update runs).
       ...(result.restoredRef ? { lastVerifiedTorchStack: result.restoredRef, observedTorchStack: null } : {}),
     })
     telemetry.emit('comfy.desktop.torch_repair.succeeded', { variant: mismatch.variantBase })

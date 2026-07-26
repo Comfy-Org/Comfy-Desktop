@@ -368,8 +368,8 @@ function sourceFor(def: TorchIndexStackDef): TorchStackSource {
 }
 
 /** Detected NVIDIA compute capabilities, one per GPU. `undefined` = not yet
- *  probed (cap-constrained entries hidden), `null` = probe failed (no
- *  nvidia-smi / no NVIDIA GPU — don't filter). */
+ *  probed, `null` = probe failed (no nvidia-smi / no NVIDIA GPU). Caps never
+ *  hide an entry - they only feed the informational mismatch warning. */
 let _computeCaps: number[] | null | undefined
 
 /** Test-only: reset/override the cached probe result. */
@@ -381,20 +381,6 @@ export function _setComputeCapsForTest(caps: number[] | null | undefined): void 
  *  under the vitest setup). Pass undefined to restore the real probe. */
 export function _setComputeCapProbeForTest(probe: (() => Promise<number[] | null>) | undefined): void {
   _probeFn = probe ?? probeComputeCaps
-}
-
-let _probe: Promise<void> | null = null
-
-/** Probe the GPU only if it has never been probed. Awaited by resolve paths
- *  (snapshot restore, change-pytorch) so an exact restore of an index stack
- *  isn't rejected just because no check-update ran since app start; shares
- *  one in-flight probe across concurrent callers. */
-export function ensureComputeCaps(): Promise<void> {
-  if (_computeCaps !== undefined) return Promise.resolve()
-  _probe ??= refreshComputeCaps().finally(() => {
-    _probe = null
-  })
-  return _probe
 }
 
 /** The real nvidia-smi probe: caps on success, null on any failure. */
@@ -418,29 +404,32 @@ let _probeFn: () => Promise<number[] | null> = probeComputeCaps
 
 /**
  * Probe GPU compute capabilities via nvidia-smi, caching the result for the
- * synchronous catalog reads. Best-effort: any failure leaves filtering off.
- * Called from `refreshTorchStackCatalog` alongside the R2 fetch.
+ * synchronous catalog reads. Best-effort: any failure just leaves the
+ * mismatch warnings off. Called from `refreshTorchStackCatalog` alongside
+ * the R2 fetch.
  */
 export async function refreshComputeCaps(): Promise<void> {
   _computeCaps = await _probeFn()
 }
 
-/** Whether any detected GPU falls inside the entry's kernel range. With
- *  multiple GPUs an entry serving ANY of them stays visible. Before the
- *  first probe, cap-constrained entries stay hidden (an incompatible stack
- *  would pass verification but crash at runtime with "no kernel image");
- *  they appear once check-update refreshes the catalog — same cadence as
- *  bundle entries. A *failed* probe (null) disables filtering instead: it
- *  must not permanently hide every index stack. */
-function computeCapCompatible(def: TorchIndexStackDef): boolean {
-  if (!def.computeCap) return true
-  if (_computeCaps === undefined) return false
-  if (_computeCaps === null || _computeCaps.length === 0) return true
+/** The entry's kernel range when NO detected GPU falls inside it - the
+ *  basis of the picker's informational warning. With multiple GPUs an entry
+ *  serving ANY of them warns about nothing. Caps never hide or block an
+ *  entry: detection can be wrong or partial (multi-GPU boxes, eGPUs, a
+ *  probe that ran before a driver install), so the user keeps the full
+ *  catalog and the final word. Unknown caps (never probed, probe failed)
+ *  produce no warning; warnings appear once check-update refreshes the
+ *  catalog - same cadence as bundle entries. */
+function capMismatch(def: TorchIndexStackDef): { min: number; max: number; detected: number[] } | null {
+  if (!def.computeCap) return null
+  if (_computeCaps == null || _computeCaps.length === 0) return null
   const { min, max } = def.computeCap
-  return _computeCaps.some((cap) => cap >= min && cap <= max)
+  if (_computeCaps.some((cap) => cap >= min && cap <= max)) return null
+  return { min, max, detected: [..._computeCaps] }
 }
 
 function entryFromDef(def: TorchIndexStackDef, variant: string): TorchStackEntry {
+  const mismatch = capMismatch(def)
   return {
     stackId: makeIndexStackId(def.indexTag, def.packages.torch),
     variant,
@@ -455,6 +444,7 @@ function entryFromDef(def: TorchIndexStackDef, variant: string): TorchStackEntry
     ...(def.noteKey ? { noteKey: def.noteKey } : {}),
     ...(def.note ? { note: def.note } : {}),
     ...(def.pythonAbis ? { pythonAbis: [...def.pythonAbis] } : {}),
+    ...(mismatch ? { capWarning: mismatch } : {}),
   }
 }
 
@@ -476,9 +466,10 @@ function nightlyFresh(def: TorchIndexStackDef): boolean {
 
 /**
  * Index-served stacks available to a variant on this machine: accelerator
- * matches, the platform has wheels, a trusted index serves the tuple, a
- * nightly entry is still young enough to install, and a detected GPU (if
- * any) has kernels in the build. Newest first.
+ * matches, the platform has wheels, a trusted index serves the tuple, and a
+ * nightly entry is still young enough to install. Newest first. An entry
+ * whose kernel range misses every detected GPU is annotated with
+ * `capWarning`, never dropped.
  */
 export function indexStacksForVariant(variant: string): TorchStackEntry[] {
   const accel = stripPlatform(variant)
@@ -490,7 +481,6 @@ export function indexStacksForVariant(variant: string): TorchStackEntry[] {
     // untagged (a tagged build has no PyPI source).
     .filter((def) => torchIndexUrlFor(def.packages) !== null
       || (def.accel === 'mps' && torchLocalTag(def.packages.torch) === ''))
-    .filter((def) => computeCapCompatible(def))
     .map((def) => entryFromDef(def, variant))
     .sort((a, b) => b.date.localeCompare(a.date))
 }

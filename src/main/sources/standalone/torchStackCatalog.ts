@@ -23,7 +23,7 @@ import {
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
 import {
-  indexStacksForVariant, refreshComputeCaps, ensureComputeCaps,
+  indexStacksForVariant, refreshComputeCaps,
   refreshRemoteIndexStacks, ensureRemoteIndexStacks,
 } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
@@ -46,6 +46,11 @@ export type TorchStackEntry = PersistedTorchStack & {
   /** Python ABIs (`major.minor`) the entry's index publishes wheels for;
    *  absent = any Python (pip fails cleanly and rolls back otherwise). */
   pythonAbis?: string[]
+  /** Present when no detected GPU falls inside the entry's kernel range.
+   *  Informational only - GPU detection can be wrong or partial (multi-GPU
+   *  boxes, eGPUs), so the entry stays selectable; the picker shows this as
+   *  a warning. Display-only: stripped before an entry is persisted. */
+  capWarning?: { min: number; max: number; detected: number[] }
 }
 
 const CACHE_FILE = path.join(dataDir(), 'torch-stack-cache.json')
@@ -187,8 +192,9 @@ function entryPythonCompatible(installation: InstallationRecord, e: TorchStackEn
  *  installs are pip-applied against their own Python, but only tuples a
  *  trusted index can serve are switchable (e.g. Windows ROCm builds have no
  *  pip source). Index-served entries pip-apply on every install type and
- *  are pre-filtered by the manifest (platform, index, GPU); the only per-
- *  install constraint is a declared Python ABI list (indexes that publish
+ *  are pre-filtered by the manifest (platform, index; a GPU compute-cap
+ *  mismatch only annotates, never filters); the only per-install
+ *  constraint is a declared Python ABI list (indexes that publish
  *  wheels for specific Pythons only, e.g. AMD's universal ROCm package).
  *  Deduplication runs after filtering so an entry dropped here can't shadow
  *  a compatible duplicate. */
@@ -209,6 +215,16 @@ function withIndexStacks(variant: string, bundleStacks: TorchStackEntry[]): Torc
   return [...bundleStacks, ...indexStacksForVariant(variant)]
 }
 
+/** The entry minus its display-only GPU-mismatch warning: everything that
+ *  persists an entry (resolve -> transaction -> `lastVerifiedTorchStack`,
+ *  reconcile adoption) must store it without the warning - it reflects one
+ *  machine's probe at one point in time, not the stack. */
+function withoutCapWarning(entry: TorchStackEntry): TorchStackEntry {
+  const persisted = { ...entry }
+  delete persisted.capWarning
+  return persisted
+}
+
 /** Fetch + filter the switchable stacks for an installation and refresh the
  *  sync cache. Throws on network failure (callers treat it as best-effort).
  *  The cache stores the unfiltered, undeduplicated list (it is keyed by
@@ -218,8 +234,8 @@ export async function refreshTorchStackCatalog(installation: InstallationRecord)
   const variant = installVariant(installation)
   if (!variant) return []
   // GPU probe and remote-manifest refresh first (both best-effort): the R2
-  // releases fetch below may throw, and index-entry filtering should still
-  // have fresh capabilities and manifest entries.
+  // releases fetch below may throw, and the index entries' compute-cap
+  // warnings should still have fresh capabilities and manifest entries.
   await refreshComputeCaps()
   await refreshRemoteIndexStacks()
   const releases = await fetchR2VendorReleases(variant)
@@ -253,17 +269,16 @@ export async function resolveTorchStack(
   const variant = installVariant(installation)
   if (!variant) return null
 
-  // Index-served stacks resolve against the validated manifest (machine-
-  // filtered). Probe the GPU and load the remote manifest first if they
-  // never ran: cap-constrained and remote-only entries are hidden before
-  // that, and an exact restore must not be rejected just because no
-  // check-update ran yet.
+  // Index-served stacks resolve against the validated manifest. Load the
+  // remote manifest first if it never ran: remote-only entries are absent
+  // before that, and an exact restore must not be rejected just because no
+  // check-update ran yet. GPU compute caps play no part here - a kernel
+  // mismatch is a picker warning, never a resolve gate.
   if (parseIndexStackId(stackId)) {
-    await ensureComputeCaps()
     await ensureRemoteIndexStacks()
     const entry = indexStacksForVariant(variant).find((e) => e.stackId === stackId) ?? null
     if (!entry || !entryPythonCompatible(installation, entry)) return null
-    return entry
+    return withoutCapWarning(entry)
   }
 
   const parsed = parseBundleStackId(stackId)
@@ -343,7 +358,7 @@ export async function reconcileTorchStack(
   const match = getCachedTorchStacks(installation).find((e) => torchTupleMatches(e.packages, installed))
   if (match) {
     // Manual change to an official stack — adopt it as verified/restorable.
-    await update({ lastVerifiedTorchStack: match, observedTorchStack: null })
+    await update({ lastVerifiedTorchStack: withoutCapWarning(match), observedTorchStack: null })
     return
   }
 

@@ -155,6 +155,12 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     // Standing warning on every nightly, independent of manifest notes: the
     // build is unstable and its wheels expire from PyTorch's index.
     if (isDevVersion(s.packages.torch)) parts.push(t('standalone.pytorchNightlyNote'))
+    // GPU-compat notice is informational only: detection can be wrong or
+    // partial (multi-GPU boxes, eGPUs), so mismatched stacks stay selectable.
+    if (s.capWarning) parts.push(t('standalone.pytorchCapWarning', {
+      required: `${s.capWarning.min}-${s.capWarning.max}`,
+      detected: s.capWarning.detected.join(', '),
+    }))
     const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
     if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
     const confirmMessage = viaPip
@@ -167,6 +173,14 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
           to: `**${s.packages.torch}**`,
           size: sizeGB,
         })
+    // With no hard compute-cap gate anywhere, the confirm dialog is the last
+    // stop before a build with no kernels for the detected GPU installs.
+    const capNotice = s.capWarning
+      ? `\n\n${t('standalone.pytorchCapConfirmWarning', {
+          required: `${s.capWarning.min}-${s.capWarning.max}`,
+          detected: s.capWarning.detected.join(', '),
+        })}`
+      : ''
     const actions = isCurrent ? undefined : [{
       id: 'change-pytorch', label: t('standalone.pytorchChangeNow'), style: 'primary', enabled: true,
       showProgress: true, cancellable: true,
@@ -174,7 +188,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       data: { stackId: s.stackId },
       confirm: {
         title: t('standalone.pytorchConfirmTitle'),
-        message: confirmMessage + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
+        message: confirmMessage + capNotice + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
       },
     }]
     options.push({

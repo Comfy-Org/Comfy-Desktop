@@ -895,6 +895,8 @@
     "pytorchCatalogError": "无法检查 PyTorch 可用性：{message}",
     "pytorchStackUnavailable": "此 PyTorch 版本已不适用于该安装。",
     "pytorchAlreadyInstalled": "PyTorch {version} 已安装。",
+    "pytorchCapConfirmWarning": "**警告：**此构建不包含适用于检测到的 GPU（计算能力 {detected}；此构建覆盖 {required}）的内核。更换后 PyTorch 可能无法在 GPU 上运行。仅当您确定自己的 GPU 受支持时（例如检测有误或将使用另一块 GPU）才继续。",
+    "pytorchCapWarning": "可能不支持本机 GPU — 需要计算能力 {required}，检测到 {detected}",
     "pytorchDownloadFailed": "PyTorch 下载失败：{message}",
     "pytorchIndexNoteCu126": "CUDA 12.6 — 从 PyTorch 官方源安装；支持较旧的 GPU（GTX 900/10 系列及更新型号）",
     "pytorchIndexNoteCu128": "CUDA 12.8 — 从 PyTorch 官方源安装；适用于 CUDA 12.x 驱动上的 RTX 20 系列及更新型号",

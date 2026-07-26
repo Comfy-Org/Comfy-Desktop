@@ -66,7 +66,7 @@ dropped; other entries survive):
 | `platforms` | yes | Non-empty subset of `win32`, `linux`, `darwin`. |
 | `packages` | yes | `torch` required; `torchvision`/`torchaudio` optional. Exact versions **with local tags** (`2.11.0+cu126`) so pip installs those exact builds. Versions are `[A-Za-z0-9._+]`. The torch local tag must equal `indexTag` (`mps` tuples must be untagged), and companion packages must carry the same tag or none — pip installs from the index the local tag derives, so a mismatched entry is dropped. Each `(indexTag, torch version)` pair must be unique: it IS the stack's identity (`stackId`), and all colliding entries are dropped. |
 | `date` | yes | ISO date (`YYYY-MM-DD…`), used for display ordering. |
-| `computeCap` | no | Inclusive NVIDIA compute-capability range the wheels ship kernels for. Entries a detected GPU can't run are hidden. |
+| `computeCap` | no | Inclusive NVIDIA compute-capability range the wheels ship kernels for. Informational only: an entry no detected GPU can run stays offered but carries a warning in the picker and the change-confirmation dialog (detection can be wrong or partial - multi-GPU boxes, eGPUs). |
 | `pythonAbis` | no | Python `major.minor` list the index publishes wheels for (e.g. `["3.12"]` for AMD's universal ROCm package). Omit when any Python resolves; an empty list is rejected. |
 | `noteKey` | no | i18n key suffix under `standalone.` for the picker description. Used when this app version has the translation. |
 | `note` | no | Plain-text (English) picker description, max 300 chars; the fallback when `noteKey` is absent or unknown to the running app version. |
