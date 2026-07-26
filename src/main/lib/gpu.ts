@@ -202,7 +202,7 @@ async function detectMacGPU(): Promise<GpuId | null> {
 const NVIDIA_DRIVER_MIN_VERSION = "580"
 
 /** Compare dotted version strings numerically: negative if a<b, positive if a>b, 0 if equal. */
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const pa = a.split(".").map(Number)
   const pb = b.split(".").map(Number)
   const len = Math.max(pa.length, pb.length)
@@ -253,12 +253,31 @@ function getNvidiaDriverVersionFallback(): Promise<string | undefined> {
   })
 }
 
+/** Dotted numeric driver version (`580.88`). nvidia-smi output that is not
+ *  shaped like this (warnings, headers) must not reach compareVersions,
+ *  where its NaN components would read as an arbitrary comparison result. */
+const NVIDIA_DRIVER_VERSION_SHAPE = /^\d+(\.\d+)*$/
+
+/** Accept a detected driver string only when it is a dotted numeric
+ *  version; anything else nvidia-smi printed reads as "not detected". */
+export function sanitizeNvidiaDriverVersion(version: string | undefined): string | undefined {
+  return version && NVIDIA_DRIVER_VERSION_SHAPE.test(version) ? version : undefined
+}
+
+/** Detect the installed NVIDIA driver version via nvidia-smi (structured
+ *  query first, plain-output parse as fallback); undefined when there is no
+ *  nvidia-smi / no NVIDIA GPU, or when the output is not a version. */
+export async function detectNvidiaDriverVersion(): Promise<string | undefined> {
+  return sanitizeNvidiaDriverVersion(
+    (await getNvidiaDriverVersionQuery()) ?? (await getNvidiaDriverVersionFallback())
+  )
+}
+
 /** Check whether the installed NVIDIA driver meets the minimum version; null if none detected. */
 async function checkNvidiaDriver(): Promise<NvidiaDriverCheck | null> {
   if (process.platform === "darwin") return null
 
-  const driverVersion =
-    (await getNvidiaDriverVersionQuery()) ?? (await getNvidiaDriverVersionFallback())
+  const driverVersion = await detectNvidiaDriverVersion()
   if (!driverVersion) return null
 
   return {

@@ -18,7 +18,9 @@ import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import {
   indexStacksForVariant, refreshComputeCaps, refreshRemoteIndexStacks, ensureRemoteIndexStacks,
+  torchSeriesInfo, nvidiaDriverMismatch, refreshNvidiaDriver,
   _setComputeCapsForTest, _setComputeCapProbeForTest, _setRemoteDefsForTest, _resetRemoteForTest,
+  _setNvidiaDriverForTest, _setNvidiaDriverProbeForTest,
 } from './torchIndexManifest'
 
 const realPlatform = process.platform
@@ -33,6 +35,8 @@ afterEach(() => {
   setPlatform(realPlatform)
   _setComputeCapsForTest(undefined)
   _setComputeCapProbeForTest(undefined)
+  _setNvidiaDriverForTest(undefined)
+  _setNvidiaDriverProbeForTest(undefined)
   _setRemoteDefsForTest(null)
   vi.mocked(fetchJSON).mockReset()
   fs.rmSync(dataDir(), { recursive: true, force: true })
@@ -468,5 +472,134 @@ describe('remote manifest', () => {
     await ensureRemoteIndexStacks() // no-op: an attempt already settled
     expect(vi.mocked(fetchJSON)).toHaveBeenCalledTimes(1)
     expect(nvidiaTags()).toEqual(expect.arrayContaining(['cu126', 'cu128']))
+  })
+})
+
+describe('series metadata', () => {
+  const cu130Entry = {
+    indexTag: 'cu130',
+    accel: 'nvidia',
+    platforms: ['win32', 'linux'],
+    packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu130', torchaudio: '2.11.0+cu130' },
+    date: '2026-04-01',
+  }
+  const doc = (series?: unknown): Record<string, unknown> => ({
+    schemaVersion: 1,
+    stacks: [cu130Entry],
+    ...(series !== undefined ? { series } : {}),
+  })
+
+  beforeEach(() => {
+    setPlatform('win32')
+    _setComputeCapsForTest(null)
+    _resetRemoteForTest()
+  })
+
+  it('serves the in-app defaults before any remote manifest', () => {
+    const info = torchSeriesInfo('cu130')
+    expect(info?.noteKey).toBe('pytorchSeriesNoteCu130')
+    expect(info?.minDriver).toEqual({ win32: '580.88', linux: '580.65.06' })
+    expect(torchSeriesInfo('cu999')).toBeNull()
+  })
+
+  it('a remote series entry replaces the whole built-in entry for its tag only', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(doc({
+      cu130: { note: 'Remote note', minDriver: { win32: '590.00' } },
+    }))
+    await refreshRemoteIndexStacks()
+    // The remote entry wins wholesale: no merging of built-in noteKey/minDriver.
+    expect(torchSeriesInfo('cu130')).toEqual({ note: 'Remote note', minDriver: { win32: '590.00' } })
+    // Tags the remote map does not mention keep their built-in metadata.
+    expect(torchSeriesInfo('cu126')?.noteKey).toBe('pytorchSeriesNoteCu126')
+  })
+
+  it('a manifest without a series map keeps the built-in metadata', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(doc())
+    await refreshRemoteIndexStacks()
+    expect(torchSeriesInfo('cu130')?.noteKey).toBe('pytorchSeriesNoteCu130')
+  })
+
+  it('drops malformed series entries one by one, falling back per tag', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(doc({
+      cu130: { note: 'ok' },
+      cu128: { noteKey: 'bad key!' }, // unsafe i18n key
+      cu126: { minDriver: { win32: 'not-a-version' } }, // non-numeric driver
+      cu132: { minDriver: { android: '1.0' } }, // unknown platform
+      xpu: { minDriver: {} }, // empty map declares nothing
+    }))
+    await refreshRemoteIndexStacks()
+    expect(torchSeriesInfo('cu130')).toEqual({ note: 'ok' })
+    // Each rejected entry falls back to the built-in default for its tag.
+    expect(torchSeriesInfo('cu128')?.noteKey).toBe('pytorchSeriesNoteCu128')
+    expect(torchSeriesInfo('cu126')?.minDriver).toEqual({ win32: '527.41', linux: '525.60.13' })
+    expect(torchSeriesInfo('cu132')?.noteKey).toBe('pytorchSeriesNoteCu132')
+    expect(torchSeriesInfo('xpu')?.noteKey).toBe('pytorchSeriesNoteXpu')
+  })
+
+  it('series metadata survives the disk cache round-trip', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(doc({ cu130: { note: 'Remote note' } }))
+    await refreshRemoteIndexStacks()
+    _resetRemoteForTest() // cold start: memory cleared, disk cache remains
+    expect(torchSeriesInfo('cu130')).toEqual({ note: 'Remote note' })
+  })
+})
+
+describe('nvidiaDriverMismatch', () => {
+  const info = { minDriver: { win32: '580.88', linux: '580.65.06' } }
+
+  beforeEach(() => {
+    setPlatform('win32')
+  })
+
+  it('warns only when the detected driver is older than the platform minimum', () => {
+    _setNvidiaDriverForTest('577.00')
+    expect(nvidiaDriverMismatch(info)).toEqual({ required: '580.88', detected: '577.00' })
+    _setNvidiaDriverForTest('580.88')
+    expect(nvidiaDriverMismatch(info)).toBeNull()
+    // Numeric comparison, not lexicographic: .100 > .88.
+    _setNvidiaDriverForTest('580.100')
+    expect(nvidiaDriverMismatch(info)).toBeNull()
+  })
+
+  it('applies the linux minimum on linux', () => {
+    setPlatform('linux')
+    _setNvidiaDriverForTest('580.60.02')
+    expect(nvidiaDriverMismatch(info)).toEqual({ required: '580.65.06', detected: '580.60.02' })
+  })
+
+  it('stays silent without a detected driver or a declared minimum', () => {
+    _setNvidiaDriverForTest(undefined) // never probed
+    expect(nvidiaDriverMismatch(info)).toBeNull()
+    _setNvidiaDriverForTest(null) // probe failed / no NVIDIA GPU
+    expect(nvidiaDriverMismatch(info)).toBeNull()
+    _setNvidiaDriverForTest('100.00')
+    expect(nvidiaDriverMismatch({})).toBeNull()
+    expect(nvidiaDriverMismatch(null)).toBeNull()
+    setPlatform('darwin') // no darwin minimum declared
+    expect(nvidiaDriverMismatch(info)).toBeNull()
+  })
+
+  it('refreshNvidiaDriver caches the probe result for later synchronous reads', async () => {
+    _setNvidiaDriverForTest(undefined)
+    _setNvidiaDriverProbeForTest(async () => '576.02')
+    expect(nvidiaDriverMismatch(info)).toBeNull() // not probed yet
+    await refreshNvidiaDriver()
+    expect(nvidiaDriverMismatch(info)).toEqual({ required: '580.88', detected: '576.02' })
+  })
+
+  it('a failed probe leaves the warnings off', async () => {
+    _setNvidiaDriverProbeForTest(async () => null)
+    await refreshNvidiaDriver()
+    expect(nvidiaDriverMismatch(info)).toBeNull()
+  })
+
+  it('a probe that throws resolves the refresh and clears the stale driver', async () => {
+    // refreshTorchStackCatalog awaits this before the manifest and release
+    // fetches - a rejection would take the whole catalog refresh down. And
+    // the previous detection must not keep warning about a replaced driver.
+    _setNvidiaDriverForTest('576.02')
+    _setNvidiaDriverProbeForTest(async () => { throw new Error('nvidia-smi exploded') })
+    await expect(refreshNvidiaDriver()).resolves.toBeUndefined()
+    expect(nvidiaDriverMismatch(info)).toBeNull()
   })
 })

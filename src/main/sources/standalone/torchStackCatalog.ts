@@ -23,7 +23,7 @@ import {
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
 import {
-  indexStacksForVariant, refreshComputeCaps,
+  indexStacksForVariant, refreshComputeCaps, refreshNvidiaDriver,
   refreshRemoteIndexStacks, ensureRemoteIndexStacks,
 } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
@@ -233,10 +233,11 @@ function withoutCapWarning(entry: TorchStackEntry): TorchStackEntry {
 export async function refreshTorchStackCatalog(installation: InstallationRecord): Promise<TorchStackEntry[]> {
   const variant = installVariant(installation)
   if (!variant) return []
-  // GPU probe and remote-manifest refresh first (both best-effort): the R2
-  // releases fetch below may throw, and the index entries' compute-cap
-  // warnings should still have fresh capabilities and manifest entries.
+  // GPU probes and remote-manifest refresh first (all best-effort): the R2
+  // releases fetch below may throw, and the index entries' compute-cap and
+  // driver warnings should still have fresh detection and manifest entries.
   await refreshComputeCaps()
+  await refreshNvidiaDriver()
   await refreshRemoteIndexStacks()
   const releases = await fetchR2VendorReleases(variant)
   const stacks = filterCompatibleStacks(variant, undefined, releases, { requirePythonAbi: false })

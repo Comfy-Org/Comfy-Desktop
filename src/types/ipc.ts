@@ -116,6 +116,9 @@ export interface DetailItem {
 export interface DetailOptionGroup {
   id: string
   label: string
+  /** Shown under the label in the group dropdown (e.g. what a CUDA series
+   *  is for, or a too-old-driver warning). */
+  description?: string
 }
 
 export interface DetailFieldOption {

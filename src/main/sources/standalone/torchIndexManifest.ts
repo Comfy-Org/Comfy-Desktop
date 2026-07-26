@@ -34,6 +34,7 @@ import path from 'path'
 import { dataDir } from '../../lib/paths'
 import { writeFileSafe } from '../../lib/safe-file'
 import { fetchJSON } from '../../lib/fetch'
+import { compareVersions, detectNvidiaDriverVersion } from '../../lib/gpu'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
 import { stripPlatform } from './envPaths'
 import { isDevVersion, makeIndexStackId, publicVersion, torchIndexUrlFor, torchLocalTag } from './torchStackTypes'
@@ -73,6 +74,36 @@ export interface TorchIndexStackDef {
   /** Plain-text picker description fallback (not localized); used when
    *  `noteKey` is absent or unknown to this app version. */
   note?: string
+}
+
+/** Display metadata for one backend series (index tag), shown on the series
+ *  dropdown of the grouped PyTorch picker. Sourced from the manifest's
+ *  optional top-level `series` map, falling back to the in-app defaults. */
+export interface TorchSeriesInfo {
+  /** i18n key suffix under `standalone.` for the series description;
+   *  display falls back to `note` when this app version lacks the key. */
+  noteKey?: string
+  /** Plain-text series description fallback (not localized). */
+  note?: string
+  /** Minimum NVIDIA driver version the series' wheels run on, per platform
+   *  (NVIDIA's per-CUDA-major minimum). Informational only: a detected
+   *  older driver adds a warning, never hides or blocks the series. */
+  minDriver?: Partial<Record<'win32' | 'linux' | 'darwin', string>>
+}
+
+/** In-app series defaults, used until a remote manifest supplies a `series`
+ *  map (a remote entry replaces the whole built-in entry for its tag).
+ *  Driver minimums follow NVIDIA's minor-version-compatibility rule: any
+ *  CUDA 12.x wheel runs on the CUDA 12.0 minimum driver, any CUDA 13.x
+ *  wheel on the CUDA 13.0 minimum. */
+const INDEX_SERIES: Readonly<Record<string, TorchSeriesInfo>> = {
+  cu126: { noteKey: 'pytorchSeriesNoteCu126', minDriver: { win32: '527.41', linux: '525.60.13' } },
+  cu128: { noteKey: 'pytorchSeriesNoteCu128', minDriver: { win32: '527.41', linux: '525.60.13' } },
+  cu130: { noteKey: 'pytorchSeriesNoteCu130', minDriver: { win32: '580.88', linux: '580.65.06' } },
+  cu132: { noteKey: 'pytorchSeriesNoteCu132', minDriver: { win32: '580.88', linux: '580.65.06' } },
+  'rocm7.1': { noteKey: 'pytorchSeriesNoteRocm71' },
+  xpu: { noteKey: 'pytorchSeriesNoteXpu' },
+  cpu: { noteKey: 'pytorchSeriesNoteCpu' },
 }
 
 /**
@@ -125,6 +156,49 @@ const NOTE_MAX_LENGTH = 300
 function isSafeNote(v: unknown): v is string {
   // eslint-disable-next-line no-control-regex
   return typeof v === 'string' && v.length <= NOTE_MAX_LENGTH && !/[\x00-\x1f\x7f]/.test(v)
+}
+
+/** Dotted numeric driver version (`580.88`, `525.60.13`) - compared
+ *  numerically against the detected NVIDIA driver. */
+const DRIVER_VERSION = /^\d+(\.\d+)*$/
+
+/** Validate one remote series entry, default-deny like the stack entries:
+ *  the text reaches the picker UI and the noteKey reaches i18n lookups. */
+function parseRemoteSeriesEntry(v: unknown): TorchSeriesInfo | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const r = v as Record<string, unknown>
+  if (r.noteKey !== undefined && (typeof r.noteKey !== 'string' || !SAFE_SEGMENT.test(r.noteKey))) return null
+  if (r.note !== undefined && !isSafeNote(r.note)) return null
+  let minDriver: TorchSeriesInfo['minDriver']
+  if (r.minDriver !== undefined) {
+    if (!r.minDriver || typeof r.minDriver !== 'object' || Array.isArray(r.minDriver)) return null
+    minDriver = {}
+    for (const [plat, version] of Object.entries(r.minDriver)) {
+      if (!PLATFORMS.includes(plat as NodeJS.Platform)) return null
+      if (typeof version !== 'string' || !DRIVER_VERSION.test(version)) return null
+      minDriver[plat as 'win32' | 'linux' | 'darwin'] = version
+    }
+    if (Object.keys(minDriver).length === 0) return null
+  }
+  return {
+    ...(r.noteKey ? { noteKey: r.noteKey as string } : {}),
+    ...(r.note ? { note: r.note as string } : {}),
+    ...(minDriver ? { minDriver } : {}),
+  }
+}
+
+/** Parse the manifest's optional top-level `series` map. Invalid entries
+ *  are dropped one by one; a missing or malformed map is just empty (the
+ *  in-app defaults keep serving those tags). */
+function parseRemoteSeries(v: unknown): Record<string, TorchSeriesInfo> {
+  const out: Record<string, TorchSeriesInfo> = {}
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out
+  for (const [key, entry] of Object.entries(v)) {
+    if (!SAFE_SEGMENT.test(key)) continue
+    const parsed = parseRemoteSeriesEntry(entry)
+    if (parsed) out[key] = parsed
+  }
+  return out
 }
 
 /** Validate one remote entry, default-deny. Remote input reaches pip install
@@ -259,7 +333,7 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
  *  `stacks: []`. Entries whose stackId collides are all dropped — the
  *  renderer round-trips only the id, so duplicates could display one tuple
  *  and install another. */
-function parseRemoteManifest(data: unknown): TorchIndexStackDef[] | null {
+function parseRemoteManifest(data: unknown): { defs: TorchIndexStackDef[]; series: Record<string, TorchSeriesInfo> } | null {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   const doc = data as Record<string, unknown>
   if (doc.schemaVersion !== 1) return null
@@ -274,20 +348,25 @@ function parseRemoteManifest(data: unknown): TorchIndexStackDef[] | null {
   }
   const unique = defs.filter((d) => ids.get(makeIndexStackId(d.indexTag, d.packages.torch)) === 1)
   if (doc.stacks.length > 0 && unique.length === 0) return null
-  return unique
+  return { defs: unique, series: parseRemoteSeries(doc.series) }
 }
 
 /** Validated remote defs; null until a remote manifest has ever been loaded
  *  (then the in-app list is authoritative). An empty array is a valid remote
  *  state: it means "offer no index stacks". */
 let _remoteDefs: TorchIndexStackDef[] | null = null
+/** Remote `series` map; null until a remote manifest has ever been loaded.
+ *  Looked up per tag with the in-app defaults as fallback, so an older
+ *  manifest without the map keeps the built-in notes and driver minimums. */
+let _remoteSeries: Record<string, TorchSeriesInfo> | null = null
 let _remoteDiskLoaded = false
 let _remoteAttempted = false
 let _remoteRefresh: Promise<void> | null = null
 
 /** Test-only: reset/override remote manifest state. */
-export function _setRemoteDefsForTest(defs: TorchIndexStackDef[] | null): void {
+export function _setRemoteDefsForTest(defs: TorchIndexStackDef[] | null, series?: Record<string, TorchSeriesInfo> | null): void {
   _remoteDefs = defs
+  _remoteSeries = series ?? null
   _remoteDiskLoaded = true
   _remoteAttempted = true
 }
@@ -295,6 +374,7 @@ export function _setRemoteDefsForTest(defs: TorchIndexStackDef[] | null): void {
 /** Test-only: reset remote manifest state to cold start. */
 export function _resetRemoteForTest(): void {
   _remoteDefs = null
+  _remoteSeries = null
   _remoteDiskLoaded = false
   _remoteAttempted = false
   _remoteRefresh = null
@@ -308,7 +388,11 @@ function activeDefs(): readonly TorchIndexStackDef[] {
     _remoteDiskLoaded = true
     try {
       const raw = JSON.parse(fs.readFileSync(REMOTE_CACHE_FILE(), 'utf-8'))
-      _remoteDefs = parseRemoteManifest(raw)
+      const parsed = parseRemoteManifest(raw)
+      if (parsed !== null) {
+        _remoteDefs = parsed.defs
+        _remoteSeries = parsed.series
+      }
     } catch {
       // no cache / unreadable — keep built-ins
     }
@@ -319,12 +403,13 @@ function activeDefs(): readonly TorchIndexStackDef[] {
 async function fetchRemoteIndexStacks(): Promise<void> {
   try {
     const data = await fetchJSON(REMOTE_MANIFEST_URL, { refresh: true })
-    const defs = parseRemoteManifest(data)
-    if (defs !== null) {
-      _remoteDefs = defs
+    const parsed = parseRemoteManifest(data)
+    if (parsed !== null) {
+      _remoteDefs = parsed.defs
+      _remoteSeries = parsed.series
       _remoteDiskLoaded = true
       try {
-        writeFileSafe(REMOTE_CACHE_FILE(), JSON.stringify({ schemaVersion: 1, stacks: defs }, null, 2))
+        writeFileSafe(REMOTE_CACHE_FILE(), JSON.stringify({ schemaVersion: 1, series: parsed.series, stacks: parsed.defs }, null, 2))
       } catch {
         // cache persistence is best-effort
       }
@@ -410,6 +495,67 @@ let _probeFn: () => Promise<number[] | null> = probeComputeCaps
  */
 export async function refreshComputeCaps(): Promise<void> {
   _computeCaps = await _probeFn()
+}
+
+/** Detected NVIDIA driver version. `undefined` = not yet probed, `null` =
+ *  probe failed (no nvidia-smi / no NVIDIA GPU). Like compute caps, the
+ *  driver version never hides an entry - it only feeds the informational
+ *  too-old-driver warning. */
+let _nvidiaDriver: string | null | undefined
+
+/** Test-only: reset/override the cached driver probe result. */
+export function _setNvidiaDriverForTest(version: string | null | undefined): void {
+  _nvidiaDriver = version
+}
+
+let _driverProbeFn: () => Promise<string | null> = async () => (await detectNvidiaDriverVersion()) ?? null
+
+/** Test-only: replace the nvidia-smi driver probe. Pass undefined to
+ *  restore the real probe. */
+export function _setNvidiaDriverProbeForTest(probe: (() => Promise<string | null>) | undefined): void {
+  _driverProbeFn = probe ?? (async () => (await detectNvidiaDriverVersion()) ?? null)
+}
+
+/**
+ * Probe the NVIDIA driver version via nvidia-smi, caching the result for the
+ * synchronous catalog reads. Best-effort: any failure just leaves the
+ * driver warnings off. Called from `refreshTorchStackCatalog` alongside
+ * the compute-cap probe.
+ */
+export async function refreshNvidiaDriver(): Promise<void> {
+  try {
+    _nvidiaDriver = await _driverProbeFn()
+  } catch {
+    // A failed probe must neither abort the catalog refresh that awaits
+    // this nor leave a stale version warning about a replaced driver.
+    _nvidiaDriver = null
+  }
+}
+
+/**
+ * Display metadata for a backend series id (`cu126`, `rocm7.1`, ...):
+ * the remote manifest's `series` entry when it has one, else the in-app
+ * default. Nightly groups look up their base tag (`nightly-cu132` ->
+ * `cu132`) on the caller's side.
+ */
+export function torchSeriesInfo(seriesId: string): TorchSeriesInfo | null {
+  activeDefs() // ensure the disk cache (and its series map) is loaded
+  return _remoteSeries?.[seriesId] ?? INDEX_SERIES[seriesId] ?? null
+}
+
+/**
+ * The series' minimum NVIDIA driver for this platform when the detected
+ * driver is older - the basis of the picker's informational warning.
+ * Unknown driver (never probed, probe failed) or no declared minimum
+ * produces no warning; like compute caps, a mismatch never hides or blocks
+ * a series - detection can be wrong (multi-GPU, probe before a driver
+ * install), so the user keeps the full catalog and the final word.
+ */
+export function nvidiaDriverMismatch(info: TorchSeriesInfo | null): { required: string; detected: string } | null {
+  const required = info?.minDriver?.[process.platform as 'win32' | 'linux' | 'darwin']
+  if (!required || !_nvidiaDriver) return null
+  if (compareVersions(_nvidiaDriver, required) >= 0) return null
+  return { required, detected: _nvidiaDriver }
 }
 
 /** The entry's kernel range when NO detected GPU falls inside it - the

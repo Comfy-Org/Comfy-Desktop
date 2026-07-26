@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import type { InstallationRecord } from '../../installations'
 import type * as I18nModule from '../../lib/i18n'
@@ -34,19 +34,24 @@ vi.mock('./torchStackCatalog', () => ({
 }))
 // No locale is loaded in tests, so the real t() returns the bare key — the
 // same signal production uses for "unknown key". Translate exactly one note
-// key so the known-noteKey path is exercisable too.
+// key and one series-note key so the known-noteKey paths are exercisable too.
 vi.mock('../../lib/i18n', async (importOriginal) => {
   const mod = await importOriginal<typeof I18nModule>()
+  const known: Record<string, string> = {
+    'standalone.pytorchIndexNoteCu128': 'Requires CUDA 12.8 drivers',
+    'standalone.pytorchSeriesNoteCu130': 'Current stable CUDA line',
+  }
   return {
     ...mod,
     t: (key: string, params?: Record<string, string | number>) =>
-      key === 'standalone.pytorchIndexNoteCu128' ? 'Requires CUDA 12.8 drivers' : mod.t(key, params),
+      known[key] ?? mod.t(key, params),
   }
 })
 
 import * as releaseCache from '../../lib/release-cache'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { TorchStackEntry } from './torchStackCatalog'
+import { _setRemoteDefsForTest, _setNvidiaDriverForTest } from './torchIndexManifest'
 import { getDetailSections, getEffectiveChannel } from './updateSections'
 
 interface UpdateAction {
@@ -255,7 +260,7 @@ describe('updateSections — PyTorch picker', () => {
   interface PytorchOption {
     value: string
     description?: string
-    groupPath?: Array<{ id: string; label: string }>
+    groupPath?: Array<{ id: string; label: string; description?: string }>
     data?: { actions?: UpdateAction[] }
   }
   interface PytorchField {
@@ -407,7 +412,12 @@ describe('updateSections — PyTorch picker', () => {
       expect(field.groupLabels).toEqual(['standalone.pytorchSeriesLabel'])
       const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
       const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
-      expect(cu130!.groupPath).toEqual([{ id: 'cu130', label: 'CUDA 13.0 (cu130)' }])
+      // cu130's series noteKey is "translated" by the i18n mock, so its group
+      // carries a description; cu128's key is unknown here, so its group has
+      // none (a bare i18n key must never leak into the dropdown).
+      expect(cu130!.groupPath).toEqual([
+        { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' },
+      ])
       expect(cu128!.groupPath).toEqual([{ id: 'cu128', label: 'CUDA 12.8 (cu128)' }])
     })
 
@@ -423,7 +433,9 @@ describe('updateSections — PyTorch picker', () => {
       // must be a deliberate step past a labeled fork in the first dropdown.
       expect(nightly!.groupPath?.[0]?.id).toBe('nightly-cu132')
       expect(nightly!.groupPath?.[0]?.label).toContain('pytorchSeriesNightly')
-      expect(stable!.groupPath).toEqual([{ id: 'cu130', label: 'CUDA 13.0 (cu130)' }])
+      expect(stable!.groupPath).toEqual([
+        { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' },
+      ])
       expect(nightly!.description).toContain('standalone.pytorchNightlyNote')
       expect(stable!.description).not.toContain('standalone.pytorchNightlyNote')
     })
@@ -518,6 +530,97 @@ describe('updateSections — PyTorch picker', () => {
         if (!action) continue // synthetic current entry has no action
         expect(action.data?.stackId).toBe(option.value)
       }
+    })
+
+    describe('series descriptions and NVIDIA driver warnings', () => {
+      // All platforms get the same minimum so assertions hold wherever the
+      // test runner happens to be.
+      const minDriver = { win32: '580.88', linux: '580.88', darwin: '580.88' }
+
+      afterEach(() => {
+        _setRemoteDefsForTest(null) // back to built-in stacks and series
+        _setNvidiaDriverForTest(undefined)
+      })
+
+      function groupedField() {
+        vi.mocked(getCachedTorchStacks).mockReturnValue([
+          cudaEntry('cu130', '2.10.0'),
+          cudaEntry('cu128', '2.11.0'),
+        ])
+        return getPytorchField(install())!
+      }
+
+      it('falls back to remote series plain text when its noteKey is unknown here', () => {
+        _setRemoteDefsForTest(null, {
+          cu128: { noteKey: 'pytorchSeriesNoteFromNewerManifest', note: 'Remote series explanation' },
+        })
+        const field = groupedField()
+        const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+        expect(cu128!.groupPath?.[0]?.description).toBe('Remote series explanation')
+        // Series the remote map does not mention keep the built-in note.
+        const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
+        expect(cu130!.groupPath?.[0]?.description).toBe('Current stable CUDA line')
+      })
+
+      it('a nightly group inherits its base series description', () => {
+        _setRemoteDefsForTest(null, { cu132: { note: 'Newest CUDA line' } })
+        vi.mocked(getCachedTorchStacks).mockReturnValue([
+          cudaEntry('cu132', '2.13.0.dev20260720'),
+          cudaEntry('cu130', '2.10.0'),
+        ])
+        const field = getPytorchField(install())!
+        const nightly = field.options.find((o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720')
+        expect(nightly!.groupPath?.[0]?.id).toBe('nightly-cu132')
+        expect(nightly!.groupPath?.[0]?.description).toBe('Newest CUDA line')
+      })
+
+      it('a too-old driver warns on the series, the option, and the confirm - still selectable', () => {
+        _setRemoteDefsForTest(null, { cu130: { minDriver } })
+        _setNvidiaDriverForTest('576.02')
+        const field = groupedField()
+        const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
+        expect(cu130!.groupPath?.[0]?.description).toContain('standalone.pytorchDriverWarning')
+        expect(cu130!.description).toContain('standalone.pytorchDriverWarning')
+        const action = cu130!.data?.actions?.find((a) => a.id === 'change-pytorch')
+        expect(action).toBeDefined() // informational: the change stays offered
+        expect(action!.confirm?.message).toContain('standalone.pytorchDriverConfirmWarning')
+        // cu128's built-in minimum (527.41 / 525.60.13) is met by 576.02.
+        const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+        expect(cu128!.description ?? '').not.toContain('standalone.pytorchDriverWarning')
+      })
+
+      it('no warning when the detected driver meets the minimum or is unknown', () => {
+        _setRemoteDefsForTest(null, { cu130: { minDriver } })
+        for (const detected of ['580.88', '581.00', null] as const) {
+          _setNvidiaDriverForTest(detected)
+          const field = groupedField()
+          const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
+          expect(cu130!.groupPath?.[0]?.description ?? '').not.toContain('standalone.pytorchDriverWarning')
+          expect(cu130!.description ?? '').not.toContain('standalone.pytorchDriverWarning')
+          const action = cu130!.data?.actions?.find((a) => a.id === 'change-pytorch')
+          expect(action!.confirm?.message).not.toContain('standalone.pytorchDriverConfirmWarning')
+        }
+      })
+
+      it('the current stack skips the per-option warning but its series still warns', () => {
+        // Nothing changes by staying on the current stack, so its own row
+        // stays clean; the series dropdown still flags the driver gap.
+        const readdir = vi.spyOn(fs, 'readdirSync').mockReturnValue([
+          'torch-2.10.0+cu130.dist-info', 'torchvision-0.26.0+cu130.dist-info',
+          'torchaudio-2.10.0+cu130.dist-info',
+        ] as unknown as ReturnType<typeof fs.readdirSync>)
+        try {
+          _setRemoteDefsForTest(null, { cu130: { minDriver } })
+          _setNvidiaDriverForTest('576.02')
+          const field = groupedField()
+          const current = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
+          expect(current!.data?.actions).toBeUndefined() // it IS the current stack
+          expect(current!.description ?? '').not.toContain('standalone.pytorchDriverWarning')
+          expect(current!.groupPath?.[0]?.description).toContain('standalone.pytorchDriverWarning')
+        } finally {
+          readdir.mockRestore()
+        }
+      })
     })
 
     it('labels ROCm series by their runtime version', () => {

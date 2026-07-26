@@ -376,19 +376,19 @@ const cascadeLevels = computed<CascadeLevel[]>(() => {
   const levels: CascadeLevel[] = []
   for (let level = 0; level < groupDepth.value; level++) {
     const prefix = path.slice(0, level)
-    const groups = new Map<string, string>()
+    const groups = new Map<string, { label: string; description?: string }>()
     for (const opt of opts) {
       const gp = opt.groupPath ?? []
       const entry = gp[level]
       if (!entry) continue
       if (prefix.every((id, i) => gp[i]?.id === id) && !groups.has(entry.id)) {
-        groups.set(entry.id, entry.label)
+        groups.set(entry.id, { label: entry.label, description: entry.description })
       }
     }
     levels.push({
       label: props.field.groupLabels?.[level],
       selected: path[level] ?? '',
-      options: [...groups].map(([value, label]) => ({ value, label }))
+      options: [...groups].map(([value, g]) => ({ value, label: g.label, description: g.description }))
     })
   }
   return levels

@@ -121,7 +121,7 @@ describe('ChannelPicker — headline product + version', () => {
 })
 
 describe('ChannelPicker — cascading group dropdowns', () => {
-  const cu130 = { id: 'cu130', label: 'CUDA 13.0 (cu130)' }
+  const cu130 = { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' }
   const cu128 = { id: 'cu128', label: 'CUDA 12.8 (cu128)' }
 
   function groupedField(value = 's-cu130-2.9'): DetailField {
@@ -190,6 +190,18 @@ describe('ChannelPicker — cascading group dropdowns', () => {
       's-cu130-2.10',
       's-cu130-2.9'
     ])
+  })
+
+  it('passes a group description through to the group dropdown, omitting absent ones', () => {
+    const wrapper = mountPicker(groupedField())
+    const groupOptions = selects(wrapper)[0].props('options') as Array<{
+      value: string
+      description?: string
+    }>
+    expect(groupOptions.find((o) => o.value === 'cu130')?.description).toBe(
+      'Current stable CUDA line'
+    )
+    expect(groupOptions.find((o) => o.value === 'cu128')?.description).toBeUndefined()
   })
 
   it('selecting another group jumps to its first (newest) concrete option', async () => {

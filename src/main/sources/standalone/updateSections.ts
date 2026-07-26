@@ -12,6 +12,7 @@ import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchS
 import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
 import { torchTupleMatches, stackAppliesViaPip, torchLocalTag, isDevVersion } from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
+import { torchSeriesInfo, nvidiaDriverMismatch } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
 
@@ -63,15 +64,39 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
  *  tag (`cu130` -> CUDA 13.0, `rocm7.2.1` -> ROCm 7.2.1). Untagged builds
  *  (PyPI / mac MPS) share one "Default" series. Presentation only - actions
  *  still carry the opaque stackId. */
-function torchSeriesGroup(torch: string | null | undefined): { id: string; label: string } {
+function torchSeriesGroup(torch: string | null | undefined): { id: string; label: string; description?: string } {
   const base = torchSeriesBase(torch)
+  // The series description comes from the base tag either way: a nightly
+  // group is the same backend line, so its driver minimum and note apply.
+  const description = torchSeriesDescription(base.id)
   // Nightly (dev) builds form their own series per tag: picking one must be
   // a deliberate step past a clearly-labeled fork, never something the
   // cascade lands on while browsing stable builds of the same tag.
   if (torch && isDevVersion(torch)) {
-    return { id: `nightly-${base.id}`, label: t('standalone.pytorchSeriesNightly', { series: base.label }) }
+    return {
+      id: `nightly-${base.id}`,
+      label: t('standalone.pytorchSeriesNightly', { series: base.label }),
+      ...(description ? { description } : {}),
+    }
   }
-  return base
+  return { ...base, ...(description ? { description } : {}) }
+}
+
+/** The series dropdown's description: the manifest/in-app series note
+ *  (localized when this app version has the key), plus an informational
+ *  warning when the detected NVIDIA driver is older than the series'
+ *  declared minimum. Undefined when there is nothing to say. */
+function torchSeriesDescription(seriesId: string): string | undefined {
+  const info = torchSeriesInfo(seriesId)
+  if (!info) return undefined
+  const parts: string[] = []
+  const noteKey = info.noteKey ? `standalone.${info.noteKey}` : null
+  const localizedNote = noteKey ? t(noteKey) : null
+  if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
+  else if (info.note) parts.push(info.note)
+  const mismatch = nvidiaDriverMismatch(info)
+  if (mismatch) parts.push(t('standalone.pytorchDriverWarning', mismatch))
+  return parts.length > 0 ? parts.join('  ·  ') : undefined
 }
 
 function torchSeriesBase(torch: string | null | undefined): { id: string; label: string } {
@@ -164,6 +189,11 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       required: `${s.capWarning.min}-${s.capWarning.max}`,
       detected: s.capWarning.detected.join(', '),
     }))
+    // Same for the series' minimum NVIDIA driver: warn, never hide. Shown
+    // per option too (not just on the series dropdown) so flat single-series
+    // pickers still surface it.
+    const driverMismatch = nvidiaDriverMismatch(torchSeriesInfo(torchSeriesBase(s.packages.torch).id))
+    if (driverMismatch && !isCurrent) parts.push(t('standalone.pytorchDriverWarning', driverMismatch))
     const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
     if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
     const confirmMessage = viaPip
@@ -184,6 +214,9 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
           detected: s.capWarning.detected.join(', '),
         })}`
       : ''
+    const driverNotice = driverMismatch
+      ? `\n\n${t('standalone.pytorchDriverConfirmWarning', driverMismatch)}`
+      : ''
     const actions = isCurrent ? undefined : [{
       id: 'change-pytorch', label: t('standalone.pytorchChangeNow'), style: 'primary', enabled: true,
       showProgress: true, cancellable: true,
@@ -191,7 +224,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
       data: { stackId: s.stackId },
       confirm: {
         title: t('standalone.pytorchConfirmTitle'),
-        message: confirmMessage + capNotice + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
+        message: confirmMessage + capNotice + driverNotice + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
       },
     }]
     options.push({

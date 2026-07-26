@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseNvidiaDriverVersion,
+  sanitizeNvidiaDriverVersion,
   isVirtualGpu,
   selectPrimaryGpu,
   parseAmdSmiDriverVersion,
@@ -31,6 +32,24 @@ describe('parseNvidiaDriverVersion', () => {
 
   it('handles Linux-style three-part versions', () => {
     expect(parseNvidiaDriverVersion('Driver Version: 535.183.01')).toBe('535.183.01')
+  })
+})
+
+describe('sanitizeNvidiaDriverVersion', () => {
+  it('accepts dotted numeric versions', () => {
+    expect(sanitizeNvidiaDriverVersion('580.88')).toBe('580.88')
+    expect(sanitizeNvidiaDriverVersion('535.183.01')).toBe('535.183.01')
+  })
+
+  it('rejects nvidia-smi output that is not a version', () => {
+    // The structured query path takes the first non-empty stdout line; a
+    // warning or header there must read as "not detected", never as a
+    // version for numeric comparison.
+    expect(sanitizeNvidiaDriverVersion('No devices were found')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion('WARNING: infoROM is corrupted')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion('.580')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion('')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion(undefined)).toBeUndefined()
   })
 })
 
