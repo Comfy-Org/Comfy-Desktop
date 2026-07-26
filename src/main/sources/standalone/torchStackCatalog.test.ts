@@ -27,7 +27,7 @@ import type * as EnvPaths from './envPaths'
 import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import { getInstalledTorchTuple } from './envPaths'
-import { getCachedTorchStacks, resolveTorchStack, reconcileTorchStack, _resetForTest } from './torchStackCatalog'
+import { getCachedTorchStacks, resolveTorchStack, reconcileTorchStack, getLastVerifiedTorchStack, _resetForTest } from './torchStackCatalog'
 import {
   _setComputeCapsForTest, _setRemoteDefsForTest, _resetRemoteForTest,
 } from './torchIndexManifest'
@@ -101,6 +101,74 @@ describe('per-install Python ABI gate on index-served stacks', () => {
     for (const inst of [install('3.12.10'), install(undefined)]) {
       expect(getCachedTorchStacks(inst).map((e) => e.stackId)).toContain(CU130_ID)
       expect((await resolveTorchStack(inst, CU130_ID))?.stackId).toBe(CU130_ID)
+    }
+  })
+})
+
+describe('getLastVerifiedTorchStack source validation', () => {
+  const baseRef = {
+    stackId: 'amd-index:rocm7.14.0:2.10.0',
+    variant: 'win-amd',
+    pythonVersion: '3.13.2',
+    packages: { torch: '2.10.0+rocm7.14.0' },
+  }
+
+  it('accepts a persisted amd-multi-arch-index ref', () => {
+    const inst = {
+      ...install('3.13.2'),
+      lastVerifiedTorchStack: { ...baseRef, source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' } },
+    } as InstallationRecord
+    expect(getLastVerifiedTorchStack(inst)?.source.kind).toBe('amd-multi-arch-index')
+  })
+
+  it('rejects amd-multi-arch-index refs that are not the exact persisted shape, and unknown kinds', () => {
+    for (const source of [
+      { kind: 'amd-multi-arch-index' },
+      // Not a rocm tag - repair must not re-acquire an arbitrary tuple
+      // from AMD's index on the strength of a corrupted ref.
+      { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
+      // Tag disagrees with the tuple's torch build - AMD's index serves
+      // many ROCm versions, so a mismatched ref must fail closed.
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.13.0' },
+      // Extra fields (e.g. a smuggled url) mark the ref as not ours.
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' },
+      { kind: 'evil-url', url: 'https://evil.example' },
+    ]) {
+      const inst = { ...install('3.13.2'), lastVerifiedTorchStack: { ...baseRef, source } } as InstallationRecord
+      expect(getLastVerifiedTorchStack(inst)).toBeNull()
+    }
+  })
+
+  it('rejects an amd-multi-arch-index ref carrying a dev tuple - the manifest mints none', () => {
+    const inst = {
+      ...install('3.13.2'),
+      lastVerifiedTorchStack: {
+        ...baseRef,
+        stackId: 'amd-index:rocm7.14.0:2.12.0.dev20260720',
+        packages: { torch: '2.12.0.dev20260720+rocm7.14.0' },
+        source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+      },
+    } as InstallationRecord
+    expect(getLastVerifiedTorchStack(inst)).toBeNull()
+  })
+
+  it('rejects an amd-multi-arch-index ref whose stackId does not name its tag + tuple', () => {
+    // The stackId is the identity the renderer and catalog resolve by; an
+    // AMD source riding under a foreign id could misidentify the stack.
+    for (const stackId of [
+      'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
+      'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
+      'amd-index:rocm7.14.0:2.11.0', // version disagrees with the tuple
+    ]) {
+      const inst = {
+        ...install('3.13.2'),
+        lastVerifiedTorchStack: {
+          ...baseRef,
+          stackId,
+          source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+        },
+      } as InstallationRecord
+      expect(getLastVerifiedTorchStack(inst)).toBeNull()
     }
   })
 })

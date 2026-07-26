@@ -376,6 +376,84 @@ describe('remote manifest', () => {
     expect(indexStacksForVariant('linux-amd')).toEqual([])
   })
 
+  const amdMultiArchEntry = {
+    kind: 'amd-multi-arch-index',
+    indexTag: 'rocm7.14.0',
+    accel: 'amd',
+    platforms: ['win32', 'linux'],
+    packages: { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' },
+    date: '2026-07-15',
+  }
+
+  it('serves amd-multi-arch-index entries on Windows AND Linux with the AMD source', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(doc([amdMultiArchEntry, cu130Entry]))
+    await refreshRemoteIndexStacks()
+    const entry = indexStacksForVariant('win-amd')[0]
+    expect(entry?.source).toEqual({ kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' })
+    expect(entry?.packages.torch).toBe('2.10.0+rocm7.14.0')
+    // Identity in the amd-index namespace: a pytorch.org rocm entry with
+    // the same tag + torch version could never share this id.
+    expect(entry?.stackId).toBe('amd-index:rocm7.14.0:2.10.0')
+    setPlatform('linux')
+    expect(indexStacksForVariant('linux-amd')).toHaveLength(1)
+  })
+
+  it('coexists with a plain pytorch-index entry sharing the tag + torch version (distinct ids)', async () => {
+    // Hypothetical: pytorch.org starts publishing a rocm7.14.0 index. Its
+    // Linux entry and AMD's must both survive - per-kind id namespaces mean
+    // the duplicate-id guard does not see a collision and drop them.
+    const pytorchTwin = { ...amdMultiArchEntry, platforms: ['linux'] } as Record<string, unknown>
+    delete pytorchTwin.kind
+    vi.mocked(fetchJSON).mockResolvedValue(doc([amdMultiArchEntry, pytorchTwin]))
+    await refreshRemoteIndexStacks()
+    setPlatform('linux')
+    const ids = indexStacksForVariant('linux-amd').map((e) => e.stackId).sort()
+    expect(ids).toEqual(['amd-index:rocm7.14.0:2.10.0', 'pytorch-index:rocm7.14.0:2.10.0'])
+  })
+
+  it('drops amd-multi-arch-index entries whose accel is not amd', async () => {
+    const hijacked = { ...cu130Entry, kind: 'amd-multi-arch-index' }
+    vi.mocked(fetchJSON).mockResolvedValue(doc([hijacked, cu130Entry]))
+    await refreshRemoteIndexStacks()
+    // The hijacked twin must fall out at parse time; were it parsed, it
+    // would offer cu130 wheels install-routed through AMD's index.
+    expect(nvidiaTags()).toEqual(['cu130'])
+  })
+
+  it('drops amd-multi-arch entries with an untagged companion - it would resolve arbitrarily', async () => {
+    // Plain pytorch-index entries may carry untagged companions (same index
+    // serves them), but on AMD's broad index an untagged pin is ambiguous.
+    const untagged = {
+      ...amdMultiArchEntry,
+      packages: { ...amdMultiArchEntry.packages, torchvision: '0.25.0' },
+    }
+    vi.mocked(fetchJSON).mockResolvedValue(doc([untagged, cu130Entry]))
+    await refreshRemoteIndexStacks()
+    expect(indexStacksForVariant('win-amd')).toEqual([])
+    expect(nvidiaTags()).toEqual(['cu130'])
+  })
+
+  it('drops dev tuples under the amd-multi-arch kind - it is stable-only', async () => {
+    const dev = {
+      ...amdMultiArchEntry,
+      packages: { torch: '2.12.0.dev20260720+rocm7.14.0' },
+    }
+    vi.mocked(fetchJSON).mockResolvedValue(doc([dev, cu130Entry]))
+    await refreshRemoteIndexStacks()
+    expect(indexStacksForVariant('win-amd')).toEqual([])
+    expect(nvidiaTags()).toEqual(['cu130'])
+  })
+
+  it('amd-multi-arch entries survive the disk cache round-trip and keep serving win32', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(doc([amdMultiArchEntry, cu130Entry]))
+    await refreshRemoteIndexStacks()
+    _resetRemoteForTest() // cold start: memory cleared, disk cache remains
+    // The cached entry must re-validate as AMD multi-arch (re-parsed as a
+    // plain pytorch-index entry it would be dropped for targeting win32).
+    const entry = indexStacksForVariant('win-amd')[0]
+    expect(entry?.source).toEqual({ kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' })
+  })
+
   it('drops all entries sharing a stackId — the renderer round-trips only the id', async () => {
     const sibling = { ...cu130Entry, packages: { torch: '2.11.0+cu130', torchaudio: '2.11.0+cu130' } }
     vi.mocked(fetchJSON).mockResolvedValue(doc([cu130Entry, sibling]))

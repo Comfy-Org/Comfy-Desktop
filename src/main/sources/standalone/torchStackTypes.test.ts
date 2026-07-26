@@ -3,6 +3,8 @@ import {
   publicVersion, torchLocalTag, stackVersionMatches, torchIndexUrlFor,
   torchTupleReacquirable, accelBaseForTag, torchTupleMatches, torchPackageTuplesEqual,
   observedTuple, hasFullObservedTuple, parseIndexStackId, makeIndexStackId, stackAppliesViaPip,
+  parseAmdIndexStackId, makeAmdIndexStackId, parseAnyIndexStackId,
+  torchIndexUrlForSource, torchTupleReacquirableFrom, AMD_MULTI_ARCH_INDEX_URL,
 } from './torchStackTypes'
 import type { ObservedTorchStack } from './torchStackTypes'
 
@@ -115,6 +117,67 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
   })
 })
 
+describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
+  const amdSource = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' } as const
+  const amdTuple = { torch: '2.10.0+rocm7.14.0' }
+
+  it('serves an amd-multi-arch source from the hardcoded AMD index on every platform', () => {
+    for (const platform of ['win32', 'linux'] as const) {
+      setPlatform(platform)
+      expect(torchIndexUrlForSource(amdSource, amdTuple)).toBe(AMD_MULTI_ARCH_INDEX_URL)
+      expect(torchTupleReacquirableFrom(amdSource, amdTuple)).toBe(true)
+    }
+  })
+
+  it('falls back to the tag-derived lookup for every other source', () => {
+    setPlatform('win32')
+    expect(
+      torchIndexUrlForSource({ kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' }, { torch: '2.10.0+cu130' })
+    ).toBe('https://download.pytorch.org/whl/cu130')
+    expect(
+      torchTupleReacquirableFrom({ kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v1' }, { torch: '2.10.0+cu130' })
+    ).toBe(true)
+    // Without the AMD source kind, a Windows ROCm tuple has no trusted index.
+    expect(torchIndexUrlForSource(null, amdTuple)).toBeNull()
+    expect(torchTupleReacquirableFrom(null, amdTuple)).toBe(false)
+  })
+
+  it('fails closed when the AMD source does not coherently name the tuple', () => {
+    // AMD's index serves many ROCm versions: a ref whose tag disagrees with
+    // the build must not re-acquire a different build under this identity.
+    for (const torch of [
+      '2.10.0+rocm7.13.0', // tag mismatch
+      '2.10.0+cu130', // wrong vendor entirely
+      '2.12.0.dev20260720+rocm7.14.0', // dev build - the manifest mints none
+    ]) {
+      expect(torchIndexUrlForSource(amdSource, { torch })).toBeNull()
+      expect(torchTupleReacquirableFrom(amdSource, { torch })).toBe(false)
+    }
+    // A non-rocm source tag is never an AMD multi-arch identity.
+    expect(
+      torchIndexUrlForSource({ kind: 'amd-multi-arch-index', indexTag: 'cu130' }, { torch: '2.10.0+cu130' })
+    ).toBeNull()
+    // Companion packages must carry the same tag: an untagged or mismatched
+    // companion pin would resolve to an arbitrary build from AMD's index.
+    for (const packages of [
+      { ...amdTuple, torchvision: '0.25.0+rocm7.13.0' },
+      { ...amdTuple, torchvision: '0.25.0' },
+      { ...amdTuple, torchaudio: '2.10.0+rocm7.13.0' },
+    ]) {
+      expect(torchIndexUrlForSource(amdSource, packages)).toBeNull()
+      expect(torchTupleReacquirableFrom(amdSource, packages)).toBe(false)
+    }
+    // A fully tagged tuple - the shape the manifest actually mints - passes.
+    expect(
+      torchIndexUrlForSource(amdSource, {
+        ...amdTuple,
+        torchvision: '0.25.0+rocm7.14.0',
+        torchaudio: '2.10.0+rocm7.14.0',
+      })
+    ).toBe(AMD_MULTI_ARCH_INDEX_URL)
+  })
+})
+
 describe('parseIndexStackId / makeIndexStackId', () => {
   it('round-trips and strips the local tag from the version key', () => {
     expect(makeIndexStackId('cu128', '2.11.0+cu128')).toBe('pytorch-index:cu128:2.11.0')
@@ -125,6 +188,21 @@ describe('parseIndexStackId / makeIndexStackId', () => {
     expect(parseIndexStackId('comfy-bundle:win-nvidia:v1.0')).toBeNull()
     expect(parseIndexStackId('pytorch-index:cu128')).toBeNull()
     expect(parseIndexStackId('pytorch-index:cu 128:2.11.0')).toBeNull()
+  })
+
+  it('AMD multi-arch ids live in their own namespace - no cross-parse with pytorch-index ids', () => {
+    expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0+rocm7.14.0')).toBe('amd-index:rocm7.14.0:2.10.0')
+    expect(parseAmdIndexStackId('amd-index:rocm7.14.0:2.10.0')).toEqual({ indexTag: 'rocm7.14.0', version: '2.10.0' })
+    expect(parseAmdIndexStackId('pytorch-index:rocm7.14.0:2.10.0')).toBeNull()
+    expect(parseIndexStackId('amd-index:rocm7.14.0:2.10.0')).toBeNull()
+    // The same tag + version mints DIFFERENT ids per source kind.
+    expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0')).not.toBe(makeIndexStackId('rocm7.14.0', '2.10.0'))
+  })
+
+  it('parseAnyIndexStackId accepts both index-served namespaces, nothing else', () => {
+    expect(parseAnyIndexStackId('pytorch-index:cu128:2.11.0')).toEqual({ indexTag: 'cu128', version: '2.11.0' })
+    expect(parseAnyIndexStackId('amd-index:rocm7.14.0:2.10.0')).toEqual({ indexTag: 'rocm7.14.0', version: '2.10.0' })
+    expect(parseAnyIndexStackId('comfy-bundle:win-nvidia:v1.0')).toBeNull()
   })
 })
 

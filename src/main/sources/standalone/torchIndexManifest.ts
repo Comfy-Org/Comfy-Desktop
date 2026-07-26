@@ -17,10 +17,11 @@
  * Remote entries are untrusted input that ends up in pip install arguments,
  * so validation is default-deny: unknown `kind` values, unknown accelerators,
  * or malformed version strings drop the entry (never the whole manifest).
- * A tuple is only ever installed from the trusted index its local tag names
- * (`torchIndexUrlFor`), so a manifest cannot point pip at an arbitrary index
- * — e.g. Windows ROCm builds come from AMD's own channels today, and stay
- * hidden until an app release explicitly supports that mechanism.
+ * A tuple is only ever installed from a trusted index the app derives itself
+ * (`torchIndexUrlForSource`), so a manifest cannot point pip at an arbitrary
+ * index — a `kind` only ever selects between hardcoded mechanisms: the
+ * pytorch.org index the local tag names, or AMD's multi-arch index constant
+ * (`amd-multi-arch-index`, the only source of Windows ROCm wheels).
  *
  * Each entry declares the compute-capability range its wheels contain
  * kernels for, so entries a detected NVIDIA GPU cannot run are hidden rather
@@ -37,7 +38,7 @@ import { fetchJSON } from '../../lib/fetch'
 import { compareVersions, detectNvidiaDriverVersion } from '../../lib/gpu'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
 import { stripPlatform } from './envPaths'
-import { isDevVersion, makeIndexStackId, publicVersion, torchIndexUrlFor, torchLocalTag } from './torchStackTypes'
+import { isDevVersion, makeAmdIndexStackId, makeIndexStackId, publicVersion, torchIndexUrlForSource, torchLocalTag } from './torchStackTypes'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 
@@ -56,10 +57,12 @@ export interface TorchIndexStackDef {
   /** Upstream release date (ISO), for display ordering. For nightly
    *  entries this is the wheel date the freshness gate keys on. */
   date: string
-  /** Present on nightly entries; must survive the disk cache round-trip so
-   *  re-validation on load still applies the nightly rules (a cached
-   *  nightly re-parsed as stable would be dropped for its dev versions). */
-  kind?: 'pytorch-nightly-index'
+  /** Present on nightly entries and AMD multi-arch entries; must survive
+   *  the disk cache round-trip so re-validation on load still applies the
+   *  kind's rules (a cached nightly re-parsed as stable would be dropped for
+   *  its dev versions; a cached AMD multi-arch entry re-parsed as plain
+   *  pytorch-index would be dropped for targeting win32). */
+  kind?: 'pytorch-nightly-index' | 'amd-multi-arch-index'
   /** Inclusive compute-capability range the wheels ship kernels for
    *  (NVIDIA only). Omit when the build has no such constraint. */
   computeCap?: { min: number; max: number }
@@ -102,6 +105,7 @@ const INDEX_SERIES: Readonly<Record<string, TorchSeriesInfo>> = {
   cu130: { noteKey: 'pytorchSeriesNoteCu130', minDriver: { win32: '580.88', linux: '580.65.06' } },
   cu132: { noteKey: 'pytorchSeriesNoteCu132', minDriver: { win32: '580.88', linux: '580.65.06' } },
   'rocm7.1': { noteKey: 'pytorchSeriesNoteRocm71' },
+  'rocm7.14.0': { noteKey: 'pytorchSeriesNoteRocm714' },
   xpu: { noteKey: 'pytorchSeriesNoteXpu' },
   cpu: { noteKey: 'pytorchSeriesNoteCpu' },
 }
@@ -214,12 +218,18 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   // `sourceFor` derives from the accelerator; `pytorch-nightly-index` marks
   // dev tuples served from the nightly namespace (`torchIndexUrlFor` derives
   // that from the version itself, so the source stays `pytorch-index`).
-  // A future manifest can introduce another kind (e.g. AMD's own Windows
-  // channel) and older app versions drop those entries instead of
-  // misapplying them through the wrong mechanism.
+  // A future manifest can introduce another kind and older app versions
+  // drop those entries instead of misapplying them through the wrong
+  // mechanism — exactly how `amd-multi-arch-index` (AMD's own channel,
+  // below) shipped without breaking older desktops.
   const stableKind = r.accel === 'mps' ? 'pypi' : 'pytorch-index'
   const nightly = r.kind === 'pytorch-nightly-index'
-  if ('kind' in r && !nightly && r.kind !== stableKind) return null
+  // AMD's TheRock multi-arch index: stable AMD tuples pip-applied from the
+  // hardcoded AMD_MULTI_ARCH_INDEX_URL constant — the only mechanism that
+  // serves Windows ROCm wheels (it serves Linux too).
+  const amdMultiArch = r.kind === 'amd-multi-arch-index'
+  if (amdMultiArch && r.accel !== 'amd') return null
+  if ('kind' in r && !nightly && !amdMultiArch && r.kind !== stableKind) return null
   // PyPI serves no dev builds, so an MPS nightly has no install source.
   if (nightly && r.accel === 'mps') return null
   if (!Array.isArray(r.platforms) || r.platforms.length === 0) return null
@@ -281,14 +291,18 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   } else if (torchTag !== r.indexTag) {
     return null
   }
-  // pytorch.org publishes no Windows ROCm wheels; AMD's SDK/find-links
-  // channel is not a mechanism schema 1 can express — reject rather than
-  // rely on the runtime index gate alone.
-  if (r.accel === 'amd' && r.platforms.includes('win32')) return null
+  // pytorch.org publishes no Windows ROCm wheels — only `amd-multi-arch-index`
+  // entries (applied from AMD's own index) may target win32; plain
+  // pytorch-index AMD entries are rejected rather than relying on the
+  // runtime index gate alone.
+  if (r.accel === 'amd' && r.platforms.includes('win32') && !amdMultiArch) return null
   // Companion packages install from the same index — same tag (or none).
+  // AMD multi-arch tuples must be fully tagged: an untagged companion pin
+  // would resolve against AMD's broad index to an arbitrary ROCm build.
   for (const opt of ['torchvision', 'torchaudio'] as const) {
-    const companionTag = torchLocalTag(pkgs[opt] as string | undefined)
-    if (companionTag !== '' && companionTag !== torchTag) return null
+    if (pkgs[opt] === undefined) continue
+    const companionTag = torchLocalTag(pkgs[opt] as string)
+    if (companionTag !== torchTag && !(companionTag === '' && !amdMultiArch)) return null
   }
   if (typeof r.date !== 'string' || !ISO_DATE.test(r.date)) return null
   if (r.computeCap !== undefined) {
@@ -310,6 +324,7 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
     indexTag: r.indexTag,
     accel: r.accel as IndexAccel,
     ...(nightly ? { kind: 'pytorch-nightly-index' as const } : {}),
+    ...(amdMultiArch ? { kind: 'amd-multi-arch-index' as const } : {}),
     platforms: r.platforms as NodeJS.Platform[],
     packages: {
       torch: pkgs.torch,
@@ -343,10 +358,10 @@ function parseRemoteManifest(data: unknown): { defs: TorchIndexStackDef[]; serie
     .filter((d): d is TorchIndexStackDef => d !== null)
   const ids = new Map<string, number>()
   for (const d of defs) {
-    const id = makeIndexStackId(d.indexTag, d.packages.torch)
+    const id = stackIdForDef(d)
     ids.set(id, (ids.get(id) ?? 0) + 1)
   }
-  const unique = defs.filter((d) => ids.get(makeIndexStackId(d.indexTag, d.packages.torch)) === 1)
+  const unique = defs.filter((d) => ids.get(stackIdForDef(d)) === 1)
   if (doc.stacks.length > 0 && unique.length === 0) return null
   return { defs: unique, series: parseRemoteSeries(doc.series) }
 }
@@ -444,6 +459,7 @@ export function ensureRemoteIndexStacks(): Promise<void> {
 }
 
 function sourceFor(def: TorchIndexStackDef): TorchStackSource {
+  if (def.kind === 'amd-multi-arch-index') return { kind: 'amd-multi-arch-index', indexTag: def.indexTag }
   if (def.accel === 'mps') return { kind: 'pypi', backend: 'mps' }
   const backend = def.accel === 'nvidia' ? 'cuda'
     : def.accel === 'amd' ? 'rocm'
@@ -574,10 +590,19 @@ function capMismatch(def: TorchIndexStackDef): { min: number; max: number; detec
   return { min, max, detected: [..._computeCaps] }
 }
 
+/** Entry identity. AMD multi-arch entries mint in their own `amd-index:`
+ *  namespace so a pytorch.org entry sharing the tag + torch version can
+ *  never collide with (or be dropped alongside) one. */
+function stackIdForDef(def: TorchIndexStackDef): string {
+  return def.kind === 'amd-multi-arch-index'
+    ? makeAmdIndexStackId(def.indexTag, def.packages.torch)
+    : makeIndexStackId(def.indexTag, def.packages.torch)
+}
+
 function entryFromDef(def: TorchIndexStackDef, variant: string): TorchStackEntry {
   const mismatch = capMismatch(def)
   return {
-    stackId: makeIndexStackId(def.indexTag, def.packages.torch),
+    stackId: stackIdForDef(def),
     variant,
     // Index stacks are Python-agnostic: pip resolves wheels against the
     // venv's own interpreter (a tuple with no wheel fails cleanly and rolls
@@ -623,9 +648,12 @@ export function indexStacksForVariant(variant: string): TorchStackEntry[] {
     .filter((def) => def.accel === accel)
     .filter((def) => def.platforms.includes(process.platform))
     .filter(nightlyFresh)
-    // Only tuples a trusted index serves; MPS is PyPI-served and must be
-    // untagged (a tagged build has no PyPI source).
-    .filter((def) => torchIndexUrlFor(def.packages) !== null
+    // Only tuples a trusted index serves, judged from the entry's SOURCE
+    // (an amd-multi-arch-index source is served by AMD's hardcoded index
+    // even on Windows, where the tag-derived lookup refuses rocm tags);
+    // MPS is PyPI-served and must be untagged (a tagged build has no PyPI
+    // source).
+    .filter((def) => torchIndexUrlForSource(sourceFor(def), def.packages) !== null
       || (def.accel === 'mps' && torchLocalTag(def.packages.torch) === ''))
     .map((def) => entryFromDef(def, variant))
     .sort((a, b) => b.date.localeCompare(a.date))

@@ -3,6 +3,8 @@ import os from 'os'
 import crypto from 'crypto'
 import path from 'path'
 import { isSafePathComponent } from '../cnr'
+import { isValidAmdMultiArchSource } from '../../sources/standalone/torchStackTypes'
+import type { TorchStackPackages } from '../../sources/standalone/torchStackTypes'
 import { snapshotsDir, formatTimestamp } from './store'
 import * as telemetry from '../telemetry'
 import type { Snapshot, SnapshotEntry, SnapshotExportEnvelope } from './types'
@@ -83,6 +85,13 @@ function isValidTorchStack(v: unknown): boolean {
   if (source.kind === 'pytorch-index') {
     return ['cuda', 'xpu', 'rocm', 'cpu'].includes(source.backend as string) &&
       typeof source.indexTag === 'string' && /^[a-z0-9.]+$/.test(source.indexTag as string)
+  }
+  // AMD multi-arch entries carry only a rocm tag that must match the torch
+  // build itself - the index URL is a hardcoded app constant, so a snapshot
+  // can never smuggle one in, and any extra field (e.g. a url) or a tuple
+  // the tag does not name marks the source as not ours.
+  if (source.kind === 'amd-multi-arch-index') {
+    return isValidAmdMultiArchSource(source, packages as unknown as TorchStackPackages, ref.stackId)
   }
   if (source.kind === 'pypi') return source.backend === 'mps'
   return false

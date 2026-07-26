@@ -17,7 +17,7 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { stackVersionMatches, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseIndexStackId } from './torchStackTypes'
+import { stackVersionMatches, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseAnyIndexStackId } from './torchStackTypes'
 import type { TorchStackPackages } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
@@ -170,9 +170,11 @@ export async function handleAction(
       if (torchTarget) {
         try {
           // Pip-applied stacks (adopted installs, index-served entries) have
-          // no bundle download pending — charge the pip staging estimate,
-          // not the bundle size.
-          await preflightDiskSpace(installation, stackAppliesViaPip(torchTarget.source, adopted) ? null : torchTarget, signal)
+          // no bundle download pending — charge the pip staging estimate
+          // (source-aware: AMD multi-arch stages more), not the bundle size.
+          const viaPip = stackAppliesViaPip(torchTarget.source, adopted)
+          await preflightDiskSpace(installation, viaPip ? null : torchTarget, signal,
+            viaPip ? { pipSource: torchTarget.source } : undefined)
         } catch (err) {
           if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
           throw err
@@ -787,7 +789,7 @@ export async function handleAction(
     // Pip-applied changes (adopted installs, index-served stacks) prepare a
     // pip payload instead of downloading a bundle. Judged from the stackId
     // shape here (the entry isn't resolved yet); index ids always pip-apply.
-    const viaPip = installation.adopted === true || parseIndexStackId(stackId) !== null
+    const viaPip = installation.adopted === true || parseAnyIndexStackId(stackId) !== null
     sendProgress('steps', { steps: [
       { phase: 'torch-prepare', label: t(viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
       { phase: 'torch-swap', label: t('standalone.pytorchSwapPhase') },
@@ -811,9 +813,12 @@ export async function handleAction(
 
     // Hard gate before anything is downloaded or touched. Pip-applied
     // changes have no bundle download pending — charge the pip staging
-    // estimate. Judged from the resolved entry's source (authoritative).
+    // estimate (source-aware: AMD multi-arch stages more). Judged from the
+    // resolved entry's source (authoritative).
     try {
-      await preflightDiskSpace(installation, stackAppliesViaPip(entry.source, installation.adopted === true) ? null : entry, signal)
+      const entryViaPip = stackAppliesViaPip(entry.source, installation.adopted === true)
+      await preflightDiskSpace(installation, entryViaPip ? null : entry, signal,
+        entryViaPip ? { pipSource: entry.source } : undefined)
     } catch (err) {
       if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
       throw err

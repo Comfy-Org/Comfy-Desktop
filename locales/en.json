@@ -911,6 +911,7 @@
     "pytorchSeriesNoteCu130": "CUDA 13.0 — current stable CUDA line for RTX 20-series and newer",
     "pytorchSeriesNoteCu132": "CUDA 13.2 — newest CUDA line, currently nightly builds only",
     "pytorchSeriesNoteRocm71": "AMD ROCm 7.1 — official PyTorch builds, Linux only",
+    "pytorchSeriesNoteRocm714": "AMD ROCm 7.14 — AMD's own multi-arch builds for Windows and Linux",
     "pytorchSeriesNoteXpu": "Intel XPU — for Intel Arc and Core Ultra integrated GPUs",
     "pytorchSeriesNoteCpu": "CPU-only — no GPU acceleration; smallest download",
     "pytorchDriverWarning": "Needs NVIDIA driver {required} or newer — detected {detected}",

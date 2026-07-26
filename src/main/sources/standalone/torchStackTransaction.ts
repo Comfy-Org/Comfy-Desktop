@@ -36,9 +36,9 @@ import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
 import { copyTorchFamily, removeTorchFamilyPackages } from './torchFamilyFs'
-import { stackVersionMatches, torchLocalTag, torchIndexUrlFor, accelBaseForTag } from './torchStackTypes'
+import { stackVersionMatches, torchLocalTag, torchIndexUrlForSource, accelBaseForTag } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
-import type { TorchStackPackages } from './torchStackTypes'
+import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
 
 const JOURNAL_FILE = '.torch-stack-journal.json'
@@ -101,6 +101,10 @@ export interface PreparedPipStack {
   /** Exact versions to install; local tags (`+cu121`) are kept so the index
    *  serves the exact same builds. */
   packages: TorchStackPackages
+  /** Acquisition source of the target stack; drives index selection and the
+   *  AMD-multi-arch-specific install shape ([device-all] extras, stale SDK
+   *  cleanup). Null for an observed-tuple restore (tag-derived index only). */
+  source: TorchStackSource | null
   /** null → default PyPI. */
   indexUrl: string | null
   /** Catalog identity to persist as verified on success; null for an
@@ -122,10 +126,12 @@ export function preparePipStack(
   packages: TorchStackPackages,
   entry: TorchStackEntry | null,
 ): PreparedPipStack {
+  const source = entry?.source ?? null
   return {
     kind: 'pip',
     packages,
-    indexUrl: torchIndexUrlFor(packages),
+    source,
+    indexUrl: torchIndexUrlForSource(source, packages),
     entry,
     accelVariant: accelBaseForTag(torchLocalTag(packages.torch)),
   }
@@ -153,6 +159,13 @@ function formatGB(bytes: number): string {
  *  largest realistic stack (CUDA torch). Deliberately conservative. */
 const PIP_FALLBACK_STAGING_BYTES = 8 * 1024 ** 3
 
+/** Staging estimate for an AMD multi-arch pip apply. The [device-all] extras
+ *  pull per-architecture device wheels for every supported GPU plus the
+ *  rocm-sdk core/libraries/device packages — roughly 7 GB of downloads
+ *  unpacking to ~15 GB of installed payload. Conservative, like the generic
+ *  pip estimate. */
+const AMD_MULTI_ARCH_STAGING_BYTES = 24 * 1024 ** 3
+
 /**
  * Hard preflight gate: measured venv size (the whole-venv copy) + download +
  * extraction staging + margin, checked on the volume hosting the venv.
@@ -160,20 +173,24 @@ const PIP_FALLBACK_STAGING_BYTES = 8 * 1024 ** 3
  *
  * `entry` sizes the pending payload; pass null for pip applies (observed-
  * tuple restores, adopted installs, index-served stacks) or an entry without
- * a bundle — both charge a conservative fixed estimate instead. Pass
- * `staged: true` for the re-check after a bundle is already downloaded and
- * extracted: the staging space is then occupied, not pending, so charging it
- * again would double-book the bundle and reject safe installs.
+ * a bundle — both charge a conservative fixed estimate instead. Pip applies
+ * should pass the target's source as `pipSource`: an AMD multi-arch apply
+ * stages far more than the generic estimate covers. Pass `staged: true` for
+ * the re-check after a bundle is already downloaded and extracted: the
+ * staging space is then occupied, not pending, so charging it again would
+ * double-book the bundle and reject safe installs.
  */
 export async function preflightDiskSpace(
   installation: InstallationRecord,
   entry: TorchStackEntry | null,
   signal?: AbortSignal,
-  opts?: { staged?: boolean },
+  opts?: { staged?: boolean; pipSource?: TorchStackSource | null },
 ): Promise<{ requiredBytes: number; freeBytes: number }> {
   const venvDir = getActiveVenvDir(installation)
   const venvSize = await getDirectorySize(venvDir, signal)
-  const pendingBytes = entry?.bundle ? entry.bundle.size * (1 + EXTRACT_FACTOR) : PIP_FALLBACK_STAGING_BYTES
+  const pipEstimate = opts?.pipSource?.kind === 'amd-multi-arch-index'
+    ? AMD_MULTI_ARCH_STAGING_BYTES : PIP_FALLBACK_STAGING_BYTES
+  const pendingBytes = entry?.bundle ? entry.bundle.size * (1 + EXTRACT_FACTOR) : pipEstimate
   const stagingBytes = opts?.staged ? 0 : pendingBytes
   const requiredBytes = Math.ceil((venvSize + stagingBytes) * (1 + DISK_MARGIN))
   const { free } = await getDiskSpace(venvDir)
@@ -224,7 +241,9 @@ export async function prepareBundleStack(
 }
 
 function readDistInfoVersion(sitePackages: string, pkg: string): string | null {
-  const re = new RegExp(`^${pkg}-(.+?)\\.dist-info$`, 'i')
+  // dist-info dir names carry the PEP 503 normalized name (`rocm-sdk-core`
+  // → `rocm_sdk_core-7.2.1.dist-info`), so hyphens match either spelling.
+  const re = new RegExp(`^${pkg.replace(/-/g, '[-_]')}-(.+?)\\.dist-info$`, 'i')
   try {
     for (const dirEntry of fs.readdirSync(sitePackages)) {
       const m = dirEntry.match(re)
@@ -352,6 +371,53 @@ export function undeclaredFamilyPackages(packages: TorchStackPackages, site: str
   return PIP_FAMILY_OPTIONAL.filter((pkg) => !packages[pkg] && readDistInfoVersion(site, pkg) !== null)
 }
 
+/** Packages AMD's retired repo.radeon.com "universal" ROCm method installed
+ *  alongside torch (last release: rocm-rel-7.2.1). A switch to the
+ *  multi-arch index must uninstall them first: pip only replaces packages the
+ *  new dependency tree references, and a stale SDK's DLLs would shadow the
+ *  wheel-provided ROCm runtime. Several of these names are re-installed at
+ *  the new version by the multi-arch dependency tree (torch requires
+ *  `rocm[libraries]`), so their absence is NOT asserted after the install. */
+const STALE_ROCM_SDK_PACKAGES = [
+  'rocm', 'rocm-bootstrap', 'rocm-sdk-core', 'rocm-sdk-devel', 'rocm-sdk-libraries', 'rocm-sdk-libraries-custom',
+] as const
+
+/** The stale universal-method SDK packages actually present in `site`. */
+export function staleRocmSdkPackages(site: string | null): string[] {
+  if (!site) return []
+  return STALE_ROCM_SDK_PACKAGES.filter((pkg) => readDistInfoVersion(site, pkg) !== null)
+}
+
+/** pip requirement specs for a prepared pip stack. AMD multi-arch torch and
+ *  torchvision wheels are thin meta-packages: the [device-all] extra pulls
+ *  the per-architecture ROCm device libraries, and a bare pin would install
+ *  a torch that cannot use any GPU. torchaudio publishes no such extra. */
+export function pipInstallSpecs(prepared: PreparedPipStack): string[] {
+  const extras = prepared.source?.kind === 'amd-multi-arch-index' ? '[device-all]' : ''
+  const specs = [`torch${extras}==${prepared.packages.torch}`]
+  if (prepared.packages.torchvision) specs.push(`torchvision${extras}==${prepared.packages.torchvision}`)
+  if (prepared.packages.torchaudio) specs.push(`torchaudio==${prepared.packages.torchaudio}`)
+  return specs
+}
+
+/** Index arguments for the install step. AMD multi-arch tuples need BOTH
+ *  indexes: AMD's serves only the ROCm/torch family, plain dependencies
+ *  (sympy, jinja2, ...) come from default PyPI. AMD must be the EXTRA
+ *  index: uv gives --extra-index-url priority over --index-url and its
+ *  default first-index strategy limits each package to the first index
+ *  that carries it, so with PyPI as the extra the torch project would
+ *  resolve against PyPI and the +rocm pins would fail. With AMD as the
+ *  extra, the torch family pins to AMD's index and everything else falls
+ *  through to PyPI; pip merges candidates from both indexes and only AMD's
+ *  can serve the pinned local tags, so the order suits it too. */
+export function pipIndexArgs(prepared: Pick<PreparedPipStack, 'source' | 'indexUrl'>): string[] {
+  if (!prepared.indexUrl) return []
+  if (prepared.source?.kind === 'amd-multi-arch-index') {
+    return ['--index-url', 'https://pypi.org/simple', '--extra-index-url', prepared.indexUrl]
+  }
+  return ['--index-url', prepared.indexUrl]
+}
+
 export function runStreamed(cmd: string, args: string[], failMessage: string, tools: TorchStackTools): Promise<void> {
   tools.sendOutput?.(`\n$ ${path.basename(cmd)} ${args.join(' ')}\n`)
   return new Promise((resolve, reject) => {
@@ -400,17 +466,23 @@ async function runPipTorchInstall(
     ? [uv, ['pip', verb, '--python', python, ...args]]
     : [python, ['-m', 'pip', verb, ...(verb === 'uninstall' ? ['-y'] : []), ...args]]
 
-  const removals = undeclaredFamilyPackages(prepared.packages, findSitePackages(candidateVenv))
+  const amdMultiArch = prepared.source?.kind === 'amd-multi-arch-index'
+  const candidateSite = findSitePackages(candidateVenv)
+  // Besides undeclared family packages, an AMD multi-arch switch removes the
+  // retired universal-method SDK packages: pip would leave the ones the new
+  // dependency tree doesn't reference, and their stale DLLs shadow the new
+  // wheel-provided ROCm runtime.
+  const removals = [
+    ...undeclaredFamilyPackages(prepared.packages, candidateSite),
+    ...(amdMultiArch ? staleRocmSdkPackages(candidateSite) : []),
+  ]
   if (removals.length > 0) {
     const [cmd, args] = pipCmd('uninstall', removals)
     await runStreamed(cmd, args, 'PyTorch package uninstall failed', tools)
   }
 
-  const specs: string[] = [`torch==${prepared.packages.torch}`]
-  if (prepared.packages.torchvision) specs.push(`torchvision==${prepared.packages.torchvision}`)
-  if (prepared.packages.torchaudio) specs.push(`torchaudio==${prepared.packages.torchaudio}`)
-  const indexArgs = prepared.indexUrl ? ['--index-url', prepared.indexUrl] : []
-  const [cmd, args] = pipCmd('install', [...indexArgs, ...specs])
+  const specs = pipInstallSpecs(prepared)
+  const [cmd, args] = pipCmd('install', [...pipIndexArgs(prepared), ...specs])
   await runStreamed(cmd, args, 'PyTorch package install failed', tools)
 }
 

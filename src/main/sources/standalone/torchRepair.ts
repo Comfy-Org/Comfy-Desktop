@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { stripPlatform, findSitePackages, getTorchVersion } from './envPaths'
 import { getActiveVenvDir } from '../../lib/pythonEnv'
-import { torchTupleReacquirable } from './torchStackTypes'
+import { torchTupleReacquirableFrom } from './torchStackTypes'
 import { getLastVerifiedTorchStack } from './torchStackCatalog'
 import { preparePipStack, applyTorchStackTransaction, preflightDiskSpace, DiskSpaceError } from './torchStackTransaction'
 import { copyTorchFamily, recoverTorchFamilyBackups } from './torchFamilyFs'
@@ -144,11 +144,11 @@ async function repairTorchViaPip(
   tools: TorchRepairTools,
 ): Promise<{ ok: boolean; message: string }> {
   const packages = verifiedRef.packages
-  if (!torchTupleReacquirable(packages)) {
+  if (!torchTupleReacquirableFrom(verifiedRef.source, packages)) {
     return { ok: false, message: `no trusted index serves torch ${packages.torch}` }
   }
   try {
-    await preflightDiskSpace(installation, null, tools.signal)
+    await preflightDiskSpace(installation, null, tools.signal, { pipSource: verifiedRef.source })
   } catch (err) {
     if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
     throw err

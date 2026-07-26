@@ -33,7 +33,11 @@ vi.mock('child_process', async (importOriginal) => {
   }
 })
 
-import { applyTorchStackTransaction, runStreamed, undeclaredFamilyPackages } from './torchStackTransaction'
+import {
+  applyTorchStackTransaction, runStreamed, undeclaredFamilyPackages,
+  preparePipStack, pipInstallSpecs, pipIndexArgs, staleRocmSdkPackages, preflightDiskSpace, DiskSpaceError,
+} from './torchStackTransaction'
+import { AMD_MULTI_ARCH_INDEX_URL } from './torchStackTypes'
 import type { PreparedBundleStack } from './torchStackTransaction'
 import type { TorchStackEntry } from './torchStackCatalog'
 import type { InstallationRecord } from '../../installations'
@@ -129,6 +133,137 @@ describe('undeclaredFamilyPackages', () => {
 
   it('returns [] when the site dir is unknown', () => {
     expect(undeclaredFamilyPackages({ torch: '2.11.0+cu126' }, null)).toEqual([])
+  })
+})
+
+describe('staleRocmSdkPackages', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'torchstack-rocm-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function distInfo(name: string, version: string): void {
+    const dir = path.join(tmpDir, `${name}-${version}.dist-info`)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'METADATA'), `Name: ${name}\nVersion: ${version}\n`)
+  }
+
+  it('detects installed universal-method packages under PEP 503 normalized dist-info names', () => {
+    // pip writes `rocm_sdk_core-7.2.1.dist-info` (underscores) for the
+    // package named rocm-sdk-core.
+    distInfo('rocm_sdk_core', '7.2.1')
+    distInfo('rocm_sdk_devel', '7.2.1')
+    distInfo('rocm_bootstrap', '7.2.1')
+    distInfo('rocm', '7.2.1')
+    distInfo('torch', '2.9.1+rocm7.2.1') // not an SDK package
+    expect(staleRocmSdkPackages(tmpDir).sort()).toEqual(['rocm', 'rocm-bootstrap', 'rocm-sdk-core', 'rocm-sdk-devel'])
+  })
+
+  it('returns [] when none are installed or the site dir is unknown', () => {
+    distInfo('torch', '2.10.0+cu130')
+    expect(staleRocmSdkPackages(tmpDir)).toEqual([])
+    expect(staleRocmSdkPackages(null)).toEqual([])
+  })
+})
+
+describe('preparePipStack / pipInstallSpecs', () => {
+  const amdEntry: TorchStackEntry = {
+    stackId: 'amd-index:rocm7.14.0:2.10.0',
+    variant: 'win-amd',
+    pythonVersion: '',
+    packages: { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' },
+    source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+    date: '2026-07-15',
+    comfyuiVersion: '',
+  }
+
+  it('carries the AMD source and derives the hardcoded AMD index from it', () => {
+    const prepared = preparePipStack(amdEntry.packages, amdEntry)
+    expect(prepared.source).toEqual({ kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' })
+    expect(prepared.indexUrl).toBe(AMD_MULTI_ARCH_INDEX_URL)
+    // The rocm tag still asserts AMD accelerator evidence at verify time.
+    expect(prepared.accelVariant).toBe('amd')
+  })
+
+  it('derives the tag index for an entry-less (observed tuple) restore', () => {
+    const prepared = preparePipStack({ torch: '2.10.0+cu130' }, null)
+    expect(prepared.source).toBeNull()
+    expect(prepared.indexUrl).toBe('https://download.pytorch.org/whl/cu130')
+  })
+
+  it('adds [device-all] to torch and torchvision only for AMD multi-arch', () => {
+    expect(pipInstallSpecs(preparePipStack(amdEntry.packages, amdEntry))).toEqual([
+      'torch[device-all]==2.10.0+rocm7.14.0',
+      'torchvision[device-all]==0.25.0+rocm7.14.0',
+      'torchaudio==2.10.0+rocm7.14.0',
+    ])
+  })
+
+  it('leaves ordinary sources on bare pins', () => {
+    expect(pipInstallSpecs(preparePipStack({ torch: '2.11.0+cu130', torchvision: '0.26.0+cu130' }, null))).toEqual([
+      'torch==2.11.0+cu130',
+      'torchvision==0.26.0+cu130',
+    ])
+  })
+
+  it('passes AMD as the EXTRA index over a default-PyPI --index-url, in exactly that order', () => {
+    // uv gives --extra-index-url priority over --index-url (first-index
+    // strategy): were AMD the --index-url, uv would resolve the torch
+    // project against PyPI (the extra) and fail the +rocm pins.
+    expect(pipIndexArgs(preparePipStack(amdEntry.packages, amdEntry))).toEqual([
+      '--index-url', 'https://pypi.org/simple',
+      '--extra-index-url', AMD_MULTI_ARCH_INDEX_URL,
+    ])
+  })
+
+  it('passes the derived index alone for ordinary sources, and nothing for PyPI tuples', () => {
+    expect(pipIndexArgs(preparePipStack({ torch: '2.11.0+cu130' }, null))).toEqual([
+      '--index-url', 'https://download.pytorch.org/whl/cu130',
+    ])
+    expect(pipIndexArgs(preparePipStack({ torch: '2.11.0' }, null))).toEqual([])
+  })
+})
+
+describe('preflightDiskSpace (pip estimates)', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'torchstack-disk-test-'))
+    fs.mkdirSync(path.join(tmpDir, 'ComfyUI', '.venv'), { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  // The machine's real free space decides pass/fail; the estimate under
+  // test is visible either way (result or DiskSpaceError both carry it).
+  async function requiredBytesFor(opts?: Parameters<typeof preflightDiskSpace>[3]): Promise<number> {
+    const installation = { id: 'disk-test', installPath: tmpDir } as unknown as InstallationRecord
+    try {
+      return (await preflightDiskSpace(installation, null, undefined, opts)).requiredBytes
+    } catch (err) {
+      if (err instanceof DiskSpaceError) return err.requiredBytes
+      throw err
+    }
+  }
+
+  it('charges the larger AMD multi-arch staging estimate only for that source', async () => {
+    const generic = await requiredBytesFor()
+    const pytorchIndex = await requiredBytesFor({
+      pipSource: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
+    })
+    const amd = await requiredBytesFor({
+      pipSource: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+    })
+    expect(pytorchIndex).toBe(generic)
+    // 24 GiB AMD estimate vs the 8 GiB generic pip fallback.
+    expect(amd - generic).toBeGreaterThanOrEqual(16 * 1024 ** 3)
   })
 })
 

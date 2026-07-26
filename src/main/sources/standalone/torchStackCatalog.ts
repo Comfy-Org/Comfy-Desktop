@@ -18,8 +18,9 @@ import { getInstalledTorchTuple, PLATFORM_PREFIX } from './envPaths'
 import { fetchR2VendorReleases, r2BundleUrl } from './r2Catalog'
 import type { R2Variant } from './r2Catalog'
 import {
-  makeBundleStackId, parseBundleStackId, parseIndexStackId, pythonAbiCompatible,
+  makeBundleStackId, parseBundleStackId, parseAnyIndexStackId, pythonAbiCompatible,
   torchTupleMatches, torchLocalTag, accelBaseForTag, torchTupleReacquirable,
+  isValidAmdMultiArchSource,
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
 import {
@@ -275,7 +276,7 @@ export async function resolveTorchStack(
   // before that, and an exact restore must not be rejected just because no
   // check-update ran yet. GPU compute caps play no part here - a kernel
   // mismatch is a picker warning, never a resolve gate.
-  if (parseIndexStackId(stackId)) {
+  if (parseAnyIndexStackId(stackId)) {
     await ensureRemoteIndexStacks()
     const entry = indexStacksForVariant(variant).find((e) => e.stackId === stackId) ?? null
     if (!entry || !entryPythonCompatible(installation, entry)) return null
@@ -322,6 +323,12 @@ export function getLastVerifiedTorchStack(installation: InstallationRecord): Per
     if (typeof bundle.size !== 'number' || !Number.isFinite(bundle.size) || bundle.size <= 0) return null
   } else if (src.kind === 'pytorch-index') {
     if (typeof src.indexTag !== 'string' || typeof src.backend !== 'string') return null
+  } else if (src.kind === 'amd-multi-arch-index') {
+    // Repair pip-installs from AMD's hardcoded index on the strength of this
+    // ref alone, so require the exact persisted shape AND coherence with the
+    // tuple (AMD's index serves many ROCm versions - a mismatched ref must
+    // fail closed, not re-acquire a different build under this identity).
+    if (!isValidAmdMultiArchSource(src, ref.packages, ref.stackId)) return null
   } else if (src.kind === 'pypi') {
     if (typeof src.backend !== 'string') return null
   } else {

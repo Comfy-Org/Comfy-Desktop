@@ -408,6 +408,57 @@ describe('validateExportEnvelope', () => {
     )
   })
 
+  it('rejects an amd-multi-arch-index source whose stackId does not name its tag + tuple', () => {
+    for (const stackId of [
+      'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
+      'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
+      'amd-index:rocm7.14.0:2.11.0', // version disagrees with the tuple
+    ]) {
+      const stack = rawManagedStack()
+      stack.ref.stackId = stackId
+      stack.ref.packages = { torch: '2.10.0+rocm7.14.0' }
+      stack.ref.source = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+      expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+        'Invalid snapshot at index 0'
+      )
+    }
+  })
+
+  it('accepts a managed torchStack with an amd-multi-arch-index source', () => {
+    const stack = rawManagedStack()
+    stack.ref.stackId = 'amd-index:rocm7.14.0:2.10.0'
+    stack.ref.variant = 'win-amd'
+    stack.ref.packages = { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' }
+    stack.ref.source = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    const result = validateExportEnvelope(makeEnvelope([snap]))
+    expect(result.snapshots[0]!.torchStack?.kind).toBe('managed')
+  })
+
+  it('rejects an amd-multi-arch-index source with a malformed or missing indexTag', () => {
+    for (const source of [
+      { kind: 'amd-multi-arch-index' },
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0 --index-url https://evil.example' },
+      // The index URL is a hardcoded app constant; a snapshot supplying one
+      // must not validate.
+      { kind: 'amd-multi-arch-index', indexTag: 'https://evil.example/' },
+      // Only rocm tags name AMD multi-arch stacks.
+      { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
+      // Extra fields (e.g. a smuggled url) mark the source as not ours.
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' },
+    ]) {
+      const stack = rawManagedStack()
+      stack.ref.stackId = 'amd-index:rocm7.14.0:2.10.0'
+      stack.ref.packages = { torch: '2.10.0+rocm7.14.0' }
+      stack.ref.source = source
+      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+      expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+        'Invalid snapshot at index 0'
+      )
+    }
+  })
+
   it('accepts torch versions with local build tags (+rocm7.1, +xpu)', () => {
     for (const torch of ['2.7.0+rocm7.1', '2.9.0+xpu', '2.8.0']) {
       const stack = makeManagedTorchStack()!

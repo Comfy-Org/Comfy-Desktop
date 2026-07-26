@@ -12,10 +12,13 @@
  *  come from the R2 release catalog; `pytorch-index` / `pypi` entries come
  *  from the validated remote manifest (in-app fallback, see
  *  `torchIndexManifest.ts`) and are pip-applied from the trusted index the
- *  tuple's local tag names. */
+ *  tuple's local tag names. `amd-multi-arch-index` entries pip-apply from
+ *  AMD's TheRock multi-arch index (a hardcoded constant, never a manifest
+ *  URL), which serves the Windows ROCm wheels pytorch.org does not. */
 export type TorchStackSource =
   | { kind: 'comfy-bundle'; variant: string; bundleTag: string }
   | { kind: 'pytorch-index'; backend: 'cuda' | 'xpu' | 'rocm' | 'cpu'; indexTag: string }
+  | { kind: 'amd-multi-arch-index'; indexTag: string }
   | { kind: 'pypi'; backend: 'mps' }
 
 export interface TorchStackPackages {
@@ -114,6 +117,10 @@ export function stackVersionMatches(a: string, b: string): boolean {
 
 const TORCH_INDEX_BASE = 'https://download.pytorch.org/whl'
 const TORCH_NIGHTLY_INDEX_BASE = 'https://download.pytorch.org/whl/nightly'
+/** AMD's TheRock multi-arch pip index: the ONLY trusted source of Windows
+ *  ROCm wheels (also serves Linux). Hardcoded - the remote manifest names
+ *  the mechanism via `kind`, never a URL. */
+export const AMD_MULTI_ARCH_INDEX_URL = 'https://repo.amd.com/rocm/whl-multi-arch/'
 
 /** PEP 440 dev release (`2.13.0.dev20260720+cu132`): a nightly build, served
  *  by the `whl/nightly/<tag>` index namespace, never the stable one. Covers
@@ -159,6 +166,59 @@ export function torchTupleReacquirable(packages: TorchStackPackages): boolean {
   // Untagged stable versions fall back to default PyPI; PyPI carries no
   // dev builds, so untagged nightlies get no such fallback.
   return torchLocalTag(packages.torch) === '' && !isDevVersion(packages.torch)
+}
+
+/** Whether an `amd-multi-arch-index` source coherently names its tuple: a
+ *  rocm tag that every present component's build actually carries, on
+ *  stable versions (the manifest mints only fully-tagged stable AMD
+ *  tuples). Anything else fails closed - AMD's index serves many ROCm
+ *  versions, so a mismatched or untagged component would otherwise
+ *  resolve to a different build under this identity. */
+function amdSourceServes(source: { indexTag: string }, packages: TorchStackPackages): boolean {
+  if (!/^rocm[0-9.]+$/.test(source.indexTag)) return false
+  for (const version of [packages.torch, packages.torchvision, packages.torchaudio]) {
+    if (version === undefined) continue
+    if (torchLocalTag(version) !== source.indexTag || isDevVersion(version)) return false
+  }
+  return true
+}
+
+/** Full validation for an untrusted (persisted / imported) value claiming
+ *  to be an `amd-multi-arch-index` source: exactly the shape the app
+ *  persists ({kind, indexTag} and nothing else - the index URL is a
+ *  hardcoded constant, so a URL-bearing field must never look legitimate),
+ *  coherent with the tuple it is attached to (`amdSourceServes`), and
+ *  named by the stackId the app would mint for that tag + tuple (so a
+ *  ref cannot carry an AMD source under a foreign identity). Shared by
+ *  the persisted-ref and snapshot validators so repair and restore trust
+ *  identical shapes. */
+export function isValidAmdMultiArchSource(source: object, packages: TorchStackPackages, stackId: string): boolean {
+  const src = source as Record<string, unknown>
+  if (typeof src.indexTag !== 'string') return false
+  if (Object.keys(src).some((k) => k !== 'kind' && k !== 'indexTag')) return false
+  if (stackId !== makeAmdIndexStackId(src.indexTag, packages.torch)) return false
+  return amdSourceServes({ indexTag: src.indexTag }, packages)
+}
+
+/** Source-aware trusted index for a pip apply: a coherent
+ *  `amd-multi-arch-index` source names AMD's hardcoded index (the
+ *  tag-derived pytorch.org lookup correctly refuses `rocm*` on Windows, so
+ *  the source kind must lift it); every other source derives from the
+ *  local tag as before. */
+export function torchIndexUrlForSource(source: TorchStackSource | null, packages: TorchStackPackages): string | null {
+  if (source?.kind === 'amd-multi-arch-index') {
+    return amdSourceServes(source, packages) ? AMD_MULTI_ARCH_INDEX_URL : null
+  }
+  return torchIndexUrlFor(packages)
+}
+
+/** Source-aware reacquirability: like `torchTupleReacquirable`, but a
+ *  managed ref whose source is AMD's multi-arch index is servable exactly
+ *  when that source coherently names the tuple (the tag-derived check
+ *  would wrongly reject it on Windows). */
+export function torchTupleReacquirableFrom(source: TorchStackSource | null, packages: TorchStackPackages): boolean {
+  if (source?.kind === 'amd-multi-arch-index') return torchIndexUrlForSource(source, packages) !== null
+  return torchTupleReacquirable(packages)
 }
 
 /** Accelerator-evidence variant base expected for a torch build, judged by
@@ -238,6 +298,29 @@ export function parseIndexStackId(stackId: string): { indexTag: string; version:
  *  version (one build per version per index, so the pair is unique). */
 export function makeIndexStackId(indexTag: string, torchVersion: string): string {
   return `pytorch-index:${indexTag}:${publicVersion(torchVersion)}`
+}
+
+const AMD_INDEX_STACK_ID_RE = /^amd-index:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/
+
+/** Parse an `amd-index` stackId (AMD multi-arch entries) into its index tag
+ *  and public torch version; null when malformed. */
+export function parseAmdIndexStackId(stackId: string): { indexTag: string; version: string } | null {
+  const m = stackId.match(AMD_INDEX_STACK_ID_RE)
+  if (!m) return null
+  return { indexTag: m[1]!, version: m[2]! }
+}
+
+/** stackId for an AMD multi-arch entry. Its own namespace: a pytorch.org
+ *  entry with the same tag + torch version is a different stack (different
+ *  index, different wheels) and must never share an id with it. */
+export function makeAmdIndexStackId(indexTag: string, torchVersion: string): string {
+  return `amd-index:${indexTag}:${publicVersion(torchVersion)}`
+}
+
+/** Parse any index-served (manifest-resolved, pip-applied) stackId,
+ *  regardless of which index serves it. */
+export function parseAnyIndexStackId(stackId: string): { indexTag: string; version: string } | null {
+  return parseIndexStackId(stackId) ?? parseAmdIndexStackId(stackId)
 }
 
 /** Whether a stack is applied via pip rather than a bundle graft. Bundle
