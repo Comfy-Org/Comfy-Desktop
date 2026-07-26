@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
@@ -13,7 +14,11 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserInstallTile from './chooser/ChooserInstallTile.vue'
+import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
+import DevPlatformDistributionCard from './devplatform/DevPlatformDistributionCard.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
+import type { ContextMenuItem } from '../types/context-menu'
+import type { Distribution } from '../devplatform/types'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
@@ -24,12 +29,18 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
  * entry.
  *
  * Layout:
+ *   - Top-right: dev-platform account chip (log-in button when signed out;
+ *     workspace switcher when signed in).
  *   - Top-left: "New Install" (always present).
  *   - Following: every install (local / cloud / remote) ordered by
  *     `lastLaunchedAt` desc, never-launched at the end.
+ *   - Then, when signed in, one tile per distribution published to the
+ *     workspace that isn't installed yet: installing a distribution is the
+ *     SAME GESTURE as launching an existing install: one tile, one click.
  *   - Filter chips above the grid narrow by source category.
  *
- * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`.
+ * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`;
+ * per-distribution tiles in `devplatform/DevPlatformDistributionCard.vue`.
  */
 
 const props = withDefaults(
@@ -57,6 +68,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
+const authStore = useAuthStore()
 const modal = useModal()
 
 onMounted(() => {
@@ -64,6 +76,20 @@ onMounted(() => {
     void installationStore.fetchInstallations()
   }
 })
+
+// Sign-in / workspace-switch can happen ON this page (the chip), so the
+// distribution list follows the session rather than mount timing. Keying on the
+// workspace id (not just signed-in) is what re-fetches after a switch, where the
+// store clears the grid but signed-in stays true.
+watch(
+  () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
+  () => {
+    if (authStore.isSignedIn && authStore.distributions.length === 0) {
+      void authStore.fetchDistributions().catch(() => {})
+    }
+  },
+  { immediate: true }
+)
 
 // Filter / search / recency logic is shared with the title-bar
 // instance picker popover via `useInstallList` so the two surfaces
@@ -78,8 +104,13 @@ onMounted(() => {
 // flow through `visibleInstalls` like every other source — there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedLabel } =
-  useInstallList({ installations: installationsRef })
+const {
+  searchQuery,
+  activeFilter,
+  visibleInstalls,
+  showEmptyHint,
+  matchesQuery
+} = useInstallList({ installations: installationsRef })
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
 // drive the underlying filter state without the chip UI mounted.
@@ -87,12 +118,153 @@ const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedL
 // doesn't reference the ref directly (chips are TODO(brand-cleanup)).
 defineExpose({ activeFilter })
 
+// --- Comfy Builder distributions ---
+//
+// ORDERING: New install → existing installs → distributions. Existing installs
+// are what the user returns to and their position is muscle memory, so the
+// "things I could add" family goes last.
+//
+// DE-DUPLICATION: an already-installed distribution is an ordinary
+// installation and must not be listed twice. `installation.distributionId`
+// when the comfybuilder install carries it (the index signature passes it
+// through), else case-insensitive name equality: an install created from a
+// distribution inherits its name.
+function installationBacksDistribution(inst: Installation, dist: Distribution): boolean {
+  const linked = inst.distributionId
+  if (typeof linked === 'string' && linked.length > 0) return linked === dist.id
+  // Name-match is a fallback only for a comfybuilder install; never let an
+  // unrelated same-named local install hide a distribution tile.
+  if (inst.sourceId !== 'comfybuilder') return false
+  return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
+}
+
+/** Every distribution that earns a tile, before search. Empty when signed out. */
+const chooserDistributions = computed<Distribution[]>(() => {
+  if (!authStore.isSignedIn) return []
+  return authStore.distributions.filter(
+    (dist) =>
+      !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
+  )
+})
+
+/** Search filters distributions through the SAME query as the install tiles. */
+const visibleDistributions = computed<Distribution[]>(() =>
+  chooserDistributions.value.filter((dist) => matchesQuery(dist.name))
+)
+
+/** A failed distribution fetch, distinct from an empty workspace: the watch
+ *  keys on session identity so it won't re-fetch on its own, hence the retry. */
+const distributionLoadFailed = computed(
+  () => authStore.isSignedIn && authStore.distributionsError && authStore.distributions.length === 0
+)
+
+/** The no-matches hint may only fire when NOTHING in the grid matches. A failed
+ *  fetch shows its own retry line instead, so the two never co-render. */
+const showNoMatches = computed(
+  () => showEmptyHint.value && visibleDistributions.value.length === 0 && !distributionLoadFailed.value
+)
+
+/** One quiet line under the grid when the signed-in workspace has nothing
+ *  published (or the fetch failed). Never a panel: this page already has content. */
+const distributionNote = computed(() => {
+  if (!authStore.isSignedIn) return ''
+  if (searchQuery.value.trim()) return ''
+  if (authStore.loadingDistributions) return ''
+  if (distributionLoadFailed.value) return t('devPlatform.distribution.loadError')
+  if (authStore.distributions.length === 0) return t('devPlatform.distribution.emptyTitle')
+  return ''
+})
+
+/**
+ * Install a distribution: main resolves the host artifact + creates the record,
+ * then we drive the SAME `installInstance` + progress UI every other install
+ * uses (via the `show-progress` event PanelApp already handles). A blocked tile
+ * never reaches here: the card suppresses its own activation.
+ */
+/** Distribution id whose install-kickoff is in flight, so a fast second click
+ *  (tile then kebab, or a double-click) can't start two installs before the
+ *  progress modal takes over. Main also guards this, belt-and-suspenders. */
+const activatingDist = ref<string | null>(null)
+
+async function handleDistributionActivate(dist: Distribution): Promise<void> {
+  if (activatingDist.value) return
+  activatingDist.value = dist.id
+  try {
+    const result = await window.api.comfybuilder.installDistribution(dist.id).catch((err: unknown) => ({
+      ok: false as const,
+      message: (err as Error)?.message || String(err)
+    }))
+    if (!result || !result.ok || !result.entry) {
+      await modal.alert({
+        title: t('errors.installFailed'),
+        message: result.message || t('devPlatform.distribution.installFailed')
+      })
+      return
+    }
+    emit('show-progress', {
+      installationId: result.entry.id,
+      title: `${t('newInstall.installing')}: ${result.entry.name}`,
+      apiCall: () => window.api.installInstance(result.entry!.id),
+      autoLaunchOnFinish: true,
+      opKind: 'install'
+    })
+  } finally {
+    activatingDist.value = null
+  }
+}
+
+// --- Distribution kebab menu ---
+//
+// Distribution cards carry the same top-right kebab as install tiles, so the
+// corner means one thing across the grid. Install is the only action a
+// distribution supports today; blocked states keep the item visible but
+// disabled rather than presenting an empty menu, which reads as a bug.
+const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  dist: null
+})
+
+const distMenuItems = computed<ContextMenuItem[]>(() => {
+  const dist = distMenu.value.dist
+  if (!dist) return []
+  return [
+    {
+      id: 'install',
+      label: t('devPlatform.distribution.menuInstall'),
+      disabled: dist.state !== 'installable' && dist.state !== 'update-available'
+    }
+  ]
+})
+
+function openDistKebabMenu(event: MouseEvent, dist: Distribution): void {
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect?.()
+  // Right-aligned drop, matching the install-tile kebab. ContextMenu clamps to
+  // the viewport, so a negative x is safe.
+  const x = rect ? rect.right - 180 : event.clientX
+  const y = (rect?.bottom ?? event.clientY) + 4
+  distMenu.value = { open: true, x, y, dist }
+}
+
+function closeDistMenu(): void {
+  distMenu.value = { open: false, x: 0, y: 0, dist: null }
+}
+
+function handleDistMenuSelect(itemId: string): void {
+  const dist = distMenu.value.dist
+  closeDistMenu()
+  if (itemId === 'install' && dist) void handleDistributionActivate(dist)
+}
+
 // --- Cluster top offset ---
 
-/** Unfiltered tile count: New Install + every install (cloud included).
- *  Reads the raw list, not `visibleInstalls`, so search never shifts the
- *  cluster. */
-const baseTileCount = computed(() => 1 + installationStore.installations.length)
+/** Unfiltered tile count: New Install + every install (cloud included) + every
+ *  distribution. Reads the raw lists, not the `visible*` ones, so search never
+ *  shifts the cluster. */
+const baseTileCount = computed(
+  () => 1 + installationStore.installations.length + chooserDistributions.value.length
+)
 
 const TILES_PER_ROW = 4
 
@@ -232,6 +404,13 @@ function handleNewInstallClick(): void {
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
     <div class="chooser-view" :style="{ '--rows': clusterRows }">
+      <!-- Identity, top-right: the account chip when signed in, a quiet log-in
+           button when not. Absolutely positioned so it never enters the
+           centered wordmark → search → grid column. -->
+      <div class="chooser-account">
+        <DevPlatformAccountChip />
+      </div>
+
       <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
       <div class="chooser-search">
         <BaseInput
@@ -250,7 +429,7 @@ function handleNewInstallClick(): void {
         {{ t('common.loading') }}
       </div>
 
-      <div v-else-if="showEmptyHint" class="chooser-empty">
+      <div v-else-if="showNoMatches" class="chooser-empty">
         {{ t('chooser.noMatches') }}
       </div>
 
@@ -277,7 +456,6 @@ function handleNewInstallClick(): void {
           :key="inst.id"
           :installation="inst"
           :is-stopped-action-gated="isStoppedActionGated(inst)"
-          :last-launched-label="lastLaunchedLabel(inst)"
           @pick="pickInstall"
           @open-card-menu="openCardMenu"
           @open-kebab-menu="openKebabMenu"
@@ -285,7 +463,29 @@ function handleNewInstallClick(): void {
           @view-error="viewError"
           @view-danger="viewDanger"
         />
+
+        <!-- Distributions: siblings of the install tiles, same box, same
+             TransitionGroup, so installing one is the same gesture as
+             launching an install. Blocked states render WITH their reason and
+             are never filtered out: the card owns that treatment. -->
+        <DevPlatformDistributionCard
+          v-for="dist in visibleDistributions"
+          :key="`dist:${dist.id}`"
+          :distribution="dist"
+          @select="handleDistributionActivate(dist)"
+          @open-kebab-menu="(event) => openDistKebabMenu(event, dist)"
+        />
       </TransitionGroup>
+
+      <button
+        v-if="distributionLoadFailed"
+        type="button"
+        class="chooser-dist-note chooser-dist-note--retry"
+        @click="authStore.fetchDistributions()"
+      >
+        {{ $t('devPlatform.distribution.loadError') }}
+      </button>
+      <p v-else-if="distributionNote" class="chooser-dist-note">{{ distributionNote }}</p>
 
       <ContextMenu
         :open="ctxMenu.open"
@@ -294,6 +494,15 @@ function handleNewInstallClick(): void {
         :items="ctxMenuItems"
         @close="closeMenu"
         @select="handleCtxMenuSelect"
+      />
+
+      <ContextMenu
+        :open="distMenu.open"
+        :x="distMenu.x"
+        :y="distMenu.y"
+        :items="distMenuItems"
+        @close="closeDistMenu"
+        @select="handleDistMenuSelect"
       />
     </div>
   </BrandBackground>
@@ -352,6 +561,46 @@ function handleNewInstallClick(): void {
   max-width: 1280px;
   padding: var(--chooser-pad-y) 24px;
   row-gap: var(--chooser-row-gap);
+}
+
+/* Account chip: pinned to the frame's top-right, out of the centered column
+ * so it can never collide with the wordmark or the search field. */
+.chooser-account {
+  position: absolute;
+  top: var(--chooser-pad-y);
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  max-width: min(340px, 45%);
+}
+
+/* Quiet one-liner for the distribution family's empty story. Lives in the
+ * bottom spacer row so it costs the centered cluster no layout; on a short
+ * window the spacer collapses and this caption is the first thing to go. */
+.chooser-dist-note {
+  grid-row: 5;
+  align-self: start;
+  margin: 0;
+  padding-top: 4px;
+  font-size: var(--takeover-fs-caption);
+  color: var(--text-muted);
+  text-align: center;
+}
+.chooser-dist-note--retry {
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.chooser-dist-note--retry:hover {
+  color: var(--neutral-100);
+  text-decoration: underline;
+}
+.chooser-dist-note--retry:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .chooser-wordmark {

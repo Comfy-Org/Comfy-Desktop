@@ -266,6 +266,9 @@
     "copyError": "复制错误详情",
     "clear": "清除"
   },
+  "comfybuilder": {
+    "stageModels": "下载模型"
+  },
   "list": {
     "loadSnapshot": "加载快照",
     "snapshotSourceName": "源实例",
@@ -1120,6 +1123,39 @@
       "nodes": "正在加载自定义节点…"
     },
     "viewLogs": "查看日志"
+  },
+  "devPlatform": {
+    "signIn": {
+      "cta": "登录"
+    },
+    "account": {
+      "signOut": "退出登录",
+      "signedInAs": "已登录为 {email}",
+      "signOutConfirmTitle": "退出 ComfyBuilder？",
+      "signOutConfirmBody": "已安装的分发版本会保留并仍可运行，只是在重新登录前不再接收更新。",
+      "signOutConfirmCta": "退出登录"
+    },
+    "workspace": {
+      "personalLabel": "个人",
+      "switchLabel": "工作区",
+      "loadError": "无法加载工作区，请重试"
+    },
+    "distribution": {
+      "menuInstall": "安装",
+      "distVersion": "分发版 v{version}",
+      "emptyTitle": "此工作区尚未发布任何分发版本。",
+      "loadError": "无法加载分发版本，请重试",
+      "installFailed": "无法开始安装，请重试。",
+      "states": {
+        "noBuild": "无构建",
+        "platformMismatch": "不适用于此设备",
+        "updateAvailable": "更新"
+      },
+      "blockedReason": {
+        "buildFailed": "此分发版本尚无成功的构建。",
+        "noArtifactForMachine": "最新构建没有适用于此操作系统和 GPU 的制品。"
+      }
+    }
   },
   "errors": {
     "invalidUrl": "请输入有效 URL（例如 http://localhost:8188）。",

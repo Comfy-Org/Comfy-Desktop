@@ -266,6 +266,9 @@
     "copyError": "Copy error details",
     "clear": "Clear"
   },
+  "comfybuilder": {
+    "stageModels": "Download models"
+  },
   "list": {
     "loadSnapshot": "Load Snapshot",
     "snapshotSourceName": "Source Instance",
@@ -1120,6 +1123,39 @@
       "nodes": "Loading custom nodes…"
     },
     "viewLogs": "View logs"
+  },
+  "devPlatform": {
+    "signIn": {
+      "cta": "Log in"
+    },
+    "account": {
+      "signOut": "Sign out",
+      "signedInAs": "Signed in as {email}",
+      "signOutConfirmTitle": "Sign out of ComfyBuilder?",
+      "signOutConfirmBody": "Your installed distributions are kept and still run. They just stop receiving updates until you sign back in.",
+      "signOutConfirmCta": "Sign out"
+    },
+    "workspace": {
+      "personalLabel": "Personal",
+      "switchLabel": "Workspace",
+      "loadError": "Couldn't load workspaces. Retry"
+    },
+    "distribution": {
+      "menuInstall": "Install",
+      "distVersion": "Dist v{version}",
+      "emptyTitle": "No distributions published to this workspace yet.",
+      "loadError": "Couldn't load distributions. Retry",
+      "installFailed": "Could not start the install. Try again.",
+      "states": {
+        "noBuild": "No build",
+        "platformMismatch": "Not for this machine",
+        "updateAvailable": "Update"
+      },
+      "blockedReason": {
+        "buildFailed": "This distribution has no successful build yet.",
+        "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
+      }
+    }
   },
   "errors": {
     "invalidUrl": "Enter a valid URL (e.g. http://localhost:8188).",

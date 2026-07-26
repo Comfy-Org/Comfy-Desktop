@@ -1,0 +1,75 @@
+/*
+ * Distribution-tile deltas on top of `views/chooser/chooser-tiles.css`.
+ *
+ * A distribution renders as a chooser tile: a visual sibling of an
+ * installed-instance tile, since that is the interface users already pick
+ * installs from. Everything structural (box, padding, radius, name → footer
+ * stack, pill vocabulary) comes from chooser-tiles.css unchanged; this file
+ * adds only the blocked treatment, the neutral state tag, and the house
+ * focus ring.
+ */
+
+.dist-tile {
+  width: 100%;
+}
+
+/* House focus ring: overrides the chooser sheet's `--accent` fallback. */
+.dist-tile:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- State tag -------------------------------------------------------------
+ * The footer's right slot when there is nothing to DO: "Available",
+ * "Installed", or a blocking reason. Deliberately the quietest thing in the
+ * tile family — it reports, it doesn't ask. The blue action pill (borrowed
+ * wholesale from the install tiles) covers the acting case. */
+.dist-tile-state-tag {
+  color: var(--neutral-200);
+  border-color: color-mix(in oklab, var(--neutral-100) 14%, transparent);
+  background: color-mix(in oklab, var(--neutral-100) 6%, transparent);
+  /* A label, not a button: no hover lift. */
+  cursor: inherit;
+}
+.dist-tile--chooser:hover .dist-tile-state-tag,
+.dist-tile--chooser:focus-visible .dist-tile-state-tag {
+  color: var(--neutral-100);
+}
+
+/* --- Blocked tile ---------------------------------------------------------
+ * De-emphasised but readable, never hidden (product contract). The dim goes on
+ * the identity block, not the root: root opacity would drag the state tag
+ * down with it, and the tag is the one thing worth reading here. The full
+ * reason rides on the tile's `title`. */
+.dist-tile--blocked {
+  cursor: default;
+}
+.dist-tile--blocked .chooser-tile-icon,
+.dist-tile--blocked .chooser-tile-name {
+  opacity: 0.62;
+}
+/* Facts step UP to --neutral-200 instead of dimming: the faint tier
+ * multiplied by 0.62 would drop under the 3:1 contrast floor. */
+.dist-tile--blocked .chooser-tile-meta-line,
+.dist-tile--blocked .chooser-tile-meta-source,
+.dist-tile--blocked .chooser-tile-meta-sep,
+.dist-tile--blocked .chooser-tile-meta-version {
+  color: var(--neutral-200);
+}
+/* Warning tone on the tag is the whole signal now that the corner is the
+ * kebab's — enough to find at a glance, not enough to alarm. */
+.dist-tile--blocked .dist-tile-state-tag {
+  color: var(--neutral-100);
+  border-color: color-mix(in oklab, var(--warning) 40%, transparent);
+  background: color-mix(in oklab, var(--warning) 10%, transparent);
+}
+/* Suppress the hover promise the tile cannot honour. */
+.dist-tile--blocked:hover {
+  background: var(--chooser-surface-bg);
+  border-color: var(--chooser-surface-border);
+}
+.dist-tile--blocked:hover .chooser-tile-icon,
+.dist-tile--blocked:hover .chooser-tile-name {
+  color: var(--neutral-100);
+  opacity: 0.62;
+}
