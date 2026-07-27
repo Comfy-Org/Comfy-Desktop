@@ -60,6 +60,7 @@ const messages = {
       migratePill: 'Migrate',
     },
     devPlatform: {
+      workspace: { personalLabel: 'Personal' },
       distribution: {
         menuInstall: 'Install',
         distVersion: 'Dist v{version}',
@@ -138,14 +139,25 @@ function makeDist(overrides: Partial<DevPlatformDistribution>): DevPlatformDistr
   }
 }
 
-/** Sign in and publish `dists` to the workspace, so distribution cards render. */
+/** Sign in and publish `dists` to the workspace, so distribution cards render.
+ *  `workspace` names the team the shelf header should show. */
 function installMockApiSignedIn(
   installs: Installation[],
   dists: DevPlatformDistribution[],
+  workspace?: { id: string; name: string },
 ): MockApi {
   const api = installMockApi(installs)
-  api.comfybuilder.getAuthStatus.mockResolvedValue({ signedIn: true })
+  api.comfybuilder.getAuthStatus.mockResolvedValue(
+    workspace
+      ? { signedIn: true, workspaceType: 'team', workspaceId: workspace.id }
+      : { signedIn: true },
+  )
   api.comfybuilder.listDistributions.mockResolvedValue(dists)
+  if (workspace) {
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: workspace.id, name: workspace.name, type: 'team', role: 'admin' },
+    ])
+  }
   return api
 }
 
@@ -660,6 +672,77 @@ describe('ChooserView', () => {
     await flushPromises()
     const pill = wrapper.find('[data-testid="chooser-dist-tile-d5"]').find('.chooser-tile-pill-action')
     expect(pill.text()).toBe('Install')
+  })
+
+  it('stays a single centered grid when the workspace has nothing to shelve', async () => {
+    // The common case — signed out, or signed in with nothing published. A lone
+    // left-aligned cluster under no header reads as broken, so we keep the
+    // shipped centered look rather than shelving one family on its own.
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(false)
+    const grids = wrapper.findAll('.chooser-family-grid')
+    expect(grids.length).toBe(1)
+    expect(grids[0]!.classes()).toContain('chooser-family-grid--centered')
+  })
+
+  it('shelves the workspace family under its own name once it has something', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })], {
+      id: 'w1',
+      name: 'Comfy Design Team',
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.find('.chooser-shelf-title').text()).toBe('Comfy Design Team')
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('1')
+    // Your-installs leads and gives up centering once a shelf sits beneath it.
+    const grids = wrapper.findAll('.chooser-family-grid')
+    expect(grids[0]!.classes()).not.toContain('chooser-family-grid--centered')
+    expect(grids[grids.length - 1]!.text()).toContain('Alpha Dist')
+  })
+
+  it('sorts builder-backed installs into the workspace shelf, not your installs', async () => {
+    installMockApiSignedIn(
+      [
+        makeInstall({ id: 'local', name: 'LocalThing' }),
+        makeInstall({ id: 'built', name: 'BuiltThing', sourceId: 'comfybuilder' }),
+      ],
+      [makeDist({ id: 'd1', name: 'AvailableThing' })],
+      { id: 'w1', name: 'Comfy Design Team' },
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const grids = wrapper.findAll('.chooser-family-grid')
+    // [0] your installs, [1] workspace-installed, [2] workspace-available.
+    expect(grids.length).toBe(3)
+    expect(grids[0]!.text()).toContain('LocalThing')
+    expect(grids[0]!.text()).not.toContain('BuiltThing')
+    expect(grids[1]!.text()).toContain('BuiltThing')
+    expect(grids[2]!.text()).toContain('AvailableThing')
+  })
+
+  it('does not flip arrangement while the user types in search', async () => {
+    // The shelf is judged on the PRE-SEARCH lists — filtering every tile out of
+    // a family must not re-center the page mid-keystroke.
+    installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })], {
+      id: 'w1',
+      name: 'Comfy Design Team',
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(true)
+
+    await wrapper.find('input').setValue('zzz-matches-nothing')
+    await flushPromises()
+    // Either the no-matches hint took over, or the shelf is still a shelf —
+    // what must never happen is a silent fall back to the centered grid.
+    const stillShelved = wrapper.find('.chooser-shelf-head').exists()
+    const noMatches = wrapper.find('.chooser-empty').exists()
+    expect(stillShelved || noMatches).toBe(true)
+    expect(wrapper.find('.chooser-family-grid--centered').exists()).toBe(false)
   })
 
   it('has no Desktop entry in the filter state', async () => {
