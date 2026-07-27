@@ -20,7 +20,8 @@
     "cloud": "Cloud",
     "legacyDesktop": "Legacy Desktop",
     "remote": "Remote",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "distribution": "Distribution"
   },
   "chooser": {
     "title": "Choose an instance",

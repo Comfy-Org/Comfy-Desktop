@@ -5,8 +5,7 @@ import {
   AlertCircle,
   ArrowDownToLine,
   ArrowRightLeft,
-  MoreVertical,
-  Package
+  MoreVertical
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
@@ -169,10 +168,11 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
          distribution install wears the distribution glyph instead. -->
     <span
       class="chooser-tile-icon"
-      :title="isFromDistribution ? undefined : t(typeMeta.labelKey)"
+      :title="t(typeMeta.labelKey)"
     >
-      <Package v-if="isFromDistribution" :size="22" />
-      <component :is="typeMeta.icon" v-else :size="22" />
+      <!-- `typeMeta` resolves the distribution glyph itself, so the tile, the
+           picker row and the title bar can't drift apart. -->
+      <component :is="typeMeta.icon" :size="22" />
     </span>
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->

@@ -20,7 +20,8 @@
     "cloud": "云端",
     "legacyDesktop": "旧版桌面端",
     "remote": "远程",
-    "unknown": "未知"
+    "unknown": "未知",
+    "distribution": "分发版"
   },
   "chooser": {
     "title": "选择一个实例",
