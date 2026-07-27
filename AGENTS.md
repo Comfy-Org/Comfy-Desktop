@@ -1,63 +1,24 @@
 # Agent Guidelines
 
-## Pre-commit checks
+Keep this file lean. Frontier models need outcomes, constraints, and project facts they can't infer from the code — not step-by-step workflow instructions. Personal workflow preferences belong in your own local config, not here.
 
-Run typecheck, lint, build, and tests before every commit and push:
+ComfyUI Desktop is an Electron app (electron-vite, Vue 3, TypeScript, pnpm) that installs and manages a local ComfyUI.
 
-```sh
-pnpm run typecheck
-pnpm run lint
-pnpm run build
-pnpm run test
-```
+## Checks
 
-Typecheck and lint are enforced automatically by a husky pre-commit hook.
+CI is the gate: every PR runs lint, typecheck, unit, integration, and per-platform e2e; lifecycle tests run nightly. Locally, run the checks that cover your change (e.g. `pnpm exec vitest run <file>`, `pnpm run typecheck`) rather than the full suite. A husky pre-commit hook enforces typecheck and lint.
 
-## Committing and pushing
+- Failures surfaced by any check are ours to fix, even if pre-existing. Don't bypass them (`--no-verify`, skipping tests, weakening assertions).
+- Flaky tests are not acceptable — fix them when discovered rather than retrying around them.
+- `pnpm run test:e2e` without `--project` also runs the `lifecycle` project, which downloads ~500 MB and performs a real install. Use the `test:e2e:<platform>` scripts. See [TESTING.md](TESTING.md) for the test taxonomy.
 
-When the current branch is a working / feature branch (anything other than `main`), it is fine to `git commit` and `git push` without asking for explicit confirmation each time — keep the branch up to date as you make progress. Run the pre-commit checks above first, fix everything they surface, and only then commit + push.
+## Git
 
-Do **not** push directly to `main`, force-push (`--force` / `--force-with-lease`), or rewrite already-published history without explicit user instruction.
-
-## Fix all issues found by checks
-
-Any errors or warnings surfaced by typecheck, lint, audit, or tests are **our responsibility to fix** — even if they appear to be pre-existing. Do not skip, ignore, or work around them with `--no-verify`. If a pre-commit hook fails, fix the underlying issues before committing.
-
-## Flaky tests
-
-Flaky tests are **not acceptable** — they must be fixed immediately when discovered. A test that intermittently fails erodes CI trust and masks real regressions. Common causes:
-
-- **Timing assertions** (e.g., `expect(elapsed).toBeLessThan(X)`) — use generous thresholds or assert behavior instead of timing.
-- **Process lifecycle races** — add explicit readiness signals (e.g., IPC `ready` messages) instead of relying on timing.
-- **Platform-specific quirks** — Windows `taskkill` and PowerShell Restart Manager can be slow; account for this in timeouts and assertions.
-
-If you encounter a flaky test during a run, investigate and fix it before continuing with other work.
+On feature branches (anything other than `main`), commit and push as you go without asking. Do not push to `main`, force-push, or rewrite published history without explicit user instruction.
 
 ## Comments
 
-- **Be concise.** Don't write multi-paragraph comments to justify a small change. One sentence beats five.
-- **Never reference plan steps, phases, tracks, or stage IDs** (e.g. "Phase 3 §17", "Track M-7", "Stage W-4"). Plans change; the comment becomes a lie within hours and meaningless once the feature ships. Describe what the code does, not what plan brought it here.
-- **Don't narrate history** ("This used to do X, now it does Y"). The git log carries that.
-
-## Follow instructions
-
-When the user gives explicit direction (e.g., "move away from takeovers", "use the unified primitive"), apply it everywhere — search the whole codebase for remaining offenders. **Never silently defer or skip part of an instruction without asking.** If something looks risky, ask; don't decide unilaterally to leave it for later.
-
-## Post-change review: code review after every big piece
-
-After completing any substantial piece of work (a new feature, a test-suite change, a refactor spanning multiple files), do a dedicated code review pass before moving on:
-
-- Review the full diff (`git diff` against the merge base), not just the files you remember touching.
-- Check that CI-relevant checks (typecheck, lint, build, tests) pass AND that their passing is meaningful — no weakened assertions, skipped tests, or reduced coverage.
-- Verify code coverage did not decrease compared to the base branch.
-- Use an independent reviewer (e.g. the oracle) for changes with subtle correctness risk.
-
-## Post-change review: deduplication
-
-After creating or modifying code, check for duplicated logic before committing:
-
-- Look for repeated filter predicates, conditions, or expressions that could be extracted into a shared variable, computed property, or helper.
-- If two call sites must stay in sync (e.g., a visibility check and the action it guards), extract the shared logic so they cannot diverge.
+Comments describe the code as it is now. Never reference plan steps, phases, or track/stage IDs ("Phase 3 §17", "Track M-7") and don't narrate history — plans change, and the git log carries the past.
 
 ## ComfyUI-Manager is v4 (not the legacy v3 layout)
 
