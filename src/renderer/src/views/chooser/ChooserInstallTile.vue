@@ -13,6 +13,7 @@ import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
+import { isDistributionInstall } from '../../devplatform/distributionState'
 import type { Installation } from '../../types/ipc'
 
 interface Props {
@@ -76,13 +77,9 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
-/** An install that came from a distribution. It wears the distribution glyph
- *  rather than its install-type icon: what it IS matters more here than where
- *  it happens to run, and it keeps one visual identity across the shelf whether
- *  a distribution is installed or still a card. */
-const isFromDistribution = computed(
-  () => inst.value.sourceId === 'comfybuilder' || typeof inst.value.distributionId === 'string'
-)
+/** Wears the distribution glyph rather than its install-type icon, so a
+ *  distribution keeps one identity whether it's installed or still a card. */
+const isFromDistribution = computed(() => isDistributionInstall(inst.value))
 
 const distributionVersion = computed(() =>
   typeof inst.value.distributionVersion === 'string' ? inst.value.distributionVersion : ''
@@ -91,8 +88,7 @@ const distributionVersion = computed(() =>
 /** Desktop's listPreview is the bare installPath (useless as a label), so fall
  *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
 const sourceLabel = computed(() => {
-  // A distribution install says WHICH distribution it is, not where it lives:
-  // the path is noise on a tile whose identity is the distribution.
+  // The path is noise on a tile whose identity is the distribution.
   if (isFromDistribution.value) return ''
   const raw =
     inst.value.sourceId === 'desktop'
@@ -101,8 +97,7 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
-/** The right-hand fact: a distribution's release, or nothing extra. Labelled so
- *  it can't be read as the ComfyUI version sitting beside it. */
+/** Labelled ("Dist v7") so it can't be read as the ComfyUI version beside it. */
 const trailingFact = computed(() =>
   isFromDistribution.value
     ? distributionVersion.value

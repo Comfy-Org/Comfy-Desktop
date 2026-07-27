@@ -53,8 +53,7 @@ export interface DistributionRow {
   /** i18n suffix explaining a blocked state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
   /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
-   *  / `linux`). Naming them beats "not for this machine": the user learns the
-   *  build is real and which machine would run it. */
+   *  / `linux`), so the card can name a machine that would run it. */
   targetOs?: string[]
 }
 
@@ -116,8 +115,7 @@ async function buildRow(
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
   if (!artifact) {
-    // Which machines this build IS for. Sorted so the label is stable across
-    // artifact orderings rather than shuffling between refreshes.
+    // Sorted so the label is stable across artifact orderings.
     const targetOs = [...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))].sort()
     return {
       ...withVersion,

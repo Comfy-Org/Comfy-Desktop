@@ -1,15 +1,8 @@
 <script setup lang="ts">
 /**
- * One grid of chooser tiles — the shared body of every shelf.
- *
- * Renders the New Install tile, install tiles and distribution cards from a
- * mixed entry list and re-emits every tile event verbatim; `ChooserView` owns
- * all the handlers, so the two families cannot drift in behaviour just because
- * they sit in different shelves.
- *
- * `centered` is the shipped single-cluster look, used when there's no shelf
- * beneath. Under a shelf header the rows go left-aligned, so tiles line up
- * with the header that names them.
+ * One grid of chooser tiles — the shared body of every shelf. Renders a mixed
+ * list of install tiles and distribution cards and re-emits every tile event
+ * verbatim; `ChooserView` owns the handlers, so the two families can't drift.
  */
 import { useI18n } from 'vue-i18n'
 import { Plus } from 'lucide-vue-next'

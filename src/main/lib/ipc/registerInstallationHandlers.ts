@@ -125,10 +125,8 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
               ? source.getStatusTag(inst)
               : undefined
     // A comfybuilder install's raw `version` is its DISTRIBUTION version, not a
-    // ComfyUI one (see `installedDistributionVersions`). Give it its own field
-    // and keep it out of `version`, so a renderer never has to guess which of
-    // the two a version string means — a bare "7" where every other tile shows
-    // "v0.28.2" reads as a ComfyUI version and isn't one.
+    // ComfyUI one (see `installedDistributionVersions`), so it gets its own
+    // field — otherwise a bare "7" lands where every other tile shows "v0.28.2".
     const isFromDistribution = inst.sourceId === 'comfybuilder'
     const distributionVersion = isFromDistribution
       ? (inst.version as string | undefined)

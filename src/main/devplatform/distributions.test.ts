@@ -68,8 +68,6 @@ describe('listDistributionRows', () => {
     const rows = await listDistributionRows(client as never, HOST)
     const row = rows[0]!
     expect(row).toMatchObject({ version: '3', state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' })
-    // Names the machines the build IS for, so the card can say "Windows"
-    // rather than only "not for this machine".
     expect(row.targetOs).toEqual(['windows'])
   })
 

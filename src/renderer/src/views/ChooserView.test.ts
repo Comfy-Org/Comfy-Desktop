@@ -773,6 +773,28 @@ describe('ChooserView', () => {
     expect(grids[2]!.text()).toContain('AvailableThing')
   })
 
+  it('leaves a local install with an empty distributionId in your installs', async () => {
+    installMockApiSignedIn(
+      [
+        makeInstall({
+          id: 'local',
+          name: 'LocalThing',
+          distributionId: '',
+        } as unknown as Partial<Installation>),
+      ],
+      [makeDist({ id: 'd1', name: 'AvailableThing' })],
+      { id: 'w1', name: 'Comfy Design Team' },
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    // An empty id is no link at all — shelving it would file a plain local
+    // install under the workspace and give it the distribution glyph.
+    const grids = wrapper.findAll('.chooser-family-grid')
+    expect(grids[0]!.text()).toContain('LocalThing')
+    expect(grids.slice(1).some((g) => g.text().includes('LocalThing'))).toBe(false)
+  })
+
   it('does not flip arrangement while the user types in search', async () => {
     // The shelf is judged on the PRE-SEARCH lists — filtering every tile out of
     // a family must not re-center the page mid-keystroke.

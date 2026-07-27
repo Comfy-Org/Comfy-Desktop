@@ -1,7 +1,6 @@
 /**
- * One tile in a chooser grid. The chooser renders two families — the user's
- * own installs, and the signed-in workspace's distributions — through the same
- * grid component, so the grid takes a mixed list rather than two props.
+ * One tile in a chooser grid. Installs and distributions render through the
+ * same grid component, so it takes a mixed list rather than two props.
  */
 import type { Distribution } from '../../devplatform/types'
 import type { Installation } from '../../types/ipc'
@@ -10,10 +9,10 @@ export type ChooserGridEntry =
   | { kind: 'install'; inst: Installation }
   | { kind: 'dist'; dist: Distribution }
 
-/** Stable `v-for` key. Namespaced so a distribution can never collide with an
- *  installation that happens to share its id. */
+/** Stable `v-for` key. Both sides are namespaced so an installation and a
+ *  distribution that share an id — or the reserved `__new` tile — can't collide. */
 export function entryKey(entry: ChooserGridEntry): string {
-  return entry.kind === 'install' ? entry.inst.id : `dist:${entry.dist.id}`
+  return entry.kind === 'install' ? `install:${entry.inst.id}` : `dist:${entry.dist.id}`
 }
 
 export function installEntry(inst: Installation): ChooserGridEntry {

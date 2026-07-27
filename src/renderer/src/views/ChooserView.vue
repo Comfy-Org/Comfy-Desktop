@@ -16,6 +16,7 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { distEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
+import { isDistributionInstall } from '../devplatform/distributionState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
@@ -138,15 +139,9 @@ function installationBacksDistribution(inst: Installation, dist: Distribution): 
   return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
 }
 
-/**
- * Every distribution that earns a tile, before search. Empty when signed out.
- *
- * Everything the workspace publishes appears, including builds this machine
- * can't install: seeing that one exists — and why it won't run here — is worth
- * more than a tidier grid, and a distribution that silently vanished would be
- * indistinguishable from one that was never published. The card owns that
- * treatment; nothing is filtered on the way in.
- */
+/** Every distribution that earns a tile, before search. Blocked builds are kept
+ *  and receded by the card, not filtered out — a hidden one is indistinguishable
+ *  from one that was never published. */
 const chooserDistributions = computed<Distribution[]>(() => {
   if (!authStore.isSignedIn) return []
   return authStore.distributions.filter(
@@ -185,42 +180,32 @@ const distributionNote = computed(() => {
 
 // --- Shelves ---
 //
-// Two families. "Your installs" leads, bare and unheaded — it is what the user
-// came for. Beneath it, ONE shelf headed by the workspace name, holding what
-// that workspace contributes: installs that came from a distribution, then the
-// distributions still available to add on a fresh row.
-//
-// The shelf only exists when the workspace has something to put in it. Most
-// users are signed out or in a workspace with nothing published, and a lone
-// left-aligned cluster under no header reads as broken rather than arranged —
-// so without a shelf the page falls back to the shipped centered grid.
+// Your installs lead, unheaded; the workspace's own installs and available
+// distributions sit under one header beneath. With nothing to shelve the page
+// falls back to the shipped centered grid — a lone left-aligned cluster under
+// no header reads as broken.
 
-/** An install that came from a distribution. Judged on the install's own
- *  identity, not the fetched distribution list, so it stays correct when a
- *  distribution is unpublished or the list hasn't loaded. */
-function isBuilderInstall(inst: Installation): boolean {
-  return inst.sourceId === 'comfybuilder' || typeof inst.distributionId === 'string'
-}
-
+// `isDistributionInstall` judges the install's own identity, not the fetched
+// distribution list, so the split holds when a distribution is unpublished or
+// the list hasn't loaded.
 const allPlainInstalls = computed(() =>
-  installationStore.installations.filter((i) => !isBuilderInstall(i))
+  installationStore.installations.filter((i) => !isDistributionInstall(i))
 )
 const allBuilderInstalls = computed(() =>
-  installationStore.installations.filter(isBuilderInstall)
+  installationStore.installations.filter(isDistributionInstall)
 )
 
 const ownEntries = computed<ChooserGridEntry[]>(() =>
-  visibleInstalls.value.filter((i) => !isBuilderInstall(i)).map(installEntry)
+  visibleInstalls.value.filter((i) => !isDistributionInstall(i)).map(installEntry)
 )
 const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
-  visibleInstalls.value.filter(isBuilderInstall).map(installEntry)
+  visibleInstalls.value.filter(isDistributionInstall).map(installEntry)
 )
 const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
   visibleDistributions.value.map(distEntry)
 )
 
-/** Judged on the PRE-SEARCH lists so typing can't flip the page between its
- *  two arrangements mid-keystroke. */
+/** Pre-search lists, so typing can't flip the page between arrangements. */
 const showWorkspaceShelf = computed(
   () =>
     authStore.isSignedIn &&
@@ -313,12 +298,10 @@ function handleDistMenuSelect(itemId: string): void {
 
 const TILES_PER_ROW = 4
 
-/** Unfiltered tile rows across both shelves. Drives the reserved `min-height`
- *  so the box doesn't shrink while filtering — that's what keeps the centered
- *  cluster from shifting when the user types in search. Reads the raw lists,
- *  not the `visible*` ones, for exactly that reason. */
+/** Unfiltered row count across both shelves, reserving `min-height` so the
+ *  cluster doesn't shift while typing in search. Raw lists, not `visible*`. */
 const clusterRows = computed(() => {
-  // The New Install tile rides with the your-installs family.
+  // +1: the New Install tile rides with the your-installs family.
   const ownRows = Math.ceil((1 + allPlainInstalls.value.length) / TILES_PER_ROW)
   if (!showWorkspaceShelf.value) return ownRows
   const shelfTiles = allBuilderInstalls.value.length + chooserDistributions.value.length
@@ -438,8 +421,8 @@ function handleNewInstallClick(): void {
   emit('show-new-install')
 }
 
-/** One handler set shared by every `ChooserFamilyGrid` (`v-on="gridHandlers"`),
- *  so a tile behaves identically whichever shelf it landed in. */
+/** Shared by every `ChooserFamilyGrid`, so a tile behaves the same whichever
+ *  shelf it landed in. */
 const gridHandlers = {
   'new-install': handleNewInstallClick,
   pick: pickInstall,
@@ -487,9 +470,8 @@ const gridHandlers = {
       </div>
 
       <div v-else class="chooser-shelves">
-        <!-- Your installs: bare tiles, no header. Centered (the shipped look)
-             whenever there's no workspace shelf beneath — a lone left-aligned
-             cluster reads as broken, not arranged. -->
+        <!-- Your installs: bare tiles, no header, centered until a shelf
+             appears beneath them. -->
         <section class="chooser-shelf">
           <ChooserFamilyGrid
             show-new
@@ -500,10 +482,8 @@ const gridHandlers = {
           />
         </section>
 
-        <!-- One shelf headed by the workspace name: what it already put on this
-             machine, then what it still offers on a fresh row. Two stacked
-             grids share the section's row gap, so they read as continuous rows
-             rather than separate blocks. -->
+        <!-- The workspace shelf: what it already put on this machine, then what
+             it still offers on a fresh row. -->
         <section
           v-if="
             showWorkspaceShelf &&
@@ -703,23 +683,18 @@ const gridHandlers = {
   padding: 24px;
 }
 
-/* The scroll viewport both shelves live in. Tile layout and the FLIP belong to
- * `ChooserFamilyGrid`; this owns only the column, the scroll and the fade. */
+/* The scroll viewport both shelves live in — column, scroll and fade only;
+ * tile layout and the FLIP belong to `ChooserFamilyGrid`. */
 .chooser-shelves {
   grid-row: 4;
   width: 100%;
-  /* The CONTENT box must hold exactly 4 tracks (4 × 280px + 3 × 16px = 1168px).
-   * The side padding — breathing room so edge tiles' focus rings don't clip
-   * against the scroll container — has to sit outside that budget, or `auto-fit`
-   * drops to 3 columns on a wide viewport. */
+  /* Content box must hold exactly 4 tracks (4 × 280 + 3 × 16 = 1168px), so the
+   * side padding sits OUTSIDE the cap — inside it, `auto-fit` drops to 3
+   * columns on a wide viewport. */
   --shelf-pad-x: 4px;
   max-width: calc(1168px + 2 * var(--shelf-pad-x));
-  /* Reserve height for the UNFILTERED row count so the box doesn't shrink while
-   * typing in search — that's what keeps the centered cluster from jumping
-   * (replaces the old top-anchor no-shift trick). One tile is
-   * 280px × 280·156.678/246 ≈ 178px tall; rows are 178px + a 16px gap each.
-   * `max-height: 100%` still caps it on short viewports, where the shelves
-   * scroll internally and the 1fr spacers collapse to 0. */
+  /* Reserve the unfiltered row height so the cluster doesn't jump while typing
+   * in search. Tile is 178px tall (280px at the golden-ratio aspect). */
   --tile-h: 178px;
   min-height: min(
     100%,
@@ -737,9 +712,7 @@ const gridHandlers = {
   padding: var(--chooser-fade) var(--shelf-pad-x);
 }
 
-/* Soft top + bottom fade on the scroll viewport so the edge feels like a
- * dissolve instead of a hard cut. Fade distance tracks the vertical padding so
- * the first/last rows still tuck under. */
+/* Soft scroll edges, matched to the vertical padding so rows tuck under. */
 @supports (mask-image: linear-gradient(black, black)) {
   .chooser-shelves {
     mask-image: linear-gradient(
@@ -755,13 +728,11 @@ const gridHandlers = {
 .chooser-shelf {
   display: flex;
   flex-direction: column;
-  /* Matches the grid's row gap so two stacked grids in one shelf read as
-   * continuous rows, not separate blocks. */
+  /* The grid's own row gap, so two stacked grids read as continuous rows. */
   gap: 16px;
 }
 
-/* Quiet label + rule. The shelf is an organising device, not a section the user
- * acts on, so the header stays at caption weight and the rule carries the span. */
+/* Caption weight: the shelf organises, it isn't a section you act on. */
 .chooser-shelf-head {
   display: flex;
   align-items: center;

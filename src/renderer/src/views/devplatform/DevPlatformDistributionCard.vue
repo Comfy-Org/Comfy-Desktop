@@ -1,22 +1,11 @@
 <script setup lang="ts">
 /**
- * One distribution, rendered as a chooser tile: a sibling of
- * `views/chooser/ChooserInstallTile.vue` — same box, same classes, same type
- * scale, same top-right kebab. Activating it is the same gesture as launching
- * an existing install.
+ * One distribution as a chooser tile — a sibling of `ChooserInstallTile.vue`,
+ * sharing its box, classes and footer grammar: facts on the left, ONE status
+ * slot on the right (an action pill or a blocked tag, never both).
  *
- * NAME is the headline. The footer row follows the grammar the install tiles
- * use: LEFT is the labelled version, RIGHT is one status/action slot — a pill
- * for what you can do (Install / Update), or a quiet tag for why it's blocked.
- * Never both, and state never replaces the facts.
- *
- * The version is labelled ("Dist v2") because these cards share a grid with
- * install tiles, whose version IS the ComfyUI version. A bare "2" beside a
- * "0.3.20" invites misreading.
- *
- * Blocked states (no-build / platform-mismatch) recede but are never hidden,
- * and keep their full reason on the tile's `title`. No security chrome: these
- * are ordinary pipeline facts, not threats.
+ * Blocked states recede but are never hidden, keeping the full reason on
+ * `title`.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -40,10 +29,8 @@ const { t } = useI18n()
 
 const isBlocked = computed(() => isBlockedDistribution(props.distribution))
 
-/** The facts line: the ComfyUI version this distribution bundles, then the fact
- *  that you don't have it yet. A card is only ever an uninstalled distribution
- *  — once installed it de-duplicates into an install tile, which shows the
- *  distribution's release in this slot instead. */
+/** A card is only ever an UNinstalled distribution — once installed it
+ *  de-duplicates into an install tile, which fills this slot differently. */
 const comfyVersionLabel = computed(() => props.distribution.comfyuiVersion ?? '')
 
 const factsLine = computed(() =>
@@ -52,9 +39,8 @@ const factsLine = computed(() =>
     .join(' · ')
 )
 
-/** Right slot, part one: the blue pill for an action the card performs.
- *  Install and Update are the same gesture — activate the card — so they
- *  wear the same pill. Empty when there's nothing to do. */
+/** Install and Update are the same gesture (activate the card), so one pill
+ *  covers both. Empty when there's nothing to do. */
 const actionPill = computed(() => {
   if (props.distribution.state === 'update-available')
     return t('devPlatform.distribution.states.updateAvailable')
@@ -63,23 +49,16 @@ const actionPill = computed(() => {
   return ''
 })
 
-/** Build-target tokens as product names. Proper nouns, so not translated. */
+/** Build targets as product names. Proper nouns, so not translated. */
 const OS_LABELS: Record<string, string> = {
   windows: 'Windows',
   mac: 'macOS',
   linux: 'Linux',
 }
 
-/**
- * Right slot, part two: a quiet tag for why the tile is blocked. Only consulted
- * when `actionPill` is empty; the two never render together.
- *
- * A platform mismatch names the machines the build IS for ("Linux") rather than
- * the one it isn't ("Not for this machine"). Same length, strictly more
- * information: you learn the build is real and who it's for, which is what
- * decides whether to go find another machine or ask for another target. Falls
- * back to the generic label when the targets aren't known.
- */
+/** Why the tile is blocked. A platform mismatch names the machines the build IS
+ *  for ("Linux") rather than the one it isn't, falling back to the generic
+ *  label when the targets aren't known. */
 const stateTag = computed(() => {
   if (!isBlocked.value) return ''
   const targets = props.distribution.targetOs
@@ -90,7 +69,7 @@ const stateTag = computed(() => {
   return t(`devPlatform.distribution.states.${suffix}`)
 })
 
-/** Full-contrast explanation, carried on `title` so it eats no tile space. */
+/** The long explanation, on `title` so it eats no tile space. */
 const blockedReason = computed(() => {
   if (!isBlocked.value) return ''
   const suffix = props.distribution.blockedReason ?? 'buildFailed'
@@ -117,12 +96,11 @@ function onActivate(): void {
     @keydown.space.prevent="onActivate"
     @contextmenu.prevent="emit('open-kebab-menu', $event)"
   >
-    <!-- "Packaged environment" glyph: the one icon every distribution wears. -->
+    <!-- The one glyph every distribution wears, installed or not. -->
     <span class="chooser-tile-icon" aria-hidden="true">
       <Package :size="22" />
     </span>
 
-    <!-- The corner is the kebab's alone; state lives on the footer row. -->
     <div class="chooser-tile-actions">
       <button
         type="button"
