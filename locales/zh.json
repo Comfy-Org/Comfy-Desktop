@@ -39,6 +39,8 @@
     "updatePill": "更新",
     "migratePill": "迁移",
     "workspaceShelf": "工作区",
+    "seeAll": "查看全部（{count}）",
+    "showLess": "收起",
     "openInstall": "打开",
     "manageInstall": "管理",
     "moreActions": "更多操作",

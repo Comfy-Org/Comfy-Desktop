@@ -59,6 +59,8 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate',
       workspaceShelf: 'Workspace',
+      seeAll: 'See all ({count})',
+      showLess: 'Show less',
     },
     devPlatform: {
       workspace: { personalLabel: 'Personal' },
@@ -561,6 +563,9 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
+    // Blocked distributions live behind the shelf's "See all".
+    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
+
     const kebab = wrapper.find('[data-testid="chooser-dist-tile-kebab-d2"]')
     expect(kebab.exists()).toBe(true)
     await kebab.trigger('click')
@@ -617,6 +622,7 @@ describe('ChooserView', () => {
     )
     const wrapper = mountChooser()
     await flushPromises()
+    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
     const card = wrapper.find('[data-testid="chooser-dist-tile-d4"]')
 
     // State reads in the footer's right slot; the facts keep the left.
@@ -777,6 +783,59 @@ describe('ChooserView', () => {
     const noMatches = wrapper.find('.chooser-empty').exists()
     expect(stillShelved || noMatches).toBe(true)
     expect(wrapper.find('.chooser-family-grid--centered').exists()).toBe(false)
+  })
+
+  it('collapses distributions this machine cannot install behind "See all"', async () => {
+    installMockApiSignedIn(
+      [],
+      [
+        makeDist({ id: 'ok', name: 'InstallableThing', state: 'installable' }),
+        makeDist({ id: 'nb', name: 'NoBuildThing', state: 'no-build' }),
+        makeDist({ id: 'pm', name: 'WrongPlatformThing', state: 'platform-mismatch' }),
+      ],
+      { id: 'w1', name: 'Comfy Design Team' },
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    // Hidden by default — but the header still counts them, so nothing reads
+    // as missing.
+    expect(wrapper.text()).toContain('InstallableThing')
+    expect(wrapper.text()).not.toContain('NoBuildThing')
+    expect(wrapper.text()).not.toContain('WrongPlatformThing')
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('3')
+
+    const toggle = wrapper.find('[data-testid="chooser-shelf-see-all"]')
+    expect(toggle.text()).toBe('See all (2)')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+    expect(wrapper.text()).toContain('NoBuildThing')
+    expect(wrapper.text()).toContain('WrongPlatformThing')
+    expect(wrapper.find('[data-testid="chooser-shelf-see-all"]').text()).toBe('Show less')
+  })
+
+  it('offers no "See all" when every distribution is installable', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'ok', name: 'Fine', state: 'installable' })], {
+      id: 'w1',
+      name: 'Comfy Design Team',
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-shelf-see-all"]').exists()).toBe(false)
+  })
+
+  it('keeps the shelf when the workspace has only blocked distributions', async () => {
+    // Otherwise the builds would be unreachable — knowing they exist is the point.
+    installMockApiSignedIn([], [makeDist({ id: 'nb', name: 'OnlyBlocked', state: 'no-build' })], {
+      id: 'w1',
+      name: 'Comfy Design Team',
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(true)
+    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
+    expect(wrapper.text()).toContain('OnlyBlocked')
   })
 
   it('has no Desktop entry in the filter state', async () => {

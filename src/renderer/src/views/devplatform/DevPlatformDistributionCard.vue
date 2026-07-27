@@ -22,7 +22,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDownToLine, MoreVertical, Package } from 'lucide-vue-next'
 import TruncatedText from '../../components/TruncatedText.vue'
-import type { Distribution, DistributionState } from '../../devplatform/types'
+import { BLOCKED_STATE_KEY, isBlockedDistribution } from '../../devplatform/distributionState'
+import type { Distribution } from '../../devplatform/types'
 
 const props = defineProps<{
   distribution: Distribution
@@ -37,16 +38,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** The states that cannot be installed. Shown with a reason, never hidden. */
-const BLOCKED_STATES: readonly DistributionState[] = ['no-build', 'platform-mismatch']
-
-/** i18n suffix per blocked state, keying the short tag label (`states.*`). */
-const BLOCKED_STATE_KEY: Record<string, string> = {
-  'no-build': 'noBuild',
-  'platform-mismatch': 'platformMismatch',
-}
-
-const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
+const isBlocked = computed(() => isBlockedDistribution(props.distribution))
 
 /** The facts line: the ComfyUI version this distribution bundles, then the fact
  *  that you don't have it yet. A card is only ever an uninstalled distribution

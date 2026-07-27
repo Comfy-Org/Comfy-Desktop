@@ -39,6 +39,8 @@
     "updatePill": "Update",
     "migratePill": "Migrate",
     "workspaceShelf": "Workspace",
+    "seeAll": "See all ({count})",
+    "showLess": "Show less",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",

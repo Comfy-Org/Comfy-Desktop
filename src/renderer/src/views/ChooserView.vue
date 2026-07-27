@@ -16,6 +16,7 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { distEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
+import { isBlockedDistribution } from '../devplatform/distributionState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
@@ -207,9 +208,19 @@ const ownEntries = computed<ChooserGridEntry[]>(() =>
 const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
   visibleInstalls.value.filter(isBuilderInstall).map(installEntry)
 )
+// A distribution this machine can't install (no build yet, or no artifact for
+// this OS/GPU) is still worth being able to find — it's how you learn the build
+// exists — but it shouldn't take a slot in the row you're actually shopping in.
+// Collapsed behind "See all" by default; the count stays in the shelf header so
+// nothing is silently missing.
 const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
-  visibleDistributions.value.map(distEntry)
+  visibleDistributions.value.filter((d) => !isBlockedDistribution(d)).map(distEntry)
 )
+const workspaceBlockedEntries = computed<ChooserGridEntry[]>(() =>
+  visibleDistributions.value.filter(isBlockedDistribution).map(distEntry)
+)
+
+const showBlockedDistributions = ref(false)
 
 /** Judged on the PRE-SEARCH lists so typing can't flip the page between its
  *  two arrangements mid-keystroke. */
@@ -499,15 +510,36 @@ const gridHandlers = {
         <section
           v-if="
             showWorkspaceShelf &&
-            (workspaceInstalledEntries.length || workspaceAvailableEntries.length)
+            (workspaceInstalledEntries.length ||
+              workspaceAvailableEntries.length ||
+              workspaceBlockedEntries.length)
           "
           class="chooser-shelf"
         >
           <header class="chooser-shelf-head">
             <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
+            <!-- Counts the blocked ones too: the header is the promise that
+                 nothing is missing, which is what lets them be collapsed. -->
             <span class="chooser-shelf-count">{{
-              workspaceInstalledEntries.length + workspaceAvailableEntries.length
+              workspaceInstalledEntries.length +
+              workspaceAvailableEntries.length +
+              workspaceBlockedEntries.length
             }}</span>
+            <span class="chooser-shelf-rule" aria-hidden="true" />
+            <button
+              v-if="workspaceBlockedEntries.length"
+              type="button"
+              class="chooser-shelf-toggle"
+              :aria-expanded="showBlockedDistributions"
+              data-testid="chooser-shelf-see-all"
+              @click="showBlockedDistributions = !showBlockedDistributions"
+            >
+              {{
+                showBlockedDistributions
+                  ? t('chooser.showLess')
+                  : t('chooser.seeAll', { count: workspaceBlockedEntries.length })
+              }}
+            </button>
           </header>
           <ChooserFamilyGrid
             v-if="workspaceInstalledEntries.length"
@@ -518,6 +550,14 @@ const gridHandlers = {
           <ChooserFamilyGrid
             v-if="workspaceAvailableEntries.length"
             :entries="workspaceAvailableEntries"
+            :is-stopped-action-gated="isStoppedActionGated"
+            v-on="gridHandlers"
+          />
+          <!-- Can't be installed here. Kept out of the shopping row by default,
+               never dropped: the reason is the point. -->
+          <ChooserFamilyGrid
+            v-if="showBlockedDistributions && workspaceBlockedEntries.length"
+            :entries="workspaceBlockedEntries"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -759,8 +799,9 @@ const gridHandlers = {
   align-items: center;
   gap: 10px;
 }
-.chooser-shelf-head::after {
-  content: '';
+/* Explicit element rather than `::after` so the toggle can sit on the far side
+ * of the rule instead of crowding the count. */
+.chooser-shelf-rule {
   flex: 1 1 auto;
   height: 1px;
   background: var(--chooser-surface-border-hover);
@@ -775,5 +816,26 @@ const gridHandlers = {
 .chooser-shelf-count {
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* Sits after the rule, at the right end of the shelf header. Quiet by default —
+ * it reveals things you can't use, so it must never outrank the cards. */
+.chooser-shelf-toggle {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chooser-shelf-toggle:hover {
+  color: var(--neutral-100);
+}
+.chooser-shelf-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 </style>

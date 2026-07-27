@@ -38,18 +38,28 @@
 
 /* --- Blocked tile ---------------------------------------------------------
  * De-emphasised but readable, never hidden (product contract). The dim goes on
- * the identity block, not the root: root opacity would drag the state tag
- * down with it, and the tag is the one thing worth reading here. The full
- * reason rides on the tile's `title`. */
-.dist-tile--blocked {
+ * the identity block, not the root: root opacity would drag the state tag down
+ * with it, and the tag is the one thing a blocked tile exists to say. The full
+ * reason rides on the tile's `title`.
+ *
+ * Doubled class (`.dist-tile.dist-tile--blocked`) throughout: the shared
+ * `.chooser-tile` hover rules are single-class, and a blocked tile has to win
+ * against them or it lights up under the cursor like something you can use. */
+.dist-tile.dist-tile--blocked {
   cursor: default;
+  /* The tile surface is a 4%-white wash — merely reducing it is imperceptible
+   * on the dark backdrop, so a blocked card drops most of the wash and keeps
+   * a half-strength border to hold its shape in the grid. */
+  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
+  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
 }
 .dist-tile--blocked .chooser-tile-icon,
-.dist-tile--blocked .chooser-tile-name {
-  opacity: 0.62;
+.dist-tile--blocked .chooser-tile-name,
+.dist-tile--blocked .chooser-tile-kebab {
+  opacity: 0.38;
 }
-/* Facts step UP to --neutral-200 instead of dimming: the faint tier
- * multiplied by 0.62 would drop under the 3:1 contrast floor. */
+/* Facts step UP to --neutral-200 instead of dimming: the faint tier multiplied
+ * by 0.38 would drop well under the 3:1 contrast floor. */
 .dist-tile--blocked .chooser-tile-meta-line,
 .dist-tile--blocked .chooser-tile-meta-source,
 .dist-tile--blocked .chooser-tile-meta-sep,
@@ -63,13 +73,18 @@
   border-color: color-mix(in oklab, var(--warning) 40%, transparent);
   background: color-mix(in oklab, var(--warning) 10%, transparent);
 }
-/* Suppress the hover promise the tile cannot honour. */
-.dist-tile--blocked:hover {
-  background: var(--chooser-surface-bg);
-  border-color: var(--chooser-surface-border);
+/* Suppress the hover promise the tile cannot honour; the kebab alone wakes,
+ * because its menu still has something to offer. */
+.dist-tile.dist-tile--blocked:hover {
+  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
+  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
 }
 .dist-tile--blocked:hover .chooser-tile-icon,
 .dist-tile--blocked:hover .chooser-tile-name {
   color: var(--neutral-100);
-  opacity: 0.62;
+  opacity: 0.38;
+}
+.dist-tile--blocked .chooser-tile-kebab:hover,
+.dist-tile--blocked .chooser-tile-kebab:focus-visible {
+  opacity: 1;
 }
