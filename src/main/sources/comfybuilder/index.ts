@@ -21,6 +21,8 @@ import path from 'path'
 import { installArtifact, buildLaunchSpec, stageModels, resolveModelManifest } from '../../comfybuilder'
 import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress, StageProgress } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
+import { listCompleteVersions } from '../../devplatform/distributions'
+import { setCachedVersions } from '../../devplatform/versionCache'
 import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { t } from '../../lib/i18n'
@@ -32,7 +34,8 @@ import type {
   InstallTools,
 } from '../../types/sources'
 
-const DEFAULT_LAUNCH_ARGS = '--enable-manager'
+import { DEFAULT_LAUNCH_ARGS } from './constants'
+import { getDetailSections } from './detailSections'
 
 /** Reconstruct the library Artifact from the fields the install record carries. */
 function artifactFromRecord(inst: InstallationRecord): Artifact {
@@ -117,19 +120,7 @@ export const comfybuilder: SourcePlugin = {
     return [launchAction(installed, !installed ? t('errors.installNotReady') : undefined)]
   },
 
-  getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
-    return [
-      {
-        tab: 'status',
-        title: 'Installation Info',
-        fields: [
-          { label: 'Install method', value: (installation.sourceLabel as string) || 'ComfyBuilder' },
-          { label: 'Distribution', value: (installation.distributionName as string) || '-' },
-          { label: 'Version', value: (installation.version as string) || '-' },
-        ],
-      },
-    ]
-  },
+  getDetailSections,
 
   // A ComfyBuilder install is never discovered on disk: only the dev-platform
   // flow creates one: so there is nothing to probe/adopt.
@@ -181,7 +172,23 @@ export const comfybuilder: SourcePlugin = {
     tools.sendProgress('models', { percent: 100, status: '' })
   },
 
-  async handleAction(actionId: string): Promise<ActionResult> {
+  // Launch / rename / open-folder / remove / delete never reach here — the
+  // generic session-action dispatch (`sessionActions/index.ts`) handles those
+  // before a plugin is consulted.
+  async handleAction(actionId: string, installation: InstallationRecord): Promise<ActionResult> {
+    if (actionId === 'check-update') {
+      const distributionId = installation.distributionId as string | undefined
+      if (!distributionId) return { ok: false, message: t('comfybuilder.errorNoDistribution') }
+      try {
+        setCachedVersions(
+          distributionId,
+          await listCompleteVersions(getBuilderClient(), distributionId),
+        )
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) }
+      }
+    }
     return { ok: false, message: `Action "${actionId}" not yet implemented.` }
   },
 }

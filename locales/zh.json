@@ -268,7 +268,17 @@
     "clear": "清除"
   },
   "comfybuilder": {
-    "stageModels": "下载模型"
+    "stageModels": "下载模型",
+    "distribution": "分发版",
+    "distributionVersion": "分发版版本",
+    "comfyuiVersion": "ComfyUI 版本",
+    "distributionVersionTitle": "分发版版本",
+    "installedVersion": "已安装",
+    "latestVersion": "最新发布",
+    "publishedVersions": "所有已发布版本",
+    "stagedModels": "模型",
+    "stagedModelsHint": "根据分发版的模型清单暂存。",
+    "errorNoDistribution": "此安装未关联到分发版。"
   },
   "list": {
     "loadSnapshot": "加载快照",

@@ -21,6 +21,7 @@ import { hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Distribution, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPU } from '../lib/gpu'
+import { setCachedVersions } from './versionCache'
 
 /**
  * Distribution tile states. `installable` / `no-build` / `platform-mismatch` are
@@ -101,7 +102,15 @@ async function buildRow(
     state: 'no-build',
   }
 
-  const latest = latestCompleteVersion(await client.listVersions(dist.id))
+  const allVersions = await client.listVersions(dist.id)
+  // The manage view's version picker is built synchronously and can't fetch, so
+  // hand it what this read already saw.
+  setCachedVersions(
+    dist.id,
+    allVersions.filter((v) => v.status === 'complete').map((v) => v.version),
+  )
+
+  const latest = latestCompleteVersion(allVersions)
   if (!latest) return { ...base, state: 'no-build', blockedReason: 'buildFailed' }
 
   const installedVersion = installed?.get(dist.id)
@@ -167,4 +176,17 @@ export async function resolveHostArtifact(
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
   return artifact ? { artifact, version: latest.version } : null
+}
+
+/** Every complete version, newest first — what the manage view reports as
+ *  published, and the basis for a future version picker. */
+export async function listCompleteVersions(
+  client: Pick<ComfyBuilderClient, 'listVersions'>,
+  distributionId: string,
+): Promise<number[]> {
+  const versions = await client.listVersions(distributionId)
+  return versions
+    .filter((v) => v.status === 'complete')
+    .map((v) => v.version)
+    .sort((a, b) => b - a)
 }

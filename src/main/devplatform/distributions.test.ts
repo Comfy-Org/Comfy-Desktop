@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { listDistributionRows, resolveHostArtifact } from './distributions'
+import { listCompleteVersions, listDistributionRows, resolveHostArtifact } from './distributions'
+import { clearVersionCache, getCachedVersions } from './versionCache'
 import type { Artifact, Distribution, DistributionVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
@@ -144,6 +145,32 @@ describe('listDistributionRows', () => {
     })
     const rows = await listDistributionRows(client as never, HOST)
     expect(rows.map((r) => r.id)).toEqual(['ok'])
+  })
+})
+
+describe('listCompleteVersions', () => {
+  it('returns complete versions newest first, dropping unbuilt ones', async () => {
+    const client = stubClient({
+      versionsByDist: {
+        d1: [version(2, 'complete'), version(5, 'complete'), version(6, 'building'), version(1, 'failed')],
+      },
+    })
+    expect(await listCompleteVersions(client as never, 'd1')).toEqual([5, 2])
+  })
+})
+
+describe('version cache warming', () => {
+  it('caches a distribution\'s complete versions as a side effect of listing rows', async () => {
+    // The manage view builds its Update tab synchronously and cannot fetch, so
+    // the catalog read the chooser already does is what fills it.
+    clearVersionCache()
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'Image' }],
+      versionsByDist: { d1: [version(1, 'complete'), version(3, 'complete'), version(4, 'building')] },
+      artifactsByVersion: { v3: [artifact()] },
+    })
+    await listDistributionRows(client as never, HOST)
+    expect(getCachedVersions('d1')?.versions).toEqual([3, 1])
   })
 })
 
