@@ -8,11 +8,12 @@
  * merely says the same words. Purely presentational: callers decide what the
  * rows mean.
  */
-import type { VersionStatRow } from '../../types/ipc'
+import { Loader2 } from 'lucide-vue-next'
+import type { ActionDef, VersionStatRow } from '../../types/ipc'
 
 export type { VersionStatRow }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     headline: string
     /** Accent the headline (an update is waiting). */
@@ -20,9 +21,26 @@ withDefaults(
     badge?: string | null
     badgeTone?: 'current' | 'update'
     rows?: VersionStatRow[]
+    /** Rendered inside the table's bottom edge, right-aligned — they act on
+     *  what the table states, so they belong to it rather than the page. */
+    actions?: ActionDef[]
+    runningActionIds?: Set<string>
   }>(),
-  { headlineHighlight: false, badge: null, badgeTone: 'current', rows: () => [] }
+  {
+    headlineHighlight: false,
+    badge: null,
+    badgeTone: 'current',
+    rows: () => [],
+    actions: () => [],
+    runningActionIds: () => new Set<string>()
+  }
 )
+
+const emit = defineEmits<{ action: [action: ActionDef] }>()
+
+function isRunning(id: string): boolean {
+  return props.runningActionIds.has(id)
+}
 </script>
 
 <template>
@@ -34,7 +52,7 @@ withDefaults(
       <span v-if="badge" class="version-stat-badge" :class="badgeTone">{{ badge }}</span>
     </div>
 
-    <dl v-if="rows.length > 0" class="version-stat-rows">
+    <dl v-if="rows.length > 0 || actions.length > 0" class="version-stat-rows">
       <div
         v-for="row in rows"
         :key="row.id"
@@ -43,6 +61,22 @@ withDefaults(
       >
         <dt>{{ row.label }}</dt>
         <dd :title="row.title">{{ row.value }}</dd>
+      </div>
+
+      <div v-if="actions.length > 0" class="version-stat-actions">
+        <button
+          v-for="action in actions"
+          :key="action.id"
+          type="button"
+          class="version-stat-action"
+          :class="[action.style, { 'is-running': isRunning(action.id) }]"
+          :title="action.enabled === false ? action.disabledMessage : action.tooltip"
+          :disabled="action.enabled === false || isRunning(action.id)"
+          @click="emit('action', action)"
+        >
+          <Loader2 v-if="isRunning(action.id)" :size="14" class="version-stat-action-spinner" />
+          {{ action.label }}
+        </button>
       </div>
     </dl>
   </div>
@@ -134,5 +168,77 @@ withDefaults(
 .version-stat-row.is-highlight dd {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* Inside the table's bottom edge, sharing the row divider so the buttons read
+ * as the table's own footer rather than a detached block. */
+.version-stat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-hover);
+}
+
+.version-stat-rows > .version-stat-actions:first-child {
+  border-top: none;
+}
+
+.version-stat-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--chooser-surface-border);
+  background: var(--brand-surface-bg);
+  color: var(--neutral-100);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition:
+    background-color 100ms ease,
+    filter 100ms ease;
+}
+
+.version-stat-action:hover:not(:disabled),
+.version-stat-action:focus-visible:not(:disabled) {
+  background: var(--brand-surface-bg-hover);
+  outline: none;
+}
+
+.version-stat-action.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.version-stat-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.version-stat-action.is-running {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+.version-stat-action-spinner {
+  flex: 0 0 auto;
+  animation: version-stat-action-spin 0.9s linear infinite;
+}
+
+@keyframes version-stat-action-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

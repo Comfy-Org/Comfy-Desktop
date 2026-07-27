@@ -672,7 +672,7 @@
     "connect": "Connect",
     "connecting": "Connecting",
     "openDirectory": "Open Directory",
-    "checkForUpdate": "Check for Update",
+    "checkForUpdate": "Check for updates",
     "featureNotImplemented": "This feature is not yet implemented.",
     "updateAvailable": "Update Available",
     "copyInstallation": "Duplicate Instance",

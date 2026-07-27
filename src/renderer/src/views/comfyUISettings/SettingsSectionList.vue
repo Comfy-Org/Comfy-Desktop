@@ -8,13 +8,13 @@ import BooleanToggle from './BooleanToggle.vue'
 import PathField from './PathField.vue'
 import EnvVarsField from './EnvVarsField.vue'
 import ChannelPicker from './ChannelPicker.vue'
-import VersionStatPanel, { type VersionStatRow } from './VersionStatPanel.vue'
+import VersionStatPanel from './VersionStatPanel.vue'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import TooltipWrap from '../../components/TooltipWrap.vue'
 import { isOpenablePathString } from '../../lib/openablePath'
-import type { ActionDef, DetailField, DetailSection } from '../../types/ipc'
+import type { ActionDef, DetailField, DetailSection, VersionStatsValue } from '../../types/ipc'
 
 /**
  * Shared section + field renderer for both the Settings drawer and the instance-picker's Settings accordion.
@@ -74,17 +74,9 @@ function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
-interface VersionStatsValue {
-  headline: string
-  headlineHighlight: boolean
-  badge: string | null
-  badgeTone: 'current' | 'update'
-  rows: VersionStatRow[]
-}
-
 /** Unpack a `version-stats` field. The backend owns the wording — it knows what
  *  the versions mean — so this only supplies defaults for a malformed payload. */
-function versionStats(field: DetailField): VersionStatsValue {
+function versionStats(field: DetailField): Required<VersionStatsValue> {
   const v = (field.value ?? {}) as Partial<VersionStatsValue>
   return {
     headline: typeof v.headline === 'string' ? v.headline : '',
@@ -133,8 +125,14 @@ function isNestedField(field: DetailField): boolean {
   return field.nested === true
 }
 
-function hasChannelPicker(section: DetailSection): boolean {
-  return (section.fields ?? []).some((f) => f.editType === 'channel-cards')
+/** Field types that render the section's actions themselves, so the generic
+ *  full-width footer must stand down or the buttons appear twice. */
+const ACTION_OWNING_EDIT_TYPES = new Set(['channel-cards', 'version-stats'])
+
+function fieldOwnsSectionActions(section: DetailSection): boolean {
+  return (section.fields ?? []).some(
+    (f) => f.editType && ACTION_OWNING_EDIT_TYPES.has(f.editType),
+  )
 }
 
 function isPathLikeValue(value: unknown): boolean {
@@ -159,7 +157,13 @@ function readonlyDisplayValue(field: DetailField): string {
 }
 
 function fieldOwnsLabel(field: DetailField): boolean {
-  return field.editType === 'env-vars' || field.editType === 'channel-cards'
+  return (
+    field.editType === 'env-vars' ||
+    field.editType === 'channel-cards' ||
+    // The panel leads with its own headline; a label above it would echo the
+    // section title.
+    field.editType === 'version-stats'
+  )
 }
 </script>
 
@@ -347,14 +351,14 @@ function fieldOwnsLabel(field: DetailField): boolean {
           />
 
           <!-- The same version table ChannelPicker shows, for a source that has
-               versions but no release channel. The backend supplies the rows. -->
+               versions but no release channel. The backend supplies the rows,
+               and the section's actions dock inside the table's footer. -->
           <VersionStatPanel
             v-else-if="field.editType === 'version-stats'"
-            :headline="versionStats(field).headline"
-            :headline-highlight="versionStats(field).headlineHighlight"
-            :badge="versionStats(field).badge"
-            :badge-tone="versionStats(field).badgeTone"
-            :rows="versionStats(field).rows"
+            v-bind="versionStats(field)"
+            :actions="section.actions ?? []"
+            :running-action-ids="runningIdsSet"
+            @action="(a) => emit('run-action', a)"
           />
 
           <BaseInput
@@ -385,7 +389,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
       </div>
 
       <div
-        v-if="section.actions && section.actions.length && !hasChannelPicker(section)"
+        v-if="section.actions && section.actions.length && !fieldOwnsSectionActions(section)"
         class="settings-v2-actions"
       >
         <TooltipWrap
