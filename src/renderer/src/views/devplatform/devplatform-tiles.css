@@ -36,26 +36,54 @@
   color: var(--neutral-100);
 }
 
-/* --- Available tile -------------------------------------------------------
- * Not on this machine yet. It sits one row under the install tiles the same
- * workspace already put here, so it reads against them: a light step back says
- * "not yours yet" without implying anything is wrong.
+/* --- Not on this machine --------------------------------------------------
+ * Available and blocked distributions recede by the SAME amount. Neither is
+ * installed here, and that shared fact is what the surface reports; what
+ * separates them is what they offer — a blue Install pill against a quiet
+ * reason tag — and what hover promises, not how far back they sit.
  *
- * Three tiers have to stay legible apart — installed (full strength), available
- * (this), blocked (well below). So the step here is deliberately small; going
- * further would start impersonating the blocked treatment.
+ * The dim goes on the identity block, never the root: root opacity would drag
+ * the pill and the tag down with it, and those are the one thing each tile
+ * exists to say.
  *
- * Hover returns it to FULL strength, unlike blocked: this card can be acted on,
- * and the hover has to promise that. Doubled class so the resting rule doesn't
- * beat the shared single-class `.chooser-tile:hover`. */
-.dist-tile.dist-tile--available {
-  background: color-mix(in oklab, var(--chooser-surface-bg) 60%, transparent);
-  border-color: color-mix(in oklab, var(--chooser-surface-border) 70%, transparent);
+ * Doubled class throughout (`.dist-tile.dist-tile--x`): the shared
+ * `.chooser-tile` hover rules are single-class, so a single-class resting rule
+ * loses to them and the tile lights up under the cursor. */
+.dist-tile.dist-tile--available,
+.dist-tile.dist-tile--blocked {
+  /* The tile surface is a 4%-white wash — merely reducing it is imperceptible
+   * on the dark backdrop, so these drop most of the wash and keep a
+   * half-strength border to hold their shape in the grid. */
+  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
+  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
 }
 .dist-tile--available .chooser-tile-icon,
-.dist-tile--available .chooser-tile-name {
-  opacity: 0.78;
+.dist-tile--available .chooser-tile-name,
+.dist-tile--blocked .chooser-tile-icon,
+.dist-tile--blocked .chooser-tile-name {
+  opacity: 0.38;
 }
+/* Blocked dims its kebab too. An available tile's stays lit: the card is
+ * something you can act on right now. */
+.dist-tile--blocked .chooser-tile-kebab {
+  opacity: 0.38;
+}
+/* Facts step UP to --neutral-200 instead of dimming: the faint tier multiplied
+ * by 0.38 would drop well under the 3:1 contrast floor. */
+.dist-tile--available .chooser-tile-meta-line,
+.dist-tile--available .chooser-tile-meta-source,
+.dist-tile--available .chooser-tile-meta-sep,
+.dist-tile--available .chooser-tile-meta-version,
+.dist-tile--blocked .chooser-tile-meta-line,
+.dist-tile--blocked .chooser-tile-meta-source,
+.dist-tile--blocked .chooser-tile-meta-sep,
+.dist-tile--blocked .chooser-tile-meta-version {
+  color: var(--neutral-200);
+}
+
+/* --- Available: hover pays out -------------------------------------------
+ * Back to full strength, because this card CAN be installed and the hover has
+ * to promise that. This is the whole behavioural difference from blocked. */
 .dist-tile.dist-tile--available:hover,
 .dist-tile.dist-tile--available:focus-visible {
   background: var(--chooser-surface-bg-hover);
@@ -68,35 +96,9 @@
   opacity: 1;
 }
 
-/* --- Blocked tile ---------------------------------------------------------
- * De-emphasised but readable, never hidden (product contract). The dim goes on
- * the identity block, not the root: root opacity would drag the state tag down
- * with it, and the tag is the one thing a blocked tile exists to say. The full
- * reason rides on the tile's `title`.
- *
- * Doubled class (`.dist-tile.dist-tile--blocked`) throughout: the shared
- * `.chooser-tile` hover rules are single-class, and a blocked tile has to win
- * against them or it lights up under the cursor like something you can use. */
+/* --- Blocked: hover stays put --------------------------------------------- */
 .dist-tile.dist-tile--blocked {
   cursor: default;
-  /* The tile surface is a 4%-white wash — merely reducing it is imperceptible
-   * on the dark backdrop, so a blocked card drops most of the wash and keeps
-   * a half-strength border to hold its shape in the grid. */
-  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
-  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
-}
-.dist-tile--blocked .chooser-tile-icon,
-.dist-tile--blocked .chooser-tile-name,
-.dist-tile--blocked .chooser-tile-kebab {
-  opacity: 0.38;
-}
-/* Facts step UP to --neutral-200 instead of dimming: the faint tier multiplied
- * by 0.38 would drop well under the 3:1 contrast floor. */
-.dist-tile--blocked .chooser-tile-meta-line,
-.dist-tile--blocked .chooser-tile-meta-source,
-.dist-tile--blocked .chooser-tile-meta-sep,
-.dist-tile--blocked .chooser-tile-meta-version {
-  color: var(--neutral-200);
 }
 /* Warning tone on the tag is the whole signal now that the corner is the
  * kebab's — enough to find at a glance, not enough to alarm. */

@@ -525,21 +525,6 @@ const gridHandlers = {
               workspaceAvailableEntries.length +
               workspaceBlockedEntries.length
             }}</span>
-            <span class="chooser-shelf-rule" aria-hidden="true" />
-            <button
-              v-if="workspaceBlockedEntries.length"
-              type="button"
-              class="chooser-shelf-toggle"
-              :aria-expanded="showBlockedDistributions"
-              data-testid="chooser-shelf-see-all"
-              @click="showBlockedDistributions = !showBlockedDistributions"
-            >
-              {{
-                showBlockedDistributions
-                  ? t('chooser.showLess')
-                  : t('chooser.seeAll', { count: workspaceBlockedEntries.length })
-              }}
-            </button>
           </header>
           <ChooserFamilyGrid
             v-if="workspaceInstalledEntries.length"
@@ -561,6 +546,24 @@ const gridHandlers = {
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
+
+          <!-- Footer control: it acts on the rows above it, so it sits under
+               them rather than up in the header. -->
+          <div v-if="workspaceBlockedEntries.length" class="chooser-shelf-more">
+            <button
+              type="button"
+              class="chooser-shelf-toggle"
+              :aria-expanded="showBlockedDistributions"
+              data-testid="chooser-shelf-see-all"
+              @click="showBlockedDistributions = !showBlockedDistributions"
+            >
+              {{
+                showBlockedDistributions
+                  ? t('chooser.showLess')
+                  : t('chooser.seeAll', { count: workspaceBlockedEntries.length })
+              }}
+            </button>
+          </div>
         </section>
       </div>
 
@@ -799,9 +802,8 @@ const gridHandlers = {
   align-items: center;
   gap: 10px;
 }
-/* Explicit element rather than `::after` so the toggle can sit on the far side
- * of the rule instead of crowding the count. */
-.chooser-shelf-rule {
+.chooser-shelf-head::after {
+  content: '';
   flex: 1 1 auto;
   height: 1px;
   background: var(--chooser-surface-border-hover);
@@ -818,21 +820,44 @@ const gridHandlers = {
   color: var(--text-faint);
 }
 
-/* Sits after the rule, at the right end of the shelf header. Quiet by default —
- * it reveals things you can't use, so it must never outrank the cards. */
+/* Centred pill closing the shelf, with a rule running out to each edge. The
+ * rules are pseudo-elements on the row, so they centre on the pill by the row's
+ * own `align-items` — no magic offsets to drift when the pill's height changes. */
+.chooser-shelf-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.chooser-shelf-more::before,
+.chooser-shelf-more::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--chooser-surface-border-hover);
+}
+
+/* Quiet by default: it reveals builds you can't use, so it must never outrank
+ * the cards above it. */
 .chooser-shelf-toggle {
   flex-shrink: 0;
-  border: none;
-  background: none;
-  padding: 2px 4px;
-  border-radius: 4px;
+  border: 1px solid var(--chooser-surface-border);
+  background: var(--chooser-surface-bg);
+  border-radius: 999px;
+  padding: 4px 14px;
   font: inherit;
   font-size: 11px;
   color: var(--text-muted);
   cursor: pointer;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    color 100ms ease;
 }
 .chooser-shelf-toggle:hover {
   color: var(--neutral-100);
+  background: var(--chooser-surface-bg-hover);
+  border-color: var(--chooser-surface-border-hover);
 }
 .chooser-shelf-toggle:focus-visible {
   outline: 2px solid var(--focus-ring);
