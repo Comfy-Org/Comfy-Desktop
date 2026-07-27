@@ -160,6 +160,15 @@ describe('comfybuilder.getDetailSections', () => {
     ).toBeUndefined()
   })
 
+  it('offers no update when the installed version is unknown', () => {
+    // `Number('')` is 0, which would read as "behind everything" and offer an
+    // update from a blank version.
+    setCachedVersions('d1', [9, 7])
+    const blank = record({ version: '' })
+    expect(updateActions(blank).find((a) => a.id === 'update-distribution')).toBeUndefined()
+    expect(statsValue(blank).headlineHighlight).toBe(false)
+  })
+
   it('disables the update action while the install is not ready', () => {
     setCachedVersions('d1', [9, 7])
     const update = updateActions(record({ version: '7', status: 'failed' })).find(

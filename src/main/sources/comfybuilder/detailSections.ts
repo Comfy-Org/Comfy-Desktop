@@ -82,8 +82,11 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
   const versions = cached?.versions ?? []
   const latest = versions[0]
   const currentNum = Number(current)
+  // An empty version is unknown, not zero — `Number('')` is 0, which would
+  // otherwise read as "behind every published version" and offer an update
+  // from a blank.
   const updateAvailable =
-    latest !== undefined && Number.isFinite(currentNum) && latest > currentNum
+    latest !== undefined && current !== '' && Number.isFinite(currentNum) && latest > currentNum
 
   // The same version table the local-install Update tab uses, so the two read
   // as one surface. Rows are stated as bare versions and left to compare

@@ -59,19 +59,40 @@ function fakeTools(signal?: AbortSignal): InstallTools & { sent: Array<{ phase: 
 describe('comfybuilder.install wiring', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('wipes the venv before extracting so a re-install/update lays down a clean env', async () => {
+  it('moves the venv aside before extracting so a re-install lays down a clean env', async () => {
+    const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
     const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
     try {
       await comfybuilder.install!(record(), fakeTools())
-      expect(rm).toHaveBeenCalledWith(
+      // Aside, NOT deleted: `installArtifact` only touches installPath after the
+      // download and checksum pass, so the old env has to survive until then.
+      expect(rename).toHaveBeenCalledWith(
         expect.stringContaining('venv'),
-        expect.objectContaining({ recursive: true, force: true }),
+        expect.stringContaining('venv.previous'),
       )
-      // The venv must be gone before the archive lays down a fresh one.
-      const rmOrder = rm.mock.invocationCallOrder[0]!
+      const renameOrder = rename.mock.invocationCallOrder[0]!
       const installOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
-      expect(rmOrder).toBeLessThan(installOrder)
+      expect(renameOrder).toBeLessThan(installOrder)
     } finally {
+      rename.mockRestore()
+      rm.mockRestore()
+    }
+  })
+
+  it('puts the previous venv back when the install fails', async () => {
+    // Otherwise a failed update leaves the record on a version whose
+    // environment is gone — an install that reports fine and cannot launch.
+    const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
+    const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
+    vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
+    try {
+      await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow('disk full')
+      expect(rename).toHaveBeenCalledTimes(2)
+      const [from, to] = rename.mock.calls[1]!
+      expect(String(from)).toContain('venv.previous')
+      expect(String(to)).toMatch(/venv$/)
+    } finally {
+      rename.mockRestore()
       rm.mockRestore()
     }
   })
@@ -227,18 +248,62 @@ describe('comfybuilder update-distribution', () => {
     // Otherwise the record advertises a version whose environment never landed.
     vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
     vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
+    // The venv survived — `installEnvironment` put it back.
+    const stat = vi.spyOn(fsp, 'stat').mockResolvedValue({} as never)
     const tools = actionTools()
 
+    try {
+      const result = await comfybuilder.handleAction(
+        'update-distribution',
+        record({ artifactId: 'art-1' }),
+        { version: 9 },
+        tools as never,
+      )
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain('disk full')
+      expect(tools.updates.at(-1)).toMatchObject({ version: '1', artifactId: 'art-1', status: 'installed' })
+    } finally {
+      stat.mockRestore()
+    }
+  })
+
+  it('reports failed when the environment did not survive the attempt', async () => {
+    // Restoring the record but still claiming `installed` would advertise a
+    // working install that cannot launch.
+    vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
+    vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
+    const stat = vi.spyOn(fsp, 'stat').mockRejectedValue(new Error('ENOENT'))
+    const tools = actionTools()
+
+    try {
+      const result = await comfybuilder.handleAction(
+        'update-distribution',
+        record({ artifactId: 'art-1' }),
+        { version: 9 },
+        tools as never,
+      )
+
+      expect(result.ok).toBe(false)
+      expect(tools.updates.at(-1)).toMatchObject({ version: '1', status: 'failed' })
+    } finally {
+      stat.mockRestore()
+    }
+  })
+
+  it('refuses to update an install that is not ready', async () => {
+    // The section disables the button, but an action id is reachable alone.
+    const tools = actionTools()
     const result = await comfybuilder.handleAction(
       'update-distribution',
-      record({ artifactId: 'art-1' }),
+      record({ status: 'failed' }),
       { version: 9 },
       tools as never,
     )
 
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('disk full')
-    expect(tools.updates.at(-1)).toMatchObject({ version: '1', artifactId: 'art-1', status: 'installed' })
+    expect(resolveHostArtifactForVersion).not.toHaveBeenCalled()
+    expect(tools.update).not.toHaveBeenCalled()
   })
 
   it('refuses a version with no build for this machine, without touching the record', async () => {
