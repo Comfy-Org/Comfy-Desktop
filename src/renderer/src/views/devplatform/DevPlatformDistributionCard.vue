@@ -87,7 +87,7 @@ function onActivate(): void {
 <template>
   <div
     class="chooser-tile chooser-tile--install dist-tile dist-tile--chooser"
-    :class="{ 'dist-tile--blocked': isBlocked }"
+    :class="{ 'dist-tile--blocked': isBlocked, 'dist-tile--available': !isBlocked }"
     role="button"
     tabindex="0"
     :aria-disabled="isBlocked ? true : undefined"

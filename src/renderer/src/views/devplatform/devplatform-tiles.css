@@ -36,6 +36,38 @@
   color: var(--neutral-100);
 }
 
+/* --- Available tile -------------------------------------------------------
+ * Not on this machine yet. It sits one row under the install tiles the same
+ * workspace already put here, so it reads against them: a light step back says
+ * "not yours yet" without implying anything is wrong.
+ *
+ * Three tiers have to stay legible apart — installed (full strength), available
+ * (this), blocked (well below). So the step here is deliberately small; going
+ * further would start impersonating the blocked treatment.
+ *
+ * Hover returns it to FULL strength, unlike blocked: this card can be acted on,
+ * and the hover has to promise that. Doubled class so the resting rule doesn't
+ * beat the shared single-class `.chooser-tile:hover`. */
+.dist-tile.dist-tile--available {
+  background: color-mix(in oklab, var(--chooser-surface-bg) 60%, transparent);
+  border-color: color-mix(in oklab, var(--chooser-surface-border) 70%, transparent);
+}
+.dist-tile--available .chooser-tile-icon,
+.dist-tile--available .chooser-tile-name {
+  opacity: 0.78;
+}
+.dist-tile.dist-tile--available:hover,
+.dist-tile.dist-tile--available:focus-visible {
+  background: var(--chooser-surface-bg-hover);
+  border-color: var(--chooser-surface-border-hover);
+}
+.dist-tile--available:hover .chooser-tile-icon,
+.dist-tile--available:focus-visible .chooser-tile-icon,
+.dist-tile--available:hover .chooser-tile-name,
+.dist-tile--available:focus-visible .chooser-tile-name {
+  opacity: 1;
+}
+
 /* --- Blocked tile ---------------------------------------------------------
  * De-emphasised but readable, never hidden (product contract). The dim goes on
  * the identity block, not the root: root opacity would drag the state tag down

@@ -815,6 +815,29 @@ describe('ChooserView', () => {
     expect(wrapper.find('[data-testid="chooser-shelf-see-all"]').text()).toBe('Show less')
   })
 
+  it('steps an available card back from the installs, but not as far as blocked', async () => {
+    installMockApiSignedIn(
+      [],
+      [
+        makeDist({ id: 'ok', name: 'Available', state: 'installable' }),
+        makeDist({ id: 'nb', name: 'Blocked', state: 'no-build' }),
+      ],
+      { id: 'w1', name: 'Comfy Design Team' },
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
+
+    // The three tiers are distinct classes, so they can't collapse into each
+    // other: installed tiles carry neither.
+    const available = wrapper.find('[data-testid="chooser-dist-tile-ok"]')
+    const blocked = wrapper.find('[data-testid="chooser-dist-tile-nb"]')
+    expect(available.classes()).toContain('dist-tile--available')
+    expect(available.classes()).not.toContain('dist-tile--blocked')
+    expect(blocked.classes()).toContain('dist-tile--blocked')
+    expect(blocked.classes()).not.toContain('dist-tile--available')
+  })
+
   it('offers no "See all" when every distribution is installable', async () => {
     installMockApiSignedIn([], [makeDist({ id: 'ok', name: 'Fine', state: 'installable' })], {
       id: 'w1',
