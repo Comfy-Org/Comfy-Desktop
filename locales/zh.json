@@ -276,8 +276,6 @@
     "installedVersion": "已安装",
     "latestVersion": "最新发布",
     "publishedVersions": "所有已发布版本",
-    "stagedModels": "模型",
-    "stagedModelsHint": "根据分发版的模型清单暂存。",
     "errorNoDistribution": "此安装未关联到分发版。"
   },
   "list": {

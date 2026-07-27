@@ -7,12 +7,19 @@
  * switch here would either do nothing or break the pin the distribution exists
  * to provide.
  *
- * Tabs a distribution deliberately does NOT get:
- *   - Snapshots — admin/owner only (Jul 24 dev-platform standup). Declaring a
- *     `snapshots` section is what makes the tab appear, so leaving it out IS
- *     the gate. Don't add one by copying another source wholesale.
- *   - Shared models — each distribution carries its own allowed model list, so
- *     `buildStorageFields`' shared-storage toggles don't apply in MVP.
+ * Tabs a distribution deliberately does NOT get. A tab exists iff a section
+ * declares it, so leaving one out IS the gate — don't reinstate either by
+ * copying another source's sections wholesale:
+ *
+ *   - Snapshots — admin/owner only (Jul 24 dev-platform standup).
+ *   - Storage — each distribution carries its own allowed model list, and
+ *     shared models are off for distributions at MVP. Note a REDUCED storage
+ *     section does not achieve that: `StoragePane` treats an ABSENT
+ *     `useSharedModels` field as enabled (`f ? f.value !== false : true`) and
+ *     renders the global shared-models directory list, and declaring the field
+ *     `false` is no better because `BooleanToggle` ignores `editable` and would
+ *     hand the user a live switch. Showing a distribution's staged models needs
+ *     its own pane, not a subset of this one.
  */
 import { t } from '../../lib/i18n'
 import { deleteAction, launchAction, openFolderAction, renameAction, untrackAction } from '../../lib/actions'
@@ -54,29 +61,6 @@ function buildStatusFields(installation: InstallationRecord): Record<string, unk
     },
     { key: 'comfyui-version', label: t('comfybuilder.comfyuiVersion'), value: comfy || '—' },
     { label: t('common.location'), value: (installation.installPath as string) || '—' },
-  ]
-}
-
-/**
- * Storage for a distribution: where it lives and what it staged, read-only.
- *
- * No shared-model toggles — see the header. `StoragePane` resolves fields by id
- * and guards on absence, so a reduced set renders cleanly rather than erroring.
- */
-function buildStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
-  return [
-    {
-      id: 'installPath',
-      label: t('common.location'),
-      value: (installation.installPath as string) || '',
-      editable: false,
-    },
-    {
-      id: 'distributionModels',
-      label: t('comfybuilder.stagedModels'),
-      value: t('comfybuilder.stagedModelsHint'),
-      editable: false,
-    },
   ]
 }
 
@@ -163,10 +147,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       // the Jul 24 standup kept the field editable rather than second-guessing
       // which flags a given build honours.
       fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS }),
-    },
-    {
-      tab: 'storage',
-      fields: buildStorageFields(installation),
     },
     {
       // No title: only `.actions` is read off a pinBottom section (the footer

@@ -51,7 +51,6 @@ describe('comfybuilder.getDetailSections', () => {
     const tabs = tabsOf(sectionsFor(record()))
     expect(tabs).toContain('status')
     expect(tabs).toContain('settings')
-    expect(tabs).toContain('storage')
     expect(tabs).toContain('update')
   })
 
@@ -62,13 +61,14 @@ describe('comfybuilder.getDetailSections', () => {
     expect(tabsOf(sectionsFor(record()))).not.toContain('snapshots')
   })
 
-  it('offers no shared-model storage toggles', () => {
-    // Each distribution carries its own allowed model list; shared models are
-    // off for distributions in MVP.
-    const storage = sectionsFor(record()).find((s) => s.tab === 'storage')
-    expect(storage).toBeDefined()
-    expect(fieldIds(storage)).not.toContain('useSharedModels')
-    expect(fieldIds(storage)).not.toContain('useSharedInputOutput')
+  it('declares NO storage section, because a reduced one shows shared models', () => {
+    // Shared models are off for distributions at MVP — each carries its own
+    // allowed list. Declaring a storage section with the toggles omitted does
+    // NOT achieve that: StoragePane reads an absent `useSharedModels` as
+    // enabled (`f ? f.value !== false : true`) and renders the global
+    // shared-models directory list. Declaring it `false` is no better, since
+    // BooleanToggle ignores `editable` and would render a live switch.
+    expect(tabsOf(sectionsFor(record()))).not.toContain('storage')
   })
 
   it('keeps startup arguments editable', () => {

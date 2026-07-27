@@ -276,8 +276,6 @@
     "installedVersion": "Installed",
     "latestVersion": "Latest Published",
     "publishedVersions": "All Published Versions",
-    "stagedModels": "Models",
-    "stagedModelsHint": "Staged from the distribution's model list.",
     "errorNoDistribution": "This install is not linked to a distribution."
   },
   "list": {
