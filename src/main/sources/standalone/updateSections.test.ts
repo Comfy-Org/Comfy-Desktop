@@ -299,6 +299,17 @@ describe('updateSections — PyTorch picker', () => {
     return options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
   }
 
+  /**
+   * Mock the installed tuple's dist-info listing platform-safely: on
+   * non-Windows, findSitePackages first readdirs `<env>/lib` to locate the
+   * pythonX.Y dir, so a blanket mockReturnValue of dist-info entries would
+   * break site-packages discovery there (and only there).
+   */
+  function mockInstalledDistInfo(entries: string[]) {
+    return vi.spyOn(fs, 'readdirSync').mockImplementation(((p: fs.PathLike) =>
+      String(p).includes('site-packages') ? entries : ['python3.13']) as unknown as typeof fs.readdirSync)
+  }
+
   it('renders an index-served entry as a pip apply: localized note shown, no bundle size, pip confirm copy', () => {
     vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
       noteKey: 'pytorchIndexNoteCu128',
@@ -354,9 +365,9 @@ describe('updateSections — PyTorch picker', () => {
 
   it('does not warn on the CURRENT stack when it omits torchaudio: nothing gets removed', () => {
     // Installed tuple (dist-info dirs) matches the no-torchaudio stack.
-    const readdir = vi.spyOn(fs, 'readdirSync').mockReturnValue([
+    const readdir = mockInstalledDistInfo([
       'torch-2.13.0+cu130.dist-info', 'torchvision-0.28.0+cu130.dist-info',
-    ] as unknown as ReturnType<typeof fs.readdirSync>)
+    ])
     try {
       vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
         stackId: 'pytorch-index:cu130:2.13.0',
@@ -605,10 +616,10 @@ describe('updateSections — PyTorch picker', () => {
       it('the current stack skips the per-option warning but its series still warns', () => {
         // Nothing changes by staying on the current stack, so its own row
         // stays clean; the series dropdown still flags the driver gap.
-        const readdir = vi.spyOn(fs, 'readdirSync').mockReturnValue([
+        const readdir = mockInstalledDistInfo([
           'torch-2.10.0+cu130.dist-info', 'torchvision-0.26.0+cu130.dist-info',
           'torchaudio-2.10.0+cu130.dist-info',
-        ] as unknown as ReturnType<typeof fs.readdirSync>)
+        ])
         try {
           _setRemoteDefsForTest(null, { cu130: { minDriver } })
           _setNvidiaDriverForTest('576.02')
