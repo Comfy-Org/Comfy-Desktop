@@ -277,7 +277,10 @@
     "installedVersion": "已安装",
     "latestVersion": "最新发布",
     "publishedVersions": "所有已发布版本",
-    "errorNoDistribution": "此安装未关联到分发版。"
+    "errorNoDistribution": "此安装未关联到分发版。",
+    "updateAvailable": "有可用更新",
+    "upToDate": "已是最新",
+    "lastChecked": "上次检查"
   },
   "list": {
     "loadSnapshot": "加载快照",

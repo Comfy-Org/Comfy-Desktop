@@ -277,7 +277,10 @@
     "installedVersion": "Installed",
     "latestVersion": "Latest Published",
     "publishedVersions": "All Published Versions",
-    "errorNoDistribution": "This install is not linked to a distribution."
+    "errorNoDistribution": "This install is not linked to a distribution.",
+    "updateAvailable": "Update available",
+    "upToDate": "Up to date",
+    "lastChecked": "Last Checked"
   },
   "list": {
     "loadSnapshot": "Load Snapshot",

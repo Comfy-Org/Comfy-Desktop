@@ -44,6 +44,19 @@ const tabsOf = (s: Section[]): string[] => s.map((x) => x.tab).filter(Boolean) a
 const fieldIds = (s: Section | undefined): string[] =>
   (s?.fields ?? []).map((f) => (f.id ?? f.key) as string).filter(Boolean)
 
+type StatRow = { id: string; label: string; value: string; highlight?: boolean }
+type StatsValue = { headline: string; headlineHighlight: boolean; badge: string | null; rows: StatRow[] }
+
+const statsField = (inst: InstallationRecord): Record<string, unknown> | undefined =>
+  (sectionsFor(inst).find((s) => s.tab === 'update')?.fields ?? []).find(
+    (f) => f.editType === 'version-stats',
+  )
+
+const statsValue = (inst: InstallationRecord): StatsValue =>
+  (statsField(inst)?.value ?? { rows: [] }) as StatsValue
+
+const rowIds = (inst: InstallationRecord): string[] => statsValue(inst).rows.map((r) => r.id)
+
 beforeEach(() => clearVersionCache())
 
 describe('comfybuilder.getDetailSections', () => {
@@ -97,39 +110,56 @@ describe('comfybuilder.getDetailSections', () => {
     )
   })
 
+  it('renders the update tab as a version-stats table, like a local install', () => {
+    // Same component the local-install Update tab uses, so the two read as one
+    // surface rather than merely saying the same words.
+    setCachedVersions('d1', [3, 7, 9])
+    const field = statsField(record({ version: '7' }))
+    expect(field?.editType).toBe('version-stats')
+    expect(field?.editable).toBe(false)
+  })
+
   it('omits the published-version list until the catalog has been read', () => {
     // "No versions found" is a different claim from "not looked yet".
     const update = sectionsFor(record()).find((s) => s.tab === 'update')
-    expect(fieldIds(update)).not.toContain('latest-distribution-version')
-    expect(fieldIds(update)).not.toContain('published-distribution-versions')
+    expect(rowIds(record())).not.toContain('latest')
+    expect(rowIds(record())).not.toContain('published')
     expect((update?.actions ?? []).map((a) => a.id)).toContain('check-update')
   })
 
   it('states installed and latest as bare versions once the cache is warm', () => {
     setCachedVersions('d1', [3, 7, 9])
-    const update = sectionsFor(record({ version: '7' })).find((s) => s.tab === 'update')
-    const fields = update?.fields ?? []
-    expect(fields.find((f) => f.key === 'current-distribution-version')?.value).toBe('v7')
-    expect(fields.find((f) => f.key === 'latest-distribution-version')?.value).toBe('v9')
+    const rows = statsValue(record({ version: '7' })).rows
+    expect(rows.find((r) => r.id === 'installed')?.value).toBe('v7')
+    expect(rows.find((r) => r.id === 'latest')?.value).toBe('v9')
     // Newest first, whatever order the catalog returned.
-    expect(fields.find((f) => f.key === 'published-distribution-versions')?.value).toBe(
-      'v9 · v7 · v3',
-    )
+    expect(rows.find((r) => r.id === 'published')?.value).toBe('v9 · v7 · v3')
+  })
+
+  it('accents the latest row and the headline only when an update is waiting', () => {
+    setCachedVersions('d1', [3, 7, 9])
+    const behind = statsValue(record({ version: '7' }))
+    expect(behind.headlineHighlight).toBe(true)
+    expect(behind.rows.find((r) => r.id === 'latest')?.highlight).toBe(true)
+
+    setCachedVersions('d1', [7, 3])
+    const current = statsValue(record({ version: '7' }))
+    expect(current.headlineHighlight).toBe(false)
+    expect(current.rows.find((r) => r.id === 'latest')?.highlight).toBe(false)
   })
 
   it('shows installed and latest as equal when already on the newest version', () => {
     setCachedVersions('d1', [7, 3])
-    const fields =
-      sectionsFor(record({ version: '7' })).find((s) => s.tab === 'update')?.fields ?? []
-    expect(fields.find((f) => f.key === 'current-distribution-version')?.value).toBe('v7')
-    expect(fields.find((f) => f.key === 'latest-distribution-version')?.value).toBe('v7')
+    const rows = statsValue(record({ version: '7' })).rows
+    expect(rows.find((r) => r.id === 'installed')?.value).toBe('v7')
+    expect(rows.find((r) => r.id === 'latest')?.value).toBe('v7')
   })
 
   it('dedupes repeated versions from the catalog', () => {
     setCachedVersions('d1', [5, 5, 2])
-    const fields =
-      sectionsFor(record({ version: '5' })).find((s) => s.tab === 'update')?.fields ?? []
-    expect(fields.find((f) => f.key === 'published-distribution-versions')?.value).toBe('v5 · v2')
+    expect(statsValue(record({ version: '5' })).rows.find((r) => r.id === 'published')?.value).toBe(
+      'v5 · v2',
+    )
   })
 
   it('drops the update tab for a record with no distribution link', () => {

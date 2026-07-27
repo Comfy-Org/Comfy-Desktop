@@ -87,38 +87,69 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
   if (!distributionId) return null
 
   const current = distributionVersion(installation)
-  const versions = getCachedVersions(distributionId)?.versions ?? []
+  const cached = getCachedVersions(distributionId)
+  const versions = cached?.versions ?? []
   const latest = versions[0]
+  const currentNum = Number(current)
+  const updateAvailable =
+    latest !== undefined && Number.isFinite(currentNum) && latest > currentNum
 
-  // Installed and latest are stated as bare versions and left to compare
-  // themselves. A translated "up to date" / "v9 available" sentence would say
-  // the same thing while hiding the number it is about.
-  const fields: Record<string, unknown>[] = [
+  // The same version table the local-install Update tab uses, so the two read
+  // as one surface. Rows are stated as bare versions and left to compare
+  // themselves — a "v9 available" sentence says the same thing while burying
+  // the number it is about.
+  const rows: Record<string, unknown>[] = [
     {
-      key: 'current-distribution-version',
+      id: 'installed',
       label: t('comfybuilder.installedVersion'),
       value: current ? `v${current}` : '—',
     },
   ]
   if (latest !== undefined) {
-    fields.push({
-      key: 'latest-distribution-version',
+    rows.push({
+      id: 'latest',
       label: t('comfybuilder.latestVersion'),
       value: `v${latest}`,
+      highlight: updateAvailable,
     })
   }
   if (versions.length > 1) {
-    fields.push({
-      key: 'published-distribution-versions',
+    rows.push({
+      id: 'published',
       label: t('comfybuilder.publishedVersions'),
       value: versions.map((v) => `v${v}`).join(' · '),
+    })
+  }
+  if (cached?.fetchedAt) {
+    rows.push({
+      id: 'last-checked',
+      label: t('comfybuilder.lastChecked'),
+      value: new Date(cached.fetchedAt).toLocaleString(),
     })
   }
 
   return {
     tab: 'update',
     title: t('comfybuilder.distributionVersionTitle'),
-    fields,
+    fields: [
+      {
+        id: 'distributionVersionStats',
+        label: t('comfybuilder.distributionVersionTitle'),
+        editType: 'version-stats',
+        editable: false,
+        value: {
+          headline: current ? `v${current}` : '—',
+          headlineHighlight: updateAvailable,
+          badge: updateAvailable
+            ? t('comfybuilder.updateAvailable')
+            : latest !== undefined
+              ? t('comfybuilder.upToDate')
+              : null,
+          badgeTone: updateAvailable ? 'update' : 'current',
+          rows,
+        },
+      },
+    ],
     actions: [
       { id: 'check-update', label: t('actions.checkForUpdate'), style: 'default', enabled: true },
     ],

@@ -66,6 +66,24 @@ export type ResolvedTheme = Exclude<Theme, 'system'>
  *  `degraded` = show heavy-usage warning; `disabled` = block entry. */
 export type CloudCapacityStatus = 'normal' | 'degraded' | 'disabled'
 
+/** One row of a `version-stats` field's table. */
+export interface VersionStatRow {
+  id: string
+  label: string
+  value: string
+  title?: string
+  highlight?: boolean
+}
+
+/** Payload of a `version-stats` field: the Update tab's version summary. */
+export interface VersionStatsValue {
+  headline: string
+  headlineHighlight?: boolean
+  badge?: string | null
+  badgeTone?: 'current' | 'update'
+  rows: VersionStatRow[]
+}
+
 /** Signed-in user's Comfy Cloud subscription tier, normalized to the
  *  two values the capacity gate cares about. `'unknown'` = signed out
  *  or no fetch has succeeded yet this lifetime; treated as `'free'`
@@ -185,7 +203,14 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value: string | boolean | number | string[] | Record<string, string> | null
+  value:
+    | string
+    | boolean
+    | number
+    | string[]
+    | Record<string, string>
+    | VersionStatsValue
+    | null
   editable?: boolean
   editType?:
   | 'select'
@@ -194,6 +219,9 @@ export interface DetailField {
   | 'number'
   | 'path'
   | 'channel-cards'
+  /** Read-only version summary: headline + badge over a table of facts. The
+   *  source supplies the wording; the renderer only lays it out. */
+  | 'version-stats'
   | 'args-builder'
   | 'env-vars'
   | 'model-dirs'

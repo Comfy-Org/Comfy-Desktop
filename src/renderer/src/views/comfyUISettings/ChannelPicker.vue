@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Loader2 } from 'lucide-vue-next'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
+import VersionStatPanel, { type VersionStatRow } from './VersionStatPanel.vue'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import type { ActionDef, DetailField, DetailFieldOption } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
@@ -164,13 +165,7 @@ const statusBadgeTone = computed<'current' | 'update'>(() =>
   preview.value?.updateAvailable ? 'update' : 'current'
 )
 
-interface StatRow {
-  id: string
-  label: string
-  value: string
-  title?: string
-  highlight?: boolean
-}
+type StatRow = VersionStatRow
 
 const lastCheckedDisplay = computed<{ value: string; title?: string } | null>(() => {
   if (!preview.value) return null
@@ -322,32 +317,13 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
 
 <template>
   <div class="channel-picker">
-    <div class="channel-picker-status">
-      <div class="channel-picker-headline-row">
-        <p
-          class="channel-picker-headline"
-          :class="{ 'is-update-available': preview?.updateAvailable }"
-        >
-          {{ headline }}
-        </p>
-        <span v-if="statusBadge && preview" class="channel-picker-badge" :class="statusBadgeTone">
-          {{ statusBadge }}
-        </span>
-      </div>
-
-    </div>
-
-    <dl v-if="statRows.length > 0" class="channel-picker-stats">
-      <div
-        v-for="row in statRows"
-        :key="row.id"
-        class="channel-picker-stat-row"
-        :class="{ 'is-highlight': row.highlight }"
-      >
-        <dt>{{ row.label }}</dt>
-        <dd :title="row.title">{{ row.value }}</dd>
-      </div>
-    </dl>
+    <VersionStatPanel
+      :headline="headline"
+      :headline-highlight="preview?.updateAvailable === true"
+      :badge="preview ? statusBadge : null"
+      :badge-tone="statusBadgeTone"
+      :rows="statRows"
+    />
 
     <!-- Hint shown while `commitsAhead` is still being computed; self-hides
          after the max window if enrichment never completes. -->
@@ -435,86 +411,17 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
   gap: 12px;
 }
 
-.channel-picker-headline-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 
-.channel-picker-headline {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 24px;
-  color: var(--text);
-}
 
-.channel-picker-headline.is-update-available {
-  color: var(--accent);
-}
 
-.channel-picker-badge {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  border-radius: 999px;
-}
 
-.channel-picker-badge.current {
-  color: var(--success, #4ade80);
-  background: color-mix(in srgb, var(--success, #4ade80) 12%, transparent);
-}
 
-.channel-picker-badge.update {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
 
-.channel-picker-stats {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  padding: 4px 12px;
-  background: var(--brand-surface-bg);
-}
 
-.channel-picker-stat-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border-hover);
-}
 
-.channel-picker-stat-row:first-child {
-  border-top: none;
-}
 
-.channel-picker-stat-row dt {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-}
 
-.channel-picker-stat-row dd {
-  margin: 0;
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--neutral-100);
-  text-align: right;
-}
 
-.channel-picker-stat-row.is-highlight dd {
-  color: var(--accent);
-  font-weight: 500;
-}
 
 .channel-picker-card {
   display: flex;

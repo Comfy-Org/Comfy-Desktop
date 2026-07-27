@@ -8,6 +8,7 @@ import BooleanToggle from './BooleanToggle.vue'
 import PathField from './PathField.vue'
 import EnvVarsField from './EnvVarsField.vue'
 import ChannelPicker from './ChannelPicker.vue'
+import VersionStatPanel, { type VersionStatRow } from './VersionStatPanel.vue'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
@@ -71,6 +72,27 @@ const { t } = useI18n()
 
 function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
+}
+
+interface VersionStatsValue {
+  headline: string
+  headlineHighlight: boolean
+  badge: string | null
+  badgeTone: 'current' | 'update'
+  rows: VersionStatRow[]
+}
+
+/** Unpack a `version-stats` field. The backend owns the wording — it knows what
+ *  the versions mean — so this only supplies defaults for a malformed payload. */
+function versionStats(field: DetailField): VersionStatsValue {
+  const v = (field.value ?? {}) as Partial<VersionStatsValue>
+  return {
+    headline: typeof v.headline === 'string' ? v.headline : '',
+    headlineHighlight: v.headlineHighlight === true,
+    badge: typeof v.badge === 'string' ? v.badge : null,
+    badgeTone: v.badgeTone === 'update' ? 'update' : 'current',
+    rows: Array.isArray(v.rows) ? v.rows : []
+  }
 }
 
 // Per-title collapse state; only titled sections (with a `section.collapsed` seed) are collapsible.
@@ -322,6 +344,17 @@ function fieldOwnsLabel(field: DetailField): boolean {
             :section-actions="section.actions ?? []"
             :running-action-ids="runningIdsSet"
             @action="(a) => emit('run-action', a)"
+          />
+
+          <!-- The same version table ChannelPicker shows, for a source that has
+               versions but no release channel. The backend supplies the rows. -->
+          <VersionStatPanel
+            v-else-if="field.editType === 'version-stats'"
+            :headline="versionStats(field).headline"
+            :headline-highlight="versionStats(field).headlineHighlight"
+            :badge="versionStats(field).badge"
+            :badge-tone="versionStats(field).badgeTone"
+            :rows="versionStats(field).rows"
           />
 
           <BaseInput
