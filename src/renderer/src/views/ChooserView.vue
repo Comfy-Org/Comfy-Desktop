@@ -16,7 +16,6 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { distEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
-import { isBlockedDistribution } from '../devplatform/distributionState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
@@ -142,16 +141,16 @@ function installationBacksDistribution(inst: Installation, dist: Distribution): 
 /**
  * Every distribution that earns a tile, before search. Empty when signed out.
  *
- * A distribution this machine can't install — no completed build, or no
- * artifact for this OS and GPU — earns no tile at all. The chooser is a place
- * you pick something to run from; a card you can only be told "no" by is noise
- * here. The platform is where the state of a build belongs.
+ * Everything the workspace publishes appears, including builds this machine
+ * can't install: seeing that one exists — and why it won't run here — is worth
+ * more than a tidier grid, and a distribution that silently vanished would be
+ * indistinguishable from one that was never published. The card owns that
+ * treatment; nothing is filtered on the way in.
  */
 const chooserDistributions = computed<Distribution[]>(() => {
   if (!authStore.isSignedIn) return []
   return authStore.distributions.filter(
     (dist) =>
-      !isBlockedDistribution(dist) &&
       !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
   )
 })

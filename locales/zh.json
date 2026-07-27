@@ -1149,6 +1149,8 @@
       "loadError": "无法加载分发版本，请重试",
       "installFailed": "无法开始安装，请重试。",
       "states": {
+        "noBuild": "无构建",
+        "platformMismatch": "不适用于此设备",
         "updateAvailable": "更新"
       },
       "blockedReason": {

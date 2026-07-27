@@ -6,18 +6,23 @@
  * an existing install.
  *
  * NAME is the headline. The footer row follows the grammar the install tiles
- * use: LEFT is the ComfyUI version this distribution bundles and the fact that
- * you don't have it, RIGHT is the blue pill for the one thing you can do.
+ * use: LEFT is the labelled version, RIGHT is one status/action slot — a pill
+ * for what you can do (Install / Update), or a quiet tag for why it's blocked.
+ * Never both, and state never replaces the facts.
  *
- * A card is only ever an INSTALLABLE distribution not yet on this machine.
- * Installed ones de-duplicate into install tiles, and ones this machine can't
- * install are filtered out upstream (`ChooserView.chooserDistributions`) —
- * so there is no blocked treatment here to reason about.
+ * The version is labelled ("Dist v2") because these cards share a grid with
+ * install tiles, whose version IS the ComfyUI version. A bare "2" beside a
+ * "0.3.20" invites misreading.
+ *
+ * Blocked states (no-build / platform-mismatch) recede but are never hidden,
+ * and keep their full reason on the tile's `title`. No security chrome: these
+ * are ordinary pipeline facts, not threats.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDownToLine, MoreVertical, Package } from 'lucide-vue-next'
 import TruncatedText from '../../components/TruncatedText.vue'
+import { BLOCKED_STATE_KEY, isBlockedDistribution } from '../../devplatform/distributionState'
 import type { Distribution } from '../../devplatform/types'
 
 const props = defineProps<{
@@ -33,9 +38,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+const isBlocked = computed(() => isBlockedDistribution(props.distribution))
+
 /** The facts line: the ComfyUI version this distribution bundles, then the fact
- *  that you don't have it yet. Once installed the tile shows the distribution's
- *  own release in this slot instead. */
+ *  that you don't have it yet. A card is only ever an uninstalled distribution
+ *  — once installed it de-duplicates into an install tile, which shows the
+ *  distribution's release in this slot instead. */
 const comfyVersionLabel = computed(() => props.distribution.comfyuiVersion ?? '')
 
 const factsLine = computed(() =>
@@ -44,24 +52,50 @@ const factsLine = computed(() =>
     .join(' · ')
 )
 
-/** The blue pill: Install and Update are the same gesture — activate the card
- *  — so they wear the same pill. */
-const actionPill = computed(() =>
-  props.distribution.state === 'update-available'
-    ? t('devPlatform.distribution.states.updateAvailable')
-    : t('devPlatform.distribution.menuInstall')
-)
+/** Right slot, part one: the blue pill for an action the card performs.
+ *  Install and Update are the same gesture — activate the card — so they
+ *  wear the same pill. Empty when there's nothing to do. */
+const actionPill = computed(() => {
+  if (props.distribution.state === 'update-available')
+    return t('devPlatform.distribution.states.updateAvailable')
+  if (props.distribution.state === 'installable')
+    return t('devPlatform.distribution.menuInstall')
+  return ''
+})
+
+/** Right slot, part two: a quiet tag for why the tile is blocked. Only consulted
+ *  when `actionPill` is empty; the two never render together. */
+const stateTag = computed(() => {
+  if (!isBlocked.value) return ''
+  const suffix = BLOCKED_STATE_KEY[props.distribution.state] ?? 'noBuild'
+  return t(`devPlatform.distribution.states.${suffix}`)
+})
+
+/** Full-contrast explanation, carried on `title` so it eats no tile space. */
+const blockedReason = computed(() => {
+  if (!isBlocked.value) return ''
+  const suffix = props.distribution.blockedReason ?? 'buildFailed'
+  return t(`devPlatform.distribution.blockedReason.${suffix}`)
+})
+
+function onActivate(): void {
+  if (isBlocked.value) return
+  emit('select')
+}
 </script>
 
 <template>
   <div
-    class="chooser-tile chooser-tile--install dist-tile dist-tile--chooser dist-tile--available"
+    class="chooser-tile chooser-tile--install dist-tile dist-tile--chooser"
+    :class="{ 'dist-tile--blocked': isBlocked, 'dist-tile--available': !isBlocked }"
     role="button"
     tabindex="0"
+    :aria-disabled="isBlocked ? true : undefined"
+    :title="blockedReason || undefined"
     :data-testid="`chooser-dist-tile-${distribution.id}`"
-    @click="emit('select')"
-    @keydown.enter.prevent="emit('select')"
-    @keydown.space.prevent="emit('select')"
+    @click="onActivate"
+    @keydown.enter.prevent="onActivate"
+    @keydown.space.prevent="onActivate"
     @contextmenu.prevent="emit('open-kebab-menu', $event)"
   >
     <!-- "Packaged environment" glyph: the one icon every distribution wears. -->
@@ -86,10 +120,10 @@ const actionPill = computed(() =>
       </button>
     </div>
 
-    <!-- Two lines: name, then facts left / action right. -->
+    <!-- Two lines: name, then facts left / one status slot right. -->
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <div class="chooser-tile-footer">
+      <div v-if="factsLine || actionPill || stateTag" class="chooser-tile-footer">
         <TruncatedText v-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
           <span v-if="comfyVersionLabel" class="chooser-tile-meta-source">{{
             comfyVersionLabel
@@ -99,9 +133,18 @@ const actionPill = computed(() =>
             t('devPlatform.distribution.notInstalled')
           }}</span>
         </TruncatedText>
-        <span class="chooser-tile-pill chooser-tile-pill-update chooser-tile-pill-action">
+        <span
+          v-if="actionPill"
+          class="chooser-tile-pill chooser-tile-pill-update chooser-tile-pill-action"
+        >
           <ArrowDownToLine :size="11" aria-hidden="true" />
           {{ actionPill }}
+        </span>
+        <span
+          v-else-if="stateTag"
+          class="chooser-tile-pill chooser-tile-pill-action dist-tile-state-tag"
+        >
+          {{ stateTag }}
         </span>
       </div>
     </div>
