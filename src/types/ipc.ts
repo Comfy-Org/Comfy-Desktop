@@ -27,6 +27,10 @@ export interface DevPlatformDistribution {
   name: string
   description?: string
   version?: string
+  /** The ComfyUI version this distribution bundles, for the card's facts line.
+   *  TODO(builder-backend): not yet populated by `listDistributionRows` — the
+   *  build metadata needs to carry it through. Absent renders as unknown. */
+  comfyuiVersion?: string
   /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number

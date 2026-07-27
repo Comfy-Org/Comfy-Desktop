@@ -23,7 +23,6 @@ import { Check, ChevronDown, Loader2, LogIn, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
 import { useDialogs } from '../../composables/useDialogs'
-import { currentWorkspaceLabel, workspaceLabel as resolveWorkspaceLabel } from '../../devplatform/workspaceLabel'
 
 const emit = defineEmits<{
   /** Sign-out completed. Host decides whether anything else changes. */
@@ -53,13 +52,19 @@ const email = computed(() => store.status.email ?? '')
  * fallback until the list loads (the claims carry no human name: backend gap).
  * Personal workspaces are named by the product.
  */
-const workspaceName = computed(() =>
-  currentWorkspaceLabel(store.status, store.workspaces, t('devPlatform.workspace.personalLabel'))
-)
+const workspaceName = computed(() => {
+  const s = store.status
+  if (!s.signedIn) return ''
+  if (s.workspaceType === 'team' && s.workspaceId) {
+    return store.workspaces.find((w) => w.id === s.workspaceId)?.name ?? s.workspaceId
+  }
+  return t('devPlatform.workspace.personalLabel')
+})
 
 /** Human label for one workspace row. Personal workspaces get the product name. */
 function workspaceLabel(ws: { name: string; type: string }): string {
-  return resolveWorkspaceLabel(ws, t('devPlatform.workspace.personalLabel'))
+  if (ws.type === 'team') return ws.name
+  return t('devPlatform.workspace.personalLabel')
 }
 
 const currentWorkspaceId = computed(() => store.status.workspaceId ?? null)

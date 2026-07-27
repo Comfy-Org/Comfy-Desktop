@@ -48,11 +48,16 @@ const BLOCKED_STATE_KEY: Record<string, string> = {
 
 const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
 
-/** Labelled so it can't be read as a ComfyUI version (see file header). */
-const versionLabel = computed(() =>
-  props.distribution.version
-    ? t('devPlatform.distribution.distVersion', { version: props.distribution.version })
-    : ''
+/** The facts line: the ComfyUI version this distribution bundles, then the fact
+ *  that you don't have it yet. A card is only ever an uninstalled distribution
+ *  — once installed it de-duplicates into an install tile, which shows the
+ *  distribution's release in this slot instead. */
+const comfyVersionLabel = computed(() => props.distribution.comfyuiVersion ?? '')
+
+const factsLine = computed(() =>
+  [comfyVersionLabel.value, t('devPlatform.distribution.notInstalled')]
+    .filter(Boolean)
+    .join(' · ')
 )
 
 /** Right slot, part one: the blue pill for an action the card performs.
@@ -126,9 +131,15 @@ function onActivate(): void {
     <!-- Two lines: name, then facts left / one status slot right. -->
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <div v-if="versionLabel || actionPill || stateTag" class="chooser-tile-footer">
-        <TruncatedText v-if="versionLabel" class="chooser-tile-meta-line" :text="versionLabel">
-          <span class="chooser-tile-meta-version">{{ versionLabel }}</span>
+      <div v-if="factsLine || actionPill || stateTag" class="chooser-tile-footer">
+        <TruncatedText v-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
+          <span v-if="comfyVersionLabel" class="chooser-tile-meta-source">{{
+            comfyVersionLabel
+          }}</span>
+          <span v-if="comfyVersionLabel" class="chooser-tile-meta-sep">·</span>
+          <span class="chooser-tile-meta-version">{{
+            t('devPlatform.distribution.notInstalled')
+          }}</span>
         </TruncatedText>
         <span
           v-if="actionPill"

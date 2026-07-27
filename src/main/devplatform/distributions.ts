@@ -41,6 +41,9 @@ export interface DistributionRow {
   name: string
   description?: string
   version?: string
+  /** ComfyUI version bundled by this distribution. TODO(builder-backend): the
+   *  build metadata doesn't carry it yet, so this is currently never set. */
+  comfyuiVersion?: string
   finishedAt?: string
   numCustomNodes?: number
   state: DistributionRowState

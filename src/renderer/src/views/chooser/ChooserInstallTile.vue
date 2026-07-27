@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, ArrowRightLeft, MoreVertical } from 'lucide-vue-next'
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowRightLeft,
+  MoreVertical,
+  Package
+} from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
@@ -70,9 +76,24 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
+/** An install that came from a distribution. It wears the distribution glyph
+ *  rather than its install-type icon: what it IS matters more here than where
+ *  it happens to run, and it keeps one visual identity across the shelf whether
+ *  a distribution is installed or still a card. */
+const isFromDistribution = computed(
+  () => inst.value.sourceId === 'comfybuilder' || typeof inst.value.distributionId === 'string'
+)
+
+const distributionVersion = computed(() =>
+  typeof inst.value.distributionVersion === 'string' ? inst.value.distributionVersion : ''
+)
+
 /** Desktop's listPreview is the bare installPath (useless as a label), so fall
  *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
 const sourceLabel = computed(() => {
+  // A distribution install says WHICH distribution it is, not where it lives:
+  // the path is noise on a tile whose identity is the distribution.
+  if (isFromDistribution.value) return ''
   const raw =
     inst.value.sourceId === 'desktop'
       ? inst.value.sourceLabel
@@ -80,8 +101,24 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
+/** The right-hand fact: a distribution's release, or nothing extra. Labelled so
+ *  it can't be read as the ComfyUI version sitting beside it. */
+const trailingFact = computed(() =>
+  isFromDistribution.value
+    ? distributionVersion.value
+      ? t('devPlatform.distribution.distVersion', { version: distributionVersion.value })
+      : ''
+    : inst.value.version || ''
+)
+
+/** Distribution installs read "<ComfyUI version> · Dist v7"; everything else
+ *  keeps "<source> · <version>". */
+const leadingFact = computed(() =>
+  isFromDistribution.value ? inst.value.version || '' : sourceLabel.value
+)
+
 const metaLine = computed(() =>
-  [sourceLabel.value, inst.value.version].filter(Boolean).join(' · ')
+  [leadingFact.value, trailingFact.value].filter(Boolean).join(' · ')
 )
 
 
@@ -133,9 +170,14 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @keydown.space.prevent="handleClick"
     @contextmenu.prevent="emit('open-card-menu', $event, inst)"
   >
-    <!-- Type icon only; source/channel lives in the meta line below. -->
-    <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
-      <component :is="typeMeta.icon" :size="22" />
+    <!-- Type icon only; source/channel lives in the meta line below. A
+         distribution install wears the distribution glyph instead. -->
+    <span
+      class="chooser-tile-icon"
+      :title="isFromDistribution ? undefined : t(typeMeta.labelKey)"
+    >
+      <Package v-if="isFromDistribution" :size="22" />
+      <component :is="typeMeta.icon" v-else :size="22" />
     </span>
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
@@ -193,9 +235,9 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       <TruncatedText class="chooser-tile-name" :text="inst.name" />
       <div v-if="metaLine || actionPill" class="chooser-tile-footer">
         <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-          <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
-          <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
-          <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
+          <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
+          <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep">·</span>
+          <span v-if="trailingFact" class="chooser-tile-meta-version">{{ trailingFact }}</span>
         </TruncatedText>
         <!-- Action pill; pinned right by its own margin, never truncates. -->
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">

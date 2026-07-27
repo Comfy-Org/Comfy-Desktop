@@ -16,7 +16,6 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import { distEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
-import { currentWorkspaceLabel } from '../devplatform/workspaceLabel'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
@@ -85,15 +84,8 @@ onMounted(() => {
 watch(
   () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
   () => {
-    if (!authStore.isSignedIn) return
-    if (authStore.distributions.length === 0) {
+    if (authStore.isSignedIn && authStore.distributions.length === 0) {
       void authStore.fetchDistributions().catch(() => {})
-    }
-    // The workspace shelf is headed by the workspace's NAME, and the claims
-    // carry only its id — so this page needs the list too, not just the chip's
-    // dropdown (which is the only other thing that fetches it).
-    if (authStore.workspaces.length === 0) {
-      void authStore.fetchWorkspaces().catch(() => {})
     }
   },
   { immediate: true }
@@ -217,14 +209,6 @@ const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
 )
 const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
   visibleDistributions.value.map(distEntry)
-)
-
-const workspaceName = computed(() =>
-  currentWorkspaceLabel(
-    authStore.status,
-    authStore.workspaces,
-    t('devPlatform.workspace.personalLabel')
-  )
 )
 
 /** Judged on the PRE-SEARCH lists so typing can't flip the page between its
@@ -520,7 +504,7 @@ const gridHandlers = {
           class="chooser-shelf"
         >
           <header class="chooser-shelf-head">
-            <span class="chooser-shelf-title">{{ workspaceName }}</span>
+            <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
             <span class="chooser-shelf-count">{{
               workspaceInstalledEntries.length + workspaceAvailableEntries.length
             }}</span>

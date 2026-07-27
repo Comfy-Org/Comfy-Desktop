@@ -58,12 +58,14 @@ const messages = {
       errorTitle: 'Error',
       updatePill: 'Update',
       migratePill: 'Migrate',
+      workspaceShelf: 'Workspace',
     },
     devPlatform: {
       workspace: { personalLabel: 'Personal' },
       distribution: {
         menuInstall: 'Install',
         distVersion: 'Dist v{version}',
+        notInstalled: 'Not installed',
         states: {
           noBuild: 'No build',
           platformMismatch: 'Not for this machine',
@@ -570,12 +572,42 @@ describe('ChooserView', () => {
     expect(items[0]!.disabled).toBe(true)
   })
 
-  it('labels the distribution version so it cannot be read as a ComfyUI version', async () => {
-    installMockApiSignedIn([], [makeDist({ id: 'd3', name: 'Versioned', version: '2' })])
+  it('states the bundled ComfyUI version and that you do not have it yet', async () => {
+    installMockApiSignedIn(
+      [],
+      [makeDist({ id: 'd3', name: 'Versioned', version: '2', comfyuiVersion: 'v0.28.2' })],
+    )
     const wrapper = mountChooser()
     await flushPromises()
-    const card = wrapper.find('[data-testid="chooser-dist-tile-d3"]')
-    expect(card.find('.chooser-tile-meta-line').text()).toContain('Dist v2')
+    const meta = wrapper.find('[data-testid="chooser-dist-tile-d3"]').find('.chooser-tile-meta-line')
+    expect(meta.text()).toContain('v0.28.2')
+    expect(meta.text()).toContain('Not installed')
+    // The distribution's own release belongs on the INSTALL tile, once you
+    // have one — a card never shows a version you don't have.
+    expect(meta.text()).not.toContain('Dist v2')
+  })
+
+  it('labels a distribution install so its release cannot be read as a ComfyUI version', async () => {
+    installMockApiSignedIn(
+      [
+        makeInstall({
+          id: 'built',
+          name: 'BuiltThing',
+          sourceId: 'comfybuilder',
+          version: 'v0.28.2',
+          distributionVersion: '7',
+        }),
+      ],
+      [],
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('BuiltThing'))!
+    const meta = tile.find('.chooser-tile-meta-line').text()
+    expect(meta).toContain('v0.28.2')
+    expect(meta).toContain('Dist v7')
+    // The install path is noise on a tile whose identity is the distribution.
+    expect(meta).not.toContain('Standalone')
   })
 
   it('puts a blocked reason in the footer status slot, not the kebab corner', async () => {
@@ -589,7 +621,7 @@ describe('ChooserView', () => {
 
     // State reads in the footer's right slot; the facts keep the left.
     expect(card.find('.dist-tile-state-tag').text()).toBe('Not for this machine')
-    expect(card.find('.chooser-tile-meta-line').text()).toContain('Dist v5')
+    expect(card.find('.chooser-tile-meta-line').text()).toContain('Not installed')
     // The corner holds the kebab and nothing else.
     const corner = card.find('.chooser-tile-actions')
     expect(corner.findAll('.chooser-tile-pill').length).toBe(0)
@@ -687,7 +719,9 @@ describe('ChooserView', () => {
     expect(grids[0]!.classes()).toContain('chooser-family-grid--centered')
   })
 
-  it('shelves the workspace family under its own name once it has something', async () => {
+  it('shelves the workspace family under a generic "Workspace" header', async () => {
+    // Deliberately NOT the workspace's name: a personal workspace is called
+    // "Personal", which collides with the unheaded your-installs group above it.
     installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })], {
       id: 'w1',
       name: 'Comfy Design Team',
@@ -695,7 +729,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.find('.chooser-shelf-title').text()).toBe('Comfy Design Team')
+    expect(wrapper.find('.chooser-shelf-title').text()).toBe('Workspace')
     expect(wrapper.find('.chooser-shelf-count').text()).toBe('1')
     // Your-installs leads and gives up centering once a shelf sits beneath it.
     const grids = wrapper.findAll('.chooser-family-grid')
