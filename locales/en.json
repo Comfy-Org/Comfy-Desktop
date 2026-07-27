@@ -39,8 +39,6 @@
     "updatePill": "Update",
     "migratePill": "Migrate",
     "workspaceShelf": "Workspace",
-    "seeAll": "See all ({count})",
-    "showLess": "Show less",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
@@ -1151,8 +1149,6 @@
       "loadError": "Couldn't load distributions. Retry",
       "installFailed": "Could not start the install. Try again.",
       "states": {
-        "noBuild": "No build",
-        "platformMismatch": "Not for this machine",
         "updateAvailable": "Update"
       },
       "blockedReason": {

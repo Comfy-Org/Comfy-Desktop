@@ -39,8 +39,6 @@
     "updatePill": "更新",
     "migratePill": "迁移",
     "workspaceShelf": "工作区",
-    "seeAll": "查看全部（{count}）",
-    "showLess": "收起",
     "openInstall": "打开",
     "manageInstall": "管理",
     "moreActions": "更多操作",
@@ -1151,8 +1149,6 @@
       "loadError": "无法加载分发版本，请重试",
       "installFailed": "无法开始安装，请重试。",
       "states": {
-        "noBuild": "无构建",
-        "platformMismatch": "不适用于此设备",
         "updateAvailable": "更新"
       },
       "blockedReason": {

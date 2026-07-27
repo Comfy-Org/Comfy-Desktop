@@ -5,8 +5,7 @@
  * installed-instance tile, since that is the interface users already pick
  * installs from. Everything structural (box, padding, radius, name → footer
  * stack, pill vocabulary) comes from chooser-tiles.css unchanged; this file
- * adds only the blocked treatment, the neutral state tag, and the house
- * focus ring.
+ * adds only the receded resting state and the house focus ring.
  */
 
 .dist-tile {
@@ -19,38 +18,18 @@
   outline-offset: 2px;
 }
 
-/* --- State tag -------------------------------------------------------------
- * The footer's right slot when there is nothing to DO: "Available",
- * "Installed", or a blocking reason. Deliberately the quietest thing in the
- * tile family — it reports, it doesn't ask. The blue action pill (borrowed
- * wholesale from the install tiles) covers the acting case. */
-.dist-tile-state-tag {
-  color: var(--neutral-200);
-  border-color: color-mix(in oklab, var(--neutral-100) 14%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 6%, transparent);
-  /* A label, not a button: no hover lift. */
-  cursor: inherit;
-}
-.dist-tile--chooser:hover .dist-tile-state-tag,
-.dist-tile--chooser:focus-visible .dist-tile-state-tag {
-  color: var(--neutral-100);
-}
-
 /* --- Not on this machine --------------------------------------------------
- * Available and blocked distributions recede by the SAME amount. Neither is
- * installed here, and that shared fact is what the surface reports; what
- * separates them is what they offer — a blue Install pill against a quiet
- * reason tag — and what hover promises, not how far back they sit.
+ * Every card is a distribution you could add but don't have — installed ones
+ * de-duplicate into install tiles, and ones this machine can't install are
+ * filtered out upstream. So the whole family steps back from the installs it
+ * sits under: less surface wash, softer border, identity dimmed.
  *
  * The dim goes on the identity block, never the root: root opacity would drag
- * the pill and the tag down with it, and those are the one thing each tile
- * exists to say.
+ * the Install pill down with it, and the pill is the point of the card.
  *
- * Doubled class throughout (`.dist-tile.dist-tile--x`): the shared
- * `.chooser-tile` hover rules are single-class, so a single-class resting rule
- * loses to them and the tile lights up under the cursor. */
-.dist-tile.dist-tile--available,
-.dist-tile.dist-tile--blocked {
+ * Doubled class (`.dist-tile.dist-tile--available`): the shared `.chooser-tile`
+ * hover rules are single-class, so a single-class resting rule loses to them. */
+.dist-tile.dist-tile--available {
   /* The tile surface is a 4%-white wash — merely reducing it is imperceptible
    * on the dark backdrop, so these drop most of the wash and keep a
    * half-strength border to hold their shape in the grid. */
@@ -58,14 +37,7 @@
   border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
 }
 .dist-tile--available .chooser-tile-icon,
-.dist-tile--available .chooser-tile-name,
-.dist-tile--blocked .chooser-tile-icon,
-.dist-tile--blocked .chooser-tile-name {
-  opacity: 0.38;
-}
-/* Blocked dims its kebab too. An available tile's stays lit: the card is
- * something you can act on right now. */
-.dist-tile--blocked .chooser-tile-kebab {
+.dist-tile--available .chooser-tile-name {
   opacity: 0.38;
 }
 /* Facts step UP to --neutral-200 instead of dimming: the faint tier multiplied
@@ -73,17 +45,12 @@
 .dist-tile--available .chooser-tile-meta-line,
 .dist-tile--available .chooser-tile-meta-source,
 .dist-tile--available .chooser-tile-meta-sep,
-.dist-tile--available .chooser-tile-meta-version,
-.dist-tile--blocked .chooser-tile-meta-line,
-.dist-tile--blocked .chooser-tile-meta-source,
-.dist-tile--blocked .chooser-tile-meta-sep,
-.dist-tile--blocked .chooser-tile-meta-version {
+.dist-tile--available .chooser-tile-meta-version {
   color: var(--neutral-200);
 }
 
-/* --- Available: hover pays out -------------------------------------------
- * Back to full strength, because this card CAN be installed and the hover has
- * to promise that. This is the whole behavioural difference from blocked. */
+/* Hover pays out in full: the card can be installed, and the hover has to
+ * promise that. */
 .dist-tile.dist-tile--available:hover,
 .dist-tile.dist-tile--available:focus-visible {
   background: var(--chooser-surface-bg-hover);
@@ -93,32 +60,5 @@
 .dist-tile--available:focus-visible .chooser-tile-icon,
 .dist-tile--available:hover .chooser-tile-name,
 .dist-tile--available:focus-visible .chooser-tile-name {
-  opacity: 1;
-}
-
-/* --- Blocked: hover stays put --------------------------------------------- */
-.dist-tile.dist-tile--blocked {
-  cursor: default;
-}
-/* Warning tone on the tag is the whole signal now that the corner is the
- * kebab's — enough to find at a glance, not enough to alarm. */
-.dist-tile--blocked .dist-tile-state-tag {
-  color: var(--neutral-100);
-  border-color: color-mix(in oklab, var(--warning) 40%, transparent);
-  background: color-mix(in oklab, var(--warning) 10%, transparent);
-}
-/* Suppress the hover promise the tile cannot honour; the kebab alone wakes,
- * because its menu still has something to offer. */
-.dist-tile.dist-tile--blocked:hover {
-  background: color-mix(in oklab, var(--chooser-surface-bg) 25%, transparent);
-  border-color: color-mix(in oklab, var(--chooser-surface-border) 50%, transparent);
-}
-.dist-tile--blocked:hover .chooser-tile-icon,
-.dist-tile--blocked:hover .chooser-tile-name {
-  color: var(--neutral-100);
-  opacity: 0.38;
-}
-.dist-tile--blocked .chooser-tile-kebab:hover,
-.dist-tile--blocked .chooser-tile-kebab:focus-visible {
   opacity: 1;
 }

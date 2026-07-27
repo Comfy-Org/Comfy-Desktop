@@ -59,8 +59,6 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate',
       workspaceShelf: 'Workspace',
-      seeAll: 'See all ({count})',
-      showLess: 'Show less',
     },
     devPlatform: {
       workspace: { personalLabel: 'Personal' },
@@ -69,8 +67,6 @@ const messages = {
         distVersion: 'Dist v{version}',
         notInstalled: 'Not installed',
         states: {
-          noBuild: 'No build',
-          platformMismatch: 'Not for this machine',
           updateAvailable: 'Update',
         },
         blockedReason: {
@@ -558,25 +554,6 @@ describe('ChooserView', () => {
     expect(api.comfybuilder.installDistribution).toHaveBeenCalledWith('d1')
   })
 
-  it('keeps the kebab on a blocked distribution but disables Install', async () => {
-    installMockApiSignedIn([], [makeDist({ id: 'd2', name: 'Blocked Dist', state: 'no-build' })])
-    const wrapper = mountChooser()
-    await flushPromises()
-
-    // Blocked distributions live behind the shelf's "See all".
-    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
-
-    const kebab = wrapper.find('[data-testid="chooser-dist-tile-kebab-d2"]')
-    expect(kebab.exists()).toBe(true)
-    await kebab.trigger('click')
-
-    const menu = wrapper
-      .findAllComponents({ name: 'ContextMenu' })
-      .find((m) => m.props('open') === true)!
-    const items = menu.props('items') as { id: string; disabled?: boolean }[]
-    expect(items[0]!.disabled).toBe(true)
-  })
-
   it('states the bundled ComfyUI version and that you do not have it yet', async () => {
     installMockApiSignedIn(
       [],
@@ -615,29 +592,7 @@ describe('ChooserView', () => {
     expect(meta).not.toContain('Standalone')
   })
 
-  it('puts a blocked reason in the footer status slot, not the kebab corner', async () => {
-    installMockApiSignedIn(
-      [],
-      [makeDist({ id: 'd4', name: 'Blocked', state: 'platform-mismatch', version: '5', blockedReason: 'noArtifactForMachine' })],
-    )
-    const wrapper = mountChooser()
-    await flushPromises()
-    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
-    const card = wrapper.find('[data-testid="chooser-dist-tile-d4"]')
-
-    // State reads in the footer's right slot; the facts keep the left.
-    expect(card.find('.dist-tile-state-tag').text()).toBe('Not for this machine')
-    expect(card.find('.chooser-tile-meta-line').text()).toContain('Not installed')
-    // The corner holds the kebab and nothing else.
-    const corner = card.find('.chooser-tile-actions')
-    expect(corner.findAll('.chooser-tile-pill').length).toBe(0)
-    expect(corner.find('.chooser-tile-kebab').exists()).toBe(true)
-    // Blocked tiles recede but stay readable, and explain themselves on hover.
-    expect(card.classes()).toContain('dist-tile--blocked')
-    expect(card.attributes('title')).toContain('operating system')
-  })
-
-  it('never renders both an action pill and a state tag', async () => {
+  it('gives every card exactly one blue action pill', async () => {
     installMockApiSignedIn(
       [],
       [
@@ -650,13 +605,40 @@ describe('ChooserView', () => {
     for (const id of ['a', 'b']) {
       const card = wrapper.find(`[data-testid="chooser-dist-tile-${id}"]`)
       expect(card.findAll('.chooser-tile-pill-action').length).toBe(1)
-    }
-    // Both are actionable, so both take the blue pill, not a state tag.
-    for (const id of ['a', 'b']) {
-      const card = wrapper.find(`[data-testid="chooser-dist-tile-${id}"]`)
       expect(card.find('.chooser-tile-pill-update').exists()).toBe(true)
-      expect(card.find('.dist-tile-state-tag').exists()).toBe(false)
     }
+  })
+
+  it('drops distributions this machine cannot install, rather than showing them', async () => {
+    installMockApiSignedIn(
+      [],
+      [
+        makeDist({ id: 'ok', name: 'InstallableThing', state: 'installable' }),
+        makeDist({ id: 'nb', name: 'NoBuildThing', state: 'no-build' }),
+        makeDist({ id: 'pm', name: 'WrongPlatformThing', state: 'platform-mismatch' }),
+      ],
+      { id: 'w1', name: 'Comfy Design Team' },
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('InstallableThing')
+    expect(wrapper.text()).not.toContain('NoBuildThing')
+    expect(wrapper.text()).not.toContain('WrongPlatformThing')
+    // They aren't counted either — the header reports what's on the shelf.
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('1')
+  })
+
+  it('shows no workspace shelf when every distribution is uninstallable here', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'nb', name: 'OnlyBlocked', state: 'no-build' })], {
+      id: 'w1',
+      name: 'Comfy Design Team',
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(false)
+    // With nothing to shelve, the page falls back to the centered grid.
+    expect(wrapper.find('.chooser-family-grid--centered').exists()).toBe(true)
   })
 
   it('de-dups an installed distribution out of the grid (distributionId link)', async () => {
@@ -783,82 +765,6 @@ describe('ChooserView', () => {
     const noMatches = wrapper.find('.chooser-empty').exists()
     expect(stillShelved || noMatches).toBe(true)
     expect(wrapper.find('.chooser-family-grid--centered').exists()).toBe(false)
-  })
-
-  it('collapses distributions this machine cannot install behind "See all"', async () => {
-    installMockApiSignedIn(
-      [],
-      [
-        makeDist({ id: 'ok', name: 'InstallableThing', state: 'installable' }),
-        makeDist({ id: 'nb', name: 'NoBuildThing', state: 'no-build' }),
-        makeDist({ id: 'pm', name: 'WrongPlatformThing', state: 'platform-mismatch' }),
-      ],
-      { id: 'w1', name: 'Comfy Design Team' },
-    )
-    const wrapper = mountChooser()
-    await flushPromises()
-
-    // Hidden by default — but the header still counts them, so nothing reads
-    // as missing.
-    expect(wrapper.text()).toContain('InstallableThing')
-    expect(wrapper.text()).not.toContain('NoBuildThing')
-    expect(wrapper.text()).not.toContain('WrongPlatformThing')
-    expect(wrapper.find('.chooser-shelf-count').text()).toBe('3')
-
-    const toggle = wrapper.find('[data-testid="chooser-shelf-see-all"]')
-    expect(toggle.text()).toBe('See all (2)')
-    expect(toggle.attributes('aria-expanded')).toBe('false')
-
-    await toggle.trigger('click')
-    expect(wrapper.text()).toContain('NoBuildThing')
-    expect(wrapper.text()).toContain('WrongPlatformThing')
-    expect(wrapper.find('[data-testid="chooser-shelf-see-all"]').text()).toBe('Show less')
-  })
-
-  it('steps an available card back from the installs, but not as far as blocked', async () => {
-    installMockApiSignedIn(
-      [],
-      [
-        makeDist({ id: 'ok', name: 'Available', state: 'installable' }),
-        makeDist({ id: 'nb', name: 'Blocked', state: 'no-build' }),
-      ],
-      { id: 'w1', name: 'Comfy Design Team' },
-    )
-    const wrapper = mountChooser()
-    await flushPromises()
-    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
-
-    // The three tiers are distinct classes, so they can't collapse into each
-    // other: installed tiles carry neither.
-    const available = wrapper.find('[data-testid="chooser-dist-tile-ok"]')
-    const blocked = wrapper.find('[data-testid="chooser-dist-tile-nb"]')
-    expect(available.classes()).toContain('dist-tile--available')
-    expect(available.classes()).not.toContain('dist-tile--blocked')
-    expect(blocked.classes()).toContain('dist-tile--blocked')
-    expect(blocked.classes()).not.toContain('dist-tile--available')
-  })
-
-  it('offers no "See all" when every distribution is installable', async () => {
-    installMockApiSignedIn([], [makeDist({ id: 'ok', name: 'Fine', state: 'installable' })], {
-      id: 'w1',
-      name: 'Comfy Design Team',
-    })
-    const wrapper = mountChooser()
-    await flushPromises()
-    expect(wrapper.find('[data-testid="chooser-shelf-see-all"]').exists()).toBe(false)
-  })
-
-  it('keeps the shelf when the workspace has only blocked distributions', async () => {
-    // Otherwise the builds would be unreachable — knowing they exist is the point.
-    installMockApiSignedIn([], [makeDist({ id: 'nb', name: 'OnlyBlocked', state: 'no-build' })], {
-      id: 'w1',
-      name: 'Comfy Design Team',
-    })
-    const wrapper = mountChooser()
-    await flushPromises()
-    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(true)
-    await wrapper.find('[data-testid="chooser-shelf-see-all"]').trigger('click')
-    expect(wrapper.text()).toContain('OnlyBlocked')
   })
 
   it('has no Desktop entry in the filter state', async () => {

@@ -139,11 +139,19 @@ function installationBacksDistribution(inst: Installation, dist: Distribution): 
   return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
 }
 
-/** Every distribution that earns a tile, before search. Empty when signed out. */
+/**
+ * Every distribution that earns a tile, before search. Empty when signed out.
+ *
+ * A distribution this machine can't install — no completed build, or no
+ * artifact for this OS and GPU — earns no tile at all. The chooser is a place
+ * you pick something to run from; a card you can only be told "no" by is noise
+ * here. The platform is where the state of a build belongs.
+ */
 const chooserDistributions = computed<Distribution[]>(() => {
   if (!authStore.isSignedIn) return []
   return authStore.distributions.filter(
     (dist) =>
+      !isBlockedDistribution(dist) &&
       !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
   )
 })
@@ -208,19 +216,9 @@ const ownEntries = computed<ChooserGridEntry[]>(() =>
 const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
   visibleInstalls.value.filter(isBuilderInstall).map(installEntry)
 )
-// A distribution this machine can't install (no build yet, or no artifact for
-// this OS/GPU) is still worth being able to find — it's how you learn the build
-// exists — but it shouldn't take a slot in the row you're actually shopping in.
-// Collapsed behind "See all" by default; the count stays in the shelf header so
-// nothing is silently missing.
 const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
-  visibleDistributions.value.filter((d) => !isBlockedDistribution(d)).map(distEntry)
+  visibleDistributions.value.map(distEntry)
 )
-const workspaceBlockedEntries = computed<ChooserGridEntry[]>(() =>
-  visibleDistributions.value.filter(isBlockedDistribution).map(distEntry)
-)
-
-const showBlockedDistributions = ref(false)
 
 /** Judged on the PRE-SEARCH lists so typing can't flip the page between its
  *  two arrangements mid-keystroke. */
@@ -510,20 +508,14 @@ const gridHandlers = {
         <section
           v-if="
             showWorkspaceShelf &&
-            (workspaceInstalledEntries.length ||
-              workspaceAvailableEntries.length ||
-              workspaceBlockedEntries.length)
+            (workspaceInstalledEntries.length || workspaceAvailableEntries.length)
           "
           class="chooser-shelf"
         >
           <header class="chooser-shelf-head">
             <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
-            <!-- Counts the blocked ones too: the header is the promise that
-                 nothing is missing, which is what lets them be collapsed. -->
             <span class="chooser-shelf-count">{{
-              workspaceInstalledEntries.length +
-              workspaceAvailableEntries.length +
-              workspaceBlockedEntries.length
+              workspaceInstalledEntries.length + workspaceAvailableEntries.length
             }}</span>
           </header>
           <ChooserFamilyGrid
@@ -538,32 +530,6 @@ const gridHandlers = {
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
-          <!-- Can't be installed here. Kept out of the shopping row by default,
-               never dropped: the reason is the point. -->
-          <ChooserFamilyGrid
-            v-if="showBlockedDistributions && workspaceBlockedEntries.length"
-            :entries="workspaceBlockedEntries"
-            :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-
-          <!-- Footer control: it acts on the rows above it, so it sits under
-               them rather than up in the header. -->
-          <div v-if="workspaceBlockedEntries.length" class="chooser-shelf-more">
-            <button
-              type="button"
-              class="chooser-shelf-toggle"
-              :aria-expanded="showBlockedDistributions"
-              data-testid="chooser-shelf-see-all"
-              @click="showBlockedDistributions = !showBlockedDistributions"
-            >
-              {{
-                showBlockedDistributions
-                  ? t('chooser.showLess')
-                  : t('chooser.seeAll', { count: workspaceBlockedEntries.length })
-              }}
-            </button>
-          </div>
         </section>
       </div>
 
@@ -820,47 +786,4 @@ const gridHandlers = {
   color: var(--text-faint);
 }
 
-/* Centred pill closing the shelf, with a rule running out to each edge. The
- * rules are pseudo-elements on the row, so they centre on the pill by the row's
- * own `align-items` — no magic offsets to drift when the pill's height changes. */
-.chooser-shelf-more {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-.chooser-shelf-more::before,
-.chooser-shelf-more::after {
-  content: '';
-  flex: 1 1 auto;
-  height: 1px;
-  background: var(--chooser-surface-border-hover);
-}
-
-/* Quiet by default: it reveals builds you can't use, so it must never outrank
- * the cards above it. */
-.chooser-shelf-toggle {
-  flex-shrink: 0;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--chooser-surface-bg);
-  border-radius: 999px;
-  padding: 4px 14px;
-  font: inherit;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    border-color 100ms ease,
-    color 100ms ease;
-}
-.chooser-shelf-toggle:hover {
-  color: var(--neutral-100);
-  background: var(--chooser-surface-bg-hover);
-  border-color: var(--chooser-surface-border-hover);
-}
-.chooser-shelf-toggle:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
 </style>
