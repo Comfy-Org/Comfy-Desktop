@@ -52,6 +52,10 @@ export interface DistributionRow {
   installedVersion?: number
   /** i18n suffix explaining a blocked state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`). Naming them beats "not for this machine": the user learns the
+   *  build is real and which machine would run it. */
+  targetOs?: string[]
 }
 
 /** What `installDistribution` resolves before it hands off to the install chain. */
@@ -111,7 +115,17 @@ async function buildRow(
 
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
-  if (!artifact) return { ...withVersion, state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' }
+  if (!artifact) {
+    // Which machines this build IS for. Sorted so the label is stable across
+    // artifact orderings rather than shuffling between refreshes.
+    const targetOs = [...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))].sort()
+    return {
+      ...withVersion,
+      state: 'platform-mismatch',
+      blockedReason: 'noArtifactForMachine',
+      ...(targetOs.length ? { targetOs } : {}),
+    }
+  }
   // Installed at an older version, and the newer one runs here: offer the update.
   if (installedVersion !== undefined && latest.version > installedVersion) {
     return { ...withVersion, state: 'update-available' }

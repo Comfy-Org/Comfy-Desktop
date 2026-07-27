@@ -38,6 +38,9 @@ export interface DevPlatformDistribution {
   state: DevPlatformDistributionState
   /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`). The card names them instead of saying "not for this machine". */
+  targetOs?: string[]
   minDesktopVersion?: string
   /** Local-only: present for installed / update-available. */
   installedVersion?: string

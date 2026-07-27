@@ -621,6 +621,7 @@ describe('ChooserView', () => {
           name: 'WrongPlatformThing',
           state: 'platform-mismatch',
           blockedReason: 'noArtifactForMachine',
+          targetOs: ['linux'],
         }),
       ],
       { id: 'w1', name: 'Comfy Design Team' },
@@ -637,10 +638,22 @@ describe('ChooserView', () => {
     // full explanation on hover, and no blue pill promising an install.
     const blocked = wrapper.find('[data-testid="chooser-dist-tile-pm"]')
     expect(blocked.classes()).toContain('dist-tile--blocked')
-    expect(blocked.find('.dist-tile-state-tag').text()).toBe('Not for this machine')
+    // Names the machine the build IS for, not the one it isn't.
+    expect(blocked.find('.dist-tile-state-tag').text()).toBe('Linux')
     expect(blocked.find('.chooser-tile-pill-update').exists()).toBe(false)
     expect(blocked.attributes('title')).toContain('operating system')
     expect(blocked.attributes('aria-disabled')).toBe('true')
+  })
+
+  it('falls back to the generic label when the build targets are unknown', async () => {
+    installMockApiSignedIn(
+      [],
+      [makeDist({ id: 'pm2', name: 'UnknownTargets', state: 'platform-mismatch' })],
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    const card = wrapper.find('[data-testid="chooser-dist-tile-pm2"]')
+    expect(card.find('.dist-tile-state-tag').text()).toBe('Not for this machine')
   })
 
   it('does not start an install when a blocked card is activated', async () => {

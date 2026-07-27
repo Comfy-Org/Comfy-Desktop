@@ -63,10 +63,29 @@ const actionPill = computed(() => {
   return ''
 })
 
-/** Right slot, part two: a quiet tag for why the tile is blocked. Only consulted
- *  when `actionPill` is empty; the two never render together. */
+/** Build-target tokens as product names. Proper nouns, so not translated. */
+const OS_LABELS: Record<string, string> = {
+  windows: 'Windows',
+  mac: 'macOS',
+  linux: 'Linux',
+}
+
+/**
+ * Right slot, part two: a quiet tag for why the tile is blocked. Only consulted
+ * when `actionPill` is empty; the two never render together.
+ *
+ * A platform mismatch names the machines the build IS for ("Linux") rather than
+ * the one it isn't ("Not for this machine"). Same length, strictly more
+ * information: you learn the build is real and who it's for, which is what
+ * decides whether to go find another machine or ask for another target. Falls
+ * back to the generic label when the targets aren't known.
+ */
 const stateTag = computed(() => {
   if (!isBlocked.value) return ''
+  const targets = props.distribution.targetOs
+  if (props.distribution.state === 'platform-mismatch' && targets?.length) {
+    return targets.map((os) => OS_LABELS[os] ?? os).join(' · ')
+  }
   const suffix = BLOCKED_STATE_KEY[props.distribution.state] ?? 'noBuild'
   return t(`devPlatform.distribution.states.${suffix}`)
 })
