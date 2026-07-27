@@ -276,11 +276,16 @@
     "distributionVersionTitle": "Distribution Version",
     "installedVersion": "Installed",
     "latestVersion": "Latest Published",
-    "publishedVersions": "All Published Versions",
     "errorNoDistribution": "This install is not linked to a distribution.",
     "updateAvailable": "Update available",
     "upToDate": "Up to date",
-    "lastChecked": "Last Checked"
+    "lastChecked": "Last Checked",
+    "updateToVersion": "Update to v{version}",
+    "updatingTo": "Updating to v{version}",
+    "updateConfirmTitle": "Update distribution",
+    "updateConfirmMessage": "Update this instance from {from} to {to}?\n\nThe environment is replaced in place. Your workflows and staged models are kept.",
+    "errorNoVersion": "No target version was given.",
+    "errorVersionUnavailable": "Version v{version} has no build for this machine."
   },
   "list": {
     "loadSnapshot": "Load Snapshot",

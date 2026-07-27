@@ -276,11 +276,16 @@
     "distributionVersionTitle": "分发版版本",
     "installedVersion": "已安装",
     "latestVersion": "最新发布",
-    "publishedVersions": "所有已发布版本",
     "errorNoDistribution": "此安装未关联到分发版。",
     "updateAvailable": "有可用更新",
     "upToDate": "已是最新",
-    "lastChecked": "上次检查"
+    "lastChecked": "上次检查",
+    "updateToVersion": "更新到 v{version}",
+    "updatingTo": "正在更新到 v{version}",
+    "updateConfirmTitle": "更新分发版",
+    "updateConfirmMessage": "将此实例从 {from} 更新到 {to}？\n\n环境将就地替换，工作流与已暂存的模型会保留。",
+    "errorNoVersion": "未指定目标版本。",
+    "errorVersionUnavailable": "版本 v{version} 没有适用于此设备的构建。"
   },
   "list": {
     "loadSnapshot": "加载快照",

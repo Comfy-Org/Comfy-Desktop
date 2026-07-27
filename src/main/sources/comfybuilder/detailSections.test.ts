@@ -11,7 +11,11 @@ vi.mock('electron', () => ({
 }))
 
 import { getDetailSections } from './detailSections'
-import { clearVersionCache, setCachedVersions } from '../../devplatform/versionCache'
+import {
+  clearVersionCache,
+  getCachedVersions,
+  setCachedVersions,
+} from '../../devplatform/versionCache'
 import type { InstallationRecord } from '../../installations'
 
 const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
@@ -56,6 +60,10 @@ const statsValue = (inst: InstallationRecord): StatsValue =>
   (statsField(inst)?.value ?? { rows: [] }) as StatsValue
 
 const rowIds = (inst: InstallationRecord): string[] => statsValue(inst).rows.map((r) => r.id)
+
+const updateActions = (inst: InstallationRecord): Record<string, unknown>[] =>
+  (sectionsFor(inst).find((s) => s.tab === 'update')?.actions ?? []) as Record<string, unknown>[]
+
 
 beforeEach(() => clearVersionCache())
 
@@ -128,12 +136,36 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('states installed and latest as bare versions once the cache is warm', () => {
+    // Newest wins whatever order the catalog returned.
     setCachedVersions('d1', [3, 7, 9])
     const rows = statsValue(record({ version: '7' })).rows
     expect(rows.find((r) => r.id === 'installed')?.value).toBe('v7')
     expect(rows.find((r) => r.id === 'latest')?.value).toBe('v9')
-    // Newest first, whatever order the catalog returned.
-    expect(rows.find((r) => r.id === 'published')?.value).toBe('v9 · v7 · v3')
+  })
+
+  it('offers the update action only when a newer version exists', () => {
+    // An always-present Update that no-ops on the newest version teaches the
+    // user to distrust it.
+    setCachedVersions('d1', [3, 7, 9])
+    const behind = updateActions(record({ version: '7' }))
+    const update = behind.find((a) => a.id === 'update-distribution')
+    expect(update).toBeDefined()
+    expect(update?.data).toEqual({ version: 9 })
+    expect(update?.showProgress).toBe(true)
+    expect(update?.confirm).toBeDefined()
+
+    setCachedVersions('d1', [7, 3])
+    expect(
+      updateActions(record({ version: '7' })).find((a) => a.id === 'update-distribution'),
+    ).toBeUndefined()
+  })
+
+  it('disables the update action while the install is not ready', () => {
+    setCachedVersions('d1', [9, 7])
+    const update = updateActions(record({ version: '7', status: 'failed' })).find(
+      (a) => a.id === 'update-distribution',
+    )
+    expect(update?.enabled).toBe(false)
   })
 
   it('accents the latest row and the headline only when an update is waiting', () => {
@@ -156,10 +188,8 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('dedupes repeated versions from the catalog', () => {
-    setCachedVersions('d1', [5, 5, 2])
-    expect(statsValue(record({ version: '5' })).rows.find((r) => r.id === 'published')?.value).toBe(
-      'v5 · v2',
-    )
+    setCachedVersions('d1', [5, 5, 2, 5])
+    expect(getCachedVersions('d1')?.versions).toEqual([5, 2])
   })
 
   it('drops the update tab for a record with no distribution link', () => {

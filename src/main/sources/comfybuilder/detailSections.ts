@@ -65,22 +65,13 @@ function buildStatusFields(installation: InstallationRecord): Record<string, unk
 }
 
 /**
- * The Update tab: which distribution version this install is on, and what else
- * is published.
+ * The Update tab: which distribution version this install is on, and where it
+ * can go.
  *
- * Read-only for now. Switching versions is a re-install, and the install chain
- * that owns the status transitions (`installing` → `installed` / `failed`),
- * progress streaming and abort registration lives inline in the
- * `install-instance` IPC handler — it can't be driven from a source plugin.
- * Re-pointing the record here without it would strand the install at
- * `installing`, so the action waits on that plumbing rather than shipping a
- * button that half-works. Today the chooser tile's Update pill is the working
- * path to the latest version.
- *
- * The version list comes from the catalog cache, which the chooser's
- * distribution read warms. Cold (nothing read yet, or signed out) the list is
- * omitted rather than shown empty — "no versions found" is a different claim
- * from "not looked yet".
+ * Versions come from the catalog cache, which the chooser's distribution read
+ * warms. Cold (nothing read yet, or signed out) the latest row is omitted
+ * rather than shown empty — "no versions found" is a different claim from "not
+ * looked yet".
  */
 function buildUpdateSection(installation: InstallationRecord): Record<string, unknown> | null {
   const distributionId = installation.distributionId as string | undefined
@@ -111,13 +102,6 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
       label: t('comfybuilder.latestVersion'),
       value: `v${latest}`,
       highlight: updateAvailable,
-    })
-  }
-  if (versions.length > 1) {
-    rows.push({
-      id: 'published',
-      label: t('comfybuilder.publishedVersions'),
-      value: versions.map((v) => `v${v}`).join(' · '),
     })
   }
   if (cached?.fetchedAt) {
@@ -152,6 +136,29 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
     ],
     actions: [
       { id: 'check-update', label: t('actions.checkForUpdate'), style: 'default', enabled: true },
+      // Only when there is somewhere to go. An always-present Update that no-ops
+      // on the newest version teaches the user to distrust it.
+      ...(updateAvailable
+        ? [
+            {
+              id: 'update-distribution',
+              label: t('comfybuilder.updateToVersion', { version: latest }),
+              style: 'primary',
+              enabled: installation.status === 'installed',
+              showProgress: true,
+              cancellable: true,
+              progressTitle: t('comfybuilder.updatingTo', { version: latest }),
+              data: { version: latest },
+              confirm: {
+                title: t('comfybuilder.updateConfirmTitle'),
+                message: t('comfybuilder.updateConfirmMessage', {
+                  from: `**v${current}**`,
+                  to: `**v${latest}**`,
+                }),
+              },
+            },
+          ]
+        : []),
     ],
   }
 }

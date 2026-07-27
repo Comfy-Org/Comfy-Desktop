@@ -1661,7 +1661,10 @@ export const REQUIRES_STOPPED = new Set([
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
-  'migrate-from'
+  'migrate-from',
+  // Re-installs the distribution's environment in place — the venv can't be
+  // rewritten under a running process.
+  'update-distribution'
 ])
 
 /** Title-popup kind tags — the discriminant for popup config/opts across main,

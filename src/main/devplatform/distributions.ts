@@ -178,6 +178,29 @@ export async function resolveHostArtifact(
   return artifact ? { artifact, version: latest.version } : null
 }
 
+/**
+ * The same resolution against ONE named version — what the manage view's update
+ * action installs. Rollback and roll-forward are the same operation.
+ *
+ * Null when the version isn't published, isn't complete, or has no artifact this
+ * machine can run, so the caller reports that instead of installing something
+ * the host can't launch.
+ */
+export async function resolveHostArtifactForVersion(
+  client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
+  host: Host,
+  distributionId: string,
+  version: number,
+): Promise<ResolvedHostArtifact | null> {
+  const target = (await client.listVersions(distributionId)).find(
+    (v) => v.version === version && v.status === 'complete',
+  )
+  if (!target) return null
+  const { artifacts } = await client.getVersion(target.id)
+  const artifact = selectArtifactForHost(artifacts, host)
+  return artifact ? { artifact, version: target.version } : null
+}
+
 /** Every complete version, newest first — what the manage view reports as
  *  published, and the basis for a future version picker. */
 export async function listCompleteVersions(
