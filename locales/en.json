@@ -38,6 +38,7 @@
     "filterRemote": "Remote",
     "updatePill": "Update",
     "migratePill": "Migrate",
+    "workspaceShelf": "Workspace",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
@@ -1143,6 +1144,7 @@
     "distribution": {
       "menuInstall": "Install",
       "distVersion": "Dist v{version}",
+      "notInstalled": "Not installed",
       "emptyTitle": "No distributions published to this workspace yet.",
       "loadError": "Couldn't load distributions. Retry",
       "installFailed": "Could not start the install. Try again.",

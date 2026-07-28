@@ -68,6 +68,26 @@ describe('listDistributionRows', () => {
     const rows = await listDistributionRows(client as never, HOST)
     const row = rows[0]!
     expect(row).toMatchObject({ version: '3', state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' })
+    expect(row.targetOs).toEqual(['windows'])
+  })
+
+  it('reports every OS a mismatched build targets, deduped and sorted', async () => {
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'NotForLinux' }],
+      versionsByDist: { d1: [version(3, 'complete')] },
+      artifactsByVersion: {
+        v3: [
+          artifact({ os: 'windows', gpu: 'nvidia' }),
+          artifact({ os: 'mac' }),
+          // Same OS twice must not double up, and a half-built target isn't
+          // somewhere you could actually run it.
+          artifact({ os: 'windows', gpu: 'cpu' }),
+          artifact({ os: 'linux', status: 'building' }),
+        ],
+      },
+    })
+    const rows = await listDistributionRows(client as never, HOST)
+    expect(rows[0]!.targetOs).toEqual(['mac', 'windows'])
   })
 
   it('marks update-available when installed older and the newer build runs here', async () => {

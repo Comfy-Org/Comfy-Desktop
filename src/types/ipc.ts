@@ -27,6 +27,10 @@ export interface DevPlatformDistribution {
   name: string
   description?: string
   version?: string
+  /** The ComfyUI version this distribution bundles, for the card's facts line.
+   *  TODO(builder-backend): not yet populated by `listDistributionRows` — the
+   *  build metadata needs to carry it through. Absent renders as unknown. */
+  comfyuiVersion?: string
   /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number
@@ -34,6 +38,9 @@ export interface DevPlatformDistribution {
   state: DevPlatformDistributionState
   /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`). The card names them instead of saying "not for this machine". */
+  targetOs?: string[]
   minDesktopVersion?: string
   /** Local-only: present for installed / update-available. */
   installedVersion?: string

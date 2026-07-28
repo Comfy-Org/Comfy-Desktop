@@ -41,6 +41,9 @@ export interface DistributionRow {
   name: string
   description?: string
   version?: string
+  /** ComfyUI version bundled by this distribution. TODO(builder-backend): the
+   *  build metadata doesn't carry it yet, so this is currently never set. */
+  comfyuiVersion?: string
   finishedAt?: string
   numCustomNodes?: number
   state: DistributionRowState
@@ -49,6 +52,9 @@ export interface DistributionRow {
   installedVersion?: number
   /** i18n suffix explaining a blocked state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`), so the card can name a machine that would run it. */
+  targetOs?: string[]
 }
 
 /** What `installDistribution` resolves before it hands off to the install chain. */
@@ -108,7 +114,16 @@ async function buildRow(
 
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
-  if (!artifact) return { ...withVersion, state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' }
+  if (!artifact) {
+    // Sorted so the label is stable across artifact orderings.
+    const targetOs = [...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))].sort()
+    return {
+      ...withVersion,
+      state: 'platform-mismatch',
+      blockedReason: 'noArtifactForMachine',
+      ...(targetOs.length ? { targetOs } : {}),
+    }
+  }
   // Installed at an older version, and the newer one runs here: offer the update.
   if (installedVersion !== undefined && latest.version > installedVersion) {
     return { ...withVersion, state: 'update-available' }

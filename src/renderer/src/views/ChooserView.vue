@@ -8,14 +8,15 @@ import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useModal } from '../composables/useModal'
-import { Plus, Search } from 'lucide-vue-next'
+import { Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
-import ChooserInstallTile from './chooser/ChooserInstallTile.vue'
+import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
-import DevPlatformDistributionCard from './devplatform/DevPlatformDistributionCard.vue'
+import { distEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
+import { isDistributionInstall } from '../devplatform/distributionState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
@@ -138,7 +139,9 @@ function installationBacksDistribution(inst: Installation, dist: Distribution): 
   return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
 }
 
-/** Every distribution that earns a tile, before search. Empty when signed out. */
+/** Every distribution that earns a tile, before search. Blocked builds are kept
+ *  and receded by the card, not filtered out — a hidden one is indistinguishable
+ *  from one that was never published. */
 const chooserDistributions = computed<Distribution[]>(() => {
   if (!authStore.isSignedIn) return []
   return authStore.distributions.filter(
@@ -174,6 +177,40 @@ const distributionNote = computed(() => {
   if (authStore.distributions.length === 0) return t('devPlatform.distribution.emptyTitle')
   return ''
 })
+
+// --- Shelves ---
+//
+// Your installs lead, unheaded; the workspace's own installs and available
+// distributions sit under one header beneath. With nothing to shelve the page
+// falls back to the shipped centered grid — a lone left-aligned cluster under
+// no header reads as broken.
+
+// `isDistributionInstall` judges the install's own identity, not the fetched
+// distribution list, so the split holds when a distribution is unpublished or
+// the list hasn't loaded.
+const allPlainInstalls = computed(() =>
+  installationStore.installations.filter((i) => !isDistributionInstall(i))
+)
+const allBuilderInstalls = computed(() =>
+  installationStore.installations.filter(isDistributionInstall)
+)
+
+const ownEntries = computed<ChooserGridEntry[]>(() =>
+  visibleInstalls.value.filter((i) => !isDistributionInstall(i)).map(installEntry)
+)
+const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
+  visibleInstalls.value.filter(isDistributionInstall).map(installEntry)
+)
+const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
+  visibleDistributions.value.map(distEntry)
+)
+
+/** Pre-search lists, so typing can't flip the page between arrangements. */
+const showWorkspaceShelf = computed(
+  () =>
+    authStore.isSignedIn &&
+    (chooserDistributions.value.length > 0 || allBuilderInstalls.value.length > 0)
+)
 
 /**
  * Install a distribution: main resolves the host artifact + creates the record,
@@ -259,33 +296,17 @@ function handleDistMenuSelect(itemId: string): void {
 
 // --- Cluster top offset ---
 
-/** Unfiltered tile count: New Install + every install (cloud included) + every
- *  distribution. Reads the raw lists, not the `visible*` ones, so search never
- *  shifts the cluster. */
-const baseTileCount = computed(
-  () => 1 + installationStore.installations.length + chooserDistributions.value.length
-)
-
 const TILES_PER_ROW = 4
 
-/** Unfiltered tile rows. Drives the grid's reserved `min-height` so the box
- *  doesn't shrink while filtering — that's what keeps the centered cluster
- *  from shifting when the user types in search. */
-const clusterRows = computed(() => Math.ceil(baseTileCount.value / TILES_PER_ROW))
-
-/** Freeze a leaving tile's box so it doesn't collapse under `position:
- *  absolute`, letting survivors FLIP into the gap immediately. */
-function lockLeavingTileSize(el: Element): void {
-  const node = el as HTMLElement
-  const grid = node.parentElement
-  if (!grid) return
-  const rect = node.getBoundingClientRect()
-  const gridRect = grid.getBoundingClientRect()
-  node.style.width = `${rect.width}px`
-  node.style.height = `${rect.height}px`
-  node.style.left = `${rect.left - gridRect.left + grid.scrollLeft}px`
-  node.style.top = `${rect.top - gridRect.top + grid.scrollTop}px`
-}
+/** Unfiltered row count across both shelves, reserving `min-height` so the
+ *  cluster doesn't shift while typing in search. Raw lists, not `visible*`. */
+const clusterRows = computed(() => {
+  // +1: the New Install tile rides with the your-installs family.
+  const ownRows = Math.ceil((1 + allPlainInstalls.value.length) / TILES_PER_ROW)
+  if (!showWorkspaceShelf.value) return ownRows
+  const shelfTiles = allBuilderInstalls.value.length + chooserDistributions.value.length
+  return ownRows + Math.ceil(shelfTiles / TILES_PER_ROW)
+})
 
 // --- Manage / context menu ---
 // All Manage routes go through `window.api.openInstancePicker` (the
@@ -399,6 +420,21 @@ const cloudCapacity = useCloudCapacity()
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
+
+/** Shared by every `ChooserFamilyGrid`, so a tile behaves the same whichever
+ *  shelf it landed in. */
+const gridHandlers = {
+  'new-install': handleNewInstallClick,
+  pick: pickInstall,
+  'open-card-menu': openCardMenu,
+  'open-kebab-menu': openKebabMenu,
+  'trigger-action': (action: 'update' | 'migrate', inst: Installation) =>
+    triggerAction(action, inst),
+  'view-error': viewError,
+  'view-danger': viewDanger,
+  'dist-select': handleDistributionActivate,
+  'dist-kebab': openDistKebabMenu
+}
 </script>
 
 <template>
@@ -433,49 +469,48 @@ function handleNewInstallClick(): void {
         {{ t('chooser.noMatches') }}
       </div>
 
-      <TransitionGroup
-        v-else
-        tag="div"
-        name="tile"
-        class="chooser-grid"
-        @before-leave="lockLeavingTileSize"
-      >
-        <button
-          key="__new"
-          type="button"
-          class="chooser-tile chooser-tile-new"
-          @click="handleNewInstallClick"
+      <div v-else class="chooser-shelves">
+        <!-- Your installs: bare tiles, no header, centered until a shelf
+             appears beneath them. -->
+        <section class="chooser-shelf">
+          <ChooserFamilyGrid
+            show-new
+            :centered="!showWorkspaceShelf"
+            :entries="ownEntries"
+            :is-stopped-action-gated="isStoppedActionGated"
+            v-on="gridHandlers"
+          />
+        </section>
+
+        <!-- The workspace shelf: what it already put on this machine, then what
+             it still offers on a fresh row. -->
+        <section
+          v-if="
+            showWorkspaceShelf &&
+            (workspaceInstalledEntries.length || workspaceAvailableEntries.length)
+          "
+          class="chooser-shelf"
         >
-          <div class="chooser-tile-icon"><Plus :size="32" /></div>
-          <div class="chooser-tile-name">{{ t('chooser.newInstall') }}</div>
-          <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
-        </button>
-
-        <ChooserInstallTile
-          v-for="inst in visibleInstalls"
-          :key="inst.id"
-          :installation="inst"
-          :is-stopped-action-gated="isStoppedActionGated(inst)"
-          @pick="pickInstall"
-          @open-card-menu="openCardMenu"
-          @open-kebab-menu="openKebabMenu"
-          @trigger-action="(action, installation) => triggerAction(action, installation)"
-          @view-error="viewError"
-          @view-danger="viewDanger"
-        />
-
-        <!-- Distributions: siblings of the install tiles, same box, same
-             TransitionGroup, so installing one is the same gesture as
-             launching an install. Blocked states render WITH their reason and
-             are never filtered out: the card owns that treatment. -->
-        <DevPlatformDistributionCard
-          v-for="dist in visibleDistributions"
-          :key="`dist:${dist.id}`"
-          :distribution="dist"
-          @select="handleDistributionActivate(dist)"
-          @open-kebab-menu="(event) => openDistKebabMenu(event, dist)"
-        />
-      </TransitionGroup>
+          <header class="chooser-shelf-head">
+            <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
+            <span class="chooser-shelf-count">{{
+              workspaceInstalledEntries.length + workspaceAvailableEntries.length
+            }}</span>
+          </header>
+          <ChooserFamilyGrid
+            v-if="workspaceInstalledEntries.length"
+            :entries="workspaceInstalledEntries"
+            :is-stopped-action-gated="isStoppedActionGated"
+            v-on="gridHandlers"
+          />
+          <ChooserFamilyGrid
+            v-if="workspaceAvailableEntries.length"
+            :entries="workspaceAvailableEntries"
+            :is-stopped-action-gated="isStoppedActionGated"
+            v-on="gridHandlers"
+          />
+        </section>
+      </div>
 
       <button
         v-if="distributionLoadFailed"
@@ -648,21 +683,18 @@ function handleNewInstallClick(): void {
   padding: 24px;
 }
 
-.chooser-grid {
+/* The scroll viewport both shelves live in — column, scroll and fade only;
+ * tile layout and the FLIP belong to `ChooserFamilyGrid`. */
+.chooser-shelves {
   grid-row: 4;
-  /* Containing block for absolutely-positioned leaving tiles (`.tile-leave-active`). */
-  position: relative;
   width: 100%;
-  /* 4 fixed tracks @ 280px + 3 × 16px gaps = 1168px. Keeps the 280px
-   * fixed-track contract from the comment below intact while letting
-   * wide viewports surface a 4-up row instead of capping at 3. */
-  max-width: 1168px;
-  /* Reserve height for the UNFILTERED row count so the grid box doesn't
-   * shrink while typing in search — that's what keeps the centered cluster
-   * from jumping (replaces the old top-anchor no-shift trick). One tile is
-   * 280px × 280·156.678/246 ≈ 178px tall; rows are 178px + a 16px gap each.
-   * `max-height: 100%` still caps it on short viewports, where the grid
-   * scrolls internally and the 1fr spacers collapse to 0. */
+  /* Content box must hold exactly 4 tracks (4 × 280 + 3 × 16 = 1168px), so the
+   * side padding sits OUTSIDE the cap — inside it, `auto-fit` drops to 3
+   * columns on a wide viewport. */
+  --shelf-pad-x: 4px;
+  max-width: calc(1168px + 2 * var(--shelf-pad-x));
+  /* Reserve the unfiltered row height so the cluster doesn't jump while typing
+   * in search. Tile is 178px tall (280px at the golden-ratio aspect). */
   --tile-h: 178px;
   min-height: min(
     100%,
@@ -670,28 +702,19 @@ function handleNewInstallClick(): void {
   );
   max-height: 100%;
   overflow-y: auto;
-  display: grid;
-  /* Fixed-width tracks instead of `auto-fill` `minmax(...)`: with
-   * `auto-fill` the grid reserves blank tracks across the full
-   * width, leaving 1-3 cards stuck at the left edge. Fixed-width
-   * tracks + `justify-content: center` center the whole row as a
-   * group while still wrapping to a new row when room runs out. */
-  grid-template-columns: repeat(auto-fit, 280px);
-  justify-content: center;
-  gap: 16px;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
   /* Vertical padding pushes the first/last rows into the mask fade so they
    * glide under it rather than clip abruptly. Fluid on height (`--chooser-fade`)
    * so short viewports reclaim the band for an extra tile row. */
   --chooser-fade: clamp(12px, 2.5vh, 24px);
-  padding: var(--chooser-fade) 0;
+  padding: var(--chooser-fade) var(--shelf-pad-x);
 }
 
-/* Soft top + bottom fade on the scroll viewport so the edge of the
- * grid feels like a smooth dissolve instead of a hard cut. Fade distance
- * tracks the grid's vertical padding so the first/last rows still tuck under. */
+/* Soft scroll edges, matched to the vertical padding so rows tuck under. */
 @supports (mask-image: linear-gradient(black, black)) {
-  .chooser-grid {
+  .chooser-shelves {
     mask-image: linear-gradient(
       to bottom,
       transparent 0,
@@ -702,45 +725,35 @@ function handleNewInstallClick(): void {
   }
 }
 
-/* Tile FLIP: enter rises in (ease-out), leave fades out of flow so survivors
- * slide into the gap, move uses the app's iOS-derived curve. Transform/opacity
- * only — GPU-friendly. */
-.tile-enter-active {
-  transition:
-    opacity 200ms ease,
-    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.tile-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.98);
+.chooser-shelf {
+  display: flex;
+  flex-direction: column;
+  /* The grid's own row gap, so two stacked grids read as continuous rows. */
+  gap: 16px;
 }
 
-.tile-leave-active {
-  transition:
-    opacity 140ms ease,
-    transform 140ms cubic-bezier(0.32, 0.72, 0, 1);
-  position: absolute;
+/* Caption weight: the shelf organises, it isn't a section you act on. */
+.chooser-shelf-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.tile-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
+.chooser-shelf-head::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--chooser-surface-border-hover);
+}
+.chooser-shelf-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.chooser-shelf-count {
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
-.tile-move {
-  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tile-enter-active,
-  .tile-leave-active,
-  .tile-move {
-    /* Non-zero so Vue's transitionend-driven cleanup still fires and leaving
-     * nodes are removed. */
-    transition-duration: 1ms;
-  }
-  .tile-enter-from,
-  .tile-leave-to {
-    transform: none;
-  }
-}
 </style>

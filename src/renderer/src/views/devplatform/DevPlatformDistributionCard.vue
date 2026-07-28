@@ -1,28 +1,18 @@
 <script setup lang="ts">
 /**
- * One distribution, rendered as a chooser tile: a sibling of
- * `views/chooser/ChooserInstallTile.vue` — same box, same classes, same type
- * scale, same top-right kebab. Activating it is the same gesture as launching
- * an existing install.
+ * One distribution as a chooser tile — a sibling of `ChooserInstallTile.vue`,
+ * sharing its box, classes and footer grammar: facts on the left, ONE status
+ * slot on the right (an action pill or a blocked tag, never both).
  *
- * NAME is the headline. The footer row follows the grammar the install tiles
- * use: LEFT is the labelled version, RIGHT is one status/action slot — a pill
- * for what you can do (Install / Update), or a quiet tag for why it's blocked.
- * Never both, and state never replaces the facts.
- *
- * The version is labelled ("Dist v2") because these cards share a grid with
- * install tiles, whose version IS the ComfyUI version. A bare "2" beside a
- * "0.3.20" invites misreading.
- *
- * Blocked states (no-build / platform-mismatch) recede but are never hidden,
- * and keep their full reason on the tile's `title`. No security chrome: these
- * are ordinary pipeline facts, not threats.
+ * Blocked states recede but are never hidden, keeping the full reason on
+ * `title`.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDownToLine, MoreVertical, Package } from 'lucide-vue-next'
 import TruncatedText from '../../components/TruncatedText.vue'
-import type { Distribution, DistributionState } from '../../devplatform/types'
+import { BLOCKED_STATE_KEY, isBlockedDistribution } from '../../devplatform/distributionState'
+import type { Distribution } from '../../devplatform/types'
 
 const props = defineProps<{
   distribution: Distribution
@@ -37,27 +27,20 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** The states that cannot be installed. Shown with a reason, never hidden. */
-const BLOCKED_STATES: readonly DistributionState[] = ['no-build', 'platform-mismatch']
+const isBlocked = computed(() => isBlockedDistribution(props.distribution))
 
-/** i18n suffix per blocked state, keying the short tag label (`states.*`). */
-const BLOCKED_STATE_KEY: Record<string, string> = {
-  'no-build': 'noBuild',
-  'platform-mismatch': 'platformMismatch',
-}
+/** A card is only ever an UNinstalled distribution — once installed it
+ *  de-duplicates into an install tile, which fills this slot differently. */
+const comfyVersionLabel = computed(() => props.distribution.comfyuiVersion ?? '')
 
-const isBlocked = computed(() => BLOCKED_STATES.includes(props.distribution.state))
-
-/** Labelled so it can't be read as a ComfyUI version (see file header). */
-const versionLabel = computed(() =>
-  props.distribution.version
-    ? t('devPlatform.distribution.distVersion', { version: props.distribution.version })
-    : ''
+const factsLine = computed(() =>
+  [comfyVersionLabel.value, t('devPlatform.distribution.notInstalled')]
+    .filter(Boolean)
+    .join(' · ')
 )
 
-/** Right slot, part one: the blue pill for an action the card performs.
- *  Install and Update are the same gesture — activate the card — so they
- *  wear the same pill. Empty when there's nothing to do. */
+/** Install and Update are the same gesture (activate the card), so one pill
+ *  covers both. Empty when there's nothing to do. */
 const actionPill = computed(() => {
   if (props.distribution.state === 'update-available')
     return t('devPlatform.distribution.states.updateAvailable')
@@ -66,15 +49,27 @@ const actionPill = computed(() => {
   return ''
 })
 
-/** Right slot, part two: a quiet tag for why the tile is blocked. Only consulted
- *  when `actionPill` is empty; the two never render together. */
+/** Build targets as product names. Proper nouns, so not translated. */
+const OS_LABELS: Record<string, string> = {
+  windows: 'Windows',
+  mac: 'macOS',
+  linux: 'Linux',
+}
+
+/** Why the tile is blocked. A platform mismatch names the machines the build IS
+ *  for ("Linux") rather than the one it isn't, falling back to the generic
+ *  label when the targets aren't known. */
 const stateTag = computed(() => {
   if (!isBlocked.value) return ''
+  const targets = props.distribution.targetOs
+  if (props.distribution.state === 'platform-mismatch' && targets?.length) {
+    return targets.map((os) => OS_LABELS[os] ?? os).join(' · ')
+  }
   const suffix = BLOCKED_STATE_KEY[props.distribution.state] ?? 'noBuild'
   return t(`devPlatform.distribution.states.${suffix}`)
 })
 
-/** Full-contrast explanation, carried on `title` so it eats no tile space. */
+/** The long explanation, on `title` so it eats no tile space. */
 const blockedReason = computed(() => {
   if (!isBlocked.value) return ''
   const suffix = props.distribution.blockedReason ?? 'buildFailed'
@@ -90,7 +85,7 @@ function onActivate(): void {
 <template>
   <div
     class="chooser-tile chooser-tile--install dist-tile dist-tile--chooser"
-    :class="{ 'dist-tile--blocked': isBlocked }"
+    :class="{ 'dist-tile--blocked': isBlocked, 'dist-tile--available': !isBlocked }"
     role="button"
     tabindex="0"
     :aria-disabled="isBlocked ? true : undefined"
@@ -101,12 +96,11 @@ function onActivate(): void {
     @keydown.space.prevent="onActivate"
     @contextmenu.prevent="emit('open-kebab-menu', $event)"
   >
-    <!-- "Packaged environment" glyph: the one icon every distribution wears. -->
+    <!-- The one glyph every distribution wears, installed or not. -->
     <span class="chooser-tile-icon" aria-hidden="true">
       <Package :size="22" />
     </span>
 
-    <!-- The corner is the kebab's alone; state lives on the footer row. -->
     <div class="chooser-tile-actions">
       <button
         type="button"
@@ -126,9 +120,15 @@ function onActivate(): void {
     <!-- Two lines: name, then facts left / one status slot right. -->
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="distribution.name" />
-      <div v-if="versionLabel || actionPill || stateTag" class="chooser-tile-footer">
-        <TruncatedText v-if="versionLabel" class="chooser-tile-meta-line" :text="versionLabel">
-          <span class="chooser-tile-meta-version">{{ versionLabel }}</span>
+      <div v-if="factsLine || actionPill || stateTag" class="chooser-tile-footer">
+        <TruncatedText v-if="factsLine" class="chooser-tile-meta-line" :text="factsLine">
+          <span v-if="comfyVersionLabel" class="chooser-tile-meta-source">{{
+            comfyVersionLabel
+          }}</span>
+          <span v-if="comfyVersionLabel" class="chooser-tile-meta-sep">·</span>
+          <span class="chooser-tile-meta-version">{{
+            t('devPlatform.distribution.notInstalled')
+          }}</span>
         </TruncatedText>
         <span
           v-if="actionPill"
