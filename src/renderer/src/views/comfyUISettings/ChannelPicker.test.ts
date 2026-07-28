@@ -273,3 +273,62 @@ describe('ChannelPicker — cascading group dropdowns', () => {
     expect(after[2].props('modelValue')).toBe('b1')
   })
 })
+
+describe('ChannelPicker - change-pytorch footer action', () => {
+  const changeAction = {
+    id: 'change-pytorch',
+    label: 'Change PyTorch',
+    style: 'primary',
+    enabled: true,
+    data: { stackId: 's-cpu-2.11' }
+  }
+
+  function pytorchField(value: string): DetailField {
+    return {
+      id: 'pytorchStack',
+      label: 'PyTorch',
+      value,
+      editable: true,
+      editType: 'channel-cards',
+      options: [
+        {
+          value: 's-cpu-2.10',
+          label: 'PyTorch 2.10.0+cpu',
+          data: { productName: 'PyTorch', installedVersion: '2.10.0+cpu', updateAvailable: false }
+        },
+        {
+          value: 's-cpu-2.11',
+          label: 'PyTorch 2.11.0+cpu',
+          data: {
+            productName: 'PyTorch',
+            installedVersion: '2.10.0+cpu',
+            latestVersion: '2.11.0+cpu',
+            updateAvailable: true,
+            actions: [changeAction]
+          }
+        }
+      ]
+    } as DetailField
+  }
+
+  it('renders the selected option\'s change-pytorch action as an accent footer button', () => {
+    const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
+    const button = wrapper.find('[data-testid="update-action-change-pytorch"]')
+    expect(button.exists()).toBe(true)
+    expect(button.classes()).toContain('accent')
+    expect(button.text()).toContain('Change PyTorch')
+  })
+
+  it('renders no change-pytorch button while the current stack is selected', () => {
+    const wrapper = mountPicker(pytorchField('s-cpu-2.10'))
+    expect(wrapper.find('[data-testid="update-action-change-pytorch"]').exists()).toBe(false)
+  })
+
+  it('emits the action when the change-pytorch button is clicked', async () => {
+    const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
+    await wrapper.find('[data-testid="update-action-change-pytorch"]').trigger('click')
+    const emitted = wrapper.emitted('action')
+    expect(emitted).toHaveLength(1)
+    expect((emitted![0]![0] as { id: string }).id).toBe('change-pytorch')
+  })
+})

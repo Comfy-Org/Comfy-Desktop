@@ -103,6 +103,7 @@ async function waitForConfigContinueEnabled(message: string): Promise<void> {
  *    meta         install id/path + torch-family baseline capture
  *    update       stop -> update-comfyui -> relaunch (needs update work
  *                 to exist; may no-op on an already-updated profile)
+ *    pytorch      switch to another compatible stack and back
  *    crosschannel stable -> latest channel switch (one-shot per profile:
  *                 requires updateChannel=stable and leaves it on latest)
  *    snapshot     snapshot capture + picker-driven restore
@@ -132,18 +133,20 @@ let HYDRATED = false
  *  - 'cpu'     - deterministic CPU torch build (default on Windows).
  *  - 'nvidia'  - CUDA torch build; refuses to run without a working
  *                NVIDIA driver so it can never pass vacuously.
+ *  - 'amd'     - ROCm torch build; refuses to run without an AMD GPU
+ *                so it can never pass vacuously.
  *  - 'default' - no explicit pick; trust the form's recommended
  *                variant (macOS only publishes `mac-mps`, Linux
  *                publishes no `linux-cpu`).
  */
-function resolveLifecycleVariant(): 'cpu' | 'nvidia' | 'default' {
+function resolveLifecycleVariant(): 'cpu' | 'nvidia' | 'amd' | 'default' {
   const raw = (process.env['LIFECYCLE_VARIANT'] ?? '').toLowerCase()
   if (raw === '') return process.platform === 'win32' ? 'cpu' : 'default'
-  if (raw === 'nvidia') {
+  if (raw === 'nvidia' || raw === 'amd') {
     if (process.platform === 'darwin') {
-      throw new Error('LIFECYCLE_VARIANT=nvidia is not supported on macOS (only mac-mps is published)')
+      throw new Error(`LIFECYCLE_VARIANT=${raw} is not supported on macOS (only mac-mps is published)`)
     }
-    return 'nvidia'
+    return raw
   }
   if (raw === 'cpu') {
     if (process.platform !== 'win32') {
@@ -151,9 +154,12 @@ function resolveLifecycleVariant(): 'cpu' | 'nvidia' | 'default' {
     }
     return 'cpu'
   }
-  throw new Error(`Unsupported LIFECYCLE_VARIANT "${process.env['LIFECYCLE_VARIANT']}" - use "cpu" or "nvidia"`)
+  throw new Error(`Unsupported LIFECYCLE_VARIANT "${process.env['LIFECYCLE_VARIANT']}" - use "cpu", "nvidia" or "amd"`)
 }
 const LIFECYCLE_VARIANT = resolveLifecycleVariant()
+/** GPU variants share heavyweight timeouts: their torch stacks are
+ *  multi-GB downloads, unlike the CPU build. */
+const GPU_VARIANT = LIFECYCLE_VARIANT === 'nvidia' || LIFECYCLE_VARIANT === 'amd'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -166,6 +172,22 @@ test.beforeAll(async () => {
       execFileSync('nvidia-smi', ['-L'], { encoding: 'utf-8', windowsHide: true, timeout: 30_000 })
     } catch {
       throw new Error('LIFECYCLE_VARIANT=nvidia requires a working NVIDIA driver (`nvidia-smi -L` failed); refusing to run the CUDA lifecycle on this machine')
+    }
+  }
+  // Same fail-fast for AMD: without an AMD GPU the ROCm install would
+  // only fail (or pass vacuously) after the multi-GB download.
+  if (LIFECYCLE_VARIANT === 'amd') {
+    let adapters = ''
+    try {
+      adapters = process.platform === 'win32'
+        ? execFileSync('powershell.exe',
+            ['-NoProfile', '-Command', '(Get-CimInstance Win32_VideoController).Name'],
+            { encoding: 'utf-8', windowsHide: true, timeout: 30_000 })
+        : execFileSync('sh', ['-c', 'lspci -d ::0300 -d ::0302 2>/dev/null || lspci 2>/dev/null'],
+            { encoding: 'utf-8', timeout: 30_000 })
+    } catch { /* fall through to the adapter check below */ }
+    if (!/\b(AMD|Radeon)\b/i.test(adapters)) {
+      throw new Error('LIFECYCLE_VARIANT=amd requires an AMD GPU (no AMD/Radeon display adapter found); refusing to run the ROCm lifecycle on this machine')
     }
   }
 
@@ -219,10 +241,11 @@ test.beforeAll(async () => {
       // the CUDA suite against a CPU profile (or vice versa) would
       // assert against the wrong torch build.
       if (_installedTorchSignature && LIFECYCLE_VARIANT !== 'default') {
-        const isCudaBuild = _installedTorchSignature.cuda !== null
-        if ((LIFECYCLE_VARIANT === 'nvidia') !== isCudaBuild) {
+        const buildVariant = _installedTorchSignature.hip !== null
+          ? 'amd' : _installedTorchSignature.cuda !== null ? 'nvidia' : 'cpu'
+        if (LIFECYCLE_VARIANT !== buildVariant) {
           throw new Error(
-            `LIFECYCLE_VARIANT=${LIFECYCLE_VARIANT} but the reused profile carries a ${isCudaBuild ? 'CUDA' : 'CPU'} torch build`
+            `LIFECYCLE_VARIANT=${LIFECYCLE_VARIANT} but the reused profile carries a ${buildVariant} torch build`
             + ' - point LIFECYCLE_REUSE_DIR at a matching profile or unset it',
           )
         }
@@ -466,7 +489,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // so with no explicit variant those platforms trust the recommended
   // pick the form already made.
   if (LIFECYCLE_VARIANT !== 'default') {
-    const rowLabel = LIFECYCLE_VARIANT === 'nvidia' ? 'NVIDIA' : 'CPU'
+    const rowLabel = LIFECYCLE_VARIANT === 'nvidia' ? 'NVIDIA' : LIFECYCLE_VARIANT === 'amd' ? 'AMD' : 'CPU'
     await ctx.panel.waitForSelector('.brand-variant-row', { timeout: 5_000 })
     expect(
       await ctx.panel.clickByText('.brand-variant-row', rowLabel),
@@ -738,9 +761,13 @@ interface TorchSignature {
    *  initializes against the local driver on NVIDIA installs (a CUDA
    *  build with a broken/missing driver still reports a cuda version). */
   cudaAvailable: boolean
+  /** ROCm/HIP runtime version - non-null only on ROCm torch builds
+   *  (which report null `cuda` but true `cudaAvailable`). */
+  hip: string | null
   torchvision: string | null
   torchaudio: string | null
   torchsde: string | null
+  torchDistInfoCount: number
 }
 
 /** Import torch through the install's REAL venv python and return the
@@ -764,8 +791,9 @@ function queryTorchSignature(): TorchSignature {
     '    try: return metadata.version(p)',
     '    except Exception: return None',
     'print(json.dumps({"torch": torch.__version__, "cuda": torch.version.cuda,'
-      + ' "cudaAvailable": torch.cuda.is_available(),'
-      + ' "torchvision": v("torchvision"), "torchaudio": v("torchaudio"), "torchsde": v("torchsde")}))',
+      + ' "cudaAvailable": torch.cuda.is_available(), "hip": torch.version.hip,'
+      + ' "torchvision": v("torchvision"), "torchaudio": v("torchaudio"), "torchsde": v("torchsde"),'
+      + ' "torchDistInfoCount": sum(1 for d in metadata.distributions() if (d.metadata.get("Name") or "").lower() == "torch")}))',
   ].join('\n')
   const out = execFileSync(venvPython, ['-c', probe], {
     encoding: 'utf-8', windowsHide: true, timeout: 120_000,
@@ -880,6 +908,18 @@ test('captures install metadata for the update tests @sec-meta @lifecycle', asyn
       _installedTorchSignature.cudaAvailable,
       `torch.cuda.is_available() must be true on an NVIDIA-variant install (torch ${_installedTorchSignature.torch}, cuda ${_installedTorchSignature.cuda})`,
     ).toBe(true)
+  } else if (LIFECYCLE_VARIANT === 'amd') {
+    // ROCm torch builds report through the CUDA API surface: null
+    // `torch.version.cuda` but non-null `torch.version.hip`, and
+    // `torch.cuda.is_available()` true once HIP initializes.
+    expect(
+      _installedTorchSignature.hip,
+      `AMD-variant install must carry a ROCm torch build (torch ${_installedTorchSignature.torch})`,
+    ).not.toBeNull()
+    expect(
+      _installedTorchSignature.cudaAvailable,
+      `torch.cuda.is_available() must be true on an AMD-variant install (torch ${_installedTorchSignature.torch}, hip ${_installedTorchSignature.hip})`,
+    ).toBe(true)
   } else if (LIFECYCLE_VARIANT === 'cpu') {
     expect(
       _installedTorchSignature.cuda,
@@ -947,6 +987,168 @@ test('re-launch ComfyUI after update validates the updated install runs @sec-upd
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
 })
 
+interface PytorchPickerOption {
+  value: string
+  label: string
+  version: string
+  groupLabels: string[]
+}
+
+let _baselinePytorchOption: PytorchPickerOption | null = null
+let _targetPytorchOption: PytorchPickerOption | null = null
+let _baselinePytorchSignature: TorchSignature | null = null
+
+async function readPytorchPicker(popup: WebContentsPage): Promise<{
+  current: PytorchPickerOption
+  options: PytorchPickerOption[]
+}> {
+  // The picker section is hidden until check-update (auto-fired on Update
+  // tab open) populates the torch stack catalog cache, so poll the sections
+  // API rather than the DOM: each call recomputes against the live cache.
+  // Poll through the panel (the popup preload has no `window.api`); errors
+  // are captured instead of thrown so the poll's last state is diagnosable.
+  const query = `(async () => {
+    try {
+      const sections = await window.api.getDetailSections(${JSON.stringify(_updateInstallId)})
+      const field = sections.flatMap((section) => section.fields || []).find((candidate) => candidate.id === 'pytorchStack')
+      if (!field) return { current: null, options: [], detail: 'fields: ' + JSON.stringify(sections.flatMap((s) => (s.fields || []).map((f) => f.id))) }
+      const options = (field.options || []).map((option) => ({
+        value: option.value,
+        label: option.label,
+        version: String(option.data?.latestVersion || '').replace(/^[vV]/, ''),
+        groupLabels: (option.groupPath || []).map((group) => group.label),
+      }))
+      return { current: options.find((option) => option.value === String(field.value)) || null, options, detail: '' }
+    } catch (err) {
+      return { current: null, options: [], detail: 'error: ' + String(err) }
+    }
+  })()`
+  type PickerRead = { current: PytorchPickerOption | null; options: PytorchPickerOption[]; detail: string }
+  let result: PickerRead = { current: null, options: [], detail: 'never evaluated' }
+  await expect.poll(async () => {
+    result = await ctx.panel.evaluate<PickerRead>(query)
+    return result.options.length > 0
+  }, {
+    timeout: 180_000, intervals: [1_000, 2_000],
+    message: `pytorchStack field never gained options; last state: ${result.detail}`,
+  }).toBe(true)
+  await popup.waitForVisible('button[role="combobox"][aria-label="PyTorch"]', { timeout: 60_000 })
+  expect(result.current, 'PyTorch picker has no catalog option matching the installed stack').not.toBeNull()
+  return { current: result.current!, options: result.options }
+}
+
+async function selectPytorchOption(popup: WebContentsPage, option: PytorchPickerOption): Promise<void> {
+  for (let level = 0; level < option.groupLabels.length; level++) {
+    const groupSelect = `${byTestId(TID.channelGroupSelect(level))} button[role="combobox"]`
+    await popup.waitForVisible(groupSelect, { timeout: 60_000 })
+    expect(await popup.click(groupSelect)).toBe(true)
+    await popup.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
+    expect(await popup.clickByText('[role="listbox"] [role="option"]', option.groupLabels[level]!)).toBe(true)
+  }
+  const stackSelect = 'button[role="combobox"][aria-label="PyTorch"]'
+  await popup.waitForVisible(stackSelect, { timeout: 60_000 })
+  expect(await popup.click(stackSelect)).toBe(true)
+  await popup.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
+  expect(await popup.clickByText('[role="listbox"] [role="option"]', option.label)).toBe(true)
+}
+
+async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  await selectPytorchOption(popup, option)
+  const action = byTestId(TID.updateActionButton('change-pytorch'))
+  await popup.waitForVisible(action, { timeout: 60_000 })
+  expect(await popup.click(action)).toBe(true)
+  const confirm = '[data-testid="modal-confirm-button"], [data-testid="base-alert-action"]'
+  await popup.waitForVisible(confirm, { timeout: 15_000 })
+  expect(await popup.click(confirm)).toBe(true)
+  await waitForProgressTakeoverAfterPopupClose()
+  // The venv is inconsistent while pip replaces the torch family, so a
+  // probe can fail to import; treat that as "not there yet", not an error
+  // (expect.poll aborts on exceptions instead of retrying).
+  await expect.poll(() => {
+    try {
+      return queryTorchSignature().torch
+    } catch {
+      return null
+    }
+  }, {
+    timeout: GPU_VARIANT ? 2_400_000 : 900_000,
+    intervals: [5_000, 10_000],
+  }).toBe(option.version)
+  await waitForOperationDrain(
+    _updateInstallId,
+    GPU_VARIANT ? 2_400_000 : 900_000,
+  )
+  await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] }).toBe(true)
+  await closeTitlePopupIfOpen(ctx.app)
+
+  const verifyPopup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const picker = await readPytorchPicker(verifyPopup)
+  expect(picker.current.value).toBe(option.value)
+  await expect.poll(() => verifyPopup.textOf('button[role="combobox"][aria-label="PyTorch"]')).toContain(option.label)
+  await closeTitlePopupIfOpen(ctx.app)
+}
+
+test('captures the baseline pytorch stack @sec-pytorch @lifecycle', async () => {
+  test.setTimeout(300_000)
+  // The torch stack catalog is only populated by check-update; fire one
+  // deterministically (the Update tab's auto-check is silent and may have
+  // raced or failed earlier in the run) before reading the picker.
+  await ctx.panel.evaluate(
+    `window.api.runAction(${JSON.stringify(_updateInstallId)}, 'check-update', { silent: true })`
+  )
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const picker = await readPytorchPicker(popup)
+  _baselinePytorchOption = picker.current
+  _baselinePytorchSignature = queryTorchSignature()
+  expect(_baselinePytorchOption.label).toBeTruthy()
+  expect(_baselinePytorchOption.value).toBeTruthy()
+  expect(_baselinePytorchSignature.torch).toBe(_baselinePytorchOption.version)
+  await closeTitlePopupIfOpen(ctx.app)
+})
+
+test('switches to a different compatible stack via the picker @sec-pytorch @lifecycle', async () => {
+  test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
+  expect(_baselinePytorchOption, 'baseline PyTorch picker option not captured').not.toBeNull()
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const picker = await readPytorchPicker(popup)
+  _targetPytorchOption = picker.options.find((option) =>
+    option.value !== _baselinePytorchOption!.value && !/nightly|\.dev/i.test(`${option.label} ${option.value}`),
+  ) ?? picker.options.find((option) => option.value !== _baselinePytorchOption!.value) ?? null
+  await closeTitlePopupIfOpen(ctx.app)
+  expect(_targetPytorchOption, 'PyTorch picker has no compatible alternative stack').not.toBeNull()
+  await changePytorchStack(_targetPytorchOption!)
+})
+
+test('venv reflects the switched stack @sec-pytorch @lifecycle', async () => {
+  expect(_targetPytorchOption, 'target PyTorch picker option not captured').not.toBeNull()
+  expect(_baselinePytorchSignature, 'baseline PyTorch signature not captured').not.toBeNull()
+  const switched = queryTorchSignature()
+  expect(switched.torch).toBe(_targetPytorchOption!.version)
+  expect(switched.torch).not.toBe(_baselinePytorchSignature!.torch)
+  expect(switched.torchDistInfoCount, 'venv must contain exactly one torch distribution').toBe(1)
+  if (LIFECYCLE_VARIANT === 'nvidia') {
+    expect(switched.cuda, 'NVIDIA stack must report a CUDA runtime version').not.toBeNull()
+  } else if (LIFECYCLE_VARIANT === 'amd') {
+    expect(switched.hip, 'AMD stack must report a ROCm/HIP runtime version').not.toBeNull()
+  } else if (LIFECYCLE_VARIANT === 'cpu') {
+    expect(switched.cuda, 'CPU stack must not report a CUDA runtime version').toBeNull()
+    expect(switched.torch, 'CPU stack must not carry a CUDA local-version suffix').not.toMatch(/\+cu\d+/i)
+  }
+})
+
+test('switches back to the baseline pytorch stack @sec-pytorch @lifecycle', async () => {
+  test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
+  expect(_baselinePytorchOption, 'baseline PyTorch picker option not captured').not.toBeNull()
+  expect(_baselinePytorchSignature, 'baseline PyTorch signature not captured').not.toBeNull()
+  await changePytorchStack(_baselinePytorchOption!)
+  // `cudaAvailable` is runtime driver state, not package state - a
+  // transient driver hiccup on a GPU machine must not fail the restore.
+  const { cudaAvailable: _cur, ...restored } = queryTorchSignature()
+  const { cudaAvailable: _base, ...baseline } = _baselinePytorchSignature!
+  expect(restored).toEqual(baseline)
+})
+
 // ---------------------------------------------------------------------------
 // FLOW 1 — IN_PLACE_RELAUNCH coverage via the real picker UI.
 //
@@ -976,7 +1178,7 @@ async function waitForProgressTakeoverAfterPopupClose(): Promise<void> {
     .poll(async () => {
       if (!(await isPopupVisible(ctx.app, 'comfyTitlePopup.html'))) return 'panel'
       const text = await titlePopupPage(ctx.app).textOf('.picker-detail')
-      return /Updating|Restoring|Restarting|Copying/i.test(text ?? '') ? 'inline' : 'pending'
+      return /Updating|Restoring|Restarting|Copying|Changing/i.test(text ?? '') ? 'inline' : 'pending'
     }, { timeout: 30_000, intervals: [100, 250] })
     .not.toBe('pending')
     .then(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'))

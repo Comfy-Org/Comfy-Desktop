@@ -271,7 +271,9 @@ const checkUpdateAction = computed<ActionDef | undefined>(() =>
 )
 
 const promotedPrimaryActions = computed<ActionDef[]>(() =>
-  selectedActions.value.filter((a) => a.id === 'update-comfyui' || a.id === 'copy-update')
+  selectedActions.value.filter(
+    (a) => a.id === 'update-comfyui' || a.id === 'copy-update' || a.id === 'change-pytorch'
+  )
 )
 
 const otherSecondaryActions = computed<ActionDef[]>(() =>
@@ -336,6 +338,13 @@ const footerActions = computed<
   const updateNow = promotedPrimaryActions.value.find((a) => a.id === 'update-comfyui')
   if (updateNow) {
     out.push({ action: updateNow, variant: 'accent' })
+  }
+
+  // The PyTorch card's per-option switch action; accented for the same
+  // reason as Update Now (it is the primary intent after picking a stack).
+  const changePytorch = promotedPrimaryActions.value.find((a) => a.id === 'change-pytorch')
+  if (changePytorch) {
+    out.push({ action: changePytorch, variant: 'accent' })
   }
 
   return out
