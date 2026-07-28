@@ -63,9 +63,7 @@ function sizeLabelOf(option: FieldOption): string {
 function modelsPresentOf(option: FieldOption): boolean {
   return option.data?.modelsPresent === true
 }
-/** Hover/AT text for a present template. The footprint moves here rather than
- *  onto the card, so it stays available without a number competing with the
- *  glyph in a slot only wide enough for one of them. */
+/** Tooltip/AT text: "Downloaded · ~17 GB", or just the word when size is unknown. */
 function presentLabelOf(option: FieldOption): string {
   const downloaded = t('standalone.templateModelsDownloaded')
   const size = sizeLabelOf(option)
@@ -191,10 +189,6 @@ defineExpose({ shownDiskError })
           <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
             <Check :size="13" :stroke-width="3" />
           </span>
-          <!-- Shown alongside the check, not instead of it: the host pre-selects
-               the recommended template, so a `v-else-if` here hid the badge in
-               exactly the state the user lands on. The two sit in opposite
-               corners and never collide. -->
           <span v-if="opt.recommended" class="tps__recommended">
             {{ t('newInstall.recommended') }}
           </span>
@@ -204,21 +198,14 @@ defineExpose({ shownDiskError })
           <span class="tps__card-text">
             <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
             <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
+            <span v-if="modelsPresentOf(opt)" class="sr-only">{{ presentLabelOf(opt) }}</span>
           </span>
-          <!-- Once the models are on disk the glyph takes the slot, and the
-               footprint moves into its tooltip. The number isn't lost, it just
-               stops competing for a slot only wide enough for one of them. -->
           <Tooltip
             v-if="modelsPresentOf(opt)"
             :text="presentLabelOf(opt)"
             class="tps__card-present"
           >
-            <HardDriveDownload
-              :size="14"
-              :stroke-width="2"
-              role="img"
-              :aria-label="presentLabelOf(opt)"
-            />
+            <HardDriveDownload :size="14" :stroke-width="2" aria-hidden="true" />
           </Tooltip>
           <span v-else-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
         </span>
@@ -270,8 +257,6 @@ defineExpose({ shownDiskError })
 .tps__card:hover {
   border-color: var(--brand-surface-border-hover);
 }
-/* Zoom rather than fade: fading the image let the branded placeholder behind
-   it show through, which read as a stray watermark over the thumbnail. */
 .tps__card:hover .tps__card-img--ready {
   transform: scale(1.05);
 }
@@ -373,8 +358,6 @@ defineExpose({ shownDiskError })
   letter-spacing: 0.01em;
   color: var(--neutral-300);
 }
-/* Same colour as the size label it replaces — this is card metadata, not an
-   alert, and a coloured glyph here would compete with the Install CTA. */
 .tps__card-present {
   flex: 0 0 auto;
   display: inline-flex;
@@ -398,10 +381,6 @@ defineExpose({ shownDiskError })
   box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
-/* Type tag from the Templates Dialog spec (Figma 2422:21611): a dark glass
-   chip, top-left. Top-left is also where a recommendation wants to be — first
-   thing scanned — and that corner freed up when the downloaded state moved
-   into the footer, so it no longer competes with the selection check. */
 .tps__recommended {
   position: absolute;
   top: 8px;
@@ -413,8 +392,9 @@ defineExpose({ shownDiskError })
   font-weight: 400;
   line-height: normal;
   letter-spacing: 0;
-  color: #fff;
-  background: rgb(0 0 0 / 0.3);
+  color: var(--neutral-100);
+  background: color-mix(in oklab, var(--neutral-950) 30%, transparent);
+  -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
 }
 

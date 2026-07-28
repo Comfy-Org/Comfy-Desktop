@@ -85,14 +85,10 @@ describe('TemplatePickerStep', () => {
     expect(wrapper.findAll('button[role="radio"]')[1]!.text()).not.toContain('Recommended')
   })
 
-  it('keeps the recommended badge on the card once it is selected', () => {
-    // The host pre-selects the recommended template, so this is the state the
-    // user lands on. Hiding the badge here left the recommendation invisible
-    // until they clicked away, by which point it was no longer guidance —
-    // hence badge and check together, in opposite corners.
-    const wrapper = mountPicker()
-    expect(wrapper.findAll('.tps__recommended')).toHaveLength(1)
-    expect(wrapper.findAll('.tps__check')).toHaveLength(1)
+  it('keeps the recommended badge and the check on the same selected card', () => {
+    const selected = mountPicker().findAll('button[role="radio"]')[0]!
+    expect(selected.find('.tps__recommended').exists()).toBe(true)
+    expect(selected.find('.tps__check').exists()).toBe(true)
   })
 
   it('swaps the size for a glyph when the models are already on disk', () => {
@@ -104,15 +100,39 @@ describe('TemplatePickerStep', () => {
       'button[role="radio"]'
     )
 
-    // Nothing local → the size stays inline, no glyph.
     expect(rows[0]!.find('.tps__card-size').text()).toBe('~7 GB')
     expect(rows[0]!.find('.tps__card-present').exists()).toBe(false)
 
-    // Present → the glyph takes the slot and carries the footprint in its label,
-    // so the number is still reachable rather than dropped.
     expect(rows[1]!.find('.tps__card-size').exists()).toBe(false)
     expect(rows[1]!.find('.tps__card-present').exists()).toBe(true)
-    expect(rows[1]!.find('[role="img"]').attributes('aria-label')).toBe('Downloaded · ~17 GB')
+    expect(rows[1]!.text()).toContain('Downloaded · ~17 GB')
+  })
+
+  it('carries check, badge and glyph together on a selected recommended present card', () => {
+    const present: FieldOption = {
+      ...IMAGE_REC,
+      data: { ...IMAGE_REC.data, modelsPresent: true },
+    }
+    const row = mountPicker({
+      options: [NONE, present],
+      selectedValue: present.value,
+    }).findAll('button[role="radio"]')[0]!
+
+    expect(row.find('.tps__check').exists()).toBe(true)
+    expect(row.find('.tps__recommended').exists()).toBe(true)
+    expect(row.find('.tps__card-present').exists()).toBe(true)
+    expect(row.find('.tps__card-size').exists()).toBe(false)
+  })
+
+  it('announces the downloaded state without a size when none is known', () => {
+    const present: FieldOption = { ...IMAGE_ALT, data: { modality: 'image', modelsPresent: true } }
+    const row = mountPicker({ options: [NONE, IMAGE_REC, present] }).findAll(
+      'button[role="radio"]'
+    )[1]!
+
+    expect(row.find('.tps__card-present').exists()).toBe(true)
+    expect(row.text()).toContain('Downloaded')
+    expect(row.text()).not.toContain('·')
   })
 
   it('marks the selected row via aria-checked', () => {
