@@ -790,15 +790,24 @@ function queryTorchSignature(): TorchSignature {
     'def v(p):',
     '    try: return metadata.version(p)',
     '    except Exception: return None',
-    'print(json.dumps({"torch": torch.__version__, "cuda": torch.version.cuda,'
+    'print("__TORCH_SIGNATURE__" + json.dumps({"torch": torch.__version__, "cuda": torch.version.cuda,'
       + ' "cudaAvailable": torch.cuda.is_available(), "hip": torch.version.hip,'
       + ' "torchvision": v("torchvision"), "torchaudio": v("torchaudio"), "torchsde": v("torchsde"),'
       + ' "torchDistInfoCount": sum(1 for d in metadata.distributions() if (d.metadata.get("Name") or "").lower() == "torch")}))',
   ].join('\n')
   const out = execFileSync(venvPython, ['-c', probe], {
     encoding: 'utf-8', windowsHide: true, timeout: 120_000,
-  }).trim()
-  return JSON.parse(out) as TorchSignature
+  })
+  // Importing torch can print to stdout before the probe's own output
+  // (the ROCm universal stack emits "[WARNING] failed to run
+  // offload-arch..." from rocm_sdk during import), so the JSON is
+  // sentinel-prefixed and extracted rather than parsed from raw stdout.
+  const line = out.split(/\r?\n/).reverse()
+    .find((candidate) => candidate.startsWith('__TORCH_SIGNATURE__'))
+  if (!line) {
+    throw new Error(`torch signature probe produced no sentinel line; stdout was: ${out.slice(0, 500)}`)
+  }
+  return JSON.parse(line.slice('__TORCH_SIGNATURE__'.length)) as TorchSignature
 }
 
 /** Assert the installed torch package family is identical to the
@@ -1062,23 +1071,26 @@ async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
   await popup.waitForVisible(confirm, { timeout: 15_000 })
   expect(await popup.click(confirm)).toBe(true)
   await waitForProgressTakeoverAfterPopupClose()
-  // The venv is inconsistent while pip replaces the torch family, so a
-  // probe can fail to import; treat that as "not there yet", not an error
-  // (expect.poll aborts on exceptions instead of retrying).
+  // Do NOT probe the venv while the transaction runs: the probe spawns
+  // the venv python, whose torch import holds .pyd files open exactly
+  // while uv tries to delete them - on Windows that races the
+  // transaction into "Access is denied" and fails the real product
+  // operation. Wait for the app-side operation to drain first; only
+  // then is the venv safe to touch.
+  await waitForOperationDrain(
+    _updateInstallId,
+    GPU_VARIANT ? 2_400_000 : 900_000,
+  )
+  // Post-drain the venv is stable; the short poll only absorbs probe
+  // startup transients (expect.poll aborts on exceptions, so map them
+  // to null instead).
   await expect.poll(() => {
     try {
       return queryTorchSignature().torch
     } catch {
       return null
     }
-  }, {
-    timeout: GPU_VARIANT ? 2_400_000 : 900_000,
-    intervals: [5_000, 10_000],
-  }).toBe(option.version)
-  await waitForOperationDrain(
-    _updateInstallId,
-    GPU_VARIANT ? 2_400_000 : 900_000,
-  )
+  }, { timeout: 120_000, intervals: [2_000, 5_000] }).toBe(option.version)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] }).toBe(true)
   await closeTitlePopupIfOpen(ctx.app)
 
