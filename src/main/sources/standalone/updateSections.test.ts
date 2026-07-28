@@ -500,9 +500,9 @@ describe('updateSections — PyTorch picker', () => {
     })
 
     it('orders grouped options newest-first across sources (bundle vs index)', () => {
-      // The catalog concatenates bundle stacks before index stacks; grouped
-      // mode must re-sort by date so group-switching (first match) lands on
-      // the newest build, not on an older bundle.
+      // The catalog concatenates bundle stacks before index stacks; the
+      // display sort must interleave them so group-switching (first match)
+      // lands on the newest build, not on an older bundle.
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         indexEntry({
           stackId: 'bundle:cu130:2.9.0',
@@ -518,6 +518,47 @@ describe('updateSections — PyTorch picker', () => {
         .filter((o) => o.groupPath?.[0]?.id === 'cu130')
         .map((o) => o.value)
       expect(cu130Values).toEqual(['pytorch-index:cu130:2.10.0', 'bundle:cu130:2.9.0'])
+    })
+
+    it('orders series numerically descending regardless of release dates', () => {
+      // Date must not drive series order: a freshly rebuilt cu126 bundle
+      // would otherwise wedge itself between (or ahead of) newer series.
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        { ...cudaEntry('cu126', '2.9.0'), date: '2026-05-01' },
+        { ...cudaEntry('cu130', '2.10.0'), date: '2026-01-01' },
+        { ...cudaEntry('cu128', '2.11.0'), date: '2026-03-01' },
+      ])
+      const seriesOrder = getPytorchOptions(install())
+        .map((o) => o.groupPath?.[0]?.id)
+        .filter((id) => id !== undefined && id !== 'default')
+      expect(seriesOrder).toEqual(['cu130', 'cu128', 'cu126'])
+    })
+
+    it('orders versions within a series newest-first regardless of date', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        { ...cudaEntry('cu130', '2.9.0'), date: '2026-05-01' },
+        { ...cudaEntry('cu130', '2.13.0'), date: '2026-01-01' },
+        { ...cudaEntry('cu130', '2.10.0'), date: '2026-03-01' },
+      ])
+      // Single series -> flat picker; the synthetic current entry leads.
+      const values = getPytorchOptions(install()).map((o) => o.value)
+      expect(values).toEqual([
+        'pytorch-current',
+        'pytorch-index:cu130:2.13.0',
+        'pytorch-index:cu130:2.10.0',
+        'pytorch-index:cu130:2.9.0',
+      ])
+    })
+
+    it('sorts nightly series after every stable series', () => {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        cudaEntry('cu132', '2.13.0.dev20260720'),
+        cudaEntry('cu126', '2.9.0'),
+      ])
+      const seriesOrder = getPytorchOptions(install())
+        .map((o) => o.groupPath?.[0]?.id)
+        .filter((id) => id !== undefined && id !== 'default')
+      expect(seriesOrder).toEqual(['cu126', 'nightly-cu132'])
     })
 
     it('puts the synthetic current entry last in grouped mode, first in flat mode', () => {

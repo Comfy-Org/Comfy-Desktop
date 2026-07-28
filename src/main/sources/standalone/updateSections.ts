@@ -12,6 +12,7 @@ import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchS
 import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
 import { torchTupleMatches, stackAppliesViaPip, torchLocalTag, isDevVersion } from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
+import type { TorchStackEntry } from './torchStackCatalog'
 import { torchSeriesInfo, nvidiaDriverMismatch } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
@@ -99,6 +100,45 @@ function torchSeriesDescription(seriesId: string): string | undefined {
   return parts.length > 0 ? parts.join('  ·  ') : undefined
 }
 
+/** Numeric components of a version-ish string, taken from its first numeric
+ *  run: `cu130` -> [130], `rocm7.14.0` -> [7, 14, 0], `2.13.0+cu130` ->
+ *  [2, 13, 0]. Empty when there is none (`xpu`, `cpu`, untagged). */
+function versionNumbers(s: string): number[] {
+  const run = /\d+(?:\.\d+)*/.exec(s)?.[0] ?? ''
+  return run === '' ? [] : run.split('.').map(Number)
+}
+
+/** Newest-first comparison of `versionNumbers` results; missing components
+ *  count as 0, so entries without numbers sort last. */
+function compareNumbersDesc(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (b[i] ?? 0) - (a[i] ?? 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+/** Display order for the PyTorch picker: stable series before nightly ones,
+ *  series numerically descending (CUDA 13.0 before 12.8, ROCm 7.14 before
+ *  7.1), newest torch version first within a series, release date as the
+ *  tiebreaker. The series dropdown lists groups in first-appearance order
+ *  and group-switching lands on the first match, so this single sort drives
+ *  both dropdowns. */
+function compareStackDisplay(a: TorchStackEntry, b: TorchStackEntry): number {
+  const nightly = Number(isDevVersion(a.packages.torch)) - Number(isDevVersion(b.packages.torch))
+  if (nightly !== 0) return nightly
+  const tagA = torchLocalTag(a.packages.torch)
+  const tagB = torchLocalTag(b.packages.torch)
+  if (tagA !== tagB) {
+    const bySeries = compareNumbersDesc(versionNumbers(tagA), versionNumbers(tagB))
+    if (bySeries !== 0) return bySeries
+    return tagA.localeCompare(tagB)
+  }
+  const byVersion = compareNumbersDesc(versionNumbers(a.packages.torch), versionNumbers(b.packages.torch))
+  if (byVersion !== 0) return byVersion
+  return b.date.localeCompare(a.date)
+}
+
 function torchSeriesBase(torch: string | null | undefined): { id: string; label: string } {
   const tag = torchLocalTag(torch)
   const cu = /^cu(\d{2,})$/.exec(tag)?.[1]
@@ -140,13 +180,10 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   // coherent (every option carries a full path or none does).
   const grouped = new Set(stacks.map((s) => torchSeriesGroup(s.packages.torch).id)).size >= 2
 
-  // Grouped pickers list each series newest-first regardless of source: the
-  // cached catalog concatenates bundle stacks before index stacks, so without
-  // a global date sort an older bundle could precede a newer index build and
-  // group-switching (which lands on the first match) would pick it.
-  const ordered = grouped
-    ? [...stacks].sort((a, b) => b.date.localeCompare(a.date))
-    : stacks
+  // The cached catalog concatenates bundle stacks before index stacks with
+  // no display order; sort by series/version so cu130 never lands between
+  // cu126 and cu128 and each series lists its newest torch first.
+  const ordered = [...stacks].sort(compareStackDisplay)
 
   const options: Record<string, unknown>[] = []
   // The installed torch doesn't match any catalog stack (manual install or
