@@ -925,8 +925,6 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
 
     telemetry.unbindUserId()
 
-    // A signed-out report while nothing is bound must not rotate the
-    // anonymous D, flip is_authenticated, or drop the queued enrichment.
     expect(anonymousIdentityMock.index).toBe(0)
     expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toBeUndefined()
 
