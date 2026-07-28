@@ -34,7 +34,7 @@ vi.mock('child_process', async (importOriginal) => {
 })
 
 import {
-  applyTorchStackTransaction, runStreamed, undeclaredFamilyPackages,
+  applyBundleGraft, applyTorchStackTransaction, renameWithLockRetry, runStreamed, undeclaredFamilyPackages,
   preparePipStack, pipInstallSpecs, pipIndexArgs, staleRocmSdkPackages, preflightDiskSpace, DiskSpaceError,
 } from './torchStackTransaction'
 import { AMD_MULTI_ARCH_INDEX_URL } from './torchStackTypes'
@@ -267,6 +267,110 @@ describe('preflightDiskSpace (pip estimates)', () => {
   })
 })
 
+describe('applyBundleGraft (real fs)', () => {
+  let tmpDir: string
+  let srcSite: string
+  let dstSite: string
+
+  function fileIn(root: string, ...segments: string[]): void {
+    const p = path.join(root, ...segments)
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, 'x')
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bundlegraft-test-'))
+    srcSite = path.join(tmpDir, 'src')
+    dstSite = path.join(tmpDir, 'dst')
+    fs.mkdirSync(srcSite, { recursive: true })
+    fs.mkdirSync(dstSite, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('switches an AMD multi-arch venv back to the universal bundle: SDK payloads grafted, multi-arch leftovers swept', async () => {
+    // Universal ROCm 7.2.1 bundle: torch family + rocm dist metadata, pure
+    // shims, and the `_`-prefixed SDK payload packages find_libraries needs.
+    for (const name of [
+      'torch', 'torch-2.9.1+rocm7.2.1.dist-info',
+      'torchvision', 'torchvision-0.24.1+rocm7.2.1.dist-info',
+      'torchaudio', 'torchaudio-2.9.1+rocm7.2.1.dist-info',
+      'rocm_sdk', 'rocm-7.2.1.dist-info',
+      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_devel', '_rocm_sdk_devel', 'rocm_sdk_devel-7.2.1.dist-info',
+      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
+    ]) fileIn(srcSite, name, 'FILE')
+    fileIn(srcSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll')
+
+    // Venv on the multi-arch 7.14 stack, exactly as the forward switch
+    // leaves it - including AMD's device-overlay .kpack payload inside
+    // torch/ and unrelated packages that must survive.
+    for (const name of [
+      'torch', 'torch-2.11.0+rocm7.14.0.dist-info',
+      'torchvision', 'torchvision-0.26.0+rocm7.14.0.dist-info',
+      'torchaudio', 'torchaudio-2.11.0+rocm7.14.0.dist-info',
+      'rocm_sdk', 'rocm-7.14.0.dist-info',
+      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.14.0.dist-info',
+      'rocm_sdk_libraries', '_rocm_sdk_libraries', 'rocm_sdk_libraries-7.14.0.dist-info',
+      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
+    ]) fileIn(dstSite, name, 'FILE')
+    fileIn(dstSite, 'torch', '.kpack', 'torch_gfx1100.kpack')
+    fileIn(dstSite, 'torchvision', '.kpack', 'torchvision_gfx1100.kpack')
+    fileIn(dstSite, 'torchsde', 'FILE')
+    fileIn(dstSite, 'torchsde-0.2.6.dist-info', 'FILE')
+    fileIn(dstSite, 'numpy', 'FILE')
+
+    const entry: TorchStackEntry = {
+      stackId: 'comfy-bundle:win-amd:old-env',
+      variant: 'win-amd',
+      pythonVersion: '3.12.9',
+      packages: { torch: '2.9.1+rocm7.2.1', torchvision: '0.24.1+rocm7.2.1', torchaudio: '2.9.1+rocm7.2.1' },
+      source: { kind: 'comfy-bundle', variant: 'win-amd', bundleTag: 'old-env' },
+      date: '2026-01-01',
+      comfyuiVersion: '0.0.0',
+    }
+    const removed = await applyBundleGraft(
+      { kind: 'bundle', srcSite, stagingDir: tmpDir, entry }, dstSite)
+
+    // Universal SDK payload is complete - this is what the E2E switch-back
+    // verification failed on (hipblas.dll unreachable via _rocm_sdk_*).
+    expect(fs.existsSync(path.join(dstSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll'))).toBe(true)
+    expect(fs.existsSync(path.join(dstSite, '_rocm_sdk_core'))).toBe(true)
+    expect(fs.existsSync(path.join(dstSite, '_rocm_sdk_devel'))).toBe(true)
+    expect(fs.existsSync(path.join(dstSite, 'rocm_sdk_core-7.2.1.dist-info'))).toBe(true)
+    expect(fs.existsSync(path.join(dstSite, 'torch-2.9.1+rocm7.2.1.dist-info'))).toBe(true)
+
+    // No trace of the multi-arch stack: dists, payloads, device overlays.
+    for (const name of [
+      'torch-2.11.0+rocm7.14.0.dist-info', 'rocm-7.14.0.dist-info',
+      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      'rocm_sdk_core-7.14.0.dist-info',
+      '_rocm_sdk_libraries', 'rocm_sdk_libraries-7.14.0.dist-info',
+      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
+    ]) expect(fs.existsSync(path.join(dstSite, name)), name).toBe(false)
+    // The device overlays' .kpack payload went with the torch dir swap.
+    expect(fs.existsSync(path.join(dstSite, 'torch', '.kpack'))).toBe(false)
+    expect(fs.existsSync(path.join(dstSite, 'torchvision', '.kpack'))).toBe(false)
+
+    // Unrelated packages survive.
+    expect(fs.existsSync(path.join(dstSite, 'torchsde'))).toBe(true)
+    expect(fs.existsSync(path.join(dstSite, 'numpy'))).toBe(true)
+
+    // Swept dists are reported so verification asserts they stayed gone.
+    expect(removed.sort()).toEqual([
+      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
+      'rocm_bootstrap', 'rocm_sdk_device_gfx1100',
+    ])
+  })
+})
+
 describe('applyTorchStackTransaction (bundle path, real fs)', () => {
   let tmpDir: string
   let installPath: string
@@ -403,5 +507,54 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     expect(fs.existsSync(path.join(venvSite, 'torch-2.1.0.dist-info'))).toBe(true)
     expect(fs.existsSync(venvDir + '.torch-backup')).toBe(true)
     expect(update).not.toHaveBeenCalled()
+  })
+})
+
+describe('renameWithLockRetry', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  function lockError(code: string): NodeJS.ErrnoException {
+    return Object.assign(new Error(`${code}: operation not permitted, rename`), { code })
+  }
+
+  it('retries a transient EPERM until the rename succeeds', async () => {
+    const rename = vi.spyOn(fs.promises, 'rename')
+      .mockRejectedValueOnce(lockError('EPERM'))
+      .mockRejectedValueOnce(lockError('EBUSY'))
+      .mockResolvedValueOnce(undefined)
+
+    await expect(renameWithLockRetry('a', 'b')).resolves.toBeUndefined()
+    expect(rename).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops retrying once the signal aborts', async () => {
+    const rename = vi.spyOn(fs.promises, 'rename').mockRejectedValue(lockError('EPERM'))
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(renameWithLockRetry('a', 'b', controller.signal)).rejects.toThrow('Cancelled')
+    expect(rename).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry non-lock errors', async () => {
+    const rename = vi.spyOn(fs.promises, 'rename').mockRejectedValue(
+      Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' }))
+
+    await expect(renameWithLockRetry('a', 'b')).rejects.toThrow('ENOENT')
+    expect(rename).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up with the original error once the retry window is exhausted', async () => {
+    vi.useFakeTimers()
+    const rename = vi.spyOn(fs.promises, 'rename').mockRejectedValue(lockError('EPERM'))
+
+    const p = renameWithLockRetry('a', 'b')
+    const rejection = expect(p).rejects.toThrow('EPERM')
+    await vi.advanceTimersByTimeAsync(31_000)
+    await rejection
+    expect(rename.mock.calls.length).toBeGreaterThan(3)
   })
 })

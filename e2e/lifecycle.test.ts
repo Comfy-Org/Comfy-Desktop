@@ -512,6 +512,10 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
 
 test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
+  // The install poll below allows 480s; the project default test timeout is
+  // 180s, which real GPU installs exceed (observed: AMD fresh install at 94%
+  // "Loading custom nodes" killed at 180s, clean retry took 2.8m).
+  test.setTimeout(600_000)
   // The CPU-variant pick at the end of the previous test re-fires the
   // variant option reload, which transiently disables Continue
   // (`saveDisabled`). A DOM click on a disabled button is a silent

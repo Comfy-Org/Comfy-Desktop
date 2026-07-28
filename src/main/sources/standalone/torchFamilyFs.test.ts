@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-import { copyTorchFamily, recoverTorchFamilyBackups, removeTorchFamilyPackages } from './torchFamilyFs'
+import { copyTorchFamily, recoverTorchFamilyBackups, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
 
 let tmpDir: string
 
@@ -67,6 +67,36 @@ describe('copyTorchFamily', () => {
     expect(fs.existsSync(path.join(dst, 'torchmetrics-1.4.0.dist-info'))).toBe(true)
     // No staging leftovers.
     expect(fs.readdirSync(dst).some((e) => e.startsWith('.torchrepair-'))).toBe(false)
+  })
+
+  it('grafts the ROCm SDK underscore-prefixed payload packages the bundle ships', async () => {
+    const src = path.join(tmpDir, 'src')
+    const dst = path.join(tmpDir, 'dst')
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(dst, { recursive: true })
+
+    // Universal AMD bundle: rocm dist-infos + pure shims + `_`-prefixed
+    // payload packages (rocm_sdk.find_libraries imports the payload name).
+    pkg(src, 'torch', "__version__ = '2.9.1+rocm7.2.1'")
+    pkg(src, 'rocm_sdk_core-7.2.1.dist-info', 'METADATA')
+    pkg(src, 'rocm_sdk_core', 'shim 7.2.1')
+    pkg(src, '_rocm_sdk_core', 'payload 7.2.1')
+
+    // Destination: multi-arch stack whose same-name payload must be replaced,
+    // plus an unrelated underscore package that must survive.
+    pkg(dst, 'torch', "__version__ = '2.11.0+rocm7.14.0'")
+    pkg(dst, 'rocm_sdk_core-7.14.0.dist-info', 'METADATA')
+    pkg(dst, 'rocm_sdk_core', 'shim 7.14')
+    pkg(dst, '_rocm_sdk_core', 'payload 7.14')
+    pkg(dst, '_yaml', 'unrelated')
+
+    await copyTorchFamily(src, dst)
+
+    expect(read(dst, '_rocm_sdk_core')).toBe('payload 7.2.1')
+    expect(read(dst, 'rocm_sdk_core')).toBe('shim 7.2.1')
+    expect(fs.existsSync(path.join(dst, 'rocm_sdk_core-7.2.1.dist-info'))).toBe(true)
+    expect(fs.existsSync(path.join(dst, 'rocm_sdk_core-7.14.0.dist-info'))).toBe(false)
+    expect(read(dst, '_yaml')).toBe('unrelated')
   })
 
   it('leaves dst untouched when cancelled before staging', async () => {
@@ -375,5 +405,89 @@ describe('removeTorchFamilyPackages', () => {
     await removeTorchFamilyPackages(site, ['pytorch-triton-rocm'])
 
     expect(fs.readdirSync(site)).toEqual([])
+  })
+})
+
+describe('removeStaleRocmEntries', () => {
+  it('sweeps multi-arch ROCm leftovers the universal bundle does not ship, keeping everything else', async () => {
+    const src = path.join(tmpDir, 'src')
+    const dst = path.join(tmpDir, 'dst')
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(dst, { recursive: true })
+
+    // Universal AMD bundle ship-list.
+    for (const name of [
+      'torch', 'rocm_sdk', 'rocm-7.2.1.dist-info',
+      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
+    ]) pkg(src, name, 'universal')
+
+    // Candidate after the graft: bundle-provided entries are already the
+    // universal copies; multi-arch leftovers the bundle does not ship remain.
+    for (const name of [
+      'torch', 'rocm_sdk', 'rocm-7.2.1.dist-info',
+      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
+    ]) pkg(dst, name, 'universal')
+    // (The 7.14 rocm_sdk_libraries dist-info is absent here: its key
+    // collides with the bundle's rocm_sdk_libraries shim, so the graft
+    // itself already replaced it. The `_rocm_sdk_libraries` PAYLOAD has no
+    // bundle counterpart and reaches the sweep.)
+    for (const name of [
+      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      '_rocm_sdk_libraries',
+      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
+    ]) pkg(dst, name, 'multi-arch leftover')
+    pkg(dst, 'numpy', 'keep me')
+    pkg(dst, 'torchsde', 'keep me')
+    pkg(dst, '_yaml', 'keep me')
+    // ROCm-adjacent but NOT stack-owned: a real PyPI package a custom node
+    // could have installed. The sweep must never treat it as stack debris.
+    pkg(dst, 'rocm_docs_core', 'keep me')
+    pkg(dst, 'rocm_docs_core-1.21.0.dist-info', 'keep me')
+
+    const removed = await removeStaleRocmEntries(src, dst)
+
+    // Everything the bundle ships (and unrelated packages) survives.
+    for (const name of [
+      'torch', 'rocm_sdk', 'rocm-7.2.1.dist-info',
+      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
+      'numpy', 'torchsde', '_yaml',
+      'rocm_docs_core', 'rocm_docs_core-1.21.0.dist-info',
+    ]) expect(fs.existsSync(path.join(dst, name)), name).toBe(true)
+
+    // Every multi-arch leftover is gone: shims, payload dirs, dist-infos.
+    for (const name of [
+      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      '_rocm_sdk_libraries',
+      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
+    ]) expect(fs.existsSync(path.join(dst, name)), name).toBe(false)
+
+    // Removed dist names (not payload dirs) are reported for verification.
+    expect(removed.sort()).toEqual([
+      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
+      'rocm_bootstrap', 'rocm_sdk_device_gfx1100',
+    ])
+  })
+
+  it('is a no-op when the candidate has no ROCm entries', async () => {
+    const src = path.join(tmpDir, 'src')
+    const dst = path.join(tmpDir, 'dst')
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(dst, { recursive: true })
+    pkg(src, 'torch', 'cuda')
+    pkg(dst, 'torch', 'cuda')
+    pkg(dst, 'nvidia_cudnn_cu12', 'lib')
+    pkg(dst, 'numpy', 'keep me')
+
+    const removed = await removeStaleRocmEntries(src, dst)
+
+    expect(removed).toEqual([])
+    expect(fs.readdirSync(dst).sort()).toEqual(['numpy', 'nvidia_cudnn_cu12', 'torch'])
   })
 })

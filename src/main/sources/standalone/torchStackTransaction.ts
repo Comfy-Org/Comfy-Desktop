@@ -35,7 +35,7 @@ import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
-import { copyTorchFamily, removeTorchFamilyPackages } from './torchFamilyFs'
+import { copyTorchFamily, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
 import { stackVersionMatches, torchLocalTag, torchIndexUrlForSource, accelBaseForTag } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
@@ -443,6 +443,35 @@ export function runStreamed(cmd: string, args: string[], failMessage: string, to
 }
 
 /**
+ * Bundle-path venv mutation: graft the bundle's torch-family payload into the
+ * candidate site, then remove survivors the bundle does not ship.
+ *
+ * The graft only replaces packages the bundle ships, so two kinds of
+ * survivors must be swept afterwards:
+ * - Optional family packages the target omits (e.g. the previous stack's
+ *   torchvision, built against the old torch) would break at import.
+ *   Ship-list is the bundle itself, not the catalog tuple: a package the
+ *   bundle ships stays even if the tuple metadata omits it.
+ * - ROCm-ecosystem packages an AMD multi-arch stack leaves behind
+ *   (rocm-sdk device/library dists, AMD's device-overlay dist-infos): their
+ *   lying dist-info beside the bundle's own SDK makes rocm_sdk library
+ *   discovery fail at import on a universal AMD target.
+ *
+ * Returns the removed package names so verification can assert they stayed
+ * gone. Operates on the transaction's candidate copy, never the live venv.
+ */
+export async function applyBundleGraft(prepared: PreparedBundleStack, dstSite: string): Promise<string[]> {
+  await copyTorchFamily(prepared.srcSite, dstSite)
+  const familyRemoved = undeclaredFamilyPackages(prepared.entry.packages, dstSite)
+    .filter((pkg) => readDistInfoVersion(prepared.srcSite, pkg) === null)
+  if (familyRemoved.length > 0) {
+    await removeTorchFamilyPackages(dstSite, familyRemoved)
+  }
+  const staleRocm = await removeStaleRocmEntries(prepared.srcSite, dstSite)
+  return [...familyRemoved, ...staleRocm]
+}
+
+/**
  * Mutate the candidate venv to the exact torch tuple: uninstall family
  * packages the tuple omits, then install the declared versions from the
  * derived index. Runs a uv OUTSIDE the candidate venv (never the
@@ -486,10 +515,36 @@ async function runPipTorchInstall(
   await runStreamed(cmd, args, 'PyTorch package install failed', tools)
 }
 
+/** Windows releases directory handles a beat after the owning process dies
+ *  (the ComfyUI tree is killed via fire-and-forget `taskkill /T`, and AV or
+ *  indexer scans pile on), so the whole-venv renames can hit a transient
+ *  EPERM/EACCES/EBUSY. Retry with backoff; once the handles drop, the
+ *  rename is instant. */
+const RENAME_LOCK_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const RENAME_RETRY_TOTAL_MS = 30_000
+
+/** The signal is only passed for the pre-mutation rename (venv -> backup):
+ *  until that rename succeeds nothing has been touched, so aborting there is
+ *  a clean cancel. Rollback and commit renames must never be cancellable. */
+export async function renameWithLockRetry(src: string, dst: string, signal?: AbortSignal): Promise<void> {
+  const deadline = Date.now() + RENAME_RETRY_TOTAL_MS
+  for (let delay = 250; ; delay = Math.min(delay * 2, 4_000)) {
+    try {
+      await fs.promises.rename(src, dst)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (!RENAME_LOCK_CODES.has(code ?? '') || Date.now() + delay > deadline) throw err
+      if (signal?.aborted) throw new Error('Cancelled', { cause: err })
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+}
+
 async function rollback(venvPath: string, backupPath: string): Promise<void> {
   if (fs.existsSync(backupPath)) {
     await fs.promises.rm(venvPath, { recursive: true, force: true })
-    await fs.promises.rename(backupPath, venvPath)
+    await renameWithLockRetry(backupPath, venvPath)
   }
 }
 
@@ -548,7 +603,9 @@ export async function applyTorchStackTransaction(
 
     try {
       // 3. Move the live venv aside — from here the backup is the good copy.
-      await fs.promises.rename(venvPath, backupPath)
+      // The just-stopped ComfyUI process tree may still hold handles for a
+      // few seconds; renameWithLockRetry absorbs that.
+      await renameWithLockRetry(venvPath, backupPath, tools.signal)
 
       // 4. Rebuild the canonical venv path as a copy of the backup.
       tools.sendProgress('torch-swap', { percent: -1, status: 'Copying environment…' })
@@ -565,18 +622,7 @@ export async function applyTorchStackTransaction(
       if (prepared.kind === 'bundle') {
         const dstSite = findSitePackages(venvPath)
         if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
-        await copyTorchFamily(prepared.srcSite, dstSite)
-        // The graft only replaces packages the bundle ships — an optional
-        // family package the target omits (e.g. the previous stack's
-        // torchvision, built against the old torch) would survive the swap
-        // and break at import. Remove the survivors from the candidate.
-        // Ship-list is the bundle itself, not the catalog tuple: a package
-        // the bundle ships stays even if the tuple metadata omits it.
-        bundleRemoved = undeclaredFamilyPackages(packages, dstSite)
-          .filter((pkg) => readDistInfoVersion(prepared.srcSite, pkg) === null)
-        if (bundleRemoved.length > 0) {
-          await removeTorchFamilyPackages(dstSite, bundleRemoved)
-        }
+        bundleRemoved = await applyBundleGraft(prepared, dstSite)
       } else {
         await runPipTorchInstall(installation, prepared, venvPath, backupPath, tools)
       }
@@ -613,7 +659,7 @@ export async function applyTorchStackTransaction(
       // touch the verified venv. Deleting a large directory is neither atomic
       // nor reliable (Windows/AV locks), so it must never double as commit.
       tools.sendProgress('torch-swap', { percent: 95, status: 'Cleaning up…' })
-      await fs.promises.rename(backupPath, gcPath)
+      await renameWithLockRetry(backupPath, gcPath)
     } catch (err) {
       tools.sendOutput?.(`\nPyTorch change failed: ${(err as Error).message}\nRestoring previous environment…\n`)
       try {

@@ -16,8 +16,12 @@ const TORCH_FAMILY_EXACT = new Set(['torch', 'torchgen', 'torchvision', 'torchau
 // torchsde/torchmetrics must not match, or a bundle graft would overwrite the
 // version a snapshot restore just installed. 'torch' covers ABI-coupled
 // torch_tensorrt/torch-scatter, 'nvidia' covers nvidia_cudnn_cu12 etc.,
-// 'triton' covers triton_windows, 'cuda' covers cuda_bindings.
-const TORCH_FAMILY_PREFIXES = ['torch', 'nvidia', 'triton', 'pytorch_triton', 'cuda', 'rocm']
+// 'triton' covers triton_windows, 'cuda' covers cuda_bindings. '_rocm_sdk'
+// covers the ROCm SDK wheels' underscore-prefixed payload packages
+// (_rocm_sdk_core, _rocm_sdk_libraries_custom): rocm_sdk.find_libraries
+// imports them under exactly that name, so a graft that replaced the
+// dist-info without the payload would strand torch on the old SDK's DLLs.
+const TORCH_FAMILY_PREFIXES = ['torch', 'nvidia', 'triton', 'pytorch_triton', 'cuda', 'rocm', '_rocm_sdk']
 const STAGING_PREFIX = '.torchrepair-'
 // Backup names taken by the old packages during the swap. Shares the staging
 // prefix so the leftover sweep and the swap loop's skip check cover both.
@@ -238,6 +242,49 @@ export async function copyTorchFamily(srcSite: string, dstSite: string, signal?:
 const DIST_OWNED_EXTRAS: Record<string, readonly string[]> = {
   torch: ['torchgen', 'functorch'],
   torchaudio: ['torio'],
+}
+
+/** ROCm-SDK-ecosystem site-packages entry: the SDK distributions' metadata
+ *  and payload (rocm, rocm-bootstrap, rocm-sdk-*, their `_`-prefixed python
+ *  payload packages and pure shims like rocm_sdk_device) plus AMD's torch
+ *  device-overlay dist-infos (amd-torch-device-gfx*, amd-torchvision-
+ *  device-gfx* - overlay wheels whose file payload lives inside torch/
+ *  and torchvision/ themselves). Deliberately NOT a bare 'rocm' prefix:
+ *  unrelated ROCm-adjacent packages (e.g. rocm-docs-core) must never be
+ *  swept as stack debris. */
+function isRocmEcosystemEntry(name: string): boolean {
+  const key = packageKey(stripLibs(name))
+  const base = key.startsWith('_') ? key.slice(1) : key
+  return base === 'rocm'
+    || base === 'rocm_bootstrap'
+    || base === 'rocm_sdk'
+    || base.startsWith('rocm_sdk_')
+    || base === 'amd_torch_device' || base.startsWith('amd_torch_device_')
+    || base === 'amd_torchvision_device' || base.startsWith('amd_torchvision_device_')
+}
+
+/**
+ * Remove ROCm-ecosystem entries in dstSite that srcSite (the bundle payload)
+ * does not ship. The graft only replaces same-key entries, so a switch away
+ * from an AMD multi-arch stack would otherwise leave its rocm-sdk device and
+ * library dists behind - lying dist-info beside the target's SDK, whose
+ * library discovery then fails at import (universal target) or which shadow
+ * nothing but waste gigabytes (non-AMD target). Returns the removed
+ * distribution names (from dist-info entries) so verification can assert
+ * they stayed gone. Operates on the transaction's candidate copy, never the
+ * live venv.
+ */
+export async function removeStaleRocmEntries(srcSite: string, dstSite: string): Promise<string[]> {
+  const provided = new Set(fs.readdirSync(srcSite).map((e) => packageKey(stripLibs(e))))
+  const removedDists: string[] = []
+  for (const entry of fs.readdirSync(dstSite)) {
+    if (entry.startsWith(STAGING_PREFIX)) continue
+    if (!isRocmEcosystemEntry(entry)) continue
+    if (provided.has(packageKey(stripLibs(entry)))) continue
+    if (entry.endsWith('.dist-info')) removedDists.push(packageKey(entry))
+    await fs.promises.rm(path.join(dstSite, entry), { recursive: true, force: true })
+  }
+  return removedDists
 }
 
 /**
