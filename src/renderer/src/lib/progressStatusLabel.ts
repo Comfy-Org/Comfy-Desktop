@@ -17,6 +17,9 @@ type TLike = ComposerTranslation | ((key: string, fallback?: string) => string)
 export function humanizeOpStatus(raw: string | null | undefined, t: TLike): string {
   const key = raw || ''
   if (key in OP_STATUS_MAP) return OP_STATUS_MAP[key]!
+  // Launch progress reports live sub-activity as `launch.activity.*` i18n
+  // keys (see launchProgress.ts); resolve them instead of showing the key.
+  if (key.startsWith('launch.activity.')) return (t as (k: string) => string)(key)
   if (key) return key
   return (t as (k: string, fb?: string) => string)('instancePicker.progressWorking', 'Working…')
 }

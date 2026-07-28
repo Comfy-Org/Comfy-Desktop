@@ -25,6 +25,13 @@ describe('humanizeOpStatus', () => {
     expect(humanizeOpStatus('Custom phase X', t)).toBe('Custom phase X')
   })
 
+  it('resolves launch.activity.* sub-status keys through i18n', () => {
+    const translating = ((key: string) =>
+      key === 'launch.activity.database' ? 'Preparing database' : key
+    ) as Parameters<typeof humanizeOpStatus>[1]
+    expect(humanizeOpStatus('launch.activity.database', translating)).toBe('Preparing database')
+  })
+
   it.each([['', ''], [null, 'null'], [undefined, 'undefined']])(
     'falls back to Working… for empty/null/undefined (%s)',
     (raw) => {
