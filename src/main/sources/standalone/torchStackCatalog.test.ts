@@ -27,10 +27,11 @@ import type * as EnvPaths from './envPaths'
 import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import { getInstalledTorchTuple } from './envPaths'
-import { getCachedTorchStacks, resolveTorchStack, resolveSnapshotManagedTarget, reconcileTorchStack, getLastVerifiedTorchStack, _resetForTest } from './torchStackCatalog'
+import { getCachedTorchStacks, resolveTorchStack, resolveSnapshotManagedTarget, reconcileTorchStack, getLastVerifiedTorchStack, refreshTorchStackCatalogs, _resetForTest } from './torchStackCatalog'
 import { fetchR2VendorReleases } from './r2Catalog'
 import {
   _setComputeCapsForTest, _setRemoteDefsForTest, _resetRemoteForTest,
+  _setComputeCapProbeForTest, _setNvidiaDriverProbeForTest,
 } from './torchIndexManifest'
 import type { TorchIndexStackDef } from './torchIndexManifest'
 
@@ -247,5 +248,41 @@ describe('compute-cap mismatch is informational, never a gate', () => {
       ?.lastVerifiedTorchStack as { stackId?: string; capWarning?: unknown } | undefined
     expect(adopted?.stackId).toBe(CU130_ID)
     expect(adopted?.capWarning).toBeUndefined()
+  })
+})
+
+describe('refreshTorchStackCatalogs', () => {
+  beforeEach(() => {
+    // Stub the GPU probes so the refresh never spawns nvidia-smi in tests.
+    _setComputeCapProbeForTest(async () => null)
+    _setNvidiaDriverProbeForTest(async () => null)
+    vi.mocked(fetchR2VendorReleases).mockClear()
+  })
+  afterEach(() => {
+    _setComputeCapProbeForTest(undefined)
+    _setNvidiaDriverProbeForTest(undefined)
+  })
+
+  it('refreshes once per unique variant among installed standalone installs', async () => {
+    await refreshTorchStackCatalogs([
+      install('3.13.2'),
+      { ...install('3.13.2'), id: 'inst-2' } as InstallationRecord,
+      { ...install('3.13.2'), id: 'inst-3', variant: 'win-amd' } as InstallationRecord,
+    ])
+    const variants = vi.mocked(fetchR2VendorReleases).mock.calls.map((c) => c[0])
+    expect(variants.sort()).toEqual(['win-amd', 'win-nvidia'])
+  })
+
+  it('ignores non-standalone and non-installed installs', async () => {
+    await refreshTorchStackCatalogs([
+      { ...install('3.13.2'), sourceId: 'portable' } as InstallationRecord,
+      { ...install('3.13.2'), status: 'installing' } as InstallationRecord,
+    ])
+    expect(vi.mocked(fetchR2VendorReleases)).not.toHaveBeenCalled()
+  })
+
+  it('never throws when a variant refresh fails', async () => {
+    vi.mocked(fetchR2VendorReleases).mockRejectedValueOnce(new Error('offline'))
+    await expect(refreshTorchStackCatalogs([install('3.13.2')])).resolves.toBeUndefined()
   })
 })
