@@ -24,6 +24,14 @@ import * as settings from '../../settings'
 const PROTECTED_EXACT = new Set([
   'pip', 'setuptools', 'wheel', 'uv',
   'torch', 'torchvision', 'torchaudio', 'torio', 'functorch', 'triton',
+  // Intel XPU runtime family members protected by exact name because a
+  // prefix would swallow unrelated user packages (mkl-fft, mkl-service,
+  // intel-extension-for-pytorch, ...). 'pyelftools' is general-purpose but
+  // a hard dependency of the XPU triton build - the sync removing it breaks
+  // the protected triton, so it is protected with it (tradeoff: a snapshot
+  // recording pyelftools for its own sake will not install it either).
+  'mkl', 'intel-opencl-rt', 'intel-openmp', 'intel-pti', 'intel-sycl-rt',
+  'tbb', 'tcmlib', 'umf', 'pyelftools',
 ])
 // Prefixes matched as `<prefix>` / `<prefix>-*` / `<prefix>_*` (never a bare
 // substring — 'torchsde' must not match 'torch'): torch-tensorrt and
@@ -36,9 +44,19 @@ const PROTECTED_EXACT = new Set([
 // the torch phase owns them - a plain pip sync can neither install nor
 // remove them safely. Deliberately NOT a bare 'amd' prefix, so ordinary
 // AMD-published libraries (e.g. amd-quark) stay snapshot-restorable.
+// The oneAPI prefixes cover the XPU stack's runtime family (dpcpp-cpp-rt,
+// intel-cmplr-*, onemkl-sycl-*, oneccl/impi bindings, level-zero): pip
+// installs them as ordinary dependencies of torch +xpu wheels, so without
+// protection a snapshot from another vendor uninstalls them from an Intel
+// install (breaking the local stack) and an Intel snapshot installs them
+// onto AMD/NVIDIA installs. Deliberately NOT bare 'intel' or 'mkl'
+// prefixes: ordinary Intel-published libraries (mkl-fft, mkl-service,
+// intel-extension-for-pytorch) must stay snapshot-restorable - the
+// remaining runtime members are protected by exact name above.
 const PROTECTED_PREFIXES = [
   'torch', 'nvidia', 'triton', 'pytorch-triton', 'cuda', 'rocm',
   'amd-torch-device', 'amd-torchvision-device', 'amd-torchaudio-device',
+  'intel-cmplr', 'onemkl', 'dpcpp', 'oneccl', 'impi', 'level-zero',
 ]
 
 export function isProtectedPackage(name: string): boolean {

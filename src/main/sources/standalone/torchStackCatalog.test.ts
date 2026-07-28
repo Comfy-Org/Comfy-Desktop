@@ -27,7 +27,8 @@ import type * as EnvPaths from './envPaths'
 import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import { getInstalledTorchTuple } from './envPaths'
-import { getCachedTorchStacks, resolveTorchStack, reconcileTorchStack, getLastVerifiedTorchStack, _resetForTest } from './torchStackCatalog'
+import { getCachedTorchStacks, resolveTorchStack, resolveSnapshotManagedTarget, reconcileTorchStack, getLastVerifiedTorchStack, _resetForTest } from './torchStackCatalog'
+import { fetchR2VendorReleases } from './r2Catalog'
 import {
   _setComputeCapsForTest, _setRemoteDefsForTest, _resetRemoteForTest,
 } from './torchIndexManifest'
@@ -102,6 +103,42 @@ describe('per-install Python ABI gate on index-served stacks', () => {
       expect(getCachedTorchStacks(inst).map((e) => e.stackId)).toContain(CU130_ID)
       expect((await resolveTorchStack(inst, CU130_ID))?.stackId).toBe(CU130_ID)
     }
+  })
+})
+
+describe('resolveSnapshotManagedTarget', () => {
+  const ref = { stackId: CU130_ID, packages: { torch: '2.11.0+cu130' } }
+
+  it('returns the catalog entry when the ref resolves and the tuple matches exactly', async () => {
+    const entry = await resolveSnapshotManagedTarget(install('3.13.2'), ref)
+    expect(entry?.stackId).toBe(CU130_ID)
+  })
+
+  it('returns null when the ref does not resolve for this install (ABI gate)', async () => {
+    expect(await resolveSnapshotManagedTarget(install('3.12.10'), ref)).toBeNull()
+  })
+
+  it('returns null when the ref belongs to a foreign vendor variant', async () => {
+    const foreign = { ...install('3.13.2'), variant: 'win-amd' } as InstallationRecord
+    expect(await resolveSnapshotManagedTarget(foreign, ref)).toBeNull()
+  })
+
+  it('returns null on tuple drift between the snapshot record and the catalog', async () => {
+    const inst = install('3.13.2')
+    expect(await resolveSnapshotManagedTarget(inst, {
+      stackId: CU130_ID, packages: { torch: '2.12.0+cu130' },
+    })).toBeNull()
+    // Symmetric drift: a package the catalog dropped (or added) counts too.
+    expect(await resolveSnapshotManagedTarget(inst, {
+      stackId: CU130_ID, packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu130' },
+    })).toBeNull()
+  })
+
+  it('propagates catalog fetch errors instead of mapping them to null', async () => {
+    vi.mocked(fetchR2VendorReleases).mockRejectedValueOnce(new Error('offline'))
+    await expect(resolveSnapshotManagedTarget(install('3.13.2'), {
+      stackId: 'comfy-bundle:win-nvidia:v1.0.0', packages: { torch: '2.11.0+cu130' },
+    })).rejects.toThrow('offline')
   })
 })
 

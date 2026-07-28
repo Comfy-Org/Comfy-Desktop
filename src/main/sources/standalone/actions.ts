@@ -17,11 +17,11 @@ import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { stackVersionMatches, torchTupleMatches, torchPackageTuplesEqual, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseAnyIndexStackId } from './torchStackTypes'
+import { stackVersionMatches, torchTupleMatches, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseAnyIndexStackId } from './torchStackTypes'
 import type { TorchStackPackages } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
-import { resolveTorchStack, refreshTorchStackCatalog } from './torchStackCatalog'
+import { resolveTorchStack, resolveSnapshotManagedTarget, refreshTorchStackCatalog } from './torchStackCatalog'
 import type { TorchStackEntry } from './torchStackCatalog'
 import {
   preflightDiskSpace, prepareBundleStack, preparePipStack, applyTorchStackTransaction,
@@ -144,18 +144,13 @@ export async function handleAction(
     // can't distinguish stacks that differ in torchvision/torchaudio.
     if (snapTorch?.kind === 'managed' && !torchTupleMatches(snapTorch.ref.packages, installedTorch)) {
       try {
-        torchTarget = await resolveTorchStack(installation, snapTorch.ref.stackId)
+        // Applicability (resolve + metadata-drift guard) is shared with the
+        // import-confirm disclosure via resolveSnapshotManagedTarget.
+        torchTarget = await resolveSnapshotManagedTarget(installation, snapTorch.ref)
       } catch (err) {
         if (mode === 'exact') {
           return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
         }
-        torchTarget = null
-      }
-      // Metadata drift guard: the re-resolved catalog entry must still be
-      // the exact tuple the snapshot recorded (symmetric — a package the
-      // catalog dropped or added is drift too), or the "exact stack"
-      // promise would quietly become "whatever that bundle tag ships now".
-      if (torchTarget && !torchPackageTuplesEqual(torchTarget.packages, snapTorch.ref.packages)) {
         torchTarget = null
       }
       if (!torchTarget) {

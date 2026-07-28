@@ -52,6 +52,7 @@ vi.mock('./torchStackTransaction', () => ({
 
 vi.mock('./torchStackCatalog', () => ({
   resolveTorchStack: vi.fn(async () => null),
+  resolveSnapshotManagedTarget: vi.fn(async () => null),
   refreshTorchStackCatalog: vi.fn(async () => {}),
 }))
 
@@ -93,6 +94,7 @@ vi.mock('../../lib/snapshots', () => snapshotsMock)
 
 // Import the SUT after all mocks are declared.
 import { handleAction } from './actions'
+import { resolveSnapshotManagedTarget } from './torchStackCatalog'
 import type { ActionTools } from '../../types/sources'
 
 describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
@@ -187,6 +189,38 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
     expect(outputs.join('')).toContain('standalone.snapshotProtectedDriftUnknown')
     // The install never provably reached the imported state: nothing commits,
     // and the staged envelope stays for a retry.
+    expect(snapshotsMock.importSnapshots).not.toHaveBeenCalled()
+    expect(snapshotsMock.releaseStagedSnapshotEnvelope).not.toHaveBeenCalled()
+  })
+
+  it('exact mode: a catalog fetch error while resolving the snapshot stack aborts with pytorchCatalogError before any mutation', async () => {
+    snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
+      snapshots: [{
+        ...stagedSnapshot,
+        torchStack: {
+          kind: 'managed',
+          ref: {
+            stackId: 'pytorch-index:cu130:2.13.0',
+            variant: 'win-nvidia',
+            pythonVersion: '3.13.2',
+            packages: { torch: '2.13.0+cu130' },
+            source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
+          },
+        },
+      }],
+    }))
+    vi.mocked(resolveSnapshotManagedTarget).mockRejectedValueOnce(new Error('offline'))
+
+    const result = await handleAction(
+      'snapshot-restore', installation,
+      { restoreToken: 'tok-5', mode: 'exact' }, makeTools(),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('standalone.pytorchCatalogError')
+    expect(result.message).toContain('offline')
+    // "Could not check" must abort before anything is mutated or committed.
+    expect(snapshotsMock.restorePipPackages).not.toHaveBeenCalled()
     expect(snapshotsMock.importSnapshots).not.toHaveBeenCalled()
     expect(snapshotsMock.releaseStagedSnapshotEnvelope).not.toHaveBeenCalled()
   })

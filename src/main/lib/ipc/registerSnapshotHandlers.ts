@@ -36,6 +36,41 @@ import type { LatestTagOverride, SnapshotExportEnvelope, FieldOption, Snapshot }
 import type { CopyEvent } from '../../../types/ipc'
 import * as telemetry from '../telemetry'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { resolveSnapshotManagedTarget } from '../../sources/standalone/torchStackCatalog'
+import { torchTupleMatches } from '../../sources/standalone/torchStackTypes'
+import { getInstalledTorchTuple } from '../../sources/standalone/envPaths'
+import type { InstallationRecord } from '../../installations'
+
+/**
+ * Kept-local disclosure for an import about to be restored: when the
+ * envelope's newest snapshot records a managed PyTorch stack this machine
+ * cannot apply (foreign vendor, unpublished, ABI-incompatible, or drifted),
+ * the compatible restore will keep the local stack. Surfacing that BEFORE
+ * the restore lets the user decide with full information instead of
+ * discovering the substitution afterwards. Applicability is decided by the
+ * same resolveSnapshotManagedTarget the restore itself uses. Errors and
+ * observed-stack (v1) records return null: the restore path discloses those
+ * cases itself, and a preview must never block the import.
+ */
+async function importTorchStackNotice(
+  inst: InstallationRecord,
+  newest: Snapshot
+): Promise<string | null> {
+  const snapTorch = newest.torchStack
+  if (snapTorch?.kind !== 'managed') return null
+  if (torchTupleMatches(snapTorch.ref.packages, getInstalledTorchTuple(inst))) return null
+  try {
+    const target = await resolveSnapshotManagedTarget(inst, snapTorch.ref)
+    if (target) return null
+  } catch {
+    // Could not check (offline catalog): the restore action re-checks and
+    // discloses; don't scare the user with a maybe-wrong warning here.
+    return null
+  }
+  return i18n.t('standalone.pytorchSnapshotStackWillKeepLocal', {
+    version: snapTorch.ref.packages.torch
+  })
+}
 
 async function _findReferenceRepo(): Promise<{
   comfyuiDir: string
@@ -349,7 +384,8 @@ export function registerSnapshotHandlers(): void {
         ...pending.envelope,
         snapshots: [newest]
       })
-      return { ok: true, imported: 1, restoreToken }
+      const torchStackNotice = await importTorchStackNotice(inst, newest)
+      return { ok: true, imported: 1, restoreToken, torchStackNotice }
     } catch (err) {
       return { ok: false, message: (err as Error)?.message ?? 'Failed to import snapshots.' }
     }

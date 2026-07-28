@@ -50,7 +50,16 @@ describe('isProtectedPackage', () => {
     // installable only via [device-all] extras against AMD's index.
     'rocm', 'rocm-sdk-core', 'rocm-bootstrap',
     'amd-torch-device-gfx1100', 'amd-torchvision-device-gfx908',
-    'amd-torchaudio-device-gfx1200'
+    'amd-torchaudio-device-gfx1200',
+    // Intel XPU stack: torch +xpu wheels pull the oneAPI runtime family as
+    // plain pip dependencies. Every name observed leaking across vendors in
+    // cross-vendor restore validation is pinned here.
+    'dpcpp-cpp-rt', 'intel-cmplr-lib-rt', 'intel-cmplr-lib-ur',
+    'intel-cmplr-lic-rt', 'intel-opencl-rt', 'intel-openmp', 'intel-pti',
+    'intel-sycl-rt', 'mkl', 'onemkl-license', 'onemkl-sycl-blas',
+    'onemkl-sycl-dft', 'onemkl-sycl-lapack', 'onemkl-sycl-rng',
+    'onemkl-sycl-sparse', 'pyelftools', 'tbb', 'tcmlib', 'umf',
+    'oneccl-bind-pt', 'impi-rt', 'level-zero'
   ])('protects %s', (name) => {
     expect(isProtectedPackage(name)).toBe(true)
   })
@@ -63,7 +72,12 @@ describe('isProtectedPackage', () => {
     'torchsde', 'torchmetrics', 'torchdiffeq',
     // 'amd' alone is not a protected prefix: ordinary AMD-published libraries
     // must stay snapshot-restorable.
-    'amd-quark', 'amdsmi'
+    'amd-quark', 'amdsmi',
+    // Intel/oneAPI protection is exact-name or narrow-prefix: ordinary
+    // Intel-published libraries must stay snapshot-restorable, and
+    // delimiter-based matching must not swallow lookalike names.
+    'mkl-fft', 'mkl-service', 'mkl-random', 'intel-extension-for-pytorch',
+    'intelhex', 'mkldnn', 'onednn', 'umap-learn', 'tbats'
   ])(
     'does not protect %s',
     (name) => {

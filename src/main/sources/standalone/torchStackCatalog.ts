@@ -20,9 +20,9 @@ import type { R2Variant } from './r2Catalog'
 import {
   makeBundleStackId, parseBundleStackId, parseAnyIndexStackId, pythonAbiCompatible,
   torchTupleMatches, torchLocalTag, accelBaseForTag, torchTupleReacquirable,
-  isValidAmdMultiArchSource,
+  isValidAmdMultiArchSource, torchPackageTuplesEqual,
 } from './torchStackTypes'
-import type { PersistedTorchStack, SnapshotTorchStack } from './torchStackTypes'
+import type { PersistedTorchStack, SnapshotTorchStack, TorchStackPackages } from './torchStackTypes'
 import {
   indexStacksForVariant, refreshComputeCaps, refreshNvidiaDriver,
   refreshRemoteIndexStacks, ensureRemoteIndexStacks,
@@ -298,6 +298,26 @@ export async function resolveTorchStack(
   } else if (!pythonAbiCompatible(installPython(installation), release.python_version)) {
     return null
   }
+  return entry
+}
+
+/**
+ * Resolve a snapshot's recorded managed stack to a catalog entry this
+ * installation could actually apply. Null means "keep the local stack":
+ * the ref doesn't resolve here (foreign vendor/variant, unpublished, or
+ * ABI-incompatible), or the re-resolved entry's tuple drifted from what
+ * the snapshot recorded - the "exact stack" promise must not quietly
+ * become "whatever that catalog ref ships now". Catalog fetch errors
+ * propagate so exact-mode callers can distinguish "unavailable" from
+ * "could not check". Shared by the restore action and the import-confirm
+ * disclosure so they can never disagree about applicability.
+ */
+export async function resolveSnapshotManagedTarget(
+  installation: InstallationRecord,
+  ref: { stackId: string; packages: TorchStackPackages },
+): Promise<TorchStackEntry | null> {
+  const entry = await resolveTorchStack(installation, ref.stackId)
+  if (!entry || !torchPackageTuplesEqual(entry.packages, ref.packages)) return null
   return entry
 }
 

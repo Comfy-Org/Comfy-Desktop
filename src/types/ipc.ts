@@ -1268,9 +1268,15 @@ export interface ElectronApi {
   importSnapshotsDiff(
     installationId: string
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
-  importSnapshotsConfirm(
-    installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
+  importSnapshotsConfirm(installationId: string): Promise<{
+    ok: boolean
+    imported?: number
+    restoreToken?: string
+    /** Kept-local disclosure: set when the snapshot's managed PyTorch stack
+     *  cannot be applied here, so the restore will keep the local stack. */
+    torchStackNotice?: string | null
+    message?: string
+  }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
