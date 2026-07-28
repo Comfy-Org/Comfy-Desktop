@@ -76,9 +76,8 @@ describe('TemplatePickerStep', () => {
     expect(rows[0]!.text()).toContain('Wan Video')
   })
 
-  it('shows the recommended badge on the recommended card when it is not selected', () => {
-    // Select the non-recommended alt so the recommended card shows its badge
-    // (the check replaces it when the recommended card is itself selected).
+  it('shows the recommended badge only on the recommended card', () => {
+    // Select the non-recommended alt, so only one card can carry the badge.
     const wrapper = mountPicker({ selectedValue: IMAGE_ALT.value })
     const tags = wrapper.findAll('.tps__recommended')
     expect(tags).toHaveLength(1)
@@ -86,11 +85,54 @@ describe('TemplatePickerStep', () => {
     expect(wrapper.findAll('button[role="radio"]')[1]!.text()).not.toContain('Recommended')
   })
 
-  it('hides the recommended badge on the selected card (check takes its place)', () => {
-    // Default selection is the recommended card → only the check shows, no badge.
-    const wrapper = mountPicker()
-    expect(wrapper.findAll('.tps__recommended')).toHaveLength(0)
-    expect(wrapper.findAll('.tps__check')).toHaveLength(1)
+  it('keeps the recommended badge and the check on the same selected card', () => {
+    const selected = mountPicker().findAll('button[role="radio"]')[0]!
+    expect(selected.find('.tps__recommended').exists()).toBe(true)
+    expect(selected.find('.tps__check').exists()).toBe(true)
+  })
+
+  it('swaps the size for a glyph when the models are already on disk', () => {
+    const present: FieldOption = {
+      ...IMAGE_ALT,
+      data: { ...IMAGE_ALT.data, modelsPresent: true },
+    }
+    const rows = mountPicker({ options: [NONE, IMAGE_REC, present] }).findAll(
+      'button[role="radio"]'
+    )
+
+    expect(rows[0]!.find('.tps__card-size').text()).toBe('~7 GB')
+    expect(rows[0]!.find('.tps__card-present').exists()).toBe(false)
+
+    expect(rows[1]!.find('.tps__card-size').exists()).toBe(false)
+    expect(rows[1]!.find('.tps__card-present').exists()).toBe(true)
+    expect(rows[1]!.text()).toContain('Downloaded · ~17 GB')
+  })
+
+  it('carries check, badge and glyph together on a selected recommended present card', () => {
+    const present: FieldOption = {
+      ...IMAGE_REC,
+      data: { ...IMAGE_REC.data, modelsPresent: true },
+    }
+    const row = mountPicker({
+      options: [NONE, present],
+      selectedValue: present.value,
+    }).findAll('button[role="radio"]')[0]!
+
+    expect(row.find('.tps__check').exists()).toBe(true)
+    expect(row.find('.tps__recommended').exists()).toBe(true)
+    expect(row.find('.tps__card-present').exists()).toBe(true)
+    expect(row.find('.tps__card-size').exists()).toBe(false)
+  })
+
+  it('announces the downloaded state without a size when none is known', () => {
+    const present: FieldOption = { ...IMAGE_ALT, data: { modality: 'image', modelsPresent: true } }
+    const row = mountPicker({ options: [NONE, IMAGE_REC, present] }).findAll(
+      'button[role="radio"]'
+    )[1]!
+
+    expect(row.find('.tps__card-present').exists()).toBe(true)
+    expect(row.text()).toContain('Downloaded')
+    expect(row.text()).not.toContain('·')
   })
 
   it('marks the selected row via aria-checked', () => {

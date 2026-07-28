@@ -33,6 +33,7 @@ import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudCapacityStatusAsync } from '../cloudCapacity'
+import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
@@ -57,6 +58,11 @@ export function registerAppHandlers(): void {
   // `disabled`. Hydrated from a persisted file at boot and refreshed on
   // every cloud webContents `dom-ready`. See `userTier.ts`.
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
+
+  // Whether the free tier is live, for the first-use trial pill. Bypasses
+  // the consent gate so it resolves pre-consent, the only state that
+  // surface renders in; fails CLOSED. See `cloudFreeRuns.ts`.
+  ipcMain.handle('get-cloud-free-runs-enabled', () => getCloudFreeRunsEnabledAsync())
 
   // Sources
   ipcMain.handle('get-sources', () =>
@@ -247,7 +253,9 @@ export function registerAppHandlers(): void {
       const wmiDrivers = await getWindowsGpuDriverVersions()
       if (wmiDrivers.size > 0) {
         allGpus = allGpus.map((g) =>
-          g.driver_version ? g : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
+          g.driver_version
+            ? g
+            : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
         )
       }
     }

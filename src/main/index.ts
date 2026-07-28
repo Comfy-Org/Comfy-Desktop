@@ -18,16 +18,18 @@ import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
-import {
-  flushLastSessionSync,
-  recordDashboardSurface
-} from './lib/lastSession'
+import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
-import { openSystemModal, openSystemModalAsync, openSystemModalChoiceAsync, registerSystemModalIpc } from './popups/systemModal'
+import {
+  openSystemModal,
+  openSystemModalAsync,
+  openSystemModalChoiceAsync,
+  registerSystemModalIpc
+} from './popups/systemModal'
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
@@ -49,7 +51,10 @@ import {
   downloadEvents,
   getDownloadsTrayState
 } from './lib/comfyDownloadManager'
-import { hasActiveTemplateDownloads, getTemplateDownloadState } from './sources/standalone/templateDownloadTask'
+import {
+  hasActiveTemplateDownloads,
+  getTemplateDownloadState
+} from './sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
@@ -96,6 +101,7 @@ import {
 } from './lib/deviceId'
 import { initExperiments } from './lib/experiments'
 import { initCloudCapacity } from './lib/cloudCapacity'
+import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -275,9 +281,10 @@ async function openStartupSurface(): Promise<void> {
   const autoLaunchValue = firstUseDone
     ? (settings.get('autoLaunchOnStartup') as string | undefined)
     : undefined
-  const explicitInst = autoLaunchValue && autoLaunchValue !== AUTO_LAUNCH_NONE
-    ? await resolveAutoLaunchInstall(autoLaunchValue)
-    : null
+  const explicitInst =
+    autoLaunchValue && autoLaunchValue !== AUTO_LAUNCH_NONE
+      ? await resolveAutoLaunchInstall(autoLaunchValue)
+      : null
 
   // Restore opens hidden (revealed on takeover-ready / fallback); the plain
   // dashboard boot reveals on first paint as before.
@@ -301,7 +308,7 @@ async function openStartupSurface(): Promise<void> {
     // guard), show the dashboard rather than leaving the window invisible.
     const timer = setTimeout(
       () => revealStartupRestoreDashboard(entry.windowKey),
-      STARTUP_RESTORE_REVEAL_BACKSTOP_MS,
+      STARTUP_RESTORE_REVEAL_BACKSTOP_MS
     )
     pendingStartupRestoreRevealTimers.set(entry.windowKey, timer)
 
@@ -585,7 +592,7 @@ function onLaunch({
         existing.comfyView.setBackgroundColor(SPLASH_DARK.bg)
         await showSplashPage(comfyContents, SPLASH_DARK, {
           title: i18n.t('launch.launchSplashTitle'),
-          desc: i18n.t('launch.launchSplashDesc'),
+          desc: i18n.t('launch.launchSplashDesc')
         }).catch(() => {})
         if (
           // A newer relaunch superseded this one during the splash paint —
@@ -781,19 +788,16 @@ ipcMain.handle('reset-zoom', () => {
  *     dashboard instead.
  * Resolved by sender so we reveal the exact hidden host that asked.
  */
-ipcMain.on(
-  'comfy-window:startup-restore-reveal',
-  (event, payload: { result?: unknown }) => {
-    const result = payload?.result === 'dashboard-fallback' ? 'dashboard-fallback' : 'takeover-ready'
-    for (const [windowKey, entry] of comfyWindows) {
-      if (entry.panelView?.webContents !== event.sender) continue
-      clearStartupRestoreRevealTimer(windowKey)
-      if (result === 'dashboard-fallback') recordDashboardSurface()
-      forceRevealHostWindow(windowKey)
-      return
-    }
+ipcMain.on('comfy-window:startup-restore-reveal', (event, payload: { result?: unknown }) => {
+  const result = payload?.result === 'dashboard-fallback' ? 'dashboard-fallback' : 'takeover-ready'
+  for (const [windowKey, entry] of comfyWindows) {
+    if (entry.panelView?.webContents !== event.sender) continue
+    clearStartupRestoreRevealTimer(windowKey)
+    if (result === 'dashboard-fallback') recordDashboardSurface()
+    forceRevealHostWindow(windowKey)
+    return
   }
-)
+})
 
 /**
  * First-use takeover step plumbing.
@@ -1495,6 +1499,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // throttled when GPUs are saturated). See `cloudCapacity.ts`.
     void initCloudCapacity({ distinctId: installationId })
 
+    // Same ops-flag path, same consent-bypass reasoning: the first-use
+    // picker renders while consent is still `'undecided'`, so the
+    // experiments cache would never have a value to give it. See
+    // `cloudFreeRuns.ts`.
+    void initCloudFreeRuns({ distinctId: installationId })
+
     // Hydrate the persisted cloud user-tier cache so the very first
     // dashboard render knows whether the signed-in user is on a paid
     // plan — without it, dashboard / IPP would treat returning paid
@@ -1573,7 +1583,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       opts?: { allowDuplicate?: boolean }
     ): Promise<void> => {
       const existing = getEntryByInstallationId(installationId)
-      const willFocusExisting = !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
+      const willFocusExisting =
+        !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
       recordIpcInvocation('open-install-new-window', {
         installationId,
         allowDuplicate: opts?.allowDuplicate === true,
@@ -1591,12 +1602,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         // fallback).
         const inst = await getInstallation(installationId)
         if (!inst) {
-          console.error('openInstallInNewWindow: unknown installation, not spawning', { installationId })
+          console.error('openInstallInNewWindow: unknown installation, not spawning', {
+            installationId
+          })
           return
         }
         const target = findEntryByHostWindow(openChooserHostWindow())
         if (!target) {
-          console.error('openInstallInNewWindow: spawned chooser host not in registry', { installationId })
+          console.error('openInstallInNewWindow: spawned chooser host not in registry', {
+            installationId
+          })
           return
         }
         mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
@@ -2314,7 +2329,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         defaultId: 1,
         cancelId: 1,
         title: i18n.t('templateQuit.title'),
-        message: i18n.t('templateQuit.message'),
+        message: i18n.t('templateQuit.message')
       })
       if (choice === 1) {
         event.preventDefault()
