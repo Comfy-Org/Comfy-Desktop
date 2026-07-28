@@ -286,6 +286,13 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     pendingFirstUseAutoLaunchId.value = null
     pendingCameFromLocalBranch.value = payload?.cameFromLocalBranch === true
 
+    // Lock the file menu to Skip Onboarding for the whole handoff —
+    // before the express install / wizard open, which can spend seconds
+    // on network fetches. FirstUseTakeover's unmount and the overlay
+    // watcher in usePanelOverlays both skip their `'none'` push for
+    // chain handoffs, so this assert can't be clobbered mid-swap.
+    window.api.setFirstUseMode('post-consent')
+
     if (payload?.express === true) {
       const expressOk = await runExpressInstall()
       if (expressOk) return
@@ -296,11 +303,6 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     }
 
     await opts.switchPanel('new-install', 'first_use')
-    // FirstUseTakeover.onUnmounted just pushed `'none'` as the chain
-    // swap unmounted it. Re-assert `'post-consent'` so the file-menu
-    // builder keeps the chain locked down to Skip Onboarding while
-    // the new-install / install-progress takeover is up.
-    window.api.setFirstUseMode('post-consent')
   }
 
   /** Express install — the "skip Configure" path. Runs the Standalone
@@ -490,17 +492,17 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     // Dismiss the takeover before kicking off the migration so the
     // Tier 2 progress modal isn't blocked by the takeover overlay.
     opts.dismissTakeoverDirect()
+    // dismissTakeoverDirect pushed `'none'` as it cleared the first-use
+    // overlay; re-assert `'post-consent'` immediately (not after the
+    // migration op resolves) so the file menu stays locked down until
+    // the progress takeover's own `'loading-lockdown'` push takes over.
+    window.api.setFirstUseMode('post-consent')
     await opts.handleShowProgress({
       installationId: legacy.id,
       title: `Migrating — ${legacy.name}`,
       apiCall: () => window.api.runAction(legacy!.id, 'migrate-to-standalone', result),
       cancellable: true
     })
-    // dismissTakeoverDirect pushed `'none'` as it cleared the first-use
-    // overlay; re-assert `'post-consent'` so the file-menu builder
-    // keeps the chain locked down to Skip Onboarding for the duration
-    // of the migration progress + auto-launch.
-    window.api.setFirstUseMode('post-consent')
   }
 
   /** Wrapper around `closeOverlay` for the new-install takeover branch

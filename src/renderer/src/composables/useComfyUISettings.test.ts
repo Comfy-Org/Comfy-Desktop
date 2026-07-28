@@ -1,7 +1,7 @@
 import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope, nextTick, ref } from 'vue'
+import { effectScope, nextTick, ref, type Ref } from 'vue'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -669,6 +669,133 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     // No markRunning — stopped install picks up new values on next
     // launch, so there is nothing pending.
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.size).toBe(0)
+    scope.stop()
+  })
+
+  function markLaunching(id: string): void {
+    useSessionStore().launchingInstances.set(id, { installationName: id.toUpperCase() })
+  }
+
+  // The boot window (#1300): the spawned process consumed its configuration
+  // at launch start, so an edit made while it boots is not reflected in it -
+  // it must surface the restart CTA once the instance is running.
+  it('marks dirty during the boot window and keeps it once the instance is running', async () => {
+    const { composable, scope } = await mountWithField('a', 'window')
+    markLaunching('a')
+    await nextTick()
+
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    // launching -> running exactly as the session store's instance-started
+    // handler does it: launching dropped and running set in the same tick.
+    useSessionStore().launchingInstances.delete('a')
+    markRunning('a')
+    await nextTick()
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+    scope.stop()
+  })
+
+  it('reverting a boot-window edit to baseline drops the pending state', async () => {
+    const { composable, scope } = await mountWithField('a', 'window')
+    markLaunching('a')
+    await nextTick()
+
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    await composable.updateField(makeRestartField('launchMode', 'console'), 'window')
+    expect(composable.pendingRestartFieldIds.value.size).toBe(0)
+    scope.stop()
+  })
+
+  it('clears boot-window edits when the launch fails (nothing left to apply while stopped)', async () => {
+    const { composable, scope } = await mountWithField('a', 'window')
+    markLaunching('a')
+    await nextTick()
+
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    // instance-launch-failed: launching ends without running. The persisted
+    // value will be picked up by the next launch, so nothing is pending.
+    useSessionStore().launchingInstances.delete('a')
+    await nextTick()
+    expect(composable.pendingRestartFieldIds.value.size).toBe(0)
+    scope.stop()
+  })
+
+  it('clears pending state from a running session the moment a new launch begins', async () => {
+    const { composable, scope } = await mountWithField('a', 'window')
+    markRunning('a')
+
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    // Restart flow without a visible running -> stopped dip: the relaunch
+    // re-reads the persisted values, so the rising launching edge clears.
+    markLaunching('a')
+    await nextTick()
+    expect(composable.pendingRestartFieldIds.value.size).toBe(0)
+    scope.stop()
+  })
+
+  // Lifecycle cleanup must be keyed on the install id, not the picker
+  // selection - an off-screen install's launch failure or stop would
+  // otherwise leave a stale "Restart to apply" tag behind.
+  async function mountTwoInstalls() {
+    const installation = ref<Installation | null>(makeInstall('a', 'A'))
+    const api = installMockApi({
+      getDetailSections: vi.fn(() =>
+        Promise.resolve([makeSectionWithField(makeRestartField('launchMode', 'window'))]),
+      ),
+    })
+    const scope = effectScope()
+    let composable!: ReturnType<typeof useComfyUISettings>
+    scope.run(() => {
+      composable = useComfyUISettings({ installation, onShowProgress: vi.fn() })
+    })
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+    return { composable, api, installation, scope }
+  }
+
+  async function selectInstall(
+    installation: Ref<Installation | null>,
+    id: string,
+  ): Promise<void> {
+    installation.value = makeInstall(id, id.toUpperCase())
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  it('clears boot-window edits when an off-screen install fails its launch', async () => {
+    const { composable, installation, scope } = await mountTwoInstalls()
+    markLaunching('a')
+    await nextTick()
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    // A fails while B is selected; re-selecting A must not resurrect the tag.
+    await selectInstall(installation, 'b')
+    useSessionStore().launchingInstances.delete('a')
+    await nextTick()
+    await selectInstall(installation, 'a')
+    expect(composable.pendingRestartFieldIds.value.size).toBe(0)
+    scope.stop()
+  })
+
+  it('clears pending state when an off-screen running install stops', async () => {
+    const { composable, installation, scope } = await mountTwoInstalls()
+    markRunning('a')
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    await selectInstall(installation, 'b')
+    useSessionStore().runningInstances.delete('a')
+    await nextTick()
+    await selectInstall(installation, 'a')
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
     scope.stop()
   })
