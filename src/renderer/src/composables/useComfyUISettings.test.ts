@@ -521,6 +521,45 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     scope.stop()
   })
 
+  it('copy-pytorch warns in its prompt, stops the running install, and runs without an auto-relaunch', async () => {
+    // Like copy-update: the op targets the new copy, so the source install
+    // is stopped for a consistent venv copy and intentionally left stopped.
+    const api = installMockApi({
+      stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
+        useSessionStore().runningInstances.delete(id)
+      }),
+      runAction: vi.fn().mockResolvedValue({ ok: true, newInstallationId: 'a-prime' }),
+    })
+    markRunning('a', 'A')
+    dialogsSpies.prompt.mockResolvedValue('A copy')
+    const onShowProgress = vi.fn()
+    const { composable, scope } = mountComposable(makeInstall('a', 'A'), onShowProgress)
+
+    await composable.runAction({
+      id: 'copy-pytorch',
+      label: 'Copy & Change PyTorch',
+      showProgress: true,
+      data: { stackId: 'pytorch-index:cu126:2.11.0' },
+      prompt: { title: 'Copy & Change PyTorch', message: 'Name the copy.', field: 'name' },
+    } as ActionDef)
+
+    // The stop warning lands on the prompt (the action's only surface).
+    const promptArg = dialogsSpies.prompt.mock.calls[0]![0] as { message: string }
+    expect(promptArg.message).toBe('errors.willStopRunning\n\nName the copy.')
+
+    const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
+    expect(opts.triggersInstanceStart).toBe(false)
+    await opts.apiCall()
+
+    expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
+    expect(api.runAction).toHaveBeenCalledTimes(1)
+    expect(api.runAction).toHaveBeenCalledWith('a', 'copy-pytorch', {
+      stackId: 'pytorch-index:cu126:2.11.0',
+      name: 'A copy',
+    })
+    scope.stop()
+  })
+
   it('apiCall does not stop or relaunch when the install is not running', async () => {
     // Wasn't running → nothing to stop or relaunch; just invoke the op.
     const api = installMockApi({

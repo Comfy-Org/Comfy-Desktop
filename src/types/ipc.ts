@@ -1599,6 +1599,7 @@ export const REQUIRES_STOPPED = new Set([
   'delete',
   'copy',
   'copy-update',
+  'copy-pytorch',
   'release-update',
   'migrate-to-standalone',
   'snapshot-restore',
