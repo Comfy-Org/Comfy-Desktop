@@ -62,14 +62,6 @@ function firstLaunchGuardPath(): string {
   return path.join(configDir(), 'first-launch-completed')
 }
 
-export function hasCompletedFirstLaunch(): boolean {
-  try {
-    return fs.existsSync(firstLaunchGuardPath())
-  } catch {
-    return true
-  }
-}
-
 /**
  * One-shot first-launch marker. Returns `true` exactly once per installation
  * (the first boot where the guard file does not yet exist) and writes the
@@ -78,7 +70,13 @@ export function hasCompletedFirstLaunch(): boolean {
  * rather than losing the first-launch anchor of the acquisition funnel.
  */
 export function consumeFirstLaunch(): boolean {
-  if (hasCompletedFirstLaunch()) return false
+  let isFirst: boolean
+  try {
+    isFirst = !fs.existsSync(firstLaunchGuardPath())
+  } catch {
+    isFirst = false
+  }
+  if (!isFirst) return false
   try {
     fs.mkdirSync(path.dirname(firstLaunchGuardPath()), { recursive: true })
     fs.writeFileSync(firstLaunchGuardPath(), new Date().toISOString())

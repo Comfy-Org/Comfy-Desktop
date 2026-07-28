@@ -1424,9 +1424,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
-    const anonymousDistinctId = recoverPendingIdentityRotation(
-      getOrCreateAnonymousDistinctId()
-    )
+    const anonymousDistinctId = recoverPendingIdentityRotation(getOrCreateAnonymousDistinctId())
 
     mainTelemetry.bindAnonymousId(anonymousDistinctId, installationId, {
       app_version: APP_VERSION,
@@ -1442,11 +1440,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
 
     const isFirstLaunch = consumeFirstLaunch()
-    const pendingDownloadToken = readPendingDownloadToken(anonymousDistinctId)
+    const pendingDownloadToken = readPendingDownloadToken()
     if (pendingDownloadToken) {
       mainTelemetry.deferDownloadTokenAlias({
         downloadToken: pendingDownloadToken.token,
-        anonymousId: pendingDownloadToken.anonymousId,
         installationId,
         source: pendingDownloadToken.source,
         attachToFirstLaunch: isFirstLaunch,
@@ -1454,9 +1451,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           clearPendingDownloadToken()
           markDownloadTokenAttributed()
         },
-        onDiscarded: () => {
-          clearPendingDownloadToken()
-        }
+        onDiscarded: clearPendingDownloadToken
       })
     }
 
@@ -2085,8 +2080,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         // "Restart" label from (`activeInstallationId` folds in
         // `previewInstallationId`), so it must be accepted here too or a
         // restart clicked during a first boot is a silent no-op.
-        const boundInstallationId =
-          parentEntry.installationId ?? parentEntry.previewInstallationId
+        const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
         if (boundInstallationId !== installationId) return
         // Confirm only when the restart will kill a local process
         // (issue #654). Cloud/remote restarts skip the modal.

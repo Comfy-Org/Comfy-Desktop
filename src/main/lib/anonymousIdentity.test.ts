@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as SafeFile from './safe-file'
 
 let testUserData = ''
-const safeFileMock = vi.hoisted(() => ({ failWrites: false, failNextWrites: 0 }))
+const safeFileMock = vi.hoisted(() => ({ failWrites: false }))
 
 vi.mock('./paths', () => ({
   configDir: () => testUserData
@@ -17,10 +17,6 @@ vi.mock('./safe-file', async (importOriginal) => {
     ...actual,
     writeFileSafe: (...args: Parameters<typeof actual.writeFileSafe>) => {
       if (safeFileMock.failWrites) throw new Error('disk unavailable')
-      if (safeFileMock.failNextWrites > 0) {
-        safeFileMock.failNextWrites -= 1
-        throw new Error('transient rename lock')
-      }
       return actual.writeFileSafe(...args)
     }
   }
@@ -28,29 +24,27 @@ vi.mock('./safe-file', async (importOriginal) => {
 
 import {
   anonymousDistinctIdPath,
-  clearPersistedUnmergeableAnonymousEpoch,
   getOrCreateAnonymousDistinctId,
-  hasPersistedUnmergeableAnonymousEpoch,
+  normalizeAnonymousDistinctId,
   persistAnonymousDistinctId,
-  persistUnmergeableAnonymousEpoch,
   readPersistedAnonymousDistinctId,
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import {
   clearPendingIdentityMerges,
-  clearPendingPersonProperties,
   enqueuePendingIdentityMerge,
-  persistPendingPersonProperties,
   readPendingIdentityMerges,
-  readPendingPersonProperties,
   recoverPendingIdentityRotation,
   reservePendingIdentityMerge
 } from './pendingIdentityMerge'
 
+const ANONYMOUS_ID_1 = '019810a3-1d3c-7bde-9c7a-3f2b6f2a4e11'
+const ANONYMOUS_ID_2 = '019810a3-1d3c-7bde-9c7a-3f2b6f2a4e12'
+const ANONYMOUS_ID_3 = '019810a3-1d3c-7bde-9c7a-3f2b6f2a4e13'
+
 beforeEach(() => {
   testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'anonymous-identity-test-'))
   safeFileMock.failWrites = false
-  safeFileMock.failNextWrites = 0
 })
 
 afterEach(() => {
@@ -58,229 +52,83 @@ afterEach(() => {
 })
 
 describe('anonymousIdentity', () => {
-  it('creates one persisted D and reuses it across startups', () => {
+  it('persists and reuses one anonymous UUID', () => {
     const created = getOrCreateAnonymousDistinctId()
-    expect(created).toBeTruthy()
+
     expect(readPersistedAnonymousDistinctId()).toBe(created)
     expect(getOrCreateAnonymousDistinctId()).toBe(created)
+    expect(fs.readFileSync(anonymousDistinctIdPath(), 'utf-8')).toBe(created)
   })
 
-  it('rotates to a fresh persisted D', () => {
-    expect(persistAnonymousDistinctId('previous-anon-id')).toBe(true)
-    const rotated = rotatePersistedAnonymousDistinctId()
-    expect(rotated).not.toBe('previous-anon-id')
-    expect(readPersistedAnonymousDistinctId()).toBe(rotated)
+  it.each([
+    '',
+    'anonymous',
+    ANONYMOUS_ID_1.toUpperCase(),
+    ANONYMOUS_ID_1.slice(1),
+    `${ANONYMOUS_ID_1}a`
+  ])('rejects invalid anonymous id %j', (value) => {
+    expect(normalizeAnonymousDistinctId(value)).toBeNull()
+    expect(persistAnonymousDistinctId(value)).toBe(false)
   })
 
-  it('round-trips an exact Unicode website identity without trimming it', () => {
-    const websiteAnonymousId = '\ufeff  website visitor 🚀  '
-
-    expect(persistAnonymousDistinctId(websiteAnonymousId)).toBe(true)
-    expect(readPersistedAnonymousDistinctId()).toBe(websiteAnonymousId)
-    expect(fs.readFileSync(anonymousDistinctIdPath(), 'utf-8')).not.toContain(websiteAnonymousId)
-  })
-
-  it('fails closed instead of adopting an unpersisted rotation', () => {
-    expect(persistAnonymousDistinctId('previous-anon-id')).toBe(true)
+  it('rotates only after the replacement is persisted', () => {
+    expect(persistAnonymousDistinctId(ANONYMOUS_ID_1)).toBe(true)
     safeFileMock.failWrites = true
+
     expect(rotatePersistedAnonymousDistinctId()).toBeNull()
-    expect(readPersistedAnonymousDistinctId()).toBe('previous-anon-id')
-  })
-
-  it('fails closed on a Windows rename lock without retrying on the main thread', () => {
-    expect(persistAnonymousDistinctId('previous-anon-id')).toBe(true)
-    let attempts = 0
-    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
-      attempts++
-      const error = new Error('temporarily locked') as NodeJS.ErrnoException
-      error.code = 'EPERM'
-      throw error
-    })
-
-    try {
-      expect(rotatePersistedAnonymousDistinctId()).toBeNull()
-      expect(readPersistedAnonymousDistinctId()).toBe('previous-anon-id')
-      expect(attempts).toBe(1)
-    } finally {
-      renameSpy.mockRestore()
-    }
-  })
-
-  it('persists an unmergeable epoch across restarts until a clean rotation clears it', () => {
-    expect(persistAnonymousDistinctId('tainted-anon-id')).toBe(true)
-    expect(persistUnmergeableAnonymousEpoch()).toBe(true)
-
-    expect(hasPersistedUnmergeableAnonymousEpoch()).toBe(true)
-    expect(readPersistedAnonymousDistinctId()).toBe('tainted-anon-id')
-    expect(rotatePersistedAnonymousDistinctId()).not.toBeNull()
-    expect(clearPersistedUnmergeableAnonymousEpoch()).toBe(true)
-    expect(hasPersistedUnmergeableAnonymousEpoch()).toBe(false)
-  })
-
-  it('deletes the reusable identity if the taint marker cannot be written', () => {
-    expect(persistAnonymousDistinctId('tainted-anon-id')).toBe(true)
-    safeFileMock.failWrites = true
-
-    expect(persistUnmergeableAnonymousEpoch()).toBe(true)
-    expect(readPersistedAnonymousDistinctId()).toBeNull()
-    expect(hasPersistedUnmergeableAnonymousEpoch()).toBe(false)
-  })
-
-  it('rejects malformed persisted identities', () => {
-    fs.writeFileSync(anonymousDistinctIdPath(), 'bad\nidentity', 'utf-8')
-    expect(readPersistedAnonymousDistinctId()).toBeNull()
-    expect(persistAnonymousDistinctId('')).toBe(false)
-    expect(persistAnonymousDistinctId('\ud800')).toBe(false)
-  })
-
-  it('rejects a PostHog-illegal identity so boot regenerates a mergeable D', () => {
-    // The full illegal-ID vocabulary is covered by opaqueIdentifier.test.ts;
-    // this proves persist/read consult the shared check.
-    expect(persistAnonymousDistinctId('anonymous')).toBe(false)
-
-    fs.writeFileSync(anonymousDistinctIdPath(), 'undefined', 'utf-8')
-    expect(readPersistedAnonymousDistinctId()).toBeNull()
-    const regenerated = getOrCreateAnonymousDistinctId()
-    expect(regenerated).not.toBe('undefined')
-    expect(readPersistedAnonymousDistinctId()).toBe(regenerated)
-  })
-
-  it('uses PostHog ingestion limits for Unicode identities', () => {
-    const exactLimit = '🚀'.repeat(200)
-
-    expect(persistAnonymousDistinctId(exactLimit)).toBe(true)
-    expect(readPersistedAnonymousDistinctId()).toBe(exactLimit)
-    expect(persistAnonymousDistinctId(`${exactLimit}🚀`)).toBe(false)
-    expect(persistAnonymousDistinctId('"anonymous"')).toBe(false)
+    expect(readPersistedAnonymousDistinctId()).toBe(ANONYMOUS_ID_1)
   })
 })
 
 describe('pendingIdentityMerge', () => {
-  it('persists merge retries until their acknowledged ids are cleared', () => {
-    const first = enqueuePendingIdentityMerge({
-      anonymousId: 'anonymous-1',
-      userId: 'firebase-1',
-      nextAnonymousId: 'anonymous-2',
-      installationId: 'installation-1',
-      personSet: { installation_id: 'installation-1', is_authenticated: true },
-      personSetOnce: { first_generation_at: 'first' }
-    })
-    const second = enqueuePendingIdentityMerge({
-      anonymousId: 'anonymous-2',
-      userId: 'firebase-2',
-      nextAnonymousId: 'anonymous-3',
+  function merge(anonymousId: string, nextAnonymousId: string, userId: string) {
+    return {
+      anonymousId,
+      userId,
+      nextAnonymousId,
       installationId: 'installation-1',
       personSet: { installation_id: 'installation-1', is_authenticated: true }
-    })
+    }
+  }
 
-    expect(first).not.toBeNull()
-    expect(second).not.toBeNull()
+  it('keeps retries until their acknowledged ids are cleared', () => {
+    const first = enqueuePendingIdentityMerge(merge(ANONYMOUS_ID_1, ANONYMOUS_ID_2, 'firebase-1'))
+    const second = enqueuePendingIdentityMerge(merge(ANONYMOUS_ID_2, ANONYMOUS_ID_3, 'firebase-2'))
+
     expect(readPendingIdentityMerges()).toHaveLength(2)
     expect(clearPendingIdentityMerges(new Set([first!.id]))).toBe(true)
     expect(readPendingIdentityMerges()).toEqual([second])
   })
 
-  it('reserves the retry record before replacing the reusable anonymous id', () => {
-    expect(persistAnonymousDistinctId('anonymous-1')).toBe(true)
+  it('reserves the retry before rotating the reusable anonymous id', () => {
+    expect(persistAnonymousDistinctId(ANONYMOUS_ID_1)).toBe(true)
 
     const pending = reservePendingIdentityMerge({
-      anonymousId: 'anonymous-1',
+      anonymousId: ANONYMOUS_ID_1,
       userId: 'firebase-1',
       installationId: 'installation-1',
       personSet: { installation_id: 'installation-1', is_authenticated: true }
     })
 
-    expect(pending).not.toBeNull()
     expect(readPendingIdentityMerges()).toEqual([pending])
     expect(readPersistedAnonymousDistinctId()).toBe(pending!.nextAnonymousId)
   })
 
-  it('preserves the exact opaque anonymous id in durable retries', () => {
-    const anonymousId = '\ufeff  website visitor 🚀  '
-    expect(persistAnonymousDistinctId(anonymousId)).toBe(true)
+  it('finishes an interrupted rotation before first capture', () => {
+    expect(persistAnonymousDistinctId(ANONYMOUS_ID_1)).toBe(true)
+    enqueuePendingIdentityMerge(merge(ANONYMOUS_ID_1, ANONYMOUS_ID_2, 'firebase-1'))
 
-    const pending = reservePendingIdentityMerge({
-      anonymousId,
-      userId: 'firebase-1',
-      installationId: 'installation-1',
-      personSet: { installation_id: 'installation-1', is_authenticated: true }
-    })
-
-    expect(pending?.anonymousId).toBe(anonymousId)
-    expect(readPendingIdentityMerges()[0]?.anonymousId).toBe(anonymousId)
+    expect(recoverPendingIdentityRotation(ANONYMOUS_ID_1)).toBe(ANONYMOUS_ID_2)
+    expect(readPersistedAnonymousDistinctId()).toBe(ANONYMOUS_ID_2)
   })
 
-  it('persists and conditionally clears pre-auth person properties', () => {
-    const pending = persistPendingPersonProperties({
-      personSet: { gpu_tier: 'high' },
-      personSetOnce: { first_generation_at: 'first' }
-    })
-
-    expect(pending).not.toBeNull()
-    expect(readPendingPersonProperties()).toEqual(pending)
-    expect(clearPendingPersonProperties('another-buffer')).toBe(true)
-    expect(readPendingPersonProperties()).toEqual(pending)
-    expect(clearPendingPersonProperties(pending!.id)).toBe(true)
-    expect(readPendingPersonProperties()).toBeNull()
-  })
-
-  it('persists the Firebase owner of a post-auth property buffer', () => {
-    const pending = persistPendingPersonProperties({
-      userId: 'firebase-user',
-      ownedPersonSet: { plan: 'pro' }
-    })
-
-    expect(readPendingPersonProperties()).toEqual(pending)
-    expect(pending?.userId).toBe('firebase-user')
-  })
-
-  it('quarantines cleared properties when Windows keeps the buffer file locked', () => {
-    const pending = persistPendingPersonProperties({
-      personSet: { previous_account_plan: 'pro' }
-    })
-    const rmSync = fs.rmSync.bind(fs)
-    const removeSpy = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
-      if (target.toString().endsWith('posthog-pending-person-properties.json')) {
-        const error = new Error('temporarily locked') as NodeJS.ErrnoException
-        error.code = 'EPERM'
-        throw error
-      }
-      return rmSync(target, options)
-    })
-
-    try {
-      expect(clearPendingPersonProperties(pending!.id)).toBe(true)
-      expect(readPendingPersonProperties()).toBeNull()
-    } finally {
-      removeSpy.mockRestore()
-    }
-
-    expect(readPendingPersonProperties()).toBeNull()
-  })
-
-  it('completes an interrupted reserved rotation before first capture', () => {
-    expect(persistAnonymousDistinctId('anonymous-1')).toBe(true)
-    const pending = enqueuePendingIdentityMerge({
-      anonymousId: 'anonymous-1',
-      userId: 'firebase-1',
-      nextAnonymousId: 'anonymous-2',
-      installationId: 'installation-1',
-      personSet: { installation_id: 'installation-1', is_authenticated: true }
-    })
-
-    expect(recoverPendingIdentityRotation('anonymous-1')).toBe('anonymous-2')
-    expect(readPersistedAnonymousDistinctId()).toBe('anonymous-2')
-    expect(readPendingIdentityMerges()).toEqual([pending])
-  })
-
-  it('does not identify without a durable retry record', () => {
+  it('does not rotate without a durable retry record', () => {
     safeFileMock.failWrites = true
 
     expect(
-      enqueuePendingIdentityMerge({
-        anonymousId: 'anonymous-1',
+      reservePendingIdentityMerge({
+        anonymousId: ANONYMOUS_ID_1,
         userId: 'firebase-1',
-        nextAnonymousId: 'anonymous-2',
         installationId: 'installation-1',
         personSet: { installation_id: 'installation-1', is_authenticated: true }
       })

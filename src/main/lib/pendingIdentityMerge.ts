@@ -2,13 +2,11 @@ import { randomUUID } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 import { configDir } from './paths'
-import { normalizeOpaqueIdentifier, normalizePostHogDistinctId } from './opaqueIdentifier'
-import { writeFileSafe } from './safe-file'
 import { normalizeAnonymousDistinctId, persistAnonymousDistinctId } from './anonymousIdentity'
+import { normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { writeFileSafe } from './safe-file'
 
 const PENDING_IDENTITY_MERGES_FILE = 'posthog-pending-identity-merges.json'
-const PENDING_PERSON_PROPERTIES_FILE = 'posthog-pending-person-properties.json'
-const DISCARDED_PERSON_PROPERTIES_FILE = 'posthog-discarded-person-properties.txt'
 const MAX_PENDING_IDENTITY_MERGES = 32
 
 export interface PendingIdentityMerge {
@@ -19,34 +17,12 @@ export interface PendingIdentityMerge {
   installationId: string
   personSet: PendingIdentityProperties
   personSetOnce?: PendingIdentityProperties
-  personPropertiesBufferId?: string
 }
 
 export type PendingIdentityProperties = Record<string, boolean | number | string | null>
 
-export interface PendingPersonProperties {
-  id: string
-  userId?: string
-  personSet?: PendingIdentityProperties
-  personSetOnce?: PendingIdentityProperties
-  ownedPersonSet?: PendingIdentityProperties
-  ownedPersonSetOnce?: PendingIdentityProperties
-}
-
 function pendingIdentityMergesPath(): string {
   return path.join(configDir(), PENDING_IDENTITY_MERGES_FILE)
-}
-
-function pendingPersonPropertiesPath(): string {
-  return path.join(configDir(), PENDING_PERSON_PROPERTIES_FILE)
-}
-
-function discardedPersonPropertiesPath(): string {
-  return path.join(configDir(), DISCARDED_PERSON_PROPERTIES_FILE)
-}
-
-function normalizeUserIdentity(value: unknown): string | null {
-  return normalizePostHogDistinctId(value)
 }
 
 function normalizeEntry(value: unknown): PendingIdentityMerge | null {
@@ -54,10 +30,9 @@ function normalizeEntry(value: unknown): PendingIdentityMerge | null {
   const entry = value as Record<string, unknown>
   const id = normalizeOpaqueIdentifier(entry.id, 64)
   const anonymousId = normalizeAnonymousDistinctId(entry.anonymousId)
-  const userId = normalizeUserIdentity(entry.userId)
+  const userId = normalizeOpaqueIdentifier(entry.userId, 256)
   const nextAnonymousId = normalizeAnonymousDistinctId(entry.nextAnonymousId)
   const installationId = normalizeOpaqueIdentifier(entry.installationId, 256)
-  const personPropertiesBufferId = normalizeOpaqueIdentifier(entry.personPropertiesBufferId, 64)
   if (!id || !anonymousId || !userId || !nextAnonymousId || !installationId) return null
   const personSet = normalizeProperties(entry.personSet) ?? {
     installation_id: installationId,
@@ -71,44 +46,7 @@ function normalizeEntry(value: unknown): PendingIdentityMerge | null {
     nextAnonymousId,
     installationId,
     personSet,
-    ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {}),
-    ...(personPropertiesBufferId ? { personPropertiesBufferId } : {})
-  }
-}
-
-function normalizePendingPersonProperties(value: unknown): PendingPersonProperties | null {
-  if (!value || typeof value !== 'object') return null
-  const entry = value as Record<string, unknown>
-  const id = normalizeOpaqueIdentifier(entry.id, 64)
-  if (!id) return null
-  const userId = entry.userId === undefined ? null : normalizeUserIdentity(entry.userId)
-  if (entry.userId !== undefined && !userId) return null
-  const personSet = normalizeProperties(entry.personSet)
-  const personSetOnce = normalizeProperties(entry.personSetOnce)
-  const ownedPersonSet = normalizeProperties(entry.ownedPersonSet)
-  const ownedPersonSetOnce = normalizeProperties(entry.ownedPersonSetOnce)
-  const hasOwnedProperties =
-    (ownedPersonSet && Object.keys(ownedPersonSet).length > 0) ||
-    (ownedPersonSetOnce && Object.keys(ownedPersonSetOnce).length > 0)
-  if (hasOwnedProperties && !userId) return null
-  if (
-    (!personSet || Object.keys(personSet).length === 0) &&
-    (!personSetOnce || Object.keys(personSetOnce).length === 0) &&
-    !hasOwnedProperties
-  ) {
-    return null
-  }
-  return {
-    id,
-    ...(userId && hasOwnedProperties ? { userId } : {}),
-    ...(personSet && Object.keys(personSet).length > 0 ? { personSet } : {}),
-    ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {}),
-    ...(ownedPersonSet && Object.keys(ownedPersonSet).length > 0
-      ? { ownedPersonSet }
-      : {}),
-    ...(ownedPersonSetOnce && Object.keys(ownedPersonSetOnce).length > 0
-      ? { ownedPersonSetOnce }
-      : {})
+    ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {})
   }
 }
 
@@ -140,101 +78,6 @@ export function readPendingIdentityMerges(): PendingIdentityMerge[] {
   } catch {
     return []
   }
-}
-
-function readPendingPersonPropertiesFile(): PendingPersonProperties | null {
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(pendingPersonPropertiesPath(), 'utf-8'))
-    return normalizePendingPersonProperties(parsed)
-  } catch {
-    return null
-  }
-}
-
-function readDiscardedPersonPropertiesId(): string | null {
-  try {
-    return normalizeOpaqueIdentifier(
-      fs.readFileSync(discardedPersonPropertiesPath(), 'utf-8'),
-      64
-    )
-  } catch {
-    return null
-  }
-}
-
-function clearDiscardedPersonPropertiesId(): void {
-  try {
-    fs.rmSync(discardedPersonPropertiesPath(), { force: true })
-  } catch {
-    // A stale marker is harmless and will be retried on the next read.
-  }
-}
-
-export function readPendingPersonProperties(): PendingPersonProperties | null {
-  const current = readPendingPersonPropertiesFile()
-  const discardedId = readDiscardedPersonPropertiesId()
-  if (!discardedId) return current
-  if (!current) return null
-  if (current.id !== discardedId) {
-    clearDiscardedPersonPropertiesId()
-    return current
-  }
-  try {
-    fs.rmSync(pendingPersonPropertiesPath(), { force: true })
-    clearDiscardedPersonPropertiesId()
-  } catch {
-    // The durable marker keeps the stale payload quarantined until deletion succeeds.
-  }
-  return null
-}
-
-export function persistPendingPersonProperties(
-  properties: Omit<PendingPersonProperties, 'id'> & { id?: string }
-): PendingPersonProperties | null {
-  const normalized = normalizePendingPersonProperties({
-    ...properties,
-    id: properties.id ?? randomUUID()
-  })
-  if (!normalized) return null
-  try {
-    writeFileSafe(pendingPersonPropertiesPath(), JSON.stringify(normalized))
-    return normalized
-  } catch {
-    return null
-  }
-}
-
-export function clearPendingPersonProperties(expectedId?: string): boolean {
-  const current = readPendingPersonPropertiesFile()
-  if (expectedId && current && current.id !== expectedId) return true
-  const discardedId = expectedId ?? current?.id
-  if (!discardedId) {
-    try {
-      fs.rmSync(pendingPersonPropertiesPath(), { force: true })
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  try {
-    writeFileSafe(discardedPersonPropertiesPath(), discardedId)
-  } catch {
-    try {
-      fs.rmSync(pendingPersonPropertiesPath(), { force: true })
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  try {
-    fs.rmSync(pendingPersonPropertiesPath(), { force: true })
-  } catch {
-    return true
-  }
-  clearDiscardedPersonPropertiesId()
-  return true
 }
 
 export function enqueuePendingIdentityMerge(
