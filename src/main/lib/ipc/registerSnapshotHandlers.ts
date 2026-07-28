@@ -380,10 +380,13 @@ export function registerSnapshotHandlers(): void {
       // and committed history must only contain states THIS install has
       // actually been in — the file's older snapshots never were.
       const newest = pending.envelope.snapshots[0]!
-      const restoreToken = await stageSnapshotEnvelope({
-        ...pending.envelope,
-        snapshots: [newest]
-      })
+      const restoreToken = await stageSnapshotEnvelope(
+        {
+          ...pending.envelope,
+          snapshots: [newest]
+        },
+        installationId
+      )
       const torchStackNotice = await importTorchStackNotice(inst, newest)
       return { ok: true, imported: 1, restoreToken, torchStackNotice }
     } catch (err) {
@@ -577,24 +580,16 @@ export function registerSnapshotHandlers(): void {
       // bundle.
       const managedTorch =
         targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
-      let installVariant: FieldOption
-      if (managedTorch && managedTorch.source.kind === 'comfy-bundle') {
-        installVariant =
-          buildPinnedVariant(
-            selectedRelease,
-            matched.data?.variantId as string,
-            managedTorch.source.bundleTag,
-            gpu?.id
-          ) ?? matched
-      } else {
-        installVariant =
-          buildPinnedVariant(
-            selectedRelease,
-            matched.data?.variantId as string,
-            targetSnapshot.comfyui.releaseTag,
-            gpu?.id
-          ) ?? matched
-      }
+      const pinTag = managedTorch && managedTorch.source.kind === 'comfy-bundle'
+        ? managedTorch.source.bundleTag
+        : targetSnapshot.comfyui.releaseTag
+      const installVariant: FieldOption =
+        buildPinnedVariant(
+          selectedRelease,
+          matched.data?.variantId as string,
+          pinTag,
+          gpu?.id
+        ) ?? matched
 
       const instData = {
         sourceId: source.id,

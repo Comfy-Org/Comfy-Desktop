@@ -246,7 +246,12 @@ export const sessionLifecycleEvents = new EventEmitter()
  *  the app log (#1250) instead of condemning the install. */
 export function snapshotRestoreFailureResult(installationId: string, restoreError: string): { ok: false; message: string } {
   const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', { message: restoreError })
-  appendLog(installationId, `\n${message}\n`)
+  // Best-effort: a diagnostic write must never mask the failure it records.
+  try {
+    appendLog(installationId, `\n${message}\n`)
+  } catch (err) {
+    console.warn('Failed to append snapshot restore failure to app log:', err)
+  }
   return { ok: false, message }
 }
 

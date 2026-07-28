@@ -120,7 +120,7 @@ export async function handleAction(
 
     sendOutput('Loading snapshot…\n')
     const stagedEnvelope = restoreToken
-      ? await snapshots.loadStagedSnapshotEnvelope(restoreToken)
+      ? await snapshots.loadStagedSnapshotEnvelope(restoreToken, installation.id)
       : undefined
     const targetSnapshot = stagedEnvelope
       ? stagedEnvelope.snapshots[0]!
@@ -525,12 +525,10 @@ export async function handleAction(
 
       // comfyResult.error and pip/abort failures already returned above; only
       // best-effort custom-node failures and a rolled-back torch swap can reach
-      // here. In exact mode a staged import whose recorded torch stack was
-      // skipped did not reach its target, so it counts as a failure and the
-      // envelope must not be committed to history (#1137). In compatible mode
-      // a skipped/kept-local torch stack is a disclosed adaptation, not a
-      // failure — but it still disqualifies the envelope from being committed.
-      const torchSkippedForImport = Boolean(stagedEnvelope && torchNote && mode === 'exact')
+      // here. A skipped/kept-local torch stack can only happen in compatible
+      // mode (exact mode aborts before mutating anything) and is a disclosed
+      // adaptation, not a failure — but it still disqualifies the envelope
+      // from being committed, via `reachedTarget` below.
       // A staged import in exact mode whose protected packages still differ
       // from the snapshot's freeze — or could not be verified — did not
       // provably reach its recorded state. Like a skipped torch stack, that is
@@ -541,7 +539,7 @@ export async function handleAction(
       const protectedDriftForImport = Boolean(stagedEnvelope && mode === 'exact' &&
         (protectedDrift.length > 0 || protectedDriftUnknown))
       const totalFailures = nodeResult.failed.length + nodeResult.unreportable.length +
-        (torchFailure ? 1 : 0) + (torchSkippedForImport ? 1 : 0) + (protectedDriftForImport ? 1 : 0)
+        (torchFailure ? 1 : 0) + (protectedDriftForImport ? 1 : 0)
 
       // Collect specific failures so the error surface explains WHY a restore
       // failed instead of a bare "N operation(s) failed".
@@ -550,7 +548,6 @@ export async function handleAction(
       for (const id of nodeResult.unreportable) failureDetails.push(`Standalone node ${id}: source file is unavailable`)
       for (const e of pipResult.errors) failureDetails.push(e)
       if (torchFailure) failureDetails.push(`PyTorch: ${torchFailure}`)
-      if (torchSkippedForImport && torchNote) failureDetails.push(torchNote)
       if (protectedDriftForImport) {
         if (protectedDriftUnknown) {
           failureDetails.push(t('standalone.snapshotProtectedDriftUnknown'))

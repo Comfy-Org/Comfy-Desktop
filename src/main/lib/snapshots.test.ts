@@ -86,7 +86,7 @@ function makeEntry(overrides?: Partial<Snapshot>): SnapshotEntry {
 function makeEnvelope(snapshots?: Snapshot[]): SnapshotExportEnvelope {
   return {
     type: 'comfyui-desktop-2-snapshot',
-    version: 1,
+    version: 2,
     exportedAt: '2026-03-02T12:00:00.000Z',
     installationName: 'Test Install',
     snapshots: snapshots ?? [makeSnapshot()]
@@ -132,9 +132,20 @@ describe('validateExportEnvelope', () => {
     expect(() => validateExportEnvelope(rest)).toThrow('not a Comfy Desktop snapshot export')
   })
 
-  it('accepts a v2 envelope', () => {
-    const result = validateExportEnvelope({ ...makeEnvelope(), version: 2 })
-    expect(result.version).toBe(2)
+  it('accepts a v1 envelope with v1 snapshots', () => {
+    const result = validateExportEnvelope({ ...makeEnvelope(), version: 1 })
+    expect(result.version).toBe(1)
+  })
+
+  it('rejects a v1 envelope containing a v2 snapshot', () => {
+    // The envelope version is the compatibility gate older clients check; a v1
+    // envelope smuggling v2 snapshots would slip torch-aware data past it.
+    expect(() =>
+      validateExportEnvelope({
+        ...makeEnvelope([{ ...makeSnapshot(), version: 2 }]),
+        version: 1
+      })
+    ).toThrow('snapshot version exceeds envelope version')
   })
 
   it('rejects unknown version', () => {
@@ -867,7 +878,7 @@ describe('staged snapshot envelopes', () => {
     const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snapshot-stage-'))
     try {
       const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
-      const token = await stageSnapshotEnvelope(envelope)
+      const token = await stageSnapshotEnvelope(envelope, 'install-1')
       // Token is an opaque 32-char hex string (the shape doubles as
       // path-traversal defense when resolving the staged file back).
       expect(token).toMatch(/^[a-f0-9]{32}$/)
@@ -876,24 +887,39 @@ describe('staged snapshot envelopes', () => {
       const history = await listSnapshots(tmpDir)
       expect(history).toHaveLength(0)
 
-      const loaded = await loadStagedSnapshotEnvelope(token)
+      const loaded = await loadStagedSnapshotEnvelope(token, 'install-1')
       expect(loaded.snapshots).toHaveLength(1)
       expect(loaded.snapshots[0]!.label).toBe('staged-target')
 
       await releaseStagedSnapshotEnvelope(token)
-      await expect(loadStagedSnapshotEnvelope(token)).rejects.toThrow()
+      await expect(loadStagedSnapshotEnvelope(token, 'install-1')).rejects.toThrow()
     } finally {
       await fs.promises.rm(tmpDir, { recursive: true, force: true })
     }
   })
 
   it('rejects an invalid/traversal token', async () => {
-    await expect(loadStagedSnapshotEnvelope('not-a-token')).rejects.toThrow(
+    await expect(loadStagedSnapshotEnvelope('not-a-token', 'install-1')).rejects.toThrow(
       /invalid staged snapshot token/i
     )
-    await expect(loadStagedSnapshotEnvelope('../../etc/passwd')).rejects.toThrow(
+    await expect(loadStagedSnapshotEnvelope('../../etc/passwd', 'install-1')).rejects.toThrow(
       /invalid staged snapshot token/i
     )
+  })
+
+  it('rejects a token staged for a different installation', async () => {
+    const envelope = makeEnvelope([makeSnapshot({ label: 'bound-target' })])
+    const token = await stageSnapshotEnvelope(envelope, 'install-a')
+    try {
+      await expect(loadStagedSnapshotEnvelope(token, 'install-b')).rejects.toThrow(
+        /invalid staged snapshot token/i
+      )
+      // Still loadable for the installation it was staged for.
+      const loaded = await loadStagedSnapshotEnvelope(token, 'install-a')
+      expect(loaded.snapshots[0]!.label).toBe('bound-target')
+    } finally {
+      await releaseStagedSnapshotEnvelope(token)
+    }
   })
 
   it('release is a no-op for unknown/invalid tokens', async () => {

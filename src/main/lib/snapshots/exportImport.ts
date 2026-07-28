@@ -50,6 +50,10 @@ function isValidCustomNode(n: unknown): boolean {
 // Version tuple: PEP 440-ish public version, optionally with a local tag.
 const VALID_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
 
+function isVersionValid(val: unknown): boolean {
+  return typeof val === 'string' && VALID_VERSION.test(val)
+}
+
 /** Strict validation of the v2 `torchStack` discriminated union. Only typed,
  *  allowlisted sources are accepted — an imported snapshot can never smuggle
  *  in an arbitrary URL or expand the protected-package surface. */
@@ -57,13 +61,13 @@ function isValidTorchStack(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false
   const obj = v as Record<string, unknown>
   if (obj.kind === 'observed') {
-    if (obj.torchVersion !== null && (typeof obj.torchVersion !== 'string' || !VALID_VERSION.test(obj.torchVersion))) return false
+    if (obj.torchVersion !== null && !isVersionValid(obj.torchVersion)) return false
     // Full-tuple fields: undefined (pre-tuple record), null (recorded as
     // absent), or a valid version. A malformed value must not import — the
     // restore path pip-installs these versions verbatim.
     for (const opt of ['torchvisionVersion', 'torchaudioVersion'] as const) {
       const val = obj[opt]
-      if (val !== undefined && val !== null && (typeof val !== 'string' || !VALID_VERSION.test(val))) return false
+      if (val !== undefined && val !== null && !isVersionValid(val)) return false
     }
     return typeof obj.observedAt === 'string'
   }
@@ -73,9 +77,9 @@ function isValidTorchStack(v: unknown): boolean {
   if (typeof ref.stackId !== 'string' || typeof ref.variant !== 'string' || typeof ref.pythonVersion !== 'string') return false
   const packages = ref.packages as Record<string, unknown> | undefined
   if (!packages || typeof packages !== 'object') return false
-  if (typeof packages.torch !== 'string' || !VALID_VERSION.test(packages.torch)) return false
+  if (!isVersionValid(packages.torch)) return false
   for (const opt of ['torchvision', 'torchaudio'] as const) {
-    if (packages[opt] !== undefined && (typeof packages[opt] !== 'string' || !VALID_VERSION.test(packages[opt] as string))) return false
+    if (packages[opt] !== undefined && !isVersionValid(packages[opt])) return false
   }
   const source = ref.source as Record<string, unknown> | undefined
   if (!source || typeof source !== 'object') return false
@@ -135,6 +139,10 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
     throw new Error('File contains no snapshots')
   for (let i = 0; i < obj.snapshots.length; i++) {
     if (!isValidSnapshot(obj.snapshots[i])) throw new Error(`Invalid snapshot at index ${i}`)
+    // The envelope version exists so older clients reject torch-aware exports
+    // outright; a v1 envelope smuggling v2 snapshots would defeat that gate.
+    if ((obj.snapshots[i] as Snapshot).version > (obj.version as number))
+      throw new Error(`Invalid snapshot at index ${i}: snapshot version exceeds envelope version`)
   }
   return obj as unknown as SnapshotExportEnvelope
 }
@@ -248,27 +256,36 @@ async function pruneStaleStaged(dir: string): Promise<void> {
   } catch {}
 }
 
-/** Stage an envelope as a restore target and return its opaque token. */
-export async function stageSnapshotEnvelope(envelope: SnapshotExportEnvelope): Promise<string> {
+/** Stage an envelope as a restore target for one installation and return its
+ *  opaque token. The token is bound to the installation so a stale or
+ *  misrouted token can never restore the envelope into a different install. */
+export async function stageSnapshotEnvelope(
+  envelope: SnapshotExportEnvelope,
+  installationId: string
+): Promise<string> {
   const dir = stagingDir()
   await fs.promises.mkdir(dir, { recursive: true })
   await pruneStaleStaged(dir)
   const token = crypto.randomBytes(16).toString('hex')
   const filePath = path.join(dir, `${token}.json`)
   const tmpPath = `${filePath}.tmp`
-  await fs.promises.writeFile(tmpPath, JSON.stringify(envelope))
+  await fs.promises.writeFile(tmpPath, JSON.stringify({ installationId, envelope }))
   await fs.promises.rename(tmpPath, filePath)
   return token
 }
 
-/** Load a previously staged envelope by token. Throws if the token is invalid. */
+/** Load a previously staged envelope by token. Throws if the token is invalid
+ *  or was staged for a different installation. */
 export async function loadStagedSnapshotEnvelope(
-  token: string
+  token: string,
+  installationId: string
 ): Promise<SnapshotExportEnvelope> {
   const filePath = resolveStagedPath(token)
   if (!filePath) throw new Error('Invalid staged snapshot token')
   const content = await fs.promises.readFile(filePath, 'utf-8')
-  return validateExportEnvelope(JSON.parse(content))
+  const staged = JSON.parse(content) as { installationId?: unknown; envelope?: unknown }
+  if (staged.installationId !== installationId) throw new Error('Invalid staged snapshot token')
+  return validateExportEnvelope(staged.envelope)
 }
 
 /** Delete a staged envelope. Safe to call with an unknown/invalid token. */
