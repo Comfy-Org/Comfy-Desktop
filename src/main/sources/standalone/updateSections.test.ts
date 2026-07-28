@@ -403,6 +403,31 @@ describe('updateSections — PyTorch picker', () => {
     expect(action!.confirm?.message).not.toContain('standalone.pytorchCapConfirmWarning')
   })
 
+  it('offers Copy & Change PyTorch beside Change PyTorch, carrying the stackId and a name prompt', () => {
+    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry()])
+    const options = getPytorchOptions(baseInstall({ name: 'My Comfy', variant: 'win-nvidia' } as Partial<InstallationRecord>))
+    const option = options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
+    const copyChange = option!.data?.actions?.find((a) => a.id === 'copy-pytorch')
+    expect(copyChange).toBeDefined()
+    expect(copyChange!.data?.stackId).toBe('pytorch-index:cu128:2.11.0')
+    // Same prompt contract as Copy & Update: source name, uniquified on show.
+    expect(copyChange!.prompt?.defaultValue).toBe('My Comfy')
+    expect(copyChange!.prompt?.uniquifyDefault).toBe(true)
+  })
+
+  it('offers neither mutation action on the current stack', () => {
+    const readdir = mockInstalledDistInfo([
+      'torch-2.11.0+cu128.dist-info', 'torchvision-0.26.0+cu128.dist-info', 'torchaudio-2.11.0+cu128.dist-info',
+    ])
+    try {
+      vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry()])
+      const option = getIndexOption()
+      expect(option!.data?.actions).toBeUndefined()
+    } finally {
+      readdir.mockRestore()
+    }
+  })
+
   describe('backend-series grouping (cascading dropdowns)', () => {
     const install = (): InstallationRecord => baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
 

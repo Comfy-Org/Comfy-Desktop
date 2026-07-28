@@ -337,6 +337,13 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     enabled: true,
     data: { stackId: 's-cpu-2.11' }
   }
+  const copyChangeAction = {
+    id: 'copy-pytorch',
+    label: 'Copy & Change PyTorch',
+    style: 'default',
+    enabled: true,
+    data: { stackId: 's-cpu-2.11' }
+  }
 
   function pytorchField(value: string): DetailField {
     return {
@@ -359,7 +366,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
             installedVersion: '2.10.0+cpu',
             latestVersion: '2.11.0+cpu',
             updateAvailable: true,
-            actions: [changeAction]
+            actions: [changeAction, copyChangeAction]
           }
         }
       ]
@@ -385,5 +392,29 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const emitted = wrapper.emitted('action')
     expect(emitted).toHaveLength(1)
     expect((emitted![0]![0] as { id: string }).id).toBe('change-pytorch')
+  })
+
+  it('renders copy-pytorch as a default footer button before the accented change button', () => {
+    const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
+    const copyButton = wrapper.find('[data-testid="update-action-copy-pytorch"]')
+    expect(copyButton.exists()).toBe(true)
+    expect(copyButton.classes()).not.toContain('accent')
+    expect(copyButton.text()).toContain('Copy & Change PyTorch')
+    // Safe alternative sits before the primary action, mirroring Copy & Update.
+    const ids = wrapper.findAll('[data-testid^="update-action-"]').map((b) => b.attributes('data-testid'))
+    expect(ids.indexOf('update-action-copy-pytorch')).toBeLessThan(ids.indexOf('update-action-change-pytorch'))
+  })
+
+  it('renders no copy-pytorch button while the current stack is selected', () => {
+    const wrapper = mountPicker(pytorchField('s-cpu-2.10'))
+    expect(wrapper.find('[data-testid="update-action-copy-pytorch"]').exists()).toBe(false)
+  })
+
+  it('emits the action when the copy-pytorch button is clicked', async () => {
+    const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
+    await wrapper.find('[data-testid="update-action-copy-pytorch"]').trigger('click')
+    const emitted = wrapper.emitted('action')
+    expect(emitted).toHaveLength(1)
+    expect((emitted![0]![0] as { id: string }).id).toBe('copy-pytorch')
   })
 })

@@ -263,6 +263,25 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
         title: t('standalone.pytorchConfirmTitle'),
         message: confirmMessage + capNotice + driverNotice + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
       },
+    }, {
+      id: 'copy-pytorch', label: t('standalone.copyAndChangePytorch'), style: 'default', enabled: true,
+      tooltip: t('tooltips.copyAndChangePytorch'),
+      showProgress: true, cancellable: true,
+      progressTitle: t('standalone.copyPytorchChangingTitle', { version: s.packages.torch }),
+      data: { stackId: s.stackId },
+      prompt: {
+        title: t('standalone.copyAndChangePytorchTitle'),
+        message: t('standalone.copyAndChangePytorchMessage', {
+          from: `**${currentTorch ?? '?'}**`,
+          to: `**${s.packages.torch}**`,
+        }) + capNotice + driverNotice,
+        placeholder: t('standalone.copyAndUpdatePlaceholder'),
+        defaultValue: installation.name,
+        uniquifyDefault: true,
+        confirmLabel: t('standalone.copyAndChangePytorchConfirm'),
+        required: true,
+        field: 'name',
+      },
     }]
     options.push({
       value: s.stackId,
@@ -315,6 +334,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     const copiedAt = installation.copiedAt as string | undefined
     const copyReason = installation.copyReason as string | undefined
     const reasonLabel = copyReason === 'copy-update' ? t('standalone.lineageCopyUpdate')
+      : copyReason === 'copy-pytorch' ? t('standalone.lineageCopyPytorch')
       : copyReason === 'release-update' ? t('standalone.lineageReleaseUpdate')
       : t('standalone.lineageCopy')
     const dateStr = copiedAt ? new Date(copiedAt).toLocaleString() : ''

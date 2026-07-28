@@ -835,7 +835,7 @@ export interface CopyEvent {
   installationId: string
   installationName: string
   copiedAt: string
-  copyReason: 'copy' | 'copy-update' | 'release-update'
+  copyReason: 'copy' | 'copy-update' | 'copy-pytorch' | 'release-update'
   exists: boolean
   /** `out` = another install was copied FROM the install whose rail this is
    *  shown on (installationName is the destination's name).

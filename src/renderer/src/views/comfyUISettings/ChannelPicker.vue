@@ -282,7 +282,7 @@ const checkUpdateAction = computed<ActionDef | undefined>(() =>
 
 const promotedPrimaryActions = computed<ActionDef[]>(() =>
   selectedActions.value.filter(
-    (a) => a.id === 'update-comfyui' || a.id === 'copy-update' || a.id === 'change-pytorch'
+    (a) => a.id === 'update-comfyui' || a.id === 'copy-update' || a.id === 'change-pytorch' || a.id === 'copy-pytorch'
   )
 )
 
@@ -292,6 +292,7 @@ const otherSecondaryActions = computed<ActionDef[]>(() =>
       a.id !== 'check-update' &&
       a.id !== 'update-comfyui' &&
       a.id !== 'copy-update' &&
+      a.id !== 'copy-pytorch' &&
       a.style !== 'primary' &&
       a.style !== 'accent'
   )
@@ -348,6 +349,13 @@ const footerActions = computed<
   const updateNow = promotedPrimaryActions.value.find((a) => a.id === 'update-comfyui')
   if (updateNow) {
     out.push({ action: updateNow, variant: 'accent' })
+  }
+
+  // Copy & Change PyTorch is the safe alternative, so it sits before the
+  // accented Change button, mirroring Copy & Update vs Update Now.
+  const copyPytorch = promotedPrimaryActions.value.find((a) => a.id === 'copy-pytorch')
+  if (copyPytorch) {
+    out.push({ action: copyPytorch, variant: 'default' })
   }
 
   // The PyTorch card's per-option switch action; accented for the same

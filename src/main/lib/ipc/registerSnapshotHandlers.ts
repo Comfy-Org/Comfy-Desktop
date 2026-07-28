@@ -170,7 +170,7 @@ export function registerSnapshotHandlers(): void {
         installationId: i.id,
         installationName: i.name,
         copiedAt: i.copiedAt as string,
-        copyReason: (i.copyReason as 'copy' | 'copy-update' | 'release-update') || 'copy',
+        copyReason: (i.copyReason as CopyEvent['copyReason']) || 'copy',
         exists: true,
         direction: 'out'
       }))
@@ -188,7 +188,7 @@ export function registerSnapshotHandlers(): void {
         installationId: copiedFrom,
         installationName: snapshottedName || source?.name || copiedFrom,
         copiedAt,
-        copyReason: (inst.copyReason as 'copy' | 'copy-update' | 'release-update') || 'copy',
+        copyReason: (inst.copyReason as CopyEvent['copyReason']) || 'copy',
         exists: Boolean(source),
         direction: 'in'
       })

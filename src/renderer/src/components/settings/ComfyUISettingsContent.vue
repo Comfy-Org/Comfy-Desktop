@@ -650,6 +650,7 @@ function actionIcon(id: string): Component {
     case 'copy':
       return Copy
     case 'copy-update':
+    case 'copy-pytorch':
       return CopyPlus
     case 'open-folder':
     case 'reveal-in-folder':

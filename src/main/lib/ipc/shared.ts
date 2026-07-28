@@ -167,7 +167,7 @@ export interface RegisterCallbacks {
   onThemeChanged?: ThemeChangedCallback
 }
 
-export type CopyReason = 'copy' | 'copy-update'
+export type CopyReason = 'copy' | 'copy-update' | 'copy-pytorch'
 
 export const sourceMap: Record<string, SourcePlugin> = Object.fromEntries(sources.map((s) => [s.id, s]))
 
