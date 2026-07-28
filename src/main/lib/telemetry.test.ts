@@ -918,6 +918,25 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.at(-1)?.properties).not.toHaveProperty('$process_person_profile')
   })
 
+  it('keeps pre-first-login enrichment through a signed-out report while unbound', () => {
+    identifies.length = 0
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+
+    telemetry.unbindUserId()
+
+    // A signed-out report while nothing is bound must not rotate the
+    // anonymous D, flip is_authenticated, or drop the queued enrichment.
+    expect(anonymousIdentityMock.index).toBe(0)
+    expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toBeUndefined()
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    const last = identifies.at(-1)!
+    expect(last.properties?.$set).toMatchObject({ gpu_tier: 'high' })
+    expect(last.properties?.$set_once).toEqual({ first_generation_at: 'first' })
+  })
+
   it('replays an unacknowledged identity merge after restart', async () => {
     // Reproduce posthog-node's auto-flush race: identify is removed from the
     // SDK queue after an HTTP failure, then our explicit empty flush resolves.

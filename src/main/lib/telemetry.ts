@@ -966,9 +966,13 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  */
 export function applyFirebaseAnonymousConsensus(): void {
   pendingUserBinding = null
+  // While nothing is bound, only cancel the queued binding. The person-prop
+  // buffers hold pre-first-login enrichment (boot props, $set_once activation
+  // markers whose disk guards are already burned) that must survive a
+  // signed-out report and land on the first bind.
+  if (!boundUserId) return
   pendingPersonSet = null
   pendingPersonSetOnce = null
-  if (!boundUserId) return
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
   }
