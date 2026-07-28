@@ -1,6 +1,7 @@
 /**
- * One tile in a chooser grid. Installs and distributions render through the
- * same grid component, so it takes a mixed list rather than two props.
+ * The entry type a chooser grid renders, plus its constructors and key. Installs
+ * and distributions flow through one grid as a single mixed list rather than two
+ * props, so each entry is tagged and keyed by a namespaced id to avoid collision.
  */
 import type { Distribution } from '../../devplatform/types'
 import type { Installation } from '../../types/ipc'

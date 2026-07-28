@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Cloud, Computer, LaptopMinimal, Globe, Box } from 'lucide-vue-next'
+import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
 
 import { installTypeMetaFor, installTypeMetaForInstall } from './installTypeIcon'
 
@@ -62,6 +62,7 @@ describe('installTypeMetaForInstall', () => {
       sourceCategory: 'local',
     })
     expect(bySource.key).toBe('distribution')
+    expect(bySource.icon).toBe(Package)
     expect(bySource.labelKey).toBe('installType.distribution')
 
     const byLink = installTypeMetaForInstall({

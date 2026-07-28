@@ -731,6 +731,10 @@ describe('ChooserView', () => {
     await flushPromises()
     const names = wrapper.findAll('.chooser-tile-name').map((w) => w.text())
     expect(names).toContain('Flux Studio')
+    // The shelf carries only the installed tile; nothing available leaks in
+    // without a workspace session, so the count is 1 and no cards render.
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('1')
+    expect(wrapper.findAll('[data-testid^="chooser-dist-tile-"]').length).toBe(0)
   })
 
   it('names the action on an installable distribution rather than its state', async () => {

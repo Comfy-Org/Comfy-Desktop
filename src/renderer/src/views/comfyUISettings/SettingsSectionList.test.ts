@@ -4,7 +4,7 @@ import { createI18n } from 'vue-i18n'
 
 import { en } from '../../lib/i18nMessages.ts'
 import SettingsSectionList from './SettingsSectionList.vue'
-import type { DetailField } from '../../types/ipc'
+import type { DetailField, DetailSection } from '../../types/ipc'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -127,6 +127,48 @@ describe('SettingsSectionList', () => {
         { id: 'updated', label: 'Last updated', value: '2024/01/02' },
       ])
       expect(wrapper.find('button.settings-v2-field-readonly-open').exists()).toBe(false)
+    })
+  })
+
+  // The Update tab's version table renders the section's actions itself, so the
+  // generic footer must stand down (or the button appears twice), and the button
+  // is the only place the update action can be fired.
+  describe('version-stats section', () => {
+    const vsSection = (enabled: boolean): DetailSection => ({
+      fields: [
+        {
+          id: 'vs',
+          label: 'Distribution version',
+          editType: 'version-stats',
+          editable: false,
+          value: { headline: 'v1', rows: [{ id: 'installed', label: 'Installed', value: 'v1' }] },
+        },
+      ],
+      actions: [{ id: 'update-distribution', label: 'Update', enabled }],
+    })
+
+    function mountSection(enabled: boolean) {
+      return mount(SettingsSectionList, {
+        props: { sections: [vsSection(enabled)] },
+        global: { plugins: [makeI18n()] },
+      })
+    }
+
+    it('docks the action inside the panel and suppresses the generic footer', () => {
+      const wrapper = mountSection(true)
+      expect(wrapper.findAll('.version-stat-action')).toHaveLength(1)
+      expect(wrapper.find('.settings-v2-actions').exists()).toBe(false)
+    })
+
+    it('emits run-action from an enabled update button', async () => {
+      const wrapper = mountSection(true)
+      await wrapper.find('.version-stat-action').trigger('click')
+      expect(wrapper.emitted('run-action')).toBeTruthy()
+    })
+
+    it('disables the update button when the action is not ready', () => {
+      const wrapper = mountSection(false)
+      expect(wrapper.find('.version-stat-action').attributes('disabled')).toBeDefined()
     })
   })
 })
