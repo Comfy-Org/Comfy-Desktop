@@ -5,11 +5,18 @@
 import type { Distribution, DistributionState } from './types'
 import type { Installation } from '../types/ipc'
 
+/** The rule itself, over the two raw fields — so callers holding only a subset
+ *  of the record (the picker row, the title bar) can ask without a cast.
+ *  `distributionId` arrives through an index signature, hence the emptiness
+ *  check rather than a `typeof`. */
+export function isDistributionSource(sourceId: unknown, distributionId: unknown): boolean {
+  return sourceId === 'comfybuilder' || Boolean(distributionId)
+}
+
 /** An install that came from a distribution. One definition, so the shelf it
- *  sorts into and the glyph it wears can't disagree. `distributionId` arrives
- *  through an index signature, hence the emptiness check. */
+ *  sorts into and the glyph it wears can't disagree. */
 export function isDistributionInstall(inst: Installation): boolean {
-  return inst.sourceId === 'comfybuilder' || Boolean(inst.distributionId)
+  return isDistributionSource(inst.sourceId, inst.distributionId)
 }
 
 export const BLOCKED_DISTRIBUTION_STATES: readonly DistributionState[] = [

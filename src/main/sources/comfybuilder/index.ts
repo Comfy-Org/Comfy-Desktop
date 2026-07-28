@@ -21,6 +21,8 @@ import path from 'path'
 import { installArtifact, buildLaunchSpec, stageModels, resolveModelManifest } from '../../comfybuilder'
 import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress, StageProgress } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
+import { listCompleteVersions, resolveHost, resolveHostArtifactForVersion } from '../../devplatform/distributions'
+import { setCachedVersions } from '../../devplatform/versionCache'
 import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { t } from '../../lib/i18n'
@@ -29,10 +31,12 @@ import type {
   SourcePlugin,
   LaunchCommand,
   ActionResult,
+  ActionTools,
   InstallTools,
 } from '../../types/sources'
 
-const DEFAULT_LAUNCH_ARGS = '--enable-manager'
+import { DEFAULT_LAUNCH_ARGS } from './constants'
+import { getDetailSections } from './detailSections'
 
 /** Reconstruct the library Artifact from the fields the install record carries. */
 function artifactFromRecord(inst: InstallationRecord): Artifact {
@@ -60,6 +64,86 @@ export function withAccelArgs(installation: InstallationRecord, launchArgs: stri
   const isCpu = installation.artifactGpu === 'cpu' || installation.artifactAccelVariant === 'cpu'
   if (!isCpu || /(?:^|\s)--cpu(?:\s|$)/.test(launchArgs)) return launchArgs
   return `${launchArgs} --cpu`.trim()
+}
+
+/**
+ * Lay down the environment for whatever artifact the record currently points
+ * at. Shared by the first install and by an in-place version change, so the two
+ * can't diverge on venv handling or model staging.
+ *
+ * Takes only what both callers have: progress + an abort signal.
+ */
+async function installEnvironment(
+  installation: InstallationRecord,
+  // Narrower than `ActionTools.sendProgress` on purpose: a handler that accepts
+  // `Record<string, unknown>` satisfies this, but not the reverse.
+  tools: {
+    sendProgress: (step: string, data: { percent: number; status: string }) => void
+    signal?: AbortSignal
+  },
+): Promise<void> {
+  const artifact = artifactFromRecord(installation)
+  const client = getBuilderClient()
+  const venvPath = path.join(installation.installPath, 'venv')
+  const previousVenvPath = `${venvPath}.previous`
+
+  // A venv can't be overlaid (leftover site-packages from the old version break
+  // Python), so the old one moves aside before extracting. MOVED, not deleted:
+  // `installArtifact` downloads to a temp and verifies the checksum before it
+  // touches `installPath`, precisely so a failed run never destroys a working
+  // environment. Deleting up front would throw that guarantee away and leave a
+  // failed update on a version it can no longer launch.
+  await fs.rm(previousVenvPath, { recursive: true, force: true }).catch(() => {})
+  const hadPreviousVenv = await fs
+    .rename(venvPath, previousVenvPath)
+    .then(() => true)
+    .catch(() => false)
+
+  try {
+    // Phase 1: archive (code + environment). `installArtifact` verifies the
+    // sha256 when the artifact carries one and fails on a byte mismatch. A
+    // missing hash is skipped for the initial rollout (see the TODO there).
+    await installArtifact({
+      artifact,
+      client,
+      installPath: installation.installPath,
+      cacheDir: defaultDownloadCacheDir(),
+      onProgress: (p: InstallProgress) => {
+        // The library's `resolve` phase has no labeled step; fold it into the
+        // download step at 0% so the stepper still shows forward motion.
+        const phase = p.phase === 'resolve' ? 'download' : p.phase
+        tools.sendProgress(phase, { percent: p.percent, status: p.detail ?? '' })
+      },
+      ...(tools.signal ? { signal: tools.signal } : {}),
+    })
+
+    // Phase 2: models. The archive carries no weights, so stage the
+    // distribution's declared models into the install's ComfyUI model tree
+    // before launch, the way comfy-deploy provisions a volume before boot. An
+    // empty manifest stages nothing and the step completes immediately.
+    const manifest = await resolveModelManifest(
+      client,
+      installation.distributionId as string,
+      installation.version as string,
+    )
+    await stageModels({
+      models: manifest.models,
+      installPath: installation.installPath,
+      onProgress: (p: StageProgress) =>
+        tools.sendProgress('models', { percent: p.percent, status: `${p.filename} (${p.index}/${p.total})` }),
+      ...(tools.signal ? { signal: tools.signal } : {}),
+    })
+    tools.sendProgress('models', { percent: 100, status: '' })
+  } catch (err) {
+    // Put the working environment back before surfacing the failure.
+    if (hadPreviousVenv) {
+      await fs.rm(venvPath, { recursive: true, force: true }).catch(() => {})
+      await fs.rename(previousVenvPath, venvPath).catch(() => {})
+    }
+    throw err
+  }
+
+  await fs.rm(previousVenvPath, { recursive: true, force: true }).catch(() => {})
 }
 
 export const comfybuilder: SourcePlugin = {
@@ -117,19 +201,7 @@ export const comfybuilder: SourcePlugin = {
     return [launchAction(installed, !installed ? t('errors.installNotReady') : undefined)]
   },
 
-  getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
-    return [
-      {
-        tab: 'status',
-        title: 'Installation Info',
-        fields: [
-          { label: 'Install method', value: (installation.sourceLabel as string) || 'ComfyBuilder' },
-          { label: 'Distribution', value: (installation.distributionName as string) || '-' },
-          { label: 'Version', value: (installation.version as string) || '-' },
-        ],
-      },
-    ]
-  },
+  getDetailSections,
 
   // A ComfyBuilder install is never discovered on disk: only the dev-platform
   // flow creates one: so there is nothing to probe/adopt.
@@ -138,50 +210,117 @@ export const comfybuilder: SourcePlugin = {
   },
 
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
-    const artifact = artifactFromRecord(installation)
-    const client = getBuilderClient()
-    // A venv can't be overlaid (leftover site-packages from the old version break
-    // Python), so remove it before extracting. No-op on a first install; on an
-    // update/retry it guarantees a clean environment. The archive lays down a
-    // fresh venv; staged models under ComfyUI/models are left untouched.
-    await fs.rm(path.join(installation.installPath, 'venv'), { recursive: true, force: true })
-    // Phase 1: archive (code + environment). `installArtifact` verifies the
-    // sha256 when the artifact carries one and fails on a byte mismatch. A
-    // missing hash is skipped for the initial rollout (see the TODO there).
-    await installArtifact({
-      artifact,
-      client,
-      installPath: installation.installPath,
-      cacheDir: defaultDownloadCacheDir(),
-      onProgress: (p: InstallProgress) => {
-        // The library's `resolve` phase has no labeled step; fold it into the
-        // download step at 0% so the stepper still shows forward motion.
-        const phase = p.phase === 'resolve' ? 'download' : p.phase
-        tools.sendProgress(phase, { percent: p.percent, status: p.detail ?? '' })
-      },
-      ...(tools.signal ? { signal: tools.signal } : {}),
-    })
-
-    // Phase 2: models. The archive carries no weights, so stage the
-    // distribution's declared models into the install's ComfyUI model tree
-    // before launch, the way comfy-deploy provisions a volume before boot. An
-    // empty manifest stages nothing and the step completes immediately.
-    const manifest = await resolveModelManifest(
-      client,
-      installation.distributionId as string,
-      installation.version as string,
-    )
-    await stageModels({
-      models: manifest.models,
-      installPath: installation.installPath,
-      onProgress: (p: StageProgress) =>
-        tools.sendProgress('models', { percent: p.percent, status: `${p.filename} (${p.index}/${p.total})` }),
-      ...(tools.signal ? { signal: tools.signal } : {}),
-    })
-    tools.sendProgress('models', { percent: 100, status: '' })
+    await installEnvironment(installation, tools)
   },
 
-  async handleAction(actionId: string): Promise<ActionResult> {
+  // Launch / rename / open-folder / remove / delete never reach here — the
+  // generic session-action dispatch (`sessionActions/index.ts`) handles those
+  // before a plugin is consulted.
+  async handleAction(
+    actionId: string,
+    installation: InstallationRecord,
+    actionData: Record<string, unknown> | undefined,
+    tools: ActionTools,
+  ): Promise<ActionResult> {
+    const distributionId = installation.distributionId as string | undefined
+    if (!distributionId) return { ok: false, message: t('comfybuilder.errorNoDistribution') }
+
+    if (actionId === 'check-update') {
+      try {
+        setCachedVersions(
+          distributionId,
+          await listCompleteVersions(getBuilderClient(), distributionId),
+        )
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    if (actionId === 'update-distribution') {
+      return updateDistributionVersion(installation, distributionId, actionData, tools)
+    }
+
     return { ok: false, message: `Action "${actionId}" not yet implemented.` }
   },
+}
+
+/**
+ * Move this install to another published version of its own distribution.
+ *
+ * Re-installs in place: the record is re-pointed at the target artifact, then
+ * the same `installEnvironment` a first install runs lays the new environment
+ * down over it. Done here rather than through the `install-instance` chain
+ * because that chain is bound to its IPC sender — but the pieces it owns are
+ * only needed for a FRESH install. The directory and the record already exist,
+ * so what remains is the status arc, which is handled explicitly below.
+ *
+ * Targets the INSTALLATION, never the distribution id: several installs of one
+ * distribution are allowed, so distribution-keyed lookup would pick arbitrarily.
+ */
+async function updateDistributionVersion(
+  installation: InstallationRecord,
+  distributionId: string,
+  actionData: Record<string, unknown> | undefined,
+  tools: ActionTools,
+): Promise<ActionResult> {
+  const target = Number(actionData?.version)
+  if (!Number.isFinite(target)) return { ok: false, message: t('comfybuilder.errorNoVersion') }
+
+  // The section only offers this on a ready install, but an action id is
+  // reachable on its own — re-check rather than trust the caller, since the
+  // rollback below can only restore a state that was coherent to begin with.
+  const previousStatus = installation.status as string | undefined
+  if (previousStatus !== 'installed') return { ok: false, message: t('errors.installNotReady') }
+
+  const previous = {
+    version: installation.version as string | undefined,
+    artifactId: installation.artifactId as string | undefined,
+    artifactOs: installation.artifactOs as string | undefined,
+    artifactGpu: installation.artifactGpu as string | undefined,
+    artifactAccelVariant: installation.artifactAccelVariant as string | undefined,
+    artifactSha256: installation.artifactSha256 as string | undefined,
+  }
+
+  try {
+    const resolved = await resolveHostArtifactForVersion(
+      getBuilderClient(),
+      await resolveHost(),
+      distributionId,
+      target,
+    )
+    if (!resolved) {
+      return { ok: false, message: t('comfybuilder.errorVersionUnavailable', { version: target }) }
+    }
+
+    const { artifact } = resolved
+    const next: Record<string, unknown> = {
+      version: String(resolved.version),
+      artifactId: artifact.id,
+      artifactOs: artifact.os,
+      artifactGpu: artifact.gpu,
+      artifactAccelVariant: artifact.accelVariant,
+      ...(artifact.archiveSha256 ? { artifactSha256: artifact.archiveSha256 } : {}),
+    }
+    await tools.update({ ...next, status: 'installing' })
+
+    await installEnvironment({ ...installation, ...next } as InstallationRecord, tools)
+
+    await tools.update({ status: 'installed' })
+    return { ok: true, navigate: 'detail' }
+  } catch (err) {
+    // Put the record back where it was. Leaving it pointed at a version whose
+    // environment never landed would report a version the install doesn't have.
+    //
+    // `installEnvironment` restores the previous venv on failure, but if that
+    // did not survive the install can no longer launch: report it failed rather
+    // than advertise a working install that isn't one.
+    const runnable = await fs
+      .stat(path.join(installation.installPath, 'venv'))
+      .then(() => true)
+      .catch(() => false)
+    await tools.update({ ...previous, status: runnable ? previousStatus : 'failed' }).catch(() => {})
+    if (tools.signal?.aborted) return { ok: false, cancelled: true }
+    return { ok: false, message: err instanceof Error ? err.message : String(err) }
+  }
 }
