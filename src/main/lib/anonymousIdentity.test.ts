@@ -38,8 +38,11 @@ import {
 } from './anonymousIdentity'
 import {
   clearPendingIdentityMerges,
+  clearPendingPersonProperties,
   enqueuePendingIdentityMerge,
+  persistPendingPersonProperties,
   readPendingIdentityMerges,
+  readPendingPersonProperties,
   recoverPendingIdentityRotation,
   reservePendingIdentityMerge
 } from './pendingIdentityMerge'
@@ -181,6 +184,35 @@ describe('pendingIdentityMerge', () => {
     expect(pending).not.toBeNull()
     expect(readPendingIdentityMerges()).toEqual([pending])
     expect(readPersistedAnonymousDistinctId()).toBe(pending!.nextAnonymousId)
+  })
+
+  it('preserves the exact opaque anonymous id in durable retries', () => {
+    const anonymousId = '\ufeff  website visitor 🚀  '
+    expect(persistAnonymousDistinctId(anonymousId)).toBe(true)
+
+    const pending = reservePendingIdentityMerge({
+      anonymousId,
+      userId: 'firebase-1',
+      installationId: 'installation-1',
+      personSet: { installation_id: 'installation-1', is_authenticated: true }
+    })
+
+    expect(pending?.anonymousId).toBe(anonymousId)
+    expect(readPendingIdentityMerges()[0]?.anonymousId).toBe(anonymousId)
+  })
+
+  it('persists and conditionally clears pre-auth person properties', () => {
+    const pending = persistPendingPersonProperties({
+      personSet: { gpu_tier: 'high' },
+      personSetOnce: { first_generation_at: 'first' }
+    })
+
+    expect(pending).not.toBeNull()
+    expect(readPendingPersonProperties()).toEqual(pending)
+    expect(clearPendingPersonProperties('another-buffer')).toBe(true)
+    expect(readPendingPersonProperties()).toEqual(pending)
+    expect(clearPendingPersonProperties(pending!.id)).toBe(true)
+    expect(readPendingPersonProperties()).toBeNull()
   })
 
   it('completes an interrupted reserved rotation before first capture', () => {

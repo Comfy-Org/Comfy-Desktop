@@ -176,8 +176,15 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
     installationId: string
     personSet: Record<string, boolean | number | string | null>
     personSetOnce?: Record<string, boolean | number | string | null>
+    personPropertiesBufferId?: string
   }>,
-  nextId: 1
+  nextId: 1,
+  nextPersonPropertiesId: 1,
+  personProperties: null as {
+    id: string
+    personSet?: Record<string, boolean | number | string | null>
+    personSetOnce?: Record<string, boolean | number | string | null>
+  } | null
 }))
 
 vi.mock('./anonymousIdentity', () => ({
@@ -198,6 +205,29 @@ vi.mock('./anonymousIdentity', () => ({
 
 vi.mock('./pendingIdentityMerge', () => ({
   readPendingIdentityMerges: () => [...pendingIdentityMergeMock.entries],
+  readPendingPersonProperties: () =>
+    pendingIdentityMergeMock.personProperties
+      ? { ...pendingIdentityMergeMock.personProperties }
+      : null,
+  persistPendingPersonProperties: (properties: {
+    id?: string
+    personSet?: Record<string, boolean | number | string | null>
+    personSetOnce?: Record<string, boolean | number | string | null>
+  }) => {
+    const persisted = {
+      ...properties,
+      id: properties.id ?? `person-properties-${pendingIdentityMergeMock.nextPersonPropertiesId++}`
+    }
+    pendingIdentityMergeMock.personProperties = persisted
+    return persisted
+  },
+  clearPendingPersonProperties: (expectedId?: string) => {
+    if (expectedId && pendingIdentityMergeMock.personProperties?.id !== expectedId) {
+      return true
+    }
+    pendingIdentityMergeMock.personProperties = null
+    return true
+  },
   enqueuePendingIdentityMerge: (
     merge: Omit<(typeof pendingIdentityMergeMock.entries)[number], 'id'>
   ) => {
@@ -206,14 +236,10 @@ vi.mock('./pendingIdentityMerge', () => ({
     return entry
   },
   reservePendingIdentityMerge: (
-    merge: Omit<
-      (typeof pendingIdentityMergeMock.entries)[number],
-      'id' | 'nextAnonymousId'
-    >
+    merge: Omit<(typeof pendingIdentityMergeMock.entries)[number], 'id' | 'nextAnonymousId'>
   ) => {
     if (anonymousIdentityMock.fail) return null
-    const nextAnonymousId =
-      anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
+    const nextAnonymousId = anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
     if (!nextAnonymousId) return null
     const entry = {
       ...merge,
@@ -285,6 +311,8 @@ afterEach(() => {
   posthogClientMock.failNextAliases = 0
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
+  pendingIdentityMergeMock.nextPersonPropertiesId = 1
+  pendingIdentityMergeMock.personProperties = null
   delete process.env['POSTHOG_API_KEY']
   delete process.env['POSTHOG_ENABLED']
   telemetry._resetForTest()
@@ -772,6 +800,27 @@ describe('telemetry.registerPersonProperties pre-consent merge', () => {
       theme: 'dark'
     })
   })
+
+  it('restores pre-auth person properties after a process restart', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('anonymous-start')
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+
+    telemetry._resetForTest()
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('anonymous-start')
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'second' })
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+
+    expect(identifies.at(-1)?.properties).toMatchObject({
+      $set: { gpu_tier: 'high' },
+      $set_once: { first_generation_at: 'first' }
+    })
+    expect(pendingIdentityMergeMock.personProperties).toBeNull()
+  })
 })
 
 describe('telemetry.registerPersonPropertiesOnce ($set_once)', () => {
@@ -813,6 +862,19 @@ describe('telemetry.registerPersonPropertiesOnce ($set_once)', () => {
 
     telemetry.applyFirebaseUserConsensus('firebase-user')
     expect(identifies.at(-1)?.properties?.$set_once).toMatchObject({
+      first_generation_at: 'first'
+    })
+  })
+
+  it('keeps the first buffered value when a marker repeats before login', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('id')
+
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'second' })
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+
+    expect(identifies.at(-1)?.properties?.$set_once).toEqual({
       first_generation_at: 'first'
     })
   })
@@ -914,9 +976,7 @@ describe('telemetry legacy download-token bridge', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(aliases).toEqual([
-      { distinctId: 'anonymous-start', alias: 'AbC123xYz789' }
-    ])
+    expect(aliases).toEqual([{ distinctId: 'anonymous-start', alias: 'AbC123xYz789' }])
     expect(
       captured.find((call) => call.event === 'comfy.desktop.identity.download_attributed')
         ?.properties
@@ -953,9 +1013,7 @@ describe('telemetry legacy download-token bridge', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(aliases).toEqual([
-      { distinctId: 'anonymous-start', alias: 'AbC123xYz789' }
-    ])
+    expect(aliases).toEqual([{ distinctId: 'anonymous-start', alias: 'AbC123xYz789' }])
     expect(onAliased).not.toHaveBeenCalled()
   })
 })

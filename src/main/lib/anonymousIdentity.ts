@@ -33,7 +33,7 @@ function decodePersistedAnonymousDistinctId(raw: string): string | null {
   }
 }
 
-function normalizeAnonymousDistinctId(value: unknown): string | null {
+export function normalizeAnonymousDistinctId(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null
   if (value.length > MAX_ANONYMOUS_DISTINCT_ID_LENGTH) return null
   if (isIllegalPostHogDistinctId(value)) return null

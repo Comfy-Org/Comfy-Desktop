@@ -127,8 +127,11 @@ import {
 import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
 import {
   clearPendingIdentityMerges,
+  clearPendingPersonProperties,
   type PendingIdentityProperties,
+  persistPendingPersonProperties,
   readPendingIdentityMerges,
+  readPendingPersonProperties,
   reservePendingIdentityMerge
 } from './pendingIdentityMerge'
 
@@ -186,6 +189,7 @@ export function _resetForTest(): void {
   pendingFirstLaunch = null
   pendingPersonSet = null
   pendingPersonSetOnce = null
+  pendingPersonPropertiesBufferId = null
   pendingUserBinding = null
   pendingDownloadTokenAlias = null
   pendingDownloadTokenEventProperties = null
@@ -567,6 +571,8 @@ export function initTelemetry(opts: InitOptions): void {
     client = null
   }
 
+  restoreQueuedPersonProperties()
+
   // Stash session-start parameters until the anonymous D is bound.
   // The session-start payload duplicates the defaults so an event-only
   // reader (no defaults yet) still sees them on the first event.
@@ -593,6 +599,8 @@ let pendingFirstLaunch: TelemetryContext | null = null
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
 /** Same, for write-once (`$set_once`) markers. */
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
+/** Stable token linking the pre-auth property buffer to its durable merge. */
+let pendingPersonPropertiesBufferId: string | null = null
 
 interface PendingUserBinding {
   userId: string
@@ -658,8 +666,20 @@ function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
       }
     }
   }
-  if (delivered.size > 0 && clearPendingIdentityMerges(delivered)) {
-    for (const id of delivered) queuedPendingIdentityMergeIds.delete(id)
+  if (delivered.size > 0) {
+    const clearable = new Set<string>()
+    for (const id of delivered) {
+      const merge = pending.find((candidate) => candidate.id === id)
+      if (
+        !merge?.personPropertiesBufferId ||
+        clearPendingPersonProperties(merge.personPropertiesBufferId)
+      ) {
+        clearable.add(id)
+      }
+    }
+    if (clearable.size > 0 && clearPendingIdentityMerges(clearable)) {
+      for (const id of clearable) queuedPendingIdentityMergeIds.delete(id)
+    }
   }
 }
 
@@ -730,8 +750,7 @@ function tryFlushDeferred(): void {
   }
   if (boundUserId && (pendingPersonSet || pendingPersonSetOnce)) {
     if (capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)) {
-      pendingPersonSet = null
-      pendingPersonSetOnce = null
+      clearQueuedPersonProperties()
     }
   }
   if (pendingSessionStart && capture('comfy.desktop.session.started', pendingSessionStart)) {
@@ -761,11 +780,10 @@ export function bindAnonymousId(
   installationIdProperty = installationId
   defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
   if (Object.keys(properties).length > 0) {
-    pendingPersonSet = {
-      ...(pendingPersonSet || {}),
+    queuePersonProperties({
       installation_id: installationId,
       ...properties
-    }
+    })
   }
   if (!canEmit()) return
   tryFlushDeferred()
@@ -813,9 +831,7 @@ async function aliasImmediateInternal(distinctId: string, alias: string): Promis
  * A fresh D is persisted before identify so logout, account switch, and the
  * next process can never reuse an id that may have been merged into F.
  */
-function persistablePersonProperties(
-  properties: TelemetryContext
-): PendingIdentityProperties {
+function persistablePersonProperties(properties: TelemetryContext): PendingIdentityProperties {
   const persistable: PendingIdentityProperties = {}
   for (const [key, value] of Object.entries(properties)) {
     if (
@@ -828,6 +844,69 @@ function persistablePersonProperties(
     }
   }
   return persistable
+}
+
+function restoreQueuedPersonProperties(): void {
+  const persisted = readPendingPersonProperties()
+  if (!persisted) return
+  const alreadyTransferred = readPendingIdentityMerges().some(
+    (merge) => merge.personPropertiesBufferId === persisted.id
+  )
+  if (alreadyTransferred) {
+    clearPendingPersonProperties(persisted.id)
+    return
+  }
+  pendingPersonPropertiesBufferId = persisted.id
+  pendingPersonSet = persisted.personSet ?? null
+  pendingPersonSetOnce = persisted.personSetOnce ?? null
+}
+
+function queuePersonProperties(
+  set?: Record<string, TelemetryValue>,
+  setOnce?: Record<string, TelemetryValue>
+): void {
+  if (set && Object.keys(set).length > 0) {
+    pendingPersonSet = { ...(pendingPersonSet || {}), ...set }
+  }
+  if (setOnce && Object.keys(setOnce).length > 0) {
+    pendingPersonSetOnce = { ...setOnce, ...(pendingPersonSetOnce || {}) }
+  }
+  const persisted = persistPendingPersonProperties({
+    ...(pendingPersonPropertiesBufferId ? { id: pendingPersonPropertiesBufferId } : {}),
+    ...(pendingPersonSet
+      ? {
+          personSet: persistablePersonProperties(
+            scrubProperties(pendingPersonSet as TelemetryContext)
+          )
+        }
+      : {}),
+    ...(pendingPersonSetOnce
+      ? {
+          personSetOnce: persistablePersonProperties(
+            scrubProperties(pendingPersonSetOnce as TelemetryContext)
+          )
+        }
+      : {})
+  })
+  if (!persisted) return
+  pendingPersonPropertiesBufferId = persisted.id
+  if (persisted.personSet) {
+    pendingPersonSet = { ...(pendingPersonSet || {}), ...persisted.personSet }
+  }
+  if (persisted.personSetOnce) {
+    pendingPersonSetOnce = {
+      ...(pendingPersonSetOnce || {}),
+      ...persisted.personSetOnce
+    }
+  }
+}
+
+function clearQueuedPersonProperties(): void {
+  const bufferId = pendingPersonPropertiesBufferId
+  pendingPersonSet = null
+  pendingPersonSetOnce = null
+  pendingPersonPropertiesBufferId = null
+  if (bufferId) clearPendingPersonProperties(bufferId)
 }
 
 function queuePendingUserBinding(
@@ -866,8 +945,7 @@ function applyFirebaseUserBinding(
     // These buffers may contain updates collected for the current account
     // while consent was not granted. Never carry them into another Firebase
     // person; properties collected before the first login remain intact.
-    pendingPersonSet = null
-    pendingPersonSetOnce = null
+    clearQueuedPersonProperties()
   }
   if (consentState !== 'granted') {
     if (boundUserId) {
@@ -915,8 +993,9 @@ function applyFirebaseUserBinding(
     userId: normalizedUserId,
     installationId: installationIdProperty,
     personSet: persistablePersonProperties(personSet),
-    ...(personSetOnce
-      ? { personSetOnce: persistablePersonProperties(personSetOnce) }
+    ...(personSetOnce ? { personSetOnce: persistablePersonProperties(personSetOnce) } : {}),
+    ...(pendingPersonPropertiesBufferId
+      ? { personPropertiesBufferId: pendingPersonPropertiesBufferId }
       : {})
   })
   if (!pendingMerge) {
@@ -924,6 +1003,7 @@ function applyFirebaseUserBinding(
     return
   }
   const reservedNextAnonymousId = pendingMerge.nextAnonymousId
+  clearQueuedPersonProperties()
 
   distinctId = normalizedUserId
   try {
@@ -946,8 +1026,6 @@ function applyFirebaseUserBinding(
   }
   boundUserId = normalizedUserId
   nextAnonymousDistinctId = reservedNextAnonymousId
-  pendingPersonSet = null
-  pendingPersonSetOnce = null
   pendingUserBinding = null
   if (emitLoginEvent) {
     capture('app:user_logged_in', { user_id: normalizedUserId })
@@ -973,10 +1051,13 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  * Detach from F and adopt the fresh D that was durably reserved before bind.
  */
 export function applyFirebaseAnonymousConsensus(): void {
+  const cancelledPendingBinding = pendingUserBinding !== null
   pendingUserBinding = null
-  pendingPersonSet = null
-  pendingPersonSetOnce = null
-  if (!boundUserId) return
+  if (!boundUserId) {
+    if (cancelledPendingBinding) clearQueuedPersonProperties()
+    return
+  }
+  clearQueuedPersonProperties()
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
   }
@@ -998,6 +1079,7 @@ export function applyFirebaseAnonymousConsensus(): void {
  * keep the process anonymous and retry before any later Firebase bind.
  */
 export function discardUnmergeableAnonymousEpoch(): boolean {
+  clearQueuedPersonProperties()
   applyFirebaseAnonymousConsensus()
   const cleanAnonymousId = rotatePersistedAnonymousDistinctId()
   if (!cleanAnonymousId) return false
@@ -1144,7 +1226,7 @@ export function captureFirstLaunch(properties: TelemetryContext = {}): void {
 export function registerPersonProperties(properties: Record<string, TelemetryValue>): void {
   if (!canEmit()) return
   if (consentState !== 'granted' || !distinctId || !boundUserId) {
-    pendingPersonSet = { ...(pendingPersonSet || {}), ...properties }
+    queuePersonProperties(properties)
     return
   }
   capturePersonProperties(properties, null)
@@ -1164,7 +1246,7 @@ export function registerPersonProperties(properties: Record<string, TelemetryVal
 export function registerPersonPropertiesOnce(properties: Record<string, TelemetryValue>): void {
   if (!canEmit()) return
   if (consentState !== 'granted' || !distinctId || !boundUserId) {
-    pendingPersonSetOnce = { ...(pendingPersonSetOnce || {}), ...properties }
+    queuePersonProperties(undefined, properties)
     return
   }
   capturePersonProperties(null, properties)
