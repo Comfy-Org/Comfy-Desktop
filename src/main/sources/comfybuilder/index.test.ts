@@ -26,7 +26,8 @@ vi.mock('../../devplatform/distributions', () => ({
 
 import { promises as fsp } from 'fs'
 import { installArtifact, stageModels, resolveModelManifest } from '../../comfybuilder'
-import { resolveHostArtifactForVersion } from '../../devplatform/distributions'
+import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/distributions'
+import { clearVersionCache, getCachedVersions } from '../../devplatform/versionCache'
 import { comfybuilder, withAccelArgs } from './index'
 import type { InstallationRecord } from '../../installations'
 import type { InstallTools } from '../../types/sources'
@@ -327,5 +328,27 @@ describe('comfybuilder update-distribution', () => {
     const result = await comfybuilder.handleAction('update-distribution', record(), {}, tools as never)
     expect(result.ok).toBe(false)
     expect(tools.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('comfybuilder check-update', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearVersionCache()
+  })
+
+  it('warms the version cache from the catalog', async () => {
+    vi.mocked(listCompleteVersions).mockResolvedValue([7, 3])
+    const result = await comfybuilder.handleAction('check-update', record(), undefined, fakeTools() as never)
+    expect(result.ok).toBe(true)
+    expect(getCachedVersions('d1')?.versions).toEqual([7, 3])
+  })
+
+  it('reports failure and leaves the cache untouched when the catalog read throws', async () => {
+    vi.mocked(listCompleteVersions).mockRejectedValueOnce(new Error('offline'))
+    const result = await comfybuilder.handleAction('check-update', record(), undefined, fakeTools() as never)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('offline')
+    expect(getCachedVersions('d1')).toBeNull()
   })
 })

@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { listCompleteVersions, listDistributionRows, resolveHostArtifact } from './distributions'
+import {
+  listCompleteVersions,
+  listDistributionRows,
+  resolveHostArtifact,
+  resolveHostArtifactForVersion,
+} from './distributions'
 import { clearVersionCache, getCachedVersions } from './versionCache'
 import type { Artifact, Distribution, DistributionVersion, Host } from '../comfybuilder'
 
@@ -195,5 +200,37 @@ describe('resolveHostArtifact', () => {
       artifactsByVersion: { v1: [artifact({ os: 'mac', gpu: 'mps' })] },
     })
     expect(await resolveHostArtifact(client as never, HOST, 'd1')).toBeNull()
+  })
+})
+
+describe('resolveHostArtifactForVersion', () => {
+  it('resolves the named version, not just the latest', async () => {
+    const client = stubClient({
+      versionsByDist: { d1: [version(9, 'complete'), version(5, 'complete')] },
+      artifactsByVersion: { v5: [artifact({ id: 'older-pick' })], v9: [artifact({ id: 'newer' })] },
+    })
+    const resolved = await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)
+    expect(resolved).toMatchObject({ version: 5, artifact: { id: 'older-pick' } })
+  })
+
+  it('returns null when the named version is not published', async () => {
+    const client = stubClient({ versionsByDist: { d1: [version(9, 'complete')] } })
+    expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
+  })
+
+  it('returns null when the named version is not complete', async () => {
+    const client = stubClient({
+      versionsByDist: { d1: [version(5, 'building')] },
+      artifactsByVersion: { v5: [artifact()] },
+    })
+    expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
+  })
+
+  it('returns null when the named version has no artifact for this host', async () => {
+    const client = stubClient({
+      versionsByDist: { d1: [version(5, 'complete')] },
+      artifactsByVersion: { v5: [artifact({ os: 'mac', gpu: 'mps' })] },
+    })
+    expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
   })
 })

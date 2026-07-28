@@ -411,18 +411,6 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
   gap: 12px;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 .channel-picker-card {
   display: flex;
   flex-direction: column;

@@ -42,8 +42,9 @@ export interface DevPlatformDistribution {
    *  / `linux`). The card names them instead of saying "not for this machine". */
   targetOs?: string[]
   minDesktopVersion?: string
-  /** Local-only: present for installed / update-available. */
-  installedVersion?: string
+  /** Local-only: present for installed / update-available. A distribution
+   *  version is an integer, matching how the row builder sets it. */
+  installedVersion?: number
 }
 
 /** Kickoff result of `installDistribution`: mirrors `addInstallation` so the

@@ -131,7 +131,7 @@ describe('comfybuilder.getDetailSections', () => {
     // "No versions found" is a different claim from "not looked yet".
     const update = sectionsFor(record()).find((s) => s.tab === 'update')
     expect(rowIds(record())).not.toContain('latest')
-    expect(rowIds(record())).not.toContain('published')
+    expect(rowIds(record())).not.toContain('last-checked')
     expect((update?.actions ?? []).map((a) => a.id)).toContain('check-update')
   })
 
