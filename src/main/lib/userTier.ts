@@ -11,8 +11,7 @@ import { app, type WebContents } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as telemetry from './telemetry'
-
-export type CloudUserTier = 'free' | 'paid' | 'unknown'
+import type { CloudUserTier } from '../../types/ipc'
 
 /** Subscription tier names that map to `paid`; anything else (FREE, missing, malformed) maps to `free`. */
 const PAID_TIER_NAMES: ReadonlySet<string> = new Set([
