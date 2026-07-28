@@ -32,7 +32,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { resolve } from 'node:path'
@@ -1241,6 +1241,168 @@ async function waitForOperationDrain(installationId: string, timeout = 300_000):
     })
     .toBe(false)
 }
+
+// ---------------------------------------------------------------------------
+// Snapshots x PyTorch stacks: change-pytorch must record pre/post snapshots
+// carrying the v2 torchStack identity, and restoring a snapshot captured on a
+// DIFFERENT stack must drive the restore's torch phase so the venv follows
+// the snapshot. Dual-tagged @sec-pytorch @sec-snapshot: the variant runs
+// (cpu/nvidia/amd) grep @sec-pytorch and get this coverage; a standalone
+// @sec-snapshot run self-skips (the switches these assert on never happened).
+// ---------------------------------------------------------------------------
+
+interface SnapshotFileLite {
+  filename: string
+  version: number
+  createdAt: string
+  trigger: string
+  label: string | null
+  torchStack?: {
+    kind: 'managed' | 'observed'
+    ref?: { packages: { torch: string; torchvision?: string; torchaudio?: string } }
+    torchVersion?: string | null
+    torchvisionVersion?: string | null
+    torchaudioVersion?: string | null
+  }
+}
+
+/** Reads the install's snapshot registry straight from disk (newest first) -
+ *  the assertions below are about what change-pytorch persisted, not about
+ *  what the renderer shows. */
+function readSnapshotFiles(): SnapshotFileLite[] {
+  const dir = path.join(_updateInstallPath, '.launcher', 'snapshots')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => ({
+      ...(JSON.parse(readFileSync(path.join(dir, f), 'utf-8')) as Omit<SnapshotFileLite, 'filename'>),
+      filename: f,
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+/** The snapshot's recorded torch tuple, kind-agnostic (managed ref packages
+ *  or observed per-package fields). */
+function snapshotTorchTuple(
+  s: SnapshotFileLite,
+): { torch?: string | null; torchvision?: string | null; torchaudio?: string | null } | null {
+  const stack = s.torchStack
+  if (!stack) return null
+  if (stack.kind === 'managed') return stack.ref?.packages ?? null
+  return { torch: stack.torchVersion, torchvision: stack.torchvisionVersion, torchaudio: stack.torchaudioVersion }
+}
+
+/** Catalog tuples may omit the local tag the venv reports (`2.10.0` vs
+ *  `2.10.0+cpu`); a recorded version satisfies an installed one when they
+ *  are equal or differ only by the installed local tag. */
+function recordedVersionMatches(recorded: string | null | undefined, installed: string): boolean {
+  if (!recorded) return false
+  return recorded === installed || installed.startsWith(`${recorded}+`)
+}
+
+/** Newest snapshot with the given trigger whose recorded torch version
+ *  satisfies `installedTorch`. */
+function findStackSnapshot(
+  snapshots: SnapshotFileLite[], trigger: string, installedTorch: string,
+): SnapshotFileLite | undefined {
+  return snapshots.find(
+    (s) => s.trigger === trigger && recordedVersionMatches(snapshotTorchTuple(s)?.torch, installedTorch),
+  )
+}
+
+/** Picker-driven snapshot restore: Snapshots tab -> expand row -> Restore ->
+ *  diff-preview confirm -> wait out the takeover and the full app-side
+ *  operation (torch phase included) before the caller probes the venv. */
+async function restoreSnapshotViaPicker(filename: string): Promise<void> {
+  await waitForOperationDrain(_updateInstallId)
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
+  await popup.waitForSelector(byTestId(TID.snapshotRow(filename)), { timeout: 30_000 })
+  await popup.clickUntilVisible(
+    byTestId(TID.snapshotRow(filename)),
+    byTestId(TID.snapshotRowRestore(filename)),
+    { timeout: 30_000 },
+  )
+  expect(await popup.click(byTestId(TID.snapshotRowRestore(filename)))).toBe(true)
+  const confirmSelector = '[data-testid="modal-confirm-button"], [data-testid="base-alert-action"]'
+  await popup.waitForVisible(confirmSelector, { timeout: 30_000 })
+  expect(await popup.click(confirmSelector)).toBe(true)
+  await waitForProgressTakeoverAfterPopupClose()
+  // Same probe discipline as changePytorchStack: never touch the venv while
+  // the restore's torch swap owns it.
+  await waitForOperationDrain(_updateInstallId, GPU_VARIANT ? 2_400_000 : 900_000)
+  await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] }).toBe(true)
+  await closeTitlePopupIfOpen(ctx.app)
+}
+
+let _pytorchSwitchedSnapshotFile = ''
+let _pytorchBaselineSnapshotFile = ''
+
+test('pytorch changes recorded pre/post snapshots carrying the stack identity @sec-pytorch @sec-snapshot @lifecycle', async () => {
+  test.skip(!_targetPytorchOption, 'pytorch switch tests did not run (standalone @sec-snapshot subset)')
+  expect(_baselinePytorchOption, 'baseline PyTorch picker option not captured').not.toBeNull()
+  expect(_baselinePytorchSignature, 'baseline PyTorch signature not captured').not.toBeNull()
+  // The switch-back op saves its post-update snapshot after the test's
+  // frontend-loaded resolution; wait for the op to fully drain first.
+  await waitForOperationDrain(_updateInstallId)
+
+  const snapshots = readSnapshotFiles()
+  const preBaseline = findStackSnapshot(snapshots, 'pre-update', _baselinePytorchSignature!.torch)
+  const postSwitched = findStackSnapshot(snapshots, 'post-update', _targetPytorchOption!.version)
+  const postBaseline = findStackSnapshot(snapshots, 'post-update', _baselinePytorchSignature!.torch)
+  expect(preBaseline, 'no pre-update snapshot recording the pre-switch stack').toBeTruthy()
+  expect(postSwitched, 'no post-update snapshot recording the switched stack').toBeTruthy()
+  expect(postBaseline, 'no post-update snapshot recording the restored baseline stack').toBeTruthy()
+
+  // Post-change snapshots must be v2 records with the restorable managed
+  // identity (change-pytorch persists the verified catalog ref) - an
+  // observed note here would silently break snapshot-driven stack restores.
+  for (const snapshot of [postSwitched!, postBaseline!]) {
+    expect(snapshot.version, `${snapshot.filename} is not a v2 snapshot`).toBe(2)
+    expect(snapshot.torchStack!.kind, `${snapshot.filename} does not carry a managed stack ref`).toBe('managed')
+  }
+
+  _pytorchSwitchedSnapshotFile = postSwitched!.filename
+  _pytorchBaselineSnapshotFile = postBaseline!.filename
+})
+
+test('snapshot restore re-applies the switched pytorch stack @sec-pytorch @sec-snapshot @lifecycle', async () => {
+  test.skip(!_pytorchSwitchedSnapshotFile, 'pytorch stack snapshots not captured')
+  test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
+
+  await restoreSnapshotViaPicker(_pytorchSwitchedSnapshotFile)
+
+  // The venv must follow the snapshot's own recorded tuple - this is the
+  // restore's torch phase actually applying a stack the install is not on.
+  const recorded = snapshotTorchTuple(readSnapshotFiles().find((s) => s.filename === _pytorchSwitchedSnapshotFile)!)!
+  const signature = queryTorchSignature()
+  expect(recordedVersionMatches(recorded.torch, signature.torch),
+    `restored torch ${signature.torch} does not match snapshot tuple ${recorded.torch}`).toBe(true)
+  expect(signature.torch).not.toBe(_baselinePytorchSignature!.torch)
+  if (recorded.torchvision) {
+    expect(recordedVersionMatches(recorded.torchvision, signature.torchvision ?? ''),
+      `restored torchvision ${signature.torchvision} does not match snapshot tuple ${recorded.torchvision}`).toBe(true)
+  }
+  if (recorded.torchaudio) {
+    expect(recordedVersionMatches(recorded.torchaudio, signature.torchaudio ?? ''),
+      `restored torchaudio ${signature.torchaudio} does not match snapshot tuple ${recorded.torchaudio}`).toBe(true)
+  }
+  expect(signature.torchDistInfoCount, 'venv must contain exactly one torch distribution').toBe(1)
+})
+
+test('snapshot restore returns the venv to the baseline pytorch stack @sec-pytorch @sec-snapshot @lifecycle', async () => {
+  test.skip(!_pytorchBaselineSnapshotFile, 'pytorch stack snapshots not captured')
+  test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
+
+  await restoreSnapshotViaPicker(_pytorchBaselineSnapshotFile)
+
+  // Full-tuple equality with the captured baseline: the round trip
+  // (switch -> switch back -> restore switched -> restore baseline) must
+  // land the venv exactly where it started. `cudaAvailable` is runtime
+  // driver state, not package state - excluded as elsewhere.
+  const { cudaAvailable: _cur, ...restored } = queryTorchSignature()
+  const { cudaAvailable: _base, ...baseline } = _baselinePytorchSignature!
+  expect(restored).toEqual(baseline)
+})
 
 let _restoreSnapshotFilename = ''
 let _snapshotHeadAtCapture = ''
