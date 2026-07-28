@@ -6,7 +6,6 @@ import {
   type ComputedRef,
   type Ref,
 } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { scoreName } from '../utils/fuzzyMatch'
 import type { Installation } from '../types/ipc'
 
@@ -38,7 +37,6 @@ export interface UseInstallListApi {
   visibleInstalls: ComputedRef<Installation[]>
   showEmptyHint: ComputedRef<boolean>
   matchesQuery: (name: string) => boolean
-  lastLaunchedLabel: (inst: Installation) => string
   /** Compact recency for tight picker rows — `3h ago`, not `Launched 3h ago`. */
   lastLaunchedShortLabel: (inst: Installation) => string
 }
@@ -52,7 +50,6 @@ export interface UseInstallListApi {
 // any settings broadcast — toggling Global Settings filters cloud out
 // without requiring a window reopen.
 export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
-  const { t } = useI18n()
   const { installations } = opts
 
   const searchQuery = ref('')
@@ -157,12 +154,6 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
     return `${days}d ago`
   }
 
-  function lastLaunchedLabel(inst: Installation): string {
-    return typeof inst.lastLaunchedAt === 'number'
-      ? t('dashboard.launchedAgo', { time: timeAgo(inst.lastLaunchedAt) })
-      : t('dashboard.neverLaunched')
-  }
-
   function lastLaunchedShortLabel(inst: Installation): string {
     return typeof inst.lastLaunchedAt === 'number'
       ? timeAgo(inst.lastLaunchedAt)
@@ -175,7 +166,6 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
     visibleInstalls,
     showEmptyHint,
     matchesQuery,
-    lastLaunchedLabel,
     lastLaunchedShortLabel,
   }
 }

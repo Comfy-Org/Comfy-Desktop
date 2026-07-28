@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { listDistributionRows, resolveHostArtifact } from './distributions'
+import {
+  listCompleteVersions,
+  listDistributionRows,
+  resolveHostArtifact,
+  resolveHostArtifactForVersion,
+} from './distributions'
+import { clearVersionCache, getCachedVersions } from './versionCache'
 import type { Artifact, Distribution, DistributionVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
@@ -68,6 +74,26 @@ describe('listDistributionRows', () => {
     const rows = await listDistributionRows(client as never, HOST)
     const row = rows[0]!
     expect(row).toMatchObject({ version: '3', state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' })
+    expect(row.targetOs).toEqual(['windows'])
+  })
+
+  it('reports every OS a mismatched build targets, deduped and sorted', async () => {
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'NotForLinux' }],
+      versionsByDist: { d1: [version(3, 'complete')] },
+      artifactsByVersion: {
+        v3: [
+          artifact({ os: 'windows', gpu: 'nvidia' }),
+          artifact({ os: 'mac' }),
+          // Same OS twice must not double up, and a half-built target isn't
+          // somewhere you could actually run it.
+          artifact({ os: 'windows', gpu: 'cpu' }),
+          artifact({ os: 'linux', status: 'building' }),
+        ],
+      },
+    })
+    const rows = await listDistributionRows(client as never, HOST)
+    expect(rows[0]!.targetOs).toEqual(['mac', 'windows'])
   })
 
   it('marks update-available when installed older and the newer build runs here', async () => {
@@ -127,6 +153,32 @@ describe('listDistributionRows', () => {
   })
 })
 
+describe('listCompleteVersions', () => {
+  it('returns complete versions newest first, dropping unbuilt ones', async () => {
+    const client = stubClient({
+      versionsByDist: {
+        d1: [version(2, 'complete'), version(5, 'complete'), version(6, 'building'), version(1, 'failed')],
+      },
+    })
+    expect(await listCompleteVersions(client as never, 'd1')).toEqual([5, 2])
+  })
+})
+
+describe('version cache warming', () => {
+  it('caches a distribution\'s complete versions as a side effect of listing rows', async () => {
+    // The manage view builds its Update tab synchronously and cannot fetch, so
+    // the catalog read the chooser already does is what fills it.
+    clearVersionCache()
+    const client = stubClient({
+      distributions: [{ id: 'd1', name: 'Image' }],
+      versionsByDist: { d1: [version(1, 'complete'), version(3, 'complete'), version(4, 'building')] },
+      artifactsByVersion: { v3: [artifact()] },
+    })
+    await listDistributionRows(client as never, HOST)
+    expect(getCachedVersions('d1')?.versions).toEqual([3, 1])
+  })
+})
+
 describe('resolveHostArtifact', () => {
   it('returns the host artifact of the latest complete version', async () => {
     const client = stubClient({
@@ -148,5 +200,37 @@ describe('resolveHostArtifact', () => {
       artifactsByVersion: { v1: [artifact({ os: 'mac', gpu: 'mps' })] },
     })
     expect(await resolveHostArtifact(client as never, HOST, 'd1')).toBeNull()
+  })
+})
+
+describe('resolveHostArtifactForVersion', () => {
+  it('resolves the named version, not just the latest', async () => {
+    const client = stubClient({
+      versionsByDist: { d1: [version(9, 'complete'), version(5, 'complete')] },
+      artifactsByVersion: { v5: [artifact({ id: 'older-pick' })], v9: [artifact({ id: 'newer' })] },
+    })
+    const resolved = await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)
+    expect(resolved).toMatchObject({ version: 5, artifact: { id: 'older-pick' } })
+  })
+
+  it('returns null when the named version is not published', async () => {
+    const client = stubClient({ versionsByDist: { d1: [version(9, 'complete')] } })
+    expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
+  })
+
+  it('returns null when the named version is not complete', async () => {
+    const client = stubClient({
+      versionsByDist: { d1: [version(5, 'building')] },
+      artifactsByVersion: { v5: [artifact()] },
+    })
+    expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
+  })
+
+  it('returns null when the named version has no artifact for this host', async () => {
+    const client = stubClient({
+      versionsByDist: { d1: [version(5, 'complete')] },
+      artifactsByVersion: { v5: [artifact({ os: 'mac', gpu: 'mps' })] },
+    })
+    expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
   })
 })

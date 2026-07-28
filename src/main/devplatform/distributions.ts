@@ -21,6 +21,7 @@ import { hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Distribution, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPU } from '../lib/gpu'
+import { setCachedVersions } from './versionCache'
 
 /**
  * Distribution tile states. `installable` / `no-build` / `platform-mismatch` are
@@ -41,6 +42,9 @@ export interface DistributionRow {
   name: string
   description?: string
   version?: string
+  /** ComfyUI version bundled by this distribution. TODO(builder-backend): the
+   *  build metadata doesn't carry it yet, so this is currently never set. */
+  comfyuiVersion?: string
   finishedAt?: string
   numCustomNodes?: number
   state: DistributionRowState
@@ -49,6 +53,9 @@ export interface DistributionRow {
   installedVersion?: number
   /** i18n suffix explaining a blocked state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`), so the card can name a machine that would run it. */
+  targetOs?: string[]
 }
 
 /** What `installDistribution` resolves before it hands off to the install chain. */
@@ -95,7 +102,15 @@ async function buildRow(
     state: 'no-build',
   }
 
-  const latest = latestCompleteVersion(await client.listVersions(dist.id))
+  const allVersions = await client.listVersions(dist.id)
+  // The manage view's version picker is built synchronously and can't fetch, so
+  // hand it what this read already saw.
+  setCachedVersions(
+    dist.id,
+    allVersions.filter((v) => v.status === 'complete').map((v) => v.version),
+  )
+
+  const latest = latestCompleteVersion(allVersions)
   if (!latest) return { ...base, state: 'no-build', blockedReason: 'buildFailed' }
 
   const installedVersion = installed?.get(dist.id)
@@ -108,7 +123,16 @@ async function buildRow(
 
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
-  if (!artifact) return { ...withVersion, state: 'platform-mismatch', blockedReason: 'noArtifactForMachine' }
+  if (!artifact) {
+    // Sorted so the label is stable across artifact orderings.
+    const targetOs = [...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))].sort()
+    return {
+      ...withVersion,
+      state: 'platform-mismatch',
+      blockedReason: 'noArtifactForMachine',
+      ...(targetOs.length ? { targetOs } : {}),
+    }
+  }
   // Installed at an older version, and the newer one runs here: offer the update.
   if (installedVersion !== undefined && latest.version > installedVersion) {
     return { ...withVersion, state: 'update-available' }
@@ -152,4 +176,40 @@ export async function resolveHostArtifact(
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
   return artifact ? { artifact, version: latest.version } : null
+}
+
+/**
+ * The same resolution against ONE named version — what the manage view's update
+ * action installs. Rollback and roll-forward are the same operation.
+ *
+ * Null when the version isn't published, isn't complete, or has no artifact this
+ * machine can run, so the caller reports that instead of installing something
+ * the host can't launch.
+ */
+export async function resolveHostArtifactForVersion(
+  client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
+  host: Host,
+  distributionId: string,
+  version: number,
+): Promise<ResolvedHostArtifact | null> {
+  const target = (await client.listVersions(distributionId)).find(
+    (v) => v.version === version && v.status === 'complete',
+  )
+  if (!target) return null
+  const { artifacts } = await client.getVersion(target.id)
+  const artifact = selectArtifactForHost(artifacts, host)
+  return artifact ? { artifact, version: target.version } : null
+}
+
+/** Every complete version, newest first — what the manage view reports as
+ *  published, and the basis for a future version picker. */
+export async function listCompleteVersions(
+  client: Pick<ComfyBuilderClient, 'listVersions'>,
+  distributionId: string,
+): Promise<number[]> {
+  const versions = await client.listVersions(distributionId)
+  return versions
+    .filter((v) => v.status === 'complete')
+    .map((v) => v.version)
+    .sort((a, b) => b - a)
 }

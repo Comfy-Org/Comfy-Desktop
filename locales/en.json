@@ -20,7 +20,8 @@
     "cloud": "Cloud",
     "legacyDesktop": "Legacy Desktop",
     "remote": "Remote",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "distribution": "Distribution"
   },
   "chooser": {
     "title": "Choose an instance",
@@ -38,6 +39,7 @@
     "filterRemote": "Remote",
     "updatePill": "Update",
     "migratePill": "Migrate",
+    "workspaceShelf": "Workspace",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
@@ -265,6 +267,25 @@
     "envVars": "Environment Variables",
     "copyError": "Copy error details",
     "clear": "Clear"
+  },
+  "comfybuilder": {
+    "stageModels": "Download models",
+    "distribution": "Distribution",
+    "distributionVersion": "Distribution Version",
+    "comfyuiVersion": "ComfyUI Version",
+    "distributionVersionTitle": "Distribution Version",
+    "installedVersion": "Installed",
+    "latestVersion": "Latest Published",
+    "errorNoDistribution": "This install is not linked to a distribution.",
+    "updateAvailable": "Update available",
+    "upToDate": "Up to date",
+    "lastChecked": "Last Checked",
+    "updateToVersion": "Update to v{version}",
+    "updatingTo": "Updating to v{version}",
+    "updateConfirmTitle": "Update distribution",
+    "updateConfirmMessage": "Update this instance from {from} to {to}?\n\nThe environment is replaced in place. Your workflows and staged models are kept.",
+    "errorNoVersion": "No target version was given.",
+    "errorVersionUnavailable": "Version v{version} has no build for this machine."
   },
   "list": {
     "loadSnapshot": "Load Snapshot",
@@ -656,7 +677,7 @@
     "connect": "Connect",
     "connecting": "Connecting",
     "openDirectory": "Open Directory",
-    "checkForUpdate": "Check for Update",
+    "checkForUpdate": "Check for updates",
     "featureNotImplemented": "This feature is not yet implemented.",
     "updateAvailable": "Update Available",
     "copyInstallation": "Duplicate Instance",
@@ -1120,6 +1141,40 @@
       "nodes": "Loading custom nodes…"
     },
     "viewLogs": "View logs"
+  },
+  "devPlatform": {
+    "signIn": {
+      "cta": "Log in"
+    },
+    "account": {
+      "signOut": "Sign out",
+      "signedInAs": "Signed in as {email}",
+      "signOutConfirmTitle": "Sign out of ComfyBuilder?",
+      "signOutConfirmBody": "Your installed distributions are kept and still run. They just stop receiving updates until you sign back in.",
+      "signOutConfirmCta": "Sign out"
+    },
+    "workspace": {
+      "personalLabel": "Personal",
+      "switchLabel": "Workspace",
+      "loadError": "Couldn't load workspaces. Retry"
+    },
+    "distribution": {
+      "menuInstall": "Install",
+      "distVersion": "Dist v{version}",
+      "notInstalled": "Not installed",
+      "emptyTitle": "No distributions published to this workspace yet.",
+      "loadError": "Couldn't load distributions. Retry",
+      "installFailed": "Could not start the install. Try again.",
+      "states": {
+        "noBuild": "No build",
+        "platformMismatch": "Not for this machine",
+        "updateAvailable": "Update"
+      },
+      "blockedReason": {
+        "buildFailed": "This distribution has no successful build yet.",
+        "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
+      }
+    }
   },
   "errors": {
     "invalidUrl": "Enter a valid URL (e.g. http://localhost:8188).",

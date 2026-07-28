@@ -27,6 +27,10 @@ export interface DevPlatformDistribution {
   name: string
   description?: string
   version?: string
+  /** The ComfyUI version this distribution bundles, for the card's facts line.
+   *  TODO(builder-backend): not yet populated by `listDistributionRows` — the
+   *  build metadata needs to carry it through. Absent renders as unknown. */
+  comfyuiVersion?: string
   /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number
@@ -34,9 +38,13 @@ export interface DevPlatformDistribution {
   state: DevPlatformDistributionState
   /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
   blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`). The card names them instead of saying "not for this machine". */
+  targetOs?: string[]
   minDesktopVersion?: string
-  /** Local-only: present for installed / update-available. */
-  installedVersion?: string
+  /** Local-only: present for installed / update-available. A distribution
+   *  version is an integer, matching how the row builder sets it. */
+  installedVersion?: number
 }
 
 /** Kickoff result of `installDistribution`: mirrors `addInstallation` so the
@@ -58,6 +66,24 @@ export type ResolvedTheme = Exclude<Theme, 'system'>
  *  `getCloudCapacity` and `useCloudCapacity`). `normal` = no UI changes;
  *  `degraded` = show heavy-usage warning; `disabled` = block entry. */
 export type CloudCapacityStatus = 'normal' | 'degraded' | 'disabled'
+
+/** One row of a `version-stats` field's table. */
+export interface VersionStatRow {
+  id: string
+  label: string
+  value: string
+  title?: string
+  highlight?: boolean
+}
+
+/** Payload of a `version-stats` field: the Update tab's version summary. */
+export interface VersionStatsValue {
+  headline: string
+  headlineHighlight?: boolean
+  badge?: string | null
+  badgeTone?: 'current' | 'update'
+  rows: VersionStatRow[]
+}
 
 /** Signed-in user's Comfy Cloud subscription tier, normalized to the
  *  two values the capacity gate cares about. `'unknown'` = signed out
@@ -178,7 +204,14 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value: string | boolean | number | string[] | Record<string, string> | null
+  value:
+    | string
+    | boolean
+    | number
+    | string[]
+    | Record<string, string>
+    | VersionStatsValue
+    | null
   editable?: boolean
   editType?:
   | 'select'
@@ -187,6 +220,9 @@ export interface DetailField {
   | 'number'
   | 'path'
   | 'channel-cards'
+  /** Read-only version summary: headline + badge over a table of facts. The
+   *  source supplies the wording; the renderer only lays it out. */
+  | 'version-stats'
   | 'args-builder'
   | 'env-vars'
   | 'model-dirs'
@@ -1626,7 +1662,10 @@ export const REQUIRES_STOPPED = new Set([
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
-  'migrate-from'
+  'migrate-from',
+  // Re-installs the distribution's environment in place — the venv can't be
+  // rewritten under a running process.
+  'update-distribution'
 ])
 
 /** Title-popup kind tags — the discriminant for popup config/opts across main,
