@@ -101,6 +101,61 @@ describe('ChannelPicker — headline product + version', () => {
     expect(version.classes()).not.toContain('is-update-available')
   })
 
+  it('shows the "Up to date" badge for cards without the opt-out (ComfyUI)', () => {
+    const wrapper = mountPicker(
+      field([
+        {
+          value: 'stable',
+          label: 'Stable',
+          data: {
+            productName: 'ComfyUI',
+            installedVersion: 'v0.3.75',
+            latestVersion: 'v0.3.75',
+            updateAvailable: false
+          }
+        }
+      ])
+    )
+    expect(wrapper.find('.channel-picker-badge').text()).toBe('Up to date')
+  })
+
+  it('hides the "Up to date" badge when the card opts out (PyTorch current stack)', () => {
+    const wrapper = mountPicker(
+      field([
+        {
+          value: 'stack-cu130',
+          label: 'PyTorch 2.10.0+cu130',
+          data: {
+            productName: 'PyTorch',
+            installedVersion: '2.10.0+cu130',
+            updateAvailable: false,
+            hideUpToDateBadge: true
+          }
+        }
+      ], 'stack-cu130')
+    )
+    expect(wrapper.find('.channel-picker-badge').exists()).toBe(false)
+  })
+
+  it('still shows the "Update available" badge when the opt-out card has an update', () => {
+    const wrapper = mountPicker(
+      field([
+        {
+          value: 'stack-cu130',
+          label: 'PyTorch 2.11.0+cu130',
+          data: {
+            productName: 'PyTorch',
+            installedVersion: '2.10.0+cu130',
+            latestVersion: '2.11.0+cu130',
+            updateAvailable: true,
+            hideUpToDateBadge: true
+          }
+        }
+      ], 'stack-cu130')
+    )
+    expect(wrapper.find('.channel-picker-badge').text()).toBe('Update available')
+  })
+
   it('renders no product span when the card data carries no productName', () => {
     const wrapper = mountPicker(
       field([

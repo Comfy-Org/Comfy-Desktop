@@ -158,7 +158,7 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
     description: t('standalone.pytorchObservedDesc'),
     ...(grouped ? { groupPath: [torchSeriesGroup(currentTorch)] } : {}),
-    data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false },
+    data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false, hideUpToDateBadge: true },
   }
   if (syntheticCurrent && !grouped) options.push(syntheticCurrent)
   for (const s of ordered) {
@@ -240,6 +240,9 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
         // "Latest" would be wrong there.
         latestLabel: t('standalone.pytorchSelectedVersion'),
         updateAvailable: !isCurrent,
+        // No "Up to date" badge on the current stack: other stacks remain
+        // selectable, and stack switches aren't recommended updates.
+        hideUpToDateBadge: true,
         ...(actions ? { actions } : {}),
       },
     })

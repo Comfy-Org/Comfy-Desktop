@@ -101,6 +101,10 @@ interface PreviewData {
   lastChecked?: string
   lastCheckedAt?: number
   updateAvailable?: boolean
+  /** Suppress the "Up to date" badge when there is no update. The PyTorch
+   *  card sets this: other stacks are still selectable in the picker, so
+   *  "Up to date" would wrongly imply nothing is available. */
+  hideUpToDateBadge?: boolean
   /** True while `commitsAhead` is still being computed; drives the
    *  "Computing commits ahead…" hint so the label swap isn't a surprise. */
   enriching?: boolean
@@ -117,6 +121,7 @@ const preview = computed<PreviewData | null>(() => {
     lastChecked: data.lastChecked,
     lastCheckedAt: data.lastCheckedAt,
     updateAvailable: data.updateAvailable,
+    hideUpToDateBadge: data.hideUpToDateBadge,
     enriching: data.enriching
   }
 })
@@ -201,6 +206,7 @@ const statusBadge = computed(() => {
   if (preview.value.updateAvailable) {
     return t('channelCards.updateAvailable', 'Update available')
   }
+  if (preview.value.hideUpToDateBadge) return null
   return t('channelCards.upToDate', 'Up to date')
 })
 
