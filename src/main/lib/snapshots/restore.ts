@@ -30,7 +30,16 @@ const PROTECTED_EXACT = new Set([
 // torch_scatter compile against torch's ABI, 'nvidia' covers
 // nvidia-cublas-cu12 etc., 'triton' covers triton-windows,
 // 'pytorch-triton' covers pytorch-triton-rocm, 'cuda' covers cuda-bindings.
-const PROTECTED_PREFIXES = ['torch', 'nvidia', 'triton', 'pytorch-triton', 'cuda', 'rocm']
+// The 'amd-*-device' prefixes cover AMD's multi-arch per-architecture
+// device-overlay wheels (amd-torch-device-gfx*, amd-torchvision-device-gfx*):
+// they only resolve from AMD's index via the torch [device-all] extras, so
+// the torch phase owns them - a plain pip sync can neither install nor
+// remove them safely. Deliberately NOT a bare 'amd' prefix, so ordinary
+// AMD-published libraries (e.g. amd-quark) stay snapshot-restorable.
+const PROTECTED_PREFIXES = [
+  'torch', 'nvidia', 'triton', 'pytorch-triton', 'cuda', 'rocm',
+  'amd-torch-device', 'amd-torchvision-device', 'amd-torchaudio-device',
+]
 
 export function isProtectedPackage(name: string): boolean {
   const lower = name.toLowerCase()

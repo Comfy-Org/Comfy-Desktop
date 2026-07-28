@@ -45,7 +45,12 @@ describe('isProtectedPackage', () => {
     'torch', 'torchvision', 'torchaudio', 'torio', 'functorch',
     'torch-tensorrt', 'torch_scatter',
     'nvidia-cublas-cu12', 'triton', 'triton-windows', 'pytorch-triton-rocm',
-    'cuda-bindings', 'Torch', 'TorchVision'
+    'cuda-bindings', 'Torch', 'TorchVision',
+    // AMD multi-arch stack: rocm-sdk family plus per-arch device overlays,
+    // installable only via [device-all] extras against AMD's index.
+    'rocm', 'rocm-sdk-core', 'rocm-bootstrap',
+    'amd-torch-device-gfx1100', 'amd-torchvision-device-gfx908',
+    'amd-torchaudio-device-gfx1200'
   ])('protects %s', (name) => {
     expect(isProtectedPackage(name)).toBe(true)
   })
@@ -55,7 +60,10 @@ describe('isProtectedPackage', () => {
   // that record them unrestorable, since nothing else reconciles them.
   it.each([
     'numpy', 'requests', 'pillow', 'transformers', 'safetensors', 'curl-cffi',
-    'torchsde', 'torchmetrics', 'torchdiffeq'
+    'torchsde', 'torchmetrics', 'torchdiffeq',
+    // 'amd' alone is not a protected prefix: ordinary AMD-published libraries
+    // must stay snapshot-restorable.
+    'amd-quark', 'amdsmi'
   ])(
     'does not protect %s',
     (name) => {
