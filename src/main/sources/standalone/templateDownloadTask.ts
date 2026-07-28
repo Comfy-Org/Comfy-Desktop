@@ -1,11 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import { download } from '../../lib/download'
-import {
-  getModelsBaseDir,
-  setTemplateTrayMirror,
-  clearTemplateTrayMirror,
-} from '../../lib/comfyDownloadManager'
+import { setTemplateTrayMirror, clearTemplateTrayMirror } from '../../lib/comfyDownloadManager'
+import { getModelsBaseDir } from '../../lib/modelDownloadPaths'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'

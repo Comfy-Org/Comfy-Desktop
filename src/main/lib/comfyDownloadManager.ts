@@ -14,13 +14,6 @@ import {
   resolveDownloadContextById,
 } from './modelDownloadPaths'
 
-export { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
-export {
-  areModelsPresent,
-  buildExistenceCandidates,
-  getModelsBaseDir,
-} from './modelDownloadPaths'
-
 /** Asset (output) downloads whose final file is itself an image we can preview. */
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 

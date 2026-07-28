@@ -14,10 +14,10 @@ vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(asy
 vi.mock('../../lib/download', () => ({ download: (...a: unknown[]) => download(...a) }))
 vi.mock('../../lib/disk', () => ({ getDiskSpace: () => getDiskSpace() }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
-  getModelsBaseDir: () => '/tmp/models',
   setTemplateTrayMirror: vi.fn(),
   clearTemplateTrayMirror: vi.fn(),
 }))
+vi.mock('../../lib/modelDownloadPaths', () => ({ getModelsBaseDir: () => '/tmp/models' }))
 // Keep the task hermetic — never touch the real filesystem. `stat` rejects so
 // the loop treats every file as "not present" and proceeds to `download`.
 vi.mock('fs', () => ({

@@ -1,74 +1,38 @@
 /**
  * Cloud capacity-protection switch.
  *
- * Reads the `desktop-cloud-capacity` PostHog flag at boot via `getOpsFlag`, which
- * deliberately BYPASSES the consent gate: this is server config pushed TO the client to
- * protect service availability, not analytics collected FROM the user, so a user who
- * declined telemetry still benefits when GPUs are saturated. The evaluation request supplies
- * only the installation-stable key and flag key; implicit flag events are disabled.
+ * Reads the `desktop-cloud-capacity` PostHog flag at boot. The read bypasses the consent gate:
+ * this is server config pushed TO the client to protect service availability, not analytics
+ * collected FROM the user, so a user who declined telemetry still benefits when GPUs are
+ * saturated. See `opsFlag.ts` for the shared plumbing and the rest of that reasoning.
  *
- * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so a
- * kill-switch isn't accidentally consent-gated. Fetched once at boot; running apps pick up
- * new values on restart.
+ * Fail-safe direction is `'normal'`: an unreachable or unrecognised flag must not take Cloud
+ * away from users who could otherwise book it.
  */
-import * as mainTelemetry from './telemetry'
+import { makeOpsFlag } from './opsFlag'
+import type { CloudCapacityStatus } from '../../types/ipc'
 
 export const CLOUD_CAPACITY_FLAG_KEY = 'desktop-cloud-capacity'
 
-export type CloudCapacityStatus = 'normal' | 'degraded' | 'disabled'
-
 const VALID: ReadonlySet<CloudCapacityStatus> = new Set(['normal', 'degraded', 'disabled'])
 
-const DEFAULT_TIMEOUT_MS = 2000
+const flag = makeOpsFlag<CloudCapacityStatus>({
+  key: CLOUD_CAPACITY_FLAG_KEY,
+  fallback: 'normal',
+  logLabel: 'cloud-capacity',
+  // `undefined`, booleans, and unknown strings all keep `'normal'`.
+  parse: (value) =>
+    typeof value === 'string' && VALID.has(value as CloudCapacityStatus)
+      ? (value as CloudCapacityStatus)
+      : undefined
+})
 
-let cached: CloudCapacityStatus = 'normal'
-let initPromise: Promise<void> | null = null
-
-/**
- * Boot-time fetch. The returned promise is cached so the IPC handler can await it: a
- * renderer query landing before the fetch settles sees the resolved value, not the default.
- * Idempotent within a process.
- */
-export function initCloudCapacity(opts: { distinctId: string; timeoutMs?: number }): Promise<void> {
-  if (initPromise) return initPromise
-  initPromise = mainTelemetry
-    .getOpsFlag(CLOUD_CAPACITY_FLAG_KEY, opts.distinctId, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-    .then((value) => {
-      if (typeof value === 'string' && VALID.has(value as CloudCapacityStatus)) {
-        cached = value as CloudCapacityStatus
-      }
-      // Else keep `'normal'` (undefined, boolean, or unknown string).
-
-      console.log('[cloud-capacity] init: fetched=', value, '→ cached=', cached)
-    })
-    .catch((err) => {
-      console.log('[cloud-capacity] init error:', err)
-      // fail-safe: keep `'normal'`
-    })
-  return initPromise
-}
+/** Boot-time fetch. Idempotent within a process; never rejects. */
+export const initCloudCapacity = flag.init
 
 /** Awaits the in-flight init fetch so renderer queries landing before it settles still get
  *  the resolved status, not the `'normal'` default. */
-export async function getCloudCapacityStatusAsync(): Promise<CloudCapacityStatus> {
-  if (initPromise) {
-    try {
-      await initPromise
-    } catch {
-      /* keep cached */
-    }
-  }
-  return cached
-}
-
-/** Synchronous accessor returning the current cache. Prefer the async variant from the IPC
- *  handler so the first call doesn't race the boot fetch. */
-export function getCloudCapacityStatus(): CloudCapacityStatus {
-  return cached
-}
+export const getCloudCapacityStatusAsync = flag.get
 
 /** @internal — exposed for tests. */
-export function _resetForTest(): void {
-  cached = 'normal'
-  initPromise = null
-}
+export const _resetForTest = flag._resetForTest

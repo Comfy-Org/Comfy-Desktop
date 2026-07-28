@@ -2,6 +2,7 @@
 // This file is the single source of truth — do not duplicate these types elsewhere.
 
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
 // Unsubscribe function returned by event listeners
@@ -138,16 +139,16 @@ export interface DetailField {
   value: string | boolean | number | string[] | Record<string, string> | null
   editable?: boolean
   editType?:
-  | 'select'
-  | 'boolean'
-  | 'text'
-  | 'number'
-  | 'path'
-  | 'channel-cards'
-  | 'args-builder'
-  | 'env-vars'
-  | 'model-dirs'
-  | 'hidden'
+    | 'select'
+    | 'boolean'
+    | 'text'
+    | 'number'
+    | 'path'
+    | 'channel-cards'
+    | 'args-builder'
+    | 'env-vars'
+    | 'model-dirs'
+    | 'hidden'
   options?: DetailFieldOption[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
@@ -161,6 +162,11 @@ export interface DetailField {
    *  nesting from the field id, since ids like `outputDir` are reused
    *  for equal-weight rows in the Shared Directories section. */
   nested?: boolean
+  /** Consecutive fields sharing the same rowGroup render side-by-side in one
+   *  row (equal widths, stacking again on narrow layouts) instead of each
+   *  taking the full width. Set by the field builder; the renderer only
+   *  groups adjacent fields so unrelated fields never merge. */
+  rowGroup?: string
   tooltip?: string
   /** Marks fields that only take effect on next process start.
    *  Renderer shows a per-field tag + promotes the footer Restart
@@ -625,6 +631,9 @@ export interface SystemInfo {
   gpu_model: string | null
   /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
   gpu_vram_mb: number | null
+  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  gpu_vram_gb: number | null
+  gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
@@ -1281,6 +1290,12 @@ export interface ElectronApi {
    *  unavailable. Renderers consume this via `useCloudCapacity`. */
   getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Whether the free tier is live, for the "5 free runs" trial pill.
+   *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
+   *  tracks the real rollout. False for everyone today; flips on its own
+   *  when the ramp lands. Fails CLOSED — the pill asserts a live
+   *  entitlement, so an unresolvable flag means we don't claim it. */
+  getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
@@ -1345,9 +1360,7 @@ export interface ElectronApi {
    *  reaches the launching window). Lets any open dashboard show the red
    *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
-  onTerminalOutput(
-    callback: (data: { installationId: string; data: string }) => void
-  ): Unsubscribe
+  onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): Unsubscribe
   onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
   onComfyBootLog(callback: (data: ComfyBootLogData) => void): Unsubscribe
   onInstanceLaunching(
@@ -1517,13 +1530,13 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-      | 'install-update'
-      | 'app-update-restart-prompt'
-      | 'app-update-download-prompt'
-      | 'open-settings'
-      | 'picker-pick-install'
-      | 'picker-install-action'
-      | 'picker-show-progress'
+        | 'install-update'
+        | 'app-update-restart-prompt'
+        | 'app-update-download-prompt'
+        | 'open-settings'
+        | 'picker-pick-install'
+        | 'picker-install-action'
+        | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>

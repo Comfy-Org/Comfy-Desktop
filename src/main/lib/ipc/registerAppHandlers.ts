@@ -33,8 +33,10 @@ import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudCapacityStatusAsync } from '../cloudCapacity'
+import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
+import { deriveGpuTier } from '../../../shared/gpuTier'
 
 export function registerAppHandlers(): void {
   // App version
@@ -56,6 +58,11 @@ export function registerAppHandlers(): void {
   // `disabled`. Hydrated from a persisted file at boot and refreshed on
   // every cloud webContents `dom-ready`. See `userTier.ts`.
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
+
+  // Whether the free tier is live, for the first-use trial pill. Bypasses
+  // the consent gate so it resolves pre-consent, the only state that
+  // surface renders in; fails CLOSED. See `cloudFreeRuns.ts`.
+  ipcMain.handle('get-cloud-free-runs-enabled', () => getCloudFreeRunsEnabledAsync())
 
   // Sources
   ipcMain.handle('get-sources', () =>
@@ -246,7 +253,9 @@ export function registerAppHandlers(): void {
       const wmiDrivers = await getWindowsGpuDriverVersions()
       if (wmiDrivers.size > 0) {
         allGpus = allGpus.map((g) =>
-          g.driver_version ? g : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
+          g.driver_version
+            ? g
+            : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
         )
       }
     }
@@ -261,6 +270,8 @@ export function registerAppHandlers(): void {
     const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
     const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
     const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
+    const primaryGpuVramGb = primaryGpuVramMb != null ? Math.round(primaryGpuVramMb / 1024) : null
+    const gpuTier = deriveGpuTier({ vendor: gpu?.id, vramGb: primaryGpuVramGb })
     // Only trust the primary controller's driver string when it actually
     // matches the detected compute vendor; selectPrimaryGpu may fall back to a
     // non-matching controller, which would otherwise mislabel the driver.
@@ -281,6 +292,8 @@ export function registerAppHandlers(): void {
       gpu_label: gpu?.label ?? null,
       gpu_model: primaryGpuModel,
       gpu_vram_mb: primaryGpuVramMb,
+      gpu_vram_gb: primaryGpuVramGb,
+      gpu_tier: gpuTier,
       gpus: allGpus,
       nvidia_driver_version: nvidiaCheck?.driverVersion ?? null,
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,

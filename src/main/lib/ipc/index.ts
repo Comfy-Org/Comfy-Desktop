@@ -39,6 +39,7 @@ import { reconcileAdoptedSettings } from '../desktopAdopt'
 export {
   getAppVersion,
   stopRunning,
+  cancelLaunching,
   hasRunningSessions,
   getSessionProcess,
   hasActiveOperations,
