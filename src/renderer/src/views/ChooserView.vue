@@ -205,11 +205,14 @@ const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
   visibleDistributions.value.map(distEntry)
 )
 
-/** Pre-search lists, so typing can't flip the page between arrangements. */
+/** Pre-search lists, so typing can't flip the page between arrangements.
+ *  A distribution-backed install is a local install the user must always be
+ *  able to launch, so it shows whether or not they are signed in; only the
+ *  still-available distributions to add need a workspace session. */
 const showWorkspaceShelf = computed(
   () =>
-    authStore.isSignedIn &&
-    (chooserDistributions.value.length > 0 || allBuilderInstalls.value.length > 0)
+    allBuilderInstalls.value.length > 0 ||
+    (authStore.isSignedIn && chooserDistributions.value.length > 0)
 )
 
 /**

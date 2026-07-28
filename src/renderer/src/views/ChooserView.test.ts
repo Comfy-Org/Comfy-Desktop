@@ -713,6 +713,26 @@ describe('ChooserView', () => {
     expect(wrapper.find('[data-testid="chooser-dist-tile-d1"]').exists()).toBe(false)
   })
 
+  it('keeps a distribution-backed install visible when signed out', async () => {
+    // A distribution install is a local install the user must be able to launch
+    // signed in or not. Its identity excludes it from Your installs, so if the
+    // workspace shelf stayed sign-in-gated it would vanish entirely while signed
+    // out. The shelf shows for the installs even before a workspace session.
+    installMockApi([
+      makeInstall({
+        id: 'builder-1',
+        name: 'Flux Studio',
+        sourceId: 'comfybuilder',
+        distributionId: 'd-flux',
+        status: 'installed',
+      } as unknown as Partial<Installation>),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const names = wrapper.findAll('.chooser-tile-name').map((w) => w.text())
+    expect(names).toContain('Flux Studio')
+  })
+
   it('names the action on an installable distribution rather than its state', async () => {
     installMockApiSignedIn([], [makeDist({ id: 'd5', name: 'Fresh', state: 'installable' })])
     const wrapper = mountChooser()
