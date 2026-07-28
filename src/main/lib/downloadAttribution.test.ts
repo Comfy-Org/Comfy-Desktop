@@ -42,18 +42,36 @@ describe('downloadAttribution', () => {
   it('reads a valid pending Windows installer token from configDir', () => {
     fs.writeFileSync(pendingDownloadTokenPath(), 'AbC123xYz789\n', 'utf-8')
 
-    expect(readPendingDownloadToken()).toEqual({
+    expect(readPendingDownloadToken('anonymous-original')).toEqual({
       token: 'AbC123xYz789',
-      source: 'windows_installer_filename'
+      source: 'windows_installer_filename',
+      anonymousId: 'anonymous-original'
     })
     expect(fs.existsSync(pendingDownloadTokenPath())).toBe(true)
   })
 
+  it('keeps retries pinned to the anonymous identity that first claimed the token', () => {
+    fs.writeFileSync(pendingDownloadTokenPath(), 'AbC123xYz789\n', 'utf-8')
+
+    expect(readPendingDownloadToken('anonymous-original')?.anonymousId).toBe(
+      'anonymous-original'
+    )
+    expect(readPendingDownloadToken('anonymous-after-rotation')?.anonymousId).toBe(
+      'anonymous-original'
+    )
+  })
+
+  it('pins an all-numeric base62 token instead of parsing it as JSON', () => {
+    fs.writeFileSync(pendingDownloadTokenPath(), '123456789012', 'utf-8')
+
+    expect(readPendingDownloadToken('anonymous-original')?.token).toBe('123456789012')
+  })
+
   it('returns null for missing or invalid pending token files', () => {
-    expect(readPendingDownloadToken()).toBeNull()
+    expect(readPendingDownloadToken('anonymous-start')).toBeNull()
 
     fs.writeFileSync(pendingDownloadTokenPath(), 'not safe@example.com', 'utf-8')
-    expect(readPendingDownloadToken()).toBeNull()
+    expect(readPendingDownloadToken('anonymous-start')).toBeNull()
     expect(fs.existsSync(pendingDownloadTokenPath())).toBe(false)
   })
 
@@ -61,7 +79,7 @@ describe('downloadAttribution', () => {
     fs.writeFileSync(pendingDownloadTokenPath(), 'AbC123xYz789\n', 'utf-8')
     markDownloadTokenAttributed()
 
-    expect(readPendingDownloadToken()).toBeNull()
+    expect(readPendingDownloadToken('anonymous-start')).toBeNull()
     expect(fs.existsSync(pendingDownloadTokenPath())).toBe(false)
   })
 

@@ -1442,16 +1442,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
 
     const isFirstLaunch = consumeFirstLaunch()
-    const pendingDownloadToken = readPendingDownloadToken()
+    const pendingDownloadToken = readPendingDownloadToken(anonymousDistinctId)
     if (pendingDownloadToken) {
       mainTelemetry.deferDownloadTokenAlias({
         downloadToken: pendingDownloadToken.token,
+        anonymousId: pendingDownloadToken.anonymousId,
         installationId,
         source: pendingDownloadToken.source,
         attachToFirstLaunch: isFirstLaunch,
         onAliased: () => {
           clearPendingDownloadToken()
           markDownloadTokenAttributed()
+        },
+        onDiscarded: () => {
+          clearPendingDownloadToken()
         }
       })
     }

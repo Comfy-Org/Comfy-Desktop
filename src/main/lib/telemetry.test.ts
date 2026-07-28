@@ -183,8 +183,11 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
   failPersonPropertiesClears: false,
   personProperties: null as {
     id: string
+    userId?: string
     personSet?: Record<string, boolean | number | string | null>
     personSetOnce?: Record<string, boolean | number | string | null>
+    ownedPersonSet?: Record<string, boolean | number | string | null>
+    ownedPersonSetOnce?: Record<string, boolean | number | string | null>
   } | null
 }))
 
@@ -198,6 +201,8 @@ vi.mock('./anonymousIdentity', () => ({
     anonymousIdentityMock.unmergeable = true
     return true
   },
+  normalizeAnonymousDistinctId: (value: unknown) =>
+    typeof value === 'string' && value.length > 0 ? value : null,
   rotatePersistedAnonymousDistinctId: () => {
     if (anonymousIdentityMock.fail) return null
     return anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
@@ -212,8 +217,11 @@ vi.mock('./pendingIdentityMerge', () => ({
       : null,
   persistPendingPersonProperties: (properties: {
     id?: string
+    userId?: string
     personSet?: Record<string, boolean | number | string | null>
     personSetOnce?: Record<string, boolean | number | string | null>
+    ownedPersonSet?: Record<string, boolean | number | string | null>
+    ownedPersonSetOnce?: Record<string, boolean | number | string | null>
   }) => {
     const persisted = {
       ...properties,
@@ -739,6 +747,27 @@ describe('telemetry consent state (3-state)', () => {
     )
   })
 
+  it('discards deferred identity data after an explicit denial', () => {
+    telemetry.setConsentState('undecided')
+    bindTestAnonymous('deferred-id', { app_version: '1.2.3' })
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+
+    expect(pendingIdentityMergeMock.personProperties).not.toBeNull()
+
+    telemetry.setConsentState('denied')
+    telemetry.registerPersonProperties({ locale: 'en' })
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+
+    expect(pendingIdentityMergeMock.personProperties).toBeNull()
+    expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('gpu_tier')
+    expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('locale')
+    expect(identifies.at(-1)?.properties?.$set_once).toBeUndefined()
+    expect(captured.map((call) => call.event)).not.toContain('comfy.desktop.session.started')
+  })
+
   it('legacy setConsent(true) maps to granted; setConsent(false) maps to denied', () => {
     telemetry.setConsent(true)
     bindTestAnonymous('legacy-id')
@@ -961,6 +990,7 @@ describe('telemetry legacy download-token bridge', () => {
     const onAliased = vi.fn()
     telemetry.deferDownloadTokenAlias({
       downloadToken: 'AbC123xYz789',
+      anonymousId: 'anonymous-start',
       installationId: 'installation-id-fake',
       source: 'windows_installer_filename',
       onAliased
@@ -1008,6 +1038,7 @@ describe('telemetry legacy download-token bridge', () => {
 
     telemetry.deferDownloadTokenAlias({
       downloadToken: 'AbC123xYz789',
+      anonymousId: 'anonymous-start',
       installationId: 'installation-id-fake',
       source: 'windows_installer_filename',
       attachToFirstLaunch: false,
@@ -1018,6 +1049,48 @@ describe('telemetry legacy download-token bridge', () => {
 
     expect(aliases).toEqual([{ distinctId: 'anonymous-start', alias: 'AbC123xYz789' }])
     expect(onAliased).not.toHaveBeenCalled()
+
+    telemetry.bindAnonymousId('anonymous-after-rotation', 'installation-id-fake')
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      anonymousId: 'anonymous-start',
+      installationId: 'installation-id-fake',
+      source: 'windows_installer_filename',
+      attachToFirstLaunch: false,
+      onAliased
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(aliases.at(-1)).toEqual({
+      distinctId: 'anonymous-start',
+      alias: 'AbC123xYz789'
+    })
+    expect(
+      captured.find((call) => call.event === 'comfy.desktop.identity.download_attributed')
+        ?.distinctId
+    ).toBe('anonymous-start')
+    expect(onAliased).toHaveBeenCalledTimes(1)
+  })
+
+  it('retires a pending download token when consent is denied', () => {
+    telemetry.setConsentState('undecided')
+    telemetry.bindAnonymousId('anonymous-start', 'installation-id-fake')
+    const onDiscarded = vi.fn()
+
+    telemetry.deferDownloadTokenAlias({
+      downloadToken: 'AbC123xYz789',
+      anonymousId: 'anonymous-start',
+      installationId: 'installation-id-fake',
+      source: 'windows_installer_filename',
+      onAliased: vi.fn(),
+      onDiscarded
+    })
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+
+    expect(onDiscarded).toHaveBeenCalledTimes(1)
+    expect(aliases).toHaveLength(0)
   })
 })
 
@@ -1155,7 +1228,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
 
   it('does not carry deferred person properties across logout', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.registerPersonProperties({ previous_account_plan: 'pro' })
     telemetry.registerPersonPropertiesOnce({ previous_account_marker: 'set' })
 
@@ -1170,7 +1243,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
 
   it('does not carry deferred person properties across a direct account switch', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.registerPersonProperties({ previous_account_plan: 'pro' })
     telemetry.registerPersonPropertiesOnce({ previous_account_marker: 'set' })
 
@@ -1182,9 +1255,51 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(identifies.at(-1)?.properties?.$set_once).toBeUndefined()
   })
 
+  it('does not restore account-owned properties into a different user after restart', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.setConsentState('undecided')
+    telemetry.registerPersonProperties({ previous_account_plan: 'pro' })
+
+    expect(pendingIdentityMergeMock.personProperties?.userId).toBe('user-123')
+
+    telemetry._resetForTest()
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anonymous-after-restart', 'installation-id-fake', {
+      app_version: '2.0.0'
+    })
+    telemetry.applyFirebaseUserConsensus('user-456')
+
+    expect(identifies.at(-1)?.distinctId).toBe('user-456')
+    expect(identifies.at(-1)?.properties?.$set).toHaveProperty('app_version', '2.0.0')
+    expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('previous_account_plan')
+    expect(pendingIdentityMergeMock.personProperties).toBeNull()
+  })
+
+  it('restores account-owned and global properties to the same user after restart', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.setConsentState('undecided')
+    telemetry.registerPersonProperties({ plan: 'pro' })
+
+    telemetry._resetForTest()
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anonymous-after-restart', 'installation-id-fake', {
+      app_version: '2.0.0'
+    })
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(identifies.at(-1)?.properties?.$set).toMatchObject({
+      app_version: '2.0.0',
+      plan: 'pro'
+    })
+  })
+
   it('defers an account switch until the previous property buffer is durably cleared', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.registerPersonProperties({ previous_account_plan: 'pro' })
     pendingIdentityMergeMock.failPersonPropertiesClears = true
 
@@ -1202,7 +1317,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
   })
 
   it('defers Firebase UID until consent is granted', () => {
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     identifies.length = 0
     captured.length = 0
     telemetry.applyFirebaseUserConsensus('user-456')
@@ -1218,7 +1333,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
   })
 
   it('keeps queued person properties across repeated same-user reports before consent', () => {
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.registerPersonProperties({ plan: 'pro' })
     telemetry.registerPersonPropertiesOnce({ original_signup: 'kept' })
 
@@ -1232,7 +1347,7 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
   })
 
   it('clears deferred account properties when signed-out consensus cancels a pending bind', () => {
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.applyFirebaseUserConsensus('user-123')
     telemetry.registerPersonProperties({ previous_account_plan: 'pro' })
     telemetry.registerPersonPropertiesOnce({ previous_account_marker: 'set' })
@@ -1555,14 +1670,14 @@ describe('telemetry deferred one-shot retention on dropped captures', () => {
     expect(captured.filter((c) => c.event === 'comfy.desktop.session.started')).toHaveLength(0)
     expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(0)
 
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.setConsentState('granted')
 
     expect(captured.filter((c) => c.event === 'comfy.desktop.session.started')).toHaveLength(1)
     expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(1)
 
     // Buffers were consumed by the successful flush — no double emit later.
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.setConsentState('granted')
 
     expect(captured.filter((c) => c.event === 'comfy.desktop.session.started')).toHaveLength(1)
@@ -1578,7 +1693,7 @@ describe('telemetry deferred one-shot retention on dropped captures', () => {
     telemetry.captureFirstLaunch({ id_class: 'random_uuid' })
     expect(captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')).toHaveLength(0)
 
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.setConsentState('granted')
 
     const events = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
@@ -1590,14 +1705,14 @@ describe('telemetry deferred one-shot retention on dropped captures', () => {
     telemetry.setConsentState('granted')
     bindTestAnonymous('anon-1')
     telemetry.applyFirebaseUserConsensus('user-123')
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.registerPersonProperties({ plan: 'pro' })
 
     posthogClientMock.failNextCaptures = 1
     telemetry.setConsentState('granted')
     expect(captured.filter((c) => c.event === 'comfy.desktop.person.set')).toHaveLength(0)
 
-    telemetry.setConsentState('denied')
+    telemetry.setConsentState('undecided')
     telemetry.setConsentState('granted')
 
     const personSets = captured.filter((c) => c.event === 'comfy.desktop.person.set')

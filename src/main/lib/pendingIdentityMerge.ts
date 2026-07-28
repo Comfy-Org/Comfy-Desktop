@@ -26,8 +26,11 @@ export type PendingIdentityProperties = Record<string, boolean | number | string
 
 export interface PendingPersonProperties {
   id: string
+  userId?: string
   personSet?: PendingIdentityProperties
   personSetOnce?: PendingIdentityProperties
+  ownedPersonSet?: PendingIdentityProperties
+  ownedPersonSetOnce?: PendingIdentityProperties
 }
 
 function pendingIdentityMergesPath(): string {
@@ -78,18 +81,34 @@ function normalizePendingPersonProperties(value: unknown): PendingPersonProperti
   const entry = value as Record<string, unknown>
   const id = normalizeOpaqueIdentifier(entry.id, 64)
   if (!id) return null
+  const userId = entry.userId === undefined ? null : normalizeUserIdentity(entry.userId)
+  if (entry.userId !== undefined && !userId) return null
   const personSet = normalizeProperties(entry.personSet)
   const personSetOnce = normalizeProperties(entry.personSetOnce)
+  const ownedPersonSet = normalizeProperties(entry.ownedPersonSet)
+  const ownedPersonSetOnce = normalizeProperties(entry.ownedPersonSetOnce)
+  const hasOwnedProperties =
+    (ownedPersonSet && Object.keys(ownedPersonSet).length > 0) ||
+    (ownedPersonSetOnce && Object.keys(ownedPersonSetOnce).length > 0)
+  if (hasOwnedProperties && !userId) return null
   if (
     (!personSet || Object.keys(personSet).length === 0) &&
-    (!personSetOnce || Object.keys(personSetOnce).length === 0)
+    (!personSetOnce || Object.keys(personSetOnce).length === 0) &&
+    !hasOwnedProperties
   ) {
     return null
   }
   return {
     id,
+    ...(userId && hasOwnedProperties ? { userId } : {}),
     ...(personSet && Object.keys(personSet).length > 0 ? { personSet } : {}),
-    ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {})
+    ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {}),
+    ...(ownedPersonSet && Object.keys(ownedPersonSet).length > 0
+      ? { ownedPersonSet }
+      : {}),
+    ...(ownedPersonSetOnce && Object.keys(ownedPersonSetOnce).length > 0
+      ? { ownedPersonSetOnce }
+      : {})
   }
 }
 

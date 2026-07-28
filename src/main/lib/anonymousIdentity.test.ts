@@ -224,6 +224,16 @@ describe('pendingIdentityMerge', () => {
     expect(readPendingPersonProperties()).toBeNull()
   })
 
+  it('persists the Firebase owner of a post-auth property buffer', () => {
+    const pending = persistPendingPersonProperties({
+      userId: 'firebase-user',
+      ownedPersonSet: { plan: 'pro' }
+    })
+
+    expect(readPendingPersonProperties()).toEqual(pending)
+    expect(pending?.userId).toBe('firebase-user')
+  })
+
   it('quarantines cleared properties when Windows keeps the buffer file locked', () => {
     const pending = persistPendingPersonProperties({
       personSet: { previous_account_plan: 'pro' }

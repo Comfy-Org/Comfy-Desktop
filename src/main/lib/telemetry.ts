@@ -121,6 +121,7 @@ import { scrubAll } from '../../shared/piiScrub'
 import {
   clearPersistedUnmergeableAnonymousEpoch,
   hasPersistedUnmergeableAnonymousEpoch,
+  normalizeAnonymousDistinctId,
   persistUnmergeableAnonymousEpoch,
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
@@ -189,7 +190,11 @@ export function _resetForTest(): void {
   pendingFirstLaunch = null
   pendingPersonSet = null
   pendingPersonSetOnce = null
+  pendingOwnedPersonSet = null
+  pendingOwnedPersonSetOnce = null
   pendingPersonPropertiesBufferId = null
+  pendingPersonPropertiesUserId = null
+  pendingPersonPropertiesDiscardRequired = false
   pendingUserBinding = null
   pendingDownloadTokenAlias = null
   pendingDownloadTokenEventProperties = null
@@ -457,8 +462,8 @@ export function _test_resetVolumeGuards(): void {
 }
 
 /**
- * Set the current consent state. Deferred product events may fire on grant;
- * pre-auth person properties remain queued until Firebase UID is bound.
+ * Set the current consent state. Undecided data may fire on grant; an explicit
+ * denial discards every deferred event, identity, and person-property buffer.
  */
 export function setConsentState(state: ConsentState): void {
   const previous = consentState
@@ -467,6 +472,7 @@ export function setConsentState(state: ConsentState): void {
     // Best-effort flush so already-queued events still go out before we
     // start suppressing.
     void client?.flush().catch(() => {})
+    if (state === 'denied') discardDeferredTelemetry()
     return
   }
   // Transitioned to granted. Ship anything we held back.
@@ -599,8 +605,16 @@ let pendingFirstLaunch: TelemetryContext | null = null
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
 /** Same, for write-once (`$set_once`) markers. */
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
+/** Account-scoped person props kept separate from globally pre-auth props. */
+let pendingOwnedPersonSet: Record<string, TelemetryValue> | null = null
+/** Account-scoped write-once markers. */
+let pendingOwnedPersonSetOnce: Record<string, TelemetryValue> | null = null
 /** Stable token linking the pre-auth property buffer to its durable merge. */
 let pendingPersonPropertiesBufferId: string | null = null
+/** Firebase owner for post-auth buffers; null means globally pre-auth. */
+let pendingPersonPropertiesUserId: string | null = null
+/** Blocks later replay if an explicit discard could not be made durable. */
+let pendingPersonPropertiesDiscardRequired = false
 
 interface PendingUserBinding {
   userId: string
@@ -615,6 +629,7 @@ let pendingDownloadTokenAlias: {
   installationId: string
   source: string
   onAliased: () => void
+  onDiscarded?: () => void
 } | null = null
 let pendingDownloadTokenEventProperties: {
   download_token: string
@@ -644,6 +659,22 @@ function applyDownloadTokenToPendingFirstLaunch(): void {
   if (!pendingFirstLaunch || !pendingDownloadTokenEventProperties) return
   pendingFirstLaunch = { ...pendingFirstLaunch, ...pendingDownloadTokenEventProperties }
   pendingDownloadTokenEventProperties = null
+}
+
+function discardDeferredTelemetry(): void {
+  pendingSessionStart = null
+  pendingFirstLaunch = null
+  pendingUserBinding = null
+  pendingDownloadTokenEventProperties = null
+  const downloadTokenAlias = pendingDownloadTokenAlias
+  pendingDownloadTokenAlias = null
+  try {
+    downloadTokenAlias?.onDiscarded?.()
+  } catch {
+    // A persisted token remains suppressed while consent stays denied.
+  }
+  pendingPersonPropertiesDiscardRequired = !clearQueuedPersonProperties()
+  if (!pendingPersonPropertiesDiscardRequired) applyFirebaseAnonymousConsensus()
 }
 
 function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
@@ -731,16 +762,22 @@ function flushPendingIdentityMerges(): Promise<void> {
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
   if (consentState !== 'granted') return
+  if (!completeRequiredPersonPropertiesDiscard()) return
   if (pendingDownloadTokenAlias) {
     const pending = pendingDownloadTokenAlias
     pendingDownloadTokenAlias = null
     void (async () => {
       if (!(await aliasImmediateInternal(pending.anonymousId, pending.downloadToken))) return
-      capture('comfy.desktop.identity.download_attributed', {
-        installation_id: pending.installationId,
-        download_token: pending.downloadToken,
-        download_token_source: pending.source
-      })
+      captureForDistinctId(
+        pending.anonymousId,
+        'comfy.desktop.identity.download_attributed',
+        {
+          installation_id: pending.installationId,
+          download_token: pending.downloadToken,
+          download_token_source: pending.source
+        },
+        true
+      )
       try {
         pending.onAliased()
       } catch {
@@ -748,8 +785,15 @@ function tryFlushDeferred(): void {
       }
     })()
   }
-  if (boundUserId && (pendingPersonSet || pendingPersonSetOnce)) {
-    if (capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)) {
+  if (
+    boundUserId &&
+    (pendingPersonSet ||
+      pendingPersonSetOnce ||
+      pendingOwnedPersonSet ||
+      pendingOwnedPersonSetOnce)
+  ) {
+    const { personSet, personSetOnce } = queuedPersonPropertiesForUser(boundUserId)
+    if (capturePersonProperties(personSet, personSetOnce)) {
       clearQueuedPersonProperties()
     }
   }
@@ -779,7 +823,7 @@ export function bindAnonymousId(
   boundUserId = null
   installationIdProperty = installationId
   defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
-  if (Object.keys(properties).length > 0) {
+  if (consentState !== 'denied' && Object.keys(properties).length > 0) {
     queuePersonProperties({
       installation_id: installationId,
       ...properties
@@ -792,18 +836,29 @@ export function bindAnonymousId(
 /** Bridge a Windows download token into the active anonymous identity. */
 export function deferDownloadTokenAlias(opts: {
   downloadToken: string
+  anonymousId: string
   installationId: string
   source: string
   attachToFirstLaunch?: boolean
   onAliased: () => void
+  onDiscarded?: () => void
 }): void {
-  if (!opts.downloadToken || !anonymousDistinctId) return
+  const targetAnonymousId = normalizeAnonymousDistinctId(opts.anonymousId)
+  if (!opts.downloadToken || !targetAnonymousId || consentState === 'denied') {
+    try {
+      opts.onDiscarded?.()
+    } catch {
+      // The caller's persisted retry remains suppressed while consent is denied.
+    }
+    return
+  }
   pendingDownloadTokenAlias = {
     downloadToken: opts.downloadToken,
-    anonymousId: anonymousDistinctId,
+    anonymousId: targetAnonymousId,
     installationId: opts.installationId,
     source: opts.source,
-    onAliased: opts.onAliased
+    onAliased: opts.onAliased,
+    ...(opts.onDiscarded ? { onDiscarded: opts.onDiscarded } : {})
   }
   pendingDownloadTokenEventProperties =
     opts.attachToFirstLaunch === false
@@ -857,22 +912,36 @@ function restoreQueuedPersonProperties(): void {
     return
   }
   pendingPersonPropertiesBufferId = persisted.id
+  pendingPersonPropertiesUserId = persisted.userId ?? null
   pendingPersonSet = persisted.personSet ?? null
   pendingPersonSetOnce = persisted.personSetOnce ?? null
+  pendingOwnedPersonSet = persisted.ownedPersonSet ?? null
+  pendingOwnedPersonSetOnce = persisted.ownedPersonSetOnce ?? null
 }
 
-function queuePersonProperties(
-  set?: Record<string, TelemetryValue>,
-  setOnce?: Record<string, TelemetryValue>
-): void {
-  if (set && Object.keys(set).length > 0) {
-    pendingPersonSet = { ...(pendingPersonSet || {}), ...set }
+function queuedPersonPropertiesForUser(userId: string): {
+  personSet: Record<string, TelemetryValue> | null
+  personSetOnce: Record<string, TelemetryValue> | null
+} {
+  const ownedPersonSet =
+    pendingPersonPropertiesUserId === userId ? pendingOwnedPersonSet : null
+  const ownedPersonSetOnce =
+    pendingPersonPropertiesUserId === userId ? pendingOwnedPersonSetOnce : null
+  const personSet = { ...(pendingPersonSet || {}), ...(ownedPersonSet || {}) }
+  const personSetOnce = {
+    ...(ownedPersonSetOnce || {}),
+    ...(pendingPersonSetOnce || {})
   }
-  if (setOnce && Object.keys(setOnce).length > 0) {
-    pendingPersonSetOnce = { ...setOnce, ...(pendingPersonSetOnce || {}) }
+  return {
+    personSet: Object.keys(personSet).length > 0 ? personSet : null,
+    personSetOnce: Object.keys(personSetOnce).length > 0 ? personSetOnce : null
   }
+}
+
+function persistQueuedPersonProperties(): boolean {
   const persisted = persistPendingPersonProperties({
     ...(pendingPersonPropertiesBufferId ? { id: pendingPersonPropertiesBufferId } : {}),
+    ...(pendingPersonPropertiesUserId ? { userId: pendingPersonPropertiesUserId } : {}),
     ...(pendingPersonSet
       ? {
           personSet: persistablePersonProperties(
@@ -886,31 +955,102 @@ function queuePersonProperties(
             scrubProperties(pendingPersonSetOnce as TelemetryContext)
           )
         }
+      : {}),
+    ...(pendingOwnedPersonSet
+      ? {
+          ownedPersonSet: persistablePersonProperties(
+            scrubProperties(pendingOwnedPersonSet as TelemetryContext)
+          )
+        }
+      : {}),
+    ...(pendingOwnedPersonSetOnce
+      ? {
+          ownedPersonSetOnce: persistablePersonProperties(
+            scrubProperties(pendingOwnedPersonSetOnce as TelemetryContext)
+          )
+        }
       : {})
   })
-  if (!persisted) return
+  if (!persisted) return false
   pendingPersonPropertiesBufferId = persisted.id
-  if (persisted.personSet) {
-    pendingPersonSet = { ...(pendingPersonSet || {}), ...persisted.personSet }
+  pendingPersonPropertiesUserId = persisted.userId ?? null
+  pendingPersonSet = persisted.personSet ?? null
+  pendingPersonSetOnce = persisted.personSetOnce ?? null
+  pendingOwnedPersonSet = persisted.ownedPersonSet ?? null
+  pendingOwnedPersonSetOnce = persisted.ownedPersonSetOnce ?? null
+  return true
+}
+
+function queuePersonProperties(
+  set?: Record<string, TelemetryValue>,
+  setOnce?: Record<string, TelemetryValue>
+): void {
+  if (!completeRequiredPersonPropertiesDiscard()) return
+  const userId = boundUserId ?? pendingUserBinding?.userId ?? null
+  if (userId && pendingPersonPropertiesUserId !== userId) {
+    if (!discardQueuedOwnedPersonProperties()) return
+    pendingPersonPropertiesUserId = userId
   }
-  if (persisted.personSetOnce) {
-    pendingPersonSetOnce = {
-      ...(pendingPersonSetOnce || {}),
-      ...persisted.personSetOnce
+  if (userId) {
+    if (set && Object.keys(set).length > 0) {
+      pendingOwnedPersonSet = { ...(pendingOwnedPersonSet || {}), ...set }
+    }
+    if (setOnce && Object.keys(setOnce).length > 0) {
+      pendingOwnedPersonSetOnce = {
+        ...setOnce,
+        ...(pendingOwnedPersonSetOnce || {})
+      }
+    }
+  } else {
+    if (set && Object.keys(set).length > 0) {
+      pendingPersonSet = { ...(pendingPersonSet || {}), ...set }
+    }
+    if (setOnce && Object.keys(setOnce).length > 0) {
+      pendingPersonSetOnce = { ...setOnce, ...(pendingPersonSetOnce || {}) }
     }
   }
+  persistQueuedPersonProperties()
 }
 
 function forgetQueuedPersonProperties(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
+  pendingOwnedPersonSet = null
+  pendingOwnedPersonSetOnce = null
   pendingPersonPropertiesBufferId = null
+  pendingPersonPropertiesUserId = null
 }
 
 function clearQueuedPersonProperties(): boolean {
   const bufferId = pendingPersonPropertiesBufferId
   if (bufferId && !clearPendingPersonProperties(bufferId)) return false
   forgetQueuedPersonProperties()
+  return true
+}
+
+function discardQueuedOwnedPersonProperties(): boolean {
+  if (!pendingPersonPropertiesUserId) return true
+  if (!pendingPersonSet && !pendingPersonSetOnce) return clearQueuedPersonProperties()
+
+  const previousUserId = pendingPersonPropertiesUserId
+  const previousPersonSet = pendingOwnedPersonSet
+  const previousPersonSetOnce = pendingOwnedPersonSetOnce
+  pendingPersonPropertiesUserId = null
+  pendingOwnedPersonSet = null
+  pendingOwnedPersonSetOnce = null
+  if (persistQueuedPersonProperties()) return true
+
+  pendingPersonPropertiesUserId = previousUserId
+  pendingOwnedPersonSet = previousPersonSet
+  pendingOwnedPersonSetOnce = previousPersonSetOnce
+  return false
+}
+
+function completeRequiredPersonPropertiesDiscard(): boolean {
+  if (!pendingPersonPropertiesDiscardRequired) return true
+  if (!clearQueuedPersonProperties()) return false
+  pendingPersonPropertiesDiscardRequired = false
+  applyFirebaseAnonymousConsensus()
   return true
 }
 
@@ -936,6 +1076,15 @@ function applyFirebaseUserBinding(
   // Reject early rather than burn an anonymous rotation on an identify that
   // can never merge.
   if (!normalizedUserId) return
+  if (consentState === 'denied') return
+  if (!completeRequiredPersonPropertiesDiscard()) return
+  if (
+    pendingPersonPropertiesUserId &&
+    pendingPersonPropertiesUserId !== normalizedUserId &&
+    !discardQueuedOwnedPersonProperties()
+  ) {
+    return
+  }
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
     queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
@@ -950,7 +1099,7 @@ function applyFirebaseUserBinding(
     // These buffers may contain updates collected for the current account
     // while consent was not granted. Never carry them into another Firebase
     // person; properties collected before the first login remain intact.
-    if (!clearQueuedPersonProperties()) return
+    if (!discardQueuedOwnedPersonProperties()) return
   }
   if (consentState !== 'granted') {
     if (boundUserId) {
@@ -983,14 +1132,15 @@ function applyFirebaseUserBinding(
     distinctId = safeAnonymousId
   }
 
+  const queuedProperties = queuedPersonPropertiesForUser(normalizedUserId)
   const personSet = scrubProperties({
-    ...(pendingPersonSet || {}),
+    ...(queuedProperties.personSet || {}),
     ...properties,
     installation_id: installationIdProperty,
     is_authenticated: true
   })
-  const personSetOnce = pendingPersonSetOnce
-    ? scrubProperties(pendingPersonSetOnce as TelemetryContext)
+  const personSetOnce = queuedProperties.personSetOnce
+    ? scrubProperties(queuedProperties.personSetOnce as TelemetryContext)
     : null
   const anonymousId = anonymousDistinctId
   const pendingMerge = reservePendingIdentityMerge({
@@ -1059,13 +1209,12 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  * Detach from F and adopt the fresh D that was durably reserved before bind.
  */
 export function applyFirebaseAnonymousConsensus(): void {
-  const cancelledPendingBinding = pendingUserBinding !== null
   if (!boundUserId) {
-    if (cancelledPendingBinding && !clearQueuedPersonProperties()) return
+    if (!discardQueuedOwnedPersonProperties()) return
     pendingUserBinding = null
     return
   }
-  if (!clearQueuedPersonProperties()) return
+  if (!discardQueuedOwnedPersonProperties()) return
   pendingUserBinding = null
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
@@ -1171,8 +1320,13 @@ function capturePersonProperties(
  * dropped (consent gate, volume guard, or SDK failure); one-shot callers use
  * this to keep their deferred payload instead of losing it.
  */
-export function capture(event: string, properties: TelemetryContext = {}): boolean {
-  if (!canEmit() || !distinctId) return false
+function captureForDistinctId(
+  targetDistinctId: string,
+  event: string,
+  properties: TelemetryContext,
+  forceAnonymousProfile: boolean
+): boolean {
+  if (!canEmit() || pendingPersonPropertiesDiscardRequired) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false
   try {
@@ -1183,9 +1337,12 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
     // to derive country (`disableGeoip: false` at init). The raw IP and all
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
-    const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+    const withDefaults = { ...defaultEventProperties, ...properties }
+    const merged = forceAnonymousProfile
+      ? { ...withDefaults, $process_person_profile: false }
+      : enforcePersonProcessingPolicy(withDefaults)
     client!.capture({
-      distinctId,
+      distinctId: targetDistinctId,
       event,
       properties: scrubProperties(merged)
     })
@@ -1195,6 +1352,11 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
     // swallow – telemetry must never break the app
     return false
   }
+}
+
+export function capture(event: string, properties: TelemetryContext = {}): boolean {
+  if (!distinctId) return false
+  return captureForDistinctId(distinctId, event, properties, false)
 }
 
 /**
@@ -1212,6 +1374,7 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
  * in, or the rare migrator), it captures immediately.
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
+  if (consentState === 'denied') return
   const eventProperties = takeDownloadTokenEventProperties(properties)
   if (
     !canEmit() ||
@@ -1233,7 +1396,7 @@ export function captureFirstLaunch(properties: TelemetryContext = {}): void {
  * an explicit capture-`$set` event.
  */
 export function registerPersonProperties(properties: Record<string, TelemetryValue>): void {
-  if (!canEmit()) return
+  if (!canEmit() || consentState === 'denied') return
   if (consentState !== 'granted' || !distinctId || !boundUserId) {
     queuePersonProperties(properties)
     return
@@ -1253,7 +1416,7 @@ export function registerPersonProperties(properties: Record<string, TelemetryVal
  * as `first_generation_at`). Pre-auth values are applied only at UID bind.
  */
 export function registerPersonPropertiesOnce(properties: Record<string, TelemetryValue>): void {
-  if (!canEmit()) return
+  if (!canEmit() || consentState === 'denied') return
   if (consentState !== 'granted' || !distinctId || !boundUserId) {
     queuePersonProperties(undefined, properties)
     return
