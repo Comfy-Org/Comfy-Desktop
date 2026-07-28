@@ -148,10 +148,25 @@ describe('validateExportEnvelope', () => {
     ).toThrow('snapshot version exceeds envelope version')
   })
 
-  it('rejects unknown version', () => {
+  it('rejects a newer version with an update-the-app hint', () => {
+    // A higher integer version means the file came from a newer Desktop; the
+    // error must point at the likely fix instead of looking like corruption.
     expect(() => validateExportEnvelope({ ...makeEnvelope(), version: 3 })).toThrow(
-      'Unsupported snapshot version'
+      /Unsupported snapshot version: 3.*updating the app/
     )
+  })
+
+  it('rejects an unrecognizable version without the update hint', () => {
+    for (const version of ['2', 2.5, -1, null]) {
+      let message = ''
+      try {
+        validateExportEnvelope({ ...makeEnvelope(), version })
+      } catch (err) {
+        message = (err as Error).message
+      }
+      expect(message).toContain('Unsupported snapshot version')
+      expect(message).not.toContain('updating the app')
+    }
   })
 
   it('rejects empty snapshots array', () => {

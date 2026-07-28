@@ -133,8 +133,15 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
   const obj = data as Record<string, unknown>
   if (obj.type !== 'comfyui-desktop-2-snapshot')
     throw new Error('Invalid file: not a Comfy Desktop snapshot export')
-  if (obj.version !== 1 && obj.version !== 2)
+  if (obj.version !== 1 && obj.version !== 2) {
+    // A higher integer version means the file came from a newer Comfy Desktop,
+    // so updating the app is the likely fix. Anything else is just malformed.
+    if (typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version > 2)
+      throw new Error(
+        `Unsupported snapshot version: ${obj.version}. This file was created by a newer version of Comfy Desktop; updating the app will likely allow importing it.`
+      )
     throw new Error(`Unsupported snapshot version: ${obj.version}`)
+  }
   if (!Array.isArray(obj.snapshots) || obj.snapshots.length === 0)
     throw new Error('File contains no snapshots')
   for (let i = 0; i < obj.snapshots.length; i++) {
