@@ -124,7 +124,7 @@ import {
   persistUnmergeableAnonymousEpoch,
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { normalizePostHogDistinctId } from './opaqueIdentifier'
 import {
   clearPendingIdentityMerges,
   clearPendingPersonProperties,
@@ -901,12 +901,17 @@ function queuePersonProperties(
   }
 }
 
-function clearQueuedPersonProperties(): void {
-  const bufferId = pendingPersonPropertiesBufferId
+function forgetQueuedPersonProperties(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingPersonPropertiesBufferId = null
-  if (bufferId) clearPendingPersonProperties(bufferId)
+}
+
+function clearQueuedPersonProperties(): boolean {
+  const bufferId = pendingPersonPropertiesBufferId
+  if (bufferId && !clearPendingPersonProperties(bufferId)) return false
+  forgetQueuedPersonProperties()
+  return true
 }
 
 function queuePendingUserBinding(
@@ -927,10 +932,10 @@ function applyFirebaseUserBinding(
   emitLoginEvent: boolean,
   properties: Record<string, TelemetryValue> = {}
 ): void {
-  const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
+  const normalizedUserId = normalizePostHogDistinctId(userId)
   // Reject early rather than burn an anonymous rotation on an identify that
   // can never merge.
-  if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
+  if (!normalizedUserId) return
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
     queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
@@ -945,7 +950,7 @@ function applyFirebaseUserBinding(
     // These buffers may contain updates collected for the current account
     // while consent was not granted. Never carry them into another Firebase
     // person; properties collected before the first login remain intact.
-    clearQueuedPersonProperties()
+    if (!clearQueuedPersonProperties()) return
   }
   if (consentState !== 'granted') {
     if (boundUserId) {
@@ -1003,7 +1008,10 @@ function applyFirebaseUserBinding(
     return
   }
   const reservedNextAnonymousId = pendingMerge.nextAnonymousId
-  clearQueuedPersonProperties()
+  if (pendingPersonPropertiesBufferId) {
+    clearPendingPersonProperties(pendingPersonPropertiesBufferId)
+  }
+  forgetQueuedPersonProperties()
 
   distinctId = normalizedUserId
   try {
@@ -1052,12 +1060,13 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  */
 export function applyFirebaseAnonymousConsensus(): void {
   const cancelledPendingBinding = pendingUserBinding !== null
-  pendingUserBinding = null
   if (!boundUserId) {
-    if (cancelledPendingBinding) clearQueuedPersonProperties()
+    if (cancelledPendingBinding && !clearQueuedPersonProperties()) return
+    pendingUserBinding = null
     return
   }
-  clearQueuedPersonProperties()
+  if (!clearQueuedPersonProperties()) return
+  pendingUserBinding = null
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
   }
@@ -1079,7 +1088,7 @@ export function applyFirebaseAnonymousConsensus(): void {
  * keep the process anonymous and retry before any later Firebase bind.
  */
 export function discardUnmergeableAnonymousEpoch(): boolean {
-  clearQueuedPersonProperties()
+  if (!clearQueuedPersonProperties()) return false
   applyFirebaseAnonymousConsensus()
   const cleanAnonymousId = rotatePersistedAnonymousDistinctId()
   if (!cleanAnonymousId) return false

@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 import { configDir } from './paths'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { normalizeOpaqueIdentifier, normalizePostHogDistinctId } from './opaqueIdentifier'
 import { writeFileSafe } from './safe-file'
 import { normalizeAnonymousDistinctId, persistAnonymousDistinctId } from './anonymousIdentity'
 
 const PENDING_IDENTITY_MERGES_FILE = 'posthog-pending-identity-merges.json'
 const PENDING_PERSON_PROPERTIES_FILE = 'posthog-pending-person-properties.json'
+const DISCARDED_PERSON_PROPERTIES_FILE = 'posthog-discarded-person-properties.txt'
 const MAX_PENDING_IDENTITY_MERGES = 32
 
 export interface PendingIdentityMerge {
@@ -37,9 +38,12 @@ function pendingPersonPropertiesPath(): string {
   return path.join(configDir(), PENDING_PERSON_PROPERTIES_FILE)
 }
 
+function discardedPersonPropertiesPath(): string {
+  return path.join(configDir(), DISCARDED_PERSON_PROPERTIES_FILE)
+}
+
 function normalizeUserIdentity(value: unknown): string | null {
-  const normalized = normalizeOpaqueIdentifier(value, 256)
-  return normalized && !isIllegalPostHogDistinctId(normalized) ? normalized : null
+  return normalizePostHogDistinctId(value)
 }
 
 function normalizeEntry(value: unknown): PendingIdentityMerge | null {
@@ -119,13 +123,50 @@ export function readPendingIdentityMerges(): PendingIdentityMerge[] {
   }
 }
 
-export function readPendingPersonProperties(): PendingPersonProperties | null {
+function readPendingPersonPropertiesFile(): PendingPersonProperties | null {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(pendingPersonPropertiesPath(), 'utf-8'))
     return normalizePendingPersonProperties(parsed)
   } catch {
     return null
   }
+}
+
+function readDiscardedPersonPropertiesId(): string | null {
+  try {
+    return normalizeOpaqueIdentifier(
+      fs.readFileSync(discardedPersonPropertiesPath(), 'utf-8'),
+      64
+    )
+  } catch {
+    return null
+  }
+}
+
+function clearDiscardedPersonPropertiesId(): void {
+  try {
+    fs.rmSync(discardedPersonPropertiesPath(), { force: true })
+  } catch {
+    // A stale marker is harmless and will be retried on the next read.
+  }
+}
+
+export function readPendingPersonProperties(): PendingPersonProperties | null {
+  const current = readPendingPersonPropertiesFile()
+  const discardedId = readDiscardedPersonPropertiesId()
+  if (!discardedId) return current
+  if (!current) return null
+  if (current.id !== discardedId) {
+    clearDiscardedPersonPropertiesId()
+    return current
+  }
+  try {
+    fs.rmSync(pendingPersonPropertiesPath(), { force: true })
+    clearDiscardedPersonPropertiesId()
+  } catch {
+    // The durable marker keeps the stale payload quarantined until deletion succeeds.
+  }
+  return null
 }
 
 export function persistPendingPersonProperties(
@@ -145,16 +186,36 @@ export function persistPendingPersonProperties(
 }
 
 export function clearPendingPersonProperties(expectedId?: string): boolean {
-  try {
-    if (expectedId) {
-      const current = readPendingPersonProperties()
-      if (current && current.id !== expectedId) return true
+  const current = readPendingPersonPropertiesFile()
+  if (expectedId && current && current.id !== expectedId) return true
+  const discardedId = expectedId ?? current?.id
+  if (!discardedId) {
+    try {
+      fs.rmSync(pendingPersonPropertiesPath(), { force: true })
+      return true
+    } catch {
+      return false
     }
-    fs.rmSync(pendingPersonPropertiesPath(), { force: true })
-    return true
-  } catch {
-    return false
   }
+
+  try {
+    writeFileSafe(discardedPersonPropertiesPath(), discardedId)
+  } catch {
+    try {
+      fs.rmSync(pendingPersonPropertiesPath(), { force: true })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  try {
+    fs.rmSync(pendingPersonPropertiesPath(), { force: true })
+  } catch {
+    return true
+  }
+  clearDiscardedPersonPropertiesId()
+  return true
 }
 
 export function enqueuePendingIdentityMerge(

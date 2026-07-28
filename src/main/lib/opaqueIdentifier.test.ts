@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import {
+  isIllegalPostHogDistinctId,
+  normalizeOpaqueIdentifier,
+  normalizePostHogDistinctId
+} from './opaqueIdentifier'
 
 describe('isIllegalPostHogDistinctId', () => {
   it.each([
@@ -16,6 +20,8 @@ describe('isIllegalPostHogDistinctId', () => {
     'undefined',
     'true',
     'False',
+    "'anonymous'",
+    '"ANONYMOUS"',
     // Case-sensitive entries match only in their listed casing.
     '[object Object]',
     'NaN',
@@ -23,6 +29,8 @@ describe('isIllegalPostHogDistinctId', () => {
     'none',
     'null',
     '0',
+    "'NaN'",
+    '"[object Object]"',
     // Blank identities can never merge.
     '',
     '   '
@@ -36,12 +44,26 @@ describe('isIllegalPostHogDistinctId', () => {
     'NULL',
     'nan',
     '[object object]',
+    "'nan'",
     // Near-misses of illegal values stay legal.
     '00',
     'anonymous-2',
     'user-123'
   ])('keeps %j legal', (value) => {
     expect(isIllegalPostHogDistinctId(value)).toBe(false)
+  })
+})
+
+describe('normalizePostHogDistinctId', () => {
+  it('matches the 200-code-point ingestion limit without counting surrogate pairs twice', () => {
+    const exactLimit = '🚀'.repeat(200)
+
+    expect(normalizePostHogDistinctId(exactLimit)).toBe(exactLimit)
+    expect(normalizePostHogDistinctId(`${exactLimit}🚀`)).toBeNull()
+  })
+
+  it('rejects quoted illegal ids used by PostHog merge validation', () => {
+    expect(normalizePostHogDistinctId('"guest"')).toBeNull()
   })
 })
 

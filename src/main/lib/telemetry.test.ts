@@ -180,6 +180,7 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
   }>,
   nextId: 1,
   nextPersonPropertiesId: 1,
+  failPersonPropertiesClears: false,
   personProperties: null as {
     id: string
     personSet?: Record<string, boolean | number | string | null>
@@ -222,6 +223,7 @@ vi.mock('./pendingIdentityMerge', () => ({
     return persisted
   },
   clearPendingPersonProperties: (expectedId?: string) => {
+    if (pendingIdentityMergeMock.failPersonPropertiesClears) return false
     if (expectedId && pendingIdentityMergeMock.personProperties?.id !== expectedId) {
       return true
     }
@@ -312,6 +314,7 @@ afterEach(() => {
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
   pendingIdentityMergeMock.nextPersonPropertiesId = 1
+  pendingIdentityMergeMock.failPersonPropertiesClears = false
   pendingIdentityMergeMock.personProperties = null
   delete process.env['POSTHOG_API_KEY']
   delete process.env['POSTHOG_ENABLED']
@@ -1179,6 +1182,25 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(identifies.at(-1)?.properties?.$set_once).toBeUndefined()
   })
 
+  it('defers an account switch until the previous property buffer is durably cleared', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.setConsentState('denied')
+    telemetry.registerPersonProperties({ previous_account_plan: 'pro' })
+    pendingIdentityMergeMock.failPersonPropertiesClears = true
+
+    telemetry.applyFirebaseUserConsensus('user-456')
+    telemetry.setConsentState('granted')
+
+    expect(identifies).toHaveLength(1)
+    expect(identifies[0]?.distinctId).toBe('user-123')
+
+    pendingIdentityMergeMock.failPersonPropertiesClears = false
+    telemetry.applyFirebaseUserConsensus('user-456')
+
+    expect(identifies.at(-1)?.distinctId).toBe('user-456')
+    expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('previous_account_plan')
+  })
+
   it('defers Firebase UID until consent is granted', () => {
     telemetry.setConsentState('denied')
     identifies.length = 0
@@ -1274,6 +1296,13 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(anonymousIdentityMock.index).toBe(rotationsBefore)
     telemetry.capture('still.anonymous')
     expect(captured.at(-1)?.distinctId).toBe('anonymous-start')
+  })
+
+  it('rejects a Firebase UID that PostHog ingestion would truncate', () => {
+    telemetry.applyFirebaseUserConsensus('u'.repeat(201))
+
+    expect(identifies).toHaveLength(0)
+    expect(anonymousIdentityMock.index).toBe(0)
   })
 
   it('fails closed without identifying when the next D cannot be persisted', () => {

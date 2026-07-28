@@ -1,4 +1,4 @@
-const CASE_INSENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set([
+const CASE_INSENSITIVE_BARE_ILLEGAL_DISTINCT_IDS = [
   'anonymous',
   'guest',
   'distinctid',
@@ -9,15 +9,29 @@ const CASE_INSENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set([
   'undefined',
   'true',
   'false'
-])
-const CASE_SENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set([
+] as const
+const CASE_SENSITIVE_BARE_ILLEGAL_DISTINCT_IDS = [
   '[object Object]',
   'NaN',
   'None',
   'none',
   'null',
+  'undefined',
   '0'
-])
+] as const
+
+function withQuotedVariants(values: readonly string[]): string[] {
+  return values.flatMap((value) => [value, `'${value}'`, `"${value}"`])
+}
+
+const CASE_INSENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set(
+  withQuotedVariants(CASE_INSENSITIVE_BARE_ILLEGAL_DISTINCT_IDS)
+)
+const CASE_SENSITIVE_ILLEGAL_DISTINCT_IDS: ReadonlySet<string> = new Set(
+  withQuotedVariants(CASE_SENSITIVE_BARE_ILLEGAL_DISTINCT_IDS)
+)
+
+export const MAX_POSTHOG_DISTINCT_ID_CODE_POINTS = 200
 
 /**
  * PostHog ingestion refuses to merge these distinct IDs. Adopting one as an
@@ -42,4 +56,10 @@ export function normalizeOpaqueIdentifier(value: unknown, maxLength: number): st
     if (code <= 31 || code === 127) return null
   }
   return normalized
+}
+
+export function normalizePostHogDistinctId(value: unknown): string | null {
+  const normalized = normalizeOpaqueIdentifier(value, Number.MAX_SAFE_INTEGER)
+  if (!normalized || Array.from(normalized).length > MAX_POSTHOG_DISTINCT_ID_CODE_POINTS) return null
+  return isIllegalPostHogDistinctId(normalized) ? null : normalized
 }

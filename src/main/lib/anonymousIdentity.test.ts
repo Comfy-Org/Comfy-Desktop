@@ -144,6 +144,15 @@ describe('anonymousIdentity', () => {
     expect(regenerated).not.toBe('undefined')
     expect(readPersistedAnonymousDistinctId()).toBe(regenerated)
   })
+
+  it('uses PostHog ingestion limits for Unicode identities', () => {
+    const exactLimit = '🚀'.repeat(200)
+
+    expect(persistAnonymousDistinctId(exactLimit)).toBe(true)
+    expect(readPersistedAnonymousDistinctId()).toBe(exactLimit)
+    expect(persistAnonymousDistinctId(`${exactLimit}🚀`)).toBe(false)
+    expect(persistAnonymousDistinctId('"anonymous"')).toBe(false)
+  })
 })
 
 describe('pendingIdentityMerge', () => {
@@ -212,6 +221,30 @@ describe('pendingIdentityMerge', () => {
     expect(clearPendingPersonProperties('another-buffer')).toBe(true)
     expect(readPendingPersonProperties()).toEqual(pending)
     expect(clearPendingPersonProperties(pending!.id)).toBe(true)
+    expect(readPendingPersonProperties()).toBeNull()
+  })
+
+  it('quarantines cleared properties when Windows keeps the buffer file locked', () => {
+    const pending = persistPendingPersonProperties({
+      personSet: { previous_account_plan: 'pro' }
+    })
+    const rmSync = fs.rmSync.bind(fs)
+    const removeSpy = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+      if (target.toString().endsWith('posthog-pending-person-properties.json')) {
+        const error = new Error('temporarily locked') as NodeJS.ErrnoException
+        error.code = 'EPERM'
+        throw error
+      }
+      return rmSync(target, options)
+    })
+
+    try {
+      expect(clearPendingPersonProperties(pending!.id)).toBe(true)
+      expect(readPendingPersonProperties()).toBeNull()
+    } finally {
+      removeSpy.mockRestore()
+    }
+
     expect(readPendingPersonProperties()).toBeNull()
   })
 

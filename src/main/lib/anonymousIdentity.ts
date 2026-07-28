@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 import { configDir } from './paths'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import {
+  isIllegalPostHogDistinctId,
+  MAX_POSTHOG_DISTINCT_ID_CODE_POINTS,
+  normalizePostHogDistinctId
+} from './opaqueIdentifier'
 import { writeFileSafe } from './safe-file'
 
 const ANONYMOUS_DISTINCT_ID_FILE = 'posthog-anonymous-distinct-id.txt'
 const UNMERGEABLE_EPOCH_FILE = 'posthog-anonymous-epoch-unmergeable'
-const MAX_ANONYMOUS_DISTINCT_ID_LENGTH = 256
 // Local persisted-file envelope (unpadded base64url of the exact UTF-8 ID).
 // Deliberately NOT 'phid1_': that tag is the installer-filename carrier's
 // version marker and carries a raw UUID, a different grammar.
@@ -16,9 +19,7 @@ const ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX = 'b64id1_'
 function decodePersistedAnonymousDistinctId(raw: string): string | null {
   if (!raw.startsWith(ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX)) {
     // Plain opaque IDs remain valid; the envelope preserves exact Unicode.
-    const normalized = normalizeOpaqueIdentifier(raw, MAX_ANONYMOUS_DISTINCT_ID_LENGTH)
-    if (!normalized || isIllegalPostHogDistinctId(normalized)) return null
-    return normalized
+    return normalizePostHogDistinctId(raw)
   }
 
   const payload = raw.slice(ENCODED_ANONYMOUS_DISTINCT_ID_PREFIX.length).trimEnd()
@@ -35,7 +36,7 @@ function decodePersistedAnonymousDistinctId(raw: string): string | null {
 
 export function normalizeAnonymousDistinctId(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null
-  if (value.length > MAX_ANONYMOUS_DISTINCT_ID_LENGTH) return null
+  if (Array.from(value).length > MAX_POSTHOG_DISTINCT_ID_CODE_POINTS) return null
   if (isIllegalPostHogDistinctId(value)) return null
   try {
     const bytes = Buffer.from(value, 'utf-8')
