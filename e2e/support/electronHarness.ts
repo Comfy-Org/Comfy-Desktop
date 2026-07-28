@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -107,6 +107,13 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   // rerun doesn't redo the ~2-minute install. A reused dir is preserved on
   // cleanup; a fresh dir is printed so the operator can re-export it.
   const reuseDir = process.env['LIFECYCLE_REUSE_DIR']
+  // macOS ignores the HOME override for userData (Application Support), so
+  // a reused profile's persisted settings can neither be read back nor kept
+  // from clobbering the developer's real profile - only fresh runs are
+  // supported there.
+  if (reuseDir && process.platform === 'darwin') {
+    throw new Error('LIFECYCLE_REUSE_DIR is not supported on macOS: Electron resolves userData outside the isolated profile dir, so persisted settings cannot be reused safely - unset it and run against a fresh profile')
+  }
   const homeDir = reuseDir ?? await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
   if (reuseDir) {
     console.log(`[lifecycle-harness] reusing profile dir: ${homeDir}`)
@@ -208,7 +215,25 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     args.push('--no-sandbox')
   }
 
-  const env = buildIsolatedEnv(homeDir, options?.settings)
+  // A reused profile must keep its persisted settings: main overwrites
+  // settings.json with E2E_SETTINGS_SEED on every boot, so fold the
+  // profile's existing file into the seed (defaults < persisted < caller
+  // overrides). Without this a hydrated run boots with
+  // firstUseCompleted=false and lands on the first-use takeover instead
+  // of the chooser.
+  let persistedSettings: Record<string, unknown> = {}
+  if (reuseDir) {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(path.join(appDataDir, 'settings.json'), 'utf-8'))
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        persistedSettings = parsed as Record<string, unknown>
+      }
+    } catch { /* no settings yet on a first run against the reuse dir */ }
+    // Safety invariant: a persisted profile must never re-enable telemetry
+    // under the harness. Callers can still override explicitly.
+    delete persistedSettings['telemetryEnabled']
+  }
+  const env = buildIsolatedEnv(homeDir, { ...persistedSettings, ...(options?.settings ?? {}) })
   if (seedRecords.length > 0) {
     env['E2E_INSTALLATIONS_SEED'] = JSON.stringify(seedRecords)
   }

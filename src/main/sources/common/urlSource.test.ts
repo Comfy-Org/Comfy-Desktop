@@ -53,3 +53,21 @@ describe('createUrlSource â€” rename action', () => {
     expect(detailActionIds(remote)).toContain('rename')
   })
 })
+
+describe('createUrlSource - settings fields', () => {
+  it('never offers the Manager security level (local-only: it reconciles an on-disk config.ini)', () => {
+    const remote = createUrlSource({
+      id: 'remote',
+      labelKey: 'remote.label',
+      descKey: 'remote.desc',
+      category: 'remote',
+      defaultUrl: 'http://localhost:8188',
+    })
+    const sections = remote.getDetailSections(makeInstall()) as Record<string, unknown>[]
+    const fieldIds = sections.flatMap(
+      (s) => ((s.fields as { id?: string }[] | undefined) ?? []).map((f) => f.id)
+    )
+    expect(fieldIds).not.toContain('managerSecurityLevel')
+    expect(fieldIds).not.toContain('managerNetworkMode')
+  })
+})
