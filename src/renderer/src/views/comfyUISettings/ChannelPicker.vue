@@ -95,6 +95,9 @@ interface PreviewData {
   productName?: string
   installedVersion?: string
   latestVersion?: string
+  /** Overrides the "Latest" stat-row label - e.g. the PyTorch card says
+   *  "Selected" because the user may have picked a downgrade. */
+  latestLabel?: string
   lastChecked?: string
   lastCheckedAt?: number
   updateAvailable?: boolean
@@ -110,6 +113,7 @@ const preview = computed<PreviewData | null>(() => {
     productName: data.productName,
     installedVersion: data.installedVersion,
     latestVersion: data.latestVersion,
+    latestLabel: data.latestLabel,
     lastChecked: data.lastChecked,
     lastCheckedAt: data.lastCheckedAt,
     updateAvailable: data.updateAvailable,
@@ -245,7 +249,7 @@ const statRows = computed<StatRow[]>(() => {
   if (updateAvailable && preview.value.latestVersion && !versionsMatch.value) {
     rows.push({
       id: 'latest',
-      label: t('channelCards.latestVersion', 'Latest'),
+      label: preview.value.latestLabel ?? t('channelCards.latestVersion', 'Latest'),
       value: formatVersionLabel(preview.value.latestVersion),
       highlight: true
     })

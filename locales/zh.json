@@ -883,6 +883,7 @@
     "pytorchObservedDesc": "在应用外安装 — 不是已知的官方构建。在下方选择一个版本以切换到官方构建。",
     "pytorchDownloadSize": "下载 {size} GB",
     "pytorchChangeNow": "更换 PyTorch",
+    "pytorchSelectedVersion": "已选择",
     "pytorchChangingTitle": "正在将 PyTorch 更换为 {version}…",
     "pytorchConfirmTitle": "更换 PyTorch",
     "pytorchConfirmMessage": "将 PyTorch 从 {from} 更换为 {to}？\n\n这将下载 {size} GB 的环境包，并临时需要足够的磁盘空间来完整复制一份环境。更换期间会备份当前环境，如有任何失败将自动恢复。",

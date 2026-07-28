@@ -236,6 +236,9 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
         productName: 'PyTorch',
         installedVersion: currentTorch ?? '—',
         latestVersion: s.packages.torch,
+        // The row shows what the user picked, which may be a downgrade -
+        // "Latest" would be wrong there.
+        latestLabel: t('standalone.pytorchSelectedVersion'),
         updateAvailable: !isCurrent,
         ...(actions ? { actions } : {}),
       },

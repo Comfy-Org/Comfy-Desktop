@@ -883,6 +883,7 @@
     "pytorchObservedDesc": "Installed outside the app — not a known official build. Pick a version below to switch to an official build.",
     "pytorchDownloadSize": "{size} GB download",
     "pytorchChangeNow": "Change PyTorch",
+    "pytorchSelectedVersion": "Selected",
     "pytorchChangingTitle": "Changing PyTorch to {version}…",
     "pytorchConfirmTitle": "Change PyTorch",
     "pytorchConfirmMessage": "Change PyTorch from {from} to {to}?\n\nThis downloads a {size} GB bundle and temporarily needs enough free disk space for a full copy of the environment. Your current environment is backed up during the change and restored automatically if anything fails.",
