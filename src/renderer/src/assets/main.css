@@ -2981,6 +2981,14 @@ input[type='checkbox']:checked::after {
   color: var(--danger);
   padding: 12px 0;
 }
+/* Non-blocking hardware warning under the detected-GPU field (e.g. Linux
+ * AMD /dev/kfd inaccessible): install may proceed, so warning, not danger. */
+.config-gpu-warning {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warning);
+  margin-top: 6px;
+}
 .track-probing {
   font-size: 14px;
   color: var(--text-muted);

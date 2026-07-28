@@ -582,6 +582,11 @@ export interface GPUInfo {
 export interface HardwareValidation {
   supported: boolean
   error?: string
+  /** Non-blocking, user-actionable problem on otherwise supported hardware
+   *  (e.g. a Linux AMD GPU whose /dev/kfd compute node the user cannot
+   *  access). Install may proceed, but GPU acceleration will not work until
+   *  the user resolves it. */
+  warning?: string
 }
 
 export interface NvidiaDriverCheck {

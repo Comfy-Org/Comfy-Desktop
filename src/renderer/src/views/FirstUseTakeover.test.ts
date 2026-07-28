@@ -58,6 +58,7 @@ beforeEach(() => {
     getSetting: vi.fn().mockResolvedValue(true),
     getLocale: vi.fn().mockResolvedValue('en'),
     detectGPU: vi.fn().mockResolvedValue(null),
+    validateHardware: vi.fn().mockResolvedValue({ supported: true }),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
     // Default to undefined so the existing tests exercise the control
@@ -500,5 +501,62 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     await btn.trigger('click')
     // Default opts: Migrate + Express both pre-ticked → chain-migrate.
     expect(wrapper.emitted('chain-migrate')).toBeTruthy()
+  })
+})
+
+describe('FirstUseTakeover hardware warning', () => {
+  const KFD_WARNING =
+    'Your user cannot access the AMD GPU compute interface (/dev/kfd), so ComfyUI will not be able to use the GPU.'
+
+  it('renders the validateHardware warning under the Local pick', async () => {
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: true,
+      warning: KFD_WARNING,
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    const warning = wrapper.find('[data-testid="first-use-hardware-warning"]')
+    expect(warning.exists()).toBe(true)
+    expect(warning.text()).toBe(KFD_WARNING)
+  })
+
+  it('hides the warning when Cloud is picked', async () => {
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: true,
+      warning: KFD_WARNING,
+    })
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="first-use-pick-cloud"]').trigger('click')
+    expect(wrapper.find('[data-testid="first-use-hardware-warning"]').exists()).toBe(false)
+  })
+
+  it('renders no warning element when validateHardware reports none', async () => {
+    const wrapper = mountTakeover()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-hardware-warning"]').exists()).toBe(false)
+  })
+
+  it('discards a stale validateHardware result that resolves after a reopen', async () => {
+    let resolveFirst!: (v: { supported: boolean; warning?: string }) => void
+    const first = new Promise<{ supported: boolean; warning?: string }>((r) => {
+      resolveFirst = r
+    })
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(first)
+      .mockResolvedValue({ supported: true })
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    // Replay open() - its validation resolves clean immediately.
+    await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    // The superseded first open()'s warning arrives late and must be dropped.
+    resolveFirst({ supported: true, warning: KFD_WARNING })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-hardware-warning"]').exists()).toBe(false)
   })
 })

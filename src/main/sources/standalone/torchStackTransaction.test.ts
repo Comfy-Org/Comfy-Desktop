@@ -35,11 +35,13 @@ vi.mock('child_process', async (importOriginal) => {
 
 import {
   applyBundleGraft, applyTorchStackTransaction, renameWithLockRetry, runStreamed, undeclaredFamilyPackages,
-  preparePipStack, pipInstallSpecs, pipIndexArgs, staleRocmSdkPackages, preflightDiskSpace, DiskSpaceError,
+  preparePipStack, pipInstallSpecs, pipIndexArgs, planPipReconciliation, amdOverlayCoherenceError,
+  preflightDiskSpace, DiskSpaceError,
 } from './torchStackTransaction'
 import { AMD_MULTI_ARCH_INDEX_URL } from './torchStackTypes'
-import type { PreparedBundleStack } from './torchStackTransaction'
+import type { PreparedBundleStack, PreparedPipStack } from './torchStackTransaction'
 import type { TorchStackEntry } from './torchStackCatalog'
+import type { TorchStackPackages } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
 
 const tools = {
@@ -136,7 +138,7 @@ describe('undeclaredFamilyPackages', () => {
   })
 })
 
-describe('staleRocmSdkPackages', () => {
+describe('planPipReconciliation', () => {
   let tmpDir: string
 
   beforeEach(() => {
@@ -153,21 +155,177 @@ describe('staleRocmSdkPackages', () => {
     fs.writeFileSync(path.join(dir, 'METADATA'), `Name: ${name}\nVersion: ${version}\n`)
   }
 
-  it('detects installed universal-method packages under PEP 503 normalized dist-info names', () => {
+  const multiArch = (packages: TorchStackPackages): Pick<PreparedPipStack, 'packages' | 'source'> => ({
+    packages,
+    source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+  })
+  const pytorchIndex = (packages: TorchStackPackages): Pick<PreparedPipStack, 'packages' | 'source'> => ({
+    packages,
+    source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm7.1' },
+  })
+  const fullTuple: TorchStackPackages = {
+    torch: '2.12.0+rocm7.14.0', torchvision: '0.27.0+rocm7.14.0', torchaudio: '2.11.0+rocm7.14.0',
+  }
+
+  it('entering multi-arch sweeps the universal SDK packages and a pytorch.org triton-rocm', () => {
     // pip writes `rocm_sdk_core-7.2.1.dist-info` (underscores) for the
     // package named rocm-sdk-core.
     distInfo('rocm_sdk_core', '7.2.1')
     distInfo('rocm_sdk_devel', '7.2.1')
     distInfo('rocm_bootstrap', '7.2.1')
     distInfo('rocm', '7.2.1')
-    distInfo('torch', '2.9.1+rocm7.2.1') // not an SDK package
-    expect(staleRocmSdkPackages(tmpDir).sort()).toEqual(['rocm', 'rocm-bootstrap', 'rocm-sdk-core', 'rocm-sdk-devel'])
+    distInfo('triton_rocm', '3.6.0')
+    // Core dists are removed too - pip would otherwise keep a same-version
+    // wheel from the other index (torch is declared by the target).
+    distInfo('torch', '2.9.1+rocm7.2.1')
+    const plan = planPipReconciliation(multiArch(fullTuple), tmpDir)
+    expect(plan.removals.sort()).toEqual(['rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_devel', 'torch', 'triton-rocm'])
+    expect(plan.expectAbsent.sort()).toEqual(['pytorch-triton-rocm', 'triton-rocm'])
   })
 
-  it('returns [] when none are installed or the site dir is unknown', () => {
-    distInfo('torch', '2.10.0+cu130')
-    expect(staleRocmSdkPackages(tmpDir)).toEqual([])
-    expect(staleRocmSdkPackages(null)).toEqual([])
+  it('entering multi-arch also sweeps the older pytorch-triton-rocm name', () => {
+    distInfo('pytorch_triton_rocm', '3.5.0')
+    const plan = planPipReconciliation(multiArch(fullTuple), tmpDir)
+    expect(plan.removals).toEqual(['pytorch-triton-rocm'])
+    expect(plan.expectAbsent.sort()).toEqual(['pytorch-triton-rocm', 'triton-rocm'])
+  })
+
+  it('a same-version cross-index switch removes the installed core tuple so pip must reinstall from the target index', () => {
+    // pip/uv treat an installed wheel of the requested version as satisfied
+    // regardless of source index; without the removal the pytorch.org wheel
+    // would survive an identical-tuple switch to the AMD index (and vice
+    // versa).
+    distInfo('torch', '2.12.0+rocm7.14.0')
+    distInfo('torchvision', '0.27.0+rocm7.14.0')
+    distInfo('torchaudio', '2.11.0+rocm7.14.0')
+    const into = planPipReconciliation(multiArch(fullTuple), tmpDir)
+    expect(into.removals.sort()).toEqual(['torch', 'torchaudio', 'torchvision'])
+
+    distInfo('amd_torch_device_gfx1100', '2.12.0+rocm7.14.0')
+    const outOf = planPipReconciliation(pytorchIndex(fullTuple), tmpDir)
+    expect(outOf.removals).toEqual(expect.arrayContaining(['torch', 'torchvision', 'torchaudio']))
+    // The target reinstalls the core tuple, so it is NOT asserted absent.
+    expect(outOf.expectAbsent).not.toEqual(expect.arrayContaining(['torch']))
+    expect(outOf.expectAbsent).toEqual(['amd_torch_device_gfx1100'])
+  })
+
+  it('multi-arch minor-to-minor sweeps device overlays so obsolete ones cannot survive', () => {
+    distInfo('rocm', '7.14.0')
+    distInfo('rocm_sdk_core', '7.14.0')
+    distInfo('rocm_sdk_device_gfx1100', '7.14.0')
+    distInfo('amd_torch_device_gfx1100', '2.11.0+rocm7.14.0')
+    distInfo('amd_torch_device_gfx1250', '2.11.0+rocm7.14.0')
+    distInfo('amd_torchvision_device_gfx1100', '0.26.0+rocm7.14.0')
+    const plan = planPipReconciliation(multiArch(fullTuple), tmpDir)
+    expect(plan.removals.sort()).toEqual([
+      'amd_torch_device_gfx1100', 'amd_torch_device_gfx1250', 'amd_torchvision_device_gfx1100',
+      'rocm', 'rocm_sdk_core', 'rocm_sdk_device_gfx1100',
+    ])
+    expect(plan.expectAbsent.sort()).toEqual(['pytorch-triton-rocm', 'triton-rocm'])
+  })
+
+  it('leaving multi-arch sweeps the whole ecosystem plus AMD triton and asserts the ecosystem stays gone', () => {
+    distInfo('rocm', '7.14.0')
+    distInfo('rocm_bootstrap', '0.1.0')
+    distInfo('rocm_sdk_core', '7.14.0')
+    distInfo('rocm_sdk_device_gfx1100', '7.14.0')
+    distInfo('amd_torch_device_gfx1100', '2.11.0+rocm7.14.0')
+    distInfo('amd_torchvision_device_gfx1100', '0.26.0+rocm7.14.0')
+    distInfo('triton', '3.7.1+git0263a6a6.rocm7.14.0')
+    const plan = planPipReconciliation(
+      pytorchIndex({ torch: '2.10.0+rocm7.1', torchvision: '0.25.0+rocm7.1', torchaudio: '2.10.0+rocm7.1' }),
+      tmpDir,
+    )
+    const ecosystem = [
+      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
+      'rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_device_gfx1100',
+    ]
+    expect(plan.removals.sort()).toEqual([...ecosystem, 'triton'].sort())
+    // triton is removed but NOT asserted absent: the target's own dependency
+    // tree may legitimately reinstall a triton build.
+    expect(plan.expectAbsent.sort()).toEqual(ecosystem)
+  })
+
+  it('a non-multi-arch venv on a non-multi-arch target gets no ecosystem sweep', () => {
+    // Universal SDK packages without device overlays (e.g. an observed-tuple
+    // restore of the universal stack) must be left to the target dependency
+    // tree, which references them.
+    distInfo('rocm', '7.2.1')
+    distInfo('rocm_sdk_core', '7.2.1')
+    distInfo('triton_rocm', '3.6.0')
+    const plan = planPipReconciliation(
+      { packages: { torch: '2.9.1+rocm7.2.1', torchvision: '0.24.1+rocm7.2.1', torchaudio: '2.9.1+rocm7.2.1' }, source: null },
+      tmpDir,
+    )
+    expect(plan.removals).toEqual([])
+    expect(plan.expectAbsent).toEqual([])
+  })
+
+  it('still reconciles undeclared family packages and declares omitted optionals absent', () => {
+    distInfo('torchvision', '0.26.0+cu126')
+    const plan = planPipReconciliation({ packages: { torch: '2.11.0+cu126' }, source: null }, tmpDir)
+    expect(plan.removals).toEqual(['torchvision'])
+    expect(plan.expectAbsent.sort()).toEqual(['torchaudio', 'torchvision'])
+  })
+
+  it('handles an unknown site dir', () => {
+    const plan = planPipReconciliation(multiArch(fullTuple), null)
+    expect(plan.removals).toEqual([])
+    expect(plan.expectAbsent).toEqual([])
+  })
+})
+
+describe('amdOverlayCoherenceError', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'torchstack-overlay-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function distInfo(name: string, version: string): void {
+    fs.mkdirSync(path.join(tmpDir, `${name}-${version}.dist-info`), { recursive: true })
+  }
+
+  const packages: TorchStackPackages = {
+    torch: '2.12.0+rocm7.14.0', torchvision: '0.27.0+rocm7.14.0', torchaudio: '2.11.0+rocm7.14.0',
+  }
+
+  it('passes when every overlay tracks the core tuple', () => {
+    distInfo('amd_torch_device_gfx1100', '2.12.0+rocm7.14.0')
+    distInfo('amd_torchvision_device_gfx1100', '0.27.0+rocm7.14.0')
+    distInfo('rocm_sdk_device_gfx1100', '7.14.0') // not an amd-* overlay; unversioned vs tuple
+    expect(amdOverlayCoherenceError(tmpDir, packages)).toBeNull()
+  })
+
+  it('flags a torch overlay left at another minor', () => {
+    distInfo('amd_torch_device_gfx1100', '2.12.0+rocm7.14.0')
+    distInfo('amd_torch_device_gfx110x', '2.11.0+rocm7.14.0')
+    expect(amdOverlayCoherenceError(tmpDir, packages)).toContain('amd_torch_device_gfx110x')
+  })
+
+  it('flags a torchvision overlay against the torchvision version, not torch', () => {
+    distInfo('amd_torchvision_device_gfx1100', '0.26.0+rocm7.14.0')
+    expect(amdOverlayCoherenceError(tmpDir, packages)).toContain('amd_torchvision_device_gfx1100')
+  })
+
+  it('flags an overlay missing the ROCm local tag - AMD overlays always carry the full core version', () => {
+    distInfo('amd_torch_device_gfx1100', '2.12.0')
+    expect(amdOverlayCoherenceError(tmpDir, packages)).toContain('amd_torch_device_gfx1100')
+  })
+
+  it('flags an overlay for a package the target does not declare', () => {
+    distInfo('amd_torchvision_device_gfx1100', '0.27.0+rocm7.14.0')
+    expect(amdOverlayCoherenceError(tmpDir, { torch: '2.12.0+rocm7.14.0' })).toContain('declares no torchvision')
+  })
+
+  it('ignores unrelated dists and unreadable dirs', () => {
+    distInfo('torch', '2.12.0+rocm7.14.0')
+    expect(amdOverlayCoherenceError(tmpDir, packages)).toBeNull()
+    expect(amdOverlayCoherenceError(path.join(tmpDir, 'missing'), packages)).toBeNull()
   })
 })
 

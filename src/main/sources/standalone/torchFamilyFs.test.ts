@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-import { copyTorchFamily, recoverTorchFamilyBackups, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
+import { copyTorchFamily, isAmdMultiArchOverlayDist, listRocmEcosystemDists, recoverTorchFamilyBackups, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
 
 let tmpDir: string
 
@@ -489,5 +489,51 @@ describe('removeStaleRocmEntries', () => {
 
     expect(removed).toEqual([])
     expect(fs.readdirSync(dst).sort()).toEqual(['numpy', 'nvidia_cudnn_cu12', 'torch'])
+  })
+})
+
+describe('listRocmEcosystemDists', () => {
+  it('lists ecosystem dist names only, skipping payload dirs and non-ecosystem dists', () => {
+    const site = path.join(tmpDir, 'site')
+    fs.mkdirSync(site, { recursive: true })
+    for (const name of [
+      'rocm-7.14.0.dist-info',
+      'rocm_bootstrap-0.1.0.dist-info',
+      'rocm_sdk_core-7.14.0.dist-info', '_rocm_sdk_core', 'rocm_sdk_core',
+      'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
+      'torch', 'torch-2.11.0+rocm7.14.0.dist-info',
+      'triton-3.7.1+git0263a6a6.rocm7.14.0.dist-info',
+      'rocm_docs_core-1.21.0.dist-info', // ROCm-adjacent PyPI package, not stack-owned
+    ]) pkg(site, name, 'x')
+
+    expect(listRocmEcosystemDists(site).sort()).toEqual([
+      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
+      'rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_device_gfx1100',
+    ])
+  })
+
+  it('returns [] for a site without ROCm dists', () => {
+    const site = path.join(tmpDir, 'site')
+    fs.mkdirSync(site, { recursive: true })
+    pkg(site, 'torch-2.10.0+cu130.dist-info', 'x')
+    expect(listRocmEcosystemDists(site)).toEqual([])
+  })
+})
+
+describe('isAmdMultiArchOverlayDist', () => {
+  it('marks device overlays and SDK device libraries, in either name spelling', () => {
+    for (const name of [
+      'amd_torch_device_gfx1100', 'amd-torch-device-gfx1250',
+      'amd_torchvision_device_gfx1100', 'rocm_sdk_device_gfx1100', 'rocm-sdk-device-gfx90a',
+    ]) expect(isAmdMultiArchOverlayDist(name), name).toBe(true)
+  })
+
+  it('does not mark universal SDK or unrelated dists', () => {
+    for (const name of [
+      'rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_libraries_custom',
+      'torch', 'triton', 'rocm_docs_core',
+    ]) expect(isAmdMultiArchOverlayDist(name), name).toBe(false)
   })
 })

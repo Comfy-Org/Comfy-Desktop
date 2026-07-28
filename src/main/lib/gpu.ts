@@ -489,7 +489,42 @@ async function checkAmdDriver(): Promise<string | undefined> {
   return getAmdDriverVersionLinux()
 }
 
-/** Validate hardware for standalone install. Rejects Intel Macs (MPS needs Apple Silicon). */
+/** Device node Linux ROCm opens for GPU compute (AMDKFD). */
+const KFD_PATH = "/dev/kfd"
+
+/**
+ * Linux AMD compute-access preflight. torch's ROCm runtime needs to open
+ * /dev/kfd; when the node is missing or the user cannot open it, torch still
+ * imports but sees no GPUs and ComfyUI fails at startup with "No HIP GPUs
+ * are available". Returns a user-actionable warning, or null when access is
+ * fine. Distro policy usually gates /dev/kfd behind the `render` group, but
+ * that is not the only possible cause, so the message suggests it without
+ * claiming certainty. This affects the shipped baseline stacks too, not just
+ * stack switches.
+ */
+export async function checkLinuxAmdKfdAccess(kfdPath = KFD_PATH): Promise<string | null> {
+  if (process.platform !== "linux") return null
+  if (!fs.existsSync(kfdPath)) {
+    return (
+      `No AMD GPU compute interface was found (${kfdPath} does not exist). ` +
+      "The amdgpu kernel driver may not be loaded; ComfyUI will not be able to use the GPU until it is."
+    )
+  }
+  try {
+    await fs.promises.access(kfdPath, fs.constants.R_OK | fs.constants.W_OK)
+    return null
+  } catch {
+    return (
+      `Your user cannot access the AMD GPU compute interface (${kfdPath}), so ComfyUI will not be able to use the GPU. ` +
+      'This usually means your user is not in the "render" group. ' +
+      'Run "sudo usermod -aG render $USER", then log out and back in, and try again.'
+    )
+  }
+}
+
+/** Validate hardware for standalone install. Rejects Intel Macs (MPS needs
+ *  Apple Silicon); surfaces a non-blocking warning when a Linux AMD GPU is
+ *  present but its compute device node is missing or inaccessible. */
 async function validateHardware(): Promise<HardwareValidation> {
   if (process.platform === "darwin") {
     const gpu = await detectMacGPU()
@@ -498,6 +533,13 @@ async function validateHardware(): Promise<HardwareValidation> {
         supported: false,
         error: "ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not supported.",
       }
+    }
+  }
+  if (process.platform === "linux") {
+    const gpu = await detectGPU()
+    if (gpu?.id === "amd") {
+      const warning = await checkLinuxAmdKfdAccess()
+      if (warning) return { supported: true, warning }
     }
   }
   return { supported: true }

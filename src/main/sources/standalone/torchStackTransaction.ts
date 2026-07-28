@@ -35,7 +35,7 @@ import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
-import { copyTorchFamily, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
+import { copyTorchFamily, isAmdMultiArchOverlayDist, listRocmEcosystemDists, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
 import { stackVersionMatches, torchLocalTag, torchIndexUrlForSource, accelBaseForTag } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
@@ -322,7 +322,7 @@ async function verifyStack(
   installation: InstallationRecord,
   packages: TorchStackPackages,
   accelVariant: string | null,
-  opts?: { expectAbsent?: readonly string[] },
+  opts?: { expectAbsent?: readonly string[]; amdMultiArch?: boolean },
 ): Promise<string | null> {
   const venvDir = getActiveVenvDir(installation)
   const site = findSitePackages(venvDir)
@@ -346,6 +346,14 @@ async function verifyStack(
     }
   }
 
+  // Multi-arch AMD targets: every device-overlay dist must version-track the
+  // core tuple (a stale overlay of another minor claims a payload inside
+  // torch/ that no longer exists).
+  if (opts?.amdMultiArch) {
+    const overlayErr = amdOverlayCoherenceError(site, packages)
+    if (overlayErr) return overlayErr
+  }
+
   if (accelVariant) {
     const accelErr = expectedAcceleratorOk(accelVariant, site)
     if (accelErr) return accelErr
@@ -362,6 +370,8 @@ async function verifyStack(
 /** Torch-family packages the pip path must reconcile even when the target
  *  tuple omits them. */
 const PIP_FAMILY_OPTIONAL = ['torchvision', 'torchaudio'] as const
+/** The full core tuple a pip stack can declare. */
+const PIP_FAMILY = ['torch', ...PIP_FAMILY_OPTIONAL] as const
 
 /** Family packages installed in `site` but not declared by the tuple — the
  *  pip path must remove them (a torchvision built against a different torch
@@ -371,21 +381,96 @@ export function undeclaredFamilyPackages(packages: TorchStackPackages, site: str
   return PIP_FAMILY_OPTIONAL.filter((pkg) => !packages[pkg] && readDistInfoVersion(site, pkg) !== null)
 }
 
-/** Packages AMD's retired repo.radeon.com "universal" ROCm method installed
- *  alongside torch (last release: rocm-rel-7.2.1). A switch to the
- *  multi-arch index must uninstall them first: pip only replaces packages the
- *  new dependency tree references, and a stale SDK's DLLs would shadow the
- *  wheel-provided ROCm runtime. Several of these names are re-installed at
- *  the new version by the multi-arch dependency tree (torch requires
- *  `rocm[libraries]`), so their absence is NOT asserted after the install. */
-const STALE_ROCM_SDK_PACKAGES = [
-  'rocm', 'rocm-bootstrap', 'rocm-sdk-core', 'rocm-sdk-devel', 'rocm-sdk-libraries', 'rocm-sdk-libraries-custom',
-] as const
+/**
+ * Reconciliation plan for a pip stack apply. pip only replaces distributions
+ * the target dependency tree references, so packages tied to the outgoing
+ * stack's acquisition family must be uninstalled explicitly, and
+ * verification must know which of them may not reappear.
+ *
+ * - Entering or staying in the AMD multi-arch family: every installed
+ *   ROCm-ecosystem dist is uninstalled first. The target's [device-all]
+ *   extras reinstall the ones it needs at coherent versions; without the
+ *   sweep a minor-to-minor switch leaves device overlays of the previous
+ *   minor behind (dist-info claiming a torch payload that no longer exists),
+ *   and a switch from the retired repo.radeon.com "universal" method leaves
+ *   stale SDK DLLs shadowing the wheel-provided runtime. AMD's torch depends
+ *   on its own `triton` build, so a pytorch.org `triton-rocm` must go too
+ *   and stay gone.
+ * - Leaving the multi-arch family (overlay dists present, non-multi-arch
+ *   target): the whole ecosystem plus AMD's `triton` build is swept, and no
+ *   ecosystem dist may survive verification - no target outside the family
+ *   references any of them. `triton` itself is not asserted absent: some
+ *   targets legitimately depend on a triton build of their own.
+ */
+export interface PipReconciliationPlan {
+  /** Distributions to uninstall before the target install. */
+  removals: string[]
+  /** Distributions verification must find absent after the install. */
+  expectAbsent: string[]
+}
 
-/** The stale universal-method SDK packages actually present in `site`. */
-export function staleRocmSdkPackages(site: string | null): string[] {
-  if (!site) return []
-  return STALE_ROCM_SDK_PACKAGES.filter((pkg) => readDistInfoVersion(site, pkg) !== null)
+export function planPipReconciliation(
+  prepared: Pick<PreparedPipStack, 'packages' | 'source'>,
+  site: string | null,
+): PipReconciliationPlan {
+  const removals = [...undeclaredFamilyPackages(prepared.packages, site)]
+  const expectAbsent: string[] = PIP_FAMILY_OPTIONAL.filter((pkg) => !prepared.packages[pkg])
+  if (!site) return { removals, expectAbsent }
+
+  const rocmDists = listRocmEcosystemDists(site)
+  const amdMultiArchTarget = prepared.source?.kind === 'amd-multi-arch-index'
+  const leavingMultiArch = !amdMultiArchTarget && rocmDists.some(isAmdMultiArchOverlayDist)
+  if (amdMultiArchTarget || leavingMultiArch) {
+    removals.push(...rocmDists)
+    // pip/uv treat an installed wheel of the requested version as satisfied
+    // regardless of which index supplied it, so a same-version cross-index
+    // switch would keep the other family's core wheels. Force the reinstall
+    // by removing every installed core dist the target declares.
+    removals.push(...PIP_FAMILY.filter(
+      (pkg) => prepared.packages[pkg] && readDistInfoVersion(site, pkg) !== null,
+    ))
+  }
+  if (amdMultiArchTarget) {
+    // pytorch.org ROCm ships its triton build as `triton-rocm` (older
+    // stacks: `pytorch-triton-rocm`); AMD's torch depends on its own
+    // `triton`, so both upstream names must go and stay gone.
+    for (const pkg of ['triton-rocm', 'pytorch-triton-rocm']) {
+      if (readDistInfoVersion(site, pkg) !== null) removals.push(pkg)
+      expectAbsent.push(pkg)
+    }
+  } else if (leavingMultiArch) {
+    expectAbsent.push(...rocmDists)
+    if (readDistInfoVersion(site, 'triton') !== null) removals.push('triton')
+  }
+  return { removals: [...new Set(removals)], expectAbsent }
+}
+
+/** Multi-arch AMD device-overlay dists must version-track the core tuple: an
+ *  `amd-torch-device-*` left at a previous version means its payload inside
+ *  torch/ was built against a different torch and fails at kernel dispatch
+ *  rather than import. dist-info dir names normalize '-' to '_' and never
+ *  contain '-' in the name part, so the first '-' splits name from version. */
+export function amdOverlayCoherenceError(site: string, packages: TorchStackPackages): string | null {
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(site)
+  } catch {
+    return null
+  }
+  for (const entry of entries) {
+    const m = entry.match(/^(amd_(torch|torchvision)_device\w*)-(.+)\.dist-info$/i)
+    if (!m) continue
+    const [, name, kind, version] = m
+    const expected = kind!.toLowerCase() === 'torchvision' ? packages.torchvision : packages.torch
+    if (!expected) return `${name} is "${version}" after swap, but the target stack declares no ${kind}`
+    // Strict comparison including the local tag: AMD overlay wheels always
+    // carry the full core version, so a missing/foreign tag is incoherent
+    // even though stackVersionMatches tolerates one-sided tags elsewhere.
+    if (!stackVersionMatches(version!, expected) || torchLocalTag(version) !== torchLocalTag(expected)) {
+      return `${name} is "${version}" after swap, expected "${expected}"`
+    }
+  }
+  return null
 }
 
 /** pip requirement specs for a prepared pip stack. AMD multi-arch torch and
@@ -480,6 +565,9 @@ export async function applyBundleGraft(prepared: PreparedBundleStack, dstSite: s
  * uv into its venv), the standalone-env uv on managed installs (their bare
  * venvs carry no uv). Falls back to the candidate's `python -m pip`.
  * Streams output to the logs panel.
+ *
+ * Returns the distributions verification must assert absent (see
+ * `planPipReconciliation`).
  */
 async function runPipTorchInstall(
   installation: InstallationRecord,
@@ -487,7 +575,7 @@ async function runPipTorchInstall(
   candidateVenv: string,
   backupVenv: string,
   tools: TorchStackTools,
-): Promise<void> {
+): Promise<string[]> {
   const python = venvPython(candidateVenv)
   const activeUv = getActiveUvPath(installation)
   const uv = venvUv(backupVenv) ?? (fs.existsSync(activeUv) ? activeUv : null)
@@ -495,24 +583,17 @@ async function runPipTorchInstall(
     ? [uv, ['pip', verb, '--python', python, ...args]]
     : [python, ['-m', 'pip', verb, ...(verb === 'uninstall' ? ['-y'] : []), ...args]]
 
-  const amdMultiArch = prepared.source?.kind === 'amd-multi-arch-index'
   const candidateSite = findSitePackages(candidateVenv)
-  // Besides undeclared family packages, an AMD multi-arch switch removes the
-  // retired universal-method SDK packages: pip would leave the ones the new
-  // dependency tree doesn't reference, and their stale DLLs shadow the new
-  // wheel-provided ROCm runtime.
-  const removals = [
-    ...undeclaredFamilyPackages(prepared.packages, candidateSite),
-    ...(amdMultiArch ? staleRocmSdkPackages(candidateSite) : []),
-  ]
-  if (removals.length > 0) {
-    const [cmd, args] = pipCmd('uninstall', removals)
+  const plan = planPipReconciliation(prepared, candidateSite)
+  if (plan.removals.length > 0) {
+    const [cmd, args] = pipCmd('uninstall', plan.removals)
     await runStreamed(cmd, args, 'PyTorch package uninstall failed', tools)
   }
 
   const specs = pipInstallSpecs(prepared)
   const [cmd, args] = pipCmd('install', [...pipIndexArgs(prepared), ...specs])
   await runStreamed(cmd, args, 'PyTorch package install failed', tools)
+  return plan.expectAbsent
 }
 
 /** Windows releases directory handles a beat after the owning process dies
@@ -618,23 +699,24 @@ export async function applyTorchStackTransaction(
       // packages (bundle-managed installs) or pip-install the exact tuple
       // from the derived index (adopted installs).
       tools.sendProgress('torch-swap', { percent: 65, status: 'Installing PyTorch packages…' })
-      let bundleRemoved: string[] = []
+      let expectAbsent: string[]
       if (prepared.kind === 'bundle') {
         const dstSite = findSitePackages(venvPath)
         if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
-        bundleRemoved = await applyBundleGraft(prepared, dstSite)
+        expectAbsent = await applyBundleGraft(prepared, dstSite)
       } else {
-        await runPipTorchInstall(installation, prepared, venvPath, backupPath, tools)
+        expectAbsent = await runPipTorchInstall(installation, prepared, venvPath, backupPath, tools)
       }
 
       // 6. Verify before committing. Family packages the target omits must be
-      // absent: the pip path asserts every optional package the tuple omits,
-      // the bundle path asserts the survivors it just removed.
+      // absent: the pip path asserts its reconciliation plan (omitted
+      // optional packages + swept acquisition-family debris), the bundle
+      // path asserts the survivors it just removed.
       tools.sendProgress('torch-swap', { percent: 85, status: 'Verifying PyTorch…' })
-      const expectAbsent = prepared.kind === 'pip'
-        ? PIP_FAMILY_OPTIONAL.filter((pkg) => !packages[pkg])
-        : bundleRemoved
-      const verifyErr = await verifyStack(installation, packages, accelVariant, { expectAbsent })
+      const verifyErr = await verifyStack(installation, packages, accelVariant, {
+        expectAbsent,
+        amdMultiArch: prepared.kind === 'pip' && prepared.source?.kind === 'amd-multi-arch-index',
+      })
       if (verifyErr) throw new Error(`verification failed: ${verifyErr}`)
 
       // 7. Persist the verified stack ref (with acquisition info for repair).

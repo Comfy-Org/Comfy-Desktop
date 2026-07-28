@@ -263,6 +263,38 @@ function isRocmEcosystemEntry(name: string): boolean {
     || base === 'amd_torchvision_device' || base.startsWith('amd_torchvision_device_')
 }
 
+/** Normalized dist names of every installed ROCm-ecosystem distribution in
+ *  `site` (see isRocmEcosystemEntry). Input for the pip path's
+ *  reconciliation: pip only mutates distributions the target dependency tree
+ *  references, so these must be uninstalled explicitly when entering, moving
+ *  within, or leaving the AMD multi-arch family. */
+export function listRocmEcosystemDists(site: string): string[] {
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(site)
+  } catch {
+    // findSitePackages does not stat on Windows; a missing dir has no dists.
+    return []
+  }
+  const out: string[] = []
+  for (const entry of entries) {
+    if (!entry.endsWith('.dist-info')) continue
+    if (!isRocmEcosystemEntry(entry)) continue
+    out.push(packageKey(entry))
+  }
+  return out
+}
+
+/** True for the per-architecture distributions only the AMD multi-arch index
+ *  installs (torch/torchvision device overlays and the SDK's device
+ *  libraries) - their presence marks a venv as multi-arch-built. */
+export function isAmdMultiArchOverlayDist(name: string): boolean {
+  const key = name.toLowerCase().replace(/-/g, '_')
+  return key.startsWith('amd_torch_device')
+    || key.startsWith('amd_torchvision_device')
+    || key.startsWith('rocm_sdk_device')
+}
+
 /**
  * Remove ROCm-ecosystem entries in dstSite that srcSite (the bundle payload)
  * does not ship. The graft only replaces same-key entries, so a switch away

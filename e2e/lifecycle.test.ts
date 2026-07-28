@@ -183,7 +183,13 @@ test.beforeAll(async () => {
         ? execFileSync('powershell.exe',
             ['-NoProfile', '-Command', '(Get-CimInstance Win32_VideoController).Name'],
             { encoding: 'utf-8', windowsHide: true, timeout: 30_000 })
-        : execFileSync('sh', ['-c', 'lspci -d ::0300 -d ::0302 2>/dev/null || lspci 2>/dev/null'],
+        // Filter the plain listing to display-controller lines (classes
+        // 0300 VGA / 0302 3D / 0380 Display) - never grep the whole listing
+        // (AMD-CPU hosts list AMD PCI bridges that would falsely pass), and
+        // never repeat `-d` class filters (pciutils ANDs them, returning
+        // empty with rc=0).
+        : execFileSync('sh',
+            ['-c', 'lspci 2>/dev/null | grep -Ei "vga|3d controller|display controller"'],
             { encoding: 'utf-8', timeout: 30_000 })
     } catch { /* fall through to the adapter check below */ }
     if (!/\b(AMD|Radeon)\b/i.test(adapters)) {
@@ -512,10 +518,13 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
 
 test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
-  // The install poll below allows 480s; the project default test timeout is
-  // 180s, which real GPU installs exceed (observed: AMD fresh install at 94%
-  // "Loading custom nodes" killed at 180s, clean retry took 2.8m).
-  test.setTimeout(600_000)
+  // The install poll below allows 480s (900s on Linux AMD, whose 5.36 GB
+  // bundle alone exceeded 480s on a valid first run); the project default
+  // test timeout is 180s, which real GPU installs exceed (observed: AMD
+  // fresh install at 94% "Loading custom nodes" killed at 180s, clean retry
+  // took 2.8m).
+  const LINUX_AMD = LIFECYCLE_VARIANT === 'amd' && process.platform === 'linux'
+  test.setTimeout(LINUX_AMD ? 1_020_000 : 600_000)
   // The CPU-variant pick at the end of the previous test re-fires the
   // variant option reload, which transiently disables Continue
   // (`saveDisabled`). A DOM click on a disabled button is a silent
@@ -530,7 +539,7 @@ test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle',
   // the comfy webContents loading a localhost URL — covers both the
   // install completing and the server coming up.
   await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
-  await expect.poll(comfyFrontendIsLoaded, { timeout: 480_000, intervals: [1_000, 2_000] }).toBe(true)
+  await expect.poll(comfyFrontendIsLoaded, { timeout: LINUX_AMD ? 900_000 : 480_000, intervals: [1_000, 2_000] }).toBe(true)
 })
 
 test('first-use Local chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @lifecycle', async () => {
