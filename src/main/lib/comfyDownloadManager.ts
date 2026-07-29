@@ -618,25 +618,9 @@ export async function startAssetDownload(
   authToken?: string,
   senderContents?: Electron.WebContents,
 ): Promise<boolean> {
+  console.log('[asset-download] request', url, '->', filename)
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return false
-  const savePath = await deduplicatePath(path.join(outputDir, safeFilename))
-  const savedFilename = path.basename(savePath)
-  // Temp dir is a sibling of the output dir — same filesystem for atomic rename,
-  // but outside the output dir so ComfyUI won't scan it.
-  const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
-  const tempPath = path.join(tempDir, tempFileNameFor(savedFilename))
-
-  const makeProgress = (
-    overrides: Partial<DownloadProgress>,
-  ): DownloadProgress => ({
-    url,
-    filename: savedFilename,
-    directory: '',
-    progress: 0,
-    status: 'pending',
-    ...overrides,
-  })
 
   const existing = pendingDownloads.get(url)
   if (existing) {
@@ -649,10 +633,62 @@ export async function startAssetDownload(
     return true
   }
 
-  await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
-  await fs.promises.mkdir(tempDir, { recursive: true })
+  // Reserve the URL before the first await: the same URL can be requested
+  // again while the async setup below is still in flight (e.g. an output
+  // reported twice in quick succession), and that request must join this
+  // download instead of racing past the pending check above and starting a
+  // second download, which would save a duplicate file.
+  const pending: PendingDownload = {
+    url,
+    filename: path.basename(safeFilename),
+    directory: '',
+    savePath: path.join(outputDir, safeFilename),
+    outputDir,
+    window: win,
+    senderContents: senderContents !== win.webContents ? senderContents : undefined,
+    subscriberWindows: new Set(),
+    lastProgress: {
+      url,
+      filename: path.basename(safeFilename),
+      directory: '',
+      progress: 0,
+      status: 'pending',
+    },
+    lastSpeedBytes: 0,
+    lastSpeedTime: Date.now(),
+  }
+  pendingDownloads.set(url, pending)
 
-  if (win.isDestroyed()) return false
+  let savePath: string
+  try {
+    savePath = await deduplicatePath(path.join(outputDir, safeFilename))
+  } catch (err) {
+    pendingDownloads.delete(url)
+    throw err
+  }
+  const savedFilename = path.basename(savePath)
+  // Temp dir is a sibling of the output dir — same filesystem for atomic rename,
+  // but outside the output dir so ComfyUI won't scan it.
+  const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
+  pending.savePath = savePath
+  pending.filename = savedFilename
+  pending.tempPath = path.join(tempDir, tempFileNameFor(savedFilename))
+  pending.lastProgress = { ...pending.lastProgress, filename: savedFilename }
+
+  try {
+    await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
+    await fs.promises.mkdir(tempDir, { recursive: true })
+  } catch (err) {
+    // Release the reservation so the URL is not stuck pointing at a download
+    // that never started.
+    pendingDownloads.delete(url)
+    throw err
+  }
+
+  if (win.isDestroyed()) {
+    pendingDownloads.delete(url)
+    return false
+  }
 
   // Register retry params only once the download is viable: an earlier
   // registration would survive a mkdir failure or destroyed window as a
@@ -666,22 +702,6 @@ export async function startAssetDownload(
     senderContents,
   })
 
-  const initial = makeProgress({ status: 'pending' })
-  pendingDownloads.set(url, {
-    url,
-    filename: savedFilename,
-    directory: '',
-    savePath,
-    tempPath,
-    outputDir,
-    window: win,
-    senderContents: senderContents !== win.webContents ? senderContents : undefined,
-    subscriberWindows: new Set(),
-    lastProgress: initial,
-    lastSpeedBytes: 0,
-    lastSpeedTime: Date.now(),
-  })
-
   const sess = (senderContents || win.webContents).session
   attachSessionDownloadHandler(sess)
   // Pass auth headers directly; the original URL stays in item.getURLChain()
@@ -691,7 +711,7 @@ export async function startAssetDownload(
     : undefined
   sess.downloadURL(url, downloadOptions)
 
-  reportProgress(initial)
+  reportProgress(pending.lastProgress)
   return true
 }
 

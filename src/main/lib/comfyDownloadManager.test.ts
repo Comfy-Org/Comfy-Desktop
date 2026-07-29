@@ -434,6 +434,66 @@ describe('asset download retries', () => {
     }
   })
 
+  it('starts a single download when the same URL is requested twice in the same tick', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://remote.example/api/view?filename=same-tick.png'
+    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn(),
+    } as unknown as Electron.Session
+    const webContents = {
+      session,
+      send: vi.fn(),
+      isDestroyed: () => false,
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents,
+    } as unknown as Electron.BrowserWindow
+
+    try {
+      // Both calls begin before either finishes its async setup - the second
+      // must join the first's reservation instead of starting a second
+      // download that would save a duplicate file.
+      const results = await Promise.all([
+        mod.startAssetDownload(win, url, 'same-tick.png', outputDir),
+        mod.startAssetDownload(win, url, 'same-tick.png', outputDir),
+      ])
+      expect(results).toEqual([true, true])
+      expect(session.downloadURL).toHaveBeenCalledTimes(1)
+
+      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      const setSavePath = vi.fn<(savePath: string) => void>()
+      const item = {
+        getURLChain: () => [url],
+        getURL: () => url,
+        getContentDisposition: () => null,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn((event: string, handler: typeof done) => {
+          if (event === 'done') done = handler
+        }),
+        getTotalBytes: () => 1,
+        getReceivedBytes: () => 1,
+        isPaused: () => false,
+      } as unknown as Electron.DownloadItem
+      willDownload!({}, item, null)
+      const tempPath = setSavePath.mock.calls[0]?.[0]
+      expect(tempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath!, 'content')
+      done!({}, 'completed')
+
+      const saved = await fs.promises.readdir(outputDir)
+      expect(saved).toEqual(['same-tick.png'])
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('allocates distinct temp paths for same-named downloads started in the same millisecond', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     // Freeze the clock: with a timestamp-only temp name these two downloads
