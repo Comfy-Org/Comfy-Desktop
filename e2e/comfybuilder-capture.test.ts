@@ -35,9 +35,10 @@
  * macOS PROFILE. `dataDir()` resolves to `app.getPath('userData')`
  * (`src/main/lib/paths.ts`), which ignores the harness HOME override on macOS,
  * so seeding rewrites the operator's REAL `installations.json`. It is snapshot
- * before launch and restored in `afterAll`. The same path lets `E2E_SETTINGS_SEED`
- * replace the operator's `settings.json` wholesale — that is pre-existing
- * behaviour of every e2e run here and is deliberately not addressed by this file.
+ * before launch, checked against the launched app's own `userData`, and restored
+ * in `afterAll`. The same path lets `E2E_SETTINGS_SEED` replace the operator's
+ * `settings.json` wholesale — pre-existing behaviour of every e2e run here,
+ * deliberately not addressed by this file but flagged on the README row.
  */
 
 import os from 'node:os'
@@ -66,16 +67,26 @@ const INSTALLED_NAME = 'desktop-4target-stg-v0190'
 const FAILED_ID = 'inst-capture-builder-failed'
 const FAILED_NAME = 'desktop-4target-stg-v0192'
 
-/** Statuses the seeded records put on screen, echoed into the manifest. */
-const DISTRIBUTION_STATES = ['installed', 'failed']
+/** The distribution installs this run seeds. Their statuses are what the
+ *  manifest reports as covered, so a third seed can't leave it stale. */
+const SEEDS = [
+  { id: INSTALLED_ID, name: INSTALLED_NAME, status: 'installed' },
+  { id: FAILED_ID, name: FAILED_NAME, status: 'failed' },
+] as const
 
 const SIGNED_IN_ONLY = 'requires a signed-in dev-platform session'
+
+/** `useInstallContextMenu` always offers Manage on a chooser tile, so this item
+ *  is the kebab's open/closed gate. */
+const KEBAB_ITEM = 'manage'
 
 /** Declaration order IS file order. */
 const SCREENS: readonly CaptureTarget[] = [
   { id: 'chooser-signed-out', surface: PANEL, anchor: '.chooser-view .account-chip__signin' },
   { id: 'chooser-signed-in', surface: PANEL, anchor: '.chooser-view .account-chip__face' },
-  { id: 'workspace-switcher', surface: PANEL, anchor: '.account-chip__menu' },
+  // A row, not the menu: the list is fetched lazily on open, so the container's
+  // first frame is the "Loading…" hint.
+  { id: 'workspace-switcher', surface: PANEL, anchor: '.account-chip__workspace-item' },
   // Cropped for the same reason as the shelf below: the row of not-yet-installed
   // distributions, not another shot of the whole chooser.
   {
@@ -94,7 +105,7 @@ const SCREENS: readonly CaptureTarget[] = [
     anchor: byTestId(TID.dashboardTile(INSTALLED_ID)),
     crop: '.chooser-shelf:has(.chooser-shelf-head)',
   },
-  { id: 'builder-install-tile-kebab', surface: PANEL, anchor: '.context-menu' },
+  { id: 'builder-install-tile-kebab', surface: PANEL, anchor: byTestId(TID.contextMenuItem(KEBAB_ITEM)) },
   { id: 'builder-install-manage', surface: TITLE_POPUP, anchor: byTestId(TID.pickerRow(INSTALLED_ID)) },
   { id: 'builder-install-not-ready', surface: PANEL, anchor: byTestId(TID.baseAlertAction) },
   { id: 'builder-install-progress', surface: PANEL, anchor: '.brand-progress__bar' },
@@ -102,7 +113,9 @@ const SCREENS: readonly CaptureTarget[] = [
 ]
 
 /** macOS only — see the header. Null everywhere else, where the harness HOME
- *  override does isolate `userData`. */
+ *  override does isolate `userData`. Checked against the launched app's own
+ *  `userData` below: this is the one file the harness writes outside a tmp dir,
+ *  so the path must never be a silent guess. */
 const realInstallationsFile = process.platform === 'darwin'
   ? path.join(os.homedir(), 'Library', 'Application Support', 'comfyui-desktop-2', 'installations.json')
   : null
@@ -140,15 +153,15 @@ function distributionRecord(id: string, name: string, status: string): SeedInsta
 
 test.beforeAll(async () => {
   if (realInstallationsFile) {
-    realInstallationsBackup = await readFile(realInstallationsFile, 'utf8').catch(() => null)
+    realInstallationsBackup = await readIfPresent(realInstallationsFile)
   }
 
   rootDir = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-capture-e2e-'))
   // A missing folder earns the tile a "Folder Not Found" danger pill
   // (`enrichInstallationsForRenderer`), which would be a lie in the screenshot.
-  for (const id of [INSTALLED_ID, FAILED_ID]) {
-    await mkdir(path.join(rootDir, id, 'ComfyUI'), { recursive: true })
-    await writeFile(path.join(rootDir, id, 'ComfyUI', 'main.py'), '')
+  for (const seed of SEEDS) {
+    await mkdir(path.join(rootDir, seed.id, 'ComfyUI'), { recursive: true })
+    await writeFile(path.join(rootDir, seed.id, 'ComfyUI', 'main.py'), '')
   }
 
   outDir = captureDir()
@@ -157,20 +170,26 @@ test.beforeAll(async () => {
 
   ctx = await launchApp({
     settings: { firstUseCompleted: true, telemetryEnabled: false },
-    installations: [
-      distributionRecord(INSTALLED_ID, INSTALLED_NAME, 'installed'),
-      distributionRecord(FAILED_ID, FAILED_NAME, 'failed'),
-    ],
+    installations: SEEDS.map((s) => distributionRecord(s.id, s.name, s.status)),
   })
+  if (realInstallationsFile) {
+    expect(
+      path.join(ctx.userDataDir, 'installations.json'),
+      'seeded the installations.json that was snapshotted',
+    ).toBe(realInstallationsFile)
+  }
   await expectChooserVisible(ctx.panel)
   await waitForSeededTiles()
-  capturer = new ScreenCapturer(ctx.app, outDir, SCREENS)
+  capturer = await ScreenCapturer.create(ctx.app, outDir, SCREENS)
 })
 
 test.afterAll(async () => {
   await ctx?.cleanup()
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
-  if (realInstallationsFile) {
+  // Only touch the real profile when the snapshot really is the file the app
+  // seeded; on a mismatch `beforeAll` already failed loudly and deleting would
+  // compound it.
+  if (realInstallationsFile && ctx?.userDataDir === path.dirname(realInstallationsFile)) {
     if (realInstallationsBackup !== null) await writeFile(realInstallationsFile, realInstallationsBackup)
     else await rm(realInstallationsFile, { force: true })
   }
@@ -206,7 +225,13 @@ test('chooser identity corner @capture', async () => {
   // The menu only. Selecting a row re-runs the browser handoff and Sign out is
   // real, so neither is ever clicked.
   expect(await ctx.panel.click('.account-chip__face'), 'account chip click dispatched').toBe(true)
-  await capturer.capture('workspace-switcher')
+  // The rows arrive on a lazy fetch; a list that never loads is a real product
+  // state, so record the gap rather than shooting the loading hint.
+  const hasRows = await ctx.panel
+    .waitForVisible('.account-chip__workspace-item', { timeout: 10_000 })
+    .then(() => true, () => false)
+  if (hasRows) await capturer.capture('workspace-switcher')
+  else capturer.skip('workspace-switcher', 'the workspace list did not load, so the switcher has no rows')
   await closeAccountMenu()
 })
 
@@ -224,9 +249,10 @@ test('workspace shelf tile and its kebab @capture', async () => {
   await capturer.capture('builder-install-tile-kebab')
 
   await dismissOverlay(ctx.panel)
-  await ctx.panel.waitFor(async () => !(await ctx.panel.exists('.context-menu')), {
-    message: 'kebab menu never closed',
-  })
+  await ctx.panel.waitFor(
+    async () => !(await ctx.panel.exists(byTestId(TID.contextMenuItem(KEBAB_ITEM)))),
+    { message: 'kebab menu never closed' },
+  )
 })
 
 test('manage popup for a distribution install @capture', async () => {
@@ -246,8 +272,13 @@ test('not-ready alert on a failed distribution install @capture', async () => {
   await clickInstallTile(ctx.panel, FAILED_NAME)
   await capturer.capture('builder-install-not-ready')
 
-  await ctx.panel.click(byTestId(TID.baseAlertAction))
-  await expectChooserVisible(ctx.panel)
+  // The alert is teleported and fixed, so `.chooser-view` stays visible under
+  // it — only its own disappearance proves it went away, and a modal left up
+  // would sit on top of the next two screens.
+  expect(await ctx.panel.click(byTestId(TID.baseAlertAction)), 'alert action click dispatched').toBe(true)
+  await ctx.panel.waitFor(async () => !(await ctx.panel.exists(byTestId(TID.baseAlertAction))), {
+    message: 'not-ready alert never closed',
+  })
 })
 
 test('install progress and its failure @capture', async () => {
@@ -263,11 +294,15 @@ test('install progress and its failure @capture', async () => {
   })()`)
   await capturer.capture('builder-install-progress')
 
-  // Same op, now failed — the transition a real install makes.
+  // Same op, now failed — the transition a real install makes. The modal shows
+  // `installInstance`'s own message, so use one the distribution install path
+  // really produces (`assertLayout` in `src/main/comfybuilder/install.ts`)
+  // rather than a string from another surface.
+  const failure = 'Extracted artifact is missing a real venv/ directory.'
   expect(
     await ctx.panel.evaluate<boolean>(`window.__e2eRenderer.settleInFlightOp({
       installationId: ${JSON.stringify(INSTALLED_ID)},
-      result: { ok: false, message: ${JSON.stringify(en.errors.installFailedDetail)} },
+      result: { ok: false, message: ${JSON.stringify(failure)} },
     })`),
     'in-flight op settled',
   ).toBe(true)
@@ -275,8 +310,6 @@ test('install progress and its failure @capture', async () => {
 })
 
 test('every declared screen is captured or explained @capture', async () => {
-  const manifest = await capturer.writeManifest(DISTRIBUTION_STATES)
-  console.log(`[capture] ${manifest.captured.length} captured, ${manifest.skipped.length} skipped`)
   // A screen that is neither shot nor explained fails the run rather than
   // quietly shrinking the set.
   expect(capturer.accountedIds()).toEqual(capturer.declaredIds())
@@ -284,13 +317,18 @@ test('every declared screen is captured or explained @capture', async () => {
   // Two identical PNGs mean a screen was shot before the compositor caught up
   // and the set silently under-covers — the whole point of the harness.
   const byDigest = new Map<string, string>()
-  for (const record of manifest.captured) {
+  for (const record of capturer.captured) {
     const digest = createHash('sha256')
       .update(await readFile(path.join(outDir, record.file)))
       .digest('hex')
     expect(byDigest.get(digest), `${record.file} is byte-identical to ${byDigest.get(digest)}`).toBeUndefined()
     byDigest.set(digest, record.file)
   }
+
+  // Written only once the set is known good: a red run must not leave a
+  // complete-looking contract behind for the Figma follow-up to consume.
+  const manifest = await capturer.writeManifest(SEEDS.map((s) => s.status))
+  console.log(`[capture] ${manifest.captured.length} captured, ${manifest.skipped.length} skipped`)
 })
 
 /**
@@ -300,13 +338,25 @@ test('every declared screen is captured or explained @capture', async () => {
  * tiles are on screen — every capture assumes they are.
  */
 async function waitForSeededTiles(): Promise<void> {
-  await ctx.app.evaluate(({ webContents }) => {
+  await ctx.app.evaluate(({ webContents }, marker) => {
     for (const wc of webContents.getAllWebContents()) {
-      if (wc.getURL().includes('panel.html')) wc.send('installations-changed', {})
+      if (wc.getURL().includes(marker)) wc.send('installations-changed', {})
     }
-  })
-  for (const id of [INSTALLED_ID, FAILED_ID]) {
-    await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(id)), { timeout: 15_000 })
+  }, PANEL)
+  for (const seed of SEEDS) {
+    await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(seed.id)), { timeout: 15_000 })
+  }
+}
+
+/** Null only when the file genuinely does not exist — any other read failure
+ *  must not pass as "the operator had none", which would lose their records. */
+async function readIfPresent(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    console.log(`[capture] no installations.json to snapshot at ${file}`)
+    return null
   }
 }
 

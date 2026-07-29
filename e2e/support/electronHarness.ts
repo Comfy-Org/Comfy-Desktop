@@ -7,6 +7,9 @@ import { _electron as electron, type ElectronApplication } from 'playwright'
 export interface LauncherAppHandle {
   application: ElectronApplication
   homeDir: string
+  /** `app.getPath('userData')` as the launched app resolves it. On macOS this
+   *  is NOT under `homeDir` — Application Support ignores the HOME override. */
+  userDataDir: string
   /** CDP remote-debugging port for connecting to non-BrowserWindow webContents. */
   cdpPort: number
   cleanup: () => Promise<void>
@@ -162,12 +165,14 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     electronApp.on('render-process-gone', () => electronApp.exit(1))
   })
 
-  // Seed installations after launch so we can query app.getPath('userData')
-  // for the correct dir (Electron may modify the app name per platform).
+  // Resolved from the running app rather than derived: Electron may modify the
+  // app name per platform, and callers that write here must not guess.
+  const userDataDir = await application.evaluate(async ({ app: electronApp }) => {
+    return electronApp.getPath('userData')
+  })
+
+  // Seed installations after launch so the write lands in that same dir.
   if (options?.installations && options.installations.length > 0) {
-    const userDataDir = await application.evaluate(async ({ app: electronApp }) => {
-      return electronApp.getPath('userData')
-    })
     const records = options.installations.map((inst, i) => {
       const { snapshots: _snapshots, ...rest } = inst
       return {
@@ -231,7 +236,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     }
   }
 
-  return { application, homeDir, cdpPort, cleanup }
+  return { application, homeDir, userDataDir, cdpPort, cleanup }
 }
 
 export async function waitForAppExit(application: ElectronApplication, timeoutMs = 10_000): Promise<void> {

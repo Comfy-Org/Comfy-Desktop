@@ -33,11 +33,14 @@ export interface AppContext {
   panel: WebContentsPage
   /** Eval-bridge facade over the chooser host's title-bar webContents. */
   titleBar: WebContentsPage
+  /** Where the launched app resolved `userData` to — the dir the harness
+   *  seeded `installations.json` into. */
+  userDataDir: string
   cleanup: () => Promise<void>
 }
 
 export async function launchApp(options?: SeedOptions): Promise<AppContext> {
-  const { application, cleanup: cleanupHarness } = await launchLauncherApp(options)
+  const { application, userDataDir, cleanup: cleanupHarness } = await launchLauncherApp(options)
 
   // Wait for the chooser host's panel + title-bar webContents to actually
   // exist on the main side BEFORE attempting CDP discovery. The parent
@@ -65,6 +68,7 @@ export async function launchApp(options?: SeedOptions): Promise<AppContext> {
     app: application,
     panel,
     titleBar,
+    userDataDir,
     cleanup: cleanupHarness,
   }
 }
