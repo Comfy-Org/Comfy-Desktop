@@ -11,7 +11,6 @@ import type { Installation } from '../../types/ipc'
 
 interface Props {
   installation: Installation
-  /** Cloud free-runs pill (resolved by the parent; presentational here). */
   showFreeRunsPill?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
@@ -245,7 +244,6 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 <style scoped>
 @import './chooser-tiles.css';
 
-/* Same treatment as FirstUseTakeover's start-cloud-runs-pill. */
 .chooser-cloud-runs-pill {
   display: inline-flex;
   align-items: center;

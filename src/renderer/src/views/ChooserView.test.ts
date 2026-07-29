@@ -481,7 +481,6 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(true)
-    // Never on the New Install tile.
     expect(wrapper.find('.chooser-tile-new [data-testid="chooser-cloud-runs-pill"]').exists()).toBe(
       false
     )

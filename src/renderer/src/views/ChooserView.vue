@@ -225,8 +225,6 @@ function viewDanger(inst: Installation): void {
 // surfaces a "Heavy usage" meta pill but the click still proceeds.
 const cloudCapacity = useCloudCapacity()
 
-/** Mirrors FirstUseTakeover's fail-closed default so the pill never
- *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
 const showCloudFreeRunsPill = computed(
   () => cloudFreeRunsEnabled.value && !cloudCapacity.isDisabled() && !cloudCapacity.isPaid()
@@ -235,7 +233,7 @@ onMounted(async () => {
   try {
     cloudFreeRunsEnabled.value = await window.api.getCloudFreeRunsEnabled()
   } catch {
-    // fail-closed: pill stays hidden
+   
   }
 })
 function handleNewInstallClick(): void {
