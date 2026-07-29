@@ -3,6 +3,8 @@ import os from 'os'
 import crypto from 'crypto'
 import path from 'path'
 import { isSafePathComponent } from '../cnr'
+import { isValidAmdMultiArchSource } from '../../sources/standalone/torchStackTypes'
+import type { TorchStackPackages } from '../../sources/standalone/torchStackTypes'
 import { snapshotsDir, formatTimestamp } from './store'
 import * as telemetry from '../telemetry'
 import type { Snapshot, SnapshotEntry, SnapshotExportEnvelope } from './types'
@@ -11,9 +13,12 @@ export function buildExportEnvelope(
   installationName: string,
   entries: SnapshotEntry[]
 ): SnapshotExportEnvelope {
+  // v2 carries torch stack data. Deliberate compatibility break: older Desktop
+  // versions reject a v2 file instead of importing it and silently performing
+  // the legacy skip-torch restore.
   return {
     type: 'comfyui-desktop-2-snapshot',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     installationName,
     snapshots: entries.map((e) => e.snapshot)
@@ -42,10 +47,66 @@ function isValidCustomNode(n: unknown): boolean {
   return true
 }
 
+// Version tuple: PEP 440-ish public version, optionally with a local tag.
+const VALID_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
+
+function isVersionValid(val: unknown): boolean {
+  return typeof val === 'string' && VALID_VERSION.test(val)
+}
+
+/** Strict validation of the v2 `torchStack` discriminated union. Only typed,
+ *  allowlisted sources are accepted — an imported snapshot can never smuggle
+ *  in an arbitrary URL or expand the protected-package surface. */
+function isValidTorchStack(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const obj = v as Record<string, unknown>
+  if (obj.kind === 'observed') {
+    if (obj.torchVersion !== null && !isVersionValid(obj.torchVersion)) return false
+    // Full-tuple fields: undefined (pre-tuple record), null (recorded as
+    // absent), or a valid version. A malformed value must not import — the
+    // restore path pip-installs these versions verbatim.
+    for (const opt of ['torchvisionVersion', 'torchaudioVersion'] as const) {
+      const val = obj[opt]
+      if (val !== undefined && val !== null && !isVersionValid(val)) return false
+    }
+    return typeof obj.observedAt === 'string'
+  }
+  if (obj.kind !== 'managed') return false
+  const ref = obj.ref as Record<string, unknown> | undefined
+  if (!ref || typeof ref !== 'object') return false
+  if (typeof ref.stackId !== 'string' || typeof ref.variant !== 'string' || typeof ref.pythonVersion !== 'string') return false
+  const packages = ref.packages as Record<string, unknown> | undefined
+  if (!packages || typeof packages !== 'object') return false
+  if (!isVersionValid(packages.torch)) return false
+  for (const opt of ['torchvision', 'torchaudio'] as const) {
+    if (packages[opt] !== undefined && !isVersionValid(packages[opt])) return false
+  }
+  const source = ref.source as Record<string, unknown> | undefined
+  if (!source || typeof source !== 'object') return false
+  if (source.kind === 'comfy-bundle') {
+    return typeof source.variant === 'string' && typeof source.bundleTag === 'string'
+  }
+  if (source.kind === 'pytorch-index') {
+    return ['cuda', 'xpu', 'rocm', 'cpu'].includes(source.backend as string) &&
+      typeof source.indexTag === 'string' && /^[a-z0-9.]+$/.test(source.indexTag as string)
+  }
+  // AMD multi-arch entries carry only a rocm tag that must match the torch
+  // build itself - the index URL is a hardcoded app constant, so a snapshot
+  // can never smuggle one in, and any extra field (e.g. a url) or a tuple
+  // the tag does not name marks the source as not ours.
+  if (source.kind === 'amd-multi-arch-index') {
+    return isValidAmdMultiArchSource(source, packages as unknown as TorchStackPackages, ref.stackId)
+  }
+  if (source.kind === 'pypi') return source.backend === 'mps'
+  return false
+}
+
 function isValidSnapshot(s: unknown): s is Snapshot {
   if (!s || typeof s !== 'object') return false
   const obj = s as Record<string, unknown>
-  if (obj.version !== 1) return false
+  if (obj.version !== 1 && obj.version !== 2) return false
+  // torchStack is a v2 concept; a v1 snapshot carrying one is malformed.
+  if (obj.torchStack !== undefined && (obj.version !== 2 || !isValidTorchStack(obj.torchStack))) return false
   if (typeof obj.createdAt !== 'string' || isNaN(Date.parse(obj.createdAt))) return false
   if (typeof obj.trigger !== 'string' || !VALID_TRIGGERS.has(obj.trigger)) return false
   if (obj.comfyui == null || typeof obj.comfyui !== 'object') return false
@@ -72,11 +133,23 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
   const obj = data as Record<string, unknown>
   if (obj.type !== 'comfyui-desktop-2-snapshot')
     throw new Error('Invalid file: not a Comfy Desktop snapshot export')
-  if (obj.version !== 1) throw new Error(`Unsupported snapshot version: ${obj.version}`)
+  if (obj.version !== 1 && obj.version !== 2) {
+    // A higher integer version means the file came from a newer Comfy Desktop,
+    // so updating the app is the likely fix. Anything else is just malformed.
+    if (typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version > 2)
+      throw new Error(
+        `Unsupported snapshot version: ${obj.version}. This file was created by a newer version of Comfy Desktop; updating the app will likely allow importing it.`
+      )
+    throw new Error(`Unsupported snapshot version: ${obj.version}`)
+  }
   if (!Array.isArray(obj.snapshots) || obj.snapshots.length === 0)
     throw new Error('File contains no snapshots')
   for (let i = 0; i < obj.snapshots.length; i++) {
     if (!isValidSnapshot(obj.snapshots[i])) throw new Error(`Invalid snapshot at index ${i}`)
+    // The envelope version exists so older clients reject torch-aware exports
+    // outright; a v1 envelope smuggling v2 snapshots would defeat that gate.
+    if ((obj.snapshots[i] as Snapshot).version > (obj.version as number))
+      throw new Error(`Invalid snapshot at index ${i}: snapshot version exceeds envelope version`)
   }
   return obj as unknown as SnapshotExportEnvelope
 }
@@ -190,27 +263,36 @@ async function pruneStaleStaged(dir: string): Promise<void> {
   } catch {}
 }
 
-/** Stage an envelope as a restore target and return its opaque token. */
-export async function stageSnapshotEnvelope(envelope: SnapshotExportEnvelope): Promise<string> {
+/** Stage an envelope as a restore target for one installation and return its
+ *  opaque token. The token is bound to the installation so a stale or
+ *  misrouted token can never restore the envelope into a different install. */
+export async function stageSnapshotEnvelope(
+  envelope: SnapshotExportEnvelope,
+  installationId: string
+): Promise<string> {
   const dir = stagingDir()
   await fs.promises.mkdir(dir, { recursive: true })
   await pruneStaleStaged(dir)
   const token = crypto.randomBytes(16).toString('hex')
   const filePath = path.join(dir, `${token}.json`)
   const tmpPath = `${filePath}.tmp`
-  await fs.promises.writeFile(tmpPath, JSON.stringify(envelope))
+  await fs.promises.writeFile(tmpPath, JSON.stringify({ installationId, envelope }))
   await fs.promises.rename(tmpPath, filePath)
   return token
 }
 
-/** Load a previously staged envelope by token. Throws if the token is invalid. */
+/** Load a previously staged envelope by token. Throws if the token is invalid
+ *  or was staged for a different installation. */
 export async function loadStagedSnapshotEnvelope(
-  token: string
+  token: string,
+  installationId: string
 ): Promise<SnapshotExportEnvelope> {
   const filePath = resolveStagedPath(token)
   if (!filePath) throw new Error('Invalid staged snapshot token')
   const content = await fs.promises.readFile(filePath, 'utf-8')
-  return validateExportEnvelope(JSON.parse(content))
+  const staged = JSON.parse(content) as { installationId?: unknown; envelope?: unknown }
+  if (staged.installationId !== installationId) throw new Error('Invalid staged snapshot token')
+  return validateExportEnvelope(staged.envelope)
 }
 
 /** Delete a staged envelope. Safe to call with an unknown/invalid token. */

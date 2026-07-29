@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, WebContents } from 'electron'
 
 import * as mainTelemetry from '../../lib/telemetry'
 import { extractErrorClass } from '../../../shared/errorEvent'
@@ -10,7 +10,28 @@ export interface SignInFailureContext extends mainTelemetry.TelemetryContext {
   error_class: string
   error_bucket: string
   flow: FirebaseAuthFlow
+  /** HTTP status when the failure came from an HTTP response. */
+  error_status?: number
   retried_poll_errors?: number
+}
+
+/** Origin of a URL, or null when it isn't parseable (e.g. a view with no page). */
+export function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * True when `contents` is still on `expectedOrigin`. Guards the IndexedDB
+ * injection, which writes the Firebase refresh token into whatever page is
+ * currently loaded — a view that navigated away must never receive it.
+ */
+export function isOnOrigin(contents: WebContents, expectedOrigin: string): boolean {
+  const current = originOf(contents.getURL())
+  return current !== null && current === originOf(expectedOrigin)
 }
 
 export function emitSignInFailure(
@@ -26,12 +47,20 @@ export function emitSignInFailure(
     flow,
     ...extra
   }
+  // The raw message stays out (it can carry response bodies), but the HTTP
+  // status is not sensitive and is the only thing that separates an old
+  // backend (404) from a verifier mismatch (403) from a 5xx. Without it every
+  // failure collapses into one error_class/error_bucket pair.
+  const status = (error as { status?: unknown }).status
+  if (typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599) {
+    failure.error_status = status
+  }
   mainTelemetry.emit('comfy.desktop.auth.sign_in_failed', failure)
   return failure
 }
 
 /** Bind the anonymous installation to the resolved Firebase user. */
-export function bindSignedInUser(user: Record<string, unknown>): void {
+export function bindSignedInUser(user: Record<string, unknown>, _source: WebContents): void {
   try {
     const uid = typeof user.uid === 'string' && user.uid.length > 0 ? user.uid : null
     if (!uid) return

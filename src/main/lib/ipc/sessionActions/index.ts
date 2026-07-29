@@ -1,7 +1,7 @@
 import type { ActionContext, ActionResult } from './types'
 import { handleRemove, handleOpenFolder, handleRename } from './basic'
 import { handleDelete } from './delete'
-import { handleCopy, handleCopyUpdate, handleReleaseUpdate } from './copy'
+import { handleCopy, handleCopyUpdate, handleCopyChangePytorch, handleReleaseUpdate } from './copy'
 import { handleMigrateToStandalone } from './migrate'
 import { handleLaunch } from './launch'
 import { handleDelegateToSource } from './delegate'
@@ -9,7 +9,7 @@ import { handleDelegateToSource } from './delegate'
 export type { ActionContext, ActionResult } from './types'
 export { handleRemove, handleOpenFolder, handleRename } from './basic'
 export { handleDelete } from './delete'
-export { handleCopy, handleCopyUpdate, handleReleaseUpdate } from './copy'
+export { handleCopy, handleCopyUpdate, handleCopyChangePytorch, handleReleaseUpdate } from './copy'
 export { handleMigrateToStandalone } from './migrate'
 export { handleLaunch } from './launch'
 export { handleDelegateToSource } from './delegate'
@@ -23,6 +23,7 @@ const SESSION_ACTION_IDS = [
   'delete',
   'copy',
   'copy-update',
+  'copy-pytorch',
   'release-update',
   'migrate-to-standalone',
   'launch',
@@ -48,6 +49,7 @@ function dispatchToSessionHandler(
     case 'delete': return handleDelete(ctx)
     case 'copy': return handleCopy(ctx)
     case 'copy-update': return handleCopyUpdate(ctx)
+    case 'copy-pytorch': return handleCopyChangePytorch(ctx)
     case 'release-update': return handleReleaseUpdate(ctx)
     case 'migrate-to-standalone': return handleMigrateToStandalone(ctx)
     case 'launch': return handleLaunch(ctx)

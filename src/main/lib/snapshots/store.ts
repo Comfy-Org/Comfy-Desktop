@@ -4,6 +4,9 @@ import { readGitHead } from '../git'
 import { scanCustomNodes, nodeKey } from '../nodes'
 import { pipFreeze } from '../pip'
 import { getActiveUvPath, getActivePythonPath } from '../pythonEnv'
+import { classifyTorchStackForSnapshot } from '../../sources/standalone/torchStackCatalog'
+import { torchPackageTuplesEqual } from '../../sources/standalone/torchStackTypes'
+import type { SnapshotTorchStack } from '../../sources/standalone/torchStackTypes'
 import * as telemetry from '../telemetry'
 import type { Snapshot, SnapshotEntry } from './types'
 import type { InstallationRecord } from '../../installations'
@@ -120,7 +123,8 @@ export async function captureState(
     customNodes,
     pipPackages,
     pythonVersion: (installation.pythonVersion as string | undefined) || undefined,
-    updateChannel: (installation.updateChannel as string | undefined) || 'stable'
+    updateChannel: (installation.updateChannel as string | undefined) || 'stable',
+    torchStack: classifyTorchStackForSnapshot(installation)
   }
 }
 
@@ -154,7 +158,30 @@ export function statesMatch(
     if (a.pipPackages[key] !== b.pipPackages[key]) return false
   }
 
+  // PyTorch stack identity — a pure stack change must not be deduped away.
+  // Compared by identity (not observedAt, which changes on every capture and
+  // would defeat dedupe entirely for observed stacks).
+  if (!torchStacksMatch(a.torchStack, b.torchStack)) return false
+
   return true
+}
+
+function torchStacksMatch(a: SnapshotTorchStack | undefined, b: SnapshotTorchStack | undefined): boolean {
+  // v1 snapshots carry no stack record; only identical absence matches.
+  if (!a || !b) return !a && !b
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'managed' && b.kind === 'managed') {
+    return a.ref.stackId === b.ref.stackId && torchPackageTuplesEqual(a.ref.packages, b.ref.packages)
+  }
+  if (a.kind === 'observed' && b.kind === 'observed') {
+    // Full tuple, with missing (pre-tuple record) distinct from null
+    // (recorded absent) — an upgrade to a fuller record must not be deduped
+    // away, or the only restorable capture of the tuple could be lost.
+    return a.torchVersion === b.torchVersion &&
+      a.torchvisionVersion === b.torchvisionVersion &&
+      a.torchaudioVersion === b.torchaudioVersion
+  }
+  return false
 }
 
 async function writeSnapshot(
@@ -167,7 +194,7 @@ async function writeSnapshot(
 ): Promise<string> {
   const now = at
   const snapshot: Snapshot = {
-    version: 1,
+    version: 2,
     createdAt: now.toISOString(),
     trigger: data.trigger,
     label: data.label,
@@ -175,7 +202,8 @@ async function writeSnapshot(
     customNodes: data.customNodes,
     pipPackages: data.pipPackages,
     pythonVersion: data.pythonVersion,
-    updateChannel: data.updateChannel
+    updateChannel: data.updateChannel,
+    torchStack: data.torchStack
   }
 
   const dir = snapshotsDir(installPath)

@@ -547,6 +547,20 @@ async function handleImport(): Promise<void> {
     }
     return
   }
+  // Kept-local PyTorch disclosure: the snapshot's recorded stack can't be
+  // applied on this machine, so the restore will keep the local stack.
+  // Surface that BEFORE running the restore; cancelling leaves only the
+  // staged token behind (it self-prunes), nothing was mutated.
+  if (importResult.torchStackNotice) {
+    const noticeChoice = await dialogs.confirm({
+      title: t('snapshots.importTorchNoticeTitle', 'Snapshot uses a different PyTorch'),
+      message: importResult.torchStackNotice,
+      confirmLabel: t('standalone.snapshotRestore', 'Restore'),
+      tone: 'primary'
+    })
+    if (noticeChoice !== 'primary') return
+  }
+
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
     action: 'import',
     snapshot_count_bucket: toCountBucket(snapshots.value.length),
@@ -710,7 +724,12 @@ async function handleImport(): Promise<void> {
               role="status"
               :data-testid="TID.snapshotsOpCard"
             >
-              <p v-if="restoreFromLabel" class="snapshots-op-card-target">
+              <!-- A successful import is an apply, not a rollback; "Rolled
+                   back to {label}" is only for restores of local history. -->
+              <p v-if="restoreOpIsImport" class="snapshots-op-card-target">
+                {{ t('snapshots.restoredImported', 'Applied imported snapshot') }}
+              </p>
+              <p v-else-if="restoreFromLabel" class="snapshots-op-card-target">
                 {{ t('snapshots.restoredFrom', { label: restoreFromLabel }) }}
               </p>
             </div>
@@ -757,6 +776,7 @@ async function handleImport(): Promise<void> {
               type="button"
               class="snapshots-rail-cta"
               :aria-label="t('snapshots.createSnapshot', 'Create Snapshot')"
+              :data-testid="TID.snapshotsSaveCta"
               @click="handleSave"
             >
               <span>{{ t('snapshots.createNew', 'Create Snapshot') }}</span>

@@ -9,7 +9,7 @@ const CREATE_REQUEST = {
   platform: 'darwin',
   app_version: '1.0.28',
   code_challenge: 'challenge-value'
-}
+} as const
 
 const EXCHANGE_REQUEST = { code: 'dlc_test-code', code_verifier: 'verifier-value' }
 
@@ -234,5 +234,75 @@ describe('exchangeDesktopLoginCode', () => {
     const err = await pending.catch((e: unknown) => e)
     expect(err).not.toBeInstanceOf(DesktopLoginCodeError)
     expect((err as Error).name).toBe('AbortError')
+  })
+})
+
+describe('grant timing validation', () => {
+  async function grantFrom(expires_in: unknown, poll_interval: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(201, { code: 'dlc_abc', expires_in, poll_interval }))
+    )
+    return await createDesktopLoginCode(ORIGIN, CREATE_REQUEST)
+  }
+
+  it.each([
+    ['expires_in', 1.5, 3],
+    ['poll_interval', 300, 1.5],
+    ['expires_in', 901, 3],
+    ['poll_interval', 300, 31],
+    ['expires_in', 0, 3],
+    ['poll_interval', 300, 0]
+  ])('rejects an out-of-contract %s', async (_field, expires_in, poll_interval) => {
+    await expect(grantFrom(expires_in, poll_interval)).rejects.toBeInstanceOf(DesktopLoginCodeError)
+  })
+
+  it('rejects a non-finite timing decoded from valid JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('{"code":"dlc_abc","expires_in":1e309,"poll_interval":3}', {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' }
+          })
+      )
+    )
+
+    await expect(createDesktopLoginCode(ORIGIN, CREATE_REQUEST)).rejects.toBeInstanceOf(
+      DesktopLoginCodeError
+    )
+  })
+
+  it('leaves a sane grant untouched', async () => {
+    const grant = await grantFrom(300, 3)
+    expect(grant).toEqual({ code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
+  })
+})
+
+describe('retryable status classification', () => {
+  // Each sign-in issues tens of exchange polls, so a rate limiter on the
+  // endpoint is expected. Treating 429 as terminal would kill a sign-in whose
+  // code and browser tab are both still valid.
+  it.each([408, 429, 500, 503])('treats %i as retryable', async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(status, { error: 'nope' }))
+    )
+    await expect(exchangeDesktopLoginCode(ORIGIN, EXCHANGE_REQUEST)).rejects.toMatchObject({
+      retryable: true,
+      status
+    })
+  })
+
+  it.each([403, 404])('keeps %i terminal', async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(status, { error: 'nope' }))
+    )
+    await expect(exchangeDesktopLoginCode(ORIGIN, EXCHANGE_REQUEST)).rejects.toMatchObject({
+      retryable: false,
+      status
+    })
   })
 })

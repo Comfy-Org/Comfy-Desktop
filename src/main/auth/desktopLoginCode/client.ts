@@ -7,6 +7,14 @@
 
 const REQUEST_TIMEOUT_MS = 8000
 
+const MIN_POLL_INTERVAL_SEC = 1
+const MAX_POLL_INTERVAL_SEC = 30
+const MAX_EXPIRES_IN_SEC = 900
+
+function isIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
+}
+
 /**
  * Classified failure from the desktop-login-code endpoints. `retryable`
  * drives the poll loop: 5xx / network / timeout may clear up within the
@@ -61,8 +69,11 @@ export interface JsonPostResponse {
   bodyText: string
 }
 
+// 408/429 are transient: each sign-in issues tens of exchange polls, so a rate
+// limiter on the endpoint is expected. Treating them as terminal would kill a
+// sign-in whose code and browser tab are both still valid. 403/404 stay final.
 function isRetryableStatus(status: number): boolean {
-  return status >= 500
+  return status >= 500 || status === 408 || status === 429
 }
 
 /**
@@ -145,17 +156,14 @@ export async function createDesktopLoginCode(
     expires_in?: unknown
     poll_interval?: unknown
   } | null
-  // Non-positive timings would spin the poll loop (interval) or expire the
-  // code before the user can sign in (deadline) — reject them here, where
-  // the caller can still fall back to the legacy bridge.
+  // Reject out-of-contract timings before opening the browser. Rewriting them
+  // would make Desktop poll on a schedule or deadline the server did not issue.
   if (
     !data ||
     typeof data.code !== 'string' ||
     data.code.length === 0 ||
-    typeof data.expires_in !== 'number' ||
-    data.expires_in <= 0 ||
-    typeof data.poll_interval !== 'number' ||
-    data.poll_interval <= 0
+    !isIntegerInRange(data.expires_in, 1, MAX_EXPIRES_IN_SEC) ||
+    !isIntegerInRange(data.poll_interval, MIN_POLL_INTERVAL_SEC, MAX_POLL_INTERVAL_SEC)
   ) {
     throw new DesktopLoginCodeError('desktop login code create returned an unexpected payload', {
       status: resp.status

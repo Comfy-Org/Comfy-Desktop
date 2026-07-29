@@ -202,7 +202,7 @@ async function detectMacGPU(): Promise<GpuId | null> {
 const NVIDIA_DRIVER_MIN_VERSION = "580"
 
 /** Compare dotted version strings numerically: negative if a<b, positive if a>b, 0 if equal. */
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const pa = a.split(".").map(Number)
   const pb = b.split(".").map(Number)
   const len = Math.max(pa.length, pb.length)
@@ -253,12 +253,31 @@ function getNvidiaDriverVersionFallback(): Promise<string | undefined> {
   })
 }
 
+/** Dotted numeric driver version (`580.88`). nvidia-smi output that is not
+ *  shaped like this (warnings, headers) must not reach compareVersions,
+ *  where its NaN components would read as an arbitrary comparison result. */
+const NVIDIA_DRIVER_VERSION_SHAPE = /^\d+(\.\d+)*$/
+
+/** Accept a detected driver string only when it is a dotted numeric
+ *  version; anything else nvidia-smi printed reads as "not detected". */
+export function sanitizeNvidiaDriverVersion(version: string | undefined): string | undefined {
+  return version && NVIDIA_DRIVER_VERSION_SHAPE.test(version) ? version : undefined
+}
+
+/** Detect the installed NVIDIA driver version via nvidia-smi (structured
+ *  query first, plain-output parse as fallback); undefined when there is no
+ *  nvidia-smi / no NVIDIA GPU, or when the output is not a version. */
+export async function detectNvidiaDriverVersion(): Promise<string | undefined> {
+  return sanitizeNvidiaDriverVersion(
+    (await getNvidiaDriverVersionQuery()) ?? (await getNvidiaDriverVersionFallback())
+  )
+}
+
 /** Check whether the installed NVIDIA driver meets the minimum version; null if none detected. */
 async function checkNvidiaDriver(): Promise<NvidiaDriverCheck | null> {
   if (process.platform === "darwin") return null
 
-  const driverVersion =
-    (await getNvidiaDriverVersionQuery()) ?? (await getNvidiaDriverVersionFallback())
+  const driverVersion = await detectNvidiaDriverVersion()
   if (!driverVersion) return null
 
   return {
@@ -470,7 +489,42 @@ async function checkAmdDriver(): Promise<string | undefined> {
   return getAmdDriverVersionLinux()
 }
 
-/** Validate hardware for standalone install. Rejects Intel Macs (MPS needs Apple Silicon). */
+/** Device node Linux ROCm opens for GPU compute (AMDKFD). */
+const KFD_PATH = "/dev/kfd"
+
+/**
+ * Linux AMD compute-access preflight. torch's ROCm runtime needs to open
+ * /dev/kfd; when the node is missing or the user cannot open it, torch still
+ * imports but sees no GPUs and ComfyUI fails at startup with "No HIP GPUs
+ * are available". Returns a user-actionable warning, or null when access is
+ * fine. Distro policy usually gates /dev/kfd behind the `render` group, but
+ * that is not the only possible cause, so the message suggests it without
+ * claiming certainty. This affects the shipped baseline stacks too, not just
+ * stack switches.
+ */
+export async function checkLinuxAmdKfdAccess(kfdPath = KFD_PATH): Promise<string | null> {
+  if (process.platform !== "linux") return null
+  if (!fs.existsSync(kfdPath)) {
+    return (
+      `No AMD GPU compute interface was found (${kfdPath} does not exist). ` +
+      "The amdgpu kernel driver may not be loaded; ComfyUI will not be able to use the GPU until it is."
+    )
+  }
+  try {
+    await fs.promises.access(kfdPath, fs.constants.R_OK | fs.constants.W_OK)
+    return null
+  } catch {
+    return (
+      `Your user cannot access the AMD GPU compute interface (${kfdPath}), so ComfyUI will not be able to use the GPU. ` +
+      'This usually means your user is not in the "render" group. ' +
+      'Run "sudo usermod -aG render $USER", then log out and back in, and try again.'
+    )
+  }
+}
+
+/** Validate hardware for standalone install. Rejects Intel Macs (MPS needs
+ *  Apple Silicon); surfaces a non-blocking warning when a Linux AMD GPU is
+ *  present but its compute device node is missing or inaccessible. */
 async function validateHardware(): Promise<HardwareValidation> {
   if (process.platform === "darwin") {
     const gpu = await detectMacGPU()
@@ -479,6 +533,13 @@ async function validateHardware(): Promise<HardwareValidation> {
         supported: false,
         error: "ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not supported.",
       }
+    }
+  }
+  if (process.platform === "linux") {
+    const gpu = await detectGPU()
+    if (gpu?.id === "amd") {
+      const warning = await checkLinuxAmdKfdAccess()
+      if (warning) return { supported: true, warning }
     }
   }
   return { supported: true }

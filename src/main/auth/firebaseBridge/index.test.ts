@@ -9,11 +9,13 @@ import {
 } from './index'
 
 const h = vi.hoisted(() => ({
+  beginSessionInjection: vi.fn(() => ({ owner: 'test' })),
   bindUserId: vi.fn(),
-  buildInjectScript: vi.fn(() => 'inject-user'),
   capture: vi.fn(),
   emit: vi.fn(),
+  injectSession: vi.fn(() => Promise.resolve(true)),
   openExternal: vi.fn(() => Promise.resolve()),
+  releaseSessionInjection: vi.fn(),
   restoreParentWindow: vi.fn(),
   signInViaDesktopLoginCode: vi.fn(),
   startBridgeServer: vi.fn()
@@ -26,7 +28,11 @@ vi.mock('./copyLinkBanner', () => ({
   COPY_LINK_BANNER_CSS: '',
   OPEN_LINK_SENTINEL: 'open-again'
 }))
-vi.mock('./inject', () => ({ buildIndexedDbInjectScript: h.buildInjectScript }))
+vi.mock('./inject', () => ({
+  beginFirebaseSessionInjection: h.beginSessionInjection,
+  injectFirebaseSession: h.injectSession,
+  releaseFirebaseSessionInjection: h.releaseSessionInjection
+}))
 vi.mock('./restoreParentWindow', () => ({ restoreParentWindow: h.restoreParentWindow }))
 vi.mock('./server', () => ({ startBridgeServer: h.startBridgeServer }))
 vi.mock('../desktopLoginCode', () => ({
@@ -42,12 +48,14 @@ vi.mock('../../lib/telemetry', () => ({
 
 const AUTH_URL = 'https://dreamboothy.firebaseapp.com/__/auth/handler?providerId=google.com'
 
-function fakeContents(): WebContents & {
+function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   executeJavaScript: ReturnType<typeof vi.fn>
   off: ReturnType<typeof vi.fn>
+  getURL: ReturnType<typeof vi.fn>
 } {
   return {
     executeJavaScript: vi.fn(() => Promise.resolve()),
+    getURL: vi.fn(() => url),
     insertCSS: vi.fn(() => Promise.resolve('css-key')),
     isDestroyed: vi.fn(() => false),
     off: vi.fn(),
@@ -55,6 +63,7 @@ function fakeContents(): WebContents & {
   } as unknown as WebContents & {
     executeJavaScript: ReturnType<typeof vi.fn>
     off: ReturnType<typeof vi.fn>
+    getURL: ReturnType<typeof vi.fn>
   }
 }
 
@@ -70,7 +79,61 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('handleFirebasePopup legacy cancellation', () => {
+describe('handleFirebasePopup legacy flow', () => {
+  it('falls back when the login-code orchestrator rejects unexpectedly', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.signInViaDesktopLoginCode.mockRejectedValueOnce(new Error('unexpected'))
+    h.startBridgeServer.mockRejectedValueOnce(new Error('legacy unavailable'))
+
+    try {
+      await handleFirebasePopup(AUTH_URL, fakeContents())
+
+      expect(h.startBridgeServer).toHaveBeenCalledOnce()
+      expect(consoleError).toHaveBeenCalledWith(
+        'Desktop login-code flow failed unexpectedly; using legacy fallback'
+      )
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it('does not inject the legacy session after the hosted view changes origin', async () => {
+    const contents = fakeContents()
+    contents.getURL
+      .mockReturnValueOnce('https://cloud.comfy.org/')
+      .mockReturnValue('https://evil.example.com/')
+    h.startBridgeServer.mockResolvedValue({
+      url: 'http://localhost:9876/',
+      signInPromise: Promise.resolve({ user: { uid: 'user-1' }, apiKey: 'api-key' }),
+      close: vi.fn()
+    })
+
+    const flow = handleFirebasePopup(AUTH_URL, contents)
+    await vi.runAllTimersAsync()
+    await flow
+
+    expect(h.injectSession).not.toHaveBeenCalled()
+    expect(h.bindUserId).not.toHaveBeenCalled()
+    expect(h.restoreParentWindow).not.toHaveBeenCalled()
+  })
+
+  it('does not inject the legacy session when the starting origin is unavailable', async () => {
+    const contents = fakeContents('')
+    h.startBridgeServer.mockResolvedValue({
+      url: 'http://localhost:9876/',
+      signInPromise: Promise.resolve({ user: { uid: 'user-1' }, apiKey: 'api-key' }),
+      close: vi.fn()
+    })
+
+    const flow = handleFirebasePopup(AUTH_URL, contents)
+    await vi.runAllTimersAsync()
+    await flow
+
+    expect(h.injectSession).not.toHaveBeenCalled()
+    expect(h.bindUserId).not.toHaveBeenCalled()
+    expect(h.restoreParentWindow).not.toHaveBeenCalled()
+  })
+
   it('cannot inject or clean up newer UI after being superseded during the success hold', async () => {
     const contents = fakeContents()
     const close = vi.fn()
@@ -82,7 +145,7 @@ describe('handleFirebasePopup legacy cancellation', () => {
 
     const staleFlow = handleFirebasePopup(AUTH_URL, contents)
     await vi.advanceTimersByTimeAsync(0)
-    expect(h.bindUserId).toHaveBeenCalledWith('old-user', expect.anything())
+    expect(h.bindUserId).not.toHaveBeenCalled()
     expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_started', {
       provider: 'google.com',
       flow: 'loopback_bridge'
@@ -94,7 +157,8 @@ describe('handleFirebasePopup legacy cancellation', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await staleFlow
 
-    expect(contents.executeJavaScript).not.toHaveBeenCalledWith('inject-user', true)
+    expect(h.injectSession).not.toHaveBeenCalled()
+    expect(h.bindUserId).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
     expect(contents.off).toHaveBeenCalledTimes(1)
     runBannerCleanup()

@@ -13,6 +13,9 @@ export interface ChannelDef {
 }
 
 export interface ChannelCardData {
+  /** What the card updates ("ComfyUI", "PyTorch"); shown in the headline so
+   *  cards stay distinguishable when the Update tab has several of them. */
+  productName?: string
   installedVersion: string
   latestVersion: string
   /** Localized human string for display (e.g. "11/24/2025, 4:32 PM"). */
@@ -63,6 +66,7 @@ export function buildChannelCards(
     return {
       ...def,
       data: info ? {
+        productName: 'ComfyUI',
         installedVersion: cv ? formatComfyVersion(cv, 'detail') : (info.installedTag || 'unknown'),
         latestVersion: latestCv ? formatComfyVersion(latestCv, 'detail') : (info.releaseName || info.latestTag || '—'),
         lastChecked: info.checkedAt ? new Date(info.checkedAt).toLocaleString() : '—',

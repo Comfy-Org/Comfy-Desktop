@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef } from 'vue'
+import { computed, onMounted, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -224,6 +224,18 @@ function viewDanger(inst: Installation): void {
 // users can't enter cloud during an outage. When `degraded`, the tile
 // surfaces a "Heavy usage" meta pill but the click still proceeds.
 const cloudCapacity = useCloudCapacity()
+
+const cloudFreeRunsEnabled = ref(false)
+const showCloudFreeRunsPill = computed(
+  () => cloudFreeRunsEnabled.value && !cloudCapacity.isDisabled() && !cloudCapacity.isPaid()
+)
+onMounted(async () => {
+  try {
+    cloudFreeRunsEnabled.value = await window.api.getCloudFreeRunsEnabled()
+  } catch {
+   
+  }
+})
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
@@ -276,6 +288,7 @@ function handleNewInstallClick(): void {
           v-for="inst in visibleInstalls"
           :key="inst.id"
           :installation="inst"
+          :show-free-runs-pill="showCloudFreeRunsPill && inst.sourceCategory === 'cloud'"
           :is-stopped-action-gated="isStoppedActionGated(inst)"
           :last-launched-label="lastLaunchedLabel(inst)"
           @pick="pickInstall"
@@ -301,6 +314,7 @@ function handleNewInstallClick(): void {
 
 <style scoped>
 @import './chooser/chooser-tiles.css';
+
 
 .chooser-bg :deep(.brand-inner-frame) {
   /* Inherit the default justify-content: center from BrandBackground;

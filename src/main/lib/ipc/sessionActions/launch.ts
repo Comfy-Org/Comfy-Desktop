@@ -11,6 +11,7 @@ import {
   _reservePort, _releasePort,
   _addSession, _removeSession,
   _markLaunching, _clearLaunchingFailed,
+  _beginLaunch, _endLaunch,
   installDirStateAsync,
   captureSnapshotIfChanged, getSnapshotCount,
   syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
@@ -54,10 +55,12 @@ import {
   flushBootPhasesOnFailure,
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
-import { ensureManagerMirrorConfig } from '../../managerConfig'
+import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
+import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
+import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -158,17 +161,62 @@ function writeLog(stream: WriteStream, text: string): void {
   if (!stream.writableEnded) stream.write(stripAnsi(text))
 }
 
-export async function handleLaunch({ event, installationId, inst: instArg, actionData }: ActionContext): Promise<ActionResult> {
+/** Failure cleanup for a throw after launch resources were acquired (launching
+ *  marker set, port possibly reserved) but before the normal failure handling
+ *  is reachable: close the log stream, release the port, free the operation
+ *  slot (ownership-guarded), stop launch-scoped work via abort, and clear the
+ *  launching marker. Safe when only some of the resources exist. Without it a
+ *  leaked marker/port would wedge every later launch while the handler's
+ *  settled promise tells `cancelLaunching` teardown completed. */
+export function _cleanupFailedLaunchSetup(
+  installationId: string,
+  abort: AbortController,
+  opts: { port?: number; logStream?: { end: () => unknown } } = {},
+): void {
+  opts.logStream?.end()
+  if (opts.port !== undefined) _releasePort(opts.port)
+  if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+  abort.abort()
+  _clearLaunchingFailed(installationId)
+}
+
+export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
+  const { installationId } = ctx
+  if (_runningSessions.has(installationId)) {
+    return { ok: false, message: i18n.t('errors.alreadyRunning') }
+  }
+  // No `_hasActiveLaunch` here: this guard, `_beginLaunch`, and runLaunch's
+  // `_operationAborts.set` all run in one synchronous stretch, so a second
+  // launch can never slip between them. Checking it would instead reject a
+  // legitimate restart relaunch during the post-registration window (session
+  // up, handler still draining post-launch work like the template gate).
+  if (_operationAborts.has(installationId)) {
+    return { ok: false, message: 'Another operation is already running for this installation.' }
+  }
+  // Track the launch for its ENTIRE handler lifetime so `cancelLaunching` can
+  // abort it at any point - including the pre-spawn prep that runs before the
+  // launching marker exists. The finally is the single teardown-complete
+  // signal: `cancelLaunching` awaits it before letting a restart relaunch.
+  const launch = _beginLaunch(installationId)
+  try {
+    return await runLaunch(ctx, launch.abort)
+  } finally {
+    if (_operationAborts.get(installationId) === launch.abort) _operationAborts.delete(installationId)
+    _endLaunch(installationId, launch)
+  }
+}
+
+async function runLaunch(
+  { event, installationId, inst: instArg, actionData }: ActionContext,
+  abort: AbortController,
+): Promise<ActionResult> {
   let inst = instArg
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
-  if (_runningSessions.has(installationId)) {
-    return { ok: false, message: i18n.t('errors.alreadyRunning') }
-  }
-  if (_operationAborts.has(installationId)) {
-    return { ok: false, message: 'Another operation is already running for this installation.' }
-  }
+  // Claim the operation slot for the whole launch, prep included, so no other
+  // operation can start against this install while the launch is preparing.
+  _operationAborts.set(installationId, abort)
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
   clearCrash(installationId)
   const source = sourceMap[inst.sourceId]
@@ -248,6 +296,51 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     return launchTracker
   }
 
+  // Wraps launch setup that runs AFTER the launching marker (and possibly the
+  // port reservation) exists but BEFORE the normal failure handling is
+  // reachable; an unexpected throw there must tear those down, not leak them.
+  async function guardLaunchSetup<T>(
+    step: () => Promise<T> | T,
+    opts: { port?: number; logStream?: WriteStream } = {},
+  ): Promise<T> {
+    try {
+      return await step()
+    } catch (err) {
+      _cleanupFailedLaunchSetup(installationId, abort, opts)
+      throw err
+    }
+  }
+
+  // Log stream + telemetry taps + progress tracker, grouped so a throw partway
+  // through closes the already-opened log stream. The tracker is armed once -
+  // a pre-launch repair may have armed it already; re-arming would re-emit
+  // steps and reset the stepper.
+  async function acquireLaunchResources(): Promise<{
+    logStream: WriteStream
+    execTap: ReturnType<typeof createExecutionTap>
+    hwTap: ReturnType<typeof createHardwareTap>
+    tracker: LaunchProgressTracker
+  }> {
+    const logStream = await openLogStream(inst.installPath)
+    try {
+      const execTap = createExecutionTap({
+        installationId,
+        variant: (inst.variant as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null,
+      })
+      const hwTap = createHardwareTap({
+        installationId,
+        variant: (inst.variant as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null,
+      })
+      const tracker = await armLaunchTracker()
+      return { logStream, execTap, hwTap, tracker }
+    } catch (err) {
+      logStream.end()
+      throw err
+    }
+  }
+
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
   if (inst.sourceId === 'standalone') {
     // Recover from an update/restore interrupted by a hard process kill (power
@@ -289,42 +382,94 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     } catch (err) {
       console.warn('Env layout migration failed:', err)
     }
+    // Recover a PyTorch stack change that died mid-transaction: restore the
+    // backed-up venv so we never launch a half-swapped env. A failed rollback
+    // fails the launch closed — reconciliation/repair/ComfyUI must not run
+    // against a venv in an unknown state (the backup remains for retry).
+    try {
+      const { recoverTorchStackTransaction } = await import(
+        '../../../sources/standalone/torchStackTransaction'
+      )
+      await recoverTorchStackTransaction(inst)
+    } catch (err) {
+      console.warn('PyTorch stack transaction recovery failed:', err)
+      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+    }
+    // Recover a torch-family swap (startup repair) that died mid-rename: an
+    // uncommitted swap's backups hold the only good copies of the live venv's
+    // torch packages, so a failed rollback fails the launch closed too - the
+    // marker stays behind for the next attempt.
+    try {
+      const { recoverTorchFamilyBackups } = await import('../../../sources/standalone/torchFamilyFs')
+      const { findSitePackages } = await import('../../../sources/standalone/envPaths')
+      const { getActiveVenvDir } = await import('../../pythonEnv')
+      const liveSite = findSitePackages(getActiveVenvDir(inst))
+      if (liveSite) await recoverTorchFamilyBackups(liveSite)
+    } catch (err) {
+      console.warn('PyTorch family swap recovery failed:', err)
+      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+    }
+    // Reconcile the persisted stack state with what's actually in the venv
+    // (e.g. a manual terminal install). Never mutates the venv; must run
+    // before repair so repair sees up-to-date verified/observed state. If it
+    // fails, `lastVerifiedTorchStack` may be stale (e.g. persisted by a torch
+    // change that was rolled back) — skip repair for this launch rather than
+    // let it trust that ref as an acquisition source. Repair is optional;
+    // launching the un-repaired venv is safer than repairing on bad metadata.
+    let stackStateTrusted = true
+    // Captured BEFORE reconciliation: on a damaged venv reconciliation clears
+    // the verified ref (the installed tuple no longer matches it), but repair
+    // needs that ref to restore the stack the user actually chose instead of
+    // reverting to the install-time bundle.
+    let preReconcileVerified: PersistedTorchStack | null = null
+    try {
+      const { reconcileTorchStack, getLastVerifiedTorchStack } = await import(
+        '../../../sources/standalone/torchStackCatalog'
+      )
+      preReconcileVerified = getLastVerifiedTorchStack(inst)
+      await reconcileTorchStack(inst, updateFn)
+      inst = (await installations.get(installationId)) || inst
+    } catch (err) {
+      console.warn('PyTorch stack reconciliation failed:', err)
+      stackStateTrusted = false
+    }
     // One-time repair for installs damaged by the brief `--upgrade` window that
     // replaced bundled GPU torch with a CPU build. Non-fatal: CPU torch still
     // runs, so a failed repair must never block launch (it retries next time).
-    // Held under `_operationAborts` for its duration so a second launch can't
-    // run a concurrent repair against the same venv, and so it stays cancellable.
-    const repairAbort = new AbortController()
-    _operationAborts.set(installationId, repairAbort)
-    try {
-      const { maybeRepairTorch, getTorchVendorMismatch } = await import(
-        '../../../sources/standalone/torchRepair'
-      )
-      // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
-      // live `torchRepair` step rather than flashing a flat status. Detection is
-      // a cheap sync check; arming only when a repair will actually run.
-      if (getTorchVendorMismatch(inst)) {
-        preLaunchPhases.push('torchRepair')
-        await armLaunchTracker()
+    // Runs under the launch's own abort controller (already in
+    // `_operationAborts`, held for the whole handler), so cancelling the
+    // launch cancels the repair too and no second operation can overlap it.
+    if (stackStateTrusted) {
+      try {
+        const { maybeRepairTorch, getTorchVendorMismatch } = await import(
+          '../../../sources/standalone/torchRepair'
+        )
+        // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
+        // live `torchRepair` step rather than flashing a flat status. Detection is
+        // a cheap sync check; arming only when a repair will actually run.
+        if (getTorchVendorMismatch(inst)) {
+          preLaunchPhases.push('torchRepair')
+          await armLaunchTracker()
+        }
+        const repaired = await maybeRepairTorch(inst, {
+          sendProgress,
+          sendOutput: makeSendOutput(event.sender, installationId),
+          update: updateFn,
+          signal: abort.signal,
+        }, { preReconcileVerified })
+        if (repaired) inst = (await installations.get(installationId)) || inst
+      } catch (err) {
+        if (abort.signal.aborted) {
+          return { ok: false, cancelled: true }
+        }
+        console.warn('PyTorch vendor repair failed:', err)
       }
-      const repaired = await maybeRepairTorch(inst, {
-        sendProgress,
-        sendOutput: makeSendOutput(event.sender, installationId),
-        update: updateFn,
-        signal: repairAbort.signal,
-      })
-      if (repaired) inst = (await installations.get(installationId)) || inst
-    } catch (err) {
-      if (repairAbort.signal.aborted) {
-        if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
-        return { ok: false, cancelled: true }
-      }
-      console.warn('PyTorch vendor repair failed:', err)
-    } finally {
-      if (_operationAborts.get(installationId) === repairAbort) _operationAborts.delete(installationId)
     }
     await writeComfyEnvironment(path.join(inst.installPath, 'ComfyUI'))
   }
+  // The standalone prep above (recovery, migration, torch repair) is the
+  // longest pre-spawn stretch; a restart clicked during it must not spawn.
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
 
   const launchStartedAt = Date.now()
   const launchCmdRaw = source.getLaunchCommand(inst)
@@ -366,16 +511,20 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       }
     }
   }
+  // Schema/feature-flag discovery spawns Python and can take seconds; another
+  // pre-spawn stretch a restart must be able to cancel out of.
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
 
-  if (!launchCmd.remote && settings.get('useChineseMirrors') === true) {
-    try {
-      await ensureManagerMirrorConfig(inst.installPath)
-    } catch (err) {
-      console.warn('Failed to seed ComfyUI-Manager mirror config:', err)
-      telemetry.capture('comfy.desktop.manager.mirror_seed_failed', {
-        ...buildErrorFields(err),
-      })
-    }
+  // Fail closed: launching after a failed config write would run Manager
+  // with stale security settings while the UI claims the chosen values.
+  const managerReconcile = await reconcileManagerConfigForLaunch({
+    remote: Boolean(launchCmd.remote),
+    installPath: inst.installPath,
+    securityLevel: inst.managerSecurityLevel,
+    networkMode: inst.managerNetworkMode,
+  })
+  if (!managerReconcile.ok) {
+    return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
   }
 
   // Shared models and shared input/output are independent flags.
@@ -474,9 +623,6 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     })
     return { getStderr: () => stderrBuf }
   }
-
-  const abort = new AbortController()
-  _operationAborts.set(installationId, abort)
 
   /** Gates the `template-models` reader: the bar derives "prior steps done" from
    *  the active phase index, so the reader stays silent through the real phases
@@ -603,12 +749,12 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         },
       })
     } catch (_err) {
-      _operationAborts.delete(installationId)
+      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
       if (abort.signal.aborted) return { ok: false, cancelled: true }
       return { ok: false, message: i18n.t('errors.cannotConnect', { url: displayUrl }) }
     }
 
-    _operationAborts.delete(installationId)
+    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
     _addSession(installationId, { proc: null, port: launchCmd.port!, url: launchCmd.url, mode, installationName: inst.name }, Date.now() - launchStartedAt)
     if (_onLaunch) {
@@ -619,34 +765,45 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
 
   // Local process launch
   if (!fs.existsSync(launchCmd.cmd!)) {
-    _operationAborts.delete(installationId)
+    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
-    _markLaunching(installationId, inst.name)
     const sendOutput = makeSendOutput(sender, installationId)
     const launchEnv = buildLaunchEnv(inst)
 
-    const logStream = await openLogStream(inst.installPath)
-    const execTap = createExecutionTap({
-      installationId,
-      variant: (inst.variant as string | undefined) ?? null,
-      release: (inst.release as string | undefined) ?? null,
+    // Marked inside the guard: even the marker's renderer broadcast can
+    // throw, and every throw after the marker exists must clear it before
+    // the handler settles.
+    const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(() => {
+      _markLaunching(installationId, inst.name)
+      return acquireLaunchResources()
     })
-    const hwTap = createHardwareTap({
-      installationId,
-      variant: (inst.variant as string | undefined) ?? null,
-      release: (inst.release as string | undefined) ?? null,
-    })
-    const tracker = await armLaunchTracker()
 
-    hwTap.beginBoot()
-    const proc = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-    const { getStderr } = attachLaunchStreams(proc, logStream, sendOutput, execTap, hwTap, tracker)
+    // Last pre-spawn cancellation point on this path: a launch cancelled
+    // during the awaits above must never spawn.
+    if (abort.signal.aborted) {
+      logStream.end()
+      _clearLaunchingFailed(installationId)
+      return { ok: false, cancelled: true }
+    }
 
-    _operationAborts.delete(installationId)
+    const { proc, getStderr } = await guardLaunchSetup(async () => {
+      hwTap.beginBoot()
+      const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
+      try {
+        return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
+      } catch (err) {
+        // Stream wiring failed: kill and WAIT for the child so the settled
+        // handler can't outlive a live process.
+        await killProcessTree(p)
+        throw err
+      }
+    }, { logStream })
+
+    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
     _addSession(installationId, { proc, port: 0, mode, installationName: inst.name }, Date.now() - launchStartedAt)
 
@@ -749,7 +906,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
           message = i18n.t('errors.portConflictOther', { port: launchCmd.port!, process: i18n.t('errors.unknownProcess') })
         }
       }
-      _operationAborts.delete(installationId)
+      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
       return { ok: false, message, portConflict: { port: launchCmd.port, pids: existingPids, isComfy, nextPort } }
     }
   }
@@ -772,7 +929,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       sendProgress('launch', { percent: -1, status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort }) })
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
-      _operationAborts.delete(installationId)
+      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
       return {
         ok: false,
         message: i18n.t('errors.portConflictLauncher', { port: launchCmd.port!, name: lateConflictOwner }),
@@ -781,37 +938,39 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     }
   }
 
-  // Reserve port eagerly
-  _reservePort(launchCmd.port!, inst.name)
-  _markLaunching(installationId, inst.name)
+  // The port probes above are the last pre-marker awaits; don't reserve a
+  // port or set the launching marker for a launch that was already cancelled.
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
 
+  // Session path / env / progress plumbing before the port is reserved, so a
+  // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
   const launchEnv = buildLaunchEnv(inst, sessionPath)
   const sendOutput = makeSendOutput(sender, installationId)
 
-  const logStream = await openLogStream(inst.installPath)
-  const execTap = createExecutionTap({
-    installationId,
-    variant: (inst.variant as string | undefined) ?? null,
-    release: (inst.release as string | undefined) ?? null,
-  })
-  const hwTap = createHardwareTap({
-    installationId,
-    variant: (inst.variant as string | undefined) ?? null,
-    release: (inst.release as string | undefined) ?? null,
-  })
+  // Port reservation and launching marker sit INSIDE the guard: even the
+  // marker's renderer broadcast can throw, and every throw after either
+  // exists must tear them back down before the handler settles. Pre-armed
+  // tracker so the synchronous relaunch loop can reuse the single instance.
+  const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(() => {
+    _reservePort(launchCmd.port!, inst.name)
+    _markLaunching(installationId, inst.name)
+    return acquireLaunchResources()
+  }, { port: launchCmd.port! })
 
-  // Arm the log-driven tracker once, here (a pre-launch repair may already have
-  // armed it). Pre-armed so the synchronous relaunch loop can reuse the single
-  // instance — re-arming would re-emit steps and reset the stepper.
-  const tracker = await armLaunchTracker()
-
-  function spawnComfy(): { proc: ChildProcess; getStderr: () => string } {
+  async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected; model-usage counts persist across the launch.
     hwTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-    return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
+    try {
+      return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
+    } catch (err) {
+      // Stream wiring failed: kill and WAIT for the child so cleanup can't
+      // outlive a live process.
+      await killProcessTree(p)
+      throw err
+    }
   }
 
   const PORT_RETRY_MAX = 3
@@ -823,6 +982,17 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   const bootId = randomUUID()
 
   const tryLaunch = async (): Promise<{ ok: true; proc: ChildProcess; getStderr: () => string } | { ok: false; message: string; cancelled?: boolean; stderr?: string; exitCode?: number | null; signal?: string | null }> => {
+    // E2E-only: parks the launch here - launching marker set, port reserved,
+    // no process yet - so tests can exercise restart-during-boot without
+    // racing real boot speed. No-op in production and when not armed.
+    await waitLaunchSpawnHold(abort.signal)
+    // A cancel that landed during the awaits since the marker was set (log
+    // stream open, tracker arming, the E2E hold) must never spawn. Returning
+    // the cancelled shape routes through the standard failure cleanup below
+    // (port release, marker clear).
+    if (abort.signal.aborted) {
+      return { ok: false, message: 'Launch cancelled', cancelled: true }
+    }
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!].map((a, ci, ca) => {
       if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
       return /\s/.test(a) ? `"${a}"` : a
@@ -850,7 +1020,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
     // actually fails (or succeeds). The tracker's `onPhaseEnter` feeds it;
     // it is flushed only on the terminal failure path below.
     startBootPhases(installationId, (inst.variant as string | undefined) ?? null)
-    const spawned = spawnComfy()
+    const spawned = await spawnComfy()
 
     let earlyExit: string | null = null
     // Exit code / signal of an early process exit, surfaced on `boot_failed`
@@ -890,8 +1060,23 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         }),
         earlyExitPromise,
       ])
+      // The port wait can resolve successfully even after an abort (a probe
+      // already in flight when the signal fired still calls back). Returning
+      // ok would register the cancelled process as a running session, so
+      // route it through the abort teardown in the catch below instead.
+      if (abort.signal.aborted) throw new Error('Launch cancelled')
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
+      // A user abort (cancel, or restart-during-boot) is terminal: kill the
+      // spawn and WAIT for it to die before returning, so the launching
+      // marker and operation slot are only cleared after the process has
+      // released its port and a caller like `cancelLaunching` can relaunch
+      // safely. Checked before the retry paths below - an aborted boot must
+      // never respawn via the reboot/port retries.
+      if (abort.signal.aborted) {
+        await killProcessTree(spawned.proc)
+        return { ok: false, message: (err as Error).message, cancelled: true, stderr: spawned.getStderr(), exitCode, signal: exitSignal }
+      }
       killProcessTree(spawned.proc)
       if (checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
         rebootRetries++
@@ -916,16 +1101,23 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
       // report the actual error. The buffer lives in main (survives a hard
       // child crash) but was previously discarded on the failure path.
       const failureStderr = spawned.getStderr()
-      if (abort.signal.aborted) return { ok: false, message: (err as Error).message, cancelled: true, stderr: failureStderr, exitCode, signal: exitSignal }
       return { ok: false, message: (err as Error).message, stderr: failureStderr, exitCode, signal: exitSignal }
     }
   }
 
-  const launchResult = await tryLaunch()
+  // A throw that escapes tryLaunch (sync spawn failure, telemetry, boot-phase
+  // buffering) must still route through the standard failure cleanup below -
+  // port release, marker clear, operation-slot release.
+  const launchResult = await tryLaunch().catch((err: unknown): Awaited<ReturnType<typeof tryLaunch>> => ({
+    ok: false,
+    message: err instanceof Error ? err.message : String(err),
+    ...(abort.signal.aborted ? { cancelled: true } : {}),
+  }))
   if (!launchResult.ok) {
     logStream.end()
     _releasePort(launchCmd.port!)
-    _operationAborts.delete(installationId)
+    // Ownership-guarded: never evict a slot a newer operation already claimed.
+    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
@@ -977,7 +1169,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
   let { proc } = launchResult
 
   _pendingPorts.delete(launchCmd.port!)
-  _operationAborts.delete(installationId)
+  if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   const mode = (inst.launchMode as string | undefined) || 'window'
   const bootTimeMs = Date.now() - launchStartedAt
   _addSession(
@@ -1027,7 +1219,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
         await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => { })
       }
       await killProcessTree(proc)
-      const respawned = spawnComfy()
+      const respawned = await spawnComfy()
       proc = respawned.proc
       const session = _runningSessions.get(installationId)
       if (session) session.proc = proc
@@ -1097,7 +1289,7 @@ export async function handleLaunch({ event, installationId, inst: instArg, actio
             }
           }
         }
-        const spawned = spawnComfy()
+        const spawned = await spawnComfy()
         proc = spawned.proc
         currentGetStderr = spawned.getStderr
         const session = _runningSessions.get(installationId)

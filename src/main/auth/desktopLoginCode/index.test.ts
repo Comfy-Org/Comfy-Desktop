@@ -2,7 +2,9 @@ import type { BrowserWindow, WebContents } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as ClientModule from './client'
+import type { CreateDesktopLoginCodeRequest } from './client'
 import type * as OrchestratorModule from './index'
+import { codeChallengeS256 } from './pkce'
 import type * as FlowSharedModule from '../firebaseBridge/flowShared'
 
 const h = vi.hoisted(() => ({
@@ -81,12 +83,28 @@ const GRANT = {
 
 function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   executeJavaScript: ReturnType<typeof vi.fn>
+  getURL: ReturnType<typeof vi.fn>
+  mainFrame: {
+    executeJavaScript: ReturnType<typeof vi.fn>
+    isDestroyed: ReturnType<typeof vi.fn>
+  }
 } {
+  const mainFrame = {
+    executeJavaScript: vi.fn((script: string) =>
+      Promise.resolve(script.includes('location.reload()') ? true : undefined)
+    ),
+    isDestroyed: vi.fn(() => false)
+  }
   return {
     isDestroyed: vi.fn(() => false),
     getURL: vi.fn(() => url),
-    executeJavaScript: vi.fn(() => Promise.resolve())
-  } as unknown as WebContents & { executeJavaScript: ReturnType<typeof vi.fn> }
+    executeJavaScript: vi.fn(() => Promise.resolve()),
+    mainFrame
+  } as unknown as WebContents & {
+    executeJavaScript: ReturnType<typeof vi.fn>
+    getURL: ReturnType<typeof vi.fn>
+    mainFrame: typeof mainFrame
+  }
 }
 
 /** Fresh module per test — the singleton AbortController lives at module scope. */
@@ -204,15 +222,30 @@ describe('signInViaDesktopLoginCode', () => {
       expect.anything()
     )
 
+    // Assert the PKCE wiring across create and exchange: the verifier presented
+    // at exchange must be the preimage of the S256 challenge sent at create.
+    const createReq = h.createDesktopLoginCode.mock.calls[0]![1] as CreateDesktopLoginCodeRequest
+    const exchangeReq = h.exchangeDesktopLoginCode.mock.calls[0]![1] as {
+      code: string
+      code_verifier: string
+    }
+    expect(exchangeReq.code).toBe(GRANT.code)
+    expect(codeChallengeS256(exchangeReq.code_verifier)).toBe(createReq.code_challenge)
+    // A plain-text downgrade would make these equal.
+    expect(exchangeReq.code_verifier).not.toBe(createReq.code_challenge)
+
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(2)
     expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'custom-token-value', {
       signal: expect.any(AbortSignal)
     })
-    expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser)
+    expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser, contents)
     expect(h.capture).toHaveBeenCalledWith('comfy.desktop.identity.login_attributed', {
       via: 'desktop_login_code'
     })
-    expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
+    expect(contents.mainFrame.executeJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('location.reload()'),
+      true
+    )
     expect(parentWindow.restore).toHaveBeenCalled()
     expect(parentWindow.show).toHaveBeenCalled()
     expect(parentWindow.focus).toHaveBeenCalled()
@@ -270,12 +303,9 @@ describe('signInViaDesktopLoginCode', () => {
     })
     mockSignInChain({ uid: 'uid-1' })
     const mod = await loadOrchestrator()
+    const contents = fakeContents('http://127.0.0.1:8188/')
 
-    const promise = mod.signInViaDesktopLoginCode(
-      AUTH_URL,
-      fakeContents('http://127.0.0.1:8188/'),
-      {}
-    )
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
@@ -285,6 +315,10 @@ describe('signInViaDesktopLoginCode', () => {
       expect.anything()
     )
     expect(h.openExternal.mock.calls[0]![0]).toMatch(/^https:\/\/cloud\.comfy\.org\/cloud\/login/)
+    expect(contents.mainFrame.executeJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('location.reload()'),
+      true
+    )
   })
 
   it('omits installation_id when telemetry consent is off or undecided', async () => {
@@ -327,6 +361,76 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.emit).not.toHaveBeenCalled()
   })
 
+  it('does not inject the session if the view navigated off the Cloud origin', async () => {
+    // The inject script carries the Firebase refresh token into the page's main
+    // world. Minutes pass between flow start and injection (browser sign-in +
+    // hold), so a view that wandered off-origin must never receive it.
+    h.settingsGet.mockReturnValue(true)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    // The sign-in chain must succeed, otherwise the flow dies before the
+    // injection and this test would pass with the guard removed.
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+    const contents = fakeContents()
+    contents.getURL
+      .mockReturnValueOnce('https://cloud.comfy.org/')
+      .mockReturnValueOnce('https://cloud.comfy.org/')
+      .mockReturnValue('https://evil.example.com/pwned')
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    // The token was minted and the user assembled — only the origin check
+    // stands between it and the foreign page.
+    expect(h.buildPersistedUserFromCustomToken).toHaveBeenCalled()
+    expect(contents.mainFrame.executeJavaScript).not.toHaveBeenCalledWith(
+      expect.stringContaining('location.reload()'),
+      true
+    )
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    expect(h.capture).not.toHaveBeenCalledWith(
+      'comfy.desktop.identity.login_attributed',
+      expect.anything()
+    )
+    expect(h.emit).toHaveBeenCalledWith(
+      'comfy.desktop.auth.sign_in_failed',
+      expect.objectContaining({ flow: 'desktop_login_code' })
+    )
+  })
+
+  it('does not bind or attribute success when session injection fails', async () => {
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const contents = fakeContents()
+    contents.mainFrame.executeJavaScript
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('frame destroyed'))
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe('handled')
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    expect(h.capture).not.toHaveBeenCalledWith(
+      'comfy.desktop.identity.login_attributed',
+      expect.anything()
+    )
+    expect(h.emit).toHaveBeenCalledWith(
+      'comfy.desktop.auth.sign_in_failed',
+      expect.objectContaining({ flow: 'desktop_login_code' })
+    )
+  })
+
   it('fails in place on a terminal exchange error — no legacy restart after the browser opened', async () => {
     const { DesktopLoginCodeError } = await import('./client')
     h.settingsGet.mockReturnValue(true)
@@ -341,21 +445,23 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
-    expect(h.emit).toHaveBeenCalledWith(
-      'comfy.desktop.auth.sign_in_failed',
-      {
-        provider: 'google.com',
-        error_class: 'DesktopLoginCodeError',
-        error_bucket: 'bucketed',
-        flow: 'desktop_login_code',
-        retried_poll_errors: 0
-      }
-    )
+    // error_status carries the HTTP status so a verifier mismatch (403) is
+    // distinguishable from an old backend (404) or a 5xx. Without it every
+    // failure collapses into the same error_class/error_bucket pair.
+    expect(h.emit).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_failed', {
+      provider: 'google.com',
+      error_class: 'DesktopLoginCodeError',
+      error_bucket: 'bucketed',
+      flow: 'desktop_login_code',
+      error_status: 403,
+      retried_poll_errors: 0
+    })
     expect(onError).toHaveBeenCalledWith({
       provider: 'google.com',
       error_class: 'DesktopLoginCodeError',
       error_bucket: 'bucketed',
       flow: 'desktop_login_code',
+      error_status: 403,
       retried_poll_errors: 0
     })
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
@@ -539,7 +645,7 @@ describe('signInViaDesktopLoginCode', () => {
       'comfy.desktop.identity.login_attributed',
       expect.anything()
     )
-    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+    expect(contents.mainFrame.executeJavaScript).not.toHaveBeenCalled()
     expect(parentWindow.focus).not.toHaveBeenCalled()
     // ...and did not tear down the newer flow's banner on the way out.
     expect(h.runBannerCleanup).toHaveBeenCalledTimes(bannerCleanupsAfterSecondStart)

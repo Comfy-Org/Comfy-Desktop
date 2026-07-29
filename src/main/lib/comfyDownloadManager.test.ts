@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest'
-import fs from 'fs'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import os from 'os'
+import fs from 'fs'
 import path from 'path'
-import type { buildExistenceCandidates as BuildExistenceCandidates } from './comfyDownloadManager'
+import * as settings from '../settings'
+import { ALLOWED_EXTENSIONS } from './downloadFilename'
+import { areModelsPresent, buildExistenceCandidates } from './modelDownloadPaths'
 import type * as ComfyDownloadManager from './comfyDownloadManager'
 
 vi.mock('electron', () => ({
@@ -18,7 +20,6 @@ vi.mock('electron', () => ({
   shell: {},
 }))
 
-let ALLOWED_EXTENSIONS: string[]
 let hasValidExtension: (filename: string) => boolean
 let isPathContained: (filePath: string, baseDir: string) => boolean
 let sanitizeAssetFilename: (filename: string, outputDir: string) => string | null
@@ -29,19 +30,16 @@ let resolveAssetSavePath: (
 ) => string | null
 let parseContentDispositionFilename: (header: string | null) => string | null
 let buildSaveDialogFilters: (suggestedName: string) => Electron.FileFilter[]
-let buildExistenceCandidates: typeof BuildExistenceCandidates
 let mod: typeof ComfyDownloadManager
 
 beforeAll(async () => {
   mod = await import('./comfyDownloadManager')
-  ALLOWED_EXTENSIONS = mod.ALLOWED_EXTENSIONS
   hasValidExtension = mod.hasValidExtension
   isPathContained = mod.isPathContained
   sanitizeAssetFilename = mod.sanitizeAssetFilename
   resolveAssetSavePath = mod.resolveAssetSavePath
   parseContentDispositionFilename = mod.parseContentDispositionFilename
   buildSaveDialogFilters = mod.buildSaveDialogFilters
-  buildExistenceCandidates = mod.buildExistenceCandidates
 })
 
 describe('buildExistenceCandidates', () => {
@@ -556,5 +554,45 @@ describe('template mirror visibility in the All-Downloads modal', () => {
       spy.mockRestore()
       mod.clearTemplateTrayMirror('inst-live')
     }
+  })
+})
+
+describe('areModelsPresent', () => {
+  let base: string
+
+  beforeAll(async () => {
+    base = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'amp-'))
+    await fs.promises.mkdir(path.join(base, 'checkpoints'), { recursive: true })
+    await fs.promises.mkdir(path.join(base, 'vae'), { recursive: true })
+    await fs.promises.writeFile(path.join(base, 'checkpoints', 'a.safetensors'), 'x')
+    await fs.promises.writeFile(path.join(base, 'vae', 'b.safetensors'), 'x')
+    vi.spyOn(settings, 'get').mockImplementation((key) =>
+      key === 'modelsDirs' ? [base] : (settings.defaults as Record<string, unknown>)[key],
+    )
+  })
+
+  afterAll(async () => {
+    vi.restoreAllMocks()
+    await fs.promises.rm(base, { recursive: true, force: true })
+  })
+
+  it('returns false for an empty model list', async () => {
+    expect(await areModelsPresent(null, [])).toBe(false)
+  })
+
+  it('returns true only when every model is on disk (shared dir, no install)', async () => {
+    const present = await areModelsPresent(null, [
+      { directory: 'checkpoints', filename: 'a.safetensors' },
+      { directory: 'vae', filename: 'b.safetensors' },
+    ])
+    expect(present).toBe(true)
+  })
+
+  it('returns false when any single model is missing', async () => {
+    const present = await areModelsPresent(null, [
+      { directory: 'checkpoints', filename: 'a.safetensors' },
+      { directory: 'vae', filename: 'missing.safetensors' },
+    ])
+    expect(present).toBe(false)
   })
 })

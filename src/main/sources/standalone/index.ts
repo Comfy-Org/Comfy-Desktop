@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
 import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
+import { areModelsPresent } from '../../lib/modelDownloadPaths'
 import {
   PLATFORM_PREFIX, DEFAULT_LAUNCH_ARGS,
   getVariantLabel, stripPlatform, getActivePythonPath,
@@ -14,6 +15,8 @@ import {
 import { install, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog } from './templateCatalog'
+import { resolveTemplateModels } from './templateModels'
+import * as installations from '../../installations'
 
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
@@ -26,29 +29,7 @@ import type {
 
 export { getVariantLabel } from './envPaths'
 
-// --- R2 release types ---
-
-interface R2Variant {
-  tag: string
-  comfyui_version: string
-  comfyui_commit: string
-  build: number
-  date: string
-  file: string
-  size: number
-  python_version: string
-  torch_version: string
-  torchvision_version?: string
-  torchaudio_version?: string
-}
-
-/** latest.json: vendor_id → newest release */
-type R2Latest = Record<string, R2Variant>
-
-/** {vendor}/releases.json: full history for one vendor */
-interface R2VendorReleases {
-  releases: R2Variant[]
-}
+import type { R2Variant, R2Latest, R2VendorReleases } from './r2Catalog'
 
 interface VariantData {
   variantId: string
@@ -56,6 +37,9 @@ interface VariantData {
   downloadUrl: string
   downloadFiles: { url: string; filename: string; size: number }[]
 }
+
+/** Max wait for the "models downloaded" check before returning options unbadged. */
+const MODELS_PRESENT_BUDGET_MS = 2500
 
 /**
  * Build a variant card FieldOption from a single R2 bundle release. Shared by
@@ -520,6 +504,36 @@ export const standalone: SourcePlugin = {
       // picks carry `recommended` on their own option so the wizard auto-selects
       // a real template (the lightest "wow"), not the skip.
       const catalog = await loadTemplateCatalog()
+
+      const installId = typeof context.installationId === 'string' ? context.installationId : null
+      const installation = installId ? await installations.get(installId) : null
+      // `budgeted` stops the timed-out pass writing after we return, so a slow
+      // `modelsPresent: false` reads as "unbadged", never "confirmed absent".
+      let budgeted = false
+      const presenceById = new Map<string, boolean>()
+      const presencePass = Promise.all(
+        catalog.map(async (tpl) => {
+          try {
+            const models = await resolveTemplateModels(installation, tpl.id)
+            const present = await areModelsPresent(installId, models)
+            if (!budgeted) presenceById.set(tpl.id, present)
+          } catch {
+            if (!budgeted) presenceById.set(tpl.id, false)
+          }
+        }),
+      )
+      let budgetTimer: NodeJS.Timeout | undefined
+      const timedOut = await Promise.race([
+        presencePass.then(() => false),
+        new Promise<boolean>((resolve) => {
+          budgetTimer = setTimeout(() => resolve(true), MODELS_PRESENT_BUDGET_MS)
+        }),
+      ]).finally(() => clearTimeout(budgetTimer))
+      if (timedOut) {
+        budgeted = true
+        console.warn(`Template models-present check hit ${MODELS_PRESENT_BUDGET_MS}ms budget for install ${installId ?? '(none)'}; some cards unbadged`)
+      }
+
       return [
         {
           value: NO_TEMPLATE_VALUE,
@@ -538,6 +552,7 @@ export const standalone: SourcePlugin = {
             task: tpl.task,
             thumbnailUrl: tpl.thumbnailUrl,
             sizeBytes: tpl.sizeBytes,
+            modelsPresent: presenceById.get(tpl.id) ?? false,
           },
         })),
       ]

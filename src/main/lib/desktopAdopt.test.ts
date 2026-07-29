@@ -114,7 +114,12 @@ vi.mock('../installations', () => {
     }),
     list: vi.fn(async () => records.slice()),
     get: vi.fn(async (id: string) => records.find((r) => r.id === id) ?? null),
-    update: vi.fn(),
+    update: vi.fn(async (id: string, data: Record<string, unknown>) => {
+      const entry = records.find((r) => r.id === id)
+      if (!entry) return null
+      Object.assign(entry, data)
+      return entry
+    }),
     remove: vi.fn(async (id: string) => {
       const idx = records.findIndex((r) => r.id === id)
       if (idx >= 0) records.splice(idx, 1)
@@ -146,6 +151,7 @@ import {
   deriveLaunchArgs,
   computeModelsDirsToCarry,
   getLegacyVenvUvPath,
+  reconcileAdoptedSettings,
   type AdoptTools,
   type AdoptDeps,
   type UserChoice
@@ -168,6 +174,7 @@ interface InstallationsMock {
   __reset: () => void
   add: ReturnType<typeof vi.fn>
   list: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
 }
 const settingsMock = settings as unknown as SettingsMock
 const installationsMock = installations as unknown as InstallationsMock
@@ -226,7 +233,12 @@ function buildFakeLegacy(
     fs.writeFileSync(path.join(venvBin, pyName), '')
   }
   for (const [name, content] of Object.entries(opts.configFiles ?? {})) {
-    fs.writeFileSync(path.join(configDir, name), content)
+    const target =
+      name === 'comfy.settings.json'
+        ? path.join(basePath, 'user', 'default', name)
+        : path.join(configDir, name)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, content)
   }
   for (const [name, content] of Object.entries(opts.baseFiles ?? {})) {
     const target = path.join(basePath, name)
@@ -546,6 +558,19 @@ describe('deriveLaunchArgs', () => {
     expect(launchArgs).toContain('--port 9999')
     expect(launchArgs).not.toContain('--port 8000')
   })
+
+  it('preserves CPU mode from selectedDevice when the settings entry is missing', () => {
+    const { launchArgs } = deriveLaunchArgs({}, 'cpu')
+    expect(launchArgs.split(' ')).toContain('--cpu')
+  })
+
+  it('does not override an explicit disabled CPU setting', () => {
+    const { launchArgs } = deriveLaunchArgs(
+      { 'Comfy.Server.LaunchArgs': { cpu: false } },
+      'cpu'
+    )
+    expect(launchArgs.split(' ')).not.toContain('--cpu')
+  })
 })
 
 describe('computeModelsDirsToCarry', () => {
@@ -727,6 +752,191 @@ describe('adoptDesktopInstall', () => {
       // Marker written
       const marker = fs.readFileSync(path.join(legacy.basePath, '.comfyui-desktop-2'), 'utf-8')
       expect(marker).toBe(record.id)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('reads and backs up settings from the legacy workspace', async () => {
+    const canonicalSettings = JSON.stringify({
+      'Comfy.Server.LaunchArgs': { cpu: '', port: '8123' }
+    })
+    const legacy = buildFakeLegacy({
+      configFiles: {
+        'config.json': JSON.stringify({ selectedDevice: 'cpu' }),
+        'comfy.settings.json': canonicalSettings
+      }
+    })
+    try {
+      fs.writeFileSync(
+        path.join(legacy.configDir, 'comfy.settings.json'),
+        JSON.stringify({ 'Comfy.Server.LaunchArgs': { 'gpu-only': '', port: '9999' } })
+      )
+
+      const record = await adoptDesktopInstall({
+        tools: buildSilentTools(),
+        deps: buildDeps({}, legacy.info)
+      })
+
+      expect(record.launchArgs).toContain('--cpu')
+      expect(record.launchArgs).toContain('--port 8123')
+      expect(record.launchArgs).not.toContain('--gpu-only')
+      expect(record.launchArgs).not.toContain('--port 9999')
+
+      const [backupDir] = fs.readdirSync(path.join(legacy.configDir, 'legacy-backup'))
+      const backup = fs.readFileSync(
+        path.join(legacy.configDir, 'legacy-backup', backupDir!, 'comfy.settings.json'),
+        'utf-8'
+      )
+      expect(backup).toBe(canonicalSettings)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('preserves CPU mode from config.json when comfy.settings.json is missing', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: { 'config.json': JSON.stringify({ selectedDevice: 'cpu' }) }
+    })
+    try {
+      const record = await adoptDesktopInstall({
+        tools: buildSilentTools(),
+        deps: buildDeps({}, legacy.info)
+      })
+      expect((record.launchArgs as string).split(' ')).toContain('--cpu')
+      expect(record.adoptedSettingsVersion).toBe(1)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('repairs adopted records that still contain generated defaults', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: {
+        'comfy.settings.json': JSON.stringify({
+          'Comfy.Server.LaunchArgs': {
+            cpu: '',
+            port: '8123',
+            'input-directory': 'D:\\legacy-input',
+            'output-directory': 'D:\\legacy-output'
+          },
+          'Comfy-Desktop.UV.PypiInstallMirror': 'https://example.com/simple/'
+        })
+      }
+    })
+    try {
+      installationsMock.__records.push({
+        id: 'affected-adoption',
+        name: 'ComfyUI',
+        createdAt: new Date().toISOString(),
+        sourceId: 'standalone',
+        installPath: path.join(legacy.basePath, 'managed-source'),
+        adopted: true,
+        adoptedBaseDir: legacy.basePath,
+        adoptedSelectedDevice: 'cpu',
+        launchArgs: '--port 8000 --enable-manager',
+        inputDir: path.join(legacy.basePath, 'input'),
+        outputDir: 'D:\\v2-output'
+      })
+
+      expect(await reconcileAdoptedSettings()).toBe(1)
+      const [record] = installationsMock.__records
+      expect(record!.launchArgs).toContain('--cpu')
+      expect(record!.launchArgs).toContain('--port 8123')
+      expect(record!.inputDir).toBe('D:\\legacy-input')
+      expect(record!.outputDir).toBe('D:\\v2-output')
+      expect(record!.adoptedSettingsVersion).toBe(1)
+      expect(settingsMock.__store['pypiMirror']).toBe('https://example.com/simple/')
+
+      installationsMock.update.mockClear()
+      expect(await reconcileAdoptedSettings()).toBe(0)
+      expect(installationsMock.update).not.toHaveBeenCalled()
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('does not replace launch args edited after adoption', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: {
+        'comfy.settings.json': JSON.stringify({
+          'Comfy.Server.LaunchArgs': {
+            cpu: '',
+            'input-directory': 'D:\\legacy-input',
+            'output-directory': 'D:\\legacy-output'
+          }
+        })
+      }
+    })
+    try {
+      installationsMock.__records.push({
+        id: 'edited-adoption',
+        name: 'ComfyUI',
+        createdAt: new Date().toISOString(),
+        sourceId: 'standalone',
+        installPath: path.join(legacy.basePath, 'managed-source'),
+        adopted: true,
+        adoptedBaseDir: legacy.basePath,
+        adoptedSelectedDevice: 'cpu',
+        launchArgs: '--port 9000 --enable-manager',
+        inputDir: path.join(legacy.basePath, 'input'),
+        outputDir: path.join(legacy.basePath, 'output')
+      })
+
+      expect(await reconcileAdoptedSettings()).toBe(1)
+      const [record] = installationsMock.__records
+      expect(record!.launchArgs).toBe('--port 9000 --enable-manager')
+      expect(record!.inputDir).toBe('D:\\legacy-input')
+      expect(record!.outputDir).toBe('D:\\legacy-output')
+      expect(record!.adoptedSettingsVersion).toBe(1)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('retries adopted settings repair after a malformed settings file', async () => {
+    const legacy = buildFakeLegacy({
+      configFiles: { 'comfy.settings.json': '{' }
+    })
+    try {
+      installationsMock.__records.push({
+        id: 'unreadable-settings-adoption',
+        name: 'ComfyUI',
+        createdAt: new Date().toISOString(),
+        sourceId: 'standalone',
+        installPath: path.join(legacy.basePath, 'managed-source'),
+        adopted: true,
+        adoptedBaseDir: legacy.basePath,
+        adoptedSelectedDevice: 'cpu',
+        launchArgs: '--port 8000 --enable-manager'
+      })
+
+      expect(await reconcileAdoptedSettings()).toBe(0)
+      expect(installationsMock.update).not.toHaveBeenCalled()
+      expect(installationsMock.__records[0]).not.toHaveProperty('adoptedSettingsVersion')
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('repairs a missing settings file from the persisted CPU device', async () => {
+    const legacy = buildFakeLegacy()
+    try {
+      installationsMock.__records.push({
+        id: 'missing-settings-adoption',
+        name: 'ComfyUI',
+        createdAt: new Date().toISOString(),
+        sourceId: 'standalone',
+        installPath: path.join(legacy.basePath, 'managed-source'),
+        adopted: true,
+        adoptedBaseDir: legacy.basePath,
+        adoptedSelectedDevice: 'cpu',
+        launchArgs: '--port 8000 --enable-manager'
+      })
+
+      expect(await reconcileAdoptedSettings()).toBe(1)
+      expect(installationsMock.__records[0]!.launchArgs).toContain('--cpu')
+      expect(installationsMock.__records[0]!.adoptedSettingsVersion).toBe(1)
     } finally {
       legacy.cleanup()
     }
@@ -1295,7 +1505,7 @@ describe('adoptDesktopInstall', () => {
     }
   })
 
-  it('backs up legacy userData files into legacy-backup/<ts>', async () => {
+  it('backs up legacy state files into legacy-backup/<ts>', async () => {
     const legacy = buildFakeLegacy({
       configFiles: {
         'config.json': '{"basePath":"x"}',

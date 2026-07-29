@@ -60,6 +60,10 @@ const suggestedName = ref('')
 const instPath = ref('')
 const defaultInstPath = ref('')
 const detectedGpu = ref('')
+/** Non-blocking hardware warning from `validateHardware()` (e.g. Linux AMD
+ *  /dev/kfd inaccessible): install may proceed, but the user should know GPU
+ *  acceleration will not work until they act. Plain-English text from main. */
+const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
@@ -444,6 +448,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   textFieldValues.value.clear()
 
   detectedGpu.value = t('newInstall.detectingGpu')
+  hardwareWarning.value = ''
   resetDiskSpace()
   sourceError.value = ''
   initializing.value = true
@@ -480,6 +485,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
 
     // Pre-select Standalone (the recommended method); other sources are reachable via the Advanced method-picker chips.
     hardwareValidation = await window.api.validateHardware()
+    // A newer open() may have started while awaiting; don't let a stale
+    // result overwrite its (cleared) warning state.
+    if (gen !== loadGeneration) return
+    hardwareWarning.value = hardwareValidation.warning ?? ''
     const standalone = sources.value.find((s) => s.id === 'standalone')
     if (standalone && hardwareValidation.supported) {
       await selectSourceCard(standalone)
@@ -953,6 +962,14 @@ defineExpose({ open })
                 aria-readonly="true"
               >
                 <span class="config-select__value">{{ detectedGpu }}</span>
+              </div>
+              <div
+                v-if="hardwareWarning && !currentSource?.skipInstall"
+                class="config-gpu-warning"
+                role="alert"
+                data-testid="wizard-hardware-warning"
+              >
+                {{ hardwareWarning }}
               </div>
             </div>
           </TooltipWrap>

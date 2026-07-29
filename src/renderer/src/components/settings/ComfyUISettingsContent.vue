@@ -230,8 +230,11 @@ watch(
 
 // Auto-refresh stale channel-cards when the Update tab opens, so a user
 // who opens the picker long after install doesn't see release data from
-// the last manual check. Per-(install, channel) dedupe via
-// `refreshedChannelKeys`; main short-circuits on a 10s window.
+// the last manual check. Fires only when the selected card's
+// `data.lastCheckedAt` is missing or older than `STALE_CHANNEL_CARD_MS`.
+// Per-(install, channel) dedupe via `refreshedChannelKeys`; main
+// short-circuits on a 10s window.
+const STALE_CHANNEL_CARD_MS = 15 * 60 * 1000
 const refreshedChannelKeys = new Set<string>()
 watch(
   [() => activeTab.value, () => props.installation?.id ?? null, () => sectionsFresh.value],
@@ -248,6 +251,16 @@ watch(
 
     const currentChannel = typeof channelField.value === 'string' ? channelField.value : null
     if (!currentChannel) return
+
+    // Skip while the selected card's data is still fresh. Without this
+    // gate the watcher fires on every Update-tab mount regardless of
+    // cache age — the dedupe set below only blocks repeat fires within
+    // the same component instance, not re-mounts (the picker rebuilds
+    // on every open).
+    const currentCard = channelField.options?.find((o) => o.value === currentChannel)
+    const lastCheckedAt = (currentCard?.data as { lastCheckedAt?: number } | undefined)
+      ?.lastCheckedAt
+    if (lastCheckedAt && Date.now() - lastCheckedAt <= STALE_CHANNEL_CARD_MS) return
 
     // Look up the canonical action def from sections to inherit whatever
     // `enabled` / disabledMessage main attaches. Bail if main isn't
@@ -637,6 +650,7 @@ function actionIcon(id: string): Component {
     case 'copy':
       return Copy
     case 'copy-update':
+    case 'copy-pytorch':
       return CopyPlus
     case 'open-folder':
     case 'reveal-in-folder':
@@ -870,6 +884,7 @@ defineExpose({
             'is-active': activeTab === tab.key,
             'is-locked': opInflight && activeTab !== tab.key
           }"
+          :data-testid="TID.settingsTab(tab.key)"
           @click="selectTab(tab.key)"
           @keydown="handleTabKeydown($event, i)"
         >
@@ -886,7 +901,7 @@ defineExpose({
       </Tooltip>
     </nav>
 
-    <section class="settings-v2-body">
+    <section class="settings-v2-body scroll-visible">
       <p v-if="!installation" class="empty">
         {{ t('comfyUISettings.emptyInstallLess', 'Open a ComfyUI instance to view its settings.') }}
       </p>
@@ -1098,6 +1113,7 @@ defineExpose({
           }"
           :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
           :title="isCloudCapacityBlocked ? $t('cloud.capacityDisabledHint') : undefined"
+          :data-testid="TID.pickerPrimaryCta"
           @click="handlePrimaryAction"
         >
           <component
@@ -1119,6 +1135,7 @@ defineExpose({
             :aria-expanded="caretMenuOpen"
             :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
             :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
+            :data-testid="TID.pickerNewWindow"
             @click="toggleCaretMenu"
           >
             <ChevronUp :size="14" />
@@ -1143,6 +1160,7 @@ defineExpose({
           :aria-expanded="moreMenuOpen"
           :aria-label="t('comfyUISettings.more', 'More')"
           :disabled="!installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh"
+          :data-testid="TID.pickerMoreTrigger"
           @click="toggleMoreMenu"
         >
           {{ t('comfyUISettings.more', 'More') }}
@@ -1297,13 +1315,6 @@ defineExpose({
   display: flex;
   flex-direction: column;
   position: relative;
-  scrollbar-width: none;
-}
-
-.settings-v2-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 .settings-v2-body-root {

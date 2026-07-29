@@ -286,6 +286,27 @@
   background: var(--border-hover);
 }
 
+.scroll-visible {
+  scrollbar-gutter: stable;
+}
+.scroll-visible::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-visible::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-visible::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background-color: var(--border);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: padding-box;
+}
+.scroll-visible::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-hover);
+}
+
 body {
   font-family: 'Inter', system-ui, sans-serif;
   /* Tailwind `antialiased` — macOS WebKit/Chromium only; ignored on
@@ -2959,6 +2980,14 @@ input[type='checkbox']:checked::after {
   font-size: 14px;
   color: var(--danger);
   padding: 12px 0;
+}
+/* Non-blocking hardware warning under the detected-GPU field (e.g. Linux
+ * AMD /dev/kfd inaccessible): install may proceed, so warning, not danger. */
+.config-gpu-warning {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warning);
+  margin-top: 6px;
 }
 .track-probing {
   font-size: 14px;

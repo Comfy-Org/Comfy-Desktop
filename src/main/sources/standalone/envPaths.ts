@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { getActiveVenvDir } from '../../lib/pythonEnv'
+import type { InstalledTorchTuple } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
 export {
   getUvPath, getActivePythonPath, getActiveUvPath, getVenvDir, getVenvPythonPath,
@@ -56,15 +57,28 @@ export function findSitePackages(envRoot: string): string | null {
  * when the venv, site-packages, or torch package can't be found.
  */
 export function getTorchVersion(installation: InstallationRecord): string | null {
+  return getInstalledTorchTuple(installation).torch
+}
+
+/**
+ * Read the installed torch/torchvision/torchaudio versions from the venv's
+ * `.dist-info` directories in one pass. Synchronous and cheap; each field is
+ * null when the venv, site-packages, or that package can't be found.
+ */
+export function getInstalledTorchTuple(installation: InstallationRecord): InstalledTorchTuple {
+  const tuple: InstalledTorchTuple = { torch: null, torchvision: null, torchaudio: null }
   const sitePackages = findSitePackages(getActiveVenvDir(installation))
-  if (!sitePackages) return null
+  if (!sitePackages) return tuple
   try {
     for (const entry of fs.readdirSync(sitePackages)) {
-      const match = entry.match(/^torch-(.+?)\.dist-info$/i)
-      if (match) return match[1]!
+      const match = entry.match(/^(torch|torchvision|torchaudio)-(.+?)\.dist-info$/i)
+      if (match) {
+        const [, pkg, version] = match
+        tuple[pkg!.toLowerCase() as keyof InstalledTorchTuple] = version!
+      }
     }
   } catch {}
-  return null
+  return tuple
 }
 
 export function getMasterPythonPath(installPath: string): string {

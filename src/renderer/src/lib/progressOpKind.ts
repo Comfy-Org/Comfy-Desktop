@@ -13,6 +13,7 @@ export function progressOpKindForActionId(actionId: string): ProgressOpKind {
       return 'snapshot'
     case 'release-update':
     case 'copy-update':
+    case 'copy-pytorch':
     case 'update':
       return 'update'
     default:
