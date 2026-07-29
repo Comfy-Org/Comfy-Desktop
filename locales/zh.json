@@ -47,6 +47,7 @@
     "menuMigrate": "迁移到独立版",
     "menuRestoreSnapshot": "恢复快照",
     "menuRevealInFolder": "打开文件夹",
+    "menuDeployDistribution": "发布为分发版本",
     "menuDelete": "卸载",
     "stoppedActionGatedReason": "请先停止正在运行的实例。",
     "menuDismissError": "忽略错误",
@@ -1174,6 +1175,18 @@
         "buildFailed": "此分发版本尚无成功的构建。",
         "noArtifactForMachine": "最新构建没有适用于此操作系统和 GPU 的制品。"
       }
+    },
+    "deploy": {
+      "confirmBody": "发布在 Comfy Builder 中完成，它会在浏览器中打开。请使用此菜单中“分享”操作导出的快照来创建新的分发版本。该导入并不完整，请在 Builder 中继续调整，而不是重新导入。",
+      "carriedLabel": "快照会带过去的内容",
+      "carriedNodes": "自定义节点及其版本",
+      "carriedPythonPins": "Python 包版本锁定",
+      "separateLabel": "需要在 Builder 中单独设置",
+      "separateModels": "模型",
+      "separateWorkflows": "工作流",
+      "separateArgs": "启动参数",
+      "separateFiles": "你的输入和输出文件",
+      "openCta": "打开 Comfy Builder"
     }
   },
   "errors": {

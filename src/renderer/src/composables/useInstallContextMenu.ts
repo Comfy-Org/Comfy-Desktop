@@ -7,6 +7,8 @@ import { useStopAction } from './useStopAction'
 import { revealInFolderLabel } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import { shareLatestSnapshot } from '../lib/snapshots'
+import { isDistributionInstall } from '../devplatform/distributionState'
+import { buildDeployDistributionUrl } from '../devplatform/builderWeb'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
@@ -26,6 +28,7 @@ export type InstallMenuActionId =
   | 'stop'
   | 'reveal-in-folder'
   | 'share'
+  | 'deploy-distribution'
   | 'copy-install'
   | 'untrack'
   | 'delete'
@@ -128,6 +131,15 @@ export function useInstallContextMenu(opts: {
     // gate on installed + local.
     if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
       items.push({ id: 'share', label: t('actions.share', 'Share') })
+    }
+
+    // Deploy as Distribution — hands off to Builder on the web, so it joins
+    // Share's group and stays enabled while the install runs. Hidden for
+    // distribution-backed installs: Builder already holds their contents
+    // faithfully, and re-publishing would round-trip them through a lossy
+    // snapshot import.
+    if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isDistributionInstall(inst)) {
+      items.push({ id: 'deploy-distribution', label: t('chooser.menuDeployDistribution') })
     }
 
     // Copy Installation — standalone source only. REQUIRES_STOPPED.
@@ -253,6 +265,41 @@ export function useInstallContextMenu(opts: {
                 : result.message ?? t('snapshots.shareFailed', 'Could not share the snapshot.'),
           })
         }
+      } catch (err) {
+        await modal.alert({ title: label, message: (err as Error)?.message || String(err) })
+      }
+    } else if (id === 'deploy-distribution') {
+      // Desktop hands off; Builder owns the publish. Spell out what a
+      // snapshot import carries before the browser takes focus, so the
+      // action can't imply a faithful clone. Cancel is a silent no-op.
+      const label = t('chooser.menuDeployDistribution')
+      const confirmed = await modal.confirm({
+        title: label,
+        message: t('devPlatform.deploy.confirmBody'),
+        messageDetails: [
+          {
+            label: t('devPlatform.deploy.carriedLabel'),
+            items: [
+              t('devPlatform.deploy.carriedNodes'),
+              t('devPlatform.deploy.carriedPythonPins'),
+            ],
+          },
+          {
+            label: t('devPlatform.deploy.separateLabel'),
+            items: [
+              t('devPlatform.deploy.separateModels'),
+              t('devPlatform.deploy.separateWorkflows'),
+              t('devPlatform.deploy.separateArgs'),
+              t('devPlatform.deploy.separateFiles'),
+            ],
+          },
+        ],
+        confirmLabel: t('devPlatform.deploy.openCta'),
+        confirmStyle: 'primary',
+      })
+      if (!confirmed) return
+      try {
+        await window.api.openExternal(buildDeployDistributionUrl())
       } catch (err) {
         await modal.alert({ title: label, message: (err as Error)?.message || String(err) })
       }

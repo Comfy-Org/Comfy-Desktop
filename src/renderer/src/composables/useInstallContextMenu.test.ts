@@ -33,6 +33,7 @@ const apiMock = {
   getSnapshots: vi.fn().mockResolvedValue({ snapshots: [] }),
   exportSnapshot: vi.fn().mockResolvedValue({ ok: true }),
   stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  openExternal: vi.fn().mockResolvedValue(undefined),
 }
 vi.stubGlobal('window', {
   ...window,
@@ -47,7 +48,23 @@ const messages = {
       menuMigrate: 'Migrate to Standalone',
       menuRestoreSnapshot: 'Restore Snapshot',
       menuRevealInFolder: 'Open Folder',
+      menuDeployDistribution: 'Deploy as Distribution',
       menuDelete: 'Uninstall',
+    },
+    devPlatform: {
+      deploy: {
+        confirmBody:
+          "Publishing happens in Comfy Builder, which opens in your browser. Seed the new distribution with a snapshot exported from this menu's Share action. That import is approximate, so finish tuning the distribution in Builder rather than importing again.",
+        carriedLabel: 'Carried over by a snapshot',
+        carriedNodes: 'Custom nodes and their versions',
+        carriedPythonPins: 'Python package pins',
+        separateLabel: 'Set up separately in Builder',
+        separateModels: 'Models',
+        separateWorkflows: 'Workflows',
+        separateArgs: 'Startup arguments',
+        separateFiles: 'Your input and output files',
+        openCta: 'Open Comfy Builder',
+      },
     },
     actions: {
       copyInstallation: 'Duplicate Instance',
@@ -486,6 +503,115 @@ describe('useInstallContextMenu — share (export latest snapshot)', () => {
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
     expect(modalMock.alert.mock.calls[0]![0].message).toBe('Disk full')
+  })
+})
+
+describe('useInstallContextMenu — deploy-distribution (hand off to Builder on the web)', () => {
+  beforeEach(() => {
+    apiMock.openExternal.mockReset()
+    apiMock.openExternal.mockResolvedValue(undefined)
+    modalMock.confirm.mockReset()
+    modalMock.alert.mockReset()
+  })
+
+  it('shows the item for an installed local install', () => {
+    const { menu } = mountHarness(makeInstall({ sourceCategory: 'local' }))
+    expect(findItem(menu.ctxMenuItems.value, 'deploy-distribution')).toBeTruthy()
+  })
+
+  it('hides the item for cloud installs (no local snapshot to seed from)', () => {
+    const { menu } = mountHarness(makeInstall({ sourceCategory: 'cloud' }))
+    expect(findItem(menu.ctxMenuItems.value, 'deploy-distribution')).toBeUndefined()
+  })
+
+  // A distribution-backed install reports `sourceCategory: 'local'`, so the
+  // local-like gate alone would let it through. Its contents already live in
+  // Builder faithfully; re-publishing would degrade them through the lossy
+  // snapshot import. Share stays — it exports rather than re-publishes.
+  it('hides the item for a distribution-backed install but keeps Share', () => {
+    const { menu } = mountHarness(
+      makeInstall({ sourceId: 'comfybuilder', distributionId: 'dist-1' } as Partial<Installation>),
+    )
+    expect(findItem(menu.ctxMenuItems.value, 'deploy-distribution')).toBeUndefined()
+    expect(findItem(menu.ctxMenuItems.value, 'share')).toBeTruthy()
+  })
+
+  it('hides the item for a record that is not installed yet', () => {
+    const { menu } = mountHarness(makeInstall({ status: 'installing' } as Partial<Installation>))
+    expect(findItem(menu.ctxMenuItems.value, 'deploy-distribution')).toBeUndefined()
+  })
+
+  // Not REQUIRES_STOPPED: it opens a browser and touches nothing on disk.
+  it('stays enabled while the install is running', () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, ({ session }) => {
+      session.runningInstances.set(inst.id, {
+        installationId: inst.id,
+        installationName: inst.name,
+      } as never)
+    })
+    const item = findItem(menu.ctxMenuItems.value, 'deploy-distribution')
+    expect(item).toBeTruthy()
+    expect(item?.disabled).toBeFalsy()
+  })
+
+  it('confirms with both detail groups before opening the browser', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    const inst = makeInstall()
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('deploy-distribution', inst)
+
+    expect(modalMock.confirm).toHaveBeenCalledTimes(1)
+    const args = modalMock.confirm.mock.calls[0]![0]
+    expect(args.title).toBe('Deploy as Distribution')
+    expect(args.confirmLabel).toBe('Open Comfy Builder')
+    expect(args.confirmStyle).toBe('primary')
+    expect(args.messageDetails).toHaveLength(2)
+    expect(args.messageDetails[0].label).toBe('Carried over by a snapshot')
+    expect(args.messageDetails[0].items).toEqual([
+      'Custom nodes and their versions',
+      'Python package pins',
+    ])
+    expect(args.messageDetails[1].label).toBe('Set up separately in Builder')
+    expect(args.messageDetails[1].items).toContain('Models')
+  })
+
+  it('on confirm true, opens the Builder web URL once', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    const inst = makeInstall()
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('deploy-distribution', inst)
+
+    expect(apiMock.openExternal).toHaveBeenCalledTimes(1)
+    const url = new URL(apiMock.openExternal.mock.calls[0]![0] as string)
+    expect(url.host).toBe('platform.comfy.org')
+    expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
+  it('on confirm cancel, opens nothing', async () => {
+    modalMock.confirm.mockResolvedValue(false)
+    const inst = makeInstall()
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('deploy-distribution', inst)
+
+    expect(apiMock.openExternal).not.toHaveBeenCalled()
+    expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
+  it('surfaces an openExternal failure via an alert', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    apiMock.openExternal.mockRejectedValueOnce(new Error('no browser'))
+    const inst = makeInstall()
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('deploy-distribution', inst)
+
+    expect(modalMock.alert).toHaveBeenCalledTimes(1)
+    expect(modalMock.alert.mock.calls[0]![0].title).toBe('Deploy as Distribution')
+    expect(modalMock.alert.mock.calls[0]![0].message).toBe('no browser')
   })
 })
 
