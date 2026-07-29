@@ -253,4 +253,9 @@ Issues and pull requests are welcome. Before opening a PR, please run `pnpm run 
 
 ## License
 
-Released under the [GNU Affero General Public License v3.0 or later](LICENSE). © Comfy Org.
+Comfy Desktop is dual-licensed:
+
+- **[GNU Affero General Public License v3.0 or later](LICENSE)** — free for use under the AGPL's terms (including the network-use source-disclosure obligation).
+- **Commercial license** — for use in proprietary products or hosted services without AGPL obligations. Contact **[licensing@comfy.org](mailto:licensing@comfy.org)**.
+
+© Comfy Org.

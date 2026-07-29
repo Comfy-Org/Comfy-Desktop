@@ -8,7 +8,7 @@
     "url": "https://www.comfy.org"
   },
   "repository": "github:Comfy-Org/Comfy-Desktop",
-  "license": "AGPL-3.0-or-later",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/Comfy-Org/Comfy-Desktop",
   "engines": {
     "node": ">=22",
