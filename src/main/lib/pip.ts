@@ -85,6 +85,7 @@ export async function installFilteredRequirementsDetailed(
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
+  extraArgs?: string[],
 ): Promise<UvPipResult> {
   const content = await fs.promises.readFile(reqPath, 'utf-8')
   const filtered = content.split('\n').filter((l) => !PYTORCH_RE.test(l.trim())).join('\n')
@@ -93,7 +94,7 @@ export async function installFilteredRequirementsDetailed(
 
   try {
     const indexArgs = getPipIndexArgs(mirrors?.pypiMirror, mirrors?.useChineseMirrors)
-    return await runUvPipDetailed(uvPath, ['pip', 'install', '-r', filteredPath, '--python', pythonPath, ...indexArgs], installPath, sendOutput, signal)
+    return await runUvPipDetailed(uvPath, ['pip', 'install', '-r', filteredPath, '--python', pythonPath, ...indexArgs, ...(extraArgs ?? [])], installPath, sendOutput, signal)
   } finally {
     try { await fs.promises.unlink(filteredPath) } catch {}
   }
@@ -109,8 +110,9 @@ export async function installFilteredRequirements(
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
+  extraArgs?: string[],
 ): Promise<number> {
-  const result = await installFilteredRequirementsDetailed(reqPath, uvPath, pythonPath, installPath, tempName, sendOutput, signal, mirrors)
+  const result = await installFilteredRequirementsDetailed(reqPath, uvPath, pythonPath, installPath, tempName, sendOutput, signal, mirrors, extraArgs)
   return result.code
 }
 

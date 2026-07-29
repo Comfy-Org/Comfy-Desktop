@@ -255,6 +255,19 @@ async function confirmRestore(): Promise<void> {
       }
       return
     }
+    // Kept-local PyTorch disclosure: the snapshot's recorded stack can't be
+    // applied on this machine, so the restore will keep the local stack.
+    // Surface that BEFORE running the restore; cancelling leaves only the
+    // staged token behind (it self-prunes), nothing was mutated.
+    if (result.torchStackNotice) {
+      const proceed = await modal.confirm({
+        title: t('snapshots.importTorchNoticeTitle', 'Snapshot uses a different PyTorch'),
+        message: result.torchStackNotice,
+        confirmLabel: t('standalone.snapshotRestore'),
+        confirmStyle: 'primary'
+      })
+      if (!proceed) return
+    }
     emitTelemetryAction('comfy.desktop.snapshot.flow', {
       action: 'import',
       snapshot_count_bucket: toCountBucket(snapshots.value.length),

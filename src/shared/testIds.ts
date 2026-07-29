@@ -36,6 +36,8 @@ export const TID = {
 
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
+  /** A group dropdown of a cascading channel picker (level 0 = outermost). */
+  channelGroupSelect: (level: number) => `channel-group-select-${level}`,
 
   /** A tab button in the picker settings tab bar. `key` matches `TabDef.key`. */
   settingsTab: (key: string) => `settings-tab-${key}`,

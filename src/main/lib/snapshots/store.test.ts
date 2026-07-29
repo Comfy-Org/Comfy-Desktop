@@ -23,6 +23,16 @@ vi.mock('../telemetry', () => ({
   emit: vi.fn()
 }))
 
+// Imports the R2 catalog (electron `net`, cacheDir) transitively — stub it
+// out so this unit test stays free of the Electron runtime.
+vi.mock('../../sources/standalone/torchStackCatalog', () => ({
+  classifyTorchStackForSnapshot: vi.fn(() => ({
+    kind: 'observed',
+    torchVersion: null,
+    observedAt: '2026-03-01T12:00:00.000Z'
+  }))
+}))
+
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
   return {
@@ -303,7 +313,7 @@ describe('captureSnapshotIfChanged telemetry', () => {
     // will produce (manifest read fails → ref:'unknown', commit comes from
     // mocked readGitHead, no nodes, no pip).
     const matching = {
-      version: 1,
+      version: 2,
       createdAt: '2026-01-01T00:00:00.000Z',
       trigger: 'boot' as const,
       label: null,
@@ -311,7 +321,10 @@ describe('captureSnapshotIfChanged telemetry', () => {
       customNodes: [],
       pipPackages: {},
       pythonVersion: undefined,
-      updateChannel: 'stable'
+      updateChannel: 'stable',
+      // Same stack identity as the mocked classifier but an older observedAt —
+      // dedupe must compare identity only, or every boot would re-snapshot.
+      torchStack: { kind: 'observed' as const, torchVersion: null, observedAt: '2026-01-01T00:00:00.000Z' }
     }
     const lastFilename = 'last.json'
     // loadSnapshot reads through `resolveSnapshotPath` which uses
@@ -404,7 +417,10 @@ describe('ensureCurrentSnapshotOnTop', () => {
   } as InstallationRecord
 
   // The live state `captureState` produces here: ref 'unknown' (manifest read
-  // fails), commit from mocked readGitHead, no nodes, no pip, channel 'stable'.
+  // fails), commit from mocked readGitHead, no nodes, no pip, channel 'stable',
+  // and the mocked observed torch stack (torchVersion null, tuple fields
+  // absent — torchStacksMatch distinguishes null from undefined and ignores
+  // only observedAt).
   const liveStateSnapshot = {
     version: 1,
     createdAt: '2025-01-01T00:00:00.000Z',
@@ -414,7 +430,12 @@ describe('ensureCurrentSnapshotOnTop', () => {
     customNodes: [],
     pipPackages: {},
     pythonVersion: undefined,
-    updateChannel: 'stable'
+    updateChannel: 'stable',
+    torchStack: {
+      kind: 'observed' as const,
+      torchVersion: null,
+      observedAt: '2025-01-01T00:00:00.000Z'
+    }
   }
 
   function seedTopSnapshot(memory: Map<string, string>, snapshot: object, filename: string): void {

@@ -29,29 +29,7 @@ import type {
 
 export { getVariantLabel } from './envPaths'
 
-// --- R2 release types ---
-
-interface R2Variant {
-  tag: string
-  comfyui_version: string
-  comfyui_commit: string
-  build: number
-  date: string
-  file: string
-  size: number
-  python_version: string
-  torch_version: string
-  torchvision_version?: string
-  torchaudio_version?: string
-}
-
-/** latest.json: vendor_id → newest release */
-type R2Latest = Record<string, R2Variant>
-
-/** {vendor}/releases.json: full history for one vendor */
-interface R2VendorReleases {
-  releases: R2Variant[]
-}
+import type { R2Variant, R2Latest, R2VendorReleases } from './r2Catalog'
 
 interface VariantData {
   variantId: string

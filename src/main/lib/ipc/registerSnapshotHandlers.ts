@@ -36,6 +36,41 @@ import type { LatestTagOverride, SnapshotExportEnvelope, FieldOption, Snapshot }
 import type { CopyEvent } from '../../../types/ipc'
 import * as telemetry from '../telemetry'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { resolveSnapshotManagedTarget } from '../../sources/standalone/torchStackCatalog'
+import { torchTupleMatches } from '../../sources/standalone/torchStackTypes'
+import { getInstalledTorchTuple } from '../../sources/standalone/envPaths'
+import type { InstallationRecord } from '../../installations'
+
+/**
+ * Kept-local disclosure for an import about to be restored: when the
+ * envelope's newest snapshot records a managed PyTorch stack this machine
+ * cannot apply (foreign vendor, unpublished, ABI-incompatible, or drifted),
+ * the compatible restore will keep the local stack. Surfacing that BEFORE
+ * the restore lets the user decide with full information instead of
+ * discovering the substitution afterwards. Applicability is decided by the
+ * same resolveSnapshotManagedTarget the restore itself uses. Errors and
+ * observed-stack (v1) records return null: the restore path discloses those
+ * cases itself, and a preview must never block the import.
+ */
+async function importTorchStackNotice(
+  inst: InstallationRecord,
+  newest: Snapshot
+): Promise<string | null> {
+  const snapTorch = newest.torchStack
+  if (snapTorch?.kind !== 'managed') return null
+  if (torchTupleMatches(snapTorch.ref.packages, getInstalledTorchTuple(inst))) return null
+  try {
+    const target = await resolveSnapshotManagedTarget(inst, snapTorch.ref)
+    if (target) return null
+  } catch {
+    // Could not check (offline catalog): the restore action re-checks and
+    // discloses; don't scare the user with a maybe-wrong warning here.
+    return null
+  }
+  return i18n.t('standalone.pytorchSnapshotStackWillKeepLocal', {
+    version: snapTorch.ref.packages.torch
+  })
+}
 
 async function _findReferenceRepo(): Promise<{
   comfyuiDir: string
@@ -135,7 +170,7 @@ export function registerSnapshotHandlers(): void {
         installationId: i.id,
         installationName: i.name,
         copiedAt: i.copiedAt as string,
-        copyReason: (i.copyReason as 'copy' | 'copy-update' | 'release-update') || 'copy',
+        copyReason: (i.copyReason as CopyEvent['copyReason']) || 'copy',
         exists: true,
         direction: 'out'
       }))
@@ -153,7 +188,7 @@ export function registerSnapshotHandlers(): void {
         installationId: copiedFrom,
         installationName: snapshottedName || source?.name || copiedFrom,
         copiedAt,
-        copyReason: (inst.copyReason as 'copy' | 'copy-update' | 'release-update') || 'copy',
+        copyReason: (inst.copyReason as CopyEvent['copyReason']) || 'copy',
         exists: Boolean(source),
         direction: 'in'
       })
@@ -340,8 +375,20 @@ export function registerSnapshotHandlers(): void {
       // live history. It only becomes history if/when the restore succeeds (see
       // the `snapshot-restore` action), so a failed restore can't leave a
       // never-applied snapshot at the top of the timeline (#1137).
-      const restoreToken = await stageSnapshotEnvelope(pending.envelope)
-      return { ok: true, imported: pending.envelope.snapshots.length, restoreToken }
+      //
+      // Only the newest snapshot is staged (#1251): it is the restore target,
+      // and committed history must only contain states THIS install has
+      // actually been in — the file's older snapshots never were.
+      const newest = pending.envelope.snapshots[0]!
+      const restoreToken = await stageSnapshotEnvelope(
+        {
+          ...pending.envelope,
+          snapshots: [newest]
+        },
+        installationId
+      )
+      const torchStackNotice = await importTorchStackNotice(inst, newest)
+      return { ok: true, imported: 1, restoreToken, torchStackNotice }
     } catch (err) {
       return { ok: false, message: (err as Error)?.message ?? 'Failed to import snapshots.' }
     }
@@ -520,12 +567,27 @@ export function registerSnapshotHandlers(): void {
       // The release dropdown only exposes the 'stable'/'latest' channels (whose
       // variants point at the newest bundle), so without this the install would
       // download the latest env — a different Python/torch baseline than the
-      // snapshot. Falls back to the newest bundle when the tag has been pruned.
-      const installVariant =
+      // snapshot.
+      //
+      // v2 snapshots with a managed torch stack make the stack's bundle tag
+      // authoritative: it is the artifact whose torch family matches the
+      // snapshot exactly (it can differ from comfyui.releaseTag after an
+      // in-place PyTorch change). If that bundle has been pruned from R2,
+      // fall back to this machine's matched variant (compatible mode): the
+      // restore discloses the torch substitution and skips committing the
+      // imported envelope, so history stays truthful. v1 snapshots (no torch
+      // identity) keep the legacy behavior: pin when possible, else newest
+      // bundle.
+      const managedTorch =
+        targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
+      const pinTag = managedTorch && managedTorch.source.kind === 'comfy-bundle'
+        ? managedTorch.source.bundleTag
+        : targetSnapshot.comfyui.releaseTag
+      const installVariant: FieldOption =
         buildPinnedVariant(
           selectedRelease,
           matched.data?.variantId as string,
-          targetSnapshot.comfyui.releaseTag,
+          pinTag,
           gpu?.id
         ) ?? matched
 

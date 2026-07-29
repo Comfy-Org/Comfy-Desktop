@@ -301,6 +301,17 @@ const detectedGpuLabel = ref<string | null>(null)
 const showGpuHint = computed(
   () => pickedChoice.value === 'local' && expressInstall.value && detectedGpuLabel.value !== null
 )
+/** Non-blocking hardware warning from `validateHardware()` (e.g. Linux AMD
+ *  /dev/kfd inaccessible). Shown for the Local pick regardless of Express:
+ *  the install works either way, but GPU acceleration will not until the
+ *  user acts. Plain-English text from main. */
+const hardwareWarning = ref('')
+const showHardwareWarning = computed(
+  () => pickedChoice.value === 'local' && hardwareWarning.value !== ''
+)
+/** Bumped on every open(); async detection results from a superseded open
+ *  are discarded so a replay cannot show stale GPU/warning state. */
+let openGeneration = 0
 /** Shared hardware tier from `get-system-info` (`deriveGpuTier`, the same
  *  classifier telemetry cohorts on). Stays `null` when the IPC fails, so
  *  the recommendation fails closed — the alternative is telling someone
@@ -793,6 +804,11 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // on the first frame even if main is slow to resolve (e.g. cold IPC, no
   // GPU on CI). Sensible defaults (`'en'`, `null`) are already in place;
   // the reactive updates surface the real values when they arrive.
+  // Generation-guarded so a slow response from an earlier open() cannot
+  // overwrite a replay's fresh (cleared) state.
+  const gen = ++openGeneration
+  detectedGpuLabel.value = null
+  hardwareWarning.value = ''
   void window.api
     .getLocale()
     .then((next) => {
@@ -812,6 +828,13 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     .finally(() => {
       hardwareChecked.value = true
     })
+  void window.api
+    .validateHardware()
+    .then((v) => {
+      if (gen !== openGeneration) return
+      hardwareWarning.value = v.warning ?? ''
+    })
+    .catch(() => {})
 }
 
 onMounted(() => {
@@ -1058,6 +1081,14 @@ defineExpose({ open, resetContinue })
                   >{{ $t('firstUse.expressGpuHintSuffix') }}
                 </template>
                 <template v-else>&nbsp;</template>
+              </span>
+              <span
+                v-if="showHardwareWarning"
+                class="start-express__hardware-warning"
+                role="alert"
+                data-testid="first-use-hardware-warning"
+              >
+                {{ hardwareWarning }}
               </span>
             </span>
           </label>
@@ -1460,6 +1491,11 @@ defineExpose({ open, resetContinue })
 .start-express__gpu-vendor {
   font-weight: 500;
   color: var(--neutral-100);
+}
+.start-express__hardware-warning {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warning);
 }
 /* Cloud pick: reserve the row's space (no layout shift on swap) but
  * fade + nudge the content out and disable pointer/keyboard access. */

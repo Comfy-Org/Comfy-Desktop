@@ -49,6 +49,7 @@ async function mountAt(opts: {
     setSetting: vi.fn().mockResolvedValue(undefined),
     getSetting: vi.fn().mockResolvedValue(true),
     getLocale: vi.fn().mockResolvedValue('en'),
+    validateHardware: vi.fn().mockResolvedValue({ supported: true }),
     getSystemInfo: vi
       .fn()
       .mockResolvedValue({ gpu_tier: opts.gpuTier ?? 'cpu_only', gpu_label: null }),

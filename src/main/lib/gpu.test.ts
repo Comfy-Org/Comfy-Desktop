@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   parseNvidiaDriverVersion,
+  sanitizeNvidiaDriverVersion,
   isVirtualGpu,
   selectPrimaryGpu,
   parseAmdSmiDriverVersion,
   parseRocmSmiDriverVersion,
   parseWmiDriverVersions,
+  checkLinuxAmdKfdAccess,
   type SystemGpuEntry
 } from './gpu'
 
@@ -31,6 +36,24 @@ describe('parseNvidiaDriverVersion', () => {
 
   it('handles Linux-style three-part versions', () => {
     expect(parseNvidiaDriverVersion('Driver Version: 535.183.01')).toBe('535.183.01')
+  })
+})
+
+describe('sanitizeNvidiaDriverVersion', () => {
+  it('accepts dotted numeric versions', () => {
+    expect(sanitizeNvidiaDriverVersion('580.88')).toBe('580.88')
+    expect(sanitizeNvidiaDriverVersion('535.183.01')).toBe('535.183.01')
+  })
+
+  it('rejects nvidia-smi output that is not a version', () => {
+    // The structured query path takes the first non-empty stdout line; a
+    // warning or header there must read as "not detected", never as a
+    // version for numeric comparison.
+    expect(sanitizeNvidiaDriverVersion('No devices were found')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion('WARNING: infoROM is corrupted')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion('.580')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion('')).toBeUndefined()
+    expect(sanitizeNvidiaDriverVersion(undefined)).toBeUndefined()
   })
 })
 
@@ -212,5 +235,52 @@ describe('parseWmiDriverVersions', () => {
   it('returns an empty map for malformed or empty output', () => {
     expect(parseWmiDriverVersions('not json').size).toBe(0)
     expect(parseWmiDriverVersions('').size).toBe(0)
+  })
+})
+
+describe('checkLinuxAmdKfdAccess', () => {
+  let tmpDir: string
+  const realPlatform = process.platform
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kfd-test-'))
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform })
+    // A read-only node from the access test blocks rmSync on Windows.
+    try {
+      fs.chmodSync(path.join(tmpDir, 'kfd'), 0o600)
+    } catch {
+      /* node may not exist */
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('returns null off Linux', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    expect(await checkLinuxAmdKfdAccess(path.join(tmpDir, 'missing'))).toBeNull()
+  })
+
+  it('warns about the amdgpu driver when the node is missing', async () => {
+    const warning = await checkLinuxAmdKfdAccess(path.join(tmpDir, 'kfd'))
+    expect(warning).toContain('does not exist')
+    expect(warning).toContain('amdgpu')
+  })
+
+  it('warns with render-group guidance when the node is not writable', async () => {
+    const node = path.join(tmpDir, 'kfd')
+    fs.writeFileSync(node, '')
+    fs.chmodSync(node, 0o400)
+    const warning = await checkLinuxAmdKfdAccess(node)
+    expect(warning).toContain('render')
+    expect(warning).toContain('usermod')
+  })
+
+  it('returns null when the node is readable and writable', async () => {
+    const node = path.join(tmpDir, 'kfd')
+    fs.writeFileSync(node, '')
+    expect(await checkLinuxAmdKfdAccess(node)).toBeNull()
   })
 })

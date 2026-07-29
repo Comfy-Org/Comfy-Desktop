@@ -4,6 +4,7 @@
 import type { InstallationRecord } from '../installations'
 import * as releaseCache from './release-cache'
 import { fetchLatestRelease } from './comfyui-releases'
+import { refreshTorchStackCatalogs } from '../sources/standalone/torchStackCatalog'
 
 /** Skip the startup check if any cache entry was refreshed within this window. */
 const STARTUP_RECHECK_MS = 60 * 60 * 1000
@@ -67,6 +68,12 @@ export async function runStartupReleaseChecks(
     )
   }
   if (tasks.length === 0) return
+
+  // Refresh the switchable-PyTorch-stack catalog alongside the release fetch
+  // so the Update tab's PyTorch picker stays current without a manual
+  // "Check for Update". Best-effort: a catalog failure never blocks the
+  // release check.
+  tasks.push(refreshTorchStackCatalogs(installations).catch(() => null))
 
   await Promise.allSettled(tasks)
   options.onRefreshed?.()

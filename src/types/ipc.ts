@@ -112,11 +112,25 @@ export interface DetailItem {
   actions?: ActionDef[]
 }
 
+/** One level of a cascading picker path (id is stable, label is display). */
+export interface DetailOptionGroup {
+  id: string
+  label: string
+  /** Shown under the label in the group dropdown (e.g. what a CUDA series
+   *  is for, or a too-old-driver warning). */
+  description?: string
+}
+
 export interface DetailFieldOption {
   value: string
   label: string
   description?: string
   recommended?: boolean
+  /** Cascading picker path for `channel-cards`: options sharing a path
+   *  prefix sit behind one dropdown per level (e.g. PyTorch backend series
+   *  -> version). The field builder emits it only when it distinguishes
+   *  (two or more groups); absent = today's flat single dropdown. */
+  groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
 }
 
@@ -150,6 +164,9 @@ export interface DetailField {
     | 'model-dirs'
     | 'hidden'
   options?: DetailFieldOption[]
+  /** Display names for each `groupPath` level of a cascading `channel-cards`
+   *  picker (e.g. ["Backend"]); indexes match `groupPath` depth. */
+  groupLabels?: string[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
    *  (e.g. switching update channel triggers `check-update`). */
@@ -565,6 +582,11 @@ export interface GPUInfo {
 export interface HardwareValidation {
   supported: boolean
   error?: string
+  /** Non-blocking, user-actionable problem on otherwise supported hardware
+   *  (e.g. a Linux AMD GPU whose /dev/kfd compute node the user cannot
+   *  access). Install may proceed, but GPU acceleration will not work until
+   *  the user resolves it. */
+  warning?: string
 }
 
 export interface NvidiaDriverCheck {
@@ -813,7 +835,7 @@ export interface CopyEvent {
   installationId: string
   installationName: string
   copiedAt: string
-  copyReason: 'copy' | 'copy-update' | 'release-update'
+  copyReason: 'copy' | 'copy-update' | 'copy-pytorch' | 'release-update'
   exists: boolean
   /** `out` = another install was copied FROM the install whose rail this is
    *  shown on (installationName is the destination's name).
@@ -1246,9 +1268,15 @@ export interface ElectronApi {
   importSnapshotsDiff(
     installationId: string
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
-  importSnapshotsConfirm(
-    installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
+  importSnapshotsConfirm(installationId: string): Promise<{
+    ok: boolean
+    imported?: number
+    restoreToken?: string
+    /** Kept-local disclosure: set when the snapshot's managed PyTorch stack
+     *  cannot be applied here, so the restore will keep the local stack. */
+    torchStackNotice?: string | null
+    message?: string
+  }>
   previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
@@ -1563,7 +1591,7 @@ export interface ElectronApi {
 
 /** Action IDs that auto-relaunch ComfyUI after completing (stop→op→launch).
  *  Shared between main and renderer so both sides agree on the relaunch contract. */
-export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore'])
+export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
 /** Action IDs that require the installation to be stopped before running.
  *  Shared between main and renderer processes. */
@@ -1571,11 +1599,13 @@ export const REQUIRES_STOPPED = new Set([
   'delete',
   'copy',
   'copy-update',
+  'copy-pytorch',
   'release-update',
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
-  'migrate-from'
+  'migrate-from',
+  'change-pytorch'
 ])
 
 /** Title-popup kind tags — the discriminant for popup config/opts across main,

@@ -121,7 +121,7 @@ export async function performLocalMigration(
   sourceInstallation: InstallationRecord,
   actionData: Record<string, unknown> | undefined,
   tools: MigrationTools,
-): Promise<{ entry: InstallationRecord; destPath: string }> {
+): Promise<{ entry: InstallationRecord; destPath: string; restoreError?: string }> {
   const { sendProgress } = tools
 
   const sourceId = sourceInstallation.sourceId as string

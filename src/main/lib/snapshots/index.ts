@@ -1,4 +1,5 @@
 export type {
+  RestoreMode,
   Snapshot,
   SnapshotEntry,
   SnapshotExportEnvelope,
@@ -40,7 +41,10 @@ export {
   buildPostRestoreState,
   frozenSnapshotInstallOverrides,
   restorePipPackages,
-  restoreCustomNodes
+  restoreCustomNodes,
+  repairNodeRequirements,
+  protectedPackageDrift
 } from './restore'
+export type { RequirementsRepairResult, ProtectedDriftEntry } from './restore'
 
 export { getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious } from './tabData'
