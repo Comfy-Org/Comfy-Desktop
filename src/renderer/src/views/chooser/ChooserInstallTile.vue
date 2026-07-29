@@ -152,6 +152,12 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
     <div class="chooser-tile-actions">
+      <span
+        v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
+        class="chooser-cloud-runs-pill"
+        data-testid="chooser-cloud-runs-pill"
+        >{{ $t('firstUse.cloudFreeRunsPill') }}</span
+      >
       <button
         v-if="hasError"
         type="button"
@@ -201,15 +207,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Stacked tiers (name → meta → recency); each truncates on its own row. -->
     <div class="chooser-tile-body">
-      <div class="chooser-tile-name-row">
-        <TruncatedText class="chooser-tile-name" :text="inst.name" />
-        <span
-          v-if="props.showFreeRunsPill"
-          class="chooser-cloud-runs-pill"
-          data-testid="chooser-cloud-runs-pill"
-          >{{ $t('firstUse.cloudFreeRunsPill') }}</span
-        >
-      </div>
+      <TruncatedText class="chooser-tile-name" :text="inst.name" />
       <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
         <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
         <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
@@ -246,13 +244,6 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
 <style scoped>
 @import './chooser-tiles.css';
-
-.chooser-tile-name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
 
 /* Same treatment as FirstUseTakeover's start-cloud-runs-pill. */
 .chooser-cloud-runs-pill {
