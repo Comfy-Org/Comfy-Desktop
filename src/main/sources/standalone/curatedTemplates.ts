@@ -109,9 +109,10 @@ export function isPersistableTemplateId(value: unknown): value is string {
 }
 
 /**
- * 4 templates per modality, sorted by size (lightest first):
+ * 4 templates per modality:
  * - Slot 1 (`recommended`): default open-source pick
- * - Slot 4: API-node demo
+ * - Slot 2: API-node demo
+ * - Slots 3-4: remaining open-source picks, lightest first
  * To update, change the id and sync the template's
  * title/description/size/mediaSubtype into `snapshot`.
  */
@@ -126,6 +127,18 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.',
       sizeBytes: 20830591386,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: 'api_bytedance_seedream_5_0_pro_image_edit',
+    modality: 'image',
+    apiNode: true,
+    snapshot: {
+      title: 'Seedream 5.0 Pro: Image Edit',
+      description:
+        'Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 2 output images through an optional Painter node and preview. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.',
+      sizeBytes: 0,
       mediaSubtype: 'webp',
     },
   },
@@ -150,18 +163,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       mediaSubtype: 'webp',
     },
   },
-  {
-    id: 'api_bytedance_seedream_5_0_pro_image_edit',
-    modality: 'image',
-    apiNode: true,
-    snapshot: {
-      title: 'Seedream 5.0 Pro: Image Edit',
-      description:
-        'Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 2 output images through an optional Painter node and preview. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.',
-      sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
-  },
 
   // --- Video ---
   {
@@ -172,6 +173,18 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'Wan 2.1 Text to Video',
       description: 'Generate videos from text prompts using Wan 2.1.',
       sizeBytes: 9824737690,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: 'api_seedance2_0_r2v',
+    modality: 'video',
+    apiNode: true,
+    snapshot: {
+      title: 'Seedance 2.0: Reference to Video',
+      description:
+        'Generate cinematic videos from reference images and text prompts. Preserve subject identity and composition while adding expressive motion with synchronized audio. Control camera movement and lighting through detailed prompts.',
+      sizeBytes: 0,
       mediaSubtype: 'webp',
     },
   },
@@ -196,18 +209,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       mediaSubtype: 'webp',
     },
   },
-  {
-    id: 'api_seedance2_0_r2v',
-    modality: 'video',
-    apiNode: true,
-    snapshot: {
-      title: 'Seedance 2.0: Reference to Video',
-      description:
-        'Generate cinematic videos from reference images and text prompts. Preserve subject identity and composition while adding expressive motion with synchronized audio. Control camera movement and lighting through detailed prompts.',
-      sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
-  },
 
   // --- 3D ---
   {
@@ -219,6 +220,18 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.',
       sizeBytes: 3972844749,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: 'api_tripo3_1_image_to_model',
+    modality: '3d',
+    apiNode: true,
+    snapshot: {
+      title: 'Tripo H3.1: Image to Model',
+      description:
+        'Upload a reference image of your object. Generate a high-detail 3D model with dense geometry and PBR-ready materials.',
+      sizeBytes: 0,
       mediaSubtype: 'webp',
     },
   },
@@ -243,18 +256,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       mediaSubtype: 'webp',
     },
   },
-  {
-    id: 'api_tripo3_1_image_to_model',
-    modality: '3d',
-    apiNode: true,
-    snapshot: {
-      title: 'Tripo H3.1: Image to Model',
-      description:
-        'Upload a reference image of your object. Generate a high-detail 3D model with dense geometry and PBR-ready materials.',
-      sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
-  },
 
   // --- Audio ---
   {
@@ -266,6 +267,18 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.',
       sizeBytes: 15676630630,
+      mediaSubtype: 'webp',
+    },
+  },
+  {
+    id: 'api_bytedance_seed_audio1_0_t2a',
+    modality: 'audio',
+    apiNode: true,
+    snapshot: {
+      title: 'Seed Audio 1.0: Text to Audio',
+      description:
+        'Input a text prompt to generate speech, dialogue, background music, and sound effects in one audio file. Describe voices, emotion, and scene details to create multi-speaker audio up to 2 minutes.',
+      sizeBytes: 0,
       mediaSubtype: 'webp',
     },
   },
@@ -288,18 +301,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
         'Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.',
       sizeBytes: 10737418240,
       mediaSubtype: 'mp3',
-    },
-  },
-  {
-    id: 'api_bytedance_seed_audio1_0_t2a',
-    modality: 'audio',
-    apiNode: true,
-    snapshot: {
-      title: 'Seed Audio 1.0: Text to Audio',
-      description:
-        'Input a text prompt to generate speech, dialogue, background music, and sound effects in one audio file. Describe voices, emotion, and scene details to create multi-speaker audio up to 2 minutes.',
-      sizeBytes: 0,
-      mediaSubtype: 'webp',
     },
   },
 ] as const
