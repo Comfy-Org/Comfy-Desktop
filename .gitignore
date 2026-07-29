@@ -8,6 +8,8 @@ out/
 result
 test-results/
 playwright-report/
+# Screenshot set written by `pnpm run test:e2e:capture` (regenerate, don't commit)
+captures/
 resources/vc_redist.x64.exe
 resources/vc_redist.x64.exe.tmp
 resources/vc_redist_version.nsh

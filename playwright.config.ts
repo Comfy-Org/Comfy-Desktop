@@ -17,5 +17,7 @@ export default defineConfig({
     { name: 'windows', grep: /@windows/ },
     { name: 'linux', grep: /@linux/ },
     { name: 'lifecycle', grep: /@lifecycle/, timeout: 180_000 },
+    // Opt-in screenshot harness; deliberately absent from the CI matrix.
+    { name: 'capture', grep: /@capture/, timeout: 120_000 },
   ],
 })
