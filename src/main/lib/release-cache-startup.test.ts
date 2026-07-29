@@ -54,10 +54,8 @@ describe('runStartupReleaseChecks', () => {
   })
 
   it('still refreshes the PyTorch catalog when every channel cache is fresh (first boot after upgrade)', async () => {
-    // The persisted release cache survives Desktop upgrades, so on the first
-    // boot of a new version every channel can be fresh while the torch
-    // catalog was never fetched at all. The catalog refresh must not depend
-    // on release fetch tasks being scheduled.
+    // Catalog freshness is independent of the release cache: the refresh
+    // must run even when no release fetch tasks are scheduled.
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
     const onRefreshed = vi.fn()
     await runStartupReleaseChecks([install()], { onRefreshed })

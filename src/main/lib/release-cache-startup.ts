@@ -15,10 +15,8 @@ const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 const COMFYUI_SOURCE_IDS = new Set(['standalone', 'portable'])
 
 /** Last time these checks refreshed the torch stack catalog. In-memory on
- *  purpose: the ComfyUI release cache persists across app restarts, so on the
- *  first boot of a new Desktop version every channel can already be fresh -
- *  the torch catalog must still refresh once per app start or the PyTorch
- *  picker looks empty/absent until a manual "Check for Update". */
+ *  purpose: catalog freshness is independent of the persisted release cache,
+ *  and every app start must refresh the catalog at least once. */
 let _torchCatalogCheckedAt = 0
 
 /** Test-only: reset the in-memory torch-catalog floor to cold start. */
@@ -82,10 +80,9 @@ export async function runStartupReleaseChecks(
   // Refresh the switchable-PyTorch-stack catalog alongside the release fetch
   // so the Update tab's PyTorch picker stays current without a manual
   // "Check for Update". Best-effort: a catalog failure never blocks the
-  // release check. The catalog has its own floor, independent of the
-  // release-cache floor above: catalog freshness is unrelated to the
-  // persisted release cache, which can be fresh on a boot where the catalog
-  // was never fetched at all (e.g. first run after a Desktop upgrade).
+  // release check. The catalog has its own floor: its freshness is
+  // independent of the persisted release cache, so the refresh must not
+  // depend on release fetch tasks being scheduled.
   if (options.bypassFloor || now() - _torchCatalogCheckedAt >= STARTUP_RECHECK_MS) {
     _torchCatalogCheckedAt = now()
     tasks.push(refreshTorchStackCatalogs(installations).catch(() => null))
