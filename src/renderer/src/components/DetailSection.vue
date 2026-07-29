@@ -170,7 +170,12 @@ v-for="a in item.actions" :key="a.id"
                 <span class="channel-preview-label">{{ $t('channelCards.lastChecked') }}</span>
                 <span class="channel-preview-value">{{ (getSelectedOption(f)!.data as Record<string, unknown>).lastChecked }}</span>
               </div>
-              <div class="channel-preview-row">
+              <!-- "Up to date" is suppressed for cards that opt out (PyTorch:
+                   other stacks stay selectable, so it would be misleading). -->
+              <div
+                v-if="(getSelectedOption(f)!.data as Record<string, unknown>).updateAvailable || !(getSelectedOption(f)!.data as Record<string, unknown>).hideUpToDateBadge"
+                class="channel-preview-row"
+              >
                 <span class="channel-preview-label">{{ $t('channelCards.status') }}</span>
                 <span class="channel-preview-value">{{ (getSelectedOption(f)!.data as Record<string, unknown>).updateAvailable ? $t('channelCards.updateAvailable') : $t('channelCards.upToDate') }}</span>
               </div>

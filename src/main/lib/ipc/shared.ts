@@ -167,7 +167,7 @@ export interface RegisterCallbacks {
   onThemeChanged?: ThemeChangedCallback
 }
 
-export type CopyReason = 'copy' | 'copy-update'
+export type CopyReason = 'copy' | 'copy-update' | 'copy-pytorch'
 
 export const sourceMap: Record<string, SourcePlugin> = Object.fromEntries(sources.map((s) => [s.id, s]))
 
@@ -240,6 +240,20 @@ export function _hasActiveLaunch(installationId: string): boolean {
  * picker popup repaints its "Current" pill / running-dot live during the launching window.
  */
 export const sessionLifecycleEvents = new EventEmitter()
+
+/** A snapshot restore failed after the install itself succeeded (#1255): the
+ *  install is bootable, so surface the failure to the caller and record it in
+ *  the app log (#1250) instead of condemning the install. */
+export function snapshotRestoreFailureResult(installationId: string, restoreError: string): { ok: false; message: string } {
+  const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', { message: restoreError })
+  // Best-effort: a diagnostic write must never mask the failure it records.
+  try {
+    appendLog(installationId, `\n${message}\n`)
+  } catch (err) {
+    console.warn('Failed to append snapshot restore failure to app log:', err)
+  }
+  return { ok: false, message }
+}
 
 export function _getLaunchingInstallationIds(): string[] {
   return Array.from(_launchingInstances.keys())

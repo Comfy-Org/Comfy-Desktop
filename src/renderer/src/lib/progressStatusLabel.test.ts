@@ -25,6 +25,13 @@ describe('humanizeOpStatus', () => {
     expect(humanizeOpStatus('Custom phase X', t)).toBe('Custom phase X')
   })
 
+  it('resolves launch.activity.* sub-status keys through i18n', () => {
+    const translating = ((key: string) =>
+      key === 'launch.activity.database' ? 'Preparing database' : key
+    ) as Parameters<typeof humanizeOpStatus>[1]
+    expect(humanizeOpStatus('launch.activity.database', translating)).toBe('Preparing database')
+  })
+
   it.each([['', ''], [null, 'null'], [undefined, 'undefined']])(
     'falls back to Working… for empty/null/undefined (%s)',
     (raw) => {
@@ -40,6 +47,7 @@ describe('operationInflightLabel', () => {
     [{ actionId: 'release-update' },                                              'Updating…'],
     [{ actionId: 'copy' },                                                        'Copying…'],
     [{ actionId: 'copy-update' },                                                 'Copying & updating…'],
+    [{ actionId: 'copy-pytorch' },                                                'Copying & changing PyTorch…'],
     [{ actionId: 'delete' },                                                      'Deleting…'],
     [{ actionId: 'snapshot-restore' },                                            'Restoring snapshot…'],
     [{ actionId: 'snapshot-save' },                                               'Saving snapshot…'],
@@ -65,6 +73,7 @@ describe('operationSuccessLabel', () => {
     [{ actionId: 'release-update' },                                              'Update complete'],
     [{ actionId: 'copy' },                                                        'Copy complete'],
     [{ actionId: 'copy-update' },                                                 'Copy complete'],
+    [{ actionId: 'copy-pytorch' },                                                'Copy complete'],
     [{ actionId: 'delete' },                                                      'Deleted'],
     [{ actionId: 'snapshot-restore' },                                            'Snapshot restored'],
     [{ actionId: 'snapshot-save' },                                               'Snapshot saved'],

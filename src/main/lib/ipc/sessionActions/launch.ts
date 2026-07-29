@@ -60,6 +60,7 @@ import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
+import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -381,34 +382,88 @@ async function runLaunch(
     } catch (err) {
       console.warn('Env layout migration failed:', err)
     }
+    // Recover a PyTorch stack change that died mid-transaction: restore the
+    // backed-up venv so we never launch a half-swapped env. A failed rollback
+    // fails the launch closed — reconciliation/repair/ComfyUI must not run
+    // against a venv in an unknown state (the backup remains for retry).
+    try {
+      const { recoverTorchStackTransaction } = await import(
+        '../../../sources/standalone/torchStackTransaction'
+      )
+      await recoverTorchStackTransaction(inst)
+    } catch (err) {
+      console.warn('PyTorch stack transaction recovery failed:', err)
+      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+    }
+    // Recover a torch-family swap (startup repair) that died mid-rename: an
+    // uncommitted swap's backups hold the only good copies of the live venv's
+    // torch packages, so a failed rollback fails the launch closed too - the
+    // marker stays behind for the next attempt.
+    try {
+      const { recoverTorchFamilyBackups } = await import('../../../sources/standalone/torchFamilyFs')
+      const { findSitePackages } = await import('../../../sources/standalone/envPaths')
+      const { getActiveVenvDir } = await import('../../pythonEnv')
+      const liveSite = findSitePackages(getActiveVenvDir(inst))
+      if (liveSite) await recoverTorchFamilyBackups(liveSite)
+    } catch (err) {
+      console.warn('PyTorch family swap recovery failed:', err)
+      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+    }
+    // Reconcile the persisted stack state with what's actually in the venv
+    // (e.g. a manual terminal install). Never mutates the venv; must run
+    // before repair so repair sees up-to-date verified/observed state. If it
+    // fails, `lastVerifiedTorchStack` may be stale (e.g. persisted by a torch
+    // change that was rolled back) — skip repair for this launch rather than
+    // let it trust that ref as an acquisition source. Repair is optional;
+    // launching the un-repaired venv is safer than repairing on bad metadata.
+    let stackStateTrusted = true
+    // Captured BEFORE reconciliation: on a damaged venv reconciliation clears
+    // the verified ref (the installed tuple no longer matches it), but repair
+    // needs that ref to restore the stack the user actually chose instead of
+    // reverting to the install-time bundle.
+    let preReconcileVerified: PersistedTorchStack | null = null
+    try {
+      const { reconcileTorchStack, getLastVerifiedTorchStack } = await import(
+        '../../../sources/standalone/torchStackCatalog'
+      )
+      preReconcileVerified = getLastVerifiedTorchStack(inst)
+      await reconcileTorchStack(inst, updateFn)
+      inst = (await installations.get(installationId)) || inst
+    } catch (err) {
+      console.warn('PyTorch stack reconciliation failed:', err)
+      stackStateTrusted = false
+    }
     // One-time repair for installs damaged by the brief `--upgrade` window that
     // replaced bundled GPU torch with a CPU build. Non-fatal: CPU torch still
     // runs, so a failed repair must never block launch (it retries next time).
     // Runs under the launch's own abort controller (already in
-    // `_operationAborts`), so cancelling the launch cancels the repair too.
-    try {
-      const { maybeRepairTorch, getTorchVendorMismatch } = await import(
-        '../../../sources/standalone/torchRepair'
-      )
-      // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
-      // live `torchRepair` step rather than flashing a flat status. Detection is
-      // a cheap sync check; arming only when a repair will actually run.
-      if (getTorchVendorMismatch(inst)) {
-        preLaunchPhases.push('torchRepair')
-        await armLaunchTracker()
+    // `_operationAborts`, held for the whole handler), so cancelling the
+    // launch cancels the repair too and no second operation can overlap it.
+    if (stackStateTrusted) {
+      try {
+        const { maybeRepairTorch, getTorchVendorMismatch } = await import(
+          '../../../sources/standalone/torchRepair'
+        )
+        // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
+        // live `torchRepair` step rather than flashing a flat status. Detection is
+        // a cheap sync check; arming only when a repair will actually run.
+        if (getTorchVendorMismatch(inst)) {
+          preLaunchPhases.push('torchRepair')
+          await armLaunchTracker()
+        }
+        const repaired = await maybeRepairTorch(inst, {
+          sendProgress,
+          sendOutput: makeSendOutput(event.sender, installationId),
+          update: updateFn,
+          signal: abort.signal,
+        }, { preReconcileVerified })
+        if (repaired) inst = (await installations.get(installationId)) || inst
+      } catch (err) {
+        if (abort.signal.aborted) {
+          return { ok: false, cancelled: true }
+        }
+        console.warn('PyTorch vendor repair failed:', err)
       }
-      const repaired = await maybeRepairTorch(inst, {
-        sendProgress,
-        sendOutput: makeSendOutput(event.sender, installationId),
-        update: updateFn,
-        signal: abort.signal,
-      })
-      if (repaired) inst = (await installations.get(installationId)) || inst
-    } catch (err) {
-      if (abort.signal.aborted) {
-        return { ok: false, cancelled: true }
-      }
-      console.warn('PyTorch vendor repair failed:', err)
     }
     await writeComfyEnvironment(path.join(inst.installPath, 'ComfyUI'))
   }

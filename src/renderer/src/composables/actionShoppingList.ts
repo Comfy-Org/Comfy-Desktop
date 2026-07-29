@@ -206,12 +206,12 @@ export async function runDiskSpaceCheck(
   installationSizeBytes?: number | null,
   dialogs?: Dialogs,
 ): Promise<boolean> {
-  const diskCheckActions = new Set(['copy', 'copy-update', 'release-update'])
+  const diskCheckActions = new Set(['copy', 'copy-update', 'copy-pytorch', 'release-update'])
   if (!diskCheckActions.has(action.id) || !installation.installPath) return true
   try {
     const space: DiskSpaceInfo = await window.api.getDiskSpace(installation.installPath)
     let estimatedRequired = 0
-    if (action.id === 'copy' || action.id === 'copy-update') {
+    if (action.id === 'copy' || action.id === 'copy-update' || action.id === 'copy-pytorch') {
       if (installationSizeBytes != null) {
         estimatedRequired = installationSizeBytes
       } else {

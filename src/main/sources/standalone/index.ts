@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
 import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
+import { areModelsPresent } from '../../lib/modelDownloadPaths'
 import {
   PLATFORM_PREFIX, DEFAULT_LAUNCH_ARGS,
   getVariantLabel, stripPlatform, getActivePythonPath,
@@ -14,6 +15,7 @@ import {
 import { install, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog } from './templateCatalog'
+import { resolveTemplateModels } from './templateModels'
 import * as installations from '../../installations'
 
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
@@ -27,29 +29,7 @@ import type {
 
 export { getVariantLabel } from './envPaths'
 
-// --- R2 release types ---
-
-interface R2Variant {
-  tag: string
-  comfyui_version: string
-  comfyui_commit: string
-  build: number
-  date: string
-  file: string
-  size: number
-  python_version: string
-  torch_version: string
-  torchvision_version?: string
-  torchaudio_version?: string
-}
-
-/** latest.json: vendor_id → newest release */
-type R2Latest = Record<string, R2Variant>
-
-/** {vendor}/releases.json: full history for one vendor */
-interface R2VendorReleases {
-  releases: R2Variant[]
-}
+import type { R2Variant, R2Latest, R2VendorReleases } from './r2Catalog'
 
 interface VariantData {
   variantId: string
@@ -527,11 +507,6 @@ export const standalone: SourcePlugin = {
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
       const installation = installId ? await installations.get(installId) : null
-      // Dynamic to break a module-init cycle back through ipc/shared → sources.
-      const [{ resolveTemplateModels }, { areModelsPresent }] = await Promise.all([
-        import('./templateModels'),
-        import('../../lib/comfyDownloadManager'),
-      ])
       // `budgeted` stops the timed-out pass writing after we return, so a slow
       // `modelsPresent: false` reads as "unbadged", never "confirmed absent".
       let budgeted = false

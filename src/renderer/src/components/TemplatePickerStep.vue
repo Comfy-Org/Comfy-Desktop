@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check } from 'lucide-vue-next'
+import { Check, HardDriveDownload } from 'lucide-vue-next'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
 import { templateDiskRequiredBytes, isTemplateDiskBlocked } from '../lib/installHelpers'
 import { useTemplateTabs } from '../composables/useTemplateTabs'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import TruncatedText from './TruncatedText.vue'
+import Tooltip from './ui/Tooltip.vue'
 
 /**
  * Starter-template picker — modality tabs (Image / Video / 3D / Audio) over a
@@ -61,6 +62,12 @@ function sizeLabelOf(option: FieldOption): string {
 }
 function modelsPresentOf(option: FieldOption): boolean {
   return option.data?.modelsPresent === true
+}
+/** Tooltip/AT text: "Downloaded · ~17 GB", or just the word when size is unknown. */
+function presentLabelOf(option: FieldOption): string {
+  const downloaded = t('standalone.templateModelsDownloaded')
+  const size = sizeLabelOf(option)
+  return size ? `${downloaded} · ${size}` : downloaded
 }
 /** Short model name (falls back to the full label). */
 function nameOf(option: FieldOption): string {
@@ -179,15 +186,10 @@ defineExpose({ shownDiskError })
             @error="thumbFailed[opt.value] = true"
           />
 
-          <span v-if="modelsPresentOf(opt)" class="tps__downloaded">
-            <Check :size="12" :stroke-width="3" />
-            {{ t('standalone.templateModelsDownloaded') }}
-          </span>
-
           <span v-if="selectedValue === opt.value" class="tps__check" aria-hidden="true">
             <Check :size="13" :stroke-width="3" />
           </span>
-          <span v-else-if="opt.recommended" class="tps__recommended">
+          <span v-if="opt.recommended" class="tps__recommended">
             {{ t('newInstall.recommended') }}
           </span>
         </span>
@@ -196,11 +198,16 @@ defineExpose({ shownDiskError })
           <span class="tps__card-text">
             <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
             <span v-if="taskOf(opt)" class="tps__card-task">{{ taskOf(opt) }}</span>
-            <span v-if="modelsPresentOf(opt)" class="sr-only">
-              {{ t('standalone.templateModelsDownloaded') }}
-            </span>
+            <span v-if="modelsPresentOf(opt)" class="sr-only">{{ presentLabelOf(opt) }}</span>
           </span>
-          <span v-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
+          <Tooltip
+            v-if="modelsPresentOf(opt)"
+            :text="presentLabelOf(opt)"
+            class="tps__card-present"
+          >
+            <HardDriveDownload :size="14" :stroke-width="2" aria-hidden="true" />
+          </Tooltip>
+          <span v-else-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
         </span>
       </button>
     </div>
@@ -251,7 +258,7 @@ defineExpose({ shownDiskError })
   border-color: var(--brand-surface-border-hover);
 }
 .tps__card:hover .tps__card-img--ready {
-  opacity: 0.88;
+  transform: scale(1.05);
 }
 .tps__card:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -276,7 +283,9 @@ defineExpose({ shownDiskError })
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 200ms ease;
+  transition:
+    opacity 200ms ease,
+    transform 260ms ease;
 }
 .tps__card-img--ready {
   opacity: 1;
@@ -349,23 +358,11 @@ defineExpose({ shownDiskError })
   letter-spacing: 0.01em;
   color: var(--neutral-300);
 }
-
-.tps__downloaded {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 1;
+.tps__card-present {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 9px 4px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--neutral-50);
-  background: color-mix(in oklab, var(--neutral-950) 88%, transparent);
-  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
+  color: var(--neutral-300);
 }
 
 .tps__check {
@@ -386,23 +383,27 @@ defineExpose({ shownDiskError })
 
 .tps__recommended {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
+  top: 8px;
+  left: 8px;
   z-index: 1;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: 0;
   color: var(--neutral-100);
-  background: var(--neutral-900);
-  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
+  background: color-mix(in oklab, var(--neutral-950) 30%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .tps__card-img {
     transition: none;
+  }
+  .tps__card:hover .tps__card-img--ready {
+    transform: none;
   }
   .tps__card-fallback--loading {
     animation: none;

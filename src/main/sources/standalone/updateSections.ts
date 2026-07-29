@@ -9,7 +9,11 @@ import { truncateNotes } from '../../lib/comfyui-releases'
 import { deleteAction, untrackAction, launchAction, openFolderAction, renameAction } from '../../lib/actions'
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
-import { getVariantLabel, getTorchVersion, DEFAULT_LAUNCH_ARGS } from './envPaths'
+import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
+import { torchTupleMatches, stackAppliesViaPip, torchLocalTag, isDevVersion } from './torchStackTypes'
+import { getCachedTorchStacks } from './torchStackCatalog'
+import type { TorchStackEntry } from './torchStackCatalog'
+import { torchSeriesInfo, nvidiaDriverMismatch } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 import type { StatusTag } from '../../types/sources'
 
@@ -57,6 +61,261 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
   return undefined
 }
 
+/** Backend series a torch build belongs to, derived from its PEP 440 local
+ *  tag (`cu130` -> CUDA 13.0, `rocm7.2.1` -> ROCm 7.2.1). Untagged builds
+ *  (PyPI / mac MPS) share one "Default" series. Presentation only - actions
+ *  still carry the opaque stackId. */
+function torchSeriesGroup(torch: string | null | undefined): { id: string; label: string; description?: string } {
+  const base = torchSeriesBase(torch)
+  // The series description comes from the base tag either way: a nightly
+  // group is the same backend line, so its driver minimum and note apply.
+  const description = torchSeriesDescription(base.id)
+  // Nightly (dev) builds form their own series per tag: picking one must be
+  // a deliberate step past a clearly-labeled fork, never something the
+  // cascade lands on while browsing stable builds of the same tag.
+  if (torch && isDevVersion(torch)) {
+    return {
+      id: `nightly-${base.id}`,
+      label: t('standalone.pytorchSeriesNightly', { series: base.label }),
+      ...(description ? { description } : {}),
+    }
+  }
+  return { ...base, ...(description ? { description } : {}) }
+}
+
+/** The series dropdown's description: the manifest/in-app series note
+ *  (localized when this app version has the key), plus an informational
+ *  warning when the detected NVIDIA driver is older than the series'
+ *  declared minimum. Undefined when there is nothing to say. */
+function torchSeriesDescription(seriesId: string): string | undefined {
+  const info = torchSeriesInfo(seriesId)
+  if (!info) return undefined
+  const parts: string[] = []
+  const noteKey = info.noteKey ? `standalone.${info.noteKey}` : null
+  const localizedNote = noteKey ? t(noteKey) : null
+  if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
+  else if (info.note) parts.push(info.note)
+  const mismatch = nvidiaDriverMismatch(info)
+  if (mismatch) parts.push(t('standalone.pytorchDriverWarning', mismatch))
+  return parts.length > 0 ? parts.join('  ·  ') : undefined
+}
+
+/** Numeric components of a version-ish string, taken from its first numeric
+ *  run: `cu130` -> [130], `rocm7.14.0` -> [7, 14, 0], `2.13.0+cu130` ->
+ *  [2, 13, 0]. Empty when there is none (`xpu`, `cpu`, untagged). */
+function versionNumbers(s: string): number[] {
+  const run = /\d+(?:\.\d+)*/.exec(s)?.[0] ?? ''
+  return run === '' ? [] : run.split('.').map(Number)
+}
+
+/** Newest-first comparison of `versionNumbers` results; missing components
+ *  count as 0, so entries without numbers sort last. */
+function compareNumbersDesc(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (b[i] ?? 0) - (a[i] ?? 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+/** Display order for the PyTorch picker: stable series before nightly ones,
+ *  series numerically descending (CUDA 13.0 before 12.8, ROCm 7.14 before
+ *  7.1), newest torch version first within a series, release date as the
+ *  tiebreaker. The series dropdown lists groups in first-appearance order
+ *  and group-switching lands on the first match, so this single sort drives
+ *  both dropdowns. */
+function compareStackDisplay(a: TorchStackEntry, b: TorchStackEntry): number {
+  const nightly = Number(isDevVersion(a.packages.torch)) - Number(isDevVersion(b.packages.torch))
+  if (nightly !== 0) return nightly
+  const tagA = torchLocalTag(a.packages.torch)
+  const tagB = torchLocalTag(b.packages.torch)
+  if (tagA !== tagB) {
+    const bySeries = compareNumbersDesc(versionNumbers(tagA), versionNumbers(tagB))
+    if (bySeries !== 0) return bySeries
+    return tagA.localeCompare(tagB)
+  }
+  const byVersion = compareNumbersDesc(versionNumbers(a.packages.torch), versionNumbers(b.packages.torch))
+  if (byVersion !== 0) return byVersion
+  return b.date.localeCompare(a.date)
+}
+
+function torchSeriesBase(torch: string | null | undefined): { id: string; label: string } {
+  const tag = torchLocalTag(torch)
+  const cu = /^cu(\d{2,})$/.exec(tag)?.[1]
+  if (cu) return { id: tag, label: `CUDA ${cu.slice(0, -1)}.${cu.slice(-1)} (${tag})` }
+  const rocm = /^rocm([\d.]+)$/.exec(tag)?.[1]
+  if (rocm) return { id: tag, label: `ROCm ${rocm}` }
+  if (tag === 'xpu') return { id: 'xpu', label: 'Intel XPU' }
+  if (tag === 'cpu') return { id: 'cpu', label: 'CPU' }
+  if (tag === '') return { id: 'default', label: t('standalone.pytorchSeriesDefault') }
+  return { id: tag, label: tag }
+}
+
+/**
+ * The PyTorch stack picker on the Update tab. Uses the synchronously cached
+ * catalog (refreshed by check-update); hidden entirely until the cache has
+ * compatible stacks. Adopted (pip-managed) installs get the same picker but
+ * apply via pip, so the copy skips the bundle download size. Options are
+ * presentation only — the change-pytorch handler re-resolves the stackId on
+ * the main side.
+ */
+function buildPytorchSection(installation: InstallationRecord, installed: boolean): Record<string, unknown> | null {
+  if (!installed) return null
+  const stacks = getCachedTorchStacks(installation)
+  if (stacks.length === 0) return null
+  const adopted = installation.adopted === true
+
+  // Full-tuple match (local tags stripped): torch version alone can't
+  // distinguish stacks, and dist-info versions may carry a +cuXXX tag the
+  // catalog omits.
+  const installedTuple = getInstalledTorchTuple(installation)
+  const currentTorch = installedTuple.torch
+  const current = currentTorch ? stacks.find((s) => torchTupleMatches(s.packages, installedTuple)) : undefined
+  const fieldValue = current ? current.stackId : 'pytorch-current'
+
+  // Split the picker by backend series (CUDA 13.0 vs 12.8, ROCm x.y) only
+  // when the filtered catalog actually spans several series; a single-series
+  // list keeps today's flat dropdown. The synthetic "current" entry never
+  // forces grouping but joins its derived series so the cascade stays
+  // coherent (every option carries a full path or none does).
+  const grouped = new Set(stacks.map((s) => torchSeriesGroup(s.packages.torch).id)).size >= 2
+
+  // The cached catalog concatenates bundle stacks before index stacks with
+  // no display order; sort by series/version so cu130 never lands between
+  // cu126 and cu128 and each series lists its newest torch first.
+  const ordered = [...stacks].sort(compareStackDisplay)
+
+  const options: Record<string, unknown>[] = []
+  // The installed torch doesn't match any catalog stack (manual install or
+  // catalog gap): surface it as a read-only "current" entry. It leads the
+  // flat list, but in grouped mode it goes last so switching back to its
+  // series still lands on the newest real stack first.
+  const syntheticCurrent = current ? null : {
+    value: 'pytorch-current',
+    label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
+    description: t('standalone.pytorchObservedDesc'),
+    ...(grouped ? { groupPath: [torchSeriesGroup(currentTorch)] } : {}),
+    data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false, hideUpToDateBadge: true },
+  }
+  if (syntheticCurrent && !grouped) options.push(syntheticCurrent)
+  for (const s of ordered) {
+    const isCurrent = s.stackId === current?.stackId
+    // Pip-applied entries (adopted installs, index-served stacks) download
+    // wheels via pip — the bundle size is not what downloads (index entries
+    // have no bundle at all).
+    const viaPip = stackAppliesViaPip(s.source, adopted)
+    const parts: string[] = []
+    if (s.packages.torchvision) parts.push(`torchvision ${s.packages.torchvision}`)
+    if (s.packages.torchaudio) parts.push(`torchaudio ${s.packages.torchaudio}`)
+    // Localized note when this app version has the key; remote-manifest
+    // entries may carry a newer key, falling back to their plain-text note
+    // (t() returns the key itself when the translation is missing).
+    const noteKey = s.noteKey ? `standalone.${s.noteKey}` : null
+    const localizedNote = noteKey ? t(noteKey) : null
+    if (localizedNote && localizedNote !== noteKey) parts.push(localizedNote)
+    else if (s.note) parts.push(s.note)
+    // Switching to a stack that omits torchaudio uninstalls it, so warn on
+    // every such target regardless of what the manifest notes say.
+    if (!s.packages.torchaudio && !isCurrent) parts.push(t('standalone.pytorchNoTorchaudioNote'))
+    // Standing warning on every nightly, independent of manifest notes: the
+    // build is unstable and its wheels expire from PyTorch's index.
+    if (isDevVersion(s.packages.torch)) parts.push(t('standalone.pytorchNightlyNote'))
+    // GPU-compat notice is informational only: detection can be wrong or
+    // partial (multi-GPU boxes, eGPUs), so mismatched stacks stay selectable.
+    if (s.capWarning) parts.push(t('standalone.pytorchCapWarning', {
+      required: `${s.capWarning.min}-${s.capWarning.max}`,
+      detected: s.capWarning.detected.join(', '),
+    }))
+    // Same for the series' minimum NVIDIA driver: warn, never hide. Shown
+    // per option too (not just on the series dropdown) so flat single-series
+    // pickers still surface it.
+    const driverMismatch = nvidiaDriverMismatch(torchSeriesInfo(torchSeriesBase(s.packages.torch).id))
+    if (driverMismatch && !isCurrent) parts.push(t('standalone.pytorchDriverWarning', driverMismatch))
+    const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
+    if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
+    const confirmMessage = viaPip
+      ? t('standalone.pytorchConfirmMessagePip', {
+          from: `**${currentTorch ?? '—'}**`,
+          to: `**${s.packages.torch}**`,
+        })
+      : t('standalone.pytorchConfirmMessage', {
+          from: `**${currentTorch ?? '—'}**`,
+          to: `**${s.packages.torch}**`,
+          size: sizeGB,
+        })
+    // With no hard compute-cap gate anywhere, the confirm dialog is the last
+    // stop before a build with no kernels for the detected GPU installs.
+    const capNotice = s.capWarning
+      ? `\n\n${t('standalone.pytorchCapConfirmWarning', {
+          required: `${s.capWarning.min}-${s.capWarning.max}`,
+          detected: s.capWarning.detected.join(', '),
+        })}`
+      : ''
+    const driverNotice = driverMismatch
+      ? `\n\n${t('standalone.pytorchDriverConfirmWarning', driverMismatch)}`
+      : ''
+    const actions = isCurrent ? undefined : [{
+      id: 'change-pytorch', label: t('standalone.pytorchChangeNow'), style: 'primary', enabled: true,
+      showProgress: true, cancellable: true,
+      progressTitle: t('standalone.pytorchChangingTitle', { version: s.packages.torch }),
+      data: { stackId: s.stackId },
+      confirm: {
+        title: t('standalone.pytorchConfirmTitle'),
+        message: confirmMessage + capNotice + driverNotice + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
+      },
+    }, {
+      id: 'copy-pytorch', label: t('standalone.copyAndChangePytorch'), style: 'default', enabled: true,
+      tooltip: t('tooltips.copyAndChangePytorch'),
+      showProgress: true, cancellable: true,
+      progressTitle: t('standalone.copyPytorchChangingTitle', { version: s.packages.torch }),
+      data: { stackId: s.stackId },
+      prompt: {
+        title: t('standalone.copyAndChangePytorchTitle'),
+        message: t('standalone.copyAndChangePytorchMessage', {
+          from: `**${currentTorch ?? '?'}**`,
+          to: `**${s.packages.torch}**`,
+        }) + capNotice + driverNotice,
+        placeholder: t('standalone.copyAndUpdatePlaceholder'),
+        defaultValue: installation.name,
+        uniquifyDefault: true,
+        confirmLabel: t('standalone.copyAndChangePytorchConfirm'),
+        required: true,
+        field: 'name',
+      },
+    }]
+    options.push({
+      value: s.stackId,
+      label: `PyTorch ${s.packages.torch}`,
+      description: parts.join('  ·  '),
+      ...(grouped ? { groupPath: [torchSeriesGroup(s.packages.torch)] } : {}),
+      data: {
+        productName: 'PyTorch',
+        installedVersion: currentTorch ?? '—',
+        latestVersion: s.packages.torch,
+        // The row shows what the user picked, which may be a downgrade -
+        // "Latest" would be wrong there.
+        latestLabel: t('standalone.pytorchSelectedVersion'),
+        updateAvailable: !isCurrent,
+        // No "Up to date" badge on the current stack: other stacks remain
+        // selectable, and stack switches aren't recommended updates.
+        hideUpToDateBadge: true,
+        ...(actions ? { actions } : {}),
+      },
+    })
+  }
+  if (syntheticCurrent && grouped) options.push(syntheticCurrent)
+
+  return {
+    tab: 'update',
+    title: t('standalone.pytorchSection'),
+    fields: [{
+      id: 'pytorchStack', label: t('standalone.pytorch'), value: fieldValue, editable: true,
+      refreshSection: true, editType: 'channel-cards', options, tooltip: t('tooltips.pytorchStack'),
+      ...(grouped ? { groupLabels: [t('standalone.pytorchSeriesLabel')] } : {}),
+    }],
+  }
+}
+
 export function getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
   const installed = installation.status === 'installed'
 
@@ -75,6 +334,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     const copiedAt = installation.copiedAt as string | undefined
     const copyReason = installation.copyReason as string | undefined
     const reasonLabel = copyReason === 'copy-update' ? t('standalone.lineageCopyUpdate')
+      : copyReason === 'copy-pytorch' ? t('standalone.lineageCopyPytorch')
       : copyReason === 'release-update' ? t('standalone.lineageReleaseUpdate')
       : t('standalone.lineageCopy')
     const dateStr = copiedAt ? new Date(copiedAt).toLocaleString() : ''
@@ -209,6 +469,9 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     fields: updateFields,
     actions: updateActions,
   })
+
+  const pytorchSection = buildPytorchSection(installation, installed)
+  if (pytorchSection) sections.push(pytorchSection)
 
   sections.push(
     {
