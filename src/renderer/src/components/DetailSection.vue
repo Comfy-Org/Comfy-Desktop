@@ -24,12 +24,12 @@ const props = withDefaults(defineProps<Props>(), {
   collapsed: null,
   items: undefined,
   fields: undefined,
-  actions: undefined,
+  actions: undefined
 })
 
 const emit = defineEmits<{
   'run-action': [action: ActionDef, button: HTMLButtonElement | null]
-  'refresh': [sectionTitle: string]
+  refresh: [sectionTitle: string]
 }>()
 
 const isCollapsed = ref(props.collapsed === true)
@@ -47,20 +47,27 @@ function getSelectedOption(f: DetailField): DetailFieldOption | undefined {
   return f.options?.find((o) => o.value === draft)
 }
 
+// Template-friendly: prettier's Vue parser can't handle generic casts in expressions.
+function getSelectedData(f: DetailField): Record<string, unknown> {
+  return (getSelectedOption(f)?.data ?? {}) as Record<string, unknown>
+}
+
 function getSelectedActions(f: DetailField): ActionDef[] | undefined {
-  const opt = getSelectedOption(f)
-  const data = opt?.data as Record<string, unknown> | undefined
-  return data?.actions as ActionDef[] | undefined
+  return getSelectedData(f).actions as ActionDef[] | undefined
 }
 
 // Reset draft when the committed value changes (e.g. after refresh).
-watch(() => props.fields, () => {
-  for (const f of props.fields ?? []) {
-    if (f.editType === 'channel-cards' && draftValues[f.id] === String(f.value)) {
-      delete draftValues[f.id]
+watch(
+  () => props.fields,
+  () => {
+    for (const f of props.fields ?? []) {
+      if (f.editType === 'channel-cards' && draftValues[f.id] === String(f.value)) {
+        delete draftValues[f.id]
+      }
     }
-  }
-}, { deep: true })
+  },
+  { deep: true }
+)
 
 async function toggleCollapse(): Promise<void> {
   if (props.collapsed != null) {
@@ -72,7 +79,10 @@ async function toggleCollapse(): Promise<void> {
   }
 }
 
-async function handleFieldChange(field: DetailField, value: string | boolean | Record<string, string>): Promise<void> {
+async function handleFieldChange(
+  field: DetailField,
+  value: string | boolean | Record<string, string>
+): Promise<void> {
   // Update local value immediately so tab switches reflect the change.
   field.value = value
   await window.api.updateInstallation(props.installationId, { [field.id]: value })
@@ -117,23 +127,36 @@ function handleOpenPath(value: unknown): void {
 <template>
   <div ref="sectionRef" class="detail-section" :data-section-title="title">
     <div
-v-if="title" class="detail-section-title"
-         :class="{ collapsible: collapsed != null }"
-         :data-collapsed="isCollapsed ? 'true' : 'false'"
-         @click="toggleCollapse">
+      v-if="title"
+      class="detail-section-title"
+      :class="{ collapsible: collapsed != null }"
+      :data-collapsed="isCollapsed ? 'true' : 'false'"
+      @click="toggleCollapse"
+    >
       {{ title }}
     </div>
     <div v-show="!isCollapsed" class="detail-section-body">
       <div v-if="description" class="detail-section-desc">{{ description }}</div>
 
       <div v-if="items?.length" class="detail-item-list">
-        <div v-for="item in items" :key="item.label" class="detail-item" :class="{ active: item.active }">
-          <div class="detail-item-label">{{ item.label }}{{ item.active ? ' (active)' : '' }}<span v-if="item.tag" class="detail-item-tag">{{ item.tag }}</span></div>
+        <div
+          v-for="item in items"
+          :key="item.label"
+          class="detail-item"
+          :class="{ active: item.active }"
+        >
+          <div class="detail-item-label">
+            {{ item.label }}{{ item.active ? ' (active)' : ''
+            }}<span v-if="item.tag" class="detail-item-tag">{{ item.tag }}</span>
+          </div>
           <div v-if="item.actions" class="detail-item-actions">
             <button
-v-for="a in item.actions" :key="a.id"
-                    :class="a.style" :disabled="a.enabled === false && !a.disabledMessage"
-                    @click="handleItemAction(a, $event)">
+              v-for="a in item.actions"
+              :key="a.id"
+              :class="a.style"
+              :disabled="a.enabled === false && !a.disabledMessage"
+              @click="handleItemAction(a, $event)"
+            >
               {{ a.label }}
             </button>
           </div>
@@ -143,7 +166,9 @@ v-for="a in item.actions" :key="a.id"
       <div v-if="fields?.length" class="detail-fields">
         <div v-for="f in fields" :key="f.id">
           <template v-if="f.editable && f.editType === 'channel-cards'">
-            <div class="detail-field-label">{{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" /></div>
+            <div class="detail-field-label">
+              {{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" />
+            </div>
             <select
               class="detail-field-input channel-select"
               :value="getDraft(f)"
@@ -151,7 +176,12 @@ v-for="a in item.actions" :key="a.id"
             >
               <option v-for="opt in f.options" :key="opt.value" :value="opt.value">
                 {{ opt.label
-                  }}{{ String(f.value) === opt.value ? ` — ${$t('channelCards.current')}` : '' }}{{ String(f.value) !== opt.value && opt.recommended ? ` — ${$t('newInstall.recommended')}` : '' }}
+                }}{{ String(f.value) === opt.value ? ` — ${$t('channelCards.current')}` : ''
+                }}{{
+                  String(f.value) !== opt.value && opt.recommended
+                    ? ` — ${$t('newInstall.recommended')}`
+                    : ''
+                }}
               </option>
             </select>
             <div v-if="getSelectedOption(f)?.description" class="channel-select-desc">
@@ -160,27 +190,34 @@ v-for="a in item.actions" :key="a.id"
             <div v-if="getSelectedOption(f)?.data" class="channel-preview">
               <div class="channel-preview-row">
                 <span class="channel-preview-label">{{ $t('channelCards.installedVersion') }}</span>
-                <span class="channel-preview-value">{{ (getSelectedOption(f)!.data as Record<string, unknown>).installedVersion }}</span>
+                <span class="channel-preview-value">{{ getSelectedData(f).installedVersion }}</span>
               </div>
               <div class="channel-preview-row">
                 <span class="channel-preview-label">{{ $t('channelCards.latestVersion') }}</span>
-                <span class="channel-preview-value">{{ (getSelectedOption(f)!.data as Record<string, unknown>).latestVersion }}</span>
+                <span class="channel-preview-value">{{ getSelectedData(f).latestVersion }}</span>
               </div>
               <div class="channel-preview-row">
                 <span class="channel-preview-label">{{ $t('channelCards.lastChecked') }}</span>
-                <span class="channel-preview-value">{{ (getSelectedOption(f)!.data as Record<string, unknown>).lastChecked }}</span>
+                <span class="channel-preview-value">{{ getSelectedData(f).lastChecked }}</span>
               </div>
               <!-- "Up to date" is suppressed for cards that opt out (PyTorch:
                    other stacks stay selectable, so it would be misleading). -->
               <div
-                v-if="(getSelectedOption(f)!.data as Record<string, unknown>).updateAvailable || !(getSelectedOption(f)!.data as Record<string, unknown>).hideUpToDateBadge"
+                v-if="getSelectedData(f).updateAvailable || !getSelectedData(f).hideUpToDateBadge"
                 class="channel-preview-row"
               >
                 <span class="channel-preview-label">{{ $t('channelCards.status') }}</span>
-                <span class="channel-preview-value">{{ (getSelectedOption(f)!.data as Record<string, unknown>).updateAvailable ? $t('channelCards.updateAvailable') : $t('channelCards.upToDate') }}</span>
+                <span class="channel-preview-value">{{
+                  getSelectedData(f).updateAvailable
+                    ? $t('channelCards.updateAvailable')
+                    : $t('channelCards.upToDate')
+                }}</span>
               </div>
             </div>
-            <div v-else-if="getDraft(f) !== String(f.value)" class="channel-preview channel-preview-empty">
+            <div
+              v-else-if="getDraft(f) !== String(f.value)"
+              class="channel-preview channel-preview-empty"
+            >
               {{ $t('channelCards.noInfo') }}
             </div>
             <div v-if="getSelectedActions(f)?.length" class="channel-actions">
@@ -199,22 +236,35 @@ v-for="a in item.actions" :key="a.id"
             </div>
           </template>
           <template v-else-if="f.editable && f.editType === 'env-vars'">
-            <div class="detail-field-label">{{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" /></div>
+            <div class="detail-field-label">
+              {{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" />
+            </div>
             <EnvVarsEditor
               :model-value="(f.value as Record<string, string>) ?? {}"
               @update:model-value="handleFieldChange(f, $event)"
             />
           </template>
           <template v-else>
-            <div class="detail-field-label">{{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" /></div>
+            <div class="detail-field-label">
+              {{ f.label }}<InfoTooltip v-if="f.tooltip" :text="f.tooltip" />
+            </div>
             <select
-v-if="f.editable && f.editType === 'select'" class="detail-field-input"
-                    :value="f.value" @change="handleFieldChange(f, ($event.target as HTMLSelectElement).value)">
-              <option v-for="opt in f.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              v-if="f.editable && f.editType === 'select'"
+              class="detail-field-input"
+              :value="f.value"
+              @change="handleFieldChange(f, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="opt in f.options" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
             </select>
             <input
-v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail-field-toggle"
-                   :checked="f.value !== false" @change="handleFieldChange(f, ($event.target as HTMLInputElement).checked)">
+              v-else-if="f.editable && f.editType === 'boolean'"
+              type="checkbox"
+              class="detail-field-toggle"
+              :checked="f.value !== false"
+              @change="handleFieldChange(f, ($event.target as HTMLInputElement).checked)"
+            />
             <div v-else-if="f.editable && f.editType === 'path'" class="path-input">
               <div v-if="f.browseOnly" class="detail-path-open-wrap">
                 <button
@@ -224,16 +274,26 @@ v-else-if="f.editable && f.editType === 'boolean'" type="checkbox" class="detail
                   :title="$t('actions.openDirectory', 'Open Directory')"
                   :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
                   @click="handleOpenPath(f.value)"
-                >{{ f.value }}</button>
+                >
+                  {{ f.value }}
+                </button>
               </div>
               <input
-v-else type="text" class="detail-field-input"
-                     :value="f.value ?? ''" @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)">
+                v-else
+                type="text"
+                class="detail-field-input"
+                :value="f.value ?? ''"
+                @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)"
+              />
               <button @click="handleBrowseField(f)">{{ $t('common.browse') }}</button>
             </div>
             <input
-v-else-if="f.editable" type="text" class="detail-field-input"
-                   :value="f.value ?? ''" @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)">
+              v-else-if="f.editable"
+              type="text"
+              class="detail-field-input"
+              :value="f.value ?? ''"
+              @change="handleFieldChange(f, ($event.target as HTMLInputElement).value)"
+            />
             <button
               v-else-if="canOpenFieldValue(f)"
               type="button"
@@ -241,7 +301,9 @@ v-else-if="f.editable" type="text" class="detail-field-input"
               :title="$t('actions.openDirectory', 'Open Directory')"
               :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${f.value}`"
               @click="handleOpenPath(f.value)"
-            >{{ f.value }}</button>
+            >
+              {{ f.value }}
+            </button>
             <div v-else class="detail-field-value">{{ f.value }}</div>
           </template>
         </div>
@@ -252,7 +314,8 @@ v-else-if="f.editable" type="text" class="detail-field-input"
           <button
             :class="[a.style, { 'looks-disabled': a.enabled === false && a.disabledMessage }]"
             :disabled="a.enabled === false && !a.disabledMessage"
-            @click="handleAction(a, $event)">
+            @click="handleAction(a, $event)"
+          >
             {{ a.label }}
           </button>
         </TooltipWrap>
