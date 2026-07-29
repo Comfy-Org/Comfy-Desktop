@@ -65,6 +65,7 @@ const messages = {
       distribution: {
         menuInstall: 'Install',
         distVersion: 'Dist v{version}',
+        distVersionNext: 'v{version}',
         notInstalled: 'Not installed',
         states: {
           noBuild: 'No build',
@@ -418,8 +419,41 @@ describe('ChooserView', () => {
     const pill = tile.find('.chooser-tile-pill-update')
     expect(pill.exists()).toBe(true)
     expect(pill.text().trim()).toBe('Update')
-    // Current version stays visible in the quiet meta line, not on the pill.
-    expect(tile.find('.chooser-tile-meta-line').text()).toContain('v0.22.3')
+    // Both versions read off the tile — no hover needed to learn the target.
+    const meta = tile.find('.chooser-tile-meta-line')
+    expect(meta.text()).toContain('v0.22.3')
+    expect(meta.find('.chooser-tile-meta-target').text()).toBe('v0.24.1')
+    // The one emphasised element moves to the target; the current one recedes.
+    expect(meta.find('.chooser-tile-meta-version--superseded').text()).toBe('v0.22.3')
+  })
+
+  it('leaves the meta row untouched when there is no update to point at', async () => {
+    installMockApi([makeInstall({ id: 'c', name: 'Current', version: 'v0.24.1' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Current'))!
+    const meta = tile.find('.chooser-tile-meta-line')
+    expect(meta.find('.chooser-tile-meta-version').text()).toBe('v0.24.1')
+    expect(meta.find('.chooser-tile-meta-target').exists()).toBe(false)
+    expect(meta.find('.chooser-tile-meta-arrow').exists()).toBe(false)
+    expect(meta.find('.chooser-tile-meta-version--superseded').exists()).toBe(false)
+  })
+
+  it('says nothing about a target when the current version is unknown', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Versionless',
+        statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' },
+      }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Versionless'))!
+    // An arrow with nothing on its left is not a delta — the pill still offers
+    // the action, the facts just don't invent a comparison.
+    expect(tile.find('.chooser-tile-meta-target').exists()).toBe(false)
+    expect(tile.find('.chooser-tile-pill-update').exists()).toBe(true)
   })
 
   it('keeps the action pill present even when the name is very long', async () => {
@@ -592,6 +626,51 @@ describe('ChooserView', () => {
     expect(meta).toContain('Dist v7')
     // The install path is noise on a tile whose identity is the distribution.
     expect(meta).not.toContain('Standalone')
+  })
+
+  it('reads the distribution delta off the tile, under the one label', async () => {
+    installMockApiSignedIn(
+      [
+        makeInstall({
+          id: 'built',
+          name: 'BuiltThing',
+          sourceId: 'comfybuilder',
+          distributionId: 'd1',
+          version: 'v0.28.2',
+          distributionVersion: '7',
+        }),
+      ],
+      [makeDist({ id: 'd1', name: 'BuiltThing', state: 'installable', version: '9' })],
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('BuiltThing'))!
+    const meta = tile.find('.chooser-tile-meta-line')
+    // "Dist v7 → v9": one governing label, so the target can't be read as a
+    // ComfyUI version either.
+    expect(meta.find('.chooser-tile-meta-version--superseded').text()).toBe('Dist v7')
+    expect(meta.find('.chooser-tile-meta-target').text()).toBe('v9')
+    expect(meta.text()).toContain('v0.28.2')
+  })
+
+  it('claims no distribution delta while the catalog is cold', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'built',
+        name: 'ColdThing',
+        sourceId: 'comfybuilder',
+        distributionId: 'd1',
+        version: 'v0.28.2',
+        distributionVersion: '7',
+      }),
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('ColdThing'))!
+    // Signed out, or the fetch not back yet: never promise an update we haven't
+    // verified. The current version still shows, fully emphasised.
+    expect(tile.find('.chooser-tile-meta-target').exists()).toBe(false)
+    expect(tile.find('.chooser-tile-meta-version').text()).toBe('Dist v7')
   })
 
   it('gives every card exactly one blue action pill', async () => {

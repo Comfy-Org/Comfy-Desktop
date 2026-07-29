@@ -1161,6 +1161,7 @@
     "distribution": {
       "menuInstall": "Install",
       "distVersion": "Dist v{version}",
+      "distVersionNext": "v{version}",
       "notInstalled": "Not installed",
       "emptyTitle": "No distributions published to this workspace yet.",
       "loadError": "Couldn't load distributions. Retry",

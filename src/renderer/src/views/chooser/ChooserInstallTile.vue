@@ -8,11 +8,12 @@ import {
   MoreVertical
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useAuthStore } from '../../stores/authStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
-import { isDistributionInstall } from '../../devplatform/distributionState'
+import { distributionUpdateVersion, isDistributionInstall } from '../../devplatform/distributionState'
 import type { Installation } from '../../types/ipc'
 
 interface Props {
@@ -34,6 +35,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
+const authStore = useAuthStore()
 
 const inst = computed(() => props.installation)
 
@@ -111,9 +113,24 @@ const leadingFact = computed(() =>
   isFromDistribution.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const metaLine = computed(() =>
-  [leadingFact.value, trailingFact.value].filter(Boolean).join(' · ')
-)
+/** The version you'd be getting, when an update exists. Needs a current version
+ *  to point away from — an arrow with nothing on its left is not a delta.
+ *  Distribution installs compare against the workspace catalog (empty until it
+ *  loads, and never a claim while it's cold); every other source already carries
+ *  its target in the update tag. */
+const targetFact = computed(() => {
+  if (!trailingFact.value) return ''
+  if (isFromDistribution.value) {
+    const next = distributionUpdateVersion(inst.value, authStore.distributions)
+    return next ? t('devPlatform.distribution.distVersionNext', { version: next }) : ''
+  }
+  return hasUpdate.value ? inst.value.statusTag?.version || '' : ''
+})
+
+const metaLine = computed(() => {
+  const facts = [leadingFact.value, trailingFact.value].filter(Boolean).join(' · ')
+  return targetFact.value ? `${facts} → ${targetFact.value}` : facts
+})
 
 
 /** The single update/migrate affordance, or null when the install has neither.
@@ -232,7 +249,18 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
           <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
           <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep">·</span>
-          <span v-if="trailingFact" class="chooser-tile-meta-version">{{ trailingFact }}</span>
+          <!-- With an update pending the roles shift down a seat: what you have
+               recedes and what you'd get takes the emphasis slot. -->
+          <span
+            v-if="trailingFact"
+            class="chooser-tile-meta-version"
+            :class="{ 'chooser-tile-meta-version--superseded': targetFact }"
+            >{{ trailingFact }}</span
+          >
+          <template v-if="targetFact">
+            <span class="chooser-tile-meta-arrow">→</span>
+            <span class="chooser-tile-meta-target">{{ targetFact }}</span>
+          </template>
         </TruncatedText>
         <!-- Action pill; pinned right by its own margin, never truncates. -->
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">

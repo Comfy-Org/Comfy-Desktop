@@ -121,6 +121,37 @@
   color: var(--text);
 }
 
+/* Version delta ("v0.22.3 → v0.24.1"). The row keeps exactly one emphasised
+ * element: the current version steps back a rung and the target takes the slot,
+ * so an updatable tile is no louder than a current one.
+ *
+ * Neutral ramp, not `--text-muted` / `--text-faint`: those invert between the
+ * themes while these tiles sit on the dark surface in both, which would flip the
+ * emphasis in light mode. The superseded/arrow hover rules must stay AFTER the
+ * `--text` lift above — equal specificity, source order decides. */
+.chooser-tile-meta-version--superseded {
+  color: var(--neutral-300);
+  font-weight: 400;
+}
+.chooser-tile-meta-arrow {
+  margin: 0 4px;
+  color: var(--neutral-300);
+}
+.chooser-tile-meta-target {
+  color: var(--neutral-200);
+  font-weight: 500;
+}
+.chooser-tile:hover .chooser-tile-meta-version--superseded,
+.chooser-tile:focus-visible .chooser-tile-meta-version--superseded,
+.chooser-tile:hover .chooser-tile-meta-arrow,
+.chooser-tile:focus-visible .chooser-tile-meta-arrow {
+  color: var(--neutral-200);
+}
+.chooser-tile:hover .chooser-tile-meta-target,
+.chooser-tile:focus-visible .chooser-tile-meta-target {
+  color: var(--text);
+}
+
 .chooser-tile-footer {
   display: flex;
   align-items: center;

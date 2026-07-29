@@ -1161,6 +1161,7 @@
     "distribution": {
       "menuInstall": "安装",
       "distVersion": "分发版 v{version}",
+      "distVersionNext": "v{version}",
       "notInstalled": "未安装",
       "emptyTitle": "此工作区尚未发布任何分发版本。",
       "loadError": "无法加载分发版本，请重试",
