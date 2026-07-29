@@ -553,6 +553,7 @@ export const standalone: SourcePlugin = {
             thumbnailUrl: tpl.thumbnailUrl,
             sizeBytes: tpl.sizeBytes,
             modelsPresent: presenceById.get(tpl.id) ?? false,
+            apiNode: tpl.apiNode,
           },
         })),
       ]
