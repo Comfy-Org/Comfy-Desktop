@@ -1422,8 +1422,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
-    // A fresh Windows install may adopt the website anonymous ID carried in
-    // the installer filename; see websiteAnonymousIdentity.ts.
     const anonymousDistinctId = recoverPendingIdentityRotation(
       getInitialAnonymousDistinctId(existingInstallation)
     )

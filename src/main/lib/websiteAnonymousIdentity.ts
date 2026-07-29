@@ -15,11 +15,8 @@ const LEGACY_DOWNLOAD_ATTRIBUTION_FILES = [
   'download-token-attributed'
 ] as const
 
-// posthog-js generates $device_id as a lowercase hyphenated UUID, and the
-// Router only emits the filename carrier for cookie values of exactly that
-// shape. The version and variant nibbles are deliberately not pinned:
-// posthog-js has changed UUID versions before (v4 -> v7), and a pinned
-// pattern would silently drop attribution on the next change.
+// Version/variant nibbles deliberately unpinned: posthog-js has switched UUID
+// versions before (v4 -> v7); a pinned pattern would silently drop attribution.
 const WEBSITE_ANONYMOUS_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -32,13 +29,9 @@ export function pendingWebsiteAnonymousIdRetryPath(): string {
 }
 
 /**
- * Validate the Router's exact filename carrier:
- * `phid1_<website PostHog $device_id>`, where the ID is carried raw.
- *
- * The payload IS the identity — there is no decoding step — so a renamed or
- * hand-crafted installer can only ever inject a well-formed UUID, never an
- * arbitrary distinct ID (which also rules out PostHog's unmergeable illegal
- * IDs by shape).
+ * The payload IS the identity — no decoding — so a hand-crafted installer can
+ * only inject a well-formed UUID, never an arbitrary distinct ID (this also
+ * rules out PostHog's unmergeable illegal IDs by shape).
  */
 export function parseWebsiteAnonymousIdPayload(payload: unknown): string | null {
   if (typeof payload !== 'string') return null
@@ -58,9 +51,8 @@ function clearPendingWebsiteAnonymousId(): void {
 function readWebsiteAnonymousId(filePath: string): string | null {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8')
-    // The NSIS writer appends exactly CRLF. Do not broadly trim: the carrier
-    // contract is exact, and accepting any other surrounding bytes would make
-    // the on-disk grammar looser than the Router filename grammar.
+    // NSIS writes exactly CRLF; don't trim() — the on-disk grammar must stay
+    // as strict as the Router's filename grammar.
     const payload = raw.endsWith('\r\n') ? raw.slice(0, -2) : raw
     return parseWebsiteAnonymousIdPayload(payload)
   } catch {
@@ -90,8 +82,7 @@ function clearLegacyDownloadAttribution(): void {
 /**
  * Resolve the pre-login PostHog distinct ID before the first capture. An
  * existing persisted ID always wins; a website carrier only seeds a fresh
- * install. A valid carrier remains the in-memory ID if its first persistence
- * attempt fails, while the pending file preserves the retry for next launch.
+ * install.
  */
 export function getInitialAnonymousDistinctId(existingInstallation = false): string {
   clearLegacyDownloadAttribution()
@@ -101,10 +92,8 @@ export function getInitialAnonymousDistinctId(existingInstallation = false): str
     return persisted
   }
 
-  // An identity file that exists but cannot be decoded still proves this is
-  // not a fresh install: fail closed, drop the carrier, and regenerate D.
-  // The app's own writer is atomic (tmp + rename), so a corrupt-but-present
-  // file always means external interference.
+  // A present-but-undecodable identity file still proves a prior install:
+  // fail closed, drop the carrier, regenerate.
   if (fs.existsSync(anonymousDistinctIdPath())) {
     clearPendingWebsiteAnonymousId()
     return getOrCreateAnonymousDistinctId()

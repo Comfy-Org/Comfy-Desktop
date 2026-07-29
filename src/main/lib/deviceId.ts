@@ -71,11 +71,8 @@ function firstLaunchGuardPath(): string {
 }
 
 /**
- * Read-only sibling of `consumeFirstLaunch` for callers that must know
- * whether this is an existing installation BEFORE the one-shot marker is
- * consumed. Fails closed (`true`): treating a fresh install as existing
- * skips website-ID adoption, which only loses attribution — never
- * misattributes an existing user's identity.
+ * Non-consuming check of the first-launch marker. Fails closed: treating a
+ * fresh install as existing only loses website-ID attribution.
  */
 export function hasCompletedFirstLaunch(): boolean {
   try {

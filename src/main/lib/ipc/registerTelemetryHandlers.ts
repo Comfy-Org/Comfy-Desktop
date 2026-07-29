@@ -184,8 +184,7 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.registerPersonProperties(props)
   })
 
-  // The legacy login binding identifies the Firebase user with the active
-  // anonymous ID. Renderer still owns datadogRum.setUser (Datadog is browser-only).
+  // Renderer still owns datadogRum.setUser (Datadog is browser-only).
   ipcMain.on('telemetry:bindUserId', (_event, payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
     const userId = asString((payload as Record<string, unknown>).userId)
@@ -194,7 +193,6 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.bindUserId(userId, properties)
   })
 
-  // Logout adopts the fresh anonymous ID reserved before the user binding.
   ipcMain.on('telemetry:unbindUserId', () => {
     mainTelemetry.unbindUserId()
   })

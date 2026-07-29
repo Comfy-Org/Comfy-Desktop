@@ -250,39 +250,26 @@
   Push $R4
   Push $R5
 
-  ; GTM-277 direct website identity carrier. The Router serves the signed
-  ; installer as:
-  ;
+  ; GTM-277: the Router serves the signed installer as
   ;   Comfy-Desktop-Setup-phid1_<website PostHog $device_id>.exe
+  ; carrying the raw 36-char lowercase UUID. Desktop re-validates the shape
+  ; before adopting it.
   ;
-  ; where the payload is the raw $device_id — a 36-char lowercase hyphenated
-  ; UUID (posthog-js's format), already filename-safe, carried without any
-  ; encoding. The Router only emits the carrier for cookie values of exactly
-  ; that shape. Persist only the fixed-length payload; Desktop re-validates
-  ; the exact UUID shape before adopting it. Renamed/malformed installers
-  ; simply have no carrier.
-  ;
-  ; Per-machine installs run this section in an elevated process that may be
-  ; a different Windows account (over-the-shoulder UAC, or SYSTEM for silent
-  ; IT deploys), so per-user shell folders resolve to that account's profile,
-  ; not the interactive user's. Skip the carrier entirely there — Desktop
-  ; falls back to its generated anonymous ID — and never touch a profile the
-  ; installer cannot attribute.
+  ; Per-machine installs run elevated, possibly as a different account
+  ; (over-the-shoulder UAC, SYSTEM), so per-user shell folders resolve to
+  ; the wrong profile — skip the carrier entirely.
   ${If} $installMode != "all"
   SetShellVarContext current
-  StrCpy $R2 "$APPDATA\Comfy Desktop"
-  ; The current installer filename is authoritative. A plain or malformed
-  ; installer must not leave a valid carrier from an earlier unlaunched setup.
+  StrCpy $R2 "$APPDATA\Comfy Desktop" ; Electron's packaged userData path
+  ; A plain installer must not leave a stale carrier from an earlier unlaunched setup.
   Delete "$R2\pending-website-anonymous-id.txt"
 
   ${GetFileName} "$EXEPATH" $R0
   StrLen $R5 "$R0"
   StrCpy $R4 ""
 
-  ; Case-sensitive grammar: 26-char prefix + 36-char UUID = 62 chars, then
-  ; the extension. Everything after the UUID — extension included — is
-  ; deliberately ignored: the payload is fixed-length, so browser duplicate-
-  ; download names ("… (1).exe") and other appended tails keep their carrier.
+  ; 26-char prefix + 36-char UUID = 62. The tail (extension, browser " (1)"
+  ; duplicate suffixes) is deliberately ignored — the payload is fixed-length.
   ${If} $R5 >= 62
     StrCpy $R1 "$R0" 26
     ${If} $R1 S== "Comfy-Desktop-Setup-phid1_"
@@ -292,8 +279,6 @@
 
   StrLen $R3 "$R4"
   ${If} $R3 == 36
-    ; Matches Electron's packaged userData path documented in README:
-    ; %APPDATA%\Comfy Desktop.
     CreateDirectory "$R2"
     ClearErrors
     FileOpen $R3 "$R2\pending-website-anonymous-id.txt" w
