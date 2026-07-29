@@ -63,6 +63,7 @@
     "test:e2e:lifecycle:picker": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-picker\"",
     "test:e2e:lifecycle:bootwindow": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-bootwindow\"",
     "test:e2e:lifecycle:copy": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-copy\"",
+    "test:e2e:lifecycle:remote": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-remote\"",
     "test:e2e:lifecycle:delete": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-delete\"",
     "test:watch": "vitest",
     "prepare": "node ./scripts/prepare.mjs"

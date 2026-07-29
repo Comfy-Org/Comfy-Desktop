@@ -7,6 +7,7 @@
 
 import {
   _test_setSeededTrayState,
+  getDownloadsTrayState,
   type DownloadsTrayState,
 } from './comfyDownloadManager'
 import { _test_setUpdateState, type AppUpdateState } from './updater'
@@ -58,6 +59,8 @@ interface SetInstallUpdateOpts {
 export interface E2EHelpers {
   /** Replace the downloads tray with a snapshot and broadcast `tray-state-changed`. */
   seedDownloads(snapshot: DownloadsTrayState): void
+  /** Live downloads tray snapshot (`active` in-flight + `recent` terminal entries). */
+  getDownloadsTrayState(): DownloadsTrayState
   /** Stub the install-update probe for one (or all) installations. */
   setInstallUpdate(opts: SetInstallUpdateOpts): void
   setAppUpdateState(state: AppUpdateState): void
@@ -104,6 +107,7 @@ export interface E2EHelpers {
 export function registerE2EHooks(): void {
   const helpers: E2EHelpers = {
     seedDownloads: _test_setSeededTrayState,
+    getDownloadsTrayState,
     setInstallUpdate(opts) {
       const key = opts.installationId ?? INSTALL_UPDATE_GLOBAL_KEY
       if (opts.available) {

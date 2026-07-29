@@ -494,11 +494,43 @@ describe('asset download retries', () => {
     }
   })
 
-  it('skips re-downloading a URL that completed moments earlier', async () => {
+  it('re-downloads a URL that completed earlier and keeps a single copy when identical', async () => {
+    // The same output event can be delivered again after the download has
+    // already finished (a replay across a reconnect, a second view of the
+    // session, or a re-run of a cached workflow re-serving the same URL).
+    // No time-based suppression: the repeat downloads again, and the
+    // content-identity check discards it in favor of the existing file so
+    // no "repeat (1).png" appears. A changed file (covered below) is kept.
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=repeat.png'
-    const baseNow = 1_700_100_000_000
-    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(baseNow)
+    const h = makeAssetHarness()
+
+    try {
+      await expect(mod.startAssetDownload(h.win, url, 'repeat.png', outputDir)).resolves.toBe(true)
+      expect(h.session.downloadURL).toHaveBeenCalledTimes(1)
+      const first = h.createItem(url)
+      h.getWillDownload()!({}, first.item, null)
+      const tempPath = first.setSavePath.mock.calls[0]?.[0]
+      expect(tempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath!, 'content')
+      first.getDone()!({}, 'completed')
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['repeat.png'])
+
+      await expect(mod.startAssetDownload(h.win, url, 'repeat.png', outputDir)).resolves.toBe(true)
+      expect(h.session.downloadURL).toHaveBeenCalledTimes(2)
+      const second = h.createItem(url)
+      h.getWillDownload()!({}, second.item, null)
+      const tempPath2 = second.setSavePath.mock.calls[0]?.[0]
+      expect(tempPath2).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath2!, 'content')
+      second.getDone()!({}, 'completed')
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['repeat.png'])
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  function makeAssetHarness() {
     let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
@@ -506,9 +538,10 @@ describe('asset download retries', () => {
       }),
       downloadURL: vi.fn(),
     } as unknown as Electron.Session
+    const send = vi.fn()
     const webContents = {
       session,
-      send: vi.fn(),
+      send,
       isDestroyed: () => false,
     } as unknown as Electron.WebContents
     const win = {
@@ -536,41 +569,63 @@ describe('asset download retries', () => {
       return { item, setSavePath, getDone: () => done }
     }
 
+    return { win, session, send, getWillDownload: () => willDownload, createItem }
+  }
+
+  it('discards the download when an identical file already sits at the requested path', async () => {
+    // The "remote" server may be a local ComfyUI writing outputs into the
+    // same directory the auto-download saves to (desktop launches installs
+    // with --output-directory <shared outputDir>). The server saves the file
+    // first, so the download must be discarded instead of saved as "x (1)".
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://remote.example/api/view?filename=served.png&subfolder=subdir'
+    const h = makeAssetHarness()
+
     try {
-      await expect(mod.startAssetDownload(win, url, 'repeat.png', outputDir)).resolves.toBe(true)
-      expect(session.downloadURL).toHaveBeenCalledTimes(1)
-      const first = createItem(url)
-      willDownload!({}, first.item, null)
-      const tempPath = first.setSavePath.mock.calls[0]?.[0]
+      await fs.promises.mkdir(path.join(outputDir, 'subdir'), { recursive: true })
+      await fs.promises.writeFile(path.join(outputDir, 'subdir', 'served.png'), 'identical-bytes')
+
+      await expect(mod.startAssetDownload(h.win, url, 'subdir/served.png', outputDir)).resolves.toBe(true)
+      const dl = h.createItem(url)
+      h.getWillDownload()!({}, dl.item, null)
+      const tempPath = dl.setSavePath.mock.calls[0]?.[0]
       expect(tempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(tempPath!, 'content')
-      first.getDone()!({}, 'completed')
+      await fs.promises.writeFile(tempPath!, 'identical-bytes')
+      dl.getDone()!({}, 'completed')
 
-      // The same output event can be delivered again after the download has
-      // already finished (a replay across a reconnect, or a second view of
-      // the session). Inside the dedupe window this must not start a second
-      // download that would save "repeat (1).png".
-      nowSpy.mockReturnValue(baseNow + 2_000)
-      await expect(mod.startAssetDownload(win, url, 'repeat.png', outputDir)).resolves.toBe(true)
-      expect(session.downloadURL).toHaveBeenCalledTimes(1)
-      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['repeat.png'])
-
-      // Well past the window the same URL downloads again: a deliberate
-      // re-run of a cached workflow re-serves the same URL and the user
-      // expects a fresh copy.
-      nowSpy.mockReturnValue(baseNow + 60_000)
-      await expect(mod.startAssetDownload(win, url, 'repeat.png', outputDir)).resolves.toBe(true)
-      expect(session.downloadURL).toHaveBeenCalledTimes(2)
-      const second = createItem(url)
-      willDownload!({}, second.item, null)
-      const tempPath2 = second.setSavePath.mock.calls[0]?.[0]
-      expect(tempPath2).toBeTypeOf('string')
-      await fs.promises.writeFile(tempPath2!, 'content2')
-      second.getDone()!({}, 'completed')
-      const saved = (await fs.promises.readdir(outputDir)).sort()
-      expect(saved).toEqual(['repeat (1).png', 'repeat.png'])
+      await expect(fs.promises.readdir(path.join(outputDir, 'subdir'))).resolves.toEqual(['served.png'])
+      const completed = h.send.mock.calls
+        .map((c) => c[1] as { status?: string; savePath?: string; filename?: string })
+        .filter((p) => p?.status === 'completed')
+      expect(completed).toHaveLength(1)
+      expect(completed[0]!.savePath).toBe(path.join(outputDir, 'subdir', 'served.png'))
+      expect(completed[0]!.filename).toBe('served.png')
     } finally {
-      nowSpy.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the deduplicated copy when the existing file has different content', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://remote.example/api/view?filename=changed.png'
+    const h = makeAssetHarness()
+
+    try {
+      await fs.promises.writeFile(path.join(outputDir, 'changed.png'), 'old-bytes')
+
+      await expect(mod.startAssetDownload(h.win, url, 'changed.png', outputDir)).resolves.toBe(true)
+      const dl = h.createItem(url)
+      h.getWillDownload()!({}, dl.item, null)
+      const tempPath = dl.setSavePath.mock.calls[0]?.[0]
+      expect(tempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath!, 'new-bytes')
+      dl.getDone()!({}, 'completed')
+
+      const saved = (await fs.promises.readdir(outputDir)).sort()
+      expect(saved).toEqual(['changed (1).png', 'changed.png'])
+      await expect(fs.promises.readFile(path.join(outputDir, 'changed.png'), 'utf8')).resolves.toBe('old-bytes')
+      await expect(fs.promises.readFile(path.join(outputDir, 'changed (1).png'), 'utf8')).resolves.toBe('new-bytes')
+    } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
     }
   })

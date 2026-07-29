@@ -56,6 +56,18 @@ export async function seedDownloads(
   }, snapshot))
 }
 
+/** Live downloads tray snapshot from main (`active` in-flight + `recent`
+ *  terminal entries) - the read counterpart to `seedDownloads`. */
+export async function getLiveDownloadsTrayState(
+  app: ElectronApplication,
+): Promise<DownloadsTrayStateLike> {
+  return evalWithRetry(() => app.evaluate((_electron) => {
+    const helpers = (globalThis as unknown as { __e2e?: { getDownloadsTrayState: () => unknown } }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.getDownloadsTrayState() as { active: unknown[]; recent: unknown[] }
+  })) as Promise<DownloadsTrayStateLike>
+}
+
 export async function setInstallUpdate(
   app: ElectronApplication,
   opts: { installationId?: string; available: boolean; version?: string },

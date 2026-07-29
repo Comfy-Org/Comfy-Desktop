@@ -32,7 +32,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { resolve } from 'node:path'
@@ -40,6 +40,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import {
   clickInstallTile,
+  clickNewInstallTile,
   expectChooserVisible,
   expectTakeoverOpen,
   openManageViaDashboard,
@@ -49,6 +50,7 @@ import {
   armLaunchSpawnHold,
   ensureInstallPanelView,
   getIpcInvocations,
+  getLiveDownloadsTrayState,
   getRunningSessionSnapshot,
   hasActiveLaunch,
   hasActiveOperation,
@@ -112,6 +114,9 @@ async function waitForConfigContinueEnabled(message: string): Promise<void> {
  *    bootwindow   restart-during-boot regressions (run as a group: the
  *                 fresh-chooser test consumes the siblings' --port edit)
  *    copy         picker + kebab copies, untrack, and their cleanup
+ *    remote       Remote Connection record pointed at the running local
+ *                 server; workflow output auto-download must not duplicate
+ *                 the server-written file
  *    delete       stops comfy and DELETES the install (consumes a reused
  *                 profile - reset the reuse dir before running setup again)
  *
@@ -2753,6 +2758,381 @@ test('cleans up the untracked kebab-copy on disk before the final Delete test ru
   await expect
     .poll(() => existsSync(_kebabCopyInstallPath), { timeout: 60_000, intervals: [500, 1_000] })
     .toBe(false)
+})
+
+// ---------------------------------------------------------------------------
+// Remote Connection output auto-download - point a Remote record at the
+// running LOCAL server, execute a real workflow through the remote view, and
+// prove the output lands on disk exactly once.
+//
+// This pins the "duplicate downloads" regression: the local server's
+// SaveImage node writes the original PNG into the shared output directory,
+// and the remote view's auto-download then fetches the same output over
+// /api/view into the same directory. Without content-identity handling the
+// download dedups to "name (1).png" and the user ends up with two copies of
+// every output (only the suffixed one visible in the downloads drawer).
+// ---------------------------------------------------------------------------
+
+let _remoteInstallId = ''
+let _remoteName = ''
+let _remoteWindowId = 0
+let _remoteWcId = 0
+let _remoteOutputRoot = ''
+let _remoteExpectedFile = ''
+let _remoteRunId = ''
+
+/** Spawn a fresh dashboard chooser window through the real UI (title pill
+ *  -> picker Home). The comfy host's own panel is a hidden install-backed
+ *  panel, so the dashboard flows (wizard, kebab) need this extra window -
+ *  its panel is then the only VISIBLE panel.html and the marker-based
+ *  `ctx.panel` facade resolves there. Returns the new window's id. */
+async function openDashboardWindowViaPickerHome(): Promise<number> {
+  const beforeWinIds = await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).map((w) => w.id)))
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+  await popup.waitForVisible('.picker-home', { timeout: 10_000 })
+  expect(await popup.click('.picker-home')).toBe(true)
+  await closeTitlePopupIfOpen(ctx.app)
+  let newWindowId = 0
+  await expect
+    .poll(async () => {
+      const ids = await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).map((w) => w.id)))
+      const fresh = ids.filter((id) => !beforeWinIds.includes(id))
+      if (fresh.length > 0) newWindowId = fresh[0]!
+      return fresh.length
+    }, { timeout: 30_000, intervals: [250, 500] })
+    .toBe(1)
+  await expectChooserVisible(ctx.panel)
+  return newWindowId
+}
+
+/** Run an expression inside an arbitrary webContents by id. The remote comfy
+ *  view shares its origin with the local one, so the URL-marker page facades
+ *  can't address it - only the webContents id can. */
+async function evalInWebContents<T>(wcId: number, expr: string): Promise<T> {
+  return await evalWithRetry(() => ctx.app.evaluate(async ({ webContents }, p) => {
+    const wc = webContents.fromId(p.id)
+    if (!wc || wc.isDestroyed()) throw new Error(`webContents ${p.id} gone`)
+    return (await wc.executeJavaScript(p.expr)) as unknown
+  }, { id: wcId, expr })) as T
+}
+
+/** Recursively collect files under `dir` (relative paths, forward slashes). */
+function listFilesRecursive(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  const walk = (d: string, prefix: string): void => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walk(path.join(d, entry.name), rel)
+      else out.push(rel)
+    }
+  }
+  walk(dir, '')
+  return out
+}
+
+test('creates a Remote Connection record pointed at the running local server through the wizard @sec-remote @lifecycle', async () => {
+  test.setTimeout(120_000)
+
+  // The section needs the real local install running (full-chain runs
+  // arrive here with it up; a greped hydrated run launched it in
+  // beforeAll, but re-launch defensively for partial-chain profiles).
+  if (!(await comfyFrontendIsLoaded())) {
+    await clickInstallTile(ctx.panel, 'ComfyUI')
+    await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
+    await ensureInstallPanelView(ctx.app, _updateInstallId)
+    await waitForWebContents(ctx.app, 'panel.html')
+  }
+
+  // Discover the actual local server origin from the loaded comfy
+  // webContents - never assume port 8188 (the suite may have relocated
+  // the port, or 8188 may have been occupied at launch).
+  const origin = await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
+    const wc = webContents.getAllWebContents()
+      .find((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()))
+    return wc ? new URL(wc.getURL()).origin : null
+  }))
+  expect(origin, 'no localhost comfy webContents to derive the server origin from').toBeTruthy()
+
+  // The local launch passes `--output-directory <shared outputDir>`
+  // (useSharedInputOutput default) and the remote install's asset
+  // downloads resolve to the same global setting - that shared directory
+  // is exactly where the collision happens.
+  const outputDir = await ctx.panel.evaluate<string | null>(`window.api.getSetting('outputDir')`)
+  expect(outputDir, 'shared outputDir setting is unset').toBeTruthy()
+  expect(existsSync(outputDir!), `shared output dir does not exist: ${outputDir}`).toBe(true)
+
+  _remoteRunId = `remote-lifecycle-${randomUUID().slice(0, 8)}`
+  _remoteOutputRoot = path.join(outputDir!, _remoteRunId)
+  _remoteExpectedFile = path.join(_remoteOutputRoot, 'nested', 'output_00001_.png')
+  expect(existsSync(_remoteOutputRoot), 'unique output root unexpectedly pre-exists').toBe(false)
+
+  // Real wizard flow: New Install tile -> Advanced -> Remote Connection
+  // source -> name + URL -> Continue. Remote is a `skipInstall` source,
+  // so Continue saves the record directly and returns to the dashboard.
+  // The wizard needs a real dashboard window; the workflow test below
+  // turns it into the remote host and the cleanup test closes it.
+  _remoteWindowId = await openDashboardWindowViaPickerHome()
+  await clickNewInstallTile(ctx.panel)
+  await expectTakeoverOpen(ctx.panel)
+  await waitForConfigContinueEnabled('Continue never enabled after the wizard opened (standalone pre-fill)')
+
+  expect(await ctx.panel.click('.config-advanced__summary')).toBe(true)
+  await ctx.panel.waitForVisible('.config-method-row', { timeout: 10_000 })
+  expect(
+    await ctx.panel.clickByText('.config-method-row button', 'Remote Connection'),
+    'Remote Connection source pill clicked',
+  ).toBe(true)
+
+  await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
+  await ctx.panel.fill('#sf-url', origin!)
+  _remoteName = `Remote Loopback E2E ${randomUUID().slice(0, 8)}`
+  await ctx.panel.fill('#inst-name-standalone', _remoteName)
+
+  await waitForConfigContinueEnabled('Continue never enabled for the Remote Connection source')
+  expect(await ctx.panel.click('.config-continue')).toBe(true)
+
+  // skipInstall save: addInstallation + close + navigate-list.
+  await expect
+    .poll(async () => {
+      const installs = await ctx.panel.evaluate<Array<{ id: string; name: string }>>(
+        `window.api.getInstallations()`,
+      ).catch(() => [] as Array<{ id: string; name: string }>)
+      const rec = installs.find((i) => i.name === _remoteName)
+      if (rec) _remoteInstallId = rec.id
+      return !!rec
+    }, { timeout: 30_000, intervals: [250, 500] })
+    .toBe(true)
+  await expectChooserVisible(ctx.panel)
+})
+
+test('remote workflow output is saved exactly once - no "(1)" duplicate next to the server-written file @sec-remote @lifecycle', async () => {
+  test.setTimeout(180_000)
+  expect(_remoteInstallId, 'no remote install id from the wizard test').toBeTruthy()
+  expect(_remoteOutputRoot, 'no output root captured').toBeTruthy()
+
+  // Snapshot the localhost webContents so the remote view (same origin as
+  // the local one!) can be identified as the NEW entry afterwards.
+  const beforeWcIds = await evalWithRetry(() => ctx.app.evaluate(({ webContents }) =>
+    webContents.getAllWebContents()
+      .filter((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()))
+      .map((w) => w.id)))
+
+  // Open the remote record by clicking its dashboard tile in the extra
+  // chooser window the wizard test opened (still the only visible panel).
+  // The chooser host transforms in place into the remote host - the local
+  // comfy host window keeps running untouched, which is exactly the
+  // shape the duplicate-download bug needs (local server + remote view
+  // sharing one output directory).
+  await expectChooserVisible(ctx.panel)
+  await clickInstallTile(ctx.panel, _remoteName)
+
+  // The remote view is the localhost webContents that wasn't there before.
+  // NOTE: the launch attach destroys the extra window's panel view - don't
+  // touch `ctx.panel` until the attach completes.
+  await expect
+    .poll(async () => {
+      const ids = await evalWithRetry(() => ctx.app.evaluate(({ webContents }) =>
+        webContents.getAllWebContents()
+          .filter((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()) && !w.isLoading())
+          .map((w) => w.id)))
+      const fresh = ids.filter((id) => !beforeWcIds.includes(id))
+      if (fresh.length > 0) _remoteWcId = fresh[0]!
+      return fresh.length
+    }, { timeout: 90_000, intervals: [500, 1_000] })
+    .toBeGreaterThan(0)
+
+  // A remote session must be registered for the record (proc-less).
+  await expect
+    .poll(async () => (await getRunningSessionSnapshot(ctx.app, _remoteInstallId)) !== null, {
+      timeout: 30_000, intervals: [250, 500],
+    })
+    .toBe(true)
+
+  // The injected content script must be active in the remote view: the
+  // download bridge exposed, the session flagged remote, and the
+  // WebSocket constructor wrapped (the auto-download intercept). The WS
+  // opened below must be created AFTER the wrap or its messages would
+  // bypass the intercept.
+  await expect
+    .poll(() => evalInWebContents<boolean>(_remoteWcId, `(() => {
+      const d = window.__comfyDesktop2
+      return !!(d && typeof d.downloadAsset === 'function'
+        && typeof d.isRemote === 'function' && d.isRemote() === true
+        && !/native code/.test(String(window.WebSocket)))
+    })()`).catch(() => false), { timeout: 60_000, intervals: [500, 1_000] })
+    .toBe(true)
+
+  // Submit EmptyImage -> SaveImage from INSIDE the remote view, over a
+  // page-created WebSocket. ComfyUI only emits `executed` to the socket
+  // whose sid matches the prompt's client_id, and only a socket created
+  // in the remote page goes through the intercepted constructor - both
+  // conditions the real Run button satisfies.
+  const graph = {
+    '1': {
+      class_type: 'EmptyImage',
+      inputs: { width: 64, height: 64, batch_size: 1, color: 0 },
+    },
+    '2': {
+      class_type: 'SaveImage',
+      inputs: { images: ['1', 0], filename_prefix: `${_remoteRunId}/nested/output` },
+    },
+  }
+  const submitted = await evalInWebContents<{ sid: string; promptId: string; error: unknown }>(
+    _remoteWcId,
+    `(() => new Promise((resolve, reject) => {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+      const ws = new WebSocket(proto + '://' + location.host + '/ws')
+      const timer = setTimeout(() => reject(new Error('no status/sid message within 20s')), 20000)
+      ws.onerror = () => { clearTimeout(timer); reject(new Error('workflow WebSocket errored')) }
+      ws.onmessage = (ev) => {
+        if (typeof ev.data !== 'string') return
+        let msg
+        try { msg = JSON.parse(ev.data) } catch { return }
+        if (msg.type !== 'status' || !msg.data || !msg.data.sid) return
+        clearTimeout(timer)
+        window.__e2eRemoteWs = ws  // keep open: 'executed' must arrive on this socket
+        fetch('/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: msg.data.sid, prompt: ${JSON.stringify(graph)} }),
+        })
+          .then((r) => r.json())
+          .then((j) => resolve({ sid: msg.data.sid, promptId: j.prompt_id || '', error: j.error || null }))
+          .catch((e) => reject(e))
+      }
+    }))()`,
+  )
+  expect(submitted.error, `POST /prompt rejected the graph: ${JSON.stringify(submitted.error)}`).toBeFalsy()
+  expect(submitted.promptId, 'no prompt_id returned').toBeTruthy()
+
+  // Wait for the execution to finish and pin the output identity: a fresh
+  // unique subfolder starts SaveImage's counter at 1.
+  await expect
+    .poll(() => evalInWebContents<boolean>(_remoteWcId, `(() =>
+      fetch('/history/' + ${JSON.stringify(submitted.promptId)})
+        .then((r) => r.json())
+        .then((j) => {
+          const h = j[${JSON.stringify(submitted.promptId)}]
+          return !!(h && h.outputs && h.outputs['2'] && h.outputs['2'].images && h.outputs['2'].images.length > 0)
+        })
+        .catch(() => false)
+    )()`).catch(() => false), { timeout: 60_000, intervals: [500, 1_000] })
+    .toBe(true)
+  const outputMeta = await evalInWebContents<{ filename: string; subfolder: string; type: string }>(
+    _remoteWcId,
+    `(() => fetch('/history/' + ${JSON.stringify(submitted.promptId)})
+      .then((r) => r.json())
+      .then((j) => j[${JSON.stringify(submitted.promptId)}].outputs['2'].images[0]))()`,
+  )
+  expect(outputMeta.filename).toBe('output_00001_.png')
+  // Windows SaveImage reports the subfolder with backslashes.
+  expect(outputMeta.subfolder.replace(/\\/g, '/')).toBe(`${_remoteRunId}/nested`)
+  expect(outputMeta.type).toBe('output')
+
+  // The server-side write is the FIRST copy - it must exist at the
+  // requested nested path.
+  await expect
+    .poll(() => existsSync(_remoteExpectedFile), { timeout: 30_000, intervals: [250, 500] })
+    .toBe(true)
+  expect(statSync(_remoteExpectedFile).size, 'server-written PNG is empty').toBeGreaterThan(0)
+
+  // The remote view's auto-download for the same output must settle: a
+  // matching tray entry reaches `completed` and no matching entry stays
+  // active. Matching on the runId inside the /api/view URL keeps this
+  // immune to other downloads the suite may have logged earlier.
+  const matches = (d: { url: string }): boolean =>
+    d.url.includes('/api/view?') && d.url.includes(_remoteRunId)
+  let completedSavePath: string | undefined
+  await expect
+    .poll(async () => {
+      const tray = await getLiveDownloadsTrayState(ctx.app)
+      if (tray.active.some(matches)) return 'still-active'
+      const done = tray.recent.find((d) => matches(d) && d.status === 'completed')
+      if (!done) return 'not-completed'
+      completedSavePath = done.savePath
+      return 'completed'
+    }, { timeout: 60_000, intervals: [500, 1_000] })
+    .toBe('completed')
+
+  // The completed download must report the ORIGINAL server-written path -
+  // not a "(1)" dedup copy (content-identity keeps the existing file).
+  expect(completedSavePath, 'completed tray entry has no savePath').toBeTruthy()
+  expect(path.resolve(completedSavePath!)).toBe(path.resolve(_remoteExpectedFile))
+
+  // Let any late duplicate download land before the final scan, then
+  // assert the core regression: exactly ONE file under the unique root,
+  // in the nested subdirectory, with no "(N)" suffix.
+  await new Promise((r) => setTimeout(r, 2_500))
+  const files = listFilesRecursive(_remoteOutputRoot)
+  expect(files, `expected exactly one output file, got: ${files.join(', ')}`).toEqual(['nested/output_00001_.png'])
+  expect(files.some((f) => / \(\d+\)\.png$/.test(f)), 'duplicate "(N)" download copy found').toBe(false)
+  expect(statSync(_remoteExpectedFile).size).toBeGreaterThan(0)
+})
+
+test('cleans up the remote connection: window closed, record untracked, local install untouched @sec-remote @lifecycle', async () => {
+  test.setTimeout(120_000)
+  expect(_remoteInstallId, 'no remote install id to clean up').toBeTruthy()
+
+  // Close the page-held workflow socket, then the remote window. Remote
+  // sessions are proc-less, so the close only detaches the session.
+  if (_remoteWcId) {
+    await evalInWebContents<boolean>(
+      _remoteWcId,
+      `(() => { try { window.__e2eRemoteWs && window.__e2eRemoteWs.close() } catch {} return true })()`,
+    ).catch(() => false)
+  }
+  expect(_remoteWindowId, 'no remote window id captured').toBeGreaterThan(0)
+  await evalWithRetry(() => ctx.app.evaluate(({ BrowserWindow }, id) => {
+    const win = BrowserWindow.fromId(id)
+    if (win && !win.isDestroyed()) win.close()
+  }, _remoteWindowId))
+  await expect
+    .poll(async () => (await getRunningSessionSnapshot(ctx.app, _remoteInstallId)) === null, {
+      timeout: 30_000, intervals: [250, 500],
+    })
+    .toBe(true)
+
+  // Untrack the remote record through the real dashboard kebab so the
+  // delete section below sees the same single-local-install registry it
+  // always has (`installs[0]` must stay the standalone install). The
+  // remaining window is the comfy host with a hidden install-backed
+  // panel, so spawn a fresh dashboard window for the kebab flow.
+  await openDashboardWindowViaPickerHome()
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_remoteInstallId)), { timeout: 15_000 })
+  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_remoteInstallId)))).toBe(true)
+  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('untrack')), { timeout: 5_000 })
+  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('untrack')))).toBe(true)
+  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
+  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await expect
+    .poll(async () => {
+      const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
+      return installs.some((i) => i.id === _remoteInstallId)
+    }, { timeout: 30_000, intervals: [250, 500] })
+    .toBe(false)
+
+  // Hand the suite back exactly one window bound to the comfy host, with
+  // the install-backed panel remounted for `window.api` reads - the same
+  // handoff dance the setup section's dashboard test does.
+  await closeExtraWindowsKeepComfyHost()
+  expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
+  await waitForWebContents(ctx.app, 'panel.html')
+
+  // Remove only this run's unique output root from the shared directory.
+  if (_remoteOutputRoot) {
+    rmSync(_remoteOutputRoot, { recursive: true, force: true })
+    await expect
+      .poll(() => existsSync(_remoteOutputRoot), { timeout: 15_000, intervals: [250, 500] })
+      .toBe(false)
+    _remoteOutputRoot = ''
+  }
+
+  // The local install must still be running - the remote section may not
+  // disturb the state the Stop + Delete section expects.
+  expect(await comfyFrontendIsLoaded(), 'local install stopped during the remote section').toBe(true)
 })
 
 // ---------------------------------------------------------------------------
