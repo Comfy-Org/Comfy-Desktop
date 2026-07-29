@@ -98,6 +98,24 @@ interface PendingDownload {
 
 const attachedSessions = new WeakSet<Electron.Session>()
 const pendingDownloads = new Map<string, PendingDownload>()
+
+/** Asset URLs whose download completed within the last few seconds.
+ *  Remote/cloud sessions can deliver the same output event more than once
+ *  (a replay across reconnects, or two views observing one session). The
+ *  `pendingDownloads` reservation only covers overlapping requests; a repeat
+ *  arriving just after the first download finished would otherwise save a
+ *  duplicate "name (1)" copy. Time-bounded so a deliberate later re-run that
+ *  re-serves the same URL still downloads. */
+const recentAssetCompletions = new Map<string, number>()
+const RECENT_ASSET_COMPLETION_TTL_MS = 15_000
+
+function recordAssetCompletion(url: string): void {
+  const now = Date.now()
+  for (const [u, t] of recentAssetCompletions) {
+    if (now - t >= RECENT_ASSET_COMPLETION_TTL_MS) recentAssetCompletions.delete(u)
+  }
+  recentAssetCompletions.set(url, now)
+}
 let mainWindow: BrowserWindow | null = null
 
 /** Original dispatch params per URL, for `retryDownload`. Kept off the
@@ -633,6 +651,12 @@ export async function startAssetDownload(
     return true
   }
 
+  const completedAt = recentAssetCompletions.get(url)
+  if (completedAt !== undefined && Date.now() - completedAt < RECENT_ASSET_COMPLETION_TTL_MS) {
+    console.log('[asset-download] skip: same URL completed', Date.now() - completedAt, 'ms ago')
+    return true
+  }
+
   // Reserve the URL before the first await: the same URL can be requested
   // again while the async setup below is still in flight (e.g. an output
   // reported twice in quick succession), and that request must join this
@@ -789,6 +813,11 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         }
         // Try to remove the temp directory if it's now empty (safe — fails silently if not empty)
         try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+      }
+      // Only asset downloads set outputDir; model downloads are keyed by
+      // explicit user action and must never be suppressed by this memo.
+      if (pending.outputDir) {
+        recordAssetCompletion(pending.url)
       }
       reportProgress({
         url: pending.url,

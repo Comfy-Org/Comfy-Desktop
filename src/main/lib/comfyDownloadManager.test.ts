@@ -494,6 +494,87 @@ describe('asset download retries', () => {
     }
   })
 
+  it('skips re-downloading a URL that completed moments earlier', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://remote.example/api/view?filename=repeat.png'
+    const baseNow = 1_700_100_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(baseNow)
+    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn(),
+    } as unknown as Electron.Session
+    const webContents = {
+      session,
+      send: vi.fn(),
+      isDestroyed: () => false,
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents,
+    } as unknown as Electron.BrowserWindow
+
+    function createItem(itemUrl: string) {
+      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      const setSavePath = vi.fn<(savePath: string) => void>()
+      const item = {
+        getURLChain: () => [itemUrl],
+        getURL: () => itemUrl,
+        getContentDisposition: () => null,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn((event: string, handler: typeof done) => {
+          if (event === 'done') done = handler
+        }),
+        getTotalBytes: () => 1,
+        getReceivedBytes: () => 1,
+        isPaused: () => false,
+      } as unknown as Electron.DownloadItem
+      return { item, setSavePath, getDone: () => done }
+    }
+
+    try {
+      await expect(mod.startAssetDownload(win, url, 'repeat.png', outputDir)).resolves.toBe(true)
+      expect(session.downloadURL).toHaveBeenCalledTimes(1)
+      const first = createItem(url)
+      willDownload!({}, first.item, null)
+      const tempPath = first.setSavePath.mock.calls[0]?.[0]
+      expect(tempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath!, 'content')
+      first.getDone()!({}, 'completed')
+
+      // The same output event can be delivered again after the download has
+      // already finished (a replay across a reconnect, or a second view of
+      // the session). Inside the dedupe window this must not start a second
+      // download that would save "repeat (1).png".
+      nowSpy.mockReturnValue(baseNow + 2_000)
+      await expect(mod.startAssetDownload(win, url, 'repeat.png', outputDir)).resolves.toBe(true)
+      expect(session.downloadURL).toHaveBeenCalledTimes(1)
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['repeat.png'])
+
+      // Well past the window the same URL downloads again: a deliberate
+      // re-run of a cached workflow re-serves the same URL and the user
+      // expects a fresh copy.
+      nowSpy.mockReturnValue(baseNow + 60_000)
+      await expect(mod.startAssetDownload(win, url, 'repeat.png', outputDir)).resolves.toBe(true)
+      expect(session.downloadURL).toHaveBeenCalledTimes(2)
+      const second = createItem(url)
+      willDownload!({}, second.item, null)
+      const tempPath2 = second.setSavePath.mock.calls[0]?.[0]
+      expect(tempPath2).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath2!, 'content2')
+      second.getDone()!({}, 'completed')
+      const saved = (await fs.promises.readdir(outputDir)).sort()
+      expect(saved).toEqual(['repeat (1).png', 'repeat.png'])
+    } finally {
+      nowSpy.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('allocates distinct temp paths for same-named downloads started in the same millisecond', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     // Freeze the clock: with a timestamp-only temp name these two downloads
