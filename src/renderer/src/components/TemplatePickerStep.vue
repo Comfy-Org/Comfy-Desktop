@@ -201,7 +201,7 @@ defineExpose({ shownDiskError })
 
         <!-- Outside the aria-hidden media span so the cost reaches the accessible name. -->
         <span v-if="isApiNodeTemplate(opt)" class="tps__api">
-          <Crown :size="13" :stroke-width="2.5" aria-hidden="true" />
+          <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
           {{ t('standalone.templateApiBadge') }}
         </span>
 
@@ -401,8 +401,7 @@ defineExpose({ shownDiskError })
   box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
-.tps__recommended,
-.tps__api {
+.tps__recommended {
   position: absolute;
   top: 8px;
   left: 8px;
@@ -413,21 +412,30 @@ defineExpose({ shownDiskError })
   font-weight: 400;
   line-height: normal;
   letter-spacing: 0;
-  white-space: nowrap;
+  color: var(--neutral-100);
   background: color-mix(in oklab, var(--neutral-950) 30%, transparent);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
 }
 
-.tps__recommended {
-  color: var(--neutral-100);
-}
-
 .tps__api {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
   color: var(--upgrade);
+  background: var(--neutral-900);
+  box-shadow: 0 2px 10px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
 .tps__card-crown {
