@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, toRef } from 'vue'
+import { computed, onMounted, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -224,6 +224,17 @@ function viewDanger(inst: Installation): void {
 // users can't enter cloud during an outage. When `degraded`, the tile
 // surfaces a "Heavy usage" meta pill but the click still proceeds.
 const cloudCapacity = useCloudCapacity()
+
+/** Mirrors FirstUseTakeover's fail-closed default so the pill never
+ *  flashes in and back out while the boot fetch is in flight. */
+const cloudFreeRunsEnabled = ref(false)
+onMounted(async () => {
+  try {
+    cloudFreeRunsEnabled.value = await window.api.getCloudFreeRunsEnabled()
+  } catch {
+    // fail-closed: pill stays hidden
+  }
+})
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
@@ -268,7 +279,15 @@ function handleNewInstallClick(): void {
           @click="handleNewInstallClick"
         >
           <div class="chooser-tile-icon"><Plus :size="32" /></div>
-          <div class="chooser-tile-name">{{ t('chooser.newInstall') }}</div>
+          <div class="chooser-tile-name">
+            {{ t('chooser.newInstall') }}
+            <span
+              v-if="cloudFreeRunsEnabled && !cloudCapacity.isDisabled() && !cloudCapacity.isPaid()"
+              class="chooser-cloud-runs-pill"
+              data-testid="chooser-cloud-runs-pill"
+              >{{ t('firstUse.cloudFreeRunsPill') }}</span
+            >
+          </div>
           <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
         </button>
 
@@ -301,6 +320,23 @@ function handleNewInstallClick(): void {
 
 <style scoped>
 @import './chooser/chooser-tiles.css';
+
+/* Same treatment as FirstUseTakeover's start-cloud-runs-pill. */
+.chooser-cloud-runs-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--comfy-yellow);
+  color: var(--neutral-900);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: normal;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 
 .chooser-bg :deep(.brand-inner-frame) {
   /* Inherit the default justify-content: center from BrandBackground;

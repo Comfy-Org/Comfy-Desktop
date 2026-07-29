@@ -471,4 +471,21 @@ describe('ChooserView', () => {
     // Confirms activeFilter is reachable from vm for the other filter tests.
     expect((wrapper.vm as unknown as { activeFilter: FilterKey }).activeFilter).toBe('all')
   })
+
+  it('shows the free-runs pill on the New Install tile when the flag is on', async () => {
+    const api = installMockApi([])
+    ;(api as unknown as { getCloudFreeRunsEnabled: unknown }).getCloudFreeRunsEnabled = vi
+      .fn()
+      .mockResolvedValue(true)
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(true)
+  })
+
+  it('hides the free-runs pill when the flag is unavailable', async () => {
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(false)
+  })
 })
