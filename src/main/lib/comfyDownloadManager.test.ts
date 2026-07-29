@@ -224,6 +224,40 @@ describe('sanitizeAssetFilename', () => {
     expect(sanitizeAssetFilename('../..', outputDir)).toBeNull()
     expect(sanitizeAssetFilename('.', outputDir)).toBeNull()
   })
+
+  it.each(['file.png:evil', 'sub/file.png:evil', 'file.png:Zone.Identifier'])(
+    'rejects NTFS alternate data stream %s',
+    (filename) => {
+      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+    },
+  )
+
+  it.each(['CON', 'NUL.png', 'aux.txt', 'COM1.mp4', 'lpt9', 'sub/nul.png'])(
+    'rejects Windows reserved device name %s',
+    (filename) => {
+      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+    },
+  )
+
+  it.each(['name.png.', 'name.png ', 'trailing./file.png', 'trailing /file.png'])(
+    'rejects trailing dot/space alias %s',
+    (filename) => {
+      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+    },
+  )
+
+  it.each(['file<x>.png', 'file|pipe.png', 'file?.png', 'file*.png', 'file"quote.png', 'file\u0001.png'])(
+    'rejects Windows-invalid character in %s',
+    (filename) => {
+      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+    },
+  )
+
+  it('does not treat reserved-name prefixes as reserved', () => {
+    expect(sanitizeAssetFilename('console.png', outputDir)).toBe('console.png')
+    expect(sanitizeAssetFilename('nullable.txt', outputDir)).toBe('nullable.txt')
+    expect(sanitizeAssetFilename('com10.mp4', outputDir)).toBe('com10.mp4')
+  })
 })
 
 describe('resolveAssetSavePath', () => {
@@ -377,7 +411,10 @@ describe('asset download retries', () => {
       if (!firstTempPath) throw new Error('First download did not receive a temporary path')
       await fs.promises.writeFile(firstTempPath, 'partial')
 
-      await mod.startAssetDownload(win, url, 'duplicate/hash.mp4', outputDir)
+      // Same URL: joins the in-flight download instead of re-registering it,
+      // so the duplicate destination cannot clobber the retry params.
+      await expect(mod.startAssetDownload(win, url, 'duplicate/hash.mp4', outputDir)).resolves.toBe(true)
+      expect(session.downloadURL).toHaveBeenCalledTimes(1)
       first.getDone()!({}, 'interrupted')
 
       expect(mod.retryDownload(url)).toBe(true)

@@ -266,6 +266,24 @@ function getAssetTempDir(): string {
 const WIN_MAX_PATH = 259
 const DEDUP_RESERVE = 6
 
+// Reserved DOS device names; Windows treats these as devices even with an
+// extension (e.g. "NUL.png").
+const WIN_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
+
+/**
+ * Reject path segments that are unsafe on Windows regardless of host
+ * platform (output dirs may be on shared/synced storage): NTFS alternate
+ * data streams and other invalid characters, control characters, reserved
+ * device names, and trailing dot/space aliases that make filesystem
+ * identity disagree with the lexical name.
+ */
+function isUnsafePathSegment(segment: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  if (/[<>:"|?*\u0000-\u001F]/.test(segment)) return true
+  if (segment.endsWith('.') || segment.endsWith(' ')) return true
+  return WIN_RESERVED_NAMES.test(segment)
+}
+
 /**
  * Sanitize an asset filename to prevent path traversal and ensure it fits
  * within filesystem limits.  Returns null if the filename is invalid.
@@ -302,10 +320,16 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
       const dirPart = path.resolve(outputDir, dir)
       const available = WIN_MAX_PATH - dirPart.length - 1 - ext.length - DEDUP_RESERVE
       if (available <= 0) return null
-      const truncatedStem = stem.substring(0, available)
+      // Trim trailing dots/spaces the truncation may expose so a legitimate
+      // long name is shortened rather than rejected below.
+      const truncatedStem = stem.substring(0, available).replace(/[. ]+$/, '')
+      if (truncatedStem === '') return null
       safe = dir && dir !== '.' ? dir + '/' + truncatedStem + ext : truncatedStem + ext
     }
   }
+
+  // Validate segments last so truncation results are covered too.
+  if (safe.split('/').some((seg) => isUnsafePathSegment(seg))) return null
 
   return safe
 }
@@ -607,6 +631,14 @@ export async function startAssetDownload(
     return true
   }
 
+  await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
+  await fs.promises.mkdir(tempDir, { recursive: true })
+
+  if (win.isDestroyed()) return false
+
+  // Register retry params only once the download is viable: an earlier
+  // registration would survive a mkdir failure or destroyed window as a
+  // ghost entry with no matching pending download.
   retryParamsByUrl.set(url, {
     kind: 'asset',
     filename: path.relative(outputDir, savePath),
@@ -615,11 +647,6 @@ export async function startAssetDownload(
     window: win,
     senderContents,
   })
-
-  await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
-  await fs.promises.mkdir(tempDir, { recursive: true })
-
-  if (win.isDestroyed()) return false
 
   const initial = makeProgress({ status: 'pending' })
   pendingDownloads.set(url, {
