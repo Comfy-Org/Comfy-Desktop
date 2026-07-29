@@ -1,5 +1,5 @@
 import { ref, onUnmounted } from 'vue'
-import type { DiskSpaceInfo, PathIssue } from '../types/ipc'
+import type { DiskSpaceInfo, FieldOption, PathIssue } from '../types/ipc'
 import { emitTelemetryAction } from './telemetry'
 import { formatBytes } from './formatting'
 
@@ -205,6 +205,17 @@ export function isTemplateDiskBlocked(
 export function minTemplateModelBytes(modelByteSizes: number[]): number {
   const withModels = modelByteSizes.filter((b) => b > 0)
   return withModels.length ? Math.min(...withModels) : 0
+}
+
+/** A template option's model footprint, or 0 when it carries none. */
+export function templateSizeBytes(option: FieldOption | null | undefined): number {
+  const size = option?.data?.sizeBytes
+  return typeof size === 'number' && size > 0 ? size : 0
+}
+
+/** Runs on API nodes: no models to download, but every run spends credits. */
+export function isApiNodeTemplate(option: FieldOption | null | undefined): boolean {
+  return option?.data?.apiNode === true
 }
 
 export async function checkTemplateDiskOrBlock(opts: {

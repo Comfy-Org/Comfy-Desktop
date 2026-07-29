@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, HardDriveDownload } from 'lucide-vue-next'
+import { Check, Crown, HardDriveDownload } from 'lucide-vue-next'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
-import { templateDiskRequiredBytes, isTemplateDiskBlocked } from '../lib/installHelpers'
+import {
+  templateDiskRequiredBytes,
+  isTemplateDiskBlocked,
+  isApiNodeTemplate,
+  templateSizeBytes
+} from '../lib/installHelpers'
 import { useTemplateTabs } from '../composables/useTemplateTabs'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import TruncatedText from './TruncatedText.vue'
@@ -47,10 +52,7 @@ const thumbFailed = reactive<Record<string, boolean>>({})
  *  placeholder meanwhile) instead of flashing a blank box. */
 const thumbLoaded = reactive<Record<string, boolean>>({})
 
-function sizeBytesOf(option: FieldOption | null): number {
-  const size = option?.data?.sizeBytes
-  return typeof size === 'number' ? size : 0
-}
+const sizeBytesOf = templateSizeBytes
 /** Card preview URL, or null for non-image previews (audio → branded tile). */
 function thumbnailOf(option: FieldOption): string | null {
   const url = option.data?.thumbnailUrl
@@ -68,6 +70,9 @@ function presentLabelOf(option: FieldOption): string {
   const downloaded = t('standalone.templateModelsDownloaded')
   const size = sizeLabelOf(option)
   return size ? `${downloaded} · ${size}` : downloaded
+}
+function hasNothingToDownload(option: FieldOption): boolean {
+  return isApiNodeTemplate(option) && sizeBytesOf(option) === 0
 }
 /** Short model name (falls back to the full label). */
 function nameOf(option: FieldOption): string {
@@ -194,6 +199,12 @@ defineExpose({ shownDiskError })
           </span>
         </span>
 
+        <!-- Outside the aria-hidden media span so the cost reaches the accessible name. -->
+        <span v-if="isApiNodeTemplate(opt)" class="tps__api">
+          <Crown :size="13" :stroke-width="2.5" aria-hidden="true" />
+          {{ t('standalone.templateApiBadge') }}
+        </span>
+
         <span class="tps__card-footer">
           <span class="tps__card-text">
             <TruncatedText class="tps__card-title" :text="nameOf(opt)" />
@@ -207,6 +218,14 @@ defineExpose({ shownDiskError })
           >
             <HardDriveDownload :size="14" :stroke-width="2" aria-hidden="true" />
           </Tooltip>
+          <!-- Decorative: the badge above already names the cost. -->
+          <Crown
+            v-else-if="hasNothingToDownload(opt)"
+            class="tps__card-crown"
+            :size="14"
+            :stroke-width="2.5"
+            :aria-hidden="true"
+          />
           <span v-else-if="sizeLabelOf(opt)" class="tps__card-size">{{ sizeLabelOf(opt) }}</span>
         </span>
       </button>
@@ -241,6 +260,7 @@ defineExpose({ shownDiskError })
 }
 
 .tps__card {
+  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--brand-surface-border);
@@ -381,7 +401,8 @@ defineExpose({ shownDiskError })
   box-shadow: 0 2px 8px color-mix(in oklab, var(--neutral-950) 55%, transparent);
 }
 
-.tps__recommended {
+.tps__recommended,
+.tps__api {
   position: absolute;
   top: 8px;
   left: 8px;
@@ -392,10 +413,26 @@ defineExpose({ shownDiskError })
   font-weight: 400;
   line-height: normal;
   letter-spacing: 0;
-  color: var(--neutral-100);
+  white-space: nowrap;
   background: color-mix(in oklab, var(--neutral-950) 30%, transparent);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
+}
+
+.tps__recommended {
+  color: var(--neutral-100);
+}
+
+.tps__api {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--upgrade);
+}
+
+.tps__card-crown {
+  flex: 0 0 auto;
+  color: var(--upgrade);
 }
 
 @media (prefers-reduced-motion: reduce) {

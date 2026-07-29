@@ -178,6 +178,56 @@ describe('TemplatePickerStep', () => {
     expect(card.find('.tps__card-size').text()).toContain('GB')
   })
 
+  describe('API-node templates', () => {
+    const API_NODE: FieldOption = {
+      value: 'api_bytedance_seedream_5_0_pro_image_edit',
+      label: 'Seedream 5.0 Pro: Image Edit',
+      data: { modality: 'image', sizeBytes: 0, apiNode: true, name: 'Seedream 5.0 Pro', task: 'Image Edit' },
+    }
+    const apiCard = (option: FieldOption = API_NODE) =>
+      mountPicker({ options: [NONE, option], selectedValue: option.value })
+        .findAll('button[role="radio"]')[0]!
+
+    it('badges the card and swaps the size for the crown', () => {
+      const card = apiCard()
+      expect(card.find('.tps__api').text()).toContain('Requires credits')
+      expect(card.find('.tps__card-crown').exists()).toBe(true)
+      expect(card.find('.tps__card-size').exists()).toBe(false)
+    })
+
+    it('keeps the credit badge out of the aria-hidden subtree', () => {
+      const card = apiCard()
+      expect(card.find('.tps__api').exists()).toBe(true)
+      expect(card.find('.tps__card-media .tps__api').exists()).toBe(false)
+    })
+
+    it('leaves local templates unbadged', () => {
+      const card = mountPicker().findAll('button[role="radio"]')[0]!
+      expect(card.find('.tps__api').exists()).toBe(false)
+      expect(card.find('.tps__card-crown').exists()).toBe(false)
+      expect(card.find('.tps__card-size').text()).toContain('GB')
+    })
+
+    it('shows the real size, not the crown, when an API-node template has models', () => {
+      const card = apiCard({
+        ...API_NODE,
+        data: { ...API_NODE.data, sizeBytes: 9 * GB },
+      })
+      expect(card.find('.tps__api').exists()).toBe(true)
+      expect(card.find('.tps__card-crown').exists()).toBe(false)
+      expect(card.find('.tps__card-size').text()).toContain('GB')
+    })
+
+    it('never blocks an API-node card on a full disk', () => {
+      const wrapper = mountPicker({
+        options: [NONE, API_NODE],
+        selectedValue: API_NODE.value,
+        diskSpace: { total: 100 * GB, free: 1 * GB },
+      })
+      expect(wrapper.vm.shownDiskError).toBeNull()
+    })
+  })
+
   it('falls back to the full label when no short name is provided', () => {
     const card = mountPicker().findAll('button[role="radio"]')[0]!
     expect(card.find('.tps__card-title').text()).toBe('SDXL Turbo')

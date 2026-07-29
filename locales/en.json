@@ -857,6 +857,7 @@
     "templatePickerLead": "Opens a ready-to-run workflow. Models download during setup.",
     "templateModelsDownloaded": "Downloaded",
     "templateTabsAria": "Filter starter workflows by type",
+    "templateApiBadge": "Requires credits",
     "templateInstall": "Install",
     "templateSkipAndInstall": "Skip & Install",
     "templateSkipAndInstallAria": "Skip starter workflow and install ComfyUI",
