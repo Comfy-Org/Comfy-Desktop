@@ -93,7 +93,9 @@ describe('parseVramLine / parseRequestedModelLoad', () => {
   })
 
   it('rejects non-identifier load tokens (paths, filenames, trailing words)', () => {
-    expect(parseRequestedModelLoad('Requested to load C:\\Users\\me\\secret.safetensors')).toBeNull()
+    expect(
+      parseRequestedModelLoad('Requested to load C:\\Users\\me\\secret.safetensors')
+    ).toBeNull()
     expect(parseRequestedModelLoad('Requested to load my-private-model.safetensors')).toBeNull()
     expect(parseRequestedModelLoad('Requested to load Lumina2 and free memory')).toBeNull()
   })
@@ -105,7 +107,9 @@ describe('parseVramLine / parseRequestedModelLoad', () => {
       )
     ).toBe('Lumina2')
     expect(
-      parseDynamicVramPrepare('Model ZImageTEModel_ prepared for dynamic VRAM loading. 7671MB Staged.')
+      parseDynamicVramPrepare(
+        'Model ZImageTEModel_ prepared for dynamic VRAM loading. 7671MB Staged.'
+      )
     ).toBe('ZImageTEModel_')
     expect(parseDynamicVramPrepare('Requested to load Lumina2')).toBeNull()
     expect(parseDynamicVramPrepare('Model prepared for something else')).toBeNull()
@@ -116,9 +120,10 @@ describe('parseVramLine / parseRequestedModelLoad', () => {
       modelClass: 'Lumina2',
       targetDevice: 'cuda:1'
     })
-    expect(
-      parseModelDeepclone('Reusing loaded multigpu deepclone of Lumina2 for cuda:1')
-    ).toEqual({ modelClass: 'Lumina2', targetDevice: 'cuda:1' })
+    expect(parseModelDeepclone('Reusing loaded multigpu deepclone of Lumina2 for cuda:1')).toEqual({
+      modelClass: 'Lumina2',
+      targetDevice: 'cuda:1'
+    })
     expect(parseModelDeepclone('Creating deepclone of ZImageTEModel_ for xpu:2')).toEqual({
       modelClass: 'ZImageTEModel_',
       targetDevice: 'xpu:2'
@@ -369,12 +374,16 @@ describe('createHardwareTap', () => {
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(2)
-    expect(
-      usage.find((u) => u.ctx['target_device'] === 'cuda:1')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', load_trigger: 'deepclone', count: 2 })
-    expect(
-      usage.find((u) => u.ctx['target_device'] === 'cuda:2')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', load_trigger: 'deepclone', count: 1 })
+    expect(usage.find((u) => u.ctx['target_device'] === 'cuda:1')!.ctx).toMatchObject({
+      model_class: 'Lumina2',
+      load_trigger: 'deepclone',
+      count: 2
+    })
+    expect(usage.find((u) => u.ctx['target_device'] === 'cuda:2')!.ctx).toMatchObject({
+      model_class: 'Lumina2',
+      load_trigger: 'deepclone',
+      count: 1
+    })
   })
 
   it('counts dynamic-VRAM prepares separately from cold loads of the same class', () => {
@@ -391,12 +400,14 @@ describe('createHardwareTap', () => {
     tap.flushSummary()
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(2)
-    expect(
-      usage.find((u) => u.ctx['load_trigger'] === 'requested')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', count: 1 })
-    expect(
-      usage.find((u) => u.ctx['load_trigger'] === 'dynamic_prepare')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', count: 2 })
+    expect(usage.find((u) => u.ctx['load_trigger'] === 'requested')!.ctx).toMatchObject({
+      model_class: 'Lumina2',
+      count: 1
+    })
+    expect(usage.find((u) => u.ctx['load_trigger'] === 'dynamic_prepare')!.ctx).toMatchObject({
+      model_class: 'Lumina2',
+      count: 2
+    })
   })
 
   it('caps distinct model classes across the tap lifetime, not per flush', () => {
@@ -493,7 +504,9 @@ describe('createHardwareTap', () => {
     const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
     expect(usage).toHaveLength(2)
     expect(usage).toContainEqual(
-      expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Lumina2', count: 1 }) })
+      expect.objectContaining({
+        ctx: expect.objectContaining({ model_class: 'Lumina2', count: 1 })
+      })
     )
     expect(usage).toContainEqual(
       expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Flux', count: 1 }) })

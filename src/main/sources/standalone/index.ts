@@ -8,9 +8,14 @@ import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
 import { areModelsPresent } from '../../lib/modelDownloadPaths'
 import {
-  PLATFORM_PREFIX, DEFAULT_LAUNCH_ARGS,
-  getVariantLabel, stripPlatform, getActivePythonPath,
-  getVenvDir, recommendVariant, writeComfyEnvironment,
+  PLATFORM_PREFIX,
+  DEFAULT_LAUNCH_ARGS,
+  getVariantLabel,
+  stripPlatform,
+  getActivePythonPath,
+  getVenvDir,
+  recommendVariant,
+  writeComfyEnvironment
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
@@ -21,11 +26,7 @@ import * as installations from '../../installations'
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
-import type {
-  SourcePlugin,
-  FieldOption,
-  LaunchCommand,
-} from '../../types/sources'
+import type { SourcePlugin, FieldOption, LaunchCommand } from '../../types/sources'
 
 export { getVariantLabel } from './envPaths'
 
@@ -58,11 +59,13 @@ function buildVariantOption(
   nightly = false
 ): FieldOption {
   const sizeMB = (release.size / 1048576).toFixed(0)
-  const downloadFiles = [{
-    url: `${R2_BASE_URL}/${vendorId}/${release.tag}/${release.file}`,
-    filename: release.file,
-    size: release.size,
-  }]
+  const downloadFiles = [
+    {
+      url: `${R2_BASE_URL}/${vendorId}/${release.tag}/${release.file}`,
+      filename: release.file,
+      size: release.size
+    }
+  ]
   // The description is a fixed-format, non-localized string ("ComfyUI X ·
   // Python Y · Z MB"), so the nightly marker is a plain literal too.
   const displayVersion = displayTag
@@ -74,12 +77,16 @@ function buildVariantOption(
     description: `ComfyUI ${displayVersion}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
     data: {
       variantId: vendorId,
-      manifest: { id: vendorId, comfyui_ref: release.comfyui_version, python_version: release.python_version },
+      manifest: {
+        id: vendorId,
+        comfyui_ref: release.comfyui_version,
+        python_version: release.python_version
+      },
       downloadFiles,
       downloadUrl: downloadFiles[0]!.url,
-      r2Release: release,
+      r2Release: release
     } as unknown as Record<string, unknown>,
-    recommended: recommendVariant(vendorId, gpu),
+    recommended: recommendVariant(vendorId, gpu)
   }
 }
 
@@ -106,8 +113,12 @@ export function buildPinnedVariant(
 
 export const standalone: SourcePlugin = {
   id: 'standalone',
-  get label() { return t('standalone.label') },
-  get description() { return t('standalone.desc') },
+  get label() {
+    return t('standalone.label')
+  },
+  get description() {
+    return t('standalone.desc')
+  },
   category: 'local',
 
   get fields() {
@@ -118,11 +129,21 @@ export const standalone: SourcePlugin = {
       // and a tag picker there would contradict the channel intent. The
       // wizard renders an empty/disabled select on 'latest' (zero options).
       { id: 'comfyVersion', label: t('standalone.comfyVersion'), type: 'select' as const },
-      { id: 'variant', label: t('standalone.variant'), type: 'select' as const, renderAs: 'cards' as const },
+      {
+        id: 'variant',
+        label: t('standalone.variant'),
+        type: 'select' as const,
+        renderAs: 'cards' as const
+      },
       // POC: optional starter template to auto-open on first launch. Rendered
       // as cards after the variant; always returns options (incl. a "None"
       // skip), so the wizard's field chain completes and Continue enables.
-      { id: 'bundledTemplate', label: t('standalone.starterTemplate'), type: 'select' as const, renderAs: 'cards' as const },
+      {
+        id: 'bundledTemplate',
+        label: t('standalone.starterTemplate'),
+        type: 'select' as const,
+        renderAs: 'cards' as const
+      }
     ]
   },
 
@@ -134,7 +155,7 @@ export const standalone: SourcePlugin = {
       { phase: 'extract', label: t('common.extract') },
       { phase: 'setup', label: t('standalone.setupEnv') },
       { phase: 'cleanup', label: t('standalone.cleanupEnv') },
-      { phase: 'update', label: t('standalone.updateToStable') },
+      { phase: 'update', label: t('standalone.updateToStable') }
     ]
   },
 
@@ -166,14 +187,15 @@ export const standalone: SourcePlugin = {
     // future channel-switches stay consistent with the install-time pick.
     const isStable = selections.release?.value === 'stable'
     const isLatest = selections.release?.value === 'latest'
-    const releaseTag = r2Release?.tag || (selections.release?.value || 'unknown')
+    const releaseTag = r2Release?.tag || selections.release?.value || 'unknown'
     // Only honour a comfyVersion pick on the stable channel; getFieldOptions
     // returns [] for 'latest', so any stale value carried in selections from
     // a prior channel toggle is dropped here as a defence-in-depth.
     const pickedComfyTag = isStable
-      ? (typeof selections.comfyVersion?.value === 'string' && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+      ? typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
         ? selections.comfyVersion.value
-        : undefined)
+        : undefined
       : undefined
     // Starter template: the chosen template id, or undefined when the user left
     // the "None" option selected. Format-validated (not matched against the
@@ -217,9 +239,9 @@ export const standalone: SourcePlugin = {
             bundledTemplateId,
             bundledTemplateSizeBytes,
             pendingTemplateOpen: bundledTemplateId,
-            downloadTemplateModels: true,
+            downloadTemplateModels: true
           }
-        : {}),
+        : {})
     }
   },
 
@@ -256,12 +278,14 @@ export const standalone: SourcePlugin = {
     )
     const adoptArgs = adoptedBaseDir
       ? [
-        '--base-directory', adoptedBaseDir,
-        '--user-directory', path.join(adoptedBaseDir, 'user'),
-        ...(userSetDatabaseUrl
-          ? []
-          : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`]),
-      ]
+          '--base-directory',
+          adoptedBaseDir,
+          '--user-directory',
+          path.join(adoptedBaseDir, 'user'),
+          ...(userSetDatabaseUrl
+            ? []
+            : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`])
+        ]
       : []
     // Desktop-managed feature flags (e.g. show_signin_button) are injected in
     // handleLaunch after we discover the running ComfyUI's feature-flag registry,
@@ -270,15 +294,13 @@ export const standalone: SourcePlugin = {
       cmd: pythonPath,
       args: ['-s', path.join('ComfyUI', 'main.py'), ...adoptArgs, ...parsed],
       cwd: installation.installPath,
-      port,
+      port
     }
   },
 
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {
     const installed = installation.status === 'installed'
-    return [
-      launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
-    ]
+    return [launchAction(installed, !installed ? t('errors.installNotReady') : undefined)]
   },
 
   install,
@@ -290,7 +312,7 @@ export const standalone: SourcePlugin = {
     inst: InstallationRecord,
     destPath: string,
     sendProgress: (phase: string, detail: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<void> {
     await writeComfyEnvironment(path.join(destPath, 'ComfyUI'))
 
@@ -322,18 +344,25 @@ export const standalone: SourcePlugin = {
         // `custom_nodes/` checked in). Remove the empty placeholder
         // first so the merge isn't ambiguous.
         if (fs.existsSync(dst)) {
-          try { await fs.promises.rm(dst, { recursive: true, force: true }) } catch { }
+          try {
+            await fs.promises.rm(dst, { recursive: true, force: true })
+          } catch {}
         }
         sendProgress('copy', { percent: 0, status: `Copying legacy ${entry}…` })
-        await copyDirWithProgress(src, dst, (copied, total, elapsedSecs, etaSecs) => {
-          const percent = total > 0 ? Math.round((copied / total) * 100) : 0
-          const elapsed = formatTime(elapsedSecs)
-          const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-          sendProgress('copy', {
-            percent,
-            status: `Copying legacy ${entry}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-          })
-        }, { signal })
+        await copyDirWithProgress(
+          src,
+          dst,
+          (copied, total, elapsedSecs, etaSecs) => {
+            const percent = total > 0 ? Math.round((copied / total) * 100) : 0
+            const elapsed = formatTime(elapsedSecs)
+            const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+            sendProgress('copy', {
+              percent,
+              status: `Copying legacy ${entry}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+            })
+          },
+          { signal }
+        )
       }
     }
 
@@ -370,13 +399,17 @@ export const standalone: SourcePlugin = {
               content = content.replaceAll(srcRewriteFrom, srcRewriteTo)
               await fs.promises.writeFile(filePath, content, 'utf-8')
             }
-          } catch { }
+          } catch {}
         }
       }
     }
   },
 
-  async getFieldOptions(fieldId: string, selections: Record<string, FieldOption | undefined>, context: Record<string, unknown>): Promise<FieldOption[]> {
+  async getFieldOptions(
+    fieldId: string,
+    selections: Record<string, FieldOption | undefined>,
+    context: Record<string, unknown>
+  ): Promise<FieldOption[]> {
     if (fieldId === 'release') {
       const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return []
@@ -384,15 +417,19 @@ export const standalone: SourcePlugin = {
       // Always revalidate R2 manifests when populating the install wizard —
       // a stale persisted ETag can otherwise hide a freshly-shipped standalone
       // release and strand new installs on whatever the previous run cached.
-      const latest = await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true }) as R2Latest
+      const latest = (await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true })) as R2Latest
       const vendorIds = Object.keys(latest).filter((id) => id.startsWith(prefix))
       if (vendorIds.length === 0) return []
 
       const vendorReleases = Object.fromEntries(
-        await Promise.all(vendorIds.map(async (id) => {
-          const data = await fetchJSON(`${R2_BASE_URL}/${id}/releases.json`, { refresh: true }) as R2VendorReleases
-          return [id, data.releases] as const
-        }))
+        await Promise.all(
+          vendorIds.map(async (id) => {
+            const data = (await fetchJSON(`${R2_BASE_URL}/${id}/releases.json`, {
+              refresh: true
+            })) as R2VendorReleases
+            return [id, data.releases] as const
+          })
+        )
       )
 
       // Collect unique release tags across all vendors for this platform
@@ -400,7 +437,11 @@ export const standalone: SourcePlugin = {
       for (const releases of Object.values(vendorReleases)) {
         for (const release of releases) {
           if (!tagMap.has(release.tag) || release.date > tagMap.get(release.tag)!.date) {
-            tagMap.set(release.tag, { comfyui_version: release.comfyui_version, date: release.date, tag: release.tag })
+            tagMap.set(release.tag, {
+              comfyui_version: release.comfyui_version,
+              date: release.date,
+              tag: release.tag
+            })
           }
         }
       }
@@ -424,19 +465,23 @@ export const standalone: SourcePlugin = {
         // nightly for 'latest', which fast-forwards a few commits past it)
         // rather than the older ComfyUI baked into the standalone bundle
         // (issues #708, #1068).
-        const channelData = { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>
+        const channelData = {
+          tag: newestBundle.tag,
+          vendorReleases,
+          latestStableTag
+        } as unknown as Record<string, unknown>
         options.push({
           value: 'stable',
           label: t('standalone.channelStable'),
           description: t('standalone.channelStableDesc'),
           recommended: true,
-          data: channelData,
+          data: channelData
         })
         options.push({
           value: 'latest',
           label: t('standalone.channelLatest'),
           description: t('standalone.channelLatestDesc'),
-          data: channelData,
+          data: channelData
         })
       }
       return options
@@ -455,12 +500,18 @@ export const standalone: SourcePlugin = {
         value: tag,
         label: tag,
         recommended: i === 0,
-        description: i === 0 ? t('newInstall.latestStable') : undefined,
+        description: i === 0 ? t('newInstall.latestStable') : undefined
       }))
     }
 
     if (fieldId === 'variant') {
-      const releaseData = selections.release?.data as { tag: string; vendorReleases: Record<string, R2Variant[]>; latestStableTag?: string | null } | undefined
+      const releaseData = selections.release?.data as
+        | {
+            tag: string
+            vendorReleases: Record<string, R2Variant[]>
+            latestStableTag?: string | null
+          }
+        | undefined
       if (!releaseData) return []
       const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return []
@@ -473,8 +524,9 @@ export const standalone: SourcePlugin = {
       // the post-install update checks out), not the channel head. Falls
       // back to the channel-head's resolved tag when no pick was made.
       const pickedComfyTag =
-        isStable && typeof selections.comfyVersion?.value === 'string'
-          && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+        isStable &&
+        typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
           ? selections.comfyVersion.value
           : null
 
@@ -490,9 +542,9 @@ export const standalone: SourcePlugin = {
           // past it). Both fall back to the bundled version when the tag is
           // unresolvable (offline, etc.).
           const displayTag = isStable
-            ? pickedComfyTag ?? releaseData.latestStableTag ?? null
+            ? (pickedComfyTag ?? releaseData.latestStableTag ?? null)
             : isLatest
-              ? releaseData.latestStableTag ?? null
+              ? (releaseData.latestStableTag ?? null)
               : null
           return buildVariantOption(vendorId, release, displayTag, gpu, isLatest)
         })
@@ -520,45 +572,49 @@ export const standalone: SourcePlugin = {
           } catch {
             if (!budgeted) presenceById.set(tpl.id, false)
           }
-        }),
+        })
       )
       let budgetTimer: NodeJS.Timeout | undefined
       const timedOut = await Promise.race([
         presencePass.then(() => false),
         new Promise<boolean>((resolve) => {
           budgetTimer = setTimeout(() => resolve(true), MODELS_PRESENT_BUDGET_MS)
-        }),
+        })
       ]).finally(() => clearTimeout(budgetTimer))
       if (timedOut) {
         budgeted = true
-        console.warn(`Template models-present check hit ${MODELS_PRESENT_BUDGET_MS}ms budget for install ${installId ?? '(none)'}; some cards unbadged`)
+        console.warn(
+          `Template models-present check hit ${MODELS_PRESENT_BUDGET_MS}ms budget for install ${installId ?? '(none)'}; some cards unbadged`
+        )
       }
 
       return [
         {
           value: NO_TEMPLATE_VALUE,
           label: t('standalone.starterTemplateNone'),
-          description: t('standalone.starterTemplateNoneDesc'),
+          description: t('standalone.starterTemplateNoneDesc')
         },
-        ...catalog.map((tpl): FieldOption => ({
-          value: tpl.id,
-          label: tpl.title,
-          description: tpl.description,
-          recommended: tpl.recommended,
-          data: {
-            modality: tpl.modality,
-            category: tpl.category,
-            name: tpl.name,
-            task: tpl.task,
-            thumbnailUrl: tpl.thumbnailUrl,
-            sizeBytes: tpl.sizeBytes,
-            modelsPresent: presenceById.get(tpl.id) ?? false,
-            apiNode: tpl.apiNode,
-          },
-        })),
+        ...catalog.map(
+          (tpl): FieldOption => ({
+            value: tpl.id,
+            label: tpl.title,
+            description: tpl.description,
+            recommended: tpl.recommended,
+            data: {
+              modality: tpl.modality,
+              category: tpl.category,
+              name: tpl.name,
+              task: tpl.task,
+              thumbnailUrl: tpl.thumbnailUrl,
+              sizeBytes: tpl.sizeBytes,
+              modelsPresent: presenceById.get(tpl.id) ?? false,
+              apiNode: tpl.apiNode
+            }
+          })
+        )
       ]
     }
 
     return []
-  },
+  }
 }

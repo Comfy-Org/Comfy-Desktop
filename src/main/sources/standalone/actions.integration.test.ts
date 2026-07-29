@@ -17,21 +17,21 @@ const SENTINEL_ACTIVE_PY = '__TEST_ACTIVE_PY__'
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 vi.mock('../../lib/i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) =>
-    params ? `${key}:${JSON.stringify(params)}` : key,
+    params ? `${key}:${JSON.stringify(params)}` : key
 }))
 
 vi.mock('../../lib/snapshots', () => ({
   saveSnapshot: vi.fn(async () => 'noop.json'),
-  getSnapshotCount: vi.fn(async () => 0),
+  getSnapshotCount: vi.fn(async () => 0)
 }))
 
 vi.mock('../../lib/bundledScript', () => ({
-  getBundledScriptPath: (name: string) => `__BUNDLED__/${name}`,
+  getBundledScriptPath: (name: string) => `__BUNDLED__/${name}`
 }))
 
 vi.mock('./envPaths', () => ({
@@ -39,27 +39,30 @@ vi.mock('./envPaths', () => ({
   getUvPath: (p: string) => path.join(p, SENTINEL_UV_NAME),
   getActivePythonPath: () => SENTINEL_ACTIVE_PY,
   getVenvDir: (p: string) => path.join(p, 'ComfyUI', '.venv'),
-  getVenvPythonPath: (p: string) =>
-    path.join(p, 'ComfyUI', '.venv', 'Scripts', 'python.exe'),
+  getVenvPythonPath: (p: string) => path.join(p, 'ComfyUI', '.venv', 'Scripts', 'python.exe')
 }))
 
 vi.mock('../../lib/pip', () => ({
   installFilteredRequirements: vi.fn(async () => 0),
-  installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' })),
+  installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
 // `installations.get` is the only entry point handleMigrateFrom uses here.
 const installationsStore: Record<string, InstallationRecord> = {}
 vi.mock('../../installations', () => ({
-  get: vi.fn(async (id: string) => installationsStore[id] ?? null),
+  get: vi.fn(async (id: string) => installationsStore[id] ?? null)
 }))
 
 // Shared paths are never read with both toggles off, but stub anyway so future drift
 // surfaces a missing field instead of crashing.
 vi.mock('../../settings', () => ({
   get: vi.fn(() => undefined),
-  defaults: { modelsDirs: ['/unused-test-models-dir'], inputDir: '/unused-test-input-dir', outputDir: '/unused-test-output-dir' },
-  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
+  defaults: {
+    modelsDirs: ['/unused-test-models-dir'],
+    inputDir: '/unused-test-input-dir',
+    outputDir: '/unused-test-output-dir'
+  },
+  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false }))
 }))
 
 // Import the SUT after all mocks are declared.
@@ -67,7 +70,9 @@ import { handleAction } from './actions'
 import * as installationsModule from '../../installations'
 import type { ActionTools } from '../../types/sources'
 
-function makeInstallation(overrides: Partial<InstallationRecord> & { id: string; installPath: string }): InstallationRecord {
+function makeInstallation(
+  overrides: Partial<InstallationRecord> & { id: string; installPath: string }
+): InstallationRecord {
   return {
     name: overrides.id,
     sourceId: 'standalone',
@@ -77,7 +82,7 @@ function makeInstallation(overrides: Partial<InstallationRecord> & { id: string;
     // (no shared injection from global settings).
     useSharedModels: false,
     useSharedInputOutput: false,
-    ...overrides,
+    ...overrides
   } as InstallationRecord
 }
 
@@ -85,7 +90,7 @@ function makeTools(): ActionTools {
   return {
     update: async () => {},
     sendProgress: () => {},
-    sendOutput: () => {},
+    sendOutput: () => {}
   }
 }
 
@@ -104,7 +109,10 @@ function seedSource(srcRoot: string): void {
   fs.mkdirSync(path.join(srcComfyUI, 'custom_nodes', NODE_NAME), { recursive: true })
   fs.writeFileSync(path.join(srcComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), NODE_FILE_BODY)
   fs.mkdirSync(path.join(srcComfyUI, 'user', 'default', 'workflows'), { recursive: true })
-  fs.writeFileSync(path.join(srcComfyUI, 'user', 'default', 'workflows', WORKFLOW_FILE), WORKFLOW_BODY)
+  fs.writeFileSync(
+    path.join(srcComfyUI, 'user', 'default', 'workflows', WORKFLOW_FILE),
+    WORKFLOW_BODY
+  )
   fs.mkdirSync(path.join(srcComfyUI, 'input'), { recursive: true })
   fs.writeFileSync(path.join(srcComfyUI, 'input', INPUT_FILE), INPUT_BODY)
   fs.mkdirSync(path.join(srcComfyUI, 'output'), { recursive: true })
@@ -130,7 +138,9 @@ describe('standalone handleAction(migrate-from)', () => {
     installationsStore[src.id] = src
     installationsStore[dst.id] = dst
     // Make sure the mocked `installations.get` reflects the per-test store.
-    vi.mocked(installationsModule.get).mockImplementation(async (id: string) => installationsStore[id] ?? null)
+    vi.mocked(installationsModule.get).mockImplementation(
+      async (id: string) => installationsStore[id] ?? null
+    )
   })
 
   afterEach(() => {
@@ -149,18 +159,20 @@ describe('standalone handleAction(migrate-from)', () => {
         workflows: true,
         input: true,
         output: true,
-        models: false,
+        models: false
       },
-      tools,
+      tools
     )
     expect(result.ok, `migrate-from failed: ${result.message ?? ''}`).toBe(true)
     expect(result.navigate).toBe('detail')
 
     const dstComfyUI = path.join(dstRoot, 'ComfyUI')
-    expect(fs.readFileSync(path.join(dstComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8'))
-      .toBe(NODE_FILE_BODY)
-    expect(fs.readFileSync(path.join(dstComfyUI, 'user', 'default', 'workflows', WORKFLOW_FILE), 'utf-8'))
-      .toBe(WORKFLOW_BODY)
+    expect(
+      fs.readFileSync(path.join(dstComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
+    ).toBe(NODE_FILE_BODY)
+    expect(
+      fs.readFileSync(path.join(dstComfyUI, 'user', 'default', 'workflows', WORKFLOW_FILE), 'utf-8')
+    ).toBe(WORKFLOW_BODY)
     expect(fs.readFileSync(path.join(dstComfyUI, 'input', INPUT_FILE), 'utf-8')).toBe(INPUT_BODY)
     expect(fs.readFileSync(path.join(dstComfyUI, 'output', OUTPUT_FILE), 'utf-8')).toBe(OUTPUT_BODY)
   })
@@ -170,14 +182,23 @@ describe('standalone handleAction(migrate-from)', () => {
     await handleAction(
       'migrate-from',
       dst,
-      { sourceInstallationId: src.id, customNodes: true, workflows: true, input: true, output: true, models: false },
-      tools,
+      {
+        sourceInstallationId: src.id,
+        customNodes: true,
+        workflows: true,
+        input: true,
+        output: true,
+        models: false
+      },
+      tools
     )
     const srcComfyUI = path.join(srcRoot, 'ComfyUI')
-    expect(fs.readFileSync(path.join(srcComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8'))
-      .toBe(NODE_FILE_BODY)
-    expect(fs.readFileSync(path.join(srcComfyUI, 'user', 'default', 'workflows', WORKFLOW_FILE), 'utf-8'))
-      .toBe(WORKFLOW_BODY)
+    expect(
+      fs.readFileSync(path.join(srcComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
+    ).toBe(NODE_FILE_BODY)
+    expect(
+      fs.readFileSync(path.join(srcComfyUI, 'user', 'default', 'workflows', WORKFLOW_FILE), 'utf-8')
+    ).toBe(WORKFLOW_BODY)
     expect(fs.readFileSync(path.join(srcComfyUI, 'input', INPUT_FILE), 'utf-8')).toBe(INPUT_BODY)
     expect(fs.readFileSync(path.join(srcComfyUI, 'output', OUTPUT_FILE), 'utf-8')).toBe(OUTPUT_BODY)
   })
@@ -193,7 +214,7 @@ describe('standalone handleAction(migrate-from)', () => {
       'migrate-from',
       dst,
       { sourceInstallationId: 'not-a-real-id', customNodes: true },
-      makeTools(),
+      makeTools()
     )
     expect(result.ok).toBe(false)
     expect(result.message).toMatch(/source/i)
@@ -208,7 +229,7 @@ describe('standalone handleAction(migrate-from)', () => {
         'migrate-from',
         dst,
         { sourceInstallationId: orphan.id, customNodes: true },
-        makeTools(),
+        makeTools()
       )
       expect(result.ok).toBe(false)
       // `findComfyUIDir` failure raises the localized `migrate.noComfyUIDir`

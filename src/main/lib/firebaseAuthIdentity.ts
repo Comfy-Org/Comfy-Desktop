@@ -109,11 +109,7 @@ function revokeAcceptedLocalAuthorization(
   state: ComfyDesktop2FirebaseAuthState,
   userMismatch: boolean
 ): void {
-  if (
-    !origin ||
-    !isLoopbackOrigin(origin) ||
-    (state.status !== 'signed_out' && !userMismatch)
-  )
+  if (!origin || !isLoopbackOrigin(origin) || (state.status !== 'signed_out' && !userMismatch))
     return
   clearVerifiedLocalFirebaseUser(origin)
   reporter.localReportingAuthorized = false
@@ -335,8 +331,7 @@ function settleFailedNavigation(webContents: WebContents, reporter: Reporter): v
     // later commit supplies an exact frame identity.
     reporter.awaitingCommittedFrame = true
     reporter.committedFrame = null
-    reporter.active =
-      reporter.eligible && refreshReporterAuthScope(reporter, webContents.getURL())
+    reporter.active = reporter.eligible && refreshReporterAuthScope(reporter, webContents.getURL())
     reporter.state = { status: 'pending' }
   }
   reporter.committedCandidate = null
@@ -535,9 +530,7 @@ export function reportFirebaseAuthState(
   const currentOrigin = originOf(webContents.getURL())
   const trustedCloud = isTrustedCloudUrl(webContents.getURL())
   const trustedLocal =
-    currentOrigin !== null &&
-    isLoopbackOrigin(currentOrigin) &&
-    reporter.localReportingAuthorized
+    currentOrigin !== null && isLoopbackOrigin(currentOrigin) && reporter.localReportingAuthorized
   if (!trustedCloud && !trustedLocal) {
     const mainVerifiedState = mainVerifiedStates.get(webContents)
     if (
@@ -548,8 +541,7 @@ export function reportFirebaseAuthState(
     ) {
       return
     }
-    const userMismatch =
-      state.status === 'signed_in' && state.userId !== mainVerifiedState.userId
+    const userMismatch = state.status === 'signed_in' && state.userId !== mainVerifiedState.userId
     mainVerifiedState.reportedState = userMismatch ? { status: 'pending' } : state
     if (userMismatch || state.status === 'signed_out') {
       mainVerifiedState.rendererMayReaffirm = false
@@ -558,9 +550,7 @@ export function reportFirebaseAuthState(
     return
   }
   const localUserMismatch =
-    trustedLocal &&
-    state.status === 'signed_in' &&
-    state.userId !== reporter.localExpectedUserId
+    trustedLocal && state.status === 'signed_in' && state.userId !== reporter.localExpectedUserId
   const acceptedState: ComfyDesktop2FirebaseAuthState = localUserMismatch
     ? { status: 'pending' }
     : state

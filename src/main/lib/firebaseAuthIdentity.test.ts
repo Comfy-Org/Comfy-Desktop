@@ -212,11 +212,7 @@ describe('firebaseAuthIdentity consensus', () => {
     activate(reporter)
     vi.clearAllMocks()
 
-    bindMainVerifiedFirebaseUser(
-      'F',
-      { signed_in_via: 'desktop_2' },
-      reporter.asWebContents()
-    )
+    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' }, reporter.asWebContents())
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
     expect(telemetry.registerPersonProperties).not.toHaveBeenCalled()
 
@@ -229,11 +225,7 @@ describe('firebaseAuthIdentity consensus', () => {
     activate(reporter)
     vi.clearAllMocks()
 
-    bindMainVerifiedFirebaseUser(
-      'F',
-      { signed_in_via: 'desktop_2' },
-      reporter.asWebContents()
-    )
+    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' }, reporter.asWebContents())
     reporter.navigate(cloudUrl)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
@@ -248,11 +240,7 @@ describe('firebaseAuthIdentity consensus', () => {
     activate(reporter)
     vi.clearAllMocks()
 
-    bindMainVerifiedFirebaseUser(
-      'F',
-      { signed_in_via: 'desktop_2' },
-      reporter.asWebContents()
-    )
+    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' }, reporter.asWebContents())
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
 
     reporter.navigate(localUrl)
@@ -430,11 +418,7 @@ describe('firebaseAuthIdentity consensus', () => {
     activate(local)
     vi.clearAllMocks()
 
-    bindMainVerifiedFirebaseUser(
-      'A',
-      { email: 'a@example.com' },
-      local.asWebContents()
-    )
+    bindMainVerifiedFirebaseUser('A', { email: 'a@example.com' }, local.asWebContents())
     local.navigate(local.getURL())
     reportFirebaseAuthState(local.asWebContents(), { status: 'signed_in', userId: 'A' })
 

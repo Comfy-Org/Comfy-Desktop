@@ -8,7 +8,7 @@ import { type Ref, ref, watch, nextTick } from 'vue'
  */
 export function useTerminalScroll(
   terminalRef: Ref<HTMLDivElement | null>,
-  getOutput: () => string | undefined,
+  getOutput: () => string | undefined
 ) {
   const isAtBottom = ref(true)
   const terminalExpanded = ref(true)
@@ -41,6 +41,6 @@ export function useTerminalScroll(
     isAtBottom,
     terminalExpanded,
     handleTerminalScroll,
-    scrollToBottom,
+    scrollToBottom
   }
 }

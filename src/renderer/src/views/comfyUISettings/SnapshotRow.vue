@@ -27,7 +27,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   isLatest: false,
   previousComfyuiVersion: undefined,
-  toggleTestId: undefined,
+  toggleTestId: undefined
 })
 
 const emit = defineEmits<{
@@ -57,7 +57,7 @@ const nodeDelta = computed(() => {
   return {
     added: d?.nodesAdded ?? 0,
     removed: d?.nodesRemoved ?? 0,
-    changed: d?.nodesChanged ?? 0,
+    changed: d?.nodesChanged ?? 0
   }
 })
 const hasNodeChanges = computed(
@@ -70,7 +70,7 @@ const pipDelta = computed(() => {
   return {
     added: diff?.pipsAdded ?? 0,
     removed: diff?.pipsRemoved ?? 0,
-    changed: diff?.pipsChanged ?? 0,
+    changed: diff?.pipsChanged ?? 0
   }
 })
 const hasPipChanges = computed(
@@ -86,7 +86,8 @@ const comfyuiChanged = computed(
 )
 const titlePillText = computed(() => {
   if (isManualWithLabel.value) return props.snapshot.label as string
-  if (comfyuiChanged.value) return `${props.previousComfyuiVersion} → ${props.snapshot.comfyuiVersion}`
+  if (comfyuiChanged.value)
+    return `${props.previousComfyuiVersion} → ${props.snapshot.comfyuiVersion}`
   return props.snapshot.comfyuiVersion
 })
 const hasTitlePill = computed(() => !!titlePillText.value)
@@ -128,8 +129,12 @@ const hasTitlePill = computed(() => !!titlePillText.value)
         <span v-if="hasNodeChanges" class="snap-pill snap-pill--nodes">
           <Boxes :size="11" aria-hidden="true" />
           <span v-if="nodeDelta.added" class="snap-delta is-add">+{{ nodeDelta.added }}</span>
-          <span v-if="nodeDelta.removed" class="snap-delta is-remove">−{{ nodeDelta.removed }}</span>
-          <span v-if="nodeDelta.changed" class="snap-delta is-change">~{{ nodeDelta.changed }}</span>
+          <span v-if="nodeDelta.removed" class="snap-delta is-remove"
+            >−{{ nodeDelta.removed }}</span
+          >
+          <span v-if="nodeDelta.changed" class="snap-delta is-change"
+            >~{{ nodeDelta.changed }}</span
+          >
           <span class="snap-pill-label">{{ t('snapshots.nodesLabel', 'nodes') }}</span>
         </span>
         <span v-if="hasPipChanges" class="snap-pill snap-pill--pkgs">

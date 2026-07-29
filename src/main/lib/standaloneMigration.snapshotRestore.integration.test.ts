@@ -14,7 +14,7 @@ import type { InstallationRecord } from '../installations'
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 // Modules imported by standaloneMigration but unused on the restore path.
@@ -26,35 +26,35 @@ vi.mock('./migrate', () => ({ mergeDirFlat: vi.fn() }))
 vi.mock('./paths', () => ({
   defaultInstallDir: vi.fn(() => ''),
   sanitizeDirName: vi.fn((s: string) => s),
-  allocateUniqueDir: vi.fn(),
+  allocateUniqueDir: vi.fn()
 }))
 vi.mock('./desktopDetect', () => ({ assertReadable: vi.fn() }))
 
 vi.mock('./i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) =>
-    params ? `${key}:${JSON.stringify(params)}` : key,
+    params ? `${key}:${JSON.stringify(params)}` : key
 }))
 
 vi.mock('./telemetry', () => ({
-  trackedStep: async <T,>(_name: string, _ctx: unknown, fn: () => Promise<T>) => fn(),
-  emit: vi.fn(),
+  trackedStep: async <T>(_name: string, _ctx: unknown, fn: () => Promise<T>) => fn(),
+  emit: vi.fn()
 }))
 
 vi.mock('../settings', () => ({
   get: vi.fn(() => undefined),
-  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
+  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false }))
 }))
 
 const installationsGet = vi.hoisted(() => vi.fn())
 vi.mock('../installations', () => ({
-  get: (id: string) => installationsGet(id),
+  get: (id: string) => installationsGet(id)
 }))
 
 const installedTorch = vi.hoisted(() => ({
-  tuple: { torch: null as string | null, torchvision: null, torchaudio: null },
+  tuple: { torch: null as string | null, torchvision: null, torchaudio: null }
 }))
 vi.mock('../sources/standalone/envPaths', () => ({
-  getInstalledTorchTuple: () => installedTorch.tuple,
+  getInstalledTorchTuple: () => installedTorch.tuple
 }))
 
 const snapshotsMock = vi.hoisted(() => ({
@@ -63,17 +63,27 @@ const snapshotsMock = vi.hoisted(() => ({
   ensureCurrentSnapshotOnTop: vi.fn(async () => ({ filename: 'post.json' })),
   getSnapshotCount: vi.fn(async () => 1),
   restoreCustomNodes: vi.fn(async () => ({
-    installed: [], switched: [], enabled: [], disabled: [], removed: [],
-    failed: [], unreportable: [],
+    installed: [],
+    switched: [],
+    enabled: [],
+    disabled: [],
+    removed: [],
+    failed: [],
+    unreportable: []
   })),
   restorePipPackages: vi.fn(async () => ({
-    installed: [], removed: [], changed: [], protectedSkipped: [], failed: [], errors: [],
+    installed: [],
+    removed: [],
+    changed: [],
+    protectedSkipped: [],
+    failed: [],
+    errors: []
   })),
   restoreComfyUIVersion: vi.fn(async () => ({ changed: false, commit: null })),
   buildPostRestoreState: vi.fn(() => ({})),
   frozenSnapshotInstallOverrides: vi.fn(() => ({})),
   repairNodeRequirements: vi.fn(async () => ({ changed: [], errors: [] })),
-  protectedPackageDrift: vi.fn(async () => []),
+  protectedPackageDrift: vi.fn(async () => [])
 }))
 vi.mock('./snapshots', () => snapshotsMock)
 
@@ -92,8 +102,10 @@ describe('restoreSnapshotIntoInstallation envelope commit gating', () => {
   function tools() {
     return {
       sendProgress: () => {},
-      sendOutput: (text: string) => { outputs.push(text) },
-      signal: new AbortController().signal,
+      sendOutput: (text: string) => {
+        outputs.push(text)
+      },
+      signal: new AbortController().signal
     }
   }
 
@@ -107,7 +119,7 @@ describe('restoreSnapshotIntoInstallation envelope commit gating', () => {
       name: 'migration-test',
       installPath: tmpRoot,
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     } as unknown as InstallationRecord
     installationsGet.mockImplementation(async () => entry)
     installedTorch.tuple = { torch: null, torchvision: null, torchaudio: null }
@@ -123,7 +135,7 @@ describe('restoreSnapshotIntoInstallation envelope commit gating', () => {
       comfyui: { commit: 'abc1234' },
       pipPackages: [],
       skipPipSync: true,
-      torchStack: { kind: 'observed', torchVersion: '2.4.1+cu121' },
+      torchStack: { kind: 'observed', torchVersion: '2.4.1+cu121' }
     })
 
     await restoreSnapshotIntoInstallation(entry, stagedFile, false, tools(), async () => {})
@@ -140,7 +152,7 @@ describe('restoreSnapshotIntoInstallation envelope commit gating', () => {
       skipPipSync: true,
       // Legacy partial record: torch alone, with a CPU local tag. Under the
       // old publicVersion comparison this wrongly matched the +cu121 install.
-      torchStack: { kind: 'observed', torchVersion: '2.4.1+cpu' },
+      torchStack: { kind: 'observed', torchVersion: '2.4.1+cpu' }
     })
 
     await restoreSnapshotIntoInstallation(entry, stagedFile, false, tools(), async () => {})
@@ -156,7 +168,7 @@ describe('restoreSnapshotIntoInstallation envelope commit gating', () => {
     writeStaged({
       comfyui: { commit: 'abc1234' },
       pipPackages: [],
-      skipPipSync: false,
+      skipPipSync: false
     })
     snapshotsMock.protectedPackageDrift.mockImplementationOnce(async () => {
       throw new Error('python missing')

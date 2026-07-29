@@ -36,21 +36,23 @@ export interface ManageOpenOptions {
   autoAction?: string | null
 }
 
-export function useInstallContextMenu(opts: {
-  /** Open the per-install Manage… overlay. Items funnel through this with
-   *  the right `initialTab` / `autoAction` so the source-side action
-   *  machinery is reused. */
-  onManage?: (inst: Installation, options?: ManageOpenOptions) => void
-  /** Fast-path for actions that own their own confirm + showProgress
-   *  (Delete). Avoids the ManageInstallModal spinner flash. Falls back
-   *  to `onManage(inst, { autoAction })` when omitted. */
-  onShowProgress?: (showOpts: ShowProgressOpts) => void
-} = {}) {
+export function useInstallContextMenu(
+  opts: {
+    /** Open the per-install Manage… overlay. Items funnel through this with
+     *  the right `initialTab` / `autoAction` so the source-side action
+     *  machinery is reused. */
+    onManage?: (inst: Installation, options?: ManageOpenOptions) => void
+    /** Fast-path for actions that own their own confirm + showProgress
+     *  (Delete). Avoids the ManageInstallModal spinner flash. Falls back
+     *  to `onManage(inst, { autoAction })` when omitted. */
+    onShowProgress?: (showOpts: ShowProgressOpts) => void
+  } = {}
+) {
   const { t } = useI18n()
   const modal = useModal()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => modal.confirm({ ...o, confirmStyle: 'danger' }),
-    alert: (o) => modal.alert(o),
+    alert: (o) => modal.alert(o)
   })
   const sessionStore = useSessionStore()
   const progressStore = useProgressStore()
@@ -59,7 +61,7 @@ export function useInstallContextMenu(opts: {
     open: false,
     x: 0,
     y: 0,
-    inst: null as Installation | null,
+    inst: null as Installation | null
   })
 
   function isLocalLikeInstall(inst: Installation): boolean {
@@ -88,9 +90,11 @@ export function useInstallContextMenu(opts: {
   /** True when REQUIRES_STOPPED actions would no-op: install is running,
    *  stopping, or has an op in flight. Drives the `disabled` flag. */
   function isStoppedActionGated(inst: Installation): boolean {
-    return sessionStore.isRunning(inst.id)
-      || sessionStore.isStopping(inst.id)
-      || progressStore.getProgressInfo(inst.id) !== null
+    return (
+      sessionStore.isRunning(inst.id) ||
+      sessionStore.isStopping(inst.id) ||
+      progressStore.getProgressInfo(inst.id) !== null
+    )
   }
 
   function getMenuItems(inst: Installation): ContextMenuItem[] {
@@ -102,17 +106,32 @@ export function useInstallContextMenu(opts: {
     if (opts.onManage) {
       items.push({
         id: 'manage',
-        label: t('chooser.manageInstall'),
+        label: t('chooser.manageInstall')
       })
 
       if (isInstalled(inst) && hasUpdateTag(inst)) {
-        items.push({ id: 'update', label: t('chooser.menuUpdate'), disabled: stoppedActionGated, title: gatedTitle })
+        items.push({
+          id: 'update',
+          label: t('chooser.menuUpdate'),
+          disabled: stoppedActionGated,
+          title: gatedTitle
+        })
       }
       if (hasMigratePrompt(inst)) {
-        items.push({ id: 'migrate', label: t('chooser.menuMigrate'), disabled: stoppedActionGated, title: gatedTitle })
+        items.push({
+          id: 'migrate',
+          label: t('chooser.menuMigrate'),
+          disabled: stoppedActionGated,
+          title: gatedTitle
+        })
       }
       if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
-        items.push({ id: 'restore-snapshot', label: t('chooser.menuRestoreSnapshot'), disabled: stoppedActionGated, title: gatedTitle })
+        items.push({
+          id: 'restore-snapshot',
+          label: t('chooser.menuRestoreSnapshot'),
+          disabled: stoppedActionGated,
+          title: gatedTitle
+        })
       }
     }
 
@@ -120,7 +139,7 @@ export function useInstallContextMenu(opts: {
       items.push({
         id: 'reveal-in-folder',
         label: revealInFolderLabel(window.api?.platform),
-        separator: items.length > 0,
+        separator: items.length > 0
       })
     }
 
@@ -136,7 +155,7 @@ export function useInstallContextMenu(opts: {
         id: 'copy-install',
         label: t('actions.copyInstallation'),
         disabled: stoppedActionGated,
-        title: gatedTitle,
+        title: gatedTitle
       })
     }
 
@@ -156,7 +175,7 @@ export function useInstallContextMenu(opts: {
         label: t('chooser.menuDelete'),
         disabled: stoppedActionGated,
         title: gatedTitle,
-        style: 'danger',
+        style: 'danger'
       })
     }
     const [clusterHead] = cluster
@@ -169,7 +188,7 @@ export function useInstallContextMenu(opts: {
       items.push({
         id: 'dismiss-error',
         label: t('chooser.menuDismissError'),
-        separator: items.length > 0,
+        separator: items.length > 0
       })
     }
 
@@ -207,7 +226,11 @@ export function useInstallContextMenu(opts: {
   /** Run a fire-and-forget action and surface a failure via `modal.alert`.
    *  Main returns `{ ok: false, message }` on action-level failures, not
    *  just rejections. */
-  async function runInstantActionWithAlert(inst: Installation, actionId: string, actionLabel: string): Promise<void> {
+  async function runInstantActionWithAlert(
+    inst: Installation,
+    actionId: string,
+    actionLabel: string
+  ): Promise<void> {
     try {
       const result = await window.api.runAction(inst.id, actionId)
       if (result.ok === false && result.message) {
@@ -237,7 +260,11 @@ export function useInstallContextMenu(opts: {
       // stop logic lives in useStopAction.
       await confirmAndStop(inst.id)
     } else if (id === 'reveal-in-folder') {
-      await runInstantActionWithAlert(inst, 'open-folder', revealInFolderLabel(window.api?.platform))
+      await runInstantActionWithAlert(
+        inst,
+        'open-folder',
+        revealInFolderLabel(window.api?.platform)
+      )
     } else if (id === 'share') {
       // Export the latest snapshot. The IPC owns its own save dialog; a
       // cancel is a silent no-op. Only surface genuine failures.
@@ -250,7 +277,7 @@ export function useInstallContextMenu(opts: {
             message:
               result.reason === 'none'
                 ? t('snapshots.noSnapshotsToShare', 'There are no snapshots to share yet.')
-                : result.message ?? t('snapshots.shareFailed', 'Could not share the snapshot.'),
+                : (result.message ?? t('snapshots.shareFailed', 'Could not share the snapshot.'))
           })
         }
       } catch (err) {
@@ -267,10 +294,10 @@ export function useInstallContextMenu(opts: {
         title: t('actions.untrackConfirmTitle', 'Forget Instance'),
         message: t(
           'actions.untrackConfirmMessage',
-          'This will remove the instance from the app. The files will not be deleted.',
+          'This will remove the instance from the app. The files will not be deleted.'
         ),
         confirmLabel: untrackLabel,
-        confirmStyle: 'danger',
+        confirmStyle: 'danger'
       })
       if (!confirmed) return
       await runInstantActionWithAlert(inst, 'remove', untrackLabel)
@@ -285,13 +312,10 @@ export function useInstallContextMenu(opts: {
           title: t('actions.deleteConfirmTitle', 'Delete Install'),
           message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
             'actions.deleteConfirmMessage',
-            'This permanently removes this ComfyUI installation and all its files. This cannot be undone.',
-          )}\n\n${t(
-            'actions.deleteConfirmDetail',
-            'Other installs are not affected.',
-          )}`,
+            'This permanently removes this ComfyUI installation and all its files. This cannot be undone.'
+          )}\n\n${t('actions.deleteConfirmDetail', 'Other installs are not affected.')}`,
           confirmLabel: deleteLabel,
-          confirmStyle: 'danger',
+          confirmStyle: 'danger'
         })
         if (!confirmed) return
         opts.onShowProgress({
@@ -301,7 +325,7 @@ export function useInstallContextMenu(opts: {
           cancellable: true,
           returnTo: 'list',
           opKind: progressOpKindForActionId('delete'),
-          destroysInstance: destroysInstanceForActionId('delete'),
+          destroysInstance: destroysInstanceForActionId('delete')
         })
         return
       }
@@ -334,6 +358,6 @@ export function useInstallContextMenu(opts: {
     handleCtxMenuSelect,
     closeMenu,
     triggerAction,
-    isStoppedActionGated,
+    isStoppedActionGated
   }
 }

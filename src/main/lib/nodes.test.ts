@@ -7,7 +7,13 @@ import type { ScannedNode } from './nodes'
 
 describe('nodeKey', () => {
   it('returns type:dirName format', () => {
-    const node: ScannedNode = { id: 'my-node', type: 'cnr', dirName: 'my-node', enabled: true, version: '1.0' }
+    const node: ScannedNode = {
+      id: 'my-node',
+      type: 'cnr',
+      dirName: 'my-node',
+      enabled: true,
+      version: '1.0'
+    }
     expect(nodeKey(node)).toBe('cnr:my-node')
   })
 
@@ -56,15 +62,22 @@ describe('scanCustomNodes', () => {
     await fs.promises.mkdir(dir)
     await fs.promises.writeFile(path.join(dir, '__init__.py'), '')
     const nodes = await scanCustomNodes(comfyuiDir)
-    expect(nodes).toEqual([{ id: 'my-local-node', type: 'git', dirName: 'my-local-node', enabled: true }])
+    expect(nodes).toEqual([
+      { id: 'my-local-node', type: 'git', dirName: 'my-local-node', enabled: true }
+    ])
   })
 
   it('captures unmanaged directories with only a pyproject.toml marker', async () => {
     const dir = path.join(customNodesDir, 'toml-only-node')
     await fs.promises.mkdir(path.join(dir, 'src'), { recursive: true })
-    await fs.promises.writeFile(path.join(dir, 'pyproject.toml'), '[project]\nname = "toml-only-node"\n')
+    await fs.promises.writeFile(
+      path.join(dir, 'pyproject.toml'),
+      '[project]\nname = "toml-only-node"\n'
+    )
     const nodes = await scanCustomNodes(comfyuiDir)
-    expect(nodes).toEqual([{ id: 'toml-only-node', type: 'git', dirName: 'toml-only-node', enabled: true }])
+    expect(nodes).toEqual([
+      { id: 'toml-only-node', type: 'git', dirName: 'toml-only-node', enabled: true }
+    ])
   })
 
   it('captures git directories even without top-level Python', async () => {
@@ -88,7 +101,9 @@ describe('scanCustomNodes', () => {
     await fs.promises.writeFile(path.join(customNodesDir, 'websocket_image_save.py'), '')
     await fs.promises.writeFile(path.join(customNodesDir, 'my_node.py'), '')
     const nodes = await scanCustomNodes(comfyuiDir)
-    expect(nodes).toEqual([{ id: 'my_node.py', type: 'file', dirName: 'my_node.py', enabled: true }])
+    expect(nodes).toEqual([
+      { id: 'my_node.py', type: 'file', dirName: 'my_node.py', enabled: true }
+    ])
   })
 
   it('skips empty directories under .disabled too', async () => {

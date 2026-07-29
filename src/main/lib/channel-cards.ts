@@ -40,40 +40,51 @@ export interface ChannelCard extends ChannelDef {
 export function buildChannelCards(
   repo: string,
   channelDefs: ChannelDef[],
-  installation: InstallationRecord,
+  installation: InstallationRecord
 ): ChannelCard[] {
   const cv = installation.comfyVersion as ComfyVersion | undefined
   // Without a `.git` dir there's no enrichment to wait for, so only show the hint when a
   // real enrichment is possible.
-  const installHasGit = !!installation.installPath
-    && hasGitDir(path.join(installation.installPath, 'ComfyUI'))
+  const installHasGit =
+    !!installation.installPath && hasGitDir(path.join(installation.installPath, 'ComfyUI'))
   return channelDefs.map((def) => {
     const info = releaseCache.getEffectiveInfo(repo, def.value, installation)
     // When latest matches installed, reuse the cherry-pick-aware git-resolved version
     // instead of the raw GitHub API comparison.
     const latestCv = info?.commitSha
-      ? (cv && cv.commit === info.commitSha && cv.baseTag
+      ? cv && cv.commit === info.commitSha && cv.baseTag
         ? cv
-        : { commit: info.commitSha, baseTag: info.baseTag, commitsAhead: info.commitsAhead } as ComfyVersion)
+        : ({
+            commit: info.commitSha,
+            baseTag: info.baseTag,
+            commitsAhead: info.commitsAhead
+          } as ComfyVersion)
       : undefined
     // Don't gate on `baseTag` (enrichCommitsAhead recovers a missing one), so the spinner
     // stays through that window. Once `lastEnrichAttemptAt` records a settle, suppress the
     // hint forever for that entry so a failed settle doesn't re-flash on every picker reopen.
-    const enriching = !!info?.commitSha
-      && info.commitsAhead === undefined
-      && info.lastEnrichAttemptAt === undefined
-      && installHasGit
+    const enriching =
+      !!info?.commitSha &&
+      info.commitsAhead === undefined &&
+      info.lastEnrichAttemptAt === undefined &&
+      installHasGit
     return {
       ...def,
-      data: info ? {
-        productName: 'ComfyUI',
-        installedVersion: cv ? formatComfyVersion(cv, 'detail') : (info.installedTag || 'unknown'),
-        latestVersion: latestCv ? formatComfyVersion(latestCv, 'detail') : (info.releaseName || info.latestTag || '—'),
-        lastChecked: info.checkedAt ? new Date(info.checkedAt).toLocaleString() : '—',
-        lastCheckedAt: info.checkedAt ?? undefined,
-        updateAvailable: releaseCache.isUpdateAvailable(installation, def.value, info),
-        ...(enriching ? { enriching: true } : {}),
-      } : undefined,
+      data: info
+        ? {
+            productName: 'ComfyUI',
+            installedVersion: cv
+              ? formatComfyVersion(cv, 'detail')
+              : info.installedTag || 'unknown',
+            latestVersion: latestCv
+              ? formatComfyVersion(latestCv, 'detail')
+              : info.releaseName || info.latestTag || '—',
+            lastChecked: info.checkedAt ? new Date(info.checkedAt).toLocaleString() : '—',
+            lastCheckedAt: info.checkedAt ?? undefined,
+            updateAvailable: releaseCache.isUpdateAvailable(installation, def.value, info),
+            ...(enriching ? { enriching: true } : {})
+          }
+        : undefined
     }
   })
 }

@@ -3,7 +3,14 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-import { copyTorchFamily, isAmdMultiArchOverlayDist, listRocmEcosystemDists, recoverTorchFamilyBackups, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
+import {
+  copyTorchFamily,
+  isAmdMultiArchOverlayDist,
+  listRocmEcosystemDists,
+  recoverTorchFamilyBackups,
+  removeStaleRocmEntries,
+  removeTorchFamilyPackages
+} from './torchFamilyFs'
 
 let tmpDir: string
 
@@ -208,8 +215,12 @@ describe('copyTorchFamily', () => {
     vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
       const fromName = path.basename(String(from))
       const toName = path.basename(String(to))
-      if (fromName.startsWith('.torchrepair-') && !fromName.startsWith('.torchrepair-old-') &&
-          !toName.startsWith('.torchrepair-') && ++finalRenames === 2) {
+      if (
+        fromName.startsWith('.torchrepair-') &&
+        !fromName.startsWith('.torchrepair-old-') &&
+        !toName.startsWith('.torchrepair-') &&
+        ++finalRenames === 2
+      ) {
         throw new Error('injected placement failure')
       }
       if (fromName === '.torchrepair-old-torch' && toName === 'torch') {
@@ -417,29 +428,47 @@ describe('removeStaleRocmEntries', () => {
 
     // Universal AMD bundle ship-list.
     for (const name of [
-      'torch', 'rocm_sdk', 'rocm-7.2.1.dist-info',
-      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
-      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
-    ]) pkg(src, name, 'universal')
+      'torch',
+      'rocm_sdk',
+      'rocm-7.2.1.dist-info',
+      'rocm_sdk_core',
+      '_rocm_sdk_core',
+      'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_libraries',
+      '_rocm_sdk_libraries_custom',
+      'rocm_sdk_libraries_custom-7.2.1.dist-info'
+    ])
+      pkg(src, name, 'universal')
 
     // Candidate after the graft: bundle-provided entries are already the
     // universal copies; multi-arch leftovers the bundle does not ship remain.
     for (const name of [
-      'torch', 'rocm_sdk', 'rocm-7.2.1.dist-info',
-      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
-      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
-    ]) pkg(dst, name, 'universal')
+      'torch',
+      'rocm_sdk',
+      'rocm-7.2.1.dist-info',
+      'rocm_sdk_core',
+      '_rocm_sdk_core',
+      'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_libraries',
+      '_rocm_sdk_libraries_custom',
+      'rocm_sdk_libraries_custom-7.2.1.dist-info'
+    ])
+      pkg(dst, name, 'universal')
     // (The 7.14 rocm_sdk_libraries dist-info is absent here: its key
     // collides with the bundle's rocm_sdk_libraries shim, so the graft
     // itself already replaced it. The `_rocm_sdk_libraries` PAYLOAD has no
     // bundle counterpart and reaches the sweep.)
     for (const name of [
-      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      'rocm_bootstrap',
+      'rocm_bootstrap-0.1.0.dist-info',
       '_rocm_sdk_libraries',
-      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'rocm_sdk_device',
+      '_rocm_sdk_device_gfx1100',
+      'rocm_sdk_device_gfx1100-7.14.0.dist-info',
       'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
-      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
-    ]) pkg(dst, name, 'multi-arch leftover')
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info'
+    ])
+      pkg(dst, name, 'multi-arch leftover')
     pkg(dst, 'numpy', 'keep me')
     pkg(dst, 'torchsde', 'keep me')
     pkg(dst, '_yaml', 'keep me')
@@ -452,26 +481,42 @@ describe('removeStaleRocmEntries', () => {
 
     // Everything the bundle ships (and unrelated packages) survives.
     for (const name of [
-      'torch', 'rocm_sdk', 'rocm-7.2.1.dist-info',
-      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
-      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
-      'numpy', 'torchsde', '_yaml',
-      'rocm_docs_core', 'rocm_docs_core-1.21.0.dist-info',
-    ]) expect(fs.existsSync(path.join(dst, name)), name).toBe(true)
+      'torch',
+      'rocm_sdk',
+      'rocm-7.2.1.dist-info',
+      'rocm_sdk_core',
+      '_rocm_sdk_core',
+      'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_libraries',
+      '_rocm_sdk_libraries_custom',
+      'rocm_sdk_libraries_custom-7.2.1.dist-info',
+      'numpy',
+      'torchsde',
+      '_yaml',
+      'rocm_docs_core',
+      'rocm_docs_core-1.21.0.dist-info'
+    ])
+      expect(fs.existsSync(path.join(dst, name)), name).toBe(true)
 
     // Every multi-arch leftover is gone: shims, payload dirs, dist-infos.
     for (const name of [
-      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      'rocm_bootstrap',
+      'rocm_bootstrap-0.1.0.dist-info',
       '_rocm_sdk_libraries',
-      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'rocm_sdk_device',
+      '_rocm_sdk_device_gfx1100',
+      'rocm_sdk_device_gfx1100-7.14.0.dist-info',
       'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
-      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
-    ]) expect(fs.existsSync(path.join(dst, name)), name).toBe(false)
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info'
+    ])
+      expect(fs.existsSync(path.join(dst, name)), name).toBe(false)
 
     // Removed dist names (not payload dirs) are reported for verification.
     expect(removed.sort()).toEqual([
-      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
-      'rocm_bootstrap', 'rocm_sdk_device_gfx1100',
+      'amd_torch_device_gfx1100',
+      'amd_torchvision_device_gfx1100',
+      'rocm_bootstrap',
+      'rocm_sdk_device_gfx1100'
     ])
   })
 
@@ -499,18 +544,26 @@ describe('listRocmEcosystemDists', () => {
     for (const name of [
       'rocm-7.14.0.dist-info',
       'rocm_bootstrap-0.1.0.dist-info',
-      'rocm_sdk_core-7.14.0.dist-info', '_rocm_sdk_core', 'rocm_sdk_core',
+      'rocm_sdk_core-7.14.0.dist-info',
+      '_rocm_sdk_core',
+      'rocm_sdk_core',
       'rocm_sdk_device_gfx1100-7.14.0.dist-info',
       'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
       'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
-      'torch', 'torch-2.11.0+rocm7.14.0.dist-info',
+      'torch',
+      'torch-2.11.0+rocm7.14.0.dist-info',
       'triton-3.7.1+git0263a6a6.rocm7.14.0.dist-info',
-      'rocm_docs_core-1.21.0.dist-info', // ROCm-adjacent PyPI package, not stack-owned
-    ]) pkg(site, name, 'x')
+      'rocm_docs_core-1.21.0.dist-info' // ROCm-adjacent PyPI package, not stack-owned
+    ])
+      pkg(site, name, 'x')
 
     expect(listRocmEcosystemDists(site).sort()).toEqual([
-      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
-      'rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_device_gfx1100',
+      'amd_torch_device_gfx1100',
+      'amd_torchvision_device_gfx1100',
+      'rocm',
+      'rocm_bootstrap',
+      'rocm_sdk_core',
+      'rocm_sdk_device_gfx1100'
     ])
   })
 
@@ -525,15 +578,25 @@ describe('listRocmEcosystemDists', () => {
 describe('isAmdMultiArchOverlayDist', () => {
   it('marks device overlays and SDK device libraries, in either name spelling', () => {
     for (const name of [
-      'amd_torch_device_gfx1100', 'amd-torch-device-gfx1250',
-      'amd_torchvision_device_gfx1100', 'rocm_sdk_device_gfx1100', 'rocm-sdk-device-gfx90a',
-    ]) expect(isAmdMultiArchOverlayDist(name), name).toBe(true)
+      'amd_torch_device_gfx1100',
+      'amd-torch-device-gfx1250',
+      'amd_torchvision_device_gfx1100',
+      'rocm_sdk_device_gfx1100',
+      'rocm-sdk-device-gfx90a'
+    ])
+      expect(isAmdMultiArchOverlayDist(name), name).toBe(true)
   })
 
   it('does not mark universal SDK or unrelated dists', () => {
     for (const name of [
-      'rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_libraries_custom',
-      'torch', 'triton', 'rocm_docs_core',
-    ]) expect(isAmdMultiArchOverlayDist(name), name).toBe(false)
+      'rocm',
+      'rocm_bootstrap',
+      'rocm_sdk_core',
+      'rocm_sdk_libraries_custom',
+      'torch',
+      'triton',
+      'rocm_docs_core'
+    ])
+      expect(isAmdMultiArchOverlayDist(name), name).toBe(false)
   })
 })

@@ -29,13 +29,14 @@ export function runUvPipDetailed(
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      detached: process.platform !== 'win32',
+      detached: process.platform !== 'win32'
     })
 
     let captured = ''
     const record = (text: string): void => {
       captured += text
-      if (captured.length > MAX_CAPTURED_OUTPUT_CHARS) captured = captured.slice(-MAX_CAPTURED_OUTPUT_CHARS)
+      if (captured.length > MAX_CAPTURED_OUTPUT_CHARS)
+        captured = captured.slice(-MAX_CAPTURED_OUTPUT_CHARS)
       sendOutput(text)
     }
 
@@ -85,18 +86,38 @@ export async function installFilteredRequirementsDetailed(
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
-  extraArgs?: string[],
+  extraArgs?: string[]
 ): Promise<UvPipResult> {
   const content = await fs.promises.readFile(reqPath, 'utf-8')
-  const filtered = content.split('\n').filter((l) => !PYTORCH_RE.test(l.trim())).join('\n')
+  const filtered = content
+    .split('\n')
+    .filter((l) => !PYTORCH_RE.test(l.trim()))
+    .join('\n')
   const filteredPath = path.join(installPath, tempName)
   await fs.promises.writeFile(filteredPath, filtered, 'utf-8')
 
   try {
     const indexArgs = getPipIndexArgs(mirrors?.pypiMirror, mirrors?.useChineseMirrors)
-    return await runUvPipDetailed(uvPath, ['pip', 'install', '-r', filteredPath, '--python', pythonPath, ...indexArgs, ...(extraArgs ?? [])], installPath, sendOutput, signal)
+    return await runUvPipDetailed(
+      uvPath,
+      [
+        'pip',
+        'install',
+        '-r',
+        filteredPath,
+        '--python',
+        pythonPath,
+        ...indexArgs,
+        ...(extraArgs ?? [])
+      ],
+      installPath,
+      sendOutput,
+      signal
+    )
   } finally {
-    try { await fs.promises.unlink(filteredPath) } catch {}
+    try {
+      await fs.promises.unlink(filteredPath)
+    } catch {}
   }
 }
 
@@ -110,9 +131,19 @@ export async function installFilteredRequirements(
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
   mirrors?: PipMirrorConfig,
-  extraArgs?: string[],
+  extraArgs?: string[]
 ): Promise<number> {
-  const result = await installFilteredRequirementsDetailed(reqPath, uvPath, pythonPath, installPath, tempName, sendOutput, signal, mirrors, extraArgs)
+  const result = await installFilteredRequirementsDetailed(
+    reqPath,
+    uvPath,
+    pythonPath,
+    installPath,
+    tempName,
+    sendOutput,
+    signal,
+    mirrors,
+    extraArgs
+  )
   return result.code
 }
 
@@ -122,7 +153,7 @@ export const PYPI_INDEX_URL = 'https://pypi.org/simple/'
 /** Additional PyPI mirror URLs for regions with restricted access (e.g. China). */
 export const PYPI_MIRROR_URLS: string[] = [
   'https://mirrors.aliyun.com/pypi/simple/',
-  'https://mirrors.cloud.tencent.com/pypi/simple/',
+  'https://mirrors.cloud.tencent.com/pypi/simple/'
 ]
 
 /** Trim whitespace and ensure a trailing slash for consistent URL comparison. */
@@ -172,7 +203,10 @@ export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean
   return args
 }
 
-export async function pipFreeze(uvPath: string, pythonPath: string): Promise<Record<string, string>> {
+export async function pipFreeze(
+  uvPath: string,
+  pythonPath: string
+): Promise<Record<string, string>> {
   const output = await new Promise<string>((resolve, reject) => {
     execFile(
       uvPath,

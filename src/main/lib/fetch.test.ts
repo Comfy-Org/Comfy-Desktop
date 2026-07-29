@@ -19,20 +19,26 @@ vi.mock('electron', () => ({
     request: vi.fn((opts: { url: string }) => {
       const headers: Record<string, string> = {}
       const req = Object.assign(new EventEmitter(), {
-        setHeader: vi.fn((k: string, v: string) => { headers[k] = v }),
+        setHeader: vi.fn((k: string, v: string) => {
+          headers[k] = v
+        }),
         end: vi.fn(),
         __url: opts.url,
-        __headers: headers,
+        __headers: headers
       }) as FakeRequest
       requests.push(req)
       return req
-    }),
-  },
+    })
+  }
 }))
 
 import { _resetCacheForTest, fetchJSON } from './fetch'
 
-function makeResponse(statusCode: number, body: string, headers: Record<string, string> = {}): EventEmitter & { statusCode: number; headers: Record<string, string> } {
+function makeResponse(
+  statusCode: number,
+  body: string,
+  headers: Record<string, string> = {}
+): EventEmitter & { statusCode: number; headers: Record<string, string> } {
   const res = Object.assign(new EventEmitter(), { statusCode, headers })
   setImmediate(() => {
     res.emit('data', body)
@@ -45,7 +51,10 @@ const PRIMARY = `${R2_BASE_URL}/latest.json`
 const MIRROR = `${R2_MIRROR_BASE_URL}/latest.json`
 
 describe('fetchJSON — happy path preserved by refactor', () => {
-  beforeEach(() => { requests.length = 0; _resetCacheForTest() })
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
 
   it('returns primary body on 200', async () => {
     const p = fetchJSON(PRIMARY)
@@ -76,7 +85,10 @@ describe('fetchJSON — happy path preserved by refactor', () => {
 })
 
 describe('fetchJSON — mirror fallback semantics', () => {
-  beforeEach(() => { requests.length = 0; _resetCacheForTest() })
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
 
   it('retries the mirror when the primary connection errors', async () => {
     const p = fetchJSON(PRIMARY)
@@ -116,7 +128,10 @@ describe('fetchJSON — mirror fallback semantics', () => {
 })
 
 describe('fetchJSON — mirror is not allowed to poison the cache', () => {
-  beforeEach(() => { requests.length = 0; _resetCacheForTest() })
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
 
   it('does NOT write a cache entry when the response came from the mirror', async () => {
     // Drive a mirror-served success, then make a second call and assert the

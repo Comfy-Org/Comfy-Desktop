@@ -22,7 +22,7 @@ function run(log: string, opts: { nodeCount?: number; chunks?: number } = {}): E
   const tracker = createLaunchProgressTracker({
     phases: DEFAULT_LAUNCH_PHASES,
     nodeCount: opts.nodeCount,
-    sendProgress: (phase, detail) => emits.push({ phase, ...detail }),
+    sendProgress: (phase, detail) => emits.push({ phase, ...detail })
   })
   // Ensure a trailing newline so the final line is flushed (real logs always
   // end newline-terminated; an un-terminated tail legitimately stays buffered).
@@ -51,9 +51,7 @@ describe('createLaunchProgressTracker', () => {
     const emits = run(FIXTURE)
     const steps = emits.filter((e) => e.phase === 'steps')
     expect(steps).toHaveLength(1)
-    expect(steps[0]!.steps?.map((s) => s.phase)).toEqual(
-      DEFAULT_LAUNCH_PHASES.map((p) => p.phase)
-    )
+    expect(steps[0]!.steps?.map((s) => s.phase)).toEqual(DEFAULT_LAUNCH_PHASES.map((p) => p.phase))
   })
 
   it('advances through the real phases in order', () => {
@@ -97,7 +95,7 @@ describe('createLaunchProgressTracker', () => {
     const emits: Emit[] = []
     const tracker = createLaunchProgressTracker({
       phases: DEFAULT_LAUNCH_PHASES,
-      sendProgress: (phase, detail) => emits.push({ phase, ...detail }),
+      sendProgress: (phase, detail) => emits.push({ phase, ...detail })
     })
     tracker.start()
     // steps payload first, then the first phase entered active — so the
@@ -140,10 +138,12 @@ describe('createLaunchProgressTracker', () => {
       'Import times for custom nodes:',
       '   0.0 seconds: /path/to/custom_nodes/node-a',
       '   0.1 seconds: /path/to/custom_nodes/node-b',
-      'Starting server',
+      'Starting server'
     ].join('\n')
     const emits = run(log, { nodeCount: 2 })
-    const nodeEmits = emits.filter((e) => e.phase === 'customNodes' && /\d+ \/ \d+/.test(e.status ?? ''))
+    const nodeEmits = emits.filter(
+      (e) => e.phase === 'customNodes' && /\d+ \/ \d+/.test(e.status ?? '')
+    )
     // Entry emits "0 / 2" at 0%, then counts up with the node name appended.
     expect(nodeEmits.map((e) => e.status)).toEqual(['0 / 2', '1 / 2 · node-a', '2 / 2 · node-b'])
     expect(nodeEmits.map((e) => e.percent)).toEqual([0, 50, 100])
@@ -152,11 +152,13 @@ describe('createLaunchProgressTracker', () => {
   it('translates recognized log signals into human i18n keys (never raw lines)', () => {
     const log = [
       'Total VRAM 24576 MB, total RAM 24576 MB',
-      'Using sub quadratic optimization for attention',
+      'Using sub quadratic optimization for attention'
     ].join('\n')
     const emits = run(log)
     // The raw line is NOT surfaced; a human i18n key is emitted instead.
-    const streamed = emits.find((e) => e.phase === 'gpu' && e.status === 'launch.activity.optimizing')
+    const streamed = emits.find(
+      (e) => e.phase === 'gpu' && e.status === 'launch.activity.optimizing'
+    )
     expect(streamed).toBeTruthy()
     expect(streamed?.percent).toBe(-1)
     // No emit ever carries the raw log text.
@@ -172,7 +174,7 @@ describe('createLaunchProgressTracker', () => {
   it('never walks the phase index backward', () => {
     const log = [
       'Starting server', // jumps to last phase
-      'Total VRAM 24576 MB', // earlier milestone arriving late — must NOT regress
+      'Total VRAM 24576 MB' // earlier milestone arriving late — must NOT regress
     ].join('\n')
     const order = phaseOrder(run(log))
     expect(order).toEqual(['startingServer'])
@@ -193,7 +195,7 @@ describe('createLaunchProgressTracker', () => {
       'mps allocator init',
       'ComfyUI version: 0.24.1', // customNodes
       'frontend assets',
-      'Starting server', // startingServer
+      'Starting server' // startingServer
     ].join('\n')
     const order = phaseOrder(run(log))
     expect(order).toEqual([
@@ -201,7 +203,7 @@ describe('createLaunchProgressTracker', () => {
       'mountLibraries',
       'gpu',
       'customNodes',
-      'startingServer',
+      'startingServer'
     ])
   })
 })
@@ -223,9 +225,11 @@ describe('buildLaunchPhases — extensibility', () => {
   it('injects a single pre-launch phase first', () => {
     expect(buildLaunchPhases({}, { preLaunchPhases: ['repair'] }).map((p) => p.phase)).toEqual([
       'repair',
-      ...DEFAULT_LAUNCH_PHASES.map((p) => p.phase),
+      ...DEFAULT_LAUNCH_PHASES.map((p) => p.phase)
     ])
-    expect(buildLaunchPhases({}, { preLaunchPhases: ['torchRepair'] })[0]!.phase).toBe('torchRepair')
+    expect(buildLaunchPhases({}, { preLaunchPhases: ['torchRepair'] })[0]!.phase).toBe(
+      'torchRepair'
+    )
   })
 
   it('injects multiple pre-launch phases in the given order (rollback, then torch)', () => {
@@ -241,7 +245,7 @@ describe('buildLaunchPhases — extensibility', () => {
     const emits: Emit[] = []
     const tracker = createLaunchProgressTracker({
       phases,
-      sendProgress: (phase, detail) => emits.push({ phase, ...detail }),
+      sendProgress: (phase, detail) => emits.push({ phase, ...detail })
     })
     // Synthetic phase is entered up front (the repair finished before spawn).
     tracker.start()

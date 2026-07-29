@@ -6,7 +6,13 @@ import type { InstallPhaseName, InstallPhaseStatus } from '../../lib/installer'
 import * as mainTelemetry from '../../lib/telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import { copyDirWithProgress } from '../../lib/copy'
-import { readGitHead, isGitAvailable, isPygit2Configured, tryConfigurePygit2Fallback, fetchTags } from '../../lib/git'
+import {
+  readGitHead,
+  isGitAvailable,
+  isPygit2Configured,
+  tryConfigurePygit2Fallback,
+  fetchTags
+} from '../../lib/git'
 import { resolveLocalVersion } from '../../lib/version-resolve'
 import { formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
@@ -15,9 +21,13 @@ import { fetchLatestRelease } from '../../lib/comfyui-releases'
 import { repairMacBinaries, codesignBinaries } from './macRepair'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import {
-  MANIFEST_FILE, DEFAULT_LAUNCH_ARGS,
-  getUvPath, getVenvDir, findSitePackages, getMasterPythonPath,
-  writeComfyEnvironment,
+  MANIFEST_FILE,
+  DEFAULT_LAUNCH_ARGS,
+  getUvPath,
+  getVenvDir,
+  findSitePackages,
+  getMasterPythonPath,
+  writeComfyEnvironment
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
 import { tagsEqual, type ComfyVersion } from '../../lib/version'
@@ -115,16 +125,32 @@ async function createEnv(
   const masterPython = getMasterPythonPath(installPath)
   const venvPath = getVenvDir(installPath)
   // env_create: `uv venv` — the bare interpreter env, before any packages land.
-  await withPostInstallPhase(installation, 'env_create', () =>
-    new Promise<void>((resolve, reject) => {
-      if (signal?.aborted) return reject(new Error('Cancelled'))
-      const proc = execFile(uvPath, ['venv', '--python', masterPython, venvPath], { cwd: installPath }, (err, _stdout, stderr) => {
+  await withPostInstallPhase(
+    installation,
+    'env_create',
+    () =>
+      new Promise<void>((resolve, reject) => {
         if (signal?.aborted) return reject(new Error('Cancelled'))
-        if (err) return reject(new Error(`Failed to create .venv: ${stderr || err.message}`))
-        resolve()
+        const proc = execFile(
+          uvPath,
+          ['venv', '--python', masterPython, venvPath],
+          { cwd: installPath },
+          (err, _stdout, stderr) => {
+            if (signal?.aborted) return reject(new Error('Cancelled'))
+            if (err) return reject(new Error(`Failed to create .venv: ${stderr || err.message}`))
+            resolve()
+          }
+        )
+        signal?.addEventListener(
+          'abort',
+          () => {
+            try {
+              proc.kill()
+            } catch {}
+          },
+          { once: true }
+        )
       })
-      signal?.addEventListener('abort', () => { try { proc.kill() } catch {} }, { once: true })
-    })
   )
 
   try {
@@ -145,7 +171,10 @@ async function createEnv(
   }
 }
 
-export async function install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
+export async function install(
+  installation: InstallationRecord,
+  tools: InstallTools
+): Promise<void> {
   // The installer owns the download↔extract seam; map its boundary callbacks
   // onto the consent-gated install.phase telemetry with this install's id/variant.
   const installerCtx = {
@@ -156,7 +185,9 @@ export async function install(installation: InstallationRecord, tools: InstallTo
       info?: { durationMs?: number; error?: unknown }
     ) => emitInstallPhase(installation, phase, status, info ?? {})
   }
-  const files = installation.downloadFiles as Array<{ url: string; filename: string; size: number }> | undefined
+  const files = installation.downloadFiles as
+    | Array<{ url: string; filename: string; size: number }>
+    | undefined
   if (files && files.length > 0) {
     const cacheDir = `${installation.releaseTag as string}_${installation.variant as string}`
     await downloadAndExtractMulti(files, installation.installPath, cacheDir, installerCtx)
@@ -168,7 +199,10 @@ export async function install(installation: InstallationRecord, tools: InstallTo
   }
 }
 
-export async function postInstall(installation: InstallationRecord, { sendProgress, update, signal }: PostInstallTools): Promise<void> {
+export async function postInstall(
+  installation: InstallationRecord,
+  { sendProgress, update, signal }: PostInstallTools
+): Promise<void> {
   const standaloneEnvDir = path.join(installation.installPath, 'standalone-env')
   if (process.platform !== 'win32') {
     const binDir = path.join(standaloneEnvDir, 'bin')
@@ -176,19 +210,28 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
       const entries = fs.readdirSync(binDir)
       for (const entry of entries) {
         const fullPath = path.join(binDir, entry)
-        try { fs.chmodSync(fullPath, 0o755) } catch {}
+        try {
+          fs.chmodSync(fullPath, 0o755)
+        } catch {}
       }
     } catch {}
   }
   await repairMacBinaries(installation.installPath, sendProgress)
   if (signal?.aborted) throw new Error('Cancelled')
   sendProgress('setup', { percent: 0, status: 'Creating Python environment…' })
-  await createEnv(installation, (copied, total, elapsedSecs, etaSecs) => {
-    const percent = Math.round((copied / total) * 100)
-    const elapsed = formatTime(elapsedSecs)
-    const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-    sendProgress('setup', { percent, status: `Copying packages… ${copied} / ${total} files  ·  ${elapsed} elapsed  ·  ${eta} remaining` })
-  }, signal)
+  await createEnv(
+    installation,
+    (copied, total, elapsedSecs, etaSecs) => {
+      const percent = Math.round((copied / total) * 100)
+      const elapsed = formatTime(elapsedSecs)
+      const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+      sendProgress('setup', {
+        percent,
+        status: `Copying packages… ${copied} / ${total} files  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+      })
+    },
+    signal
+  )
   if (signal?.aborted) throw new Error('Cancelled')
   sendProgress('cleanup', { percent: -1, status: t('standalone.cleanupEnvStatus') })
   await stripMasterPackages(installation.installPath)
@@ -196,7 +239,7 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
   // Populate comfyVersion now so version displays are correct without waiting
   // for the first update. Without a global git binary, configure pygit2 against
   // the just-installed standalone Python so tag resolution works.
-  if (!isPygit2Configured() && !await isGitAvailable()) {
+  if (!isPygit2Configured() && !(await isGitAvailable())) {
     await tryConfigurePygit2Fallback(installation.installPath)
   }
   const comfyuiDir = path.join(installation.installPath, 'ComfyUI')
@@ -236,7 +279,9 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
     const pickedTag = installation.comfyVersionTag as string | undefined
     const channelLabel = pickedTag
       ? `ComfyUI ${pickedTag}`
-      : channel === 'latest' ? 'latest version' : 'latest stable version'
+      : channel === 'latest'
+        ? 'latest version'
+        : 'latest stable version'
     sendProgress('update', { percent: -1, status: `Fetching ${channelLabel}` })
 
     try {
@@ -246,13 +291,18 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
       const latestRelease = await fetchLatestRelease(channel, { refresh: true })
       const latestTag = latestRelease?.tag_name as string | undefined
       const current = installation.comfyVersion as ComfyVersion | undefined
-      const onLatestTag = !!latestTag && tagsEqual(current?.baseTag, latestTag) && current?.commitsAhead === 0
-      const onPickedTag = !!pickedTag && tagsEqual(current?.baseTag, pickedTag) && current?.commitsAhead === 0
+      const onLatestTag =
+        !!latestTag && tagsEqual(current?.baseTag, latestTag) && current?.commitsAhead === 0
+      const onPickedTag =
+        !!pickedTag && tagsEqual(current?.baseTag, pickedTag) && current?.commitsAhead === 0
 
       if (!latestTag && !pickedTag) {
         // A network flake must not masquerade as "up to date" — that stranded
         // first installs on the bundled version.
-        sendProgress('update', { percent: 100, status: `Skipped — could not verify ${channelLabel}` })
+        sendProgress('update', {
+          percent: 100,
+          status: `Skipped — could not verify ${channelLabel}`
+        })
       } else if (pickedTag ? onPickedTag : onLatestTag) {
         sendProgress('update', { percent: 100, status: 'Already up to date' })
       } else {
@@ -276,7 +326,7 @@ export async function postInstall(installation: InstallationRecord, { sendProgre
             // --upgrade -r requirements.txt` after the post-install git update,
             // even when the file is byte-identical pre/post, so the venv always
             // ends up in sync with ComfyUI's pins before the user runs anything.
-            forceDepsSync: true,
+            forceDepsSync: true
           })
         )
         installation = result.installation
@@ -325,7 +375,10 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
   let variant = ''
   let pythonVersion = ''
   try {
-    const data = JSON.parse(fs.readFileSync(path.join(root, MANIFEST_FILE), 'utf8')) as Record<string, string>
+    const data = JSON.parse(fs.readFileSync(path.join(root, MANIFEST_FILE), 'utf8')) as Record<
+      string,
+      string
+    >
     version = data.comfyui_ref || version
     releaseTag = data.version || releaseTag
     variant = data.id || variant
@@ -354,14 +407,14 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
     installPath: root,
     launchArgs: DEFAULT_LAUNCH_ARGS,
     launchMode: 'window',
-    ...(hasLegacyEnvs && !hasVenv ? { needsEnvMigration: true } : {}),
+    ...(hasLegacyEnvs && !hasVenv ? { needsEnvMigration: true } : {})
   }
 }
 
 export async function migrateEnvLayout(
   installPath: string,
   update: (data: Record<string, unknown>) => Promise<unknown>,
-  sendProgress?: (step: string, data: { percent: number; status: string }) => void,
+  sendProgress?: (step: string, data: { percent: number; status: string }) => void
 ): Promise<boolean> {
   const venvDir = getVenvDir(installPath)
   if (fs.existsSync(venvDir)) return false

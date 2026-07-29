@@ -8,8 +8,8 @@ vi.mock('vue-i18n', () => ({
     // t(key, fallbackString) returns the fallback; t(key, paramsObject)
     // returns the bare key.
     t: (key: string, arg?: string | Record<string, unknown>) =>
-      typeof arg === 'string' ? arg : key,
-  }),
+      typeof arg === 'string' ? arg : key
+  })
 }))
 
 // Hoisted so they can capture calls — the composable invokes
@@ -19,45 +19,52 @@ const modalSpies = vi.hoisted(() => ({
   prompt: vi.fn(),
   select: vi.fn(),
   confirmWithOptions: vi.fn(),
-  alert: vi.fn(),
+  alert: vi.fn()
 }))
 // `dialogsSpies.confirm` resolves `'primary'` to proceed, `false` to cancel.
 const dialogsSpies = vi.hoisted(() => ({
   confirm: vi.fn(),
   prompt: vi.fn(),
   actionSheet: vi.fn(),
-  alert: vi.fn(),
+  alert: vi.fn()
 }))
 const actionGuardSpies = vi.hoisted(() => ({
-  checkBeforeAction: vi.fn(),
+  checkBeforeAction: vi.fn()
 }))
 
 vi.mock('./useModal', () => ({
-  useModal: () => modalSpies,
+  useModal: () => modalSpies
 }))
 
 vi.mock('./useDialogs', () => ({
-  useDialogs: () => dialogsSpies,
+  useDialogs: () => dialogsSpies
 }))
 
 vi.mock('./useActionGuard', () => ({
-  useActionGuard: () => actionGuardSpies,
+  useActionGuard: () => actionGuardSpies
 }))
 
 vi.mock('./useMigrateAction', () => ({
   useMigrateAction: () => ({
-    confirmMigration: vi.fn(),
-  }),
+    confirmMigration: vi.fn()
+  })
 }))
 
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
-  toErrorBucket: () => 'other',
+  toErrorBucket: () => 'other'
 }))
 
 import { useComfyUISettings } from './useComfyUISettings'
 import { useSessionStore } from '../stores/sessionStore'
-import type { ActionDef, ActionResult, DetailField, DetailSection, Installation, ShowProgressOpts } from '../types/ipc'
+import type {
+  ActionDef,
+  ActionResult,
+  DetailField,
+  DetailSection,
+  Installation,
+  ShowProgressOpts
+} from '../types/ipc'
 
 function makeInstall(id: string, name: string): Installation {
   return {
@@ -66,7 +73,7 @@ function makeInstall(id: string, name: string): Installation {
     sourceLabel: 'standalone',
     sourceCategory: 'local',
     status: 'installed',
-    installPath: `/tmp/${id}`,
+    installPath: `/tmp/${id}`
   } as Installation
 }
 
@@ -75,7 +82,7 @@ function makeSection(installName: string): DetailSection {
   return {
     tab: 'status',
     title: `Sections for ${installName}`,
-    fields: [],
+    fields: []
   } as DetailSection
 }
 
@@ -96,9 +103,9 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     stopComfyUI: vi.fn().mockResolvedValue(undefined),
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     updateInstallation: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
+    ...overrides
   }
-    ; (window as unknown as { api: MockApi }).api = api
+  ;(window as unknown as { api: MockApi }).api = api
   return api
 }
 
@@ -119,7 +126,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
         if (id === 'a') return Promise.resolve([makeSection('A')])
         if (id === 'b') return sectionsB
         return Promise.resolve([])
-      }),
+      })
     })
 
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
@@ -135,9 +142,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     await nextTick()
     await Promise.resolve() // flush microtasks for the await chain in loadAll
     await Promise.resolve()
-    expect(composable.sections.value.map((s) => s.title)).toEqual([
-      'Sections for A',
-    ])
+    expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A'])
     expect(composable.sectionsFresh.value).toBe(true)
 
     // Switch to install B. Sections/diskSpace are deliberately NOT blanked
@@ -147,9 +152,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     await nextTick()
 
     expect(composable.loading.value).toBe(true)
-    expect(composable.sections.value.map((s) => s.title)).toEqual([
-      'Sections for A',
-    ])
+    expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A'])
     expect(composable.sectionsFresh.value).toBe(false)
 
     // Resolve B's IPC; sections flip to B and sectionsFresh returns true.
@@ -159,9 +162,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     await nextTick()
 
     expect(composable.loading.value).toBe(false)
-    expect(composable.sections.value.map((s) => s.title)).toEqual([
-      'Sections for B',
-    ])
+    expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for B'])
     expect(composable.sectionsFresh.value).toBe(true)
     expect(api.getDetailSections).toHaveBeenCalledTimes(2)
     scope.stop()
@@ -169,7 +170,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
 
   it('clears sections when the installation prop is set to null', async () => {
     installMockApi({
-      getDetailSections: vi.fn().mockResolvedValue([makeSection('A')]),
+      getDetailSections: vi.fn().mockResolvedValue([makeSection('A')])
     })
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
     const onShowProgress = vi.fn()
@@ -201,7 +202,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
       getDetailSections: vi.fn(() => {
         getCallCount++
         return Promise.resolve([makeSection(`A-call-${getCallCount}`)])
-      }),
+      })
     })
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
     const onShowProgress = vi.fn()
@@ -237,7 +238,7 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
         if (id === 'a') return Promise.resolve([makeSection('A')])
         if (id === 'b') return sectionsB
         return Promise.resolve([])
-      }),
+      })
     })
 
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
@@ -299,11 +300,14 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     sessionStore.runningInstances.set(id, {
       installationId: id,
       installationName: name,
-      mode: 'standalone',
+      mode: 'standalone'
     })
   }
 
-  function mountComposable(installation: Installation | null, onShowProgress = vi.fn()): {
+  function mountComposable(
+    installation: Installation | null,
+    onShowProgress = vi.fn()
+  ): {
     composable: ReturnType<typeof useComfyUISettings>
     onShowProgress: ReturnType<typeof vi.fn>
     onDismissPreview: ReturnType<typeof vi.fn>
@@ -314,7 +318,11 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     const onDismissPreview = vi.fn()
     let composable!: ReturnType<typeof useComfyUISettings>
     scope.run(() => {
-      composable = useComfyUISettings({ installation: installationRef, onShowProgress, onDismissPreview })
+      composable = useComfyUISettings({
+        installation: installationRef,
+        onShowProgress,
+        onDismissPreview
+      })
     })
     return { composable, onShowProgress, onDismissPreview, scope }
   }
@@ -328,7 +336,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     await composable.runAction({
       id: 'update-comfyui',
       label: 'Update ComfyUI',
-      confirm: { title: 'Update?', message: 'This will pull the latest ComfyUI.' },
+      confirm: { title: 'Update?', message: 'This will pull the latest ComfyUI.' }
     } as ActionDef)
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
@@ -346,7 +354,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     await composable.runAction({
       id: 'snapshot-restore',
-      label: 'Restore Snapshot',
+      label: 'Restore Snapshot'
     } as ActionDef)
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
@@ -365,7 +373,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     await composable.runAction({
       id: 'update-comfyui',
       label: 'Update ComfyUI',
-      confirm: { title: 'Update?', message: 'This will pull the latest ComfyUI.' },
+      confirm: { title: 'Update?', message: 'This will pull the latest ComfyUI.' }
     } as ActionDef)
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
@@ -428,7 +436,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
       }),
-      runAction: vi.fn().mockResolvedValue({ ok: true }),
+      runAction: vi.fn().mockResolvedValue({ ok: true })
     })
     markRunning('a', 'A')
     dialogsSpies.confirm.mockResolvedValue('primary')
@@ -440,7 +448,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       id: 'update-comfyui',
       label: 'Update ComfyUI',
       showProgress: true,
-      confirm: { message: 'Update?' },
+      confirm: { message: 'Update?' }
     } as ActionDef)
 
     expect(onShowProgress).toHaveBeenCalledTimes(1)
@@ -448,7 +456,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     // triggersInstanceStart reflects the relaunch the apiCall appends.
     expect(opts.triggersInstanceStart).toBe(true)
 
-    const result = await opts.apiCall() as ActionResult
+    const result = (await opts.apiCall()) as ActionResult
 
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(api.stopComfyUI).toHaveBeenCalledWith('a')
@@ -466,7 +474,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
       }),
-      runAction: vi.fn().mockResolvedValue({ ok: false, message: 'no update available' }),
+      runAction: vi.fn().mockResolvedValue({ ok: false, message: 'no update available' })
     })
     markRunning('a', 'A')
     dialogsSpies.confirm.mockResolvedValue('primary')
@@ -477,7 +485,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       id: 'update-comfyui',
       label: 'Update ComfyUI',
       showProgress: true,
-      confirm: { message: 'Update?' },
+      confirm: { message: 'Update?' }
     } as ActionDef)
 
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
@@ -496,7 +504,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
       }),
-      runAction: vi.fn().mockResolvedValue({ ok: true, newInstallationId: 'a-prime' }),
+      runAction: vi.fn().mockResolvedValue({ ok: true, newInstallationId: 'a-prime' })
     })
     markRunning('a', 'A')
     dialogsSpies.confirm.mockResolvedValue('primary')
@@ -507,7 +515,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       id: 'copy-update',
       label: 'Copy & Update',
       showProgress: true,
-      confirm: { message: 'Copy & update?' },
+      confirm: { message: 'Copy & update?' }
     } as ActionDef)
 
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
@@ -528,7 +536,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
       }),
-      runAction: vi.fn().mockResolvedValue({ ok: true, newInstallationId: 'a-prime' }),
+      runAction: vi.fn().mockResolvedValue({ ok: true, newInstallationId: 'a-prime' })
     })
     markRunning('a', 'A')
     dialogsSpies.prompt.mockResolvedValue('A copy')
@@ -540,7 +548,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       label: 'Copy & Change PyTorch',
       showProgress: true,
       data: { stackId: 'pytorch-index:cu126:2.11.0' },
-      prompt: { title: 'Copy & Change PyTorch', message: 'Name the copy.', field: 'name' },
+      prompt: { title: 'Copy & Change PyTorch', message: 'Name the copy.', field: 'name' }
     } as ActionDef)
 
     // The stop warning lands on the prompt (the action's only surface).
@@ -555,7 +563,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     expect(api.runAction).toHaveBeenCalledTimes(1)
     expect(api.runAction).toHaveBeenCalledWith('a', 'copy-pytorch', {
       stackId: 'pytorch-index:cu126:2.11.0',
-      name: 'A copy',
+      name: 'A copy'
     })
     scope.stop()
   })
@@ -563,7 +571,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   it('apiCall does not stop or relaunch when the install is not running', async () => {
     // Wasn't running → nothing to stop or relaunch; just invoke the op.
     const api = installMockApi({
-      runAction: vi.fn().mockResolvedValue({ ok: true }),
+      runAction: vi.fn().mockResolvedValue({ ok: true })
     })
     dialogsSpies.confirm.mockResolvedValue('primary')
     const onShowProgress = vi.fn()
@@ -573,7 +581,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       id: 'update-comfyui',
       label: 'Update ComfyUI',
       showProgress: true,
-      confirm: { message: 'Update?' },
+      confirm: { message: 'Update?' }
     } as ActionDef)
 
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
@@ -592,7 +600,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
       }),
-      runAction: vi.fn().mockResolvedValue({ ok: true }),
+      runAction: vi.fn().mockResolvedValue({ ok: true })
     })
     markRunning('a', 'A')
     dialogsSpies.confirm.mockResolvedValue('primary')
@@ -601,7 +609,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     await composable.runAction({
       id: 'update-comfyui',
       label: 'Update ComfyUI',
-      confirm: { message: 'Update?' },
+      confirm: { message: 'Update?' }
     } as ActionDef)
 
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
@@ -622,7 +630,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
       value: value as DetailField['value'],
       editable: true,
       editType: 'select',
-      requiresRestart: true,
+      requiresRestart: true
     }
   }
 
@@ -634,12 +642,12 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
   async function mountWithField(
     installId: string,
     initialValue: unknown,
-    apiOverrides: Partial<MockApi> = {},
+    apiOverrides: Partial<MockApi> = {}
   ) {
     const initialField = makeRestartField('launchMode', initialValue)
     const api = installMockApi({
       getDetailSections: vi.fn().mockResolvedValue([makeSectionWithField(initialField)]),
-      ...apiOverrides,
+      ...apiOverrides
     })
     const installation = ref<Installation | null>(makeInstall(installId, installId.toUpperCase()))
     const scope = effectScope()
@@ -657,7 +665,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     useSessionStore().runningInstances.set(id, {
       installationId: id,
       installationName: id.toUpperCase(),
-      mode: 'standalone',
+      mode: 'standalone'
     })
   }
 
@@ -674,7 +682,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     markRunning('a')
     const updatePromise = composable.updateField(
       makeRestartField('launchMode', 'window'),
-      'console',
+      'console'
     )
 
     // Microtask flush — but IPC is still pending.
@@ -785,8 +793,8 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
     const api = installMockApi({
       getDetailSections: vi.fn(() =>
-        Promise.resolve([makeSectionWithField(makeRestartField('launchMode', 'window'))]),
-      ),
+        Promise.resolve([makeSectionWithField(makeRestartField('launchMode', 'window'))])
+      )
     })
     const scope = effectScope()
     let composable!: ReturnType<typeof useComfyUISettings>
@@ -799,10 +807,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     return { composable, api, installation, scope }
   }
 
-  async function selectInstall(
-    installation: Ref<Installation | null>,
-    id: string,
-  ): Promise<void> {
+  async function selectInstall(installation: Ref<Installation | null>, id: string): Promise<void> {
     installation.value = makeInstall(id, id.toUpperCase())
     await nextTick()
     await Promise.resolve()
@@ -847,11 +852,10 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     const api = installMockApi({
       getDetailSections: vi.fn((id: string) => {
         if (id === 'a') return Promise.resolve([makeSectionWithField(initialField)])
-        if (id === 'b') return Promise.resolve([
-          makeSectionWithField(makeRestartField('launchMode', 'window')),
-        ])
+        if (id === 'b')
+          return Promise.resolve([makeSectionWithField(makeRestartField('launchMode', 'window'))])
         return Promise.resolve([])
-      }),
+      })
     })
     const scope = effectScope()
     let composable!: ReturnType<typeof useComfyUISettings>
@@ -905,13 +909,13 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     // updateInstallation never settles — the 5s timeout should win and roll back.
     vi.useFakeTimers()
     try {
-      const updateInstallation = vi.fn().mockReturnValue(new Promise<void>(() => { }))
+      const updateInstallation = vi.fn().mockReturnValue(new Promise<void>(() => {}))
       const { composable, scope } = await mountWithField('a', 'window', { updateInstallation })
       markRunning('a')
 
       const updatePromise = composable.updateField(
         makeRestartField('launchMode', 'window'),
-        'console',
+        'console'
       )
       // Advance past the 5s deadline to trigger the timeout branch.
       await vi.advanceTimersByTimeAsync(5_001)
@@ -921,7 +925,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
       expect(timeoutField.value).toBe('window')
       expect(composable.pendingRestartFieldIds.value.size).toBe(0)
       expect(composable.fieldErrorMessages.value.get('launchMode')).toBe(
-        "Couldn't reach app — try again",
+        "Couldn't reach app — try again"
       )
       scope.stop()
     } finally {
@@ -930,7 +934,9 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
   })
 
   it('clears the per-install dirty + error entries when the install transitions to not-running', async () => {
-    const updateInstallation = vi.fn().mockRejectedValueOnce(new Error('boom'))
+    const updateInstallation = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValue(undefined)
     const { composable, scope } = await mountWithField('a', 'window', { updateInstallation })
     markRunning('a')
@@ -959,11 +965,11 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
       value: { FOO: 'bar' } as DetailField['value'],
       editable: true,
       editType: 'env-vars',
-      requiresRestart: true,
+      requiresRestart: true
     }
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
     installMockApi({
-      getDetailSections: vi.fn().mockResolvedValue([makeSectionWithField(initialField)]),
+      getDetailSections: vi.fn().mockResolvedValue([makeSectionWithField(initialField)])
     })
     const scope = effectScope()
     let composable!: ReturnType<typeof useComfyUISettings>
@@ -980,9 +986,12 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
 
     // Revert to the baseline object — equality is by keys+values, not
     // by reference, so a fresh `{ FOO: 'bar' }` object still matches.
-    await composable.updateField({ ...initialField, value: { FOO: 'bar', BAZ: 'qux' } } as DetailField, {
-      FOO: 'bar',
-    })
+    await composable.updateField(
+      { ...initialField, value: { FOO: 'bar', BAZ: 'qux' } } as DetailField,
+      {
+        FOO: 'bar'
+      }
+    )
     expect(composable.pendingRestartFieldIds.value.has('envVars')).toBe(false)
     scope.stop()
   })
@@ -1043,7 +1052,7 @@ describe('useComfyUISettings — renameInstallation', () => {
 
   it('surfaces a rejection (duplicate name) as an alert and resolves false', async () => {
     const api = installMockApi({
-      updateInstallation: vi.fn().mockResolvedValue({ ok: false, message: 'taken' }),
+      updateInstallation: vi.fn().mockResolvedValue({ ok: false, message: 'taken' })
     })
     const { composable, scope } = await mountRename(api)
     api.getDetailSections.mockClear()
@@ -1051,9 +1060,7 @@ describe('useComfyUISettings — renameInstallation', () => {
     const committed = await composable.renameInstallation('Dupe')
 
     expect(committed).toBe(false)
-    expect(dialogsSpies.alert).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'taken' }),
-    )
+    expect(dialogsSpies.alert).toHaveBeenCalledWith(expect.objectContaining({ message: 'taken' }))
     expect(api.getDetailSections).not.toHaveBeenCalled() // no reload on failure
     scope.stop()
   })

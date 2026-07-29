@@ -160,8 +160,7 @@ export const useProgressStore = defineStore('progress', () => {
       // ambient surfaces never surface dev-y slugs like "source".
       const raw = op.lastStatus[op.activePhase]
       const stepLabel = op.steps.find((s) => s.phase === op.activePhase)?.label
-      const status =
-        (raw && raw !== op.activePhase ? raw : null) || stepLabel || op.activePhase
+      const status = (raw && raw !== op.activePhase ? raw : null) || stepLabel || op.activePhase
       return { status, percent: op.activePercent }
     }
     return { status: op.flatStatus || op.title, percent: op.flatPercent }
@@ -245,11 +244,14 @@ export const useProgressStore = defineStore('progress', () => {
     // one mid-fetch. Prepended so any lines that streamed in before the snapshot
     // resolved aren't clobbered.
     if (chainSpan === 'launch' && typeof window.api.logsSnapshot === 'function') {
-      void window.api.logsSnapshot(installationId).then((snapshot) => {
-        if (!snapshot) return
-        if (operations.get(installationId) !== rop) return
-        rop.terminalOutput = snapshot + rop.terminalOutput
-      }).catch(() => {})
+      void window.api
+        .logsSnapshot(installationId)
+        .then((snapshot) => {
+          if (!snapshot) return
+          if (operations.get(installationId) !== rop) return
+          rop.terminalOutput = snapshot + rop.terminalOutput
+        })
+        .catch(() => {})
     }
 
     rop.unsubProgress = window.api.onInstallProgress((data: ProgressData) => {

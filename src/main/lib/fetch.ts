@@ -12,7 +12,7 @@ interface CacheEntry {
 
 // ETag cache (url -> { etag, data }) persisted to disk; bounded, oldest evicted first.
 const MAX_CACHE_SIZE = 100
-const CACHE_FILE = path.join(cacheDir(), "fetch-cache.json")
+const CACHE_FILE = path.join(cacheDir(), 'fetch-cache.json')
 
 const _cache: Map<string, CacheEntry> = new Map()
 let _loaded = false
@@ -21,15 +21,15 @@ function _ensureLoaded(): void {
   if (_loaded) return
   _loaded = true
   try {
-    const raw: unknown = JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"))
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const raw: unknown = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'))
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       for (const [url, entry] of Object.entries(raw as Record<string, unknown>)) {
         if (
           entry &&
-          typeof entry === "object" &&
-          "etag" in entry &&
-          typeof (entry as CacheEntry).etag === "string" &&
-          "data" in entry
+          typeof entry === 'object' &&
+          'etag' in entry &&
+          typeof (entry as CacheEntry).etag === 'string' &&
+          'data' in entry
         ) {
           _cache.set(url, entry as CacheEntry)
         }
@@ -75,28 +75,34 @@ function _headerString(value: string | string[] | undefined): string | undefined
 // entirely. Splitting these lets the mirror-retry below run WITHOUT leaking the
 // primary's ETag to the mirror (cached: undefined) and WITHOUT poisoning the
 // primary's persisted cache entry with mirror-tagged data (cacheKey: undefined).
-function fetchJSONOnce(url: string, cached: CacheEntry | undefined, cacheKey: string | undefined): Promise<unknown> {
+function fetchJSONOnce(
+  url: string,
+  cached: CacheEntry | undefined,
+  cacheKey: string | undefined
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const request = net.request({ url, cache: "no-cache" })
-    request.setHeader("User-Agent", "ComfyUI-Desktop-2")
+    const request = net.request({ url, cache: 'no-cache' })
+    request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
 
     const ghToken = process.env.GITHUB_TOKEN
     if (ghToken) {
       try {
-        if (new URL(url).hostname === "api.github.com") {
-          request.setHeader("Authorization", `token ${ghToken}`)
+        if (new URL(url).hostname === 'api.github.com') {
+          request.setHeader('Authorization', `token ${ghToken}`)
         }
-      } catch { /* invalid URL — skip auth */ }
+      } catch {
+        /* invalid URL — skip auth */
+      }
     }
 
     if (cached?.etag) {
-      request.setHeader("If-None-Match", cached.etag)
+      request.setHeader('If-None-Match', cached.etag)
     }
 
-    let data = ""
-    request.on("response", (response) => {
-      response.on("data", (chunk) => (data += chunk.toString()))
-      response.on("end", () => {
+    let data = ''
+    request.on('response', (response) => {
+      response.on('data', (chunk) => (data += chunk.toString()))
+      response.on('end', () => {
         if (response.statusCode === 304 && cached) {
           resolve(structuredClone(cached.data))
           return
@@ -104,8 +110,8 @@ function fetchJSONOnce(url: string, cached: CacheEntry | undefined, cacheKey: st
         if (response.statusCode !== 200) {
           let msg = `HTTP ${response.statusCode}`
           if (response.statusCode === 403 || response.statusCode === 429) {
-            const resetHeader = _headerString(response.headers["x-ratelimit-reset"])
-            const retryAfter = _headerString(response.headers["retry-after"])
+            const resetHeader = _headerString(response.headers['x-ratelimit-reset'])
+            const retryAfter = _headerString(response.headers['retry-after'])
             let resetSecs: number | undefined
             if (resetHeader) {
               resetSecs = Math.max(0, Math.ceil(Number(resetHeader) - Date.now() / 1000))
@@ -114,9 +120,9 @@ function fetchJSONOnce(url: string, cached: CacheEntry | undefined, cacheKey: st
             }
             if (resetSecs != null) {
               const mins = Math.ceil(resetSecs / 60)
-              msg += ` (rate limited — resets in ${mins} minute${mins !== 1 ? "s" : ""})`
+              msg += ` (rate limited — resets in ${mins} minute${mins !== 1 ? 's' : ''})`
             } else {
-              msg += " (rate limited)"
+              msg += ' (rate limited)'
             }
           }
           reject(new Error(msg))
@@ -130,7 +136,7 @@ function fetchJSONOnce(url: string, cached: CacheEntry | undefined, cacheKey: st
           return
         }
         if (cacheKey) {
-          const etag = _headerString(response.headers["etag"])
+          const etag = _headerString(response.headers['etag'])
           if (etag) {
             _cacheSet(cacheKey, { etag, data: parsed })
           }
@@ -138,7 +144,7 @@ function fetchJSONOnce(url: string, cached: CacheEntry | undefined, cacheKey: st
         resolve(parsed)
       })
     })
-    request.on("error", (err) => reject(err))
+    request.on('error', (err) => reject(err))
     request.end()
   })
 }

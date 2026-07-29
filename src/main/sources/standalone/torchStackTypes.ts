@@ -55,16 +55,14 @@ export interface ObservedTorchStack {
   observedAt: string
 }
 
-export type SnapshotTorchStack =
-  | { kind: 'managed'; ref: ManagedTorchStackRef }
-  | ObservedTorchStack
+export type SnapshotTorchStack = { kind: 'managed'; ref: ManagedTorchStackRef } | ObservedTorchStack
 
 /** Exact-version tuple of an observed snapshot record (local tags kept). */
 export function observedTuple(s: ObservedTorchStack): TorchStackPackages {
   return {
     torch: s.torchVersion ?? '',
     ...(s.torchvisionVersion ? { torchvision: s.torchvisionVersion } : {}),
-    ...(s.torchaudioVersion ? { torchaudio: s.torchaudioVersion } : {}),
+    ...(s.torchaudioVersion ? { torchaudio: s.torchaudioVersion } : {})
   }
 }
 
@@ -192,7 +190,11 @@ function amdSourceServes(source: { indexTag: string }, packages: TorchStackPacka
  *  ref cannot carry an AMD source under a foreign identity). Shared by
  *  the persisted-ref and snapshot validators so repair and restore trust
  *  identical shapes. */
-export function isValidAmdMultiArchSource(source: object, packages: TorchStackPackages, stackId: string): boolean {
+export function isValidAmdMultiArchSource(
+  source: object,
+  packages: TorchStackPackages,
+  stackId: string
+): boolean {
   const src = source as Record<string, unknown>
   if (typeof src.indexTag !== 'string') return false
   if (Object.keys(src).some((k) => k !== 'kind' && k !== 'indexTag')) return false
@@ -205,7 +207,10 @@ export function isValidAmdMultiArchSource(source: object, packages: TorchStackPa
  *  tag-derived pytorch.org lookup correctly refuses `rocm*` on Windows, so
  *  the source kind must lift it); every other source derives from the
  *  local tag as before. */
-export function torchIndexUrlForSource(source: TorchStackSource | null, packages: TorchStackPackages): string | null {
+export function torchIndexUrlForSource(
+  source: TorchStackSource | null,
+  packages: TorchStackPackages
+): string | null {
   if (source?.kind === 'amd-multi-arch-index') {
     return amdSourceServes(source, packages) ? AMD_MULTI_ARCH_INDEX_URL : null
   }
@@ -216,8 +221,12 @@ export function torchIndexUrlForSource(source: TorchStackSource | null, packages
  *  managed ref whose source is AMD's multi-arch index is servable exactly
  *  when that source coherently names the tuple (the tag-derived check
  *  would wrongly reject it on Windows). */
-export function torchTupleReacquirableFrom(source: TorchStackSource | null, packages: TorchStackPackages): boolean {
-  if (source?.kind === 'amd-multi-arch-index') return torchIndexUrlForSource(source, packages) !== null
+export function torchTupleReacquirableFrom(
+  source: TorchStackSource | null,
+  packages: TorchStackPackages
+): boolean {
+  if (source?.kind === 'amd-multi-arch-index')
+    return torchIndexUrlForSource(source, packages) !== null
   return torchTupleReacquirable(packages)
 }
 
@@ -244,7 +253,10 @@ export interface InstalledTorchTuple {
  *  declared by the stack is a mismatch too. Comparing torch alone is not
  *  enough — two stacks can share a torch version but differ in
  *  torchvision/torchaudio. */
-export function torchTupleMatches(expected: TorchStackPackages, installed: InstalledTorchTuple): boolean {
+export function torchTupleMatches(
+  expected: TorchStackPackages,
+  installed: InstalledTorchTuple
+): boolean {
   for (const pkg of ['torch', 'torchvision', 'torchaudio'] as const) {
     const want = expected[pkg]
     const have = installed[pkg]
@@ -304,7 +316,9 @@ const AMD_INDEX_STACK_ID_RE = /^amd-index:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/
 
 /** Parse an `amd-index` stackId (AMD multi-arch entries) into its index tag
  *  and public torch version; null when malformed. */
-export function parseAmdIndexStackId(stackId: string): { indexTag: string; version: string } | null {
+export function parseAmdIndexStackId(
+  stackId: string
+): { indexTag: string; version: string } | null {
   const m = stackId.match(AMD_INDEX_STACK_ID_RE)
   if (!m) return null
   return { indexTag: m[1]!, version: m[2]! }
@@ -319,7 +333,9 @@ export function makeAmdIndexStackId(indexTag: string, torchVersion: string): str
 
 /** Parse any index-served (manifest-resolved, pip-applied) stackId,
  *  regardless of which index serves it. */
-export function parseAnyIndexStackId(stackId: string): { indexTag: string; version: string } | null {
+export function parseAnyIndexStackId(
+  stackId: string
+): { indexTag: string; version: string } | null {
   return parseIndexStackId(stackId) ?? parseAmdIndexStackId(stackId)
 }
 

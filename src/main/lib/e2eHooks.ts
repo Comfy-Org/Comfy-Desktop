@@ -8,12 +8,12 @@
 import {
   _test_setSeededTrayState,
   getDownloadsTrayState,
-  type DownloadsTrayState,
+  type DownloadsTrayState
 } from './comfyDownloadManager'
 import { _test_setUpdateState, type AppUpdateState } from './updater'
 import {
   get as _releaseCacheGet,
-  _test_ageEntries as _test_ageReleaseCacheEntries,
+  _test_ageEntries as _test_ageReleaseCacheEntries
 } from './release-cache'
 import { _test_getOpenTitlePopupBounds } from '../popups/titlePopup'
 import { returnToDashboard } from '../host/detach'
@@ -28,7 +28,7 @@ import {
   resetShellOpenExternalCalls,
   armLaunchSpawnHold,
   releaseLaunchSpawnHold,
-  isLaunchSpawnHeld,
+  isLaunchSpawnHeld
 } from './e2eOverrides'
 import {
   _runningSessions,
@@ -36,7 +36,7 @@ import {
   _getLaunchingInstallationIds,
   _hasActiveLaunch,
   _test_addRunningSession,
-  _test_clearRunningSessions,
+  _test_clearRunningSessions
 } from './ipc/shared'
 
 export interface RunningSessionSnapshot {
@@ -142,7 +142,7 @@ export function registerE2EHooks(): void {
         pid: session.proc?.pid ?? null,
         startedAt: session.startedAt,
         port: session.port,
-        url: session.url,
+        url: session.url
       }
     },
     hasActiveOperation(installationId) {
@@ -166,7 +166,7 @@ export function registerE2EHooks(): void {
       if (!entry || entry.window.isDestroyed()) return false
       ensurePanelView(entry.windowKey, entry, 'comfy-lifecycle')
       return true
-    },
+    }
   }
   ;(globalThis as unknown as { __e2e: E2EHelpers }).__e2e = helpers
 }

@@ -423,7 +423,8 @@ export function createHardwareTap(opts: {
     // carry over, which is the sole unbounded-growth risk.
     const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
     const tail = lines.pop() ?? ''
-    pendingBySource[source] = tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
+    pendingBySource[source] =
+      tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
     return lines
   }
 

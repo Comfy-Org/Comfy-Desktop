@@ -16,29 +16,29 @@ import type { InstallationRecord } from '../../installations'
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 vi.mock('../../lib/i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) =>
-    params ? `${key}:${JSON.stringify(params)}` : key,
+    params ? `${key}:${JSON.stringify(params)}` : key
 }))
 
 // Deterministic no-git environment: no op-marker window, no source rollback.
 vi.mock('../../lib/git', () => ({
   readGitHead: vi.fn(() => null),
-  rollbackComfySource: vi.fn(async () => true),
+  rollbackComfySource: vi.fn(async () => true)
 }))
 
 vi.mock('../../lib/popoutWindows', () => ({
-  releaseInstallTerminalForFsOp: vi.fn(),
+  releaseInstallTerminalForFsOp: vi.fn()
 }))
 
 vi.mock('./envPaths', () => ({
   getMasterPythonPath: () => '/test/python',
   getActivePythonPath: () => '/test/python',
   getActiveUvPath: () => '/test/uv',
-  getInstalledTorchTuple: () => ({ torch: null, torchvision: null, torchaudio: null }),
+  getInstalledTorchTuple: () => ({ torch: null, torchvision: null, torchaudio: null })
 }))
 
 vi.mock('./torchStackTransaction', () => ({
@@ -47,23 +47,23 @@ vi.mock('./torchStackTransaction', () => ({
   prepareBundleStack: vi.fn(),
   preparePipStack: vi.fn(),
   applyTorchStackTransaction: vi.fn(),
-  DiskSpaceError: class DiskSpaceError extends Error {},
+  DiskSpaceError: class DiskSpaceError extends Error {}
 }))
 
 vi.mock('./torchStackCatalog', () => ({
   resolveTorchStack: vi.fn(async () => null),
   resolveSnapshotManagedTarget: vi.fn(async () => null),
-  refreshTorchStackCatalog: vi.fn(async () => {}),
+  refreshTorchStackCatalog: vi.fn(async () => {})
 }))
 
 vi.mock('../../settings', () => ({
   get: vi.fn(() => undefined),
-  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
+  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false }))
 }))
 
 const installationsGet = vi.hoisted(() => vi.fn())
 vi.mock('../../installations', () => ({
-  get: (id: string) => installationsGet(id),
+  get: (id: string) => installationsGet(id)
 }))
 
 const snapshotsMock = vi.hoisted(() => ({
@@ -71,11 +71,21 @@ const snapshotsMock = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   restoreComfyUIVersion: vi.fn(async () => ({ changed: false, commit: null })),
   restoreCustomNodes: vi.fn(async () => ({
-    installed: [], switched: [], enabled: [], disabled: [], removed: [],
-    failed: [], unreportable: [],
+    installed: [],
+    switched: [],
+    enabled: [],
+    disabled: [],
+    removed: [],
+    failed: [],
+    unreportable: []
   })),
   restorePipPackages: vi.fn(async () => ({
-    installed: [], removed: [], changed: [], protectedSkipped: [], failed: [], errors: [],
+    installed: [],
+    removed: [],
+    changed: [],
+    protectedSkipped: [],
+    failed: [],
+    errors: []
   })),
   repairNodeRequirements: vi.fn(async () => ({ changed: [], errors: [] })),
   protectedPackageDrift: vi.fn(async () => []),
@@ -88,7 +98,7 @@ const snapshotsMock = vi.hoisted(() => ({
   // Unused by the restore path; present so other action branches don't crash.
   listSnapshots: vi.fn(async () => []),
   deleteSnapshot: vi.fn(async () => {}),
-  diffAgainstCurrent: vi.fn(async () => ({})),
+  diffAgainstCurrent: vi.fn(async () => ({}))
 }))
 vi.mock('../../lib/snapshots', () => snapshotsMock)
 
@@ -105,7 +115,7 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
     comfyui: { commit: 'abc1234' },
     pipPackages: [],
     skipPipSync: true,
-    updateChannel: 'stable',
+    updateChannel: 'stable'
   }
 
   beforeEach(() => {
@@ -116,11 +126,11 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
       name: 'gating-test',
       installPath: tmpRoot,
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     } as unknown as InstallationRecord
     installationsGet.mockImplementation(async () => installation)
     snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
-      snapshots: [stagedSnapshot],
+      snapshots: [stagedSnapshot]
     }))
   })
 
@@ -132,14 +142,19 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
     return {
       update: async () => {},
       sendProgress: () => {},
-      sendOutput: (text: string) => { outputs?.push(text) },
-      ...(signal ? { signal } : {}),
+      sendOutput: (text: string) => {
+        outputs?.push(text)
+      },
+      ...(signal ? { signal } : {})
     }
   }
 
   it('commits and releases a staged envelope when the restore cleanly reaches its target', async () => {
     const result = await handleAction(
-      'snapshot-restore', installation, { restoreToken: 'tok-1' }, makeTools(),
+      'snapshot-restore',
+      installation,
+      { restoreToken: 'tok-1' },
+      makeTools()
     )
 
     expect(result.ok).toBe(true)
@@ -159,7 +174,10 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
     })
 
     const result = await handleAction(
-      'snapshot-restore', installation, { restoreToken: 'tok-2' }, makeTools(controller.signal),
+      'snapshot-restore',
+      installation,
+      { restoreToken: 'tok-2' },
+      makeTools(controller.signal)
     )
 
     expect(result.ok).toBe(false)
@@ -172,7 +190,7 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
 
   it('exact mode: unknown protected drift fails the restore, keeps the staged envelope, and discloses why', async () => {
     snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
-      snapshots: [{ ...stagedSnapshot, skipPipSync: false }],
+      snapshots: [{ ...stagedSnapshot, skipPipSync: false }]
     }))
     snapshotsMock.protectedPackageDrift.mockImplementationOnce(async () => {
       throw new Error('python missing')
@@ -180,8 +198,10 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
 
     const outputs: string[] = []
     const result = await handleAction(
-      'snapshot-restore', installation,
-      { restoreToken: 'tok-3', mode: 'exact' }, makeTools(undefined, outputs),
+      'snapshot-restore',
+      installation,
+      { restoreToken: 'tok-3', mode: 'exact' },
+      makeTools(undefined, outputs)
     )
 
     expect(result.ok).toBe(false)
@@ -195,25 +215,29 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
 
   it('exact mode: a catalog fetch error while resolving the snapshot stack aborts with pytorchCatalogError before any mutation', async () => {
     snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
-      snapshots: [{
-        ...stagedSnapshot,
-        torchStack: {
-          kind: 'managed',
-          ref: {
-            stackId: 'pytorch-index:cu130:2.13.0',
-            variant: 'win-nvidia',
-            pythonVersion: '3.13.2',
-            packages: { torch: '2.13.0+cu130' },
-            source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
-          },
-        },
-      }],
+      snapshots: [
+        {
+          ...stagedSnapshot,
+          torchStack: {
+            kind: 'managed',
+            ref: {
+              stackId: 'pytorch-index:cu130:2.13.0',
+              variant: 'win-nvidia',
+              pythonVersion: '3.13.2',
+              packages: { torch: '2.13.0+cu130' },
+              source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' }
+            }
+          }
+        }
+      ]
     }))
     vi.mocked(resolveSnapshotManagedTarget).mockRejectedValueOnce(new Error('offline'))
 
     const result = await handleAction(
-      'snapshot-restore', installation,
-      { restoreToken: 'tok-5', mode: 'exact' }, makeTools(),
+      'snapshot-restore',
+      installation,
+      { restoreToken: 'tok-5', mode: 'exact' },
+      makeTools()
     )
 
     expect(result.ok).toBe(false)
@@ -227,7 +251,7 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
 
   it('compatible mode: unknown protected drift succeeds with disclosure but never commits the envelope', async () => {
     snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
-      snapshots: [{ ...stagedSnapshot, skipPipSync: false }],
+      snapshots: [{ ...stagedSnapshot, skipPipSync: false }]
     }))
     snapshotsMock.protectedPackageDrift.mockImplementationOnce(async () => {
       throw new Error('python missing')
@@ -235,8 +259,10 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
 
     const outputs: string[] = []
     const result = await handleAction(
-      'snapshot-restore', installation,
-      { restoreToken: 'tok-4', mode: 'compatible' }, makeTools(undefined, outputs),
+      'snapshot-restore',
+      installation,
+      { restoreToken: 'tok-4', mode: 'compatible' },
+      makeTools(undefined, outputs)
     )
 
     expect(result.ok).toBe(true)

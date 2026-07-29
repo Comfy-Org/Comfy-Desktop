@@ -12,7 +12,7 @@ function makeProgress(
     filename: 'model.safetensors',
     progress: 0,
     status: 'pending',
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -36,20 +36,18 @@ function installMockApi(): BroadcastHooks {
       removedCb = cb
       return vi.fn()
     }),
-    onModelDownloadsClearedFinished: vi.fn(
-      (cb: (data: { urls: string[] }) => void) => {
-        clearedCb = cb
-        return vi.fn()
-      }
-    ),
+    onModelDownloadsClearedFinished: vi.fn((cb: (data: { urls: string[] }) => void) => {
+      clearedCb = cb
+      return vi.fn()
+    }),
     dismissModelDownload,
-    clearFinishedModelDownloads,
+    clearFinishedModelDownloads
   } as unknown as ElectronApi
   return {
     emitRemoved: (url) => removedCb?.({ url }),
     emitClearedFinished: (urls) => clearedCb?.({ urls }),
     dismissModelDownload,
-    clearFinishedModelDownloads,
+    clearFinishedModelDownloads
   }
 }
 
@@ -74,7 +72,7 @@ describe('useDownloadStore', () => {
       expect(store.downloads.size).toBe(1)
       expect(store.downloads.get('https://example.com/a.bin')).toMatchObject({
         url: 'https://example.com/a.bin',
-        status: 'pending',
+        status: 'pending'
       })
     })
 
@@ -86,16 +84,14 @@ describe('useDownloadStore', () => {
       expect(store.downloads.size).toBe(1)
       expect(store.downloads.get(url)).toMatchObject({
         progress: 50,
-        status: 'downloading',
+        status: 'downloading'
       })
     })
 
     it('preserves other entries when updating one', () => {
       store.upsert(makeProgress({ url: 'https://example.com/a.bin' }))
       store.upsert(makeProgress({ url: 'https://example.com/b.bin' }))
-      store.upsert(
-        makeProgress({ url: 'https://example.com/a.bin', progress: 75 })
-      )
+      store.upsert(makeProgress({ url: 'https://example.com/a.bin', progress: 75 }))
 
       expect(store.downloads.size).toBe(2)
       expect(store.downloads.get('https://example.com/b.bin')).toBeDefined()
@@ -120,9 +116,7 @@ describe('useDownloadStore', () => {
       store.upsert(makeProgress({ url: 'https://example.com/a.bin' }))
       store.dismiss('https://example.com/unknown.bin')
 
-      expect(api.dismissModelDownload).toHaveBeenCalledWith(
-        'https://example.com/unknown.bin'
-      )
+      expect(api.dismissModelDownload).toHaveBeenCalledWith('https://example.com/unknown.bin')
       expect(store.downloads.size).toBe(1)
     })
   })
@@ -150,11 +144,7 @@ describe('useDownloadStore', () => {
       store.upsert(makeProgress({ url: 'c', status: 'paused' }))
 
       expect(store.activeDownloads).toHaveLength(3)
-      expect(store.activeDownloads.map((d) => d.url).sort()).toEqual([
-        'a',
-        'b',
-        'c',
-      ])
+      expect(store.activeDownloads.map((d) => d.url).sort()).toEqual(['a', 'b', 'c'])
     })
 
     it('excludes completed, error, cancelled', () => {
@@ -175,11 +165,7 @@ describe('useDownloadStore', () => {
       store.upsert(makeProgress({ url: 'c', status: 'cancelled' }))
 
       expect(store.finishedDownloads).toHaveLength(3)
-      expect(store.finishedDownloads.map((d) => d.url).sort()).toEqual([
-        'a',
-        'b',
-        'c',
-      ])
+      expect(store.finishedDownloads.map((d) => d.url).sort()).toEqual(['a', 'b', 'c'])
     })
 
     it('excludes pending, downloading, paused', () => {

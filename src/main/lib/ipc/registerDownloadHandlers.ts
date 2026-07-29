@@ -10,7 +10,7 @@ import {
   pauseModelDownload,
   resumeModelDownload,
   retryDownload,
-  startModelDownload,
+  startModelDownload
 } from '../comfyDownloadManager'
 import { openModelAccessPageWindow } from '../modelAccessPage'
 
@@ -20,10 +20,8 @@ export function registerDownloadHandlers(): void {
     event.returnValue = entry?.sourceCategory === 'cloud' || entry?.sourceCategory === 'remote'
   })
 
-  ipcMain.handle(
-    'desktop2-open-model-access-page',
-    (event, payload?: { url?: unknown }) =>
-      openModelAccessPageWindow(event.sender, payload?.url),
+  ipcMain.handle('desktop2-open-model-access-page', (event, payload?: { url?: unknown }) =>
+    openModelAccessPageWindow(event.sender, payload?.url)
   )
 
   ipcMain.handle(
@@ -32,23 +30,23 @@ export function registerDownloadHandlers(): void {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) return false
       return startModelDownload(win, url, filename, directory, event.sender)
-    },
+    }
   )
 
   ipcMain.handle('model-download-pause', (_event, { url }: { url: string }) =>
-    pauseModelDownload(url),
+    pauseModelDownload(url)
   )
 
   ipcMain.handle('model-download-resume', (_event, { url }: { url: string }) =>
-    resumeModelDownload(url),
+    resumeModelDownload(url)
   )
 
   ipcMain.handle('model-download-cancel', (_event, { url }: { url: string }) =>
-    cancelModelDownload(url),
+    cancelModelDownload(url)
   )
 
   ipcMain.handle('model-download-dismiss', (_event, { url }: { url: string }) =>
-    dismissRecentDownload(url),
+    dismissRecentDownload(url)
   )
 
   ipcMain.handle('model-download-clear-finished', () => clearFinishedDownloads())
@@ -68,6 +66,6 @@ export function registerDownloadHandlers(): void {
   // or unreadable files. Reachable from the panel (`window.api`) and the
   // title-bar popup (`ipcRenderer.invoke`) alike.
   ipcMain.handle('download-thumbnail', (_event, { savePath }: { savePath: string }) =>
-    getDownloadThumbnail(savePath),
+    getDownloadThumbnail(savePath)
   )
 }

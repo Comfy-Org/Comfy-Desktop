@@ -5,19 +5,19 @@ import type { InstallationRecord } from '../installations'
 vi.mock('./release-cache', () => ({
   get: vi.fn(() => undefined),
   getOrFetch: vi.fn(async () => null),
-  buildCacheEntry: vi.fn((release: unknown) => release),
+  buildCacheEntry: vi.fn((release: unknown) => release)
 }))
 vi.mock('./comfyui-releases', () => ({
-  fetchLatestRelease: vi.fn(async () => null),
+  fetchLatestRelease: vi.fn(async () => null)
 }))
 vi.mock('../sources/standalone/torchStackCatalog', () => ({
-  refreshTorchStackCatalogs: vi.fn(async () => true),
+  refreshTorchStackCatalogs: vi.fn(async () => true)
 }))
 
 import {
   runStartupReleaseChecks,
   startPeriodicReleaseChecks,
-  _resetTorchCatalogFloorForTest,
+  _resetTorchCatalogFloorForTest
 } from './release-cache-startup'
 import * as releaseCache from './release-cache'
 import { refreshTorchStackCatalogs } from '../sources/standalone/torchStackCatalog'
@@ -31,7 +31,7 @@ function install(overrides: Partial<InstallationRecord> = {}): InstallationRecor
     status: 'installed',
     createdAt: new Date(0).toISOString(),
     variant: 'win-nvidia',
-    ...overrides,
+    ...overrides
   } as InstallationRecord
 }
 
@@ -107,7 +107,7 @@ describe('runStartupReleaseChecks', () => {
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
     let resolveRefresh!: (ok: boolean) => void
     vi.mocked(refreshTorchStackCatalogs).mockImplementationOnce(
-      () => new Promise((resolve) => (resolveRefresh = resolve)),
+      () => new Promise((resolve) => (resolveRefresh = resolve))
     )
 
     const first = runStartupReleaseChecks([install()])
@@ -120,7 +120,7 @@ describe('runStartupReleaseChecks', () => {
   it('does not run at all without ComfyUI installs', async () => {
     await runStartupReleaseChecks([
       install({ sourceId: 'cloud' }),
-      install({ status: 'installing' }),
+      install({ status: 'installing' })
     ])
     expect(vi.mocked(releaseCache.getOrFetch)).not.toHaveBeenCalled()
     expect(vi.mocked(refreshTorchStackCatalogs)).not.toHaveBeenCalled()

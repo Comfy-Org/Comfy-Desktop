@@ -19,12 +19,16 @@ export function writeFileSafe(filePath: string, data: string, backup: boolean = 
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(tmpPath, data, 'utf-8')
   if (backup) {
-    try { fs.copyFileSync(filePath, bakPath) } catch {}
+    try {
+      fs.copyFileSync(filePath, bakPath)
+    } catch {}
   }
   try {
     fs.renameSync(tmpPath, filePath)
   } catch (err) {
-    try { fs.unlinkSync(tmpPath) } catch {}
+    try {
+      fs.unlinkSync(tmpPath)
+    } catch {}
     throw err
   }
 }
@@ -41,7 +45,9 @@ export function readFileSafe(filePath: string): string | null {
   try {
     const data = fs.readFileSync(bakPath, 'utf-8')
     if (data.length > 0) {
-      try { fs.copyFileSync(bakPath, filePath) } catch {}
+      try {
+        fs.copyFileSync(bakPath, filePath)
+      } catch {}
       return data
     }
   } catch {}
@@ -49,13 +55,19 @@ export function readFileSafe(filePath: string): string | null {
   return null
 }
 
-export async function writeFileSafeAsync(filePath: string, data: string, backup: boolean = false): Promise<void> {
+export async function writeFileSafeAsync(
+  filePath: string,
+  data: string,
+  backup: boolean = false
+): Promise<void> {
   const tmpPath = filePath + '.tmp'
   const bakPath = filePath + '.bak'
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
   await fs.promises.writeFile(tmpPath, data, 'utf-8')
   if (backup) {
-    try { await fs.promises.copyFile(filePath, bakPath) } catch {}
+    try {
+      await fs.promises.copyFile(filePath, bakPath)
+    } catch {}
   }
   // On Windows, antivirus or indexer may briefly lock the file after a write,
   // causing EPERM on rename. Retry a few times with a short delay.
@@ -71,7 +83,9 @@ export async function writeFileSafeAsync(filePath: string, data: string, backup:
         await new Promise((r) => setTimeout(r, RENAME_DELAY_MS * (attempt + 1)))
         continue
       }
-      try { await fs.promises.unlink(tmpPath) } catch {}
+      try {
+        await fs.promises.unlink(tmpPath)
+      } catch {}
       throw err
     }
   }
@@ -87,7 +101,9 @@ export async function readFileSafeAsync(filePath: string): Promise<string | null
   try {
     const data = await fs.promises.readFile(bakPath, 'utf-8')
     if (data.length > 0) {
-      try { await fs.promises.copyFile(bakPath, filePath) } catch {}
+      try {
+        await fs.promises.copyFile(bakPath, filePath)
+      } catch {}
       return data
     }
   } catch {}

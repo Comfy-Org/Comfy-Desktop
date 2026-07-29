@@ -52,12 +52,12 @@ const TEMPLATE_PACKAGE_DIRS = [
   'comfyui_workflow_templates_media_video',
   'comfyui_workflow_templates_media_audio',
   'comfyui_workflow_templates_media_other',
-  'comfyui_workflow_templates_media_api',
+  'comfyui_workflow_templates_media_api'
 ]
 
 export async function loadTemplateJson(
   installation: InstallationRecord | null,
-  templateId: string,
+  templateId: string
 ): Promise<unknown | null> {
   const sitePackages = installation ? findSitePackages(getActiveVenvDir(installation)) : null
   if (sitePackages) {
@@ -107,7 +107,7 @@ function isAcceptableModelUrl(url: string): boolean {
  */
 export function sanitizeModelPath(
   directory: string,
-  name: string,
+  name: string
 ): { directory: string; filename: string } | null {
   const normalizedDir = path.posix.normalize(directory.replace(/\\/g, '/'))
   // Trailing-slash-stripped form for the root check only: `''`, `'.'`, and
@@ -165,7 +165,7 @@ function walkNodes(nodes: unknown, out: RawModel[]): void {
  */
 export async function resolveTemplateModels(
   installation: InstallationRecord | null,
-  templateId: string,
+  templateId: string
 ): Promise<TemplateModelDownload[]> {
   const json = await loadTemplateJson(installation, templateId)
   if (!json || typeof json !== 'object') return []
@@ -190,7 +190,11 @@ export async function resolveTemplateModels(
   const seen = new Set<string>()
   const result: TemplateModelDownload[] = []
   for (const m of raw) {
-    if (typeof m.name !== 'string' || typeof m.url !== 'string' || typeof m.directory !== 'string') {
+    if (
+      typeof m.name !== 'string' ||
+      typeof m.url !== 'string' ||
+      typeof m.directory !== 'string'
+    ) {
       continue
     }
     if (!isAcceptableModelUrl(m.url)) continue

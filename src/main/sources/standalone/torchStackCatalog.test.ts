@@ -3,35 +3,49 @@ import fs from 'fs'
 import type { InstallationRecord } from '../../installations'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 vi.mock('../../lib/fetch', () => ({
-  fetchJSON: vi.fn(),
+  fetchJSON: vi.fn()
 }))
 vi.mock('../../lib/paths', async () => {
   const os = await import('os')
   const path = await import('path')
-  const dir = path.join(os.tmpdir(), `torch-catalog-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+  const dir = path.join(
+    os.tmpdir(),
+    `torch-catalog-test-${process.pid}-${Math.random().toString(36).slice(2)}`
+  )
   return { dataDir: () => dir }
 })
 vi.mock('./r2Catalog', () => ({
   fetchR2VendorReleases: vi.fn(async () => []),
-  r2BundleUrl: vi.fn(() => ''),
+  r2BundleUrl: vi.fn(() => '')
 }))
 vi.mock('./envPaths', async (importOriginal) => ({
   ...(await importOriginal<typeof EnvPaths>()),
-  getInstalledTorchTuple: vi.fn(() => ({ torch: null, torchvision: null, torchaudio: null })),
+  getInstalledTorchTuple: vi.fn(() => ({ torch: null, torchvision: null, torchaudio: null }))
 }))
 
 import type * as EnvPaths from './envPaths'
 import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import { getInstalledTorchTuple } from './envPaths'
-import { getCachedTorchStacks, resolveTorchStack, resolveSnapshotManagedTarget, reconcileTorchStack, getLastVerifiedTorchStack, refreshTorchStackCatalogs, _resetForTest } from './torchStackCatalog'
+import {
+  getCachedTorchStacks,
+  resolveTorchStack,
+  resolveSnapshotManagedTarget,
+  reconcileTorchStack,
+  getLastVerifiedTorchStack,
+  refreshTorchStackCatalogs,
+  _resetForTest
+} from './torchStackCatalog'
 import { fetchR2VendorReleases } from './r2Catalog'
 import {
-  _setComputeCapsForTest, _setRemoteDefsForTest, _resetRemoteForTest,
-  _setComputeCapProbeForTest, _setNvidiaDriverProbeForTest,
+  _setComputeCapsForTest,
+  _setRemoteDefsForTest,
+  _resetRemoteForTest,
+  _setComputeCapProbeForTest,
+  _setNvidiaDriverProbeForTest
 } from './torchIndexManifest'
 import type { TorchIndexStackDef } from './torchIndexManifest'
 
@@ -47,7 +61,7 @@ const cu130Def: TorchIndexStackDef = {
   platforms: ['win32', 'linux'],
   packages: { torch: '2.11.0+cu130' },
   date: '2026-04-01',
-  pythonAbis: ['3.13'],
+  pythonAbis: ['3.13']
 }
 
 function install(pythonVersion?: string): InstallationRecord {
@@ -59,7 +73,7 @@ function install(pythonVersion?: string): InstallationRecord {
     status: 'installed',
     createdAt: new Date(0).toISOString(),
     variant: 'win-nvidia',
-    ...(pythonVersion ? { pythonVersion } : {}),
+    ...(pythonVersion ? { pythonVersion } : {})
   } as InstallationRecord
 }
 
@@ -74,7 +88,11 @@ afterEach(() => {
   _setComputeCapsForTest(undefined)
   _setRemoteDefsForTest(null)
   vi.mocked(fetchJSON).mockReset()
-  vi.mocked(getInstalledTorchTuple).mockReturnValue({ torch: null, torchvision: null, torchaudio: null })
+  vi.mocked(getInstalledTorchTuple).mockReturnValue({
+    torch: null,
+    torchvision: null,
+    torchaudio: null
+  })
   fs.rmSync(dataDir(), { recursive: true, force: true })
 })
 
@@ -126,20 +144,29 @@ describe('resolveSnapshotManagedTarget', () => {
 
   it('returns null on tuple drift between the snapshot record and the catalog', async () => {
     const inst = install('3.13.2')
-    expect(await resolveSnapshotManagedTarget(inst, {
-      stackId: CU130_ID, packages: { torch: '2.12.0+cu130' },
-    })).toBeNull()
+    expect(
+      await resolveSnapshotManagedTarget(inst, {
+        stackId: CU130_ID,
+        packages: { torch: '2.12.0+cu130' }
+      })
+    ).toBeNull()
     // Symmetric drift: a package the catalog dropped (or added) counts too.
-    expect(await resolveSnapshotManagedTarget(inst, {
-      stackId: CU130_ID, packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu130' },
-    })).toBeNull()
+    expect(
+      await resolveSnapshotManagedTarget(inst, {
+        stackId: CU130_ID,
+        packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu130' }
+      })
+    ).toBeNull()
   })
 
   it('propagates catalog fetch errors instead of mapping them to null', async () => {
     vi.mocked(fetchR2VendorReleases).mockRejectedValueOnce(new Error('offline'))
-    await expect(resolveSnapshotManagedTarget(install('3.13.2'), {
-      stackId: 'comfy-bundle:win-nvidia:v1.0.0', packages: { torch: '2.11.0+cu130' },
-    })).rejects.toThrow('offline')
+    await expect(
+      resolveSnapshotManagedTarget(install('3.13.2'), {
+        stackId: 'comfy-bundle:win-nvidia:v1.0.0',
+        packages: { torch: '2.11.0+cu130' }
+      })
+    ).rejects.toThrow('offline')
   })
 })
 
@@ -148,13 +175,16 @@ describe('getLastVerifiedTorchStack source validation', () => {
     stackId: 'amd-index:rocm7.14.0:2.10.0',
     variant: 'win-amd',
     pythonVersion: '3.13.2',
-    packages: { torch: '2.10.0+rocm7.14.0' },
+    packages: { torch: '2.10.0+rocm7.14.0' }
   }
 
   it('accepts a persisted amd-multi-arch-index ref', () => {
     const inst = {
       ...install('3.13.2'),
-      lastVerifiedTorchStack: { ...baseRef, source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' } },
+      lastVerifiedTorchStack: {
+        ...baseRef,
+        source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+      }
     } as InstallationRecord
     expect(getLastVerifiedTorchStack(inst)?.source.kind).toBe('amd-multi-arch-index')
   })
@@ -170,9 +200,12 @@ describe('getLastVerifiedTorchStack source validation', () => {
       { kind: 'amd-multi-arch-index', indexTag: 'rocm7.13.0' },
       // Extra fields (e.g. a smuggled url) mark the ref as not ours.
       { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' },
-      { kind: 'evil-url', url: 'https://evil.example' },
+      { kind: 'evil-url', url: 'https://evil.example' }
     ]) {
-      const inst = { ...install('3.13.2'), lastVerifiedTorchStack: { ...baseRef, source } } as InstallationRecord
+      const inst = {
+        ...install('3.13.2'),
+        lastVerifiedTorchStack: { ...baseRef, source }
+      } as InstallationRecord
       expect(getLastVerifiedTorchStack(inst)).toBeNull()
     }
   })
@@ -184,8 +217,8 @@ describe('getLastVerifiedTorchStack source validation', () => {
         ...baseRef,
         stackId: 'amd-index:rocm7.14.0:2.12.0.dev20260720',
         packages: { torch: '2.12.0.dev20260720+rocm7.14.0' },
-        source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
-      },
+        source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+      }
     } as InstallationRecord
     expect(getLastVerifiedTorchStack(inst)).toBeNull()
   })
@@ -196,15 +229,15 @@ describe('getLastVerifiedTorchStack source validation', () => {
     for (const stackId of [
       'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
       'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
-      'amd-index:rocm7.14.0:2.11.0', // version disagrees with the tuple
+      'amd-index:rocm7.14.0:2.11.0' // version disagrees with the tuple
     ]) {
       const inst = {
         ...install('3.13.2'),
         lastVerifiedTorchStack: {
           ...baseRef,
           stackId,
-          source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
-        },
+          source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+        }
       } as InstallationRecord
       expect(getLastVerifiedTorchStack(inst)).toBeNull()
     }
@@ -239,13 +272,18 @@ describe('compute-cap mismatch is informational, never a gate', () => {
   it('reconcile adoption of a manual change persists the entry without the warning', async () => {
     _setRemoteDefsForTest([{ ...cu130Def, computeCap: { min: 7.5, max: 12.0 } }])
     _setComputeCapsForTest([6.1])
-    vi.mocked(getInstalledTorchTuple).mockReturnValue(
-      { torch: '2.11.0+cu130', torchvision: null, torchaudio: null }
-    )
+    vi.mocked(getInstalledTorchTuple).mockReturnValue({
+      torch: '2.11.0+cu130',
+      torchvision: null,
+      torchaudio: null
+    })
     const updates: Record<string, unknown>[] = []
-    await reconcileTorchStack(install('3.13.2'), async (data) => { updates.push(data) })
-    const adopted = updates.find((u) => u.lastVerifiedTorchStack)
-      ?.lastVerifiedTorchStack as { stackId?: string; capWarning?: unknown } | undefined
+    await reconcileTorchStack(install('3.13.2'), async (data) => {
+      updates.push(data)
+    })
+    const adopted = updates.find((u) => u.lastVerifiedTorchStack)?.lastVerifiedTorchStack as
+      | { stackId?: string; capWarning?: unknown }
+      | undefined
     expect(adopted?.stackId).toBe(CU130_ID)
     expect(adopted?.capWarning).toBeUndefined()
   })
@@ -267,7 +305,7 @@ describe('refreshTorchStackCatalogs', () => {
     await refreshTorchStackCatalogs([
       install('3.13.2'),
       { ...install('3.13.2'), id: 'inst-2' } as InstallationRecord,
-      { ...install('3.13.2'), id: 'inst-3', variant: 'win-amd' } as InstallationRecord,
+      { ...install('3.13.2'), id: 'inst-3', variant: 'win-amd' } as InstallationRecord
     ])
     const variants = vi.mocked(fetchR2VendorReleases).mock.calls.map((c) => c[0])
     expect(variants.sort()).toEqual(['win-amd', 'win-nvidia'])
@@ -276,7 +314,7 @@ describe('refreshTorchStackCatalogs', () => {
   it('ignores non-standalone and non-installed installs', async () => {
     await refreshTorchStackCatalogs([
       { ...install('3.13.2'), sourceId: 'portable' } as InstallationRecord,
-      { ...install('3.13.2'), status: 'installing' } as InstallationRecord,
+      { ...install('3.13.2'), status: 'installing' } as InstallationRecord
     ])
     expect(vi.mocked(fetchR2VendorReleases)).not.toHaveBeenCalled()
   })

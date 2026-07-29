@@ -8,7 +8,7 @@ import type { ActionContext, ActionResult } from './types'
  */
 export async function withAbortableSessionAction(
   ctx: ActionContext,
-  fn: (signal: AbortSignal, ctx: ActionContext) => Promise<ActionResult>,
+  fn: (signal: AbortSignal, ctx: ActionContext) => Promise<ActionResult>
 ): Promise<ActionResult> {
   if (_operationAborts.has(ctx.installationId)) {
     return { ok: false, message: 'Another operation is already running for this installation.' }

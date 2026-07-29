@@ -189,7 +189,7 @@ export function templateDiskRequiredBytes(estimatedModelBytes: number): number {
  */
 export function isTemplateDiskBlocked(
   diskSpace: DiskSpaceInfo | null,
-  estimatedModelBytes: number,
+  estimatedModelBytes: number
 ): boolean {
   const required = templateDiskRequiredBytes(estimatedModelBytes)
   if (required === 0 || !diskSpace) return false

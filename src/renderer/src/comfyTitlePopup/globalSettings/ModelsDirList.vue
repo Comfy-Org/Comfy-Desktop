@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, FileText, Folder, FolderLock, FolderOpen, MoreHorizontal, Plus } from 'lucide-vue-next'
+import {
+  ChevronRight,
+  FileText,
+  Folder,
+  FolderLock,
+  FolderOpen,
+  MoreHorizontal,
+  Plus
+} from 'lucide-vue-next'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
@@ -159,23 +167,39 @@ const rows = computed(() =>
       <StorageItemIcon
         :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
         :shared="row.shared"
-        :title="row.locked ? t('models.lockedDir', 'This directory is always used and cannot be removed.') : undefined"
+        :title="
+          row.locked
+            ? t('models.lockedDir', 'This directory is always used and cannot be removed.')
+            : undefined
+        "
       />
       <div class="models-dir-main">
         <button
           type="button"
           class="models-dir-name"
-          :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details') : t('models.openDir', 'Open folder')"
+          :title="
+            row.isExtra
+              ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details')
+              : t('models.openDir', 'Open folder')
+          "
           @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
-        >{{ row.path }}</button>
+        >
+          {{ row.path }}
+        </button>
       </div>
       <span v-if="row.isPrimary" class="models-dir-tag tag-primary">
         {{ t('models.primary', 'Downloads') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
       </span>
       <span v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
-        {{ row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance') }}
-        <InfoTooltip :text="row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')" />
+        {{
+          row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance')
+        }}
+        <InfoTooltip
+          :text="
+            row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
+          "
+        />
       </span>
       <div class="models-dir-actions">
         <button

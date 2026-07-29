@@ -166,20 +166,27 @@ export function statesMatch(
   return true
 }
 
-function torchStacksMatch(a: SnapshotTorchStack | undefined, b: SnapshotTorchStack | undefined): boolean {
+function torchStacksMatch(
+  a: SnapshotTorchStack | undefined,
+  b: SnapshotTorchStack | undefined
+): boolean {
   // v1 snapshots carry no stack record; only identical absence matches.
   if (!a || !b) return !a && !b
   if (a.kind !== b.kind) return false
   if (a.kind === 'managed' && b.kind === 'managed') {
-    return a.ref.stackId === b.ref.stackId && torchPackageTuplesEqual(a.ref.packages, b.ref.packages)
+    return (
+      a.ref.stackId === b.ref.stackId && torchPackageTuplesEqual(a.ref.packages, b.ref.packages)
+    )
   }
   if (a.kind === 'observed' && b.kind === 'observed') {
     // Full tuple, with missing (pre-tuple record) distinct from null
     // (recorded absent) — an upgrade to a fuller record must not be deduped
     // away, or the only restorable capture of the tuple could be lost.
-    return a.torchVersion === b.torchVersion &&
+    return (
+      a.torchVersion === b.torchVersion &&
       a.torchvisionVersion === b.torchvisionVersion &&
       a.torchaudioVersion === b.torchaudioVersion
+    )
   }
   return false
 }

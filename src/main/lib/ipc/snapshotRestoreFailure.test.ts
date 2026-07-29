@@ -6,19 +6,19 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 vi.mock('../i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) =>
-    params ? `${key}:${JSON.stringify(params)}` : key,
+    params ? `${key}:${JSON.stringify(params)}` : key
 }))
 
 // The diagnostic log write is best-effort; make it explode to prove the
@@ -26,7 +26,7 @@ vi.mock('../i18n', () => ({
 vi.mock('../logsBroadcast', () => ({
   appendLog: vi.fn(() => {
     throw new Error('disk full')
-  }),
+  })
 }))
 
 import { snapshotRestoreFailureResult } from './shared'

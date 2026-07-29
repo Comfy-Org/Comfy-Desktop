@@ -14,7 +14,7 @@ const i18n = createI18n({
   locale: 'en',
   messages: { en },
   missingWarn: false,
-  fallbackWarn: false,
+  fallbackWarn: false
 })
 
 const SCHEMA: ComfyArgDef[] = [
@@ -24,7 +24,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Run on CPU only.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'gpuVram',
+    category: 'gpuVram'
   },
   {
     name: 'gpu-only',
@@ -32,7 +32,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Force GPU usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'gpuVram',
+    category: 'gpuVram'
   },
   {
     name: 'lowvram',
@@ -40,7 +40,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Reduce VRAM usage.',
     type: 'boolean',
     exclusiveGroup: 'group_0',
-    category: 'gpuVram',
+    category: 'gpuVram'
   },
   {
     name: 'port',
@@ -48,15 +48,15 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Server port.',
     type: 'value',
     metavar: 'PORT',
-    category: 'network',
-  },
+    category: 'network'
+  }
 ]
 
 function stubElectronApi(): void {
   // Attach to the real window so jsdom listeners survive teardown
   // (swapping the whole window object breaks BaseSelect's resize/scroll cleanup).
   ;(window as unknown as { api: unknown }).api = {
-    getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA }),
+    getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA })
   }
 }
 
@@ -69,9 +69,9 @@ async function mountPage(initialValue = '', pendingRestart = false): Promise<Vue
       plugins: [i18n],
       // BaseSelect teleports its popover to <body>; render it in-tree
       // so we can query options through the wrapper.
-      stubs: { Teleport: { template: '<div><slot /></div>' } },
+      stubs: { Teleport: { template: '<div><slot /></div>' } }
     },
-    attachTo: document.body,
+    attachTo: document.body
   })
   wrappers.push(wrapper)
   await flushPromises()

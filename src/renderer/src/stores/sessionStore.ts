@@ -200,7 +200,7 @@ export const useSessionStore = defineStore('session', () => {
           exitCodeHex: c.exitCodeHex,
           crashKind: c.crashKind,
           vcRuntimeMissing: c.vcRuntimeMissing,
-          crashedAtMs: c.crashedAtMs,
+          crashedAtMs: c.crashedAtMs
         })
       }
     }

@@ -36,11 +36,13 @@ describe('reconcileManagerConfigForLaunch', () => {
     expect(mockEnsure).not.toHaveBeenCalled()
   })
 
-  it('passes the launched install\'s own level (mirrors stay a global setting)', async () => {
+  it("passes the launched install's own level (mirrors stay a global setting)", async () => {
     mockSettings = { useChineseMirrors: true }
 
     await reconcileManagerConfigForLaunch({
-      remote: false, installPath: '/inst', securityLevel: 'weak'
+      remote: false,
+      installPath: '/inst',
+      securityLevel: 'weak'
     })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
@@ -52,23 +54,34 @@ describe('reconcileManagerConfigForLaunch', () => {
 
   it('keeps per-install levels isolated between launches', async () => {
     await reconcileManagerConfigForLaunch({
-      remote: false, installPath: '/inst-a', securityLevel: 'strong'
+      remote: false,
+      installPath: '/inst-a',
+      securityLevel: 'strong'
     })
     await reconcileManagerConfigForLaunch({
-      remote: false, installPath: '/inst-b', securityLevel: 'normal-'
+      remote: false,
+      installPath: '/inst-b',
+      securityLevel: 'normal-'
     })
 
     expect(mockEnsure).toHaveBeenNthCalledWith(1, '/inst-a', {
-      useChineseMirrors: false, securityLevel: 'strong', networkMode: undefined
+      useChineseMirrors: false,
+      securityLevel: 'strong',
+      networkMode: undefined
     })
     expect(mockEnsure).toHaveBeenNthCalledWith(2, '/inst-b', {
-      useChineseMirrors: false, securityLevel: 'normal-', networkMode: undefined
+      useChineseMirrors: false,
+      securityLevel: 'normal-',
+      networkMode: undefined
     })
   })
 
-  it('passes the launched install\'s own network mode', async () => {
+  it("passes the launched install's own network mode", async () => {
     await reconcileManagerConfigForLaunch({
-      remote: false, installPath: '/inst', securityLevel: 'normal', networkMode: 'personal_cloud'
+      remote: false,
+      installPath: '/inst',
+      securityLevel: 'normal',
+      networkMode: 'personal_cloud'
     })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
@@ -90,7 +103,10 @@ describe('reconcileManagerConfigForLaunch', () => {
 
   it('degrades hand-edited bogus values to undefined instead of leaking them', async () => {
     await reconcileManagerConfigForLaunch({
-      remote: false, installPath: '/inst', securityLevel: 'bogus', networkMode: 'bogus'
+      remote: false,
+      installPath: '/inst',
+      securityLevel: 'bogus',
+      networkMode: 'bogus'
     })
 
     expect(mockEnsure).toHaveBeenCalledWith('/inst', {
@@ -132,7 +148,9 @@ describe('reconcileManagerConfigForLaunch', () => {
     try {
       await expect(
         reconcileManagerConfigForLaunch({
-          remote: false, installPath: '/inst', securityLevel: 'strong'
+          remote: false,
+          installPath: '/inst',
+          securityLevel: 'strong'
         })
       ).resolves.toEqual({ ok: false, error: err })
       expect(telemetry.capture).toHaveBeenCalledWith(
@@ -152,7 +170,9 @@ describe('reconcileManagerConfigForLaunch', () => {
     try {
       await expect(
         reconcileManagerConfigForLaunch({
-          remote: false, installPath: '/inst', networkMode: 'public'
+          remote: false,
+          installPath: '/inst',
+          networkMode: 'public'
         })
       ).resolves.toEqual({ ok: false, error: err })
     } finally {
@@ -168,7 +188,10 @@ describe('reconcileManagerConfigForLaunch', () => {
     try {
       await expect(
         reconcileManagerConfigForLaunch({
-          remote: false, installPath: '/inst', securityLevel: 'bogus', networkMode: 'bogus'
+          remote: false,
+          installPath: '/inst',
+          securityLevel: 'bogus',
+          networkMode: 'bogus'
         })
       ).resolves.toEqual({ ok: true })
     } finally {

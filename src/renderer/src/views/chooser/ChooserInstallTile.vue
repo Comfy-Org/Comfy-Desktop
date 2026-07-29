@@ -83,10 +83,7 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
-const metaLine = computed(() =>
-  [sourceLabel.value, inst.value.version].filter(Boolean).join(' · ')
-)
-
+const metaLine = computed(() => [sourceLabel.value, inst.value.version].filter(Boolean).join(' · '))
 
 /** The single update/migrate affordance, or null when the install has neither.
  *  The Update tooltip surfaces the target version the bare pill hides. */

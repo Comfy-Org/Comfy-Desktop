@@ -6,11 +6,27 @@ import type { ChannelDef } from '../../lib/channel-cards'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { truncateNotes } from '../../lib/comfyui-releases'
-import { deleteAction, untrackAction, launchAction, openFolderAction, renameAction } from '../../lib/actions'
+import {
+  deleteAction,
+  untrackAction,
+  launchAction,
+  openFolderAction,
+  renameAction
+} from '../../lib/actions'
 import { t } from '../../lib/i18n'
 import { buildLaunchSettingsFields, buildStorageFields } from '../common/launchSettingsFields'
-import { getVariantLabel, getTorchVersion, getInstalledTorchTuple, DEFAULT_LAUNCH_ARGS } from './envPaths'
-import { torchTupleMatches, stackAppliesViaPip, torchLocalTag, isDevVersion } from './torchStackTypes'
+import {
+  getVariantLabel,
+  getTorchVersion,
+  getInstalledTorchTuple,
+  DEFAULT_LAUNCH_ARGS
+} from './envPaths'
+import {
+  torchTupleMatches,
+  stackAppliesViaPip,
+  torchLocalTag,
+  isDevVersion
+} from './torchStackTypes'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { TorchStackEntry } from './torchStackCatalog'
 import { torchSeriesInfo, nvidiaDriverMismatch } from './torchIndexManifest'
@@ -23,8 +39,17 @@ export { R2_BASE_URL } from '../../lib/r2Mirror'
 
 function getChannelDefs(): ChannelDef[] {
   return [
-    { value: 'stable', label: t('standalone.channelStable'), description: t('standalone.channelStableDesc'), recommended: true },
-    { value: 'latest', label: t('standalone.channelLatest'), description: t('standalone.channelLatestDesc') },
+    {
+      value: 'stable',
+      label: t('standalone.channelStable'),
+      description: t('standalone.channelStableDesc'),
+      recommended: true
+    },
+    {
+      value: 'latest',
+      label: t('standalone.channelLatest'),
+      description: t('standalone.channelLatestDesc')
+    }
   ]
 }
 
@@ -65,7 +90,11 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
  *  tag (`cu130` -> CUDA 13.0, `rocm7.2.1` -> ROCm 7.2.1). Untagged builds
  *  (PyPI / mac MPS) share one "Default" series. Presentation only - actions
  *  still carry the opaque stackId. */
-function torchSeriesGroup(torch: string | null | undefined): { id: string; label: string; description?: string } {
+function torchSeriesGroup(torch: string | null | undefined): {
+  id: string
+  label: string
+  description?: string
+} {
   const base = torchSeriesBase(torch)
   // The series description comes from the base tag either way: a nightly
   // group is the same backend line, so its driver minimum and note apply.
@@ -77,7 +106,7 @@ function torchSeriesGroup(torch: string | null | undefined): { id: string; label
     return {
       id: `nightly-${base.id}`,
       label: t('standalone.pytorchSeriesNightly', { series: base.label }),
-      ...(description ? { description } : {}),
+      ...(description ? { description } : {})
     }
   }
   return { ...base, ...(description ? { description } : {}) }
@@ -134,7 +163,10 @@ function compareStackDisplay(a: TorchStackEntry, b: TorchStackEntry): number {
     if (bySeries !== 0) return bySeries
     return tagA.localeCompare(tagB)
   }
-  const byVersion = compareNumbersDesc(versionNumbers(a.packages.torch), versionNumbers(b.packages.torch))
+  const byVersion = compareNumbersDesc(
+    versionNumbers(a.packages.torch),
+    versionNumbers(b.packages.torch)
+  )
   if (byVersion !== 0) return byVersion
   return b.date.localeCompare(a.date)
 }
@@ -159,7 +191,10 @@ function torchSeriesBase(torch: string | null | undefined): { id: string; label:
  * presentation only — the change-pytorch handler re-resolves the stackId on
  * the main side.
  */
-function buildPytorchSection(installation: InstallationRecord, installed: boolean): Record<string, unknown> | null {
+function buildPytorchSection(
+  installation: InstallationRecord,
+  installed: boolean
+): Record<string, unknown> | null {
   if (!installed) return null
   const stacks = getCachedTorchStacks(installation)
   if (stacks.length === 0) return null
@@ -170,7 +205,9 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   // catalog omits.
   const installedTuple = getInstalledTorchTuple(installation)
   const currentTorch = installedTuple.torch
-  const current = currentTorch ? stacks.find((s) => torchTupleMatches(s.packages, installedTuple)) : undefined
+  const current = currentTorch
+    ? stacks.find((s) => torchTupleMatches(s.packages, installedTuple))
+    : undefined
   const fieldValue = current ? current.stackId : 'pytorch-current'
 
   // Split the picker by backend series (CUDA 13.0 vs 12.8, ROCm x.y) only
@@ -190,13 +227,20 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   // catalog gap): surface it as a read-only "current" entry. It leads the
   // flat list, but in grouped mode it goes last so switching back to its
   // series still lands on the newest real stack first.
-  const syntheticCurrent = current ? null : {
-    value: 'pytorch-current',
-    label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
-    description: t('standalone.pytorchObservedDesc'),
-    ...(grouped ? { groupPath: [torchSeriesGroup(currentTorch)] } : {}),
-    data: { productName: 'PyTorch', installedVersion: currentTorch ?? '—', updateAvailable: false, hideUpToDateBadge: true },
-  }
+  const syntheticCurrent = current
+    ? null
+    : {
+        value: 'pytorch-current',
+        label: currentTorch ? `PyTorch ${currentTorch}` : t('standalone.pytorchUnknown'),
+        description: t('standalone.pytorchObservedDesc'),
+        ...(grouped ? { groupPath: [torchSeriesGroup(currentTorch)] } : {}),
+        data: {
+          productName: 'PyTorch',
+          installedVersion: currentTorch ?? '—',
+          updateAvailable: false,
+          hideUpToDateBadge: true
+        }
+      }
   if (syntheticCurrent && !grouped) options.push(syntheticCurrent)
   for (const s of ordered) {
     const isCurrent = s.stackId === current?.stackId
@@ -222,67 +266,93 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
     if (isDevVersion(s.packages.torch)) parts.push(t('standalone.pytorchNightlyNote'))
     // GPU-compat notice is informational only: detection can be wrong or
     // partial (multi-GPU boxes, eGPUs), so mismatched stacks stay selectable.
-    if (s.capWarning) parts.push(t('standalone.pytorchCapWarning', {
-      required: `${s.capWarning.min}-${s.capWarning.max}`,
-      detected: s.capWarning.detected.join(', '),
-    }))
+    if (s.capWarning)
+      parts.push(
+        t('standalone.pytorchCapWarning', {
+          required: `${s.capWarning.min}-${s.capWarning.max}`,
+          detected: s.capWarning.detected.join(', ')
+        })
+      )
     // Same for the series' minimum NVIDIA driver: warn, never hide. Shown
     // per option too (not just on the series dropdown) so flat single-series
     // pickers still surface it.
-    const driverMismatch = nvidiaDriverMismatch(torchSeriesInfo(torchSeriesBase(s.packages.torch).id))
-    if (driverMismatch && !isCurrent) parts.push(t('standalone.pytorchDriverWarning', driverMismatch))
+    const driverMismatch = nvidiaDriverMismatch(
+      torchSeriesInfo(torchSeriesBase(s.packages.torch).id)
+    )
+    if (driverMismatch && !isCurrent)
+      parts.push(t('standalone.pytorchDriverWarning', driverMismatch))
     const sizeGB = s.bundle ? (s.bundle.size / 1024 ** 3).toFixed(1) : ''
     if (!viaPip) parts.push(t('standalone.pytorchDownloadSize', { size: sizeGB }))
     const confirmMessage = viaPip
       ? t('standalone.pytorchConfirmMessagePip', {
           from: `**${currentTorch ?? '—'}**`,
-          to: `**${s.packages.torch}**`,
+          to: `**${s.packages.torch}**`
         })
       : t('standalone.pytorchConfirmMessage', {
           from: `**${currentTorch ?? '—'}**`,
           to: `**${s.packages.torch}**`,
-          size: sizeGB,
+          size: sizeGB
         })
     // With no hard compute-cap gate anywhere, the confirm dialog is the last
     // stop before a build with no kernels for the detected GPU installs.
     const capNotice = s.capWarning
       ? `\n\n${t('standalone.pytorchCapConfirmWarning', {
           required: `${s.capWarning.min}-${s.capWarning.max}`,
-          detected: s.capWarning.detected.join(', '),
+          detected: s.capWarning.detected.join(', ')
         })}`
       : ''
     const driverNotice = driverMismatch
       ? `\n\n${t('standalone.pytorchDriverConfirmWarning', driverMismatch)}`
       : ''
-    const actions = isCurrent ? undefined : [{
-      id: 'change-pytorch', label: t('standalone.pytorchChangeNow'), style: 'primary', enabled: true,
-      showProgress: true, cancellable: true,
-      progressTitle: t('standalone.pytorchChangingTitle', { version: s.packages.torch }),
-      data: { stackId: s.stackId },
-      confirm: {
-        title: t('standalone.pytorchConfirmTitle'),
-        message: confirmMessage + capNotice + driverNotice + `\n\n${t('standalone.updateSnapshotUndoHint')}`,
-      },
-    }, {
-      id: 'copy-pytorch', label: t('standalone.copyAndChangePytorch'), style: 'default', enabled: true,
-      tooltip: t('tooltips.copyAndChangePytorch'),
-      showProgress: true, cancellable: true,
-      progressTitle: t('standalone.copyPytorchChangingTitle', { version: s.packages.torch }),
-      data: { stackId: s.stackId },
-      prompt: {
-        title: t('standalone.copyAndChangePytorchTitle'),
-        message: t('standalone.copyAndChangePytorchMessage', {
-          from: `**${currentTorch ?? '?'}**`,
-          to: `**${s.packages.torch}**`,
-        }) + capNotice + driverNotice,
-        placeholder: t('standalone.copyAndUpdatePlaceholder'),
-        defaultValue: installation.name,
-        uniquifyDefault: true,
-        confirmLabel: t('standalone.copyAndChangePytorchConfirm'),
-        required: true,
-        field: 'name',
-      },
-    }]
+    const actions = isCurrent
+      ? undefined
+      : [
+          {
+            id: 'change-pytorch',
+            label: t('standalone.pytorchChangeNow'),
+            style: 'primary',
+            enabled: true,
+            showProgress: true,
+            cancellable: true,
+            progressTitle: t('standalone.pytorchChangingTitle', { version: s.packages.torch }),
+            data: { stackId: s.stackId },
+            confirm: {
+              title: t('standalone.pytorchConfirmTitle'),
+              message:
+                confirmMessage +
+                capNotice +
+                driverNotice +
+                `\n\n${t('standalone.updateSnapshotUndoHint')}`
+            }
+          },
+          {
+            id: 'copy-pytorch',
+            label: t('standalone.copyAndChangePytorch'),
+            style: 'default',
+            enabled: true,
+            tooltip: t('tooltips.copyAndChangePytorch'),
+            showProgress: true,
+            cancellable: true,
+            progressTitle: t('standalone.copyPytorchChangingTitle', { version: s.packages.torch }),
+            data: { stackId: s.stackId },
+            prompt: {
+              title: t('standalone.copyAndChangePytorchTitle'),
+              message:
+                t('standalone.copyAndChangePytorchMessage', {
+                  from: `**${currentTorch ?? '?'}**`,
+                  to: `**${s.packages.torch}**`
+                }) +
+                capNotice +
+                driverNotice,
+              placeholder: t('standalone.copyAndUpdatePlaceholder'),
+              defaultValue: installation.name,
+              uniquifyDefault: true,
+              confirmLabel: t('standalone.copyAndChangePytorchConfirm'),
+              required: true,
+              field: 'name'
+            }
+          }
+        ]
     options.push({
       value: s.stackId,
       label: `PyTorch ${s.packages.torch}`,
@@ -299,8 +369,8 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
         // No "Up to date" badge on the current stack: other stacks remain
         // selectable, and stack switches aren't recommended updates.
         hideUpToDateBadge: true,
-        ...(actions ? { actions } : {}),
-      },
+        ...(actions ? { actions } : {})
+      }
     })
   }
   if (syntheticCurrent && grouped) options.push(syntheticCurrent)
@@ -308,11 +378,19 @@ function buildPytorchSection(installation: InstallationRecord, installed: boolea
   return {
     tab: 'update',
     title: t('standalone.pytorchSection'),
-    fields: [{
-      id: 'pytorchStack', label: t('standalone.pytorch'), value: fieldValue, editable: true,
-      refreshSection: true, editType: 'channel-cards', options, tooltip: t('tooltips.pytorchStack'),
-      ...(grouped ? { groupLabels: [t('standalone.pytorchSeriesLabel')] } : {}),
-    }],
+    fields: [
+      {
+        id: 'pytorchStack',
+        label: t('standalone.pytorch'),
+        value: fieldValue,
+        editable: true,
+        refreshSection: true,
+        editType: 'channel-cards',
+        options,
+        tooltip: t('tooltips.pytorchStack'),
+        ...(grouped ? { groupLabels: [t('standalone.pytorchSeriesLabel')] } : {})
+      }
+    ]
   }
 }
 
@@ -321,11 +399,25 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
 
   const infoFields: Record<string, unknown>[] = [
     { label: t('common.installMethod'), value: installation.sourceLabel as string },
-    { key: 'comfyui-version', label: t('standalone.currentVersion'), value: installation.comfyVersion ? formatComfyVersion(installation.comfyVersion as ComfyVersion, 'detail') : (installation.version as string | undefined) || 'unknown' },
-    { label: t('standalone.variant'), value: (installation.variant as string | undefined) ? getVariantLabel(installation.variant as string) : '—' },
-    { label: t('standalone.python'), value: (installation.pythonVersion as string | undefined) || '—' },
+    {
+      key: 'comfyui-version',
+      label: t('standalone.currentVersion'),
+      value: installation.comfyVersion
+        ? formatComfyVersion(installation.comfyVersion as ComfyVersion, 'detail')
+        : (installation.version as string | undefined) || 'unknown'
+    },
+    {
+      label: t('standalone.variant'),
+      value: (installation.variant as string | undefined)
+        ? getVariantLabel(installation.variant as string)
+        : '—'
+    },
+    {
+      label: t('standalone.python'),
+      value: (installation.pythonVersion as string | undefined) || '—'
+    },
     { label: t('standalone.pytorch'), value: getTorchVersion(installation) || '—' },
-    { label: t('common.location'), value: installation.installPath || '—' },
+    { label: t('common.location'), value: installation.installPath || '—' }
   ]
 
   const copiedFrom = installation.copiedFrom as string | undefined
@@ -333,17 +425,19 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     const copiedFromName = installation.copiedFromName as string | undefined
     const copiedAt = installation.copiedAt as string | undefined
     const copyReason = installation.copyReason as string | undefined
-    const reasonLabel = copyReason === 'copy-update' ? t('standalone.lineageCopyUpdate')
-      : copyReason === 'copy-pytorch' ? t('standalone.lineageCopyPytorch')
-      : copyReason === 'release-update' ? t('standalone.lineageReleaseUpdate')
-      : t('standalone.lineageCopy')
+    const reasonLabel =
+      copyReason === 'copy-update'
+        ? t('standalone.lineageCopyUpdate')
+        : copyReason === 'copy-pytorch'
+          ? t('standalone.lineageCopyPytorch')
+          : copyReason === 'release-update'
+            ? t('standalone.lineageReleaseUpdate')
+            : t('standalone.lineageCopy')
     const dateStr = copiedAt ? new Date(copiedAt).toLocaleString() : ''
     const nameStr = copiedFromName || copiedFrom
     infoFields.push({
       label: t('standalone.lineage'),
-      value: dateStr
-        ? `${reasonLabel}: ${nameStr}  ·  ${dateStr}`
-        : `${reasonLabel}: ${nameStr}`,
+      value: dateStr ? `${reasonLabel}: ${nameStr}  ·  ${dateStr}` : `${reasonLabel}: ${nameStr}`
     })
   }
 
@@ -351,19 +445,22 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     {
       tab: 'status',
       title: t('common.installInfo'),
-      fields: infoFields,
-    },
+      fields: infoFields
+    }
   ]
 
   // Minimal section so the tab appears; SnapshotTab.vue handles rendering.
   if (installed && installation.installPath) {
     sections.push({
       tab: 'snapshots',
-      title: t('standalone.snapshotHistory'),
+      title: t('standalone.snapshotHistory')
     })
   }
 
-  const hasGit = installed && installation.installPath && fs.existsSync(path.join(installation.installPath, 'ComfyUI', '.git'))
+  const hasGit =
+    installed &&
+    installation.installPath &&
+    fs.existsSync(path.join(installation.installPath, 'ComfyUI', '.git'))
   const channel = getEffectiveChannel(installation)
 
   const channelDefs = getChannelDefs()
@@ -374,20 +471,40 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     if (card.data?.updateAvailable && hasGit) {
       const channelInfo = releaseCache.getEffectiveInfo(COMFYUI_REPO, card.value, installation)!
       const cv = installation.comfyVersion as ComfyVersion | undefined
-      const installedDisplay = cv ? formatComfyVersion(cv, 'detail') : (channelInfo.installedTag || 'unknown')
+      const installedDisplay = cv
+        ? formatComfyVersion(cv, 'detail')
+        : channelInfo.installedTag || 'unknown'
       const latestCv = channelInfo.commitSha
-        ? { commit: channelInfo.commitSha, baseTag: channelInfo.baseTag, commitsAhead: channelInfo.commitsAhead } as ComfyVersion
+        ? ({
+            commit: channelInfo.commitSha,
+            baseTag: channelInfo.baseTag,
+            commitsAhead: channelInfo.commitsAhead
+          } as ComfyVersion)
         : undefined
-      const latestDisplay = latestCv ? formatComfyVersion(latestCv, 'detail') : (channelInfo.releaseName || channelInfo.latestTag || '—')
+      const latestDisplay = latestCv
+        ? formatComfyVersion(latestCv, 'detail')
+        : channelInfo.releaseName || channelInfo.latestTag || '—'
       const isSwitching = card.value !== channel
-      const isDowngrade = card.value === 'stable' && cv ? (cv.commitsAhead === undefined ? !!cv.baseTag : cv.commitsAhead > 0) : false
-      const msgKey = isDowngrade ? 'standalone.updateConfirmMessageDowngrade'
-        : card.value === 'latest' ? 'standalone.updateConfirmMessageLatest'
-        : 'standalone.updateConfirmMessage'
+      const isDowngrade =
+        card.value === 'stable' && cv
+          ? cv.commitsAhead === undefined
+            ? !!cv.baseTag
+            : cv.commitsAhead > 0
+          : false
+      const msgKey = isDowngrade
+        ? 'standalone.updateConfirmMessageDowngrade'
+        : card.value === 'latest'
+          ? 'standalone.updateConfirmMessageLatest'
+          : 'standalone.updateConfirmMessage'
       const notes = truncateNotes(channelInfo.releaseNotes || '', 2000)
-      const notesDetails = notes ? [{ label: t('standalone.releaseNotesLabel'), items: [notes] }] : undefined
+      const notesDetails = notes
+        ? [{ label: t('standalone.releaseNotesLabel'), items: [notes] }]
+        : undefined
       const switchPrefix = isSwitching
-        ? t('channelCards.switchChannelPrefix', { from: `**${getChannelLabel(channel)}**`, to: `**${card.label}**` })
+        ? t('channelCards.switchChannelPrefix', {
+            from: `**${getChannelLabel(channel)}**`,
+            to: `**${card.label}**`
+          })
         : ''
       const boldInstalled = `**${installedDisplay}**`
       const boldLatest = `**${latestDisplay}**`
@@ -405,7 +522,10 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         : t(msgKey, { installed: boldInstalled, latest: boldLatest })
       const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateBreakingWarning')}\n${t('standalone.updateSnapshotUndoHint')}`
       actions.push({
-        id: 'update-comfyui', label: t('standalone.updateNow'), style: 'primary', enabled: installed,
+        id: 'update-comfyui',
+        label: t('standalone.updateNow'),
+        style: 'primary',
+        enabled: installed,
         tooltip: t('tooltips.updateNow'),
         showProgress: true,
         progressTitle: isSwitching
@@ -418,23 +538,29 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         // downgrade it.
         data: {
           channel: card.value,
-          isDowngrade,
+          isDowngrade
         },
         confirm: {
           title: t('standalone.updateConfirmTitle'),
           message: confirmMessage,
-          messageDetails: notesDetails,
-        },
+          messageDetails: notesDetails
+        }
       })
       actions.push({
-        id: 'copy-update', label: t('standalone.copyAndUpdate'), style: 'default', enabled: installed,
+        id: 'copy-update',
+        label: t('standalone.copyAndUpdate'),
+        style: 'default',
+        enabled: installed,
         tooltip: t('tooltips.copyAndUpdate'),
-        showProgress: true, progressTitle: t('standalone.copyUpdatingTitle', { version: latestDisplay }),
+        showProgress: true,
+        progressTitle: t('standalone.copyUpdatingTitle', { version: latestDisplay }),
         cancellable: true,
         data: { channel: card.value },
         prompt: {
           title: t('standalone.copyAndUpdateTitle'),
-          message: (isSwitching ? switchPrefix : '') + t('standalone.copyAndUpdateMessage', { installed: boldInstalled, latest: boldLatest }),
+          message:
+            (isSwitching ? switchPrefix : '') +
+            t('standalone.copyAndUpdateMessage', { installed: boldInstalled, latest: boldLatest }),
           placeholder: t('standalone.copyAndUpdatePlaceholder'),
           // Default to the source name (never the target version, which goes
           // stale the moment the copy is updated again). `uniquifyDefault` shows
@@ -444,30 +570,44 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           confirmLabel: t('standalone.copyAndUpdateConfirm'),
           required: true,
           field: 'name',
-          messageDetails: notesDetails,
-        },
+          messageDetails: notesDetails
+        }
       })
     } else if (card.value !== channel && hasGit) {
       actions.push({
-        id: 'switch-channel', label: t('channelCards.switchChannelOnly'), style: 'default', enabled: installed,
-        data: { channel: card.value },
+        id: 'switch-channel',
+        label: t('channelCards.switchChannelOnly'),
+        style: 'default',
+        enabled: installed,
+        data: { channel: card.value }
       })
     }
-    return { ...card, data: card.data ? { ...card.data, actions: actions.length ? actions : undefined } : undefined }
+    return {
+      ...card,
+      data: card.data ? { ...card.data, actions: actions.length ? actions : undefined } : undefined
+    }
   })
 
   const updateFields: Record<string, unknown>[] = [
-    { id: 'updateChannel', label: t('standalone.updateChannel'), value: channel, editable: true,
-      refreshSection: true, editType: 'channel-cards', options: channelOptions, tooltip: t('tooltips.updateChannel') },
+    {
+      id: 'updateChannel',
+      label: t('standalone.updateChannel'),
+      value: channel,
+      editable: true,
+      refreshSection: true,
+      editType: 'channel-cards',
+      options: channelOptions,
+      tooltip: t('tooltips.updateChannel')
+    }
   ]
   const updateActions: Record<string, unknown>[] = [
-    { id: 'check-update', label: t('actions.checkForUpdate'), style: 'default', enabled: installed },
+    { id: 'check-update', label: t('actions.checkForUpdate'), style: 'default', enabled: installed }
   ]
   sections.push({
     tab: 'update',
     title: t('standalone.updates'),
     fields: updateFields,
-    actions: updateActions,
+    actions: updateActions
   })
 
   const pytorchSection = buildPytorchSection(installation, installed)
@@ -477,11 +617,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     {
       tab: 'settings',
       title: t('common.launchSettings'),
-      fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS }),
+      fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS })
     },
     {
       tab: 'storage',
-      fields: buildStorageFields(installation),
+      fields: buildStorageFields(installation)
     },
     {
       title: 'Actions',
@@ -489,8 +629,14 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       actions: [
         launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
         renameAction(installation.name),
-        { id: 'copy', label: t('actions.copyInstallation'), style: 'default', enabled: installed,
-          showProgress: true, progressTitle: t('actions.copyingInstallation'), cancellable: true,
+        {
+          id: 'copy',
+          label: t('actions.copyInstallation'),
+          style: 'default',
+          enabled: installed,
+          showProgress: true,
+          progressTitle: t('actions.copyingInstallation'),
+          cancellable: true,
           prompt: {
             title: t('actions.copyInstallationTitle'),
             message: t('actions.copyInstallationMessage'),
@@ -501,8 +647,9 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
             uniquifyDefault: true,
             confirmLabel: t('actions.copyInstallationConfirm'),
             required: true,
-            field: 'name',
-          } },
+            field: 'name'
+          }
+        },
         openFolderAction(installation.installPath),
         { id: 'share', label: t('actions.share'), style: 'default', enabled: installed },
         // Adopted installs are non-forgettable: the `.comfyui-desktop-2`
@@ -510,9 +657,9 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         // resurfacing them, stranding the user. Matches the same gate in
         // the chooser context menu (useInstallContextMenu).
         ...(installation.adopted ? [] : [untrackAction()]),
-        deleteAction(installation),
-      ],
-    },
+        deleteAction(installation)
+      ]
+    }
   )
 
   return sections

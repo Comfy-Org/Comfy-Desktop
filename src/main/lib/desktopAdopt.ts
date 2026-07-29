@@ -956,16 +956,10 @@ export async function reconcileAdoptedSettings(): Promise<number> {
       if (existing.launchArgs === generatedDefaultArgs) {
         patch.launchArgs = derived.launchArgs
       }
-      if (
-        derived.pathOverrides.inputDir &&
-        existing.inputDir === path.join(basePath, 'input')
-      ) {
+      if (derived.pathOverrides.inputDir && existing.inputDir === path.join(basePath, 'input')) {
         patch.inputDir = derived.pathOverrides.inputDir
       }
-      if (
-        derived.pathOverrides.outputDir &&
-        existing.outputDir === path.join(basePath, 'output')
-      ) {
+      if (derived.pathOverrides.outputDir && existing.outputDir === path.join(basePath, 'output')) {
         patch.outputDir = derived.pathOverrides.outputDir
       }
 

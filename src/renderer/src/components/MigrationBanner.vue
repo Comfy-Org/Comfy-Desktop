@@ -29,13 +29,9 @@ async function startMigration(): Promise<void> {
     emit('show-progress', {
       installationId: props.installation.id,
       title: `${t('desktop.migrating')} — ${props.installation.name}`,
-      apiCall: () => window.api.runAction(
-        props.installation.id,
-        'migrate-to-standalone',
-        result,
-      ),
+      apiCall: () => window.api.runAction(props.installation.id, 'migrate-to-standalone', result),
       cancellable: true,
-      opKind: 'update',
+      opKind: 'update'
     })
   } finally {
     migrating.value = false
@@ -51,19 +47,11 @@ async function startMigration(): Promise<void> {
 
     <h1 class="dashboard-welcome-title">{{ $t('dashboard.migrateBannerTitle') }}</h1>
     <p class="dashboard-welcome-desc">{{ $t('dashboard.migrateBannerDesc') }}</p>
-    <button
-      class="primary dashboard-cta-btn"
-      :disabled="migrating"
-      @click="startMigration"
-    >
+    <button class="primary dashboard-cta-btn" :disabled="migrating" @click="startMigration">
       <ArrowRightLeft :size="18" />
       {{ $t('dashboard.migrateBannerAction') }}
     </button>
-    <button
-      class="dashboard-cta-btn"
-      style="margin-top: 10px"
-      @click="emit('show-quick-install')"
-    >
+    <button class="dashboard-cta-btn" style="margin-top: 10px" @click="emit('show-quick-install')">
       <Download :size="18" />
       {{ $t('dashboard.migrateBannerSkip') }}
     </button>

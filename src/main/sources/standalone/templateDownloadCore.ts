@@ -22,12 +22,7 @@ export interface FileProgress {
   failed: boolean
 }
 
-export type TemplateDownloadStatus =
-  | 'resolving'
-  | 'downloading'
-  | 'done'
-  | 'error'
-  | 'cancelled'
+export type TemplateDownloadStatus = 'resolving' | 'downloading' | 'done' | 'error' | 'cancelled'
 
 export interface TemplateDownloadState {
   status: TemplateDownloadStatus
@@ -103,7 +98,7 @@ export interface TemplateTrayEntry {
  */
 export function templateStateToTrayEntries(
   state: TemplateDownloadState,
-  urlPrefix = 'template-model://',
+  urlPrefix = 'template-model://'
 ): TemplateTrayEntry[] {
   const speedBytesPerSec = state.speedMBs > 0 ? Math.round(state.speedMBs * 1048576) : 0
   const etaSeconds = state.etaSecs >= 0 ? state.etaSecs : 0
@@ -135,7 +130,7 @@ export function templateStateToTrayEntries(
       receivedBytes: file.received,
       totalBytes: file.total,
       speedBytesPerSec: isLiveRow ? speedBytesPerSec : 0,
-      etaSeconds: isLiveRow ? etaSeconds : 0,
+      etaSeconds: isLiveRow ? etaSeconds : 0
     }
   })
 }
@@ -153,7 +148,7 @@ export async function withRetry<T>(
   opts?: {
     isFatal?: (err: unknown) => boolean
     onRetry?: (nextAttempt: number, err: unknown) => void
-  },
+  }
 ): Promise<T> {
   let lastErr: unknown
   for (let i = 0; i <= retries; i++) {
@@ -182,7 +177,7 @@ const WIN_MAX_PATH = 259
 export function truncateForMaxPath(
   destDir: string,
   filename: string,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform = process.platform
 ): string | null {
   if (platform !== 'win32') return filename
   const sep = '\\'
@@ -206,7 +201,7 @@ export async function runPool<T>(
   items: readonly T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<void>,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<void> {
   if (items.length === 0) return
   const cap = Math.max(1, Math.min(concurrency, items.length))
@@ -226,9 +221,7 @@ export async function runPool<T>(
  * Derive cumulative progress from the per-file counters. Pure — the single
  * place the "X of Y" math lives, so it's unit-testable without a download.
  */
-export function summarizeTemplateState(
-  state: TemplateDownloadState,
-): TemplateDownloadSummary {
+export function summarizeTemplateState(state: TemplateDownloadState): TemplateDownloadSummary {
   const fileCount = state.files.length
   let receivedBytes = 0
   let knownTotal = 0
@@ -243,7 +236,8 @@ export function summarizeTemplateState(
   }
   const fileIndex = activeIndex === 0 ? fileCount : activeIndex
   const current = fileCount > 0 ? state.files[Math.min(fileIndex, fileCount) - 1] : undefined
-  const totalBytes = knownTotal > 0 ? Math.max(knownTotal, receivedBytes) : state.estimatedTotalBytes
+  const totalBytes =
+    knownTotal > 0 ? Math.max(knownTotal, receivedBytes) : state.estimatedTotalBytes
   const percent =
     state.status === 'done'
       ? 100
@@ -261,7 +255,7 @@ export function summarizeTemplateState(
     speedMBs: state.speedMBs,
     etaSecs: state.etaSecs,
     percent,
-    error: state.error,
+    error: state.error
   }
 }
 
@@ -274,14 +268,11 @@ export const DISK_SPACE_ERROR = 'insufficient-disk'
 
 /** i18n key for each non-downloading status (the `downloading` line is built
  *  separately since it interpolates per-file figures). */
-const STATUS_MESSAGE_KEY: Record<
-  Exclude<TemplateDownloadStatus, 'downloading'>,
-  string
-> = {
+const STATUS_MESSAGE_KEY: Record<Exclude<TemplateDownloadStatus, 'downloading'>, string> = {
   resolving: 'standalone.templateModelsResolving',
   done: 'standalone.templateModelsDone',
   error: 'standalone.templateModelsError',
-  cancelled: 'standalone.templateModelsCancelled',
+  cancelled: 'standalone.templateModelsCancelled'
 }
 
 /**
@@ -307,6 +298,6 @@ export function formatTemplateSubStatus(summary: TemplateDownloadSummary): strin
     doneGb: gbStr(summary.receivedBytes),
     totalGb: gbStr(summary.totalBytes),
     speed,
-    eta,
+    eta
   })
 }

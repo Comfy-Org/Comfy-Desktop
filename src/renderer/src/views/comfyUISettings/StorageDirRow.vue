@@ -23,7 +23,7 @@ withDefaults(defineProps<Props>(), {
   label: '',
   tag: '',
   resettable: false,
-  shared: false,
+  shared: false
 })
 
 const emit = defineEmits<{
@@ -46,7 +46,9 @@ const { t } = useI18n()
           class="storage-dir-name"
           :title="t('models.openDir', 'Open folder')"
           @click="emit('open')"
-        >{{ path }}</button>
+        >
+          {{ path }}
+        </button>
       </div>
       <span v-if="tag" class="storage-dir-tag">{{ tag }}</span>
       <div class="storage-dir-actions">

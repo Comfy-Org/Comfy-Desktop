@@ -3,12 +3,7 @@ import type { LucideIcon } from 'lucide-vue-next'
 
 /** Stable UX-side install-type key. Callers switch on this for styling /
  *  analytics rather than the raw `sourceCategory` from the source plugins. */
-export type InstallTypeKey =
-  | 'standalone'
-  | 'cloud'
-  | 'legacyDesktop'
-  | 'remote'
-  | 'unknown'
+export type InstallTypeKey = 'standalone' | 'cloud' | 'legacyDesktop' | 'remote' | 'unknown'
 
 export interface InstallTypeIconMeta {
   key: InstallTypeKey
@@ -18,9 +13,7 @@ export interface InstallTypeIconMeta {
 
 /** Map a raw `sourceCategory` to its install-type icon metadata. Shared by
  *  the chooser tile and the title bar so the icon vocabulary can't diverge. */
-export function installTypeMetaFor(
-  category: string | undefined | null,
-): InstallTypeIconMeta {
+export function installTypeMetaFor(category: string | undefined | null): InstallTypeIconMeta {
   switch (category) {
     case 'cloud':
       return { key: 'cloud', icon: Cloud, labelKey: 'installType.cloud' }

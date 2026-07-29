@@ -12,7 +12,17 @@ import { formatComfyVersion } from '../version'
 import type { ComfyVersion } from '../version'
 import { resolveLocalVersion, clearVersionCache } from '../version-resolve'
 import type { LatestTagOverride } from '../version-resolve'
-import { readGitHead, readGitRemoteUrl, fetchTags, findLatestVersionTag, revParseRef, hasGitDir, isGitAvailable, tryConfigureBootstrapPygit2, tryConfigurePygit2Fallback } from '../git'
+import {
+  readGitHead,
+  readGitRemoteUrl,
+  fetchTags,
+  findLatestVersionTag,
+  revParseRef,
+  hasGitDir,
+  isGitAvailable,
+  tryConfigureBootstrapPygit2,
+  tryConfigurePygit2Fallback
+} from '../git'
 import { ensureRemoteUrl } from '../github-mirror'
 import * as settings from '../../settings'
 import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
@@ -26,12 +36,31 @@ import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
 import {
-  spawnProcess, waitForPort, waitForUrl, killProcessTree, killByPort,
-  findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
-  findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
-  COMFY_BOOT_TIMEOUT_MS,
+  spawnProcess,
+  waitForPort,
+  waitForUrl,
+  killProcessTree,
+  killByPort,
+  findPidsByPort,
+  getProcessInfo,
+  looksLikeComfyUI,
+  setPortArg,
+  findAvailablePort,
+  isPortListening,
+  writePortLock,
+  readPortLock,
+  removePortLock,
+  COMFY_BOOT_TIMEOUT_MS
 } from '../process'
-import { detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions } from '../gpu'
+import {
+  detectGPU,
+  validateHardware,
+  checkNvidiaDriver,
+  checkAmdDriver,
+  selectPrimaryGpu,
+  vendorMatches,
+  getWindowsGpuDriverVersions
+} from '../gpu'
 import { detectDesktopInstall } from '../desktopDetect'
 import { performLocalMigration, stageLocalSnapshot } from '../localMigration'
 import { getDiskSpace, getDirectorySize, validateInstallPath } from '../disk'
@@ -41,11 +70,42 @@ import { formatTime } from '../util'
 import { getActiveDownloads } from '../comfyDownloadManager'
 import * as releaseCache from '../release-cache'
 import * as i18n from '../i18n'
-import { syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath } from '../models'
+import {
+  syncCustomModelFolders,
+  discoverExtraModelFolders,
+  instanceModelPathsYaml,
+  isSamePath
+} from '../models'
 import { copyDirWithProgress } from '../copy'
 import { fetchJSON } from '../fetch'
 import { fetchLatestRelease, getLatestStableTag, getStableTags } from '../comfyui-releases'
-import { captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData, getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, deleteSnapshot, diffSnapshots, buildExportEnvelope, validateExportEnvelope, importSnapshots, stageSnapshotEnvelope, loadStagedSnapshotEnvelope, releaseStagedSnapshotEnvelope, saveSnapshot, statesMatch, restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion } from '../snapshots'
+import {
+  captureSnapshotIfChanged,
+  getSnapshotCount,
+  getSnapshotListData,
+  getSnapshotDetailData,
+  getSnapshotDiffVsPrevious,
+  diffAgainstCurrent,
+  loadSnapshot,
+  listSnapshots,
+  deleteSnapshot,
+  diffSnapshots,
+  buildExportEnvelope,
+  validateExportEnvelope,
+  importSnapshots,
+  stageSnapshotEnvelope,
+  loadStagedSnapshotEnvelope,
+  releaseStagedSnapshotEnvelope,
+  saveSnapshot,
+  statesMatch,
+  restoreCustomNodes,
+  restorePipPackages,
+  restoreComfyUIVersion,
+  buildPostRestoreState,
+  frozenSnapshotInstallOverrides,
+  formatSnapshotVersion,
+  resolveSnapshotVersion
+} from '../snapshots'
 import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
@@ -60,37 +120,134 @@ import type { FeatureFlagRegistry } from '../comfy-feature-flags'
 
 // Re-export frequently used imports so handler modules can import from shared
 export {
-  path, fs, os, app, ipcMain, dialog, shell, BrowserWindow, nativeTheme,
-  execFile, spawn, execFileSync,
-  sources, installations, settings, releaseCache, i18n,
-  formatComfyVersion, resolveLocalVersion, clearVersionCache,
-  readGitRemoteUrl, fetchTags, findLatestVersionTag, revParseRef, hasGitDir, isGitAvailable, tryConfigureBootstrapPygit2, tryConfigurePygit2Fallback,
+  path,
+  fs,
+  os,
+  app,
+  ipcMain,
+  dialog,
+  shell,
+  BrowserWindow,
+  nativeTheme,
+  execFile,
+  spawn,
+  execFileSync,
+  sources,
+  installations,
+  settings,
+  releaseCache,
+  i18n,
+  formatComfyVersion,
+  resolveLocalVersion,
+  clearVersionCache,
+  readGitRemoteUrl,
+  fetchTags,
+  findLatestVersionTag,
+  revParseRef,
+  hasGitDir,
+  isGitAvailable,
+  tryConfigureBootstrapPygit2,
+  tryConfigurePygit2Fallback,
   ensureRemoteUrl,
-  defaultInstallDir, sanitizeDirName, allocateUniqueDir, download, createCache, extract, deleteDir, formatDeleteStatus, deleteAction, untrackAction,
-  spawnProcess, waitForPort, waitForUrl, killProcessTree, killByPort,
-  findPidsByPort, getProcessInfo, looksLikeComfyUI, setPortArg,
-  findAvailablePort, isPortListening, writePortLock, readPortLock, removePortLock,
+  defaultInstallDir,
+  sanitizeDirName,
+  allocateUniqueDir,
+  download,
+  createCache,
+  extract,
+  deleteDir,
+  formatDeleteStatus,
+  deleteAction,
+  untrackAction,
+  spawnProcess,
+  waitForPort,
+  waitForUrl,
+  killProcessTree,
+  killByPort,
+  findPidsByPort,
+  getProcessInfo,
+  looksLikeComfyUI,
+  setPortArg,
+  findAvailablePort,
+  isPortListening,
+  writePortLock,
+  readPortLock,
+  removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
-  detectGPU, validateHardware, checkNvidiaDriver, checkAmdDriver, selectPrimaryGpu, vendorMatches, getWindowsGpuDriverVersions,
+  detectGPU,
+  validateHardware,
+  checkNvidiaDriver,
+  checkAmdDriver,
+  selectPrimaryGpu,
+  vendorMatches,
+  getWindowsGpuDriverVersions,
   detectDesktopInstall,
-  performLocalMigration, stageLocalSnapshot,
-  getDiskSpace, getDirectorySize, validateInstallPath,
-  syncOemSeed, formatTime, getActiveDownloads,
-  syncCustomModelFolders, discoverExtraModelFolders, instanceModelPathsYaml, isSamePath,
-  copyDirWithProgress, fetchJSON, fetchLatestRelease, getLatestStableTag, getStableTags,
-  captureSnapshotIfChanged, getSnapshotCount, getSnapshotListData, getSnapshotDetailData,
-  getSnapshotDiffVsPrevious, diffAgainstCurrent, loadSnapshot, listSnapshots, diffSnapshots,
-  buildExportEnvelope, validateExportEnvelope, importSnapshots, stageSnapshotEnvelope, loadStagedSnapshotEnvelope, releaseStagedSnapshotEnvelope, saveSnapshot, statesMatch, deleteSnapshot,
-  restoreCustomNodes, restorePipPackages, restoreComfyUIVersion, buildPostRestoreState, frozenSnapshotInstallOverrides, formatSnapshotVersion, resolveSnapshotVersion,
-  getVariantLabel, buildPinnedVariant, REQUIRES_STOPPED, findLockingProcesses,
-  getComfyArgsSchema, filterUnsupportedArgs,
-  getComfyFeatureFlagRegistry,
+  performLocalMigration,
+  stageLocalSnapshot,
+  getDiskSpace,
+  getDirectorySize,
+  validateInstallPath,
+  syncOemSeed,
+  formatTime,
+  getActiveDownloads,
+  syncCustomModelFolders,
+  discoverExtraModelFolders,
+  instanceModelPathsYaml,
+  isSamePath,
+  copyDirWithProgress,
+  fetchJSON,
+  fetchLatestRelease,
+  getLatestStableTag,
+  getStableTags,
+  captureSnapshotIfChanged,
+  getSnapshotCount,
+  getSnapshotListData,
+  getSnapshotDetailData,
+  getSnapshotDiffVsPrevious,
+  diffAgainstCurrent,
+  loadSnapshot,
+  listSnapshots,
+  diffSnapshots,
+  buildExportEnvelope,
+  validateExportEnvelope,
+  importSnapshots,
+  stageSnapshotEnvelope,
+  loadStagedSnapshotEnvelope,
+  releaseStagedSnapshotEnvelope,
+  saveSnapshot,
+  statesMatch,
+  deleteSnapshot,
+  restoreCustomNodes,
+  restorePipPackages,
+  restoreComfyUIVersion,
+  buildPostRestoreState,
+  frozenSnapshotInstallOverrides,
+  formatSnapshotVersion,
+  resolveSnapshotVersion,
+  getVariantLabel,
+  buildPinnedVariant,
+  REQUIRES_STOPPED,
+  findLockingProcesses,
+  getComfyArgsSchema,
+  filterUnsupportedArgs,
+  getComfyFeatureFlagRegistry
 }
 export type {
-  ChildProcess, InstallationRecord, ComfyVersion, LatestTagOverride,
-  GpuInfo, SnapshotExportEnvelope, Snapshot, FieldOption, SourcePlugin,
-  Theme, ResolvedTheme, QuitActiveItem, LaunchCmd, ComfyArgDef,
-  FeatureFlagRegistry,
+  ChildProcess,
+  InstallationRecord,
+  ComfyVersion,
+  LatestTagOverride,
+  GpuInfo,
+  SnapshotExportEnvelope,
+  Snapshot,
+  FieldOption,
+  SourcePlugin,
+  Theme,
+  ResolvedTheme,
+  QuitActiveItem,
+  LaunchCmd,
+  ComfyArgDef,
+  FeatureFlagRegistry
 }
 
 export { MSG_CANCELLED } from '../../../shared/operationStatus'
@@ -100,7 +257,12 @@ export const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 export const UPDATE_CHECK_INTERVAL = 10 * 60 * 1000
 export const IGNORE_FILES = new Set([MARKER_FILE, '.DS_Store', 'Thumbs.db', 'desktop.ini'])
 export const ALL_UPDATE_CHANNELS = ['stable', 'latest']
-export const RESERVED_ENV_VARS = new Set(['PYTHONIOENCODING', 'PYTHONFAULTHANDLER', '__COMFY_CLI_SESSION__', 'CM_USE_PYGIT2'])
+export const RESERVED_ENV_VARS = new Set([
+  'PYTHONIOENCODING',
+  'PYTHONFAULTHANDLER',
+  '__COMFY_CLI_SESSION__',
+  'CM_USE_PYGIT2'
+])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -169,7 +331,9 @@ export interface RegisterCallbacks {
 
 export type CopyReason = 'copy' | 'copy-update' | 'copy-pytorch'
 
-export const sourceMap: Record<string, SourcePlugin> = Object.fromEntries(sources.map((s) => [s.id, s]))
+export const sourceMap: Record<string, SourcePlugin> = Object.fromEntries(
+  sources.map((s) => [s.id, s])
+)
 
 export let _onLaunch: LaunchCallback | null = null
 export let _onStop: StopCallback | null = null
@@ -215,8 +379,14 @@ const _activeLaunches = new Map<string, ActiveLaunch>()
 /** Register a launch operation at handler entry. Caller must pair with `_endLaunch`. */
 export function _beginLaunch(installationId: string): { abort: AbortController } {
   let resolveSettled!: () => void
-  const settled = new Promise<void>((resolve) => { resolveSettled = resolve })
-  const launch: ActiveLaunch = { abort: new AbortController(), settled, _resolveSettled: resolveSettled }
+  const settled = new Promise<void>((resolve) => {
+    resolveSettled = resolve
+  })
+  const launch: ActiveLaunch = {
+    abort: new AbortController(),
+    settled,
+    _resolveSettled: resolveSettled
+  }
   _activeLaunches.set(installationId, launch)
   return launch
 }
@@ -244,7 +414,10 @@ export const sessionLifecycleEvents = new EventEmitter()
 /** A snapshot restore failed after the install itself succeeded (#1255): the
  *  install is bootable, so surface the failure to the caller and record it in
  *  the app log (#1250) instead of condemning the install. */
-export function snapshotRestoreFailureResult(installationId: string, restoreError: string): { ok: false; message: string } {
+export function snapshotRestoreFailureResult(
+  installationId: string,
+  restoreError: string
+): { ok: false; message: string } {
   const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', { message: restoreError })
   // Best-effort: a diagnostic write must never mask the failure it records.
   try {
@@ -262,10 +435,12 @@ export function _getLaunchingInstallationIds(): string[] {
 /** Snapshot of launching installs (id + name), so a window opened mid-launch can
  *  hydrate `sessionStore.launchingInstances` instead of missing the live event. */
 export function _getLaunchingInstances(): { installationId: string; installationName: string }[] {
-  return Array.from(_launchingInstances.entries()).map(([installationId, { installationName }]) => ({
-    installationId,
-    installationName,
-  }))
+  return Array.from(_launchingInstances.entries()).map(
+    ([installationId, { installationName }]) => ({
+      installationId,
+      installationName
+    })
+  )
 }
 
 /** Mark `installationId` mid-launch and broadcast `instance-launching`. Idempotent. */
@@ -420,7 +595,9 @@ export function isInstallDirUnavailable(state: InstallDirState | undefined): boo
  *  the unavailable boolean) so a `missing`↔`no-permission` flip — same boolean,
  *  different pill — still re-broadcasts and updates the label. */
 export type InstallDirDashboardKind = 'available' | 'not-found' | 'no-permission'
-export function installDirDashboardKind(state: InstallDirState | undefined): InstallDirDashboardKind {
+export function installDirDashboardKind(
+  state: InstallDirState | undefined
+): InstallDirDashboardKind {
   if (state === 'no-permission') return 'no-permission'
   if (state === 'missing' || state === 'inaccessible') return 'not-found'
   return 'available'
@@ -477,12 +654,17 @@ export function refreshInstallDirStates(): Promise<void> {
       const all = await installations.list()
       const local = all.filter((inst) => {
         const source = sourceMap[inst.sourceId]
-        return source && !source.skipInstall && typeof inst.installPath === 'string' && inst.installPath
+        return (
+          source && !source.skipInstall && typeof inst.installPath === 'string' && inst.installPath
+        )
       })
       // Probe in parallel so a few offline paths don't serialize their timeouts
       // (worst-case refresh stays ~one timeout, not one per install).
       const probed = await Promise.all(
-        local.map(async (inst) => ({ id: inst.id, state: await installDirStateAsync(inst.installPath) }))
+        local.map(async (inst) => ({
+          id: inst.id,
+          state: await installDirStateAsync(inst.installPath)
+        }))
       )
       const tracked = new Set<string>()
       for (const { id, state } of probed) {
@@ -516,18 +698,25 @@ export function openPath(targetPath: string): Promise<string> {
   if (process.env['E2E'] === '1') return Promise.resolve('')
   if (process.platform === 'linux') {
     return new Promise((resolve) => {
-      execFile('dbus-send', [
-        '--session', '--print-reply', '--type=method_call',
-        '--dest=org.freedesktop.FileManager1',
-        '/org/freedesktop/FileManager1',
-        'org.freedesktop.FileManager1.ShowFolders',
-        `array:string:file://${targetPath}`, 'string:',
-      ], (err) => {
-        if (!err) return resolve('')
-        const child = spawn('xdg-open', [targetPath], { stdio: 'ignore', detached: true })
-        child.unref()
-        resolve('')
-      })
+      execFile(
+        'dbus-send',
+        [
+          '--session',
+          '--print-reply',
+          '--type=method_call',
+          '--dest=org.freedesktop.FileManager1',
+          '/org/freedesktop/FileManager1',
+          'org.freedesktop.FileManager1.ShowFolders',
+          `array:string:file://${targetPath}`,
+          'string:'
+        ],
+        (err) => {
+          if (!err) return resolve('')
+          const child = spawn('xdg-open', [targetPath], { stdio: 'ignore', detached: true })
+          child.unref()
+          resolve('')
+        }
+      )
     })
   }
   return shell.openPath(targetPath)
@@ -538,7 +727,11 @@ export function getAppVersion(): string {
   if (!app.isPackaged) {
     try {
       // Restrict to release tags so unrelated tags (e.g. `bootstrap-v1`) don't bleed in.
-      version = execFileSync('git', ['describe', '--tags', '--always', '--match', 'v[0-9]*'], { cwd: __dirname, encoding: 'utf8' }).trim() || version
+      version =
+        execFileSync('git', ['describe', '--tags', '--always', '--match', 'v[0-9]*'], {
+          cwd: __dirname,
+          encoding: 'utf8'
+        }).trim() || version
     } catch {}
   }
   return version.replace(/^v/, '')
@@ -546,7 +739,11 @@ export function getAppVersion(): string {
 
 export async function findDuplicatePath(installPath: string): Promise<InstallationRecord | null> {
   const normalized = path.resolve(installPath)
-  return (await installations.list()).find((i) => i.installPath && path.resolve(i.installPath) === normalized) ?? null
+  return (
+    (await installations.list()).find(
+      (i) => i.installPath && path.resolve(i.installPath) === normalized
+    ) ?? null
+  )
 }
 
 export async function uniqueName(baseName: string): Promise<string> {
@@ -554,7 +751,11 @@ export async function uniqueName(baseName: string): Promise<string> {
   return installations.uniqueName(baseName, all)
 }
 
-export async function copyBrowserPartition(sourceId: string, destId: string, sourceBrowserPartition?: string): Promise<void> {
+export async function copyBrowserPartition(
+  sourceId: string,
+  destId: string,
+  sourceBrowserPartition?: string
+): Promise<void> {
   if (sourceBrowserPartition !== 'unique') return
   const partitionsDir = path.join(app.getPath('userData'), 'Partitions')
   const srcPartition = path.join(partitionsDir, sourceId)
@@ -597,7 +798,12 @@ export async function deleteBrowserPartition(id: string, browserPartition?: stri
     console.warn('Failed to clear browser partition storage:', (err as Error).message)
   }
   try {
-    await fs.promises.rm(partitionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    await fs.promises.rm(partitionDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100
+    })
   } catch (err) {
     console.warn('Failed to delete browser partition:', (err as Error).message)
   }
@@ -623,7 +829,12 @@ export function sweepOrphanPartitions(knownIds: ReadonlySet<string>): void {
     if (!name.startsWith('inst-')) continue // only per-install partitions
     if (knownIds.has(name)) continue
     try {
-      fs.rmSync(path.join(partitionsDir, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      fs.rmSync(path.join(partitionsDir, name), {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100
+      })
     } catch (err) {
       console.warn('Failed to sweep orphan browser partition:', name, (err as Error).message)
     }
@@ -648,15 +859,20 @@ export async function performCopy(
 
   try {
     sendProgress('copy', { percent: 0, status: i18n.t('actions.copyingFiles') })
-    await copyDirWithProgress(inst.installPath, destPath, (copied, total, elapsedSecs, etaSecs) => {
-      const percent = Math.round((copied / total) * 100)
-      const elapsed = formatTime(elapsedSecs)
-      const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-      sendProgress('copy', {
-        percent,
-        status: `${i18n.t('actions.copyingFiles')}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-      })
-    }, { signal })
+    await copyDirWithProgress(
+      inst.installPath,
+      destPath,
+      (copied, total, elapsedSecs, etaSecs) => {
+        const percent = Math.round((copied / total) * 100)
+        const elapsed = formatTime(elapsedSecs)
+        const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+        sendProgress('copy', {
+          percent,
+          status: `${i18n.t('actions.copyingFiles')}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+        })
+      },
+      { signal }
+    )
 
     const source = sourceMap[inst.sourceId]
     if (source?.fixupCopy) {
@@ -666,8 +882,16 @@ export async function performCopy(
     const adopted = inst.adopted === true && typeof inst.adoptedBaseDir === 'string'
 
     const {
-      id: _id, name: _name, installPath: _path, createdAt: _created, seen: _seen, status: _status,
-      copiedFrom: _copiedFrom, copiedAt: _copiedAt, copiedFromName: _copiedFromName, copyReason: _copyReason,
+      id: _id,
+      name: _name,
+      installPath: _path,
+      createdAt: _created,
+      seen: _seen,
+      status: _status,
+      copiedFrom: _copiedFrom,
+      copiedAt: _copiedAt,
+      copiedFromName: _copiedFromName,
+      copyReason: _copyReason,
       ...inherited
     } = inst
 
@@ -676,7 +900,7 @@ export async function performCopy(
     // this come from" fields since they describe the original adoption, not the copy.
     let recordData: Record<string, unknown> = {
       ...inherited,
-      name: '',  // overwritten below
+      name: '', // overwritten below
       installPath: destPath,
       status: 'installed',
       seen: false,
@@ -684,21 +908,25 @@ export async function performCopy(
       copiedFrom: inst.id,
       copiedFromName: inst.name,
       copiedAt: new Date().toISOString(),
-      copyReason,
+      copyReason
     }
 
     if (adopted) {
       const newComfyUI = path.join(destPath, 'ComfyUI')
       const newAdoptedPython = path.join(
-        newComfyUI, '.venv',
+        newComfyUI,
+        '.venv',
         process.platform === 'win32' ? 'Scripts' : 'bin',
-        process.platform === 'win32' ? 'python.exe' : 'python3',
+        process.platform === 'win32' ? 'python.exe' : 'python3'
       )
       const {
-        adoptedFromLegacyVersion: _afv, adoptedFromGpu: _afg,
-        adoptedSelectedDevice: _asd, adoptedComfyTagAtMigration: _act,
+        adoptedFromLegacyVersion: _afv,
+        adoptedFromGpu: _afg,
+        adoptedSelectedDevice: _asd,
+        adoptedComfyTagAtMigration: _act,
         adoptedSourceMode: _asm,
-        inputDir: _idn, outputDir: _odn,
+        inputDir: _idn,
+        outputDir: _odn,
         ...adoptInherited
       } = recordData as Record<string, unknown>
       recordData = {
@@ -711,7 +939,7 @@ export async function performCopy(
         // legacy workspace. inputDir/outputDir are left unset so launch falls
         // back to this copy's own `<comfyDir>/{input,output}` — keeping the
         // record clone-safe (no absolute path pointing at a specific install).
-        useSharedInputOutput: false,
+        useSharedInputOutput: false
       }
     }
 
@@ -719,13 +947,17 @@ export async function performCopy(
     recordData.name = finalName
     const entry = await installations.add(recordData)
 
-    try { fs.writeFileSync(path.join(destPath, MARKER_FILE), entry.id) } catch {}
+    try {
+      fs.writeFileSync(path.join(destPath, MARKER_FILE), entry.id)
+    } catch {}
 
     await copyBrowserPartition(inst.id, entry.id, inst.browserPartition as string | undefined)
 
     return { entry, destPath }
   } catch (err) {
-    try { await fs.promises.rm(destPath, { recursive: true, force: true }) } catch {}
+    try {
+      await fs.promises.rm(destPath, { recursive: true, force: true })
+    } catch {}
     throw err
   }
 }
@@ -746,7 +978,10 @@ export function sanitizeEnvVars(raw: unknown): Record<string, string> {
   return result
 }
 
-export function buildLaunchEnv(inst: InstallationRecord, sessionPath?: string): Record<string, string | undefined> {
+export function buildLaunchEnv(
+  inst: InstallationRecord,
+  sessionPath?: string
+): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
   return {
     ...process.env,
@@ -766,14 +1001,16 @@ export function buildLaunchEnv(inst: InstallationRecord, sessionPath?: string): 
     // back to its bundled pygit2 only when system git is absent.
     ...(inst.sourceId === 'standalone' && process.env.COMFY_FORCE_PYGIT2 === '1'
       ? { CM_USE_PYGIT2: '1' }
-      : {}),
+      : {})
   }
 }
 
 export function checkRebootMarker(sessionPath: string): boolean {
   const marker = sessionPath + '.reboot'
   if (fs.existsSync(marker)) {
-    try { fs.unlinkSync(marker) } catch {}
+    try {
+      fs.unlinkSync(marker)
+    } catch {}
     return true
   }
   return false
@@ -789,7 +1026,11 @@ export function _releasePort(port: number): void {
 
 // Re-exported from ./broadcast so leaf modules can register without importing this file's
 // whole IPC handler universe.
-export { _registerExtraBroadcastTarget, _unregisterExtraBroadcastTarget, _broadcastToRenderer } from './broadcast'
+export {
+  _registerExtraBroadcastTarget,
+  _unregisterExtraBroadcastTarget,
+  _broadcastToRenderer
+} from './broadcast'
 
 export function _addSession(
   installationId: string,
@@ -799,9 +1040,16 @@ export function _addSession(
    *  renderer's `instance_started` telemetry can carry them without a
    *  separate `server_ready` event. Omitted for the remote / skip-port paths
    *  (no spawn retry there). */
-  retries?: { portRetries: number; rebootRetries: number },
+  retries?: { portRetries: number; rebootRetries: number }
 ): void {
-  _runningSessions.set(installationId, { proc, port, url, mode, installationName, startedAt: Date.now() })
+  _runningSessions.set(installationId, {
+    proc,
+    port,
+    url,
+    mode,
+    installationName,
+    startedAt: Date.now()
+  })
   // Clear the launching marker first so subscribers never double-count this id across the
   // transition.
   _launchingInstances.delete(installationId)
@@ -813,7 +1061,7 @@ export function _addSession(
     installationName,
     bootTimeMs,
     portRetries: retries?.portRetries ?? 0,
-    rebootRetries: retries?.rebootRetries ?? 0,
+    rebootRetries: retries?.rebootRetries ?? 0
   })
   sessionLifecycleEvents.emit('changed')
   // Per-instance-boot telemetry (instance_started / snapshot_history), emitted
@@ -824,11 +1072,12 @@ export function _addSession(
       installationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
-      rebootRetries: retries?.rebootRetries ?? 0,
+      rebootRetries: retries?.rebootRetries ?? 0
     })
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
-  installations.markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
+  installations
+    .markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
     .catch((err) => {
       console.error('Failed to mark installation launched:', err)
@@ -855,7 +1104,7 @@ export function _getPublicSessions(): Record<string, unknown>[] {
     url: s.url,
     mode: s.mode,
     installationName: s.installationName,
-    startedAt: s.startedAt,
+    startedAt: s.startedAt
   }))
 }
 
@@ -1010,15 +1259,17 @@ export async function _fetchAndResolveLatestTags(
   }
 
   const result = new Map<string, LatestTagOverride>()
-  await Promise.all([...originGroups.entries()].map(async ([origin, dirs]) => {
-    await Promise.all(dirs.map((d) => fetchTags(d)))
-    const representative = dirs[0]!
-    const tagName = await findLatestVersionTag(representative)
-    if (!tagName) return
-    const sha = await revParseRef(representative, tagName)
-    if (!sha) return
-    result.set(origin, { name: tagName, sha })
-  }))
+  await Promise.all(
+    [...originGroups.entries()].map(async ([origin, dirs]) => {
+      await Promise.all(dirs.map((d) => fetchTags(d)))
+      const representative = dirs[0]!
+      const tagName = await findLatestVersionTag(representative)
+      if (!tagName) return
+      const sha = await revParseRef(representative, tagName)
+      if (!sha) return
+      result.set(origin, { name: tagName, sha })
+    })
+  )
   return result
 }
 
@@ -1032,9 +1283,11 @@ export function scheduleResolveAndBroadcastVersions(list: InstallationRecord[]):
   if (_resolveVersionsInFlight) return
   if (Date.now() - _lastResolveVersionsAt < RESOLVE_VERSIONS_TTL_MS) return
   _lastResolveVersionsAt = Date.now()
-  _resolveVersionsInFlight = _resolveAndBroadcastVersions(list).catch(() => {}).finally(() => {
-    _resolveVersionsInFlight = null
-  })
+  _resolveVersionsInFlight = _resolveAndBroadcastVersions(list)
+    .catch(() => {})
+    .finally(() => {
+      _resolveVersionsInFlight = null
+    })
 }
 
 export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): Promise<void> {
@@ -1051,52 +1304,56 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
   clearVersionCache()
 
   const updates: { id: string; version: string }[] = []
-  await Promise.all(candidates.map(async ({ inst, cv, comfyuiDir }) => {
-    const origin = readGitRemoteUrl(comfyuiDir)
-    const override = origin ? tagOverrides.get(origin) : undefined
-    try {
-      // Read actual HEAD; it may differ from cv.commit after external changes (manual pull, checkout).
-      const actualHead = readGitHead(comfyuiDir) || cv.commit
+  await Promise.all(
+    candidates.map(async ({ inst, cv, comfyuiDir }) => {
+      const origin = readGitRemoteUrl(comfyuiDir)
+      const override = origin ? tagOverrides.get(origin) : undefined
+      try {
+        // Read actual HEAD; it may differ from cv.commit after external changes (manual pull, checkout).
+        const actualHead = readGitHead(comfyuiDir) || cv.commit
 
-      const resolved = await resolveLocalVersion(comfyuiDir, actualHead, undefined, override)
+        const resolved = await resolveLocalVersion(comfyuiDir, actualHead, undefined, override)
 
-      // Downgrade ratchet: tag-resolution can transiently fail and return a bare `{ commit }`.
-      // Persisting it would clobber a populated `{ commit, baseTag, commitsAhead }` for the
-      // same commit, so bail; a genuinely-new commit still writes through.
-      if (cv?.baseTag && !resolved.baseTag && resolved.commit === cv.commit) {
-        return
-      }
-      const resolvedStr = formatComfyVersion(resolved, 'short')
-      const storedStr = formatComfyVersion(cv, 'short')
-      const versionChanged = resolvedStr !== storedStr
-
-      const existing = inst.updateInfoByChannel as Record<string, Record<string, unknown>> | undefined
-      let reconciledChannels: Record<string, Record<string, unknown>> | undefined
-      if (existing) {
-        let changed = false
-        const reconciled: Record<string, Record<string, unknown>> = {}
-        for (const [ch, info] of Object.entries(existing)) {
-          if (info?.installedTag && info.installedTag !== resolvedStr) {
-            reconciled[ch] = { ...info, installedTag: resolvedStr }
-            changed = true
-          } else {
-            reconciled[ch] = info
-          }
+        // Downgrade ratchet: tag-resolution can transiently fail and return a bare `{ commit }`.
+        // Persisting it would clobber a populated `{ commit, baseTag, commitsAhead }` for the
+        // same commit, so bail; a genuinely-new commit still writes through.
+        if (cv?.baseTag && !resolved.baseTag && resolved.commit === cv.commit) {
+          return
         }
-        if (changed) reconciledChannels = reconciled
-      }
+        const resolvedStr = formatComfyVersion(resolved, 'short')
+        const storedStr = formatComfyVersion(cv, 'short')
+        const versionChanged = resolvedStr !== storedStr
 
-      if (versionChanged || reconciledChannels) {
-        const patch: Record<string, unknown> = {}
-        if (versionChanged) patch.comfyVersion = resolved
-        if (reconciledChannels) patch.updateInfoByChannel = reconciledChannels
-        await installations.update(inst.id, patch)
-        updates.push({ id: inst.id, version: resolvedStr })
+        const existing = inst.updateInfoByChannel as
+          | Record<string, Record<string, unknown>>
+          | undefined
+        let reconciledChannels: Record<string, Record<string, unknown>> | undefined
+        if (existing) {
+          let changed = false
+          const reconciled: Record<string, Record<string, unknown>> = {}
+          for (const [ch, info] of Object.entries(existing)) {
+            if (info?.installedTag && info.installedTag !== resolvedStr) {
+              reconciled[ch] = { ...info, installedTag: resolvedStr }
+              changed = true
+            } else {
+              reconciled[ch] = info
+            }
+          }
+          if (changed) reconciledChannels = reconciled
+        }
+
+        if (versionChanged || reconciledChannels) {
+          const patch: Record<string, unknown> = {}
+          if (versionChanged) patch.comfyVersion = resolved
+          if (reconciledChannels) patch.updateInfoByChannel = reconciledChannels
+          await installations.update(inst.id, patch)
+          updates.push({ id: inst.id, version: resolvedStr })
+        }
+      } catch {
+        // ignore — keep stored version
       }
-    } catch {
-      // ignore — keep stored version
-    }
-  }))
+    })
+  )
   if (updates.length > 0) {
     _broadcastToRenderer('installations-versions-updated', { updates })
   }
@@ -1150,11 +1407,16 @@ export function checkInstallationUpdates(): Promise<void> {
     try {
       await Promise.allSettled(
         ALL_UPDATE_CHANNELS.map((channel) =>
-          releaseCache.getOrFetch(COMFYUI_REPO, channel, async () => {
-            const release = await fetchLatestRelease(channel)
-            if (!release) return null
-            return releaseCache.buildCacheEntry(release)
-          }, true)
+          releaseCache.getOrFetch(
+            COMFYUI_REPO,
+            channel,
+            async () => {
+              const release = await fetchLatestRelease(channel)
+              if (!release) return null
+              return releaseCache.buildCacheEntry(release)
+            },
+            true
+          )
         )
       )
       await _enrichLatestCommitsAhead()
@@ -1178,7 +1440,10 @@ async function _enrichLatestCommitsAhead(): Promise<void> {
 }
 
 /** Helper to create a sendProgress callback from an IPC event sender */
-export function makeSendProgress(sender: Electron.WebContents, installationId: string): (phase: string, detail: Record<string, unknown>) => void {
+export function makeSendProgress(
+  sender: Electron.WebContents,
+  installationId: string
+): (phase: string, detail: Record<string, unknown>) => void {
   return (phase: string, detail: Record<string, unknown>): void => {
     if (!sender.isDestroyed()) {
       sender.send('install-progress', { installationId, phase, ...detail })
@@ -1187,12 +1452,17 @@ export function makeSendProgress(sender: Electron.WebContents, installationId: s
 }
 
 /** Helper to create a sendOutput callback from an IPC event sender */
-export function makeSendOutput(sender: Electron.WebContents, installationId: string): (text: string) => void {
+export function makeSendOutput(
+  sender: Electron.WebContents,
+  installationId: string
+): (text: string) => void {
   return (text: string): void => {
     // Strip ANSI: these are plain-text surfaces. The xterm.js terminal keeps
     // its colors via the separate `terminal-output` channel.
     const clean = stripAnsi(text)
-    try { if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text: clean }) } catch {}
+    try {
+      if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text: clean })
+    } catch {}
     appendLog(installationId, clean)
   }
 }
@@ -1208,7 +1478,7 @@ export function makeSendOutput(sender: Electron.WebContents, installationId: str
  */
 export async function stopRunning(
   installationId?: string,
-  onEnterStopping?: (info: { installationId: string }) => void,
+  onEnterStopping?: (info: { installationId: string }) => void
 ): Promise<void> {
   if (installationId) {
     const session = _runningSessions.get(installationId)
@@ -1278,7 +1548,10 @@ export async function stopRunning(
  * only after the handler has fully unwound - process killed, port released,
  * markers cleared - so a caller can relaunch immediately on true.
  */
-export async function cancelLaunching(installationId: string, timeoutMs = 60_000): Promise<boolean> {
+export async function cancelLaunching(
+  installationId: string,
+  timeoutMs = 60_000
+): Promise<boolean> {
   const launch = _activeLaunches.get(installationId)
   // A registered session means the boot already completed - the launch
   // handler may still be running post-launch work, but the restart path
@@ -1291,7 +1564,7 @@ export async function cancelLaunching(installationId: string, timeoutMs = 60_000
     launch.settled,
     new Promise<typeof timedOut>((resolve) => {
       timer = setTimeout(() => resolve(timedOut), timeoutMs)
-    }),
+    })
   ]).finally(() => clearTimeout(timer))
   if (outcome === timedOut) {
     throw new Error(`Timed out waiting for the cancelled launch of ${installationId} to wind down`)
@@ -1341,24 +1614,21 @@ export async function getActiveDetails(): Promise<QuitActiveItem[]> {
 /** Test-only: register a synthetic running session without spawning ComfyUI. Mirrors
  *  `_addSession`'s side effects so the REQUIRES_STOPPED guard fires; `stopRunning` handles
  *  the null `proc`. Called only via `__e2e.seedRunningSession`. */
-export function _test_addRunningSession(
-  installationId: string,
-  installationName: string,
-): void {
+export function _test_addRunningSession(installationId: string, installationName: string): void {
   _runningSessions.set(installationId, {
     proc: null,
     port: 0,
     url: undefined,
     mode: 'window',
     installationName,
-    startedAt: Date.now(),
+    startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {
     installationId,
     port: 0,
     url: undefined,
     mode: 'window',
-    installationName,
+    installationName
   })
 }
 

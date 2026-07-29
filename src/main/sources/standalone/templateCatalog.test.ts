@@ -3,11 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
 import { loadTemplateCatalog, resetTemplateCatalogCache } from './templateCatalog'
-import {
-  CURATED_TEMPLATES,
-  TEMPLATE_MODALITY_ORDER,
-  thumbnailUrlFor,
-} from './curatedTemplates'
+import { CURATED_TEMPLATES, TEMPLATE_MODALITY_ORDER, thumbnailUrlFor } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
@@ -18,8 +14,8 @@ function indexFor(overrides: Record<string, Record<string, unknown>>, category =
   return [
     {
       title: category,
-      templates: Object.entries(overrides).map(([name, fields]) => ({ name, ...fields })),
-    },
+      templates: Object.entries(overrides).map(([name, fields]) => ({ name, ...fields }))
+    }
   ]
 }
 
@@ -43,7 +39,9 @@ describe('loadTemplateCatalog', () => {
   it('prefers live index metadata over the offline snapshot', async () => {
     const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue(
-      indexFor({ [first.id]: { title: 'Live', description: 'LiveDesc', size: 42, mediaSubtype: 'webp' } })
+      indexFor({
+        [first.id]: { title: 'Live', description: 'LiveDesc', size: 42, mediaSubtype: 'webp' }
+      })
     )
     const card = (await loadTemplateCatalog()).find((c) => c.id === first.id)!
     expect(card.title).toBe('Live')
@@ -56,7 +54,7 @@ describe('loadTemplateCatalog', () => {
     const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue(
       indexFor({
-        [first.id]: { title: 'Z-Image-Turbo Text to Image', tags: ['Image', 'Text to Image'] },
+        [first.id]: { title: 'Z-Image-Turbo Text to Image', tags: ['Image', 'Text to Image'] }
       })
     )
     const card = (await loadTemplateCatalog()).find((c) => c.id === first.id)!
@@ -68,7 +66,10 @@ describe('loadTemplateCatalog', () => {
     const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue(
       indexFor({
-        [first.id]: { title: 'Flux.2 [Klein] 4B Distilled: Image Edit', tags: ['Image', 'Image Edit'] },
+        [first.id]: {
+          title: 'Flux.2 [Klein] 4B Distilled: Image Edit',
+          tags: ['Image', 'Image Edit']
+        }
       })
     )
     const card = (await loadTemplateCatalog()).find((c) => c.id === first.id)!
@@ -78,7 +79,9 @@ describe('loadTemplateCatalog', () => {
 
   it('falls back to a modality-default task when no task tag is present', async () => {
     const first = CURATED_TEMPLATES[0]! // image modality
-    mockedFetchJSON.mockResolvedValue(indexFor({ [first.id]: { title: 'SDXL Turbo', tags: ['Image'] } }))
+    mockedFetchJSON.mockResolvedValue(
+      indexFor({ [first.id]: { title: 'SDXL Turbo', tags: ['Image'] } })
+    )
     const card = (await loadTemplateCatalog()).find((c) => c.id === first.id)!
     expect(card.name).toBe('SDXL Turbo')
     expect(card.task).toBe('Text to Image')
@@ -86,7 +89,9 @@ describe('loadTemplateCatalog', () => {
 
   it('ignores blank/whitespace tags and uses the modality default', async () => {
     const first = CURATED_TEMPLATES[0]! // image modality
-    mockedFetchJSON.mockResolvedValue(indexFor({ [first.id]: { title: 'X', tags: ['', '  ', 'Image'] } }))
+    mockedFetchJSON.mockResolvedValue(
+      indexFor({ [first.id]: { title: 'X', tags: ['', '  ', 'Image'] } })
+    )
     const card = (await loadTemplateCatalog()).find((c) => c.id === first.id)!
     expect(card.task).toBe('Text to Image')
   })
@@ -94,7 +99,9 @@ describe('loadTemplateCatalog', () => {
   it('skips the API tag so an API-node card is not subtitled "API"', async () => {
     const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
     mockedFetchJSON.mockResolvedValue(
-      indexFor({ [apiTemplate.id]: { title: 'Seedream 5.0 Pro: Image Edit', tags: ['API', 'Image Edit'] } })
+      indexFor({
+        [apiTemplate.id]: { title: 'Seedream 5.0 Pro: Image Edit', tags: ['API', 'Image Edit'] }
+      })
     )
     const card = (await loadTemplateCatalog()).find((c) => c.id === apiTemplate.id)!
     expect(card.task).toBe('Image Edit')
@@ -104,7 +111,10 @@ describe('loadTemplateCatalog', () => {
   it('treats "3D Model" as a kind, not a task', async () => {
     const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode && t.modality === '3d')!
     mockedFetchJSON.mockResolvedValue(
-      indexFor({ [apiTemplate.id]: { title: 'Tripo H3.1: Image to Model', tags: ['3D Model', 'API'] } }, '3D Model')
+      indexFor(
+        { [apiTemplate.id]: { title: 'Tripo H3.1: Image to Model', tags: ['3D Model', 'API'] } },
+        '3D Model'
+      )
     )
     const card = (await loadTemplateCatalog()).find((c) => c.id === apiTemplate.id)!
     expect(card.task).toBe('Image to 3D')
@@ -114,7 +124,9 @@ describe('loadTemplateCatalog', () => {
     mockedFetchJSON.mockImplementationOnce(() => Promise.reject(new Error('offline')))
     const catalog = await loadTemplateCatalog()
     for (const curated of CURATED_TEMPLATES) {
-      expect(catalog.find((c) => c.id === curated.id)!.apiNode, curated.id).toBe(curated.apiNode === true)
+      expect(catalog.find((c) => c.id === curated.id)!.apiNode, curated.id).toBe(
+        curated.apiNode === true
+      )
     }
   })
 
@@ -169,13 +181,20 @@ describe('loadTemplateCatalog', () => {
 
   /** A live image category with arbitrary template entries. */
   const imageCategory = (templates: Array<Record<string, unknown>>): unknown => [
-    { title: 'Image', type: 'image', templates },
+    { title: 'Image', type: 'image', templates }
   ]
 
   it('substitutes a live same-modality template when a curated id has vanished', async () => {
     const first = CURATED_TEMPLATES[0]! // image, recommended
     mockedFetchJSON.mockResolvedValue(
-      imageCategory([{ name: 'fresh_image_model', title: 'Fresh Model', size: 5, tags: ['Image', 'Text to Image'] }])
+      imageCategory([
+        {
+          name: 'fresh_image_model',
+          title: 'Fresh Model',
+          size: 5,
+          tags: ['Image', 'Text to Image']
+        }
+      ])
     )
     const catalog = await loadTemplateCatalog()
     const recImage = catalog.find((c) => c.modality === 'image' && c.recommended)!
@@ -189,10 +208,12 @@ describe('loadTemplateCatalog', () => {
       imageCategory([
         { name: 'api_cloud_thing', title: 'Cloud', size: 5 },
         { name: 'no_size_model', title: 'No Size' },
-        { name: 'good_local', title: 'Good Local', size: 9 },
+        { name: 'good_local', title: 'Good Local', size: 9 }
       ])
     )
-    const recImage = (await loadTemplateCatalog()).find((c) => c.modality === 'image' && c.recommended)!
+    const recImage = (await loadTemplateCatalog()).find(
+      (c) => c.modality === 'image' && c.recommended
+    )!
     expect(recImage.id).toBe('good_local')
   })
 
@@ -202,7 +223,7 @@ describe('loadTemplateCatalog', () => {
         { name: 'sub_a', title: 'A', size: 1 },
         { name: 'sub_b', title: 'B', size: 2 },
         { name: 'sub_c', title: 'C', size: 3 },
-        { name: 'sub_d', title: 'D', size: 4 },
+        { name: 'sub_d', title: 'D', size: 4 }
       ])
     )
     const images = (await loadTemplateCatalog()).filter((c) => c.modality === 'image')
@@ -213,7 +234,9 @@ describe('loadTemplateCatalog', () => {
   it('falls back to the snapshot when online but no substitute exists', async () => {
     const first = CURATED_TEMPLATES[0]!
     // Online (non-empty index) but only an unusable api/size-less image entry.
-    mockedFetchJSON.mockResolvedValue(imageCategory([{ name: 'api_only', title: 'Cloud', size: 0 }]))
+    mockedFetchJSON.mockResolvedValue(
+      imageCategory([{ name: 'api_only', title: 'Cloud', size: 0 }])
+    )
     const catalog = await loadTemplateCatalog()
     expect(catalog.find((c) => c.id === first.id)!.title).toBe(first.snapshot.title)
   })
@@ -225,7 +248,7 @@ describe('loadTemplateCatalog', () => {
         { name: 'sub_a', title: 'A', size: 1 },
         { name: 'sub_b', title: 'B', size: 2 },
         { name: 'sub_c', title: 'C', size: 3 },
-        { name: 'sub_d', title: 'D', size: 4 },
+        { name: 'sub_d', title: 'D', size: 4 }
       ])
     )
     const catalog = await loadTemplateCatalog()
@@ -233,7 +256,10 @@ describe('loadTemplateCatalog', () => {
     expect(card, 'API-node slot kept its snapshot').toBeDefined()
     expect(card!.apiNode).toBe(true)
     expect(card!.sizeBytes).toBe(0)
-    expect(catalog.some((c) => c.id === 'sub_d'), 'no local substitute took the slot').toBe(false)
+    expect(
+      catalog.some((c) => c.id === 'sub_d'),
+      'no local substitute took the slot'
+    ).toBe(false)
   })
 
   it('keeps the curated snapshot card when offline (empty index → no substitution)', async () => {

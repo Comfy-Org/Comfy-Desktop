@@ -75,7 +75,7 @@ const state = reactive<ModalState>({
   items: [],
   options: [],
   testIds: {},
-  resolve: null,
+  resolve: null
 })
 
 function reset(): void {
@@ -138,11 +138,7 @@ function dismiss(): void {
 }
 
 export function useModal() {
-  function alert(opts: {
-    title: string
-    message: string
-    buttonLabel?: string
-  }): Promise<void> {
+  function alert(opts: { title: string; message: string; buttonLabel?: string }): Promise<void> {
     return new Promise((resolve) => {
       reset()
       state.visible = true
@@ -195,7 +191,8 @@ export function useModal() {
     if (!state.visible || state.type !== 'confirm') return
     if (opts.loading !== undefined) state.loading = opts.loading
     if (opts.message !== undefined) state.message = opts.message
-    if (opts.messageDetails !== undefined) state.messageDetails = opts.messageDetails.map((g) => ({ ...g, items: [...g.items] }))
+    if (opts.messageDetails !== undefined)
+      state.messageDetails = opts.messageDetails.map((g) => ({ ...g, items: [...g.items] }))
     if (opts.snapshotPreview !== undefined) state.snapshotPreview = opts.snapshotPreview
     if (opts.variantCards !== undefined) state.variantCards = opts.variantCards
     if (opts.selectedVariant !== undefined) state.selectedVariant = opts.selectedVariant
@@ -275,6 +272,6 @@ export function useModal() {
     select,
     close,
     dismiss,
-    getLastCheckboxValues,
+    getLastCheckboxValues
   }
 }

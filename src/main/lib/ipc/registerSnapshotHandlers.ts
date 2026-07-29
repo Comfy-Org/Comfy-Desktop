@@ -517,7 +517,11 @@ export function registerSnapshotHandlers(): void {
       // empty array and create-from-snapshot bails with "No releases available."
       // even when there *are* releases. Mirrors the InstallWizard / QuickInstall
       // call shape on the renderer side.
-      const releaseOptions = await source.getFieldOptions!('release', {}, { includeLatestStable: true })
+      const releaseOptions = await source.getFieldOptions!(
+        'release',
+        {},
+        { includeLatestStable: true }
+      )
       if (releaseOptions.length === 0) return { ok: false, message: 'No releases available.' }
 
       let selectedRelease: FieldOption
@@ -580,16 +584,13 @@ export function registerSnapshotHandlers(): void {
       // bundle.
       const managedTorch =
         targetSnapshot.torchStack?.kind === 'managed' ? targetSnapshot.torchStack.ref : undefined
-      const pinTag = managedTorch && managedTorch.source.kind === 'comfy-bundle'
-        ? managedTorch.source.bundleTag
-        : targetSnapshot.comfyui.releaseTag
+      const pinTag =
+        managedTorch && managedTorch.source.kind === 'comfy-bundle'
+          ? managedTorch.source.bundleTag
+          : targetSnapshot.comfyui.releaseTag
       const installVariant: FieldOption =
-        buildPinnedVariant(
-          selectedRelease,
-          matched.data?.variantId as string,
-          pinTag,
-          gpu?.id
-        ) ?? matched
+        buildPinnedVariant(selectedRelease, matched.data?.variantId as string, pinTag, gpu?.id) ??
+        matched
 
       const instData = {
         sourceId: source.id,

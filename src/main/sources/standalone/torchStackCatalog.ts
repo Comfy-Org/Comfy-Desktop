@@ -18,14 +18,24 @@ import { getInstalledTorchTuple, PLATFORM_PREFIX } from './envPaths'
 import { fetchR2VendorReleases, r2BundleUrl } from './r2Catalog'
 import type { R2Variant } from './r2Catalog'
 import {
-  makeBundleStackId, parseBundleStackId, parseAnyIndexStackId, pythonAbiCompatible,
-  torchTupleMatches, torchLocalTag, accelBaseForTag, torchTupleReacquirable,
-  isValidAmdMultiArchSource, torchPackageTuplesEqual,
+  makeBundleStackId,
+  parseBundleStackId,
+  parseAnyIndexStackId,
+  pythonAbiCompatible,
+  torchTupleMatches,
+  torchLocalTag,
+  accelBaseForTag,
+  torchTupleReacquirable,
+  isValidAmdMultiArchSource,
+  torchPackageTuplesEqual
 } from './torchStackTypes'
 import type { PersistedTorchStack, SnapshotTorchStack, TorchStackPackages } from './torchStackTypes'
 import {
-  indexStacksForVariant, refreshComputeCaps, refreshNvidiaDriver,
-  refreshRemoteIndexStacks, ensureRemoteIndexStacks,
+  indexStacksForVariant,
+  refreshComputeCaps,
+  refreshNvidiaDriver,
+  refreshRemoteIndexStacks,
+  ensureRemoteIndexStacks
 } from './torchIndexManifest'
 import type { InstallationRecord } from '../../installations'
 
@@ -92,16 +102,16 @@ function entryFromRelease(variant: string, release: R2Variant): TorchStackEntry 
     packages: {
       torch: release.torch_version,
       ...(release.torchvision_version ? { torchvision: release.torchvision_version } : {}),
-      ...(release.torchaudio_version ? { torchaudio: release.torchaudio_version } : {}),
+      ...(release.torchaudio_version ? { torchaudio: release.torchaudio_version } : {})
     },
     source: { kind: 'comfy-bundle', variant, bundleTag: release.tag },
     bundle: {
       url: r2BundleUrl(variant, release),
       filename: release.file,
-      size: release.size,
+      size: release.size
     },
     date: release.date,
-    comfyuiVersion: release.comfyui_version,
+    comfyuiVersion: release.comfyui_version
   }
 }
 
@@ -124,7 +134,7 @@ export function filterCompatibleStacks(
   variant: string,
   pythonVersion: string | undefined,
   releases: R2Variant[],
-  opts?: { requirePythonAbi?: boolean },
+  opts?: { requirePythonAbi?: boolean }
 ): TorchStackEntry[] {
   const requireAbi = opts?.requirePythonAbi !== false
   return releases
@@ -158,10 +168,8 @@ function inferAdoptedVariant(installation: InstallationRecord): string | null {
   if (!prefix) return null
   if (process.platform === 'darwin') return 'mac-mps'
   const gpu = installation.adoptedFromGpu as string | undefined
-  let base = gpu === 'nvidia' ? 'nvidia'
-    : gpu === 'amd' ? 'amd'
-    : gpu === 'intel' ? 'intel-xpu'
-    : null
+  let base =
+    gpu === 'nvidia' ? 'nvidia' : gpu === 'amd' ? 'amd' : gpu === 'intel' ? 'intel-xpu' : null
   if (!base) {
     base = accelBaseForTag(torchLocalTag(getInstalledTorchTuple(installation).torch)) ?? 'cpu'
   }
@@ -199,7 +207,10 @@ function entryPythonCompatible(installation: InstallationRecord, e: TorchStackEn
  *  wheels for specific Pythons only, e.g. AMD's universal ROCm package).
  *  Deduplication runs after filtering so an entry dropped here can't shadow
  *  a compatible duplicate. */
-function filterStacksForInstall(installation: InstallationRecord, stacks: TorchStackEntry[]): TorchStackEntry[] {
+function filterStacksForInstall(
+  installation: InstallationRecord,
+  stacks: TorchStackEntry[]
+): TorchStackEntry[] {
   const filtered = stacks.filter((e) => {
     if (e.source.kind !== 'comfy-bundle') return entryPythonCompatible(installation, e)
     return installation.adopted === true
@@ -231,7 +242,9 @@ function withoutCapWarning(entry: TorchStackEntry): TorchStackEntry {
  *  The cache stores the unfiltered, undeduplicated list (it is keyed by
  *  variant and shared between installs with different Pythons); per-install
  *  filtering + dedupe are applied on read. */
-export async function refreshTorchStackCatalog(installation: InstallationRecord): Promise<TorchStackEntry[]> {
+export async function refreshTorchStackCatalog(
+  installation: InstallationRecord
+): Promise<TorchStackEntry[]> {
   const variant = installVariant(installation)
   if (!variant) return []
   // GPU probes and remote-manifest refresh first (all best-effort): the R2
@@ -253,7 +266,9 @@ export async function refreshTorchStackCatalog(installation: InstallationRecord)
  *  so every install sharing it reads the refreshed data. Never throws;
  *  resolves `true` only when every variant refresh succeeded, so callers can
  *  treat a partial or total failure as "still stale". */
-export async function refreshTorchStackCatalogs(installations: InstallationRecord[]): Promise<boolean> {
+export async function refreshTorchStackCatalogs(
+  installations: InstallationRecord[]
+): Promise<boolean> {
   const byVariant = new Map<string, InstallationRecord>()
   for (const inst of installations) {
     if (inst.status !== 'installed' || inst.sourceId !== 'standalone') continue
@@ -261,7 +276,9 @@ export async function refreshTorchStackCatalogs(installations: InstallationRecor
     if (!variant || byVariant.has(variant)) continue
     byVariant.set(variant, inst)
   }
-  const results = await Promise.allSettled([...byVariant.values()].map((inst) => refreshTorchStackCatalog(inst)))
+  const results = await Promise.allSettled(
+    [...byVariant.values()].map((inst) => refreshTorchStackCatalog(inst))
+  )
   return results.every((r) => r.status === 'fulfilled')
 }
 
@@ -283,7 +300,7 @@ export function getCachedTorchStacks(installation: InstallationRecord): TorchSta
  */
 export async function resolveTorchStack(
   installation: InstallationRecord,
-  stackId: string,
+  stackId: string
 ): Promise<TorchStackEntry | null> {
   const variant = installVariant(installation)
   if (!variant) return null
@@ -331,7 +348,7 @@ export async function resolveTorchStack(
  */
 export async function resolveSnapshotManagedTarget(
   installation: InstallationRecord,
-  ref: { stackId: string; packages: TorchStackPackages },
+  ref: { stackId: string; packages: TorchStackPackages }
 ): Promise<TorchStackEntry | null> {
   const entry = await resolveTorchStack(installation, ref.stackId)
   if (!entry || !torchPackageTuplesEqual(entry.packages, ref.packages)) return null
@@ -342,13 +359,23 @@ export async function resolveSnapshotManagedTarget(
  *  record (e.g. from an older build or corrupted store) must not reach
  *  snapshot classification or the repair path with identity/acquisition
  *  fields undefined. */
-export function getLastVerifiedTorchStack(installation: InstallationRecord): PersistedTorchStack | null {
+export function getLastVerifiedTorchStack(
+  installation: InstallationRecord
+): PersistedTorchStack | null {
   const ref = installation.lastVerifiedTorchStack as PersistedTorchStack | undefined
   if (!ref || typeof ref !== 'object') return null
-  if (typeof ref.stackId !== 'string' || typeof ref.variant !== 'string' || typeof ref.pythonVersion !== 'string') return null
-  if (!ref.packages || typeof ref.packages !== 'object' || typeof ref.packages.torch !== 'string') return null
-  if (ref.packages.torchvision !== undefined && typeof ref.packages.torchvision !== 'string') return null
-  if (ref.packages.torchaudio !== undefined && typeof ref.packages.torchaudio !== 'string') return null
+  if (
+    typeof ref.stackId !== 'string' ||
+    typeof ref.variant !== 'string' ||
+    typeof ref.pythonVersion !== 'string'
+  )
+    return null
+  if (!ref.packages || typeof ref.packages !== 'object' || typeof ref.packages.torch !== 'string')
+    return null
+  if (ref.packages.torchvision !== undefined && typeof ref.packages.torchvision !== 'string')
+    return null
+  if (ref.packages.torchaudio !== undefined && typeof ref.packages.torchaudio !== 'string')
+    return null
   const src = ref.source
   if (!src || typeof src !== 'object' || typeof src.kind !== 'string') return null
   if (src.kind === 'comfy-bundle') {
@@ -357,7 +384,8 @@ export function getLastVerifiedTorchStack(installation: InstallationRecord): Per
     const bundle = ref.bundle
     if (!bundle || typeof bundle !== 'object') return null
     if (typeof bundle.url !== 'string' || typeof bundle.filename !== 'string') return null
-    if (typeof bundle.size !== 'number' || !Number.isFinite(bundle.size) || bundle.size <= 0) return null
+    if (typeof bundle.size !== 'number' || !Number.isFinite(bundle.size) || bundle.size <= 0)
+      return null
   } else if (src.kind === 'pytorch-index') {
     if (typeof src.indexTag !== 'string' || typeof src.backend !== 'string') return null
   } else if (src.kind === 'amd-multi-arch-index') {
@@ -383,7 +411,7 @@ export function getLastVerifiedTorchStack(installation: InstallationRecord): Per
  */
 export async function reconcileTorchStack(
   installation: InstallationRecord,
-  update: (data: Record<string, unknown>) => Promise<unknown>,
+  update: (data: Record<string, unknown>) => Promise<unknown>
 ): Promise<void> {
   const variant = installVariant(installation)
   if (!variant) return
@@ -400,7 +428,9 @@ export async function reconcileTorchStack(
     return
   }
 
-  const match = getCachedTorchStacks(installation).find((e) => torchTupleMatches(e.packages, installed))
+  const match = getCachedTorchStacks(installation).find((e) =>
+    torchTupleMatches(e.packages, installed)
+  )
   if (match) {
     // Manual change to an official stack — adopt it as verified/restorable.
     await update({ lastVerifiedTorchStack: withoutCapWarning(match), observedTorchStack: null })
@@ -411,20 +441,27 @@ export async function reconcileTorchStack(
   // change persisted its metadata but was rolled back before commit) and MUST
   // be cleared — repair would otherwise trust it as the acquisition source.
   const prior = installation.observedTorchStack as
-    { torchVersion?: string; torchvisionVersion?: string | null; torchaudioVersion?: string | null } | undefined
+    | {
+        torchVersion?: string
+        torchvisionVersion?: string | null
+        torchaudioVersion?: string | null
+      }
+    | undefined
   if (
-    !verified && prior?.torchVersion === installed.torch &&
+    !verified &&
+    prior?.torchVersion === installed.torch &&
     (prior?.torchvisionVersion ?? null) === installed.torchvision &&
     (prior?.torchaudioVersion ?? null) === installed.torchaudio
-  ) return // already recorded
+  )
+    return // already recorded
   await update({
     lastVerifiedTorchStack: null,
     observedTorchStack: {
       torchVersion: installed.torch,
       torchvisionVersion: installed.torchvision,
       torchaudioVersion: installed.torchaudio,
-      observedAt: new Date().toISOString(),
-    },
+      observedAt: new Date().toISOString()
+    }
   })
 }
 
@@ -432,7 +469,7 @@ export async function reconcileTorchStack(
  *  the full installed tuple (with local tags) so pip-managed installs can
  *  restore it from the derived index. */
 export function classifyTorchStackForSnapshot(
-  installation: InstallationRecord,
+  installation: InstallationRecord
 ): SnapshotTorchStack {
   const installed = getInstalledTorchTuple(installation)
   const verified = getLastVerifiedTorchStack(installation)
@@ -446,6 +483,6 @@ export function classifyTorchStackForSnapshot(
     torchVersion: installed.torch,
     torchvisionVersion: installed.torchvision,
     torchaudioVersion: installed.torchaudio,
-    observedAt: new Date().toISOString(),
+    observedAt: new Date().toISOString()
   }
 }

@@ -14,16 +14,17 @@ export function useActionGuard() {
 
   async function checkBeforeAction(installationId: string, actionLabel: string): Promise<boolean> {
     const activeSession = sessionStore.activeSessions.get(installationId)
-    const isBusy = sessionStore.isLaunching(installationId)
-      || (activeSession && !sessionStore.isRunning(installationId))
-      || progressStore.getProgressInfo(installationId) !== null
+    const isBusy =
+      sessionStore.isLaunching(installationId) ||
+      (activeSession && !sessionStore.isRunning(installationId)) ||
+      progressStore.getProgressInfo(installationId) !== null
     if (isBusy) {
       const operation = activeSession?.label || t('running.title')
       const confirmed = await modal.confirm({
         title: actionLabel,
         message: t('errors.operationInProgress', { operation }),
         confirmLabel: t('errors.cancelOperation'),
-        confirmStyle: 'danger',
+        confirmStyle: 'danger'
       })
       if (!confirmed) return false
       await window.api.cancelOperation(installationId)
@@ -31,7 +32,8 @@ export function useActionGuard() {
       // generous deadline because Windows taskkill / Restart Manager is slow.
       const deadline = Date.now() + 10_000
       while (
-        (progressStore.getProgressInfo(installationId) !== null || sessionStore.isStopping(installationId)) &&
+        (progressStore.getProgressInfo(installationId) !== null ||
+          sessionStore.isStopping(installationId)) &&
         Date.now() < deadline
       ) {
         await new Promise((r) => setTimeout(r, 100))

@@ -16,16 +16,37 @@ import { MSG_CANCELLED } from '../../../shared/operationStatus'
 import * as installations from '../../installations'
 import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
-import { getActivePythonPath, getActiveUvPath, getInstalledTorchTuple, getMasterPythonPath } from './envPaths'
-import { stackVersionMatches, torchTupleMatches, torchTupleReacquirable, observedTuple, hasFullObservedTuple, stackAppliesViaPip, parseAnyIndexStackId } from './torchStackTypes'
+import {
+  getActivePythonPath,
+  getActiveUvPath,
+  getInstalledTorchTuple,
+  getMasterPythonPath
+} from './envPaths'
+import {
+  stackVersionMatches,
+  torchTupleMatches,
+  torchTupleReacquirable,
+  observedTuple,
+  hasFullObservedTuple,
+  stackAppliesViaPip,
+  parseAnyIndexStackId
+} from './torchStackTypes'
 import type { TorchStackPackages } from './torchStackTypes'
 import { COMFYUI_REPO, getEffectiveChannel } from './updateSections'
 import { runComfyUIUpdate } from './updateOrchestrator'
-import { resolveTorchStack, resolveSnapshotManagedTarget, refreshTorchStackCatalog } from './torchStackCatalog'
+import {
+  resolveTorchStack,
+  resolveSnapshotManagedTarget,
+  refreshTorchStackCatalog
+} from './torchStackCatalog'
 import type { TorchStackEntry } from './torchStackCatalog'
 import {
-  preflightDiskSpace, prepareBundleStack, preparePipStack, applyTorchStackTransaction,
-  recoverTorchStackTransaction, DiskSpaceError,
+  preflightDiskSpace,
+  prepareBundleStack,
+  preparePipStack,
+  applyTorchStackTransaction,
+  recoverTorchStackTransaction,
+  DiskSpaceError
 } from './torchStackTransaction'
 import type { PreparedStack, TorchStackTools } from './torchStackTransaction'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
@@ -37,7 +58,12 @@ import type { ActionResult, ActionTools } from '../../types/sources'
  *  resolve any PyTorch change that died mid-transaction — mutating a venv
  *  that recovery is about to roll back (or failing to roll back and mutating
  *  debris) would corrupt it. */
-const VENV_MUTATING_ACTIONS = new Set(['snapshot-restore', 'change-pytorch', 'update-comfyui', 'migrate-from'])
+const VENV_MUTATING_ACTIONS = new Set([
+  'snapshot-restore',
+  'change-pytorch',
+  'update-comfyui',
+  'migrate-from'
+])
 
 /** Download + stage a torch bundle, then re-check disk (`staged: true` — the
  *  bundle already occupies its staging space, only the venv copy still needs
@@ -46,8 +72,10 @@ const VENV_MUTATING_ACTIONS = new Set(['snapshot-restore', 'change-pytorch', 'up
 async function acquireTorchBundle(
   installation: InstallationRecord,
   entry: TorchStackEntry,
-  tools: TorchStackTools,
-): Promise<{ prepared: PreparedStack; failure?: never } | { prepared?: never; failure: ActionResult }> {
+  tools: TorchStackTools
+): Promise<
+  { prepared: PreparedStack; failure?: never } | { prepared?: never; failure: ActionResult }
+> {
   // Pip-applied stacks skip bundle staging entirely: adopted (pip-managed)
   // installs always pip-apply, and index-served entries have no bundle
   // artifact on any install type — the exact tuple is pip-installed from
@@ -67,7 +95,12 @@ async function acquireTorchBundle(
     }
     if (tools.signal?.aborted) return { failure: { ok: false, message: 'Cancelled' } }
     if (err instanceof DiskSpaceError) return { failure: { ok: false, message: err.message } }
-    return { failure: { ok: false, message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message }) } }
+    return {
+      failure: {
+        ok: false,
+        message: t('standalone.pytorchDownloadFailed', { message: (err as Error).message })
+      }
+    }
   }
 }
 
@@ -88,7 +121,12 @@ export async function handleAction(
 
   if (actionId === 'snapshot-save') {
     const label = (actionData?.label as string | undefined) || undefined
-    const filename = await snapshots.saveSnapshot(installation.installPath, installation, 'manual', label)
+    const filename = await snapshots.saveSnapshot(
+      installation.installPath,
+      installation,
+      'manual',
+      label
+    )
     const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
     await update({ lastSnapshot: filename, snapshotCount })
     return { ok: true, navigate: 'detail' }
@@ -111,7 +149,9 @@ export async function handleAction(
     const mode: snapshots.RestoreMode =
       modeRaw === 'exact' || modeRaw === 'compatible'
         ? modeRaw
-        : restoreToken ? 'compatible' : 'exact'
+        : restoreToken
+          ? 'compatible'
+          : 'exact'
 
     // Drop the shared shell + pop-outs first: on Windows a live shell holds a
     // handle on the install dir and any running python locks venv DLLs, which
@@ -142,14 +182,20 @@ export async function handleAction(
     let torchNote: string | null = null
     // Skip the torch phase only on a FULL tuple match — torch version alone
     // can't distinguish stacks that differ in torchvision/torchaudio.
-    if (snapTorch?.kind === 'managed' && !torchTupleMatches(snapTorch.ref.packages, installedTorch)) {
+    if (
+      snapTorch?.kind === 'managed' &&
+      !torchTupleMatches(snapTorch.ref.packages, installedTorch)
+    ) {
       try {
         // Applicability (resolve + metadata-drift guard) is shared with the
         // import-confirm disclosure via resolveSnapshotManagedTarget.
         torchTarget = await resolveSnapshotManagedTarget(installation, snapTorch.ref)
       } catch (err) {
         if (mode === 'exact') {
-          return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+          return {
+            ok: false,
+            message: t('standalone.pytorchCatalogError', { message: (err as Error).message })
+          }
         }
         torchTarget = null
       }
@@ -158,9 +204,16 @@ export async function handleAction(
         // local stack and discloses the substitution instead of aborting
         // (the snapshot may come from different hardware).
         if (mode === 'exact') {
-          return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.ref.packages.torch }) }
+          return {
+            ok: false,
+            message: t('standalone.pytorchSnapshotStackUnavailable', {
+              version: snapTorch.ref.packages.torch
+            })
+          }
         }
-        torchNote = t('standalone.pytorchSnapshotStackKeptLocal', { version: snapTorch.ref.packages.torch })
+        torchNote = t('standalone.pytorchSnapshotStackKeptLocal', {
+          version: snapTorch.ref.packages.torch
+        })
       }
       if (torchTarget) {
         try {
@@ -168,8 +221,12 @@ export async function handleAction(
           // no bundle download pending — charge the pip staging estimate
           // (source-aware: AMD multi-arch stages more), not the bundle size.
           const viaPip = stackAppliesViaPip(torchTarget.source, adopted)
-          await preflightDiskSpace(installation, viaPip ? null : torchTarget, signal,
-            viaPip ? { pipSource: torchTarget.source } : undefined)
+          await preflightDiskSpace(
+            installation,
+            viaPip ? null : torchTarget,
+            signal,
+            viaPip ? { pipSource: torchTarget.source } : undefined
+          )
         } catch (err) {
           if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
           throw err
@@ -188,7 +245,7 @@ export async function handleAction(
       const tuple = observedTuple(snapTorch)
       const differs = full
         ? !torchTupleMatches(tuple, installedTorch)
-        : (!torchBefore || !stackVersionMatches(torchBefore, snapTorch.torchVersion))
+        : !torchBefore || !stackVersionMatches(torchBefore, snapTorch.torchVersion)
       if (differs) {
         // An observed tuple can be re-acquired from the index its local tag
         // names — the snapshot IS the recipe — on any install type: the
@@ -207,21 +264,31 @@ export async function handleAction(
           // Exact mode promises the recorded stack: an unrestorable observed
           // tuple (partial record, or no trusted index serves it) aborts
           // before anything is mutated, same as an unavailable managed stack.
-          return { ok: false, message: t('standalone.pytorchSnapshotStackUnavailable', { version: snapTorch.torchVersion }) }
+          return {
+            ok: false,
+            message: t('standalone.pytorchSnapshotStackUnavailable', {
+              version: snapTorch.torchVersion
+            })
+          }
         } else {
           // Not re-acquirable — reported instead of silently skipped.
-          torchNote = t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
+          torchNote = t('standalone.pytorchSnapshotObservedSkip', {
+            version: snapTorch.torchVersion
+          })
         }
       }
     }
 
-    sendProgress('steps', { steps: [
-      { phase: 'restore-comfyui', label: t('standalone.snapshotRestoreComfyUIPhase') },
-      { phase: 'restore-nodes', label: t('standalone.snapshotRestoreNodesPhase') },
-      { phase: 'restore-pip', label: t('standalone.snapshotRestorePipPhase') },
-      ...(torchTarget || torchObservedTuple
-        ? [{ phase: 'restore-torch', label: t('standalone.snapshotRestoreTorchPhase') }] : []),
-    ] })
+    sendProgress('steps', {
+      steps: [
+        { phase: 'restore-comfyui', label: t('standalone.snapshotRestoreComfyUIPhase') },
+        { phase: 'restore-nodes', label: t('standalone.snapshotRestoreNodesPhase') },
+        { phase: 'restore-pip', label: t('standalone.snapshotRestorePipPhase') },
+        ...(torchTarget || torchObservedTuple
+          ? [{ phase: 'restore-torch', label: t('standalone.snapshotRestoreTorchPhase') }]
+          : [])
+      ]
+    })
     sendProgress('restore-comfyui', { percent: 0, status: 'Loading snapshot…' })
 
     // Acquire the torch payload before any mutation, so a failed or cancelled
@@ -229,14 +296,22 @@ export async function handleAction(
     // no download — wheels are fetched inside the transaction.)
     const torchProgress = (phase: string, data: Record<string, unknown>): void =>
       sendProgress(
-        phase === 'download' || phase === 'extract' || phase === 'torch-swap' ? 'restore-torch' : phase,
+        phase === 'download' || phase === 'extract' || phase === 'torch-swap'
+          ? 'restore-torch'
+          : phase,
         data
       )
     let torchPrepared: PreparedStack | null = null
     if (torchTarget) {
       // Pip-applied stacks prepare a pip payload — nothing downloads here.
-      if (!stackAppliesViaPip(torchTarget.source, adopted)) sendOutput('\n── Download PyTorch Bundle ──\n')
-      const acquired = await acquireTorchBundle(installation, torchTarget, { sendProgress: torchProgress, sendOutput, update, signal })
+      if (!stackAppliesViaPip(torchTarget.source, adopted))
+        sendOutput('\n── Download PyTorch Bundle ──\n')
+      const acquired = await acquireTorchBundle(installation, torchTarget, {
+        sendProgress: torchProgress,
+        sendOutput,
+        update,
+        signal
+      })
       if (acquired.failure) return acquired.failure
       torchPrepared = acquired.prepared
     } else if (torchObservedTuple) {
@@ -244,7 +319,9 @@ export async function handleAction(
     }
     const cleanupTorchStaging = async (): Promise<void> => {
       if (torchPrepared?.kind === 'bundle') {
-        await fs.promises.rm(torchPrepared.stagingDir, { recursive: true, force: true }).catch(() => {})
+        await fs.promises
+          .rm(torchPrepared.stagingDir, { recursive: true, force: true })
+          .catch(() => {})
       }
     }
 
@@ -258,7 +335,11 @@ export async function handleAction(
       // recovered on the next launch (see recoverInterruptedComfyOp). Cleared once
       // source + packages are consistent below.
       if (preRestoreHead) {
-        await writeOpMarker(installation.installPath, { op: 'restore', preHead: preRestoreHead, startedAt: Date.now() })
+        await writeOpMarker(installation.installPath, {
+          op: 'restore',
+          preHead: preRestoreHead,
+          startedAt: Date.now()
+        })
       }
 
       // Safety net for failed/cancelled+rolled-back exits below. A staged import
@@ -272,7 +353,8 @@ export async function handleAction(
         try {
           const currentInstallation = (await installations.get(installation.id)) || installation
           const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
-            installation.installPath, currentInstallation
+            installation.installPath,
+            currentInstallation
           )
           if (filename) {
             const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
@@ -307,9 +389,15 @@ export async function handleAction(
 
       sendOutput('\n── Restore ComfyUI Version ──\n')
       const comfyResult = await snapshots.restoreComfyUIVersion(
-        installation.installPath, targetSnapshot, sendOutput, signal
+        installation.installPath,
+        targetSnapshot,
+        sendOutput,
+        signal
       )
-      sendProgress('restore-comfyui', { percent: 100, status: comfyResult.changed ? 'Restored' : 'Up to date' })
+      sendProgress('restore-comfyui', {
+        percent: 100,
+        status: comfyResult.changed ? 'Restored' : 'Up to date'
+      })
 
       // Check cancellation before the error: an abort mid-checkout surfaces as a
       // non-zero git result (comfyResult.error), and cancelledResult rolls the
@@ -328,7 +416,12 @@ export async function handleAction(
       // Restore custom nodes before pip — node installs may add pip dependencies.
       sendOutput('\n── Restore Nodes ──\n')
       const nodeResult = await snapshots.restoreCustomNodes(
-        installation.installPath, installation, targetSnapshot, sendProgress, sendOutput, signal,
+        installation.installPath,
+        installation,
+        targetSnapshot,
+        sendProgress,
+        sendOutput,
+        signal,
         settings.getMirrorConfig()
       )
 
@@ -337,8 +430,12 @@ export async function handleAction(
       }
 
       let pipResult: snapshots.RestoreResult = {
-        installed: [], removed: [], changed: [],
-        protectedSkipped: [], failed: [], errors: [],
+        installed: [],
+        removed: [],
+        changed: [],
+        protectedSkipped: [],
+        failed: [],
+        errors: []
       }
       let pipError: string | null = null
       if (targetSnapshot.skipPipSync) {
@@ -348,9 +445,13 @@ export async function handleAction(
         sendOutput('\n── Restore Packages ──\n')
         try {
           pipResult = await snapshots.restorePipPackages(
-            installation.installPath, installation, targetSnapshot,
+            installation.installPath,
+            installation,
+            targetSnapshot,
             (phase, data) => sendProgress(phase === 'restore' ? 'restore-pip' : phase, data),
-            sendOutput, signal, settings.getMirrorConfig()
+            sendOutput,
+            signal,
+            settings.getMirrorConfig()
           )
         } catch (err) {
           pipError = (err as Error).message
@@ -369,7 +470,9 @@ export async function handleAction(
           return await cancelledResult('Package changes were reverted where possible.')
         }
         const rolledBack = await revertSourceIfMoved()
-        const headline = pipError ? `Snapshot package restore failed: ${pipError}` : 'Snapshot package restore failed.'
+        const headline = pipError
+          ? `Snapshot package restore failed: ${pipError}`
+          : 'Snapshot package restore failed.'
         const tail = rolledBack
           ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
           : 'Package changes were reverted where possible, but ComfyUI source rollback failed.'
@@ -378,9 +481,10 @@ export async function handleAction(
         // a large restore can't produce a wall-of-text dialog.
         const shownErrors = pipResult.errors.slice(0, 20)
         const omittedErrors = pipResult.errors.length - shownErrors.length
-        const pkgDetail = shownErrors.length > 0
-          ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
-          : ''
+        const pkgDetail =
+          shownErrors.length > 0
+            ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
+            : ''
         await ensureLiveStateOnTop()
         return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
       }
@@ -400,13 +504,20 @@ export async function handleAction(
         sendProgress('restore-pip', { percent: -1, status: t('standalone.snapshotRepairPhase') })
         try {
           repairResult = await snapshots.repairNodeRequirements(
-            installation.installPath, installation, sendOutput, signal, settings.getMirrorConfig()
+            installation.installPath,
+            installation,
+            sendOutput,
+            signal,
+            settings.getMirrorConfig()
           )
         } catch (err) {
           // A rejected repair pass (freeze/constraints IO failure) must flow
           // into the normal partial-restore reporting and history
           // reconciliation below, not escape past them.
-          repairResult = { changed: [], errors: [`Requirements repair failed: ${(err as Error).message}`] }
+          repairResult = {
+            changed: [],
+            errors: [`Requirements repair failed: ${(err as Error).message}`]
+          }
         }
         if (repairResult.changed.length > 0) {
           sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
@@ -432,7 +543,10 @@ export async function handleAction(
         sendOutput('\n── Restore PyTorch ──\n')
         try {
           const torchResult = await applyTorchStackTransaction(installation, torchPrepared, {
-            sendProgress: torchProgress, sendOutput, update, signal,
+            sendProgress: torchProgress,
+            sendOutput,
+            update,
+            signal
           })
           if (torchResult.ok) torchApplied = true
           else torchFailure = torchResult.message
@@ -457,7 +571,10 @@ export async function handleAction(
       let protectedDriftUnknown = false
       if (!targetSnapshot.skipPipSync && !signal?.aborted && !torchFailure) {
         try {
-          protectedDrift = await snapshots.protectedPackageDrift(installation, targetSnapshot.pipPackages)
+          protectedDrift = await snapshots.protectedPackageDrift(
+            installation,
+            targetSnapshot.pipPackages
+          )
         } catch (err) {
           // Unknown drift must not commit an envelope, but is not a failure.
           protectedDriftUnknown = true
@@ -468,10 +585,16 @@ export async function handleAction(
       const summary: string[] = []
 
       if (comfyResult.changed) {
-        summary.push(`ComfyUI: checked out ${(comfyResult.commit || targetSnapshot.comfyui.commit || '').slice(0, 7)}`)
+        summary.push(
+          `ComfyUI: checked out ${(comfyResult.commit || targetSnapshot.comfyui.commit || '').slice(0, 7)}`
+        )
       }
-      const nodeActions = nodeResult.installed.length + nodeResult.switched.length +
-        nodeResult.enabled.length + nodeResult.disabled.length + nodeResult.removed.length
+      const nodeActions =
+        nodeResult.installed.length +
+        nodeResult.switched.length +
+        nodeResult.enabled.length +
+        nodeResult.disabled.length +
+        nodeResult.removed.length
       if (nodeActions > 0) {
         const parts: string[] = []
         if (nodeResult.installed.length > 0) parts.push(`${nodeResult.installed.length} installed`)
@@ -482,19 +605,27 @@ export async function handleAction(
         summary.push(`Nodes: ${parts.join(', ')}`)
       }
       if (nodeResult.failed.length > 0) summary.push(`${nodeResult.failed.length} node(s) failed`)
-      if (nodeResult.unreportable.length > 0) summary.push(`${nodeResult.unreportable.length} standalone .py file(s) not restorable`)
+      if (nodeResult.unreportable.length > 0)
+        summary.push(`${nodeResult.unreportable.length} standalone .py file(s) not restorable`)
 
-      if (pipResult.installed.length > 0 || pipResult.changed.length > 0 || pipResult.removed.length > 0) {
+      if (
+        pipResult.installed.length > 0 ||
+        pipResult.changed.length > 0 ||
+        pipResult.removed.length > 0
+      ) {
         const parts: string[] = []
         if (pipResult.installed.length > 0) parts.push(`${pipResult.installed.length} installed`)
         if (pipResult.changed.length > 0) parts.push(`${pipResult.changed.length} changed`)
         if (pipResult.removed.length > 0) parts.push(`${pipResult.removed.length} removed`)
         summary.push(`Packages: ${parts.join(', ')}`)
       }
-      if (pipResult.protectedSkipped.length > 0) summary.push(`${pipResult.protectedSkipped.length} protected (skipped)`)
+      if (pipResult.protectedSkipped.length > 0)
+        summary.push(`${pipResult.protectedSkipped.length} protected (skipped)`)
       if (pipResult.failed.length > 0) summary.push(`${pipResult.failed.length} package(s) failed`)
-      if (repairResult.changed.length > 0) summary.push(`Requirements repair: ${repairResult.changed.length} package(s) adjusted`)
-      if (repairResult.errors.length > 0) summary.push(`${repairResult.errors.length} requirements repair warning(s)`)
+      if (repairResult.changed.length > 0)
+        summary.push(`Requirements repair: ${repairResult.changed.length} package(s) adjusted`)
+      if (repairResult.errors.length > 0)
+        summary.push(`${repairResult.errors.length} requirements repair warning(s)`)
 
       if (torchApplied) {
         const torchAfter = torchTarget?.packages.torch ?? torchObservedTuple?.torch
@@ -508,7 +639,9 @@ export async function handleAction(
 
       let protectedDriftNote: string | null = null
       if (protectedDrift.length > 0) {
-        protectedDriftNote = t('standalone.snapshotProtectedDrift', { count: protectedDrift.length })
+        protectedDriftNote = t('standalone.snapshotProtectedDrift', {
+          count: protectedDrift.length
+        })
         const detail = protectedDrift
           .map((d) => `  ${d.name}: ${d.live ?? '(absent)'} (snapshot: ${d.target ?? '(absent)'})`)
           .join('\n')
@@ -536,16 +669,21 @@ export async function handleAction(
       // exact restores and compatible mode disclose the drift instead:
       // protected packages are skipped by design, so failing them would make
       // e.g. v1 snapshots permanently unrestorable.
-      const protectedDriftForImport = Boolean(stagedEnvelope && mode === 'exact' &&
-        (protectedDrift.length > 0 || protectedDriftUnknown))
-      const totalFailures = nodeResult.failed.length + nodeResult.unreportable.length +
-        (torchFailure ? 1 : 0) + (protectedDriftForImport ? 1 : 0)
+      const protectedDriftForImport = Boolean(
+        stagedEnvelope && mode === 'exact' && (protectedDrift.length > 0 || protectedDriftUnknown)
+      )
+      const totalFailures =
+        nodeResult.failed.length +
+        nodeResult.unreportable.length +
+        (torchFailure ? 1 : 0) +
+        (protectedDriftForImport ? 1 : 0)
 
       // Collect specific failures so the error surface explains WHY a restore
       // failed instead of a bare "N operation(s) failed".
       const failureDetails: string[] = []
       for (const f of nodeResult.failed) failureDetails.push(`Node ${f.id}: ${f.error}`)
-      for (const id of nodeResult.unreportable) failureDetails.push(`Standalone node ${id}: source file is unavailable`)
+      for (const id of nodeResult.unreportable)
+        failureDetails.push(`Standalone node ${id}: source file is unavailable`)
       for (const e of pipResult.errors) failureDetails.push(e)
       if (torchFailure) failureDetails.push(`PyTorch: ${torchFailure}`)
       if (protectedDriftForImport) {
@@ -553,7 +691,9 @@ export async function handleAction(
           failureDetails.push(t('standalone.snapshotProtectedDriftUnknown'))
         }
         for (const d of protectedDrift) {
-          failureDetails.push(`${d.name}: installed ${d.live ?? '(absent)'}, snapshot records ${d.target ?? '(absent)'}`)
+          failureDetails.push(
+            `${d.name}: installed ${d.live ?? '(absent)'}, snapshot records ${d.target ?? '(absent)'}`
+          )
         }
       }
       const failMessage = (headline: string): string =>
@@ -563,7 +703,9 @@ export async function handleAction(
       if (nothingToDo) {
         sendOutput(`\n✓ ${t('standalone.snapshotRestoreNothingToDo')}\n`)
       } else {
-        sendOutput(`\n${totalFailures > 0 ? '⚠' : '✓'} ${t('standalone.snapshotRestoreComplete')}: ${summary.join('; ')}\n`)
+        sendOutput(
+          `\n${totalFailures > 0 ? '⚠' : '✓'} ${t('standalone.snapshotRestoreComplete')}: ${summary.join('; ')}\n`
+        )
       }
 
       // Restore channel + version/lastRollback state so the release cache sees
@@ -571,7 +713,8 @@ export async function handleAction(
       // returned above after rolling the source back.)
       const restoredHead = comfyResult.commit || readGitHead(comfyuiDir)
       const restoreState = snapshots.buildPostRestoreState(
-        targetSnapshot, comfyResult,
+        targetSnapshot,
+        comfyResult,
         installation.updateInfoByChannel as Record<string, Record<string, unknown>> | undefined,
         installation.comfyVersion as ComfyVersion | undefined
       )
@@ -579,7 +722,10 @@ export async function handleAction(
         const resolved = await resolveLocalVersion(comfyuiDir, restoredHead)
         restoreState.comfyVersion = resolved
         const tag = formatComfyVersion(resolved, 'short')
-        const channelInfo = restoreState.updateInfoByChannel as Record<string, Record<string, unknown>>
+        const channelInfo = restoreState.updateInfoByChannel as Record<
+          string,
+          Record<string, unknown>
+        >
         const ch = targetSnapshot.updateChannel || 'stable'
         channelInfo[ch] = { ...channelInfo[ch], installedTag: tag }
       }
@@ -609,12 +755,16 @@ export async function handleAction(
       // reached, so the imported envelope must not be committed even though the
       // restore is reported as successful; the post-restore snapshot records
       // reality.
-      const reachedTarget = totalFailures === 0 && !torchNote &&
-        repairResult.changed.length === 0 && repairResult.errors.length === 0 &&
-        protectedDrift.length === 0 && !protectedDriftUnknown
+      const reachedTarget =
+        totalFailures === 0 &&
+        !torchNote &&
+        repairResult.changed.length === 0 &&
+        repairResult.errors.length === 0 &&
+        protectedDrift.length === 0 &&
+        !protectedDriftUnknown
       const updatedInstallation = {
         ...freshInst,
-        ...restoreState,
+        ...restoreState
       }
 
       let adaptedStateRecorded = false
@@ -626,7 +776,10 @@ export async function handleAction(
         } catch (err) {
           console.warn('Committing imported snapshots failed:', err)
           await ensureLiveStateOnTop()
-          return { ok: false, message: `Snapshot was restored, but its history could not be saved: ${(err as Error).message}` }
+          return {
+            ok: false,
+            message: `Snapshot was restored, but its history could not be saved: ${(err as Error).message}`
+          }
         }
 
         // Release only after the commit succeeds, so a failed commit keeps the
@@ -646,12 +799,18 @@ export async function handleAction(
         // failure keeps the target retryable instead of leaving "Latest" stale.
         adaptedStateRecorded = true
         try {
-          const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
+          const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
+            installation.installPath,
+            updatedInstallation
+          )
           const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
           if (filename) await update({ lastSnapshot: filename, snapshotCount })
         } catch (err) {
           console.warn('Post-restore snapshot failed:', err)
-          return { ok: false, message: `Snapshot was restored with adaptations, but the resulting state could not be saved: ${(err as Error).message}` }
+          return {
+            ok: false,
+            message: `Snapshot was restored with adaptations, but the resulting state could not be saved: ${(err as Error).message}`
+          }
         }
         try {
           await snapshots.releaseStagedSnapshotEnvelope(restoreToken)
@@ -668,14 +827,21 @@ export async function handleAction(
           // above the future-dated imported entries, since ensureCurrentSnapshotOnTop
           // stamps after the current top. The adapted path above already did this.
           if (!adaptedStateRecorded) {
-            const { filename } = await snapshots.ensureCurrentSnapshotOnTop(installation.installPath, updatedInstallation)
+            const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
+              installation.installPath,
+              updatedInstallation
+            )
             const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
             if (filename) await update({ lastSnapshot: filename, snapshotCount })
           }
         } else {
           // Restoring an existing in-history snapshot: it carries an older
           // timestamp, so a plain post-restore snapshot lands on top.
-          const filename = await snapshots.saveSnapshot(installation.installPath, updatedInstallation, 'post-restore')
+          const filename = await snapshots.saveSnapshot(
+            installation.installPath,
+            updatedInstallation,
+            'post-restore'
+          )
           const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
           await update({ lastSnapshot: filename, snapshotCount })
         }
@@ -685,19 +851,32 @@ export async function handleAction(
 
       sendProgress('done', {
         percent: 100,
-        status: nothingToDo ? t('standalone.snapshotRestoreNothingToDo') : t('standalone.snapshotRestoreComplete')
+        status: nothingToDo
+          ? t('standalone.snapshotRestoreNothingToDo')
+          : t('standalone.snapshotRestoreComplete')
       })
       // Successful compatible-mode restores disclose their adaptations as a
       // transient notice (ok + navigate:'detail' + message → flashNotice).
       const adaptations: string[] = []
       if (torchNote) adaptations.push(torchNote)
       if (protectedDriftNote && !protectedDriftForImport) adaptations.push(protectedDriftNote)
-      if (repairResult.changed.length > 0) adaptations.push(t('standalone.snapshotRepairAdjusted', { count: repairResult.changed.length }))
-      if (repairResult.errors.length > 0) adaptations.push(t('standalone.snapshotRepairWarnings', { count: repairResult.errors.length }))
-      return { ok: totalFailures === 0, navigate: 'detail',
+      if (repairResult.changed.length > 0)
+        adaptations.push(
+          t('standalone.snapshotRepairAdjusted', { count: repairResult.changed.length })
+        )
+      if (repairResult.errors.length > 0)
+        adaptations.push(
+          t('standalone.snapshotRepairWarnings', { count: repairResult.errors.length })
+        )
+      return {
+        ok: totalFailures === 0,
+        navigate: 'detail',
         ...(totalFailures > 0
           ? { message: failMessage(`${totalFailures} operation(s) failed`) }
-          : adaptations.length > 0 ? { message: adaptations.join(' ') } : {}) }
+          : adaptations.length > 0
+            ? { message: adaptations.join(' ') }
+            : {})
+      }
     } finally {
       // Structural guarantee: staging is removed on every exit â€” early
       // returns, unexpected throws, and success (a no-op there: the apply
@@ -732,7 +911,11 @@ export async function handleAction(
       lines.push('')
     }
 
-    if (diff.nodesAdded.length > 0 || diff.nodesRemoved.length > 0 || diff.nodesChanged.length > 0) {
+    if (
+      diff.nodesAdded.length > 0 ||
+      diff.nodesRemoved.length > 0 ||
+      diff.nodesChanged.length > 0
+    ) {
       lines.push(`${t('standalone.snapshotDiffNodes')}`)
       for (const n of diff.nodesAdded) {
         const ver = n.version || (n.commit ? n.commit.slice(0, 7) : '')
@@ -748,9 +931,13 @@ export async function handleAction(
         const enabledChanged = n.from.enabled !== n.to.enabled
         const versionChanged = fromVer !== toVer
         if (enabledChanged && versionChanged) {
-          lines.push(`  ~ ${n.id}: ${fromVer} → ${toVer}, ${n.from.enabled ? 'enabled' : 'disabled'} → ${n.to.enabled ? 'enabled' : 'disabled'}`)
+          lines.push(
+            `  ~ ${n.id}: ${fromVer} → ${toVer}, ${n.from.enabled ? 'enabled' : 'disabled'} → ${n.to.enabled ? 'enabled' : 'disabled'}`
+          )
         } else if (enabledChanged) {
-          lines.push(`  ~ ${n.id}: ${n.from.enabled ? 'enabled' : 'disabled'} → ${n.to.enabled ? 'enabled' : 'disabled'}`)
+          lines.push(
+            `  ~ ${n.id}: ${n.from.enabled ? 'enabled' : 'disabled'} → ${n.to.enabled ? 'enabled' : 'disabled'}`
+          )
         } else {
           lines.push(`  ~ ${n.id}: ${fromVer} → ${toVer}`)
         }
@@ -782,10 +969,15 @@ export async function handleAction(
     // pip payload instead of downloading a bundle. Judged from the stackId
     // shape here (the entry isn't resolved yet); index ids always pip-apply.
     const viaPip = installation.adopted === true || parseAnyIndexStackId(stackId) !== null
-    sendProgress('steps', { steps: [
-      { phase: 'torch-prepare', label: t(viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
-      { phase: 'torch-swap', label: t('standalone.pytorchSwapPhase') },
-    ] })
+    sendProgress('steps', {
+      steps: [
+        {
+          phase: 'torch-prepare',
+          label: t(viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase')
+        },
+        { phase: 'torch-swap', label: t('standalone.pytorchSwapPhase') }
+      ]
+    })
 
     // Trust boundary: the renderer's stackId is only a hint — re-resolve it
     // against a fresh R2 fetch for THIS installation (variant + Python ABI).
@@ -794,13 +986,20 @@ export async function handleAction(
     try {
       entry = await resolveTorchStack(installation, stackId)
     } catch (err) {
-      return { ok: false, message: t('standalone.pytorchCatalogError', { message: (err as Error).message }) }
+      return {
+        ok: false,
+        message: t('standalone.pytorchCatalogError', { message: (err as Error).message })
+      }
     }
     if (!entry) return { ok: false, message: t('standalone.pytorchStackUnavailable') }
 
     const currentTuple = getInstalledTorchTuple(installation)
     if (currentTuple.torch && torchTupleMatches(entry.packages, currentTuple)) {
-      return { ok: true, navigate: 'detail', message: t('standalone.pytorchAlreadyInstalled', { version: currentTuple.torch }) }
+      return {
+        ok: true,
+        navigate: 'detail',
+        message: t('standalone.pytorchAlreadyInstalled', { version: currentTuple.torch })
+      }
     }
 
     // Hard gate before anything is downloaded or touched. Pip-applied
@@ -809,8 +1008,12 @@ export async function handleAction(
     // resolved entry's source (authoritative).
     try {
       const entryViaPip = stackAppliesViaPip(entry.source, installation.adopted === true)
-      await preflightDiskSpace(installation, entryViaPip ? null : entry, signal,
-        entryViaPip ? { pipSource: entry.source } : undefined)
+      await preflightDiskSpace(
+        installation,
+        entryViaPip ? null : entry,
+        signal,
+        entryViaPip ? { pipSource: entry.source } : undefined
+      )
     } catch (err) {
       if (err instanceof DiskSpaceError) return { ok: false, message: err.message }
       throw err
@@ -823,7 +1026,11 @@ export async function handleAction(
 
     // Safety net the user can roll back to from the Snapshots tab.
     try {
-      const filename = await snapshots.saveSnapshot(installation.installPath, installation, 'pre-update')
+      const filename = await snapshots.saveSnapshot(
+        installation.installPath,
+        installation,
+        'pre-update'
+      )
       const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
       await update({ lastSnapshot: filename, snapshotCount })
     } catch (err) {
@@ -836,15 +1043,29 @@ export async function handleAction(
     // the declared 'torch-prepare' step so the stepper tracks them.
     const prepareProgress = (phase: string, data: Record<string, unknown>): void =>
       sendProgress(phase === 'download' || phase === 'extract' ? 'torch-prepare' : phase, data)
-    const acquired = await acquireTorchBundle(installation, entry, { sendProgress: prepareProgress, sendOutput, update, signal })
+    const acquired = await acquireTorchBundle(installation, entry, {
+      sendProgress: prepareProgress,
+      sendOutput,
+      update,
+      signal
+    })
     if (acquired.failure) return acquired.failure
 
-    const result = await applyTorchStackTransaction(installation, acquired.prepared, { sendProgress, sendOutput, update, signal })
+    const result = await applyTorchStackTransaction(installation, acquired.prepared, {
+      sendProgress,
+      sendOutput,
+      update,
+      signal
+    })
     if (!result.ok) return { ok: false, message: result.message }
 
     try {
       const freshInst = (await installations.get(installation.id)) || installation
-      const filename = await snapshots.saveSnapshot(installation.installPath, freshInst, 'post-update')
+      const filename = await snapshots.saveSnapshot(
+        installation.installPath,
+        freshInst,
+        'post-update'
+      )
       const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
       await update({ lastSnapshot: filename, snapshotCount })
     } catch (err) {
@@ -867,20 +1088,27 @@ export async function handleAction(
     const otherChannels = ['stable', 'latest'].filter((ch) => ch !== channel)
     await Promise.allSettled([
       ...otherChannels.map((ch) =>
-        releaseCache.getOrFetch(COMFYUI_REPO, ch, async () => {
-          const release = await fetchLatestRelease(ch)
-          if (!release) return null
-          return releaseCache.buildCacheEntry(release)
-        }, true)
+        releaseCache.getOrFetch(
+          COMFYUI_REPO,
+          ch,
+          async () => {
+            const release = await fetchLatestRelease(ch)
+            if (!release) return null
+            return releaseCache.buildCacheEntry(release)
+          },
+          true
+        )
       ),
       // Refresh the switchable-PyTorch-stack catalog alongside the release
       // check so the PyTorch picker on the Update tab has current options.
-      refreshTorchStackCatalog(installation),
+      refreshTorchStackCatalog(installation)
     ])
     const result = await releaseCache.checkForUpdate(COMFYUI_REPO, channel, installation, update)
     // Enrich the "+ N commits" label in the background (it can run a slow
     // `git fetch --unshallow`); the card refreshes in place when it lands.
-    void releaseCache.enrichCommitsAhead(COMFYUI_REPO, path.join(installation.installPath, 'ComfyUI')).catch(() => {})
+    void releaseCache
+      .enrichCommitsAhead(COMFYUI_REPO, path.join(installation.installPath, 'ComfyUI'))
+      .catch(() => {})
     // A manual check that finds nothing should say so, else it reads as a no-op.
     // The tab-open auto-refresh passes `silent` to suppress this.
     if (result.ok && actionData?.silent !== true) {
@@ -893,7 +1121,12 @@ export async function handleAction(
   }
 
   if (actionId === 'update-comfyui') {
-    return handleUpdateComfyUI(installation, actionData, { update, sendProgress, sendOutput, signal })
+    return handleUpdateComfyUI(installation, actionData, {
+      update,
+      sendProgress,
+      sendOutput,
+      signal
+    })
   }
 
   if (actionId === 'migrate-from') {
@@ -933,12 +1166,16 @@ async function handleUpdateComfyUI(
     if (!adoptedPython || !fs.existsSync(adoptedPython)) {
       return {
         ok: false,
-        message: 'Adopted Python not found at the recorded path. Re-run "Migrate to Standalone" to reconcile, or use "Copy & Update" to rebuild as a managed standalone.',
+        message:
+          'Adopted Python not found at the recorded path. Re-run "Migrate to Standalone" to reconcile, or use "Copy & Update" to rebuild as a managed standalone.'
       }
     }
   }
 
-  const targetChannel = (actionData?.channel as string | undefined) ?? (installation.updateChannel as string | undefined) ?? 'stable'
+  const targetChannel =
+    (actionData?.channel as string | undefined) ??
+    (installation.updateChannel as string | undefined) ??
+    'stable'
   if (targetChannel !== (installation.updateChannel as string | undefined)) {
     await update({ updateChannel: targetChannel })
   }
@@ -952,11 +1189,13 @@ async function handleUpdateComfyUI(
   const rawTargetTag = typeof actionData?.targetTag === 'string' ? actionData.targetTag : undefined
   const targetTag = rawTargetTag && /^v\d+\.\d+\.\d+$/.test(rawTargetTag) ? rawTargetTag : undefined
 
-  sendProgress('steps', { steps: [
-    { phase: 'prepare', label: t('standalone.updatePrepare') },
-    { phase: 'run', label: t('standalone.updateRun') },
-    { phase: 'deps', label: t('standalone.updateDeps') },
-  ] })
+  sendProgress('steps', {
+    steps: [
+      { phase: 'prepare', label: t('standalone.updatePrepare') },
+      { phase: 'run', label: t('standalone.updateRun') },
+      { phase: 'deps', label: t('standalone.updateDeps') }
+    ]
+  })
 
   sendProgress('prepare', { percent: -1, status: t('standalone.updatePrepareSnapshot') })
   sendProgress('run', { percent: -1, status: t('standalone.updateFetching') })
@@ -972,7 +1211,7 @@ async function handleUpdateComfyUI(
     signal,
     dryRunConflictCheck: true,
     saveRollback: true,
-    preUpdateSnapshot: true,
+    preUpdateSnapshot: true
   })
 
   if (!result.ok) {
@@ -1031,11 +1270,11 @@ async function handleMigrateFrom(
     : path.join(dstComfyUI, 'models')
   const srcInput = path.join(srcComfyUI, 'input')
   const dstInput = useSharedInputOutput
-    ? ((settings.get('inputDir') as string | undefined) || settings.defaults.inputDir)
+    ? (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
     : perInstallInput || path.join(dstComfyUI, 'input')
   const srcOutput = path.join(srcComfyUI, 'output')
   const dstOutput = useSharedInputOutput
-    ? ((settings.get('outputDir') as string | undefined) || settings.defaults.outputDir)
+    ? (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
     : perInstallOutput || path.join(dstComfyUI, 'output')
 
   const srcCustomNodes = path.join(srcComfyUI, 'custom_nodes')
@@ -1044,7 +1283,9 @@ async function handleMigrateFrom(
   const dstWorkflows = path.join(dstComfyUI, 'user', 'default', 'workflows')
   const srcUserDir = path.join(srcComfyUI, 'user')
 
-  const steps: Array<{ phase: string; label: string }> = [{ phase: 'migrate', label: t('migrate.filePhase') }]
+  const steps: Array<{ phase: string; label: string }> = [
+    { phase: 'migrate', label: t('migrate.filePhase') }
+  ]
   if (wantNodes) steps.push({ phase: 'deps', label: t('migrate.depsPhase') })
   sendProgress('steps', { steps })
 
@@ -1064,14 +1305,25 @@ async function handleMigrateFrom(
         if (d.isDirectory() && !d.name.startsWith('_')) {
           const src = path.join(srcUserDir, d.name, 'comfy.settings.json')
           if (fs.existsSync(src)) {
-            settingsFiles.push({ profile: d.name, src, dst: path.join(dstComfyUI, 'user', d.name, 'comfy.settings.json') })
+            settingsFiles.push({
+              profile: d.name,
+              src,
+              dst: path.join(dstComfyUI, 'user', d.name, 'comfy.settings.json')
+            })
           }
         }
       }
     } catch {}
   }
 
-  const total = srcNodes.length + (hasAllUserData ? 1 : 0) + (hasWorkflows ? 1 : 0) + (settingsFiles.length > 0 ? 1 : 0) + (hasModels ? 1 : 0) + (hasInput ? 1 : 0) + (hasOutput ? 1 : 0)
+  const total =
+    srcNodes.length +
+    (hasAllUserData ? 1 : 0) +
+    (hasWorkflows ? 1 : 0) +
+    (settingsFiles.length > 0 ? 1 : 0) +
+    (hasModels ? 1 : 0) +
+    (hasInput ? 1 : 0) +
+    (hasOutput ? 1 : 0)
 
   if (total === 0) {
     sendProgress('migrate', { percent: 100, status: t('migrate.nothingToMigrate') })
@@ -1096,7 +1348,10 @@ async function handleMigrateFrom(
       await copyDirWithProgress(node.dir, dstNodeDir, (copied, fileTotal) => {
         const sub = fileTotal > 0 ? copied / fileTotal : 1
         const percent = Math.round(((migrated + sub) / total) * 100)
-        sendProgress('migrate', { percent, status: t('migrate.copyingNode', { name: node.name, current: migrated + 1, total }) })
+        sendProgress('migrate', {
+          percent,
+          status: t('migrate.copyingNode', { name: node.name, current: migrated + 1, total })
+        })
       })
       migratedNodes.push(node)
       migrated++
@@ -1106,7 +1361,10 @@ async function handleMigrateFrom(
   }
 
   if (hasAllUserData) {
-    sendProgress('migrate', { percent: Math.round((migrated / total) * 100), status: t('migrate.mergingUserData') })
+    sendProgress('migrate', {
+      percent: Math.round((migrated / total) * 100),
+      status: t('migrate.mergingUserData')
+    })
     const dstUserDir = path.join(dstComfyUI, 'user')
     const result = await mergeDirFlat(srcUserDir, dstUserDir, (copied, skipped, fileTotal) => {
       const sub = fileTotal > 0 ? (copied + skipped) / fileTotal : 1
@@ -1118,7 +1376,10 @@ async function handleMigrateFrom(
   }
 
   if (hasWorkflows) {
-    sendProgress('migrate', { percent: Math.round((migrated / total) * 100), status: t('migrate.mergingWorkflows') })
+    sendProgress('migrate', {
+      percent: Math.round((migrated / total) * 100),
+      status: t('migrate.mergingWorkflows')
+    })
     const result = await mergeDirFlat(srcWorkflows, dstWorkflows, (copied, skipped, fileTotal) => {
       const sub = fileTotal > 0 ? (copied + skipped) / fileTotal : 1
       const percent = Math.round(((migrated + sub) / total) * 100)
@@ -1129,7 +1390,10 @@ async function handleMigrateFrom(
   }
 
   if (settingsFiles.length > 0) {
-    sendProgress('migrate', { percent: Math.round((migrated / total) * 100), status: t('migrate.copyingSettings') })
+    sendProgress('migrate', {
+      percent: Math.round((migrated / total) * 100),
+      status: t('migrate.copyingSettings')
+    })
     let copied = 0
     for (const sf of settingsFiles) {
       await fs.promises.mkdir(path.dirname(sf.dst), { recursive: true })
@@ -1141,7 +1405,10 @@ async function handleMigrateFrom(
   }
 
   if (hasModels) {
-    sendProgress('migrate', { percent: Math.round((migrated / total) * 100), status: t('migrate.mergingModels') })
+    sendProgress('migrate', {
+      percent: Math.round((migrated / total) * 100),
+      status: t('migrate.mergingModels')
+    })
     const result = await mergeDirFlat(srcModels, dstModels, (copied, skipped, fileTotal) => {
       const sub = fileTotal > 0 ? (copied + skipped) / fileTotal : 1
       const percent = Math.round(((migrated + sub) / total) * 100)
@@ -1152,7 +1419,10 @@ async function handleMigrateFrom(
   }
 
   if (hasInput) {
-    sendProgress('migrate', { percent: Math.round((migrated / total) * 100), status: t('migrate.mergingInput') })
+    sendProgress('migrate', {
+      percent: Math.round((migrated / total) * 100),
+      status: t('migrate.mergingInput')
+    })
     const result = await mergeDirFlat(srcInput, dstInput, (copied, skipped, fileTotal) => {
       const sub = fileTotal > 0 ? (copied + skipped) / fileTotal : 1
       const percent = Math.round(((migrated + sub) / total) * 100)
@@ -1163,7 +1433,10 @@ async function handleMigrateFrom(
   }
 
   if (hasOutput) {
-    sendProgress('migrate', { percent: Math.round((migrated / total) * 100), status: t('migrate.mergingOutput') })
+    sendProgress('migrate', {
+      percent: Math.round((migrated / total) * 100),
+      status: t('migrate.mergingOutput')
+    })
     const result = await mergeDirFlat(srcOutput, dstOutput, (copied, skipped, fileTotal) => {
       const sub = fileTotal > 0 ? (copied + skipped) / fileTotal : 1
       const percent = Math.round(((migrated + sub) / total) * 100)
@@ -1196,13 +1469,27 @@ async function handleMigrateFrom(
           const nodReqPath = path.join(dstCustomNodes, node.name, 'requirements.txt')
           sendProgress('deps', {
             percent: Math.round((depsInstalled / nodesWithReqs.length) * 100),
-            status: t('migrate.installingNodeDeps', { name: node.name }),
+            status: t('migrate.installingNodeDeps', { name: node.name })
           })
 
           try {
-            const procResult = await installFilteredRequirementsDetailed(nodReqPath, uvPath, activePython, installation.installPath, `.migrate-reqs-${node.name}.txt`, sendOutput, undefined, { pypiMirror: migrateMirror, useChineseMirrors: settings.get('useChineseMirrors') === true })
+            const procResult = await installFilteredRequirementsDetailed(
+              nodReqPath,
+              uvPath,
+              activePython,
+              installation.installPath,
+              `.migrate-reqs-${node.name}.txt`,
+              sendOutput,
+              undefined,
+              {
+                pypiMirror: migrateMirror,
+                useChineseMirrors: settings.get('useChineseMirrors') === true
+              }
+            )
             if (procResult.code !== 0) {
-              sendOutput(`\n${withOutputTail(`⚠ ${node.name}: dependency install exited with code ${procResult.code}`, procResult.output)}\n`)
+              sendOutput(
+                `\n${withOutputTail(`⚠ ${node.name}: dependency install exited with code ${procResult.code}`, procResult.output)}\n`
+              )
             }
           } catch (err) {
             sendOutput(`⚠ ${node.name}: ${(err as Error).message}\n`)
@@ -1227,9 +1514,20 @@ async function handleMigrateFrom(
 
       if (fs.existsSync(uvPath) && activePython) {
         sendOutput('\nInstalling manager requirements…\n')
-        const procResult = await installFilteredRequirementsDetailed(mgrReqPath, uvPath, activePython, installation.installPath, '.migrate-mgr-reqs.txt', sendOutput, undefined, settings.getMirrorConfig())
+        const procResult = await installFilteredRequirementsDetailed(
+          mgrReqPath,
+          uvPath,
+          activePython,
+          installation.installPath,
+          '.migrate-mgr-reqs.txt',
+          sendOutput,
+          undefined,
+          settings.getMirrorConfig()
+        )
         if (procResult.code !== 0) {
-          sendOutput(`\n${withOutputTail(`⚠ manager requirements install exited with code ${procResult.code}`, procResult.output)}\n`)
+          sendOutput(
+            `\n${withOutputTail(`⚠ manager requirements install exited with code ${procResult.code}`, procResult.output)}\n`
+          )
         }
       }
     }

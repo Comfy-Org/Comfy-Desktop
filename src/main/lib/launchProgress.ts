@@ -38,12 +38,24 @@ const NODE_IMPORT_LINE = /^\s*[\d.]+\s*seconds?:\s*.*[/\\]custom_nodes[/\\](.+?)
  */
 const ACTIVITY_MESSAGES: ReadonlyArray<{ match: RegExp; key: string }> = [
   { match: /\[(?:PRE|START)\] ComfyUI-Manager|ComfyUI-Manager/i, key: 'launch.activity.manager' },
-  { match: /FETCH ComfyRegistry|custom-node-list|api\.comfy\.org\/nodes/i, key: 'launch.activity.registry' },
+  {
+    match: /FETCH ComfyRegistry|custom-node-list|api\.comfy\.org\/nodes/i,
+    key: 'launch.activity.registry'
+  },
   { match: /Set vram state|Device:\s|VRAM/i, key: 'launch.activity.vram' },
-  { match: /pytorch version|optimization for attention|xformers|sage-attention|flash-attention/i, key: 'launch.activity.optimizing' },
-  { match: /Checkpoint files will always|model path|Adding extra search path/i, key: 'launch.activity.models' },
+  {
+    match: /pytorch version|optimization for attention|xformers|sage-attention|flash-attention/i,
+    key: 'launch.activity.optimizing'
+  },
+  {
+    match: /Checkpoint files will always|model path|Adding extra search path/i,
+    key: 'launch.activity.models'
+  },
   { match: /Database|alembic|Running upgrade|SQLite/i, key: 'launch.activity.database' },
-  { match: /Import times for custom nodes|Loading custom node|Loaded node/i, key: 'launch.activity.nodes' },
+  {
+    match: /Import times for custom nodes|Loading custom node|Loaded node/i,
+    key: 'launch.activity.nodes'
+  }
 ]
 
 /** Map a raw log line to a human i18n key, or null if it's not meaningful. */
@@ -117,7 +129,7 @@ export function createLaunchProgressTracker(opts: {
     // Weights ride along so the renderer paces the bar from the phase defs (the
     // single source of truth) — no mirrored table to keep in sync.
     sendProgress('steps', {
-      steps: phases.map((p) => ({ phase: p.phase, label: p.phase, weight: p.weight })),
+      steps: phases.map((p) => ({ phase: p.phase, label: p.phase, weight: p.weight }))
     })
   }
 
@@ -129,7 +141,7 @@ export function createLaunchProgressTracker(opts: {
     observePhase(def.phase)
     sendProgress(def.phase, {
       status: entryStatus(def),
-      percent: entryPercent(def),
+      percent: entryPercent(def)
     })
   }
 
@@ -208,7 +220,7 @@ export function createLaunchProgressTracker(opts: {
         const name = nodeMatch[1]?.replace(/\.py$/, '') ?? ''
         sendProgress(def.phase, {
           status: name ? `${nodeCountLabel()} · ${name}` : nodeCountLabel(),
-          percent: pct,
+          percent: pct
         })
         return
       }
@@ -240,6 +252,6 @@ export function createLaunchProgressTracker(opts: {
       const lines = pending.split(/\r?\n/)
       pending = lines.pop() ?? ''
       for (const line of lines) handleLine(line)
-    },
+    }
   }
 }

@@ -104,7 +104,7 @@ export function subscribeLogs(installationId: string, wc: WebContents): LogsRest
   })
   return {
     installationId,
-    buffer: state.buffer.slice(),
+    buffer: state.buffer.slice()
   }
 }
 

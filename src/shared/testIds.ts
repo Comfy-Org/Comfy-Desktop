@@ -77,7 +77,7 @@ export const TID = {
   /** Visible only when `portConflict.nextPort` is set. */
   progressPortConflictUsePort: 'progress-port-conflict-use-port',
   /** Visible only when `portConflict.isComfy` is true. */
-  progressPortConflictKill: 'progress-port-conflict-kill',
+  progressPortConflictKill: 'progress-port-conflict-kill'
 } as const
 
 export type TestIdKey = keyof typeof TID

@@ -4,7 +4,12 @@ import { stripPlatform, findSitePackages, getTorchVersion } from './envPaths'
 import { getActiveVenvDir } from '../../lib/pythonEnv'
 import { torchTupleReacquirableFrom } from './torchStackTypes'
 import { getLastVerifiedTorchStack } from './torchStackCatalog'
-import { preparePipStack, applyTorchStackTransaction, preflightDiskSpace, DiskSpaceError } from './torchStackTransaction'
+import {
+  preparePipStack,
+  applyTorchStackTransaction,
+  preflightDiskSpace,
+  DiskSpaceError
+} from './torchStackTransaction'
 import { copyTorchFamily, recoverTorchFamilyBackups } from './torchFamilyFs'
 import type { PersistedTorchStack } from './torchStackTypes'
 import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
@@ -22,7 +27,7 @@ import type { InstallationRecord } from '../../installations'
 const EXPECTED_FAMILY: Record<string, string> = {
   nvidia: 'cu',
   amd: 'rocm',
-  'intel-xpu': 'xpu',
+  'intel-xpu': 'xpu'
 }
 
 export interface TorchMismatch {
@@ -58,9 +63,11 @@ function readTorchAcceleratorEvidence(sitePackages: string): AcceleratorEvidence
   try {
     const txt = fs.readFileSync(path.join(sitePackages, 'torch', 'version.py'), 'utf-8')
     const field = (name: string): boolean => {
-      const m = txt.match(new RegExp(`^${name}\\s*(?::[^=\\n]+)?=\\s*(None|'([^']*)'|"([^"]*)")`, 'm'))
+      const m = txt.match(
+        new RegExp(`^${name}\\s*(?::[^=\\n]+)?=\\s*(None|'([^']*)'|"([^"]*)")`, 'm')
+      )
       if (!m || m[1] === 'None') return false
-      return ((m[2] ?? m[3] ?? '').trim()).length > 0
+      return (m[2] ?? m[3] ?? '').trim().length > 0
     }
     return { cuda: field('cuda'), hip: field('hip'), rocm: field('rocm'), xpu: field('xpu') }
   } catch {
@@ -70,7 +77,9 @@ function readTorchAcceleratorEvidence(sitePackages: string): AcceleratorEvidence
 
 /** Local-version tag of a torch version string, e.g. '2.10.0+cu128' → 'cu128'. */
 function localTag(version: string | null): string {
-  return version && version.includes('+') ? version.slice(version.indexOf('+') + 1).toLowerCase() : ''
+  return version && version.includes('+')
+    ? version.slice(version.indexOf('+') + 1).toLowerCase()
+    : ''
 }
 
 /** Read the installed torch version from a torch dist-info dir in site-packages. */
@@ -88,7 +97,11 @@ function readTorchVersionFromSite(sitePackages: string): string | null {
 
 /** Whether a torch install carries the accelerator its GPU variant requires,
  *  judged by either the wheel's local tag or the version.py backend fields. */
-function hasExpectedAccelerator(variantBase: string, tag: string, ev: AcceleratorEvidence): boolean {
+function hasExpectedAccelerator(
+  variantBase: string,
+  tag: string,
+  ev: AcceleratorEvidence
+): boolean {
   if (variantBase === 'nvidia') return tag.includes('cu') || ev.cuda
   if (variantBase === 'amd') return tag.includes('rocm') || ev.hip || ev.rocm
   if (variantBase === 'intel-xpu') return tag.includes('xpu') || ev.xpu
@@ -109,7 +122,9 @@ export function getTorchVendorMismatch(installation: InstallationRecord): TorchM
   if (!variant) return null
 
   const base = stripPlatform(variant)
-  const variantBase = Object.keys(EXPECTED_FAMILY).find((k) => base === k || base.startsWith(`${k}-`))
+  const variantBase = Object.keys(EXPECTED_FAMILY).find(
+    (k) => base === k || base.startsWith(`${k}-`)
+  )
   if (!variantBase) return null // cpu, mps, or unknown — nothing to repair
 
   const sitePackages = findSitePackages(getActiveVenvDir(installation))
@@ -121,7 +136,12 @@ export function getTorchVendorMismatch(installation: InstallationRecord): TorchM
   const evidence = readTorchAcceleratorEvidence(sitePackages)
   if (hasExpectedAccelerator(variantBase, installedTag, evidence)) return null
 
-  return { variantBase, expectedFamily: EXPECTED_FAMILY[variantBase]!, installedVersion, installedTag }
+  return {
+    variantBase,
+    expectedFamily: EXPECTED_FAMILY[variantBase]!,
+    installedVersion,
+    installedTag
+  }
 }
 
 export interface TorchRepairTools {
@@ -141,7 +161,7 @@ export interface TorchRepairTools {
 async function repairTorchViaPip(
   installation: InstallationRecord,
   verifiedRef: PersistedTorchStack,
-  tools: TorchRepairTools,
+  tools: TorchRepairTools
 ): Promise<{ ok: boolean; message: string }> {
   const packages = verifiedRef.packages
   if (!torchTupleReacquirableFrom(verifiedRef.source, packages)) {
@@ -188,7 +208,7 @@ export interface TorchRepairResult {
 export async function repairTorch(
   installation: InstallationRecord,
   tools: TorchRepairTools,
-  verifiedRef: PersistedTorchStack | null = getLastVerifiedTorchStack(installation),
+  verifiedRef: PersistedTorchStack | null = getLastVerifiedTorchStack(installation)
 ): Promise<TorchRepairResult> {
   const installPath = installation.installPath
   const tmpDir = path.join(installPath, '.torch-repair-tmp')
@@ -200,7 +220,10 @@ export async function repairTorch(
   }
 
   try {
-    const cache = createCache(settings.get('cacheDir') as string, settings.get('maxCachedDownloads') as number)
+    const cache = createCache(
+      settings.get('cacheDir') as string,
+      settings.get('maxCachedDownloads') as number
+    )
     const ctx = { sendProgress: tools.sendProgress, download, cache, extract, signal: tools.signal }
 
     await fs.promises.rm(tmpDir, { recursive: true, force: true })
@@ -209,12 +232,16 @@ export async function repairTorch(
     // A verified comfy-bundle stack carries its own download info — restore
     // the stack the user actually chose, not the install-time bundle.
     const verifiedBundle = verifiedRef?.bundle
-    const verifiedTag = verifiedRef?.source.kind === 'comfy-bundle' ? verifiedRef.source.bundleTag : undefined
+    const verifiedTag =
+      verifiedRef?.source.kind === 'comfy-bundle' ? verifiedRef.source.bundleTag : undefined
 
     const files = verifiedBundle
       ? [verifiedBundle]
-      : (installation.downloadFiles as Array<{ url: string; filename: string; size: number }> | undefined)
-    const releaseTag = verifiedBundle && verifiedTag ? verifiedTag : (installation.releaseTag as string | undefined)
+      : (installation.downloadFiles as
+          | Array<{ url: string; filename: string; size: number }>
+          | undefined)
+    const releaseTag =
+      verifiedBundle && verifiedTag ? verifiedTag : (installation.releaseTag as string | undefined)
     const variant = installation.variant as string | undefined
     const downloadUrl = installation.downloadUrl as string | undefined
 
@@ -258,13 +285,16 @@ export async function repairTorch(
     // PyTorch changing how version.py is written.
     const after = readTorchVersionFromSite(dstSite)
     if (after !== srcVersion) {
-      return { ok: false, message: `PyTorch is "${after ?? 'absent'}" after copy, expected "${srcVersion}"` }
+      return {
+        ok: false,
+        message: `PyTorch is "${after ?? 'absent'}" after copy, expected "${srcVersion}"`
+      }
     }
 
     return {
       ok: true,
       message: `restored PyTorch ${after}`,
-      ...(verifiedBundle && verifiedRef ? { restoredRef: verifiedRef } : {}),
+      ...(verifiedBundle && verifiedRef ? { restoredRef: verifiedRef } : {})
     }
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
@@ -296,11 +326,12 @@ interface TorchRepairState {
 export async function maybeRepairTorch(
   installation: InstallationRecord,
   tools: TorchRepairTools,
-  opts?: { preReconcileVerified?: PersistedTorchStack | null },
+  opts?: { preReconcileVerified?: PersistedTorchStack | null }
 ): Promise<boolean> {
   // Best-effort sweep of a multi-GB temp extraction orphaned by a hard kill.
   const orphan = path.join(installation.installPath, '.torch-repair-tmp')
-  if (fs.existsSync(orphan)) await fs.promises.rm(orphan, { recursive: true, force: true }).catch(() => {})
+  if (fs.existsSync(orphan))
+    await fs.promises.rm(orphan, { recursive: true, force: true }).catch(() => {})
 
   // Recover from a swap that died mid-way: an uncommitted swap's backups hold
   // the only good copies, and mismatch detection below bails when torch is
@@ -313,7 +344,9 @@ export async function maybeRepairTorch(
     try {
       await recoverTorchFamilyBackups(liveSite)
     } catch (err) {
-      tools.sendOutput?.(`\nWARNING: could not recover PyTorch packages from an interrupted repair: ${(err as Error).message}\n`)
+      tools.sendOutput?.(
+        `\nWARNING: could not recover PyTorch packages from an interrupted repair: ${(err as Error).message}\n`
+      )
       telemetry.emit('comfy.desktop.torch_repair.recovery_failed', { ...buildErrorFields(err) })
     }
   }
@@ -331,13 +364,19 @@ export async function maybeRepairTorch(
   telemetry.emit('comfy.desktop.torch_repair.detected', {
     variant: mismatch.variantBase,
     installed_version: mismatch.installedVersion,
-    installed_tag: mismatch.installedTag || 'none',
+    installed_tag: mismatch.installedTag || 'none'
   })
-  tools.sendOutput?.(`\nDetected CPU PyTorch on a ${mismatch.variantBase.toUpperCase()} install; restoring the GPU build…\n`)
+  tools.sendOutput?.(
+    `\nDetected CPU PyTorch on a ${mismatch.variantBase.toUpperCase()} install; restoring the GPU build…\n`
+  )
 
   let result: TorchRepairResult
   try {
-    result = await repairTorch(installation, tools, opts?.preReconcileVerified ?? getLastVerifiedTorchStack(installation))
+    result = await repairTorch(
+      installation,
+      tools,
+      opts?.preReconcileVerified ?? getLastVerifiedTorchStack(installation)
+    )
   } catch (err) {
     if (tools.signal?.aborted) throw err // cancellation — let launch handle it, don't count
     result = { ok: false, message: (err as Error).message }
@@ -350,7 +389,9 @@ export async function maybeRepairTorch(
       // Re-persist the ref repair restored: reconciliation cleared it when it
       // saw the damaged tuple, and the cached catalog may not re-adopt it
       // (remote-only index entries are absent until a check-update runs).
-      ...(result.restoredRef ? { lastVerifiedTorchStack: result.restoredRef, observedTorchStack: null } : {}),
+      ...(result.restoredRef
+        ? { lastVerifiedTorchStack: result.restoredRef, observedTorchStack: null }
+        : {})
     })
     telemetry.emit('comfy.desktop.torch_repair.succeeded', { variant: mismatch.variantBase })
     tools.sendOutput?.('GPU PyTorch restored.\n')
@@ -361,7 +402,7 @@ export async function maybeRepairTorch(
   telemetry.emit('comfy.desktop.torch_repair.failed', {
     variant: mismatch.variantBase,
     attempts,
-    ...buildErrorFields(result.message),
+    ...buildErrorFields(result.message)
   })
   tools.sendOutput?.(`PyTorch repair failed (will retry on next launch): ${result.message}\n`)
   return false

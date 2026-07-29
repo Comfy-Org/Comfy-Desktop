@@ -43,14 +43,14 @@ export function useLocalInstanceGuard() {
       title: t('launch.instanceRunningTitle'),
       message: t('launch.instanceRunningMessage'),
       messageDetails: [
-        { label: t('launch.instanceRunningListLabel'), items: runningLocal.map((r) => r.name) },
+        { label: t('launch.instanceRunningListLabel'), items: runningLocal.map((r) => r.name) }
       ],
       confirmLabel: t('launch.instanceRunningReplace'),
       tone: 'primary',
       secondaryLabel: t('launch.instanceRunningProceed'),
       secondaryTone: 'default',
       showCancel: false,
-      showCloseIcon: true,
+      showCloseIcon: true
     })
 
     // Primary → close then launch. `stopComfyUI` awaits the process kill so
@@ -63,7 +63,7 @@ export function useLocalInstanceGuard() {
           window.api.closeComfyWindow(r.id, { skipConfirm: true }).catch((err) => {
             console.warn('useLocalInstanceGuard: closeComfyWindow failed', err)
           })
-        }),
+        })
       )
       return true
     }

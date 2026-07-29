@@ -67,7 +67,10 @@ function buildPopoutScript(installationId: string): string {
   // installationId interpolation goes after the cached payload — keeps
   // the UMD bundle re-used across windows but lets each window target its
   // own installation. The bootstrap reads it from a top-level constant.
-  return `window.__comfyDesktopPopoutInstallationId = ${JSON.stringify(installationId)};\n` + cachedScript
+  return (
+    `window.__comfyDesktopPopoutInstallationId = ${JSON.stringify(installationId)};\n` +
+    cachedScript
+  )
 }
 
 /**
@@ -211,8 +214,8 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
     webPreferences: {
       preload: path.join(__dirname, '../preload/comfyPreload.js'),
       contextIsolation: true,
-      sandbox: false,
-    },
+      sandbox: false
+    }
   })
 
   popoutsByInstallation.set(installationId, win)

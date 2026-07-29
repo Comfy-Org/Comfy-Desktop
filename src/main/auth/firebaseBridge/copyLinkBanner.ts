@@ -81,7 +81,7 @@ export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLab
     copy: JSON.stringify(labels.copy),
     copied: JSON.stringify(labels.copied),
     openAgain: JSON.stringify(labels.openAgain),
-    dismiss: JSON.stringify(labels.dismiss),
+    dismiss: JSON.stringify(labels.dismiss)
   }
   return `(function(){try{
     var URL=${u}, ID=${id};

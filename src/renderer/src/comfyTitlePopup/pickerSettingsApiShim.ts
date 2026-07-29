@@ -42,15 +42,15 @@ const API_MAP = {
   terminalResize: 'terminalResize',
   terminalRestart: 'terminalRestart',
   onTerminalOutput: 'onTerminalOutput',
-  onTerminalExited: 'onTerminalExited',
+  onTerminalExited: 'onTerminalExited'
 } as const satisfies Record<string, keyof ComfyTitlePopupBridge>
 
 type ShimApi = {
   [K in keyof typeof API_MAP]: ComfyTitlePopupBridge[(typeof API_MAP)[K]]
 } & {
-  browseFolder: (defaultPath?: string) => ReturnType<
-    ComfyTitlePopupBridge['pickerSettingsBrowseFolder']
-  >
+  browseFolder: (
+    defaultPath?: string
+  ) => ReturnType<ComfyTitlePopupBridge['pickerSettingsBrowseFolder']>
   relaunchApp: () => void
   /** The popup has no installations-changed IPC, so this maps onto the
    *  picker's snapshot rebroadcast to live-refresh settings views. */
@@ -71,15 +71,14 @@ export function installPickerSettingsApiShim(): void {
     const method = bridge[bridgeKey as keyof ComfyTitlePopupBridge] as (
       ...args: unknown[]
     ) => unknown
-      ; (api as Record<string, unknown>)[apiKey] = method.bind(bridge)
+    ;(api as Record<string, unknown>)[apiKey] = method.bind(bridge)
   }
   // Adapters for the two methods whose shape diverges from a pure pass-through.
   api.browseFolder = (defaultPath?: string) =>
     bridge.pickerSettingsBrowseFolder(defaultPath ? { defaultPath } : undefined)
   api.relaunchApp = () => bridge.pickerSettingsRelaunchApp()
   api.onInstallationsChanged = (cb: () => void) => bridge.onInstancePickerSnapshot(() => cb())
-
-    ; (window as unknown as { api: ShimApi }).api = api
+  ;(window as unknown as { api: ShimApi }).api = api
 }
 
 /**

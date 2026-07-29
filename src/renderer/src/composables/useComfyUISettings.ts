@@ -128,7 +128,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => dialogs.confirm({ ...o, tone: 'danger' }),
-    alert: (o) => dialogs.alert(o),
+    alert: (o) => dialogs.alert(o)
   })
   const actionGuard = useActionGuard()
   const { confirmMigration } = useMigrateAction()
@@ -654,7 +654,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     // cloud/remote have no local Python process to stop. Grouped at the head of
     // the destructive cluster (Forget/Uninstall) and styled danger to match.
     if (inst.sourceCategory !== 'cloud' && sessionStore.isRunning(inst.id)) {
-      const stopAction: ActionDef = { id: 'stop', label: t('actions.stop', 'Stop'), style: 'danger', enabled: true }
+      const stopAction: ActionDef = {
+        id: 'stop',
+        label: t('actions.stop', 'Stop'),
+        style: 'danger',
+        enabled: true
+      }
       const firstDanger = acts.findIndex((a) => a.style === 'danger')
       if (firstDanger === -1) acts.push(stopAction)
       else acts.splice(firstDanger, 0, stopAction)

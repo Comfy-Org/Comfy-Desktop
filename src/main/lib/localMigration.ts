@@ -5,9 +5,7 @@ import { pipFreezeDirect } from './desktopDetect'
 import { findComfyUIDir } from './migrate'
 import { scanCustomNodes } from './nodes'
 import { buildExportEnvelope } from './snapshots'
-import {
-  sendMigrationSteps, migrateToStandaloneFromSnapshot,
-} from './standaloneMigration'
+import { sendMigrationSteps, migrateToStandaloneFromSnapshot } from './standaloneMigration'
 import type { MigrationTools, StandaloneTargetSelection } from './standaloneMigration'
 import type { Snapshot, SnapshotExportEnvelope } from './snapshots'
 import type { InstallationRecord } from '../installations'
@@ -58,7 +56,7 @@ function findPythonForSource(installPath: string, sourceId: string): string | nu
 export async function captureLocalSnapshot(
   installPath: string,
   sourceId: string,
-  skipPipSync: boolean = true,
+  skipPipSync: boolean = true
 ): Promise<Snapshot> {
   const comfyUIDir = findComfyUIDir(installPath)
   if (!comfyUIDir) {
@@ -88,11 +86,11 @@ export async function captureLocalSnapshot(
       ref: sourceLabel,
       commit: null,
       releaseTag: '',
-      variant: '',
+      variant: ''
     },
     customNodes,
     pipPackages,
-    skipPipSync,
+    skipPipSync
   }
 }
 
@@ -101,11 +99,11 @@ export async function stageLocalSnapshot(
   installPath: string,
   sourceId: string,
   installationName: string,
-  skipPipSync: boolean = true,
+  skipPipSync: boolean = true
 ): Promise<{ envelope: SnapshotExportEnvelope; stagedFile: string }> {
   const snapshot = await captureLocalSnapshot(installPath, sourceId, skipPipSync)
   const envelope = buildExportEnvelope(`${installationName} Migration`, [
-    { filename: `${sourceId}-migration.json`, snapshot },
+    { filename: `${sourceId}-migration.json`, snapshot }
   ])
 
   const stagingDir = path.join(os.tmpdir(), 'comfyui-desktop-2-snapshots')
@@ -120,7 +118,7 @@ export async function stageLocalSnapshot(
 export async function performLocalMigration(
   sourceInstallation: InstallationRecord,
   actionData: Record<string, unknown> | undefined,
-  tools: MigrationTools,
+  tools: MigrationTools
 ): Promise<{ entry: InstallationRecord; destPath: string; restoreError?: string }> {
   const { sendProgress } = tools
 
@@ -130,12 +128,16 @@ export async function performLocalMigration(
     throw new Error(i18n.t('migrate.noComfyUIDir'))
   }
 
-  const hasPreStaged = !!(actionData?.snapshotPath && typeof actionData.snapshotPath === 'string' && fs.existsSync(actionData.snapshotPath as string))
+  const hasPreStaged = !!(
+    actionData?.snapshotPath &&
+    typeof actionData.snapshotPath === 'string' &&
+    fs.existsSync(actionData.snapshotPath as string)
+  )
 
   sendMigrationSteps(sendProgress, {
     includeScan: !hasPreStaged,
     scanLabel: i18n.t('migrate.scanning'),
-    dataPhaseLabel: i18n.t('migrate.migrateDataPhase'),
+    dataPhaseLabel: i18n.t('migrate.migrateDataPhase')
   })
 
   const skipPipSync = !(actionData?.enablePipSync as boolean | undefined)
@@ -150,7 +152,7 @@ export async function performLocalMigration(
       sourceInstallation.installPath,
       sourceId,
       sourceInstallation.name,
-      skipPipSync,
+      skipPipSync
     )
     stagedFile = staged.stagedFile
     ownsStagedFile = true
@@ -159,23 +161,26 @@ export async function performLocalMigration(
 
   const target = actionData?.target as StandaloneTargetSelection | undefined
 
-  return migrateToStandaloneFromSnapshot({
-    installNameBase: DEFAULT_INSTALL_NAME,
-    stagedSnapshot: { path: stagedFile, owned: ownsStagedFile },
-    sourcePaths: {
-      userDir: path.join(comfyUIDir, 'user'),
-      inputDir: path.join(comfyUIDir, 'input'),
-      outputDir: path.join(comfyUIDir, 'output'),
-      modelsDir: path.join(comfyUIDir, 'models'),
+  return migrateToStandaloneFromSnapshot(
+    {
+      installNameBase: DEFAULT_INSTALL_NAME,
+      stagedSnapshot: { path: stagedFile, owned: ownsStagedFile },
+      sourcePaths: {
+        userDir: path.join(comfyUIDir, 'user'),
+        inputDir: path.join(comfyUIDir, 'input'),
+        outputDir: path.join(comfyUIDir, 'output'),
+        modelsDir: path.join(comfyUIDir, 'models')
+      },
+      labels: {
+        userData: i18n.t('migrate.mergingUserData'),
+        input: i18n.t('migrate.mergingInput'),
+        output: i18n.t('migrate.mergingOutput'),
+        models: i18n.t('migrate.addingModels')
+      },
+      target,
+      sourceInstallationId: sourceInstallation.id,
+      sourceInstallationName: sourceInstallation.name
     },
-    labels: {
-      userData: i18n.t('migrate.mergingUserData'),
-      input: i18n.t('migrate.mergingInput'),
-      output: i18n.t('migrate.mergingOutput'),
-      models: i18n.t('migrate.addingModels'),
-    },
-    target,
-    sourceInstallationId: sourceInstallation.id,
-    sourceInstallationName: sourceInstallation.name,
-  }, tools)
+    tools
+  )
 }

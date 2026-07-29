@@ -50,7 +50,10 @@ describe('ensureManagerConfig', () => {
     })
 
     it('seeds a config from a network mode alone, pinning the default security level', async () => {
-      await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, networkMode: 'personal_cloud' })
+      await ensureManagerConfig(tmpRoot, {
+        useChineseMirrors: false,
+        networkMode: 'personal_cloud'
+      })
       const written = readModern()
       expect(written).toContain('network_mode = personal_cloud')
       expect(written).toContain('security_level = normal')
@@ -58,7 +61,9 @@ describe('ensureManagerConfig', () => {
 
     it('writes both chosen Manager options together', async () => {
       await ensureManagerConfig(tmpRoot, {
-        useChineseMirrors: false, securityLevel: 'weak', networkMode: 'offline'
+        useChineseMirrors: false,
+        securityLevel: 'weak',
+        networkMode: 'offline'
       })
       const written = readModern()
       expect(written).toContain('security_level = weak')
@@ -124,7 +129,9 @@ describe('ensureManagerConfig', () => {
     it('reconciles both options in one pass, preserving everything else', async () => {
       seed('[default]\nchannel_url = keep\nsecurity_level = normal\nnetwork_mode = public\n')
       await ensureManagerConfig(tmpRoot, {
-        useChineseMirrors: false, securityLevel: 'strong', networkMode: 'personal_cloud'
+        useChineseMirrors: false,
+        securityLevel: 'strong',
+        networkMode: 'personal_cloud'
       })
       const written = readModern()
       expect(written).toContain('channel_url = keep')
@@ -205,7 +212,11 @@ describe('ensureManagerConfig', () => {
   describe('withDefaultOption', () => {
     it('replaces an existing key', () => {
       expect(
-        _internals.withDefaultOption('[default]\nsecurity_level = normal\n', 'security_level', 'weak')
+        _internals.withDefaultOption(
+          '[default]\nsecurity_level = normal\n',
+          'security_level',
+          'weak'
+        )
       ).toBe('[default]\nsecurity_level = weak\n')
     })
 
@@ -253,12 +264,17 @@ describe('ensureManagerConfig', () => {
     // as security_level - replace it instead of adding a duplicate.
     it('replaces a mixed-case key (configparser keys are case-insensitive)', () => {
       expect(
-        _internals.withDefaultOption('[default]\nSecurity_Level = normal\n', 'security_level', 'weak')
+        _internals.withDefaultOption(
+          '[default]\nSecurity_Level = normal\n',
+          'security_level',
+          'weak'
+        )
       ).toBe('[default]\nsecurity_level = weak\n')
     })
 
     it('collapses case-variant duplicate keys to one canonical line', () => {
-      const content = '[default]\nSecurity_Level = normal\nchannel_url = x\nsecurity_level = strong\n'
+      const content =
+        '[default]\nSecurity_Level = normal\nchannel_url = x\nsecurity_level = strong\n'
       expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
         '[default]\nsecurity_level = weak\nchannel_url = x\n'
       )
@@ -296,12 +312,17 @@ describe('ensureManagerConfig', () => {
     // later duplicate wins).
     it('replaces a colon-delimited key (configparser accepts both = and :)', () => {
       expect(
-        _internals.withDefaultOption('[default]\nnetwork_mode: public\n', 'network_mode', 'personal_cloud')
+        _internals.withDefaultOption(
+          '[default]\nnetwork_mode: public\n',
+          'network_mode',
+          'personal_cloud'
+        )
       ).toBe('[default]\nnetwork_mode = personal_cloud\n')
     })
 
     it('collapses mixed = / : duplicates to one canonical line', () => {
-      const content = '[default]\nsecurity_level = normal\nchannel_url = x\nsecurity_level: strong\n'
+      const content =
+        '[default]\nsecurity_level = normal\nchannel_url = x\nsecurity_level: strong\n'
       expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
         '[default]\nsecurity_level = weak\nchannel_url = x\n'
       )
@@ -309,7 +330,11 @@ describe('ensureManagerConfig', () => {
 
     it('replaces a mixed-case colon-delimited key', () => {
       expect(
-        _internals.withDefaultOption('[default]\nSecurity_Level: normal\n', 'security_level', 'weak')
+        _internals.withDefaultOption(
+          '[default]\nSecurity_Level: normal\n',
+          'security_level',
+          'weak'
+        )
       ).toBe('[default]\nsecurity_level = weak\n')
     })
 
@@ -327,7 +352,8 @@ describe('ensureManagerConfig', () => {
     // trailing text, so `[other] junk` IS a section boundary and
     // `[default] ; note` IS the default section.
     it('treats a header with trailing text as a section boundary', () => {
-      const content = '[default] ; note\nsecurity_level = normal\n[other] junk\nsecurity_level = weak\n'
+      const content =
+        '[default] ; note\nsecurity_level = normal\n[other] junk\nsecurity_level = weak\n'
       expect(_internals.withDefaultOption(content, 'security_level', 'strong')).toBe(
         '[default] ; note\nsecurity_level = strong\n[other] junk\nsecurity_level = weak\n'
       )

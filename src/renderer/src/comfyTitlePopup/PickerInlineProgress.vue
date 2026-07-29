@@ -25,18 +25,21 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const isInflight  = computed(() => !props.operation.done)
-const isSuccess   = computed(() => props.operation.done && props.operation.ok === true)
-const isError     = computed(() => props.operation.done && props.operation.ok === false && props.operation.error !== MSG_CANCELLED)
+const isInflight = computed(() => !props.operation.done)
+const isSuccess = computed(() => props.operation.done && props.operation.ok === true)
+const isError = computed(
+  () =>
+    props.operation.done && props.operation.ok === false && props.operation.error !== MSG_CANCELLED
+)
 const isCancelled = computed(() => props.operation.done && props.operation.error === MSG_CANCELLED)
 
-const progressPercent   = computed(() => Math.min(100, Math.max(0, props.operation.percent)))
-const isIndeterminate   = computed(() => props.operation.percent < 0 && !props.operation.done)
+const progressPercent = computed(() => Math.min(100, Math.max(0, props.operation.percent)))
+const isIndeterminate = computed(() => props.operation.percent < 0 && !props.operation.done)
 
 const statusLabel = computed(() => {
   if (isCancelled.value) return t('instancePicker.progressCancelled')
-  if (isError.value)     return props.operation.error ?? t('instancePicker.progressError')
-  if (isSuccess.value)   return operationSuccessLabel(props.operation, t)
+  if (isError.value) return props.operation.error ?? t('instancePicker.progressError')
+  if (isSuccess.value) return operationSuccessLabel(props.operation, t)
   return props.operation.status || operationInflightLabel(props.operation, t)
 })
 </script>
@@ -50,9 +53,13 @@ const statusLabel = computed(() => {
             <circle class="pip__ring-track" cx="18" cy="18" r="15" />
             <circle
               class="pip__ring-fill"
-              cx="18" cy="18" r="15"
+              cx="18"
+              cy="18"
+              r="15"
               :class="{ 'is-indeterminate': isIndeterminate }"
-              :style="isIndeterminate ? {} : { strokeDashoffset: 94.25 - (94.25 * progressPercent) / 100 }"
+              :style="
+                isIndeterminate ? {} : { strokeDashoffset: 94.25 - (94.25 * progressPercent) / 100 }
+              "
             />
           </svg>
           <span v-if="!isIndeterminate" class="pip__pct">{{ progressPercent }}%</span>
@@ -75,12 +82,10 @@ const statusLabel = computed(() => {
           <CheckCircle :size="40" />
         </div>
         <p class="pip__heading">{{ operationSuccessLabel(operation, t) }}</p>
-        <p class="pip__subtext">{{ installationName }} {{ t('instancePicker.progressSuccessSubtext') }}</p>
-        <button
-          type="button"
-          class="pip__primary-btn"
-          @click="emit('open')"
-        >
+        <p class="pip__subtext">
+          {{ installationName }} {{ t('instancePicker.progressSuccessSubtext') }}
+        </p>
+        <button type="button" class="pip__primary-btn" @click="emit('open')">
           {{ t('instancePicker.progressOpenInstance') }}
         </button>
       </div>
@@ -92,18 +97,10 @@ const statusLabel = computed(() => {
         <p class="pip__heading pip__heading--error">{{ t('instancePicker.progressError') }}</p>
         <OperationErrorDetail v-if="operation.error" :error="operation.error" compact />
         <div class="pip__actions">
-          <button
-            type="button"
-            class="pip__primary-btn"
-            @click="emit('retry')"
-          >
+          <button type="button" class="pip__primary-btn" @click="emit('retry')">
             {{ t('instancePicker.progressRetry') }}
           </button>
-          <button
-            type="button"
-            class="pip__ghost-btn"
-            @click="emit('dismiss')"
-          >
+          <button type="button" class="pip__ghost-btn" @click="emit('dismiss')">
             {{ t('instancePicker.progressDismiss') }}
           </button>
         </div>
@@ -172,7 +169,9 @@ const statusLabel = computed(() => {
   transform-box: fill-box;
 }
 @keyframes pip-ring-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .pip__pct {
@@ -193,8 +192,12 @@ const statusLabel = computed(() => {
   justify-content: center;
   margin-bottom: 4px;
 }
-.pip__icon--success { color: var(--brand-success, #27ae60); }
-.pip__icon--error   { color: var(--brand-error,   #e74c3c); }
+.pip__icon--success {
+  color: var(--brand-success, #27ae60);
+}
+.pip__icon--error {
+  color: var(--brand-error, #e74c3c);
+}
 .pip__icon--cancelled {
   color: var(--text-muted, var(--neutral-100));
   opacity: 0.45;
@@ -214,7 +217,9 @@ const statusLabel = computed(() => {
   margin: 0;
   line-height: 1.3;
 }
-.pip__heading--error { color: var(--brand-error, #e74c3c); }
+.pip__heading--error {
+  color: var(--brand-error, #e74c3c);
+}
 .pip__subtext {
   font-size: 12px;
   color: var(--text-muted, var(--neutral-100));
@@ -235,8 +240,12 @@ const statusLabel = computed(() => {
   cursor: pointer;
   transition: opacity 120ms ease;
 }
-.pip__primary-btn:hover  { opacity: 0.85; }
-.pip__primary-btn:active { opacity: 0.7; }
+.pip__primary-btn:hover {
+  opacity: 0.85;
+}
+.pip__primary-btn:active {
+  opacity: 0.7;
+}
 
 .pip__ghost-btn {
   height: 30px;
@@ -247,9 +256,14 @@ const statusLabel = computed(() => {
   color: var(--text-muted, var(--neutral-100));
   font-size: 12px;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
 }
-.pip__ghost-btn:hover { color: var(--text); border-color: var(--text-muted, var(--neutral-100)); }
+.pip__ghost-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted, var(--neutral-100));
+}
 
 .pip__actions {
   display: flex;
@@ -262,7 +276,9 @@ const statusLabel = computed(() => {
 
 .pip-fade-enter-active,
 .pip-fade-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
 }
 .pip-fade-enter-from,
 .pip-fade-leave-to {

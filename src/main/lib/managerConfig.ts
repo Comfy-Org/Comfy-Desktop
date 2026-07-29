@@ -18,9 +18,7 @@ export type ManagerSecurityLevel = (typeof MANAGER_SECURITY_LEVELS)[number]
 export const DEFAULT_MANAGER_SECURITY_LEVEL: ManagerSecurityLevel = 'normal'
 
 export function isManagerSecurityLevel(value: unknown): value is ManagerSecurityLevel {
-  return (
-    typeof value === 'string' && (MANAGER_SECURITY_LEVELS as readonly string[]).includes(value)
-  )
+  return typeof value === 'string' && (MANAGER_SECURITY_LEVELS as readonly string[]).includes(value)
 }
 
 // Manager v4's `network_mode` values. `personal_cloud` relaxes the
@@ -184,9 +182,7 @@ export async function ensureManagerConfig(
     useChineseMirrors: false
   }
 ): Promise<void> {
-  const securityLevel = isManagerSecurityLevel(opts.securityLevel)
-    ? opts.securityLevel
-    : undefined
+  const securityLevel = isManagerSecurityLevel(opts.securityLevel) ? opts.securityLevel : undefined
   const networkMode = isManagerNetworkMode(opts.networkMode) ? opts.networkMode : undefined
   const target = modernConfigPath(installPath)
   const legacy = legacyConfigPath(installPath)
@@ -228,5 +224,5 @@ export const _internals = {
   buildManagerConfig,
   withDefaultOption,
   modernConfigPath,
-  legacyConfigPath,
+  legacyConfigPath
 }

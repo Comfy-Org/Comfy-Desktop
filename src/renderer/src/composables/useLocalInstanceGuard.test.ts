@@ -22,7 +22,7 @@ vi.stubGlobal('window', {
     onInstallationsChanged: vi.fn(),
     onInstallationsVersionsUpdated: vi.fn(),
     stopComfyUI: vi.fn().mockResolvedValue(undefined),
-    closeComfyWindow: vi.fn().mockResolvedValue(true),
+    closeComfyWindow: vi.fn().mockResolvedValue(true)
   }
 })
 
@@ -37,7 +37,7 @@ function makeInstallation(overrides: Partial<Installation> = {}): Installation {
     name: 'Test Install',
     sourceLabel: 'standalone',
     sourceCategory: 'local',
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -62,11 +62,13 @@ describe('useLocalInstanceGuard', () => {
   })
 
   it('allows launch without prompting for non-local (cloud) targets', async () => {
-    installationStore.installations.push(makeInstallation({ id: 'cloud-1', sourceCategory: 'cloud' }))
+    installationStore.installations.push(
+      makeInstallation({ id: 'cloud-1', sourceCategory: 'cloud' })
+    )
     sessionStore.runningInstances.set('other', {
       installationId: 'other',
       installationName: 'Other',
-      mode: 'window',
+      mode: 'window'
     })
     const guard = useLocalInstanceGuard()
 
@@ -79,12 +81,12 @@ describe('useLocalInstanceGuard', () => {
   it('prompts when another local instance is running', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'target' }),
-      makeInstallation({ id: 'running-1', name: 'Running Install' }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
     )
     sessionStore.runningInstances.set('running-1', {
       installationId: 'running-1',
       installationName: 'Running Install',
-      mode: 'window',
+      mode: 'window'
     })
     mockConfirm.mockResolvedValue('primary')
     const guard = useLocalInstanceGuard()
@@ -98,10 +100,10 @@ describe('useLocalInstanceGuard', () => {
   it('prompts when another local instance is launching (not yet fully booted)', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'target' }),
-      makeInstallation({ id: 'launching-1', name: 'Launching Install' }),
+      makeInstallation({ id: 'launching-1', name: 'Launching Install' })
     )
     sessionStore.launchingInstances.set('launching-1', {
-      installationName: 'Launching Install',
+      installationName: 'Launching Install'
     })
     mockConfirm.mockResolvedValue('primary')
     const guard = useLocalInstanceGuard()
@@ -115,7 +117,7 @@ describe('useLocalInstanceGuard', () => {
   it('does not prompt for instances that are the target itself', async () => {
     installationStore.installations.push(makeInstallation({ id: 'target' }))
     sessionStore.launchingInstances.set('target', {
-      installationName: 'Target',
+      installationName: 'Target'
     })
     const guard = useLocalInstanceGuard()
 
@@ -128,12 +130,12 @@ describe('useLocalInstanceGuard', () => {
   it('returns false when user cancels the prompt', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'target' }),
-      makeInstallation({ id: 'other' }),
+      makeInstallation({ id: 'other' })
     )
     sessionStore.runningInstances.set('other', {
       installationId: 'other',
       installationName: 'Other',
-      mode: 'window',
+      mode: 'window'
     })
     mockConfirm.mockResolvedValue(false)
     const guard = useLocalInstanceGuard()
@@ -146,12 +148,12 @@ describe('useLocalInstanceGuard', () => {
   it('stops and closes running instance windows when user chooses Close & Launch New (primary)', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'target' }),
-      makeInstallation({ id: 'other' }),
+      makeInstallation({ id: 'other' })
     )
     sessionStore.runningInstances.set('other', {
       installationId: 'other',
       installationName: 'Other',
-      mode: 'window',
+      mode: 'window'
     })
     mockConfirm.mockResolvedValue('primary')
     const guard = useLocalInstanceGuard()
@@ -166,12 +168,12 @@ describe('useLocalInstanceGuard', () => {
   it('launches alongside without stopping when user chooses Launch Anyway (secondary)', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'target' }),
-      makeInstallation({ id: 'other' }),
+      makeInstallation({ id: 'other' })
     )
     sessionStore.runningInstances.set('other', {
       installationId: 'other',
       installationName: 'Other',
-      mode: 'window',
+      mode: 'window'
     })
     mockConfirm.mockResolvedValue('secondary')
     const guard = useLocalInstanceGuard()

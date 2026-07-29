@@ -66,17 +66,20 @@ export interface PopupInstancePickerSnapshot {
   autoActionNonce: number
   /** Installs with an inline background op in flight; drives the spinner dot. */
   operatingInstallationIds: string[]
-  installOperationStatus: Record<string, {
-    status: string
-    percent: number
-    done: boolean
-    ok: boolean | null
-    error: string | null
-    cancellable: boolean
-    title: string
-    actionId: string
-    actionData?: Record<string, unknown>
-  }>
+  installOperationStatus: Record<
+    string,
+    {
+      status: string
+      percent: number
+      done: boolean
+      ok: boolean | null
+      error: string | null
+      cancellable: boolean
+      title: string
+      actionId: string
+      actionData?: Record<string, unknown>
+    }
+  >
 }
 
 /** Mirrors `GlobalSettingsModelsDir` in `src/main/popups/titlePopup.ts`. */
@@ -123,8 +126,16 @@ export type TitlePopupConfig =
   | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[]; theme: PopupTheme }
   | { kind: typeof POPUP_KIND.downloads; theme: PopupTheme }
   | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.instancePicker; snapshot: PopupInstancePickerSnapshot; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.globalSettings; snapshot: PopupGlobalSettingsSnapshot; theme: PopupTheme }
+  | {
+      kind: typeof POPUP_KIND.instancePicker
+      snapshot: PopupInstancePickerSnapshot
+      theme: PopupTheme
+    }
+  | {
+      kind: typeof POPUP_KIND.globalSettings
+      snapshot: PopupGlobalSettingsSnapshot
+      theme: PopupTheme
+    }
 
 /** Mirrors `DownloadProgress` in `src/main/lib/comfyDownloadManager.ts`. */
 export interface PopupDownloadEntry {
@@ -189,9 +200,7 @@ export interface ComfyTitlePopupBridge {
    *  to a band. Only the `'downloads'`/`'instance-picker'` kinds use this. */
   requestSize(height: number): void
   /** Live picker snapshot pushes while a picker is open. */
-  onInstancePickerSnapshot(
-    cb: (snapshot: PopupInstancePickerSnapshot) => void,
-  ): () => void
+  onInstancePickerSnapshot(cb: (snapshot: PopupInstancePickerSnapshot) => void): () => void
   /** Picker → pick install (focus-or-launch). Dismissed before launch. `confirmed`
    *  signals the renderer already prompted in-drawer, so main skips its modal. */
   pickInstall(installationId: string, opts?: { confirmed?: boolean }): void
@@ -221,13 +230,13 @@ export interface ComfyTitlePopupBridge {
   pickerUpdateField(
     installationId: string,
     fieldId: string,
-    value: unknown,
+    value: unknown
   ): Promise<{ ok: boolean; message?: string }>
   /** Picker → run a snapshot-lifecycle action; main enforces an allowlist. */
   pickerRunAction(
     installationId: string,
     actionId: 'snapshot-save' | 'snapshot-restore' | 'snapshot-delete',
-    actionData?: Record<string, unknown>,
+    actionData?: Record<string, unknown>
   ): Promise<{ ok: boolean; message?: string }>
   /** Picker → install-level action forwarded to the parent panel's
    *  `useInstallContextMenu` dispatch. */
@@ -236,13 +245,11 @@ export interface ComfyTitlePopupBridge {
    *  so views can reset transient per-open state that `onConfig` would miss. */
   onWillShow(cb: (info: { kind: TitlePopupConfig['kind'] }) => void): () => void
   /** Live global-settings snapshot pushes while that popup is open. */
-  onGlobalSettingsSnapshot(
-    cb: (snapshot: PopupGlobalSettingsSnapshot) => void,
-  ): () => void
+  onGlobalSettingsSnapshot(cb: (snapshot: PopupGlobalSettingsSnapshot) => void): () => void
   /** Global Settings → write a setting (the popup lacks `window.api`). */
   globalSettingsUpdateField(
     fieldId: string,
-    value: unknown,
+    value: unknown
   ): Promise<{ ok: boolean; message?: string }>
   globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
   globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
@@ -268,17 +275,17 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>
   pickerSettingsUpdateInstallation(
     installationId: string,
-    data: Record<string, unknown>,
+    data: Record<string, unknown>
   ): Promise<Record<string, unknown> | void>
   pickerSettingsRunAction(
     installationId: string,
     actionId: string,
-    actionData?: Record<string, unknown>,
+    actionData?: Record<string, unknown>
   ): Promise<Record<string, unknown>>
   pickerSettingsGetFieldOptions(
     sourceId: string,
     fieldId: string,
-    selections: Record<string, unknown>,
+    selections: Record<string, unknown>
   ): Promise<Record<string, unknown>[]>
   pickerSettingsGetStableTags(): Promise<string[]>
   pickerSettingsGetUniqueName(baseName: string): Promise<string>
@@ -288,19 +295,19 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetSnapshots(installationId: string): Promise<Record<string, unknown>>
   pickerSettingsGetSnapshotDetail(
     installationId: string,
-    filename: string,
+    filename: string
   ): Promise<Record<string, unknown>>
   pickerSettingsGetSnapshotDiff(
     installationId: string,
     filename: string,
-    mode: 'previous' | 'current',
+    mode: 'previous' | 'current'
   ): Promise<Record<string, unknown>>
   pickerSettingsExportSnapshot(
     installationId: string,
-    filename: string,
+    filename: string
   ): Promise<{ ok: boolean; message?: string }>
   pickerSettingsExportAllSnapshots(
-    installationId: string,
+    installationId: string
   ): Promise<{ ok: boolean; message?: string }>
   pickerSettingsImportSnapshotsPreview(): Promise<{
     ok: boolean
@@ -308,7 +315,7 @@ export interface ComfyTitlePopupBridge {
     message?: string
   }>
   pickerSettingsImportSnapshotsDiff(
-    installationId: string,
+    installationId: string
   ): Promise<{ ok: boolean; diff?: Record<string, unknown>; message?: string }>
   pickerSettingsImportSnapshotsConfirm(installationId: string): Promise<{
     ok: boolean
@@ -322,13 +329,11 @@ export interface ComfyTitlePopupBridge {
     message?: string
   }>
   pickerSettingsGetComfyArgs(
-    installationId: string,
+    installationId: string
   ): Promise<{ args: Record<string, unknown>[]; error?: string } | null>
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
   pickerSettingsCancelOperation(installationId: string): Promise<void>
-  pickerSettingsPreviewLocalMigration(
-    installationId: string,
-  ): Promise<Record<string, unknown>>
+  pickerSettingsPreviewLocalMigration(installationId: string): Promise<Record<string, unknown>>
   /** Interactive per-install console. The popup's settings UI hits the same
    *  generic `terminal-*` IPC the panel does, with an explicit installationId. */
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
@@ -336,9 +341,7 @@ export interface ComfyTitlePopupBridge {
   terminalWrite(installationId: string, data: string): Promise<void>
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
-  onTerminalOutput(
-    callback: (data: { installationId: string; data: string }) => void,
-  ): () => void
+  onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): () => void
   onTerminalExited(callback: (data: { installationId: string }) => void): () => void
   /** Relaunch the app (`app.relaunch()` main-side). */
   pickerSettingsRelaunchApp(): void
@@ -355,9 +358,7 @@ export interface ComfyTitlePopupBridge {
   ): () => void
   /** Fires when `enrichCommitsAhead` writes a new `commitsAhead`, so the open
    *  pane upgrades the "Latest from GitHub" card in place. */
-  pickerSettingsOnReleaseCacheEnriched(
-    callback: (data: { repo: string }) => void,
-  ): () => void
+  pickerSettingsOnReleaseCacheEnriched(callback: (data: { repo: string }) => void): () => void
   /** Forward a `show-progress` request to the parent panel renderer, which
    *  rebuilds the apiCall closure and routes through its ProgressModal. */
   pickerForwardShowProgress(payload: {
@@ -399,12 +400,13 @@ function isPopupConfig(value: unknown): value is TitlePopupConfig {
     snapshot?: unknown
   }
   if (
-    v.kind !== POPUP_KIND.menu
-    && v.kind !== POPUP_KIND.downloads
-    && v.kind !== POPUP_KIND.downloadsFull
-    && v.kind !== POPUP_KIND.instancePicker
-    && v.kind !== POPUP_KIND.globalSettings
-  ) return false
+    v.kind !== POPUP_KIND.menu &&
+    v.kind !== POPUP_KIND.downloads &&
+    v.kind !== POPUP_KIND.downloadsFull &&
+    v.kind !== POPUP_KIND.instancePicker &&
+    v.kind !== POPUP_KIND.globalSettings
+  )
+    return false
   if (!v.theme || typeof v.theme !== 'object') return false
   const theme = v.theme as { bg?: unknown; text?: unknown }
   if (typeof theme.bg !== 'string' || typeof theme.text !== 'string') return false
@@ -455,34 +457,29 @@ function isInstancePickerSnapshot(value: unknown): value is PopupInstancePickerS
   if (!Array.isArray(v.runningInstallationIds)) return false
   // Selected fields are optional on the wire so older bundles' snapshots validate.
   if (
-    v.selectedInstallationId !== undefined
-    && v.selectedInstallationId !== null
-    && typeof v.selectedInstallationId !== 'string'
-  ) return false
+    v.selectedInstallationId !== undefined &&
+    v.selectedInstallationId !== null &&
+    typeof v.selectedInstallationId !== 'string'
+  )
+    return false
+  if (v.pickerSelectionEpoch !== undefined && typeof v.pickerSelectionEpoch !== 'number')
+    return false
   if (
-    v.pickerSelectionEpoch !== undefined
-    && typeof v.pickerSelectionEpoch !== 'number'
-  ) return false
+    v.selectedSettings !== undefined &&
+    v.selectedSettings !== null &&
+    !Array.isArray(v.selectedSettings)
+  )
+    return false
   if (
-    v.selectedSettings !== undefined
-    && v.selectedSettings !== null
-    && !Array.isArray(v.selectedSettings)
-  ) return false
-  if (
-    v.selectedSnapshots !== undefined
-    && v.selectedSnapshots !== null
-    && typeof v.selectedSnapshots !== 'object'
-  ) return false
-  if (
-    v.initialTab !== undefined
-    && v.initialTab !== null
-    && typeof v.initialTab !== 'string'
-  ) return false
-  if (
-    v.autoAction !== undefined
-    && v.autoAction !== null
-    && typeof v.autoAction !== 'string'
-  ) return false
+    v.selectedSnapshots !== undefined &&
+    v.selectedSnapshots !== null &&
+    typeof v.selectedSnapshots !== 'object'
+  )
+    return false
+  if (v.initialTab !== undefined && v.initialTab !== null && typeof v.initialTab !== 'string')
+    return false
+  if (v.autoAction !== undefined && v.autoAction !== null && typeof v.autoAction !== 'string')
+    return false
   return true
 }
 
@@ -552,7 +549,7 @@ const bridge: ComfyTitlePopupBridge = {
   restartInstall: (installationId, opts) => {
     ipcRenderer.send('comfy-titlepopup:restart-install', {
       installationId,
-      confirmed: opts?.confirmed === true,
+      confirmed: opts?.confirmed === true
     })
   },
   getDownloadThumbnail: (savePath: string) =>
@@ -580,18 +577,18 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke('comfy-titlepopup:picker-update-field', {
       installationId,
       fieldId,
-      value,
+      value
     }),
   pickerRunAction: (installationId, actionId, actionData) =>
     ipcRenderer.invoke('comfy-titlepopup:picker-run-action', {
       installationId,
       actionId,
-      actionData,
+      actionData
     }),
   openInstallAction: (installationId, actionId) => {
     ipcRenderer.send('comfy-titlepopup:open-install-action', {
       installationId,
-      actionId,
+      actionId
     })
   },
   onWillShow: (cb) => {
@@ -599,12 +596,13 @@ const bridge: ComfyTitlePopupBridge = {
       if (!data || typeof data !== 'object') return
       const kind = (data as { kind?: unknown }).kind
       if (
-        kind !== POPUP_KIND.menu
-        && kind !== POPUP_KIND.downloads
-        && kind !== POPUP_KIND.downloadsFull
-        && kind !== POPUP_KIND.instancePicker
-        && kind !== POPUP_KIND.globalSettings
-      ) return
+        kind !== POPUP_KIND.menu &&
+        kind !== POPUP_KIND.downloads &&
+        kind !== POPUP_KIND.downloadsFull &&
+        kind !== POPUP_KIND.instancePicker &&
+        kind !== POPUP_KIND.globalSettings
+      )
+        return
       cb({ kind })
     }
     ipcRenderer.on('comfy-titlepopup:will-show', handler)
@@ -687,16 +685,14 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.cancelOperation, { installationId }),
   pickerSettingsPreviewLocalMigration: (installationId) =>
     ipcRenderer.invoke(CH.previewLocalMigration, { installationId }),
-  terminalSubscribe: (installationId) =>
-    ipcRenderer.invoke('terminal-subscribe', installationId),
+  terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
   terminalUnsubscribe: (installationId) =>
     ipcRenderer.invoke('terminal-unsubscribe', installationId),
   terminalWrite: (installationId, data) =>
     ipcRenderer.invoke('terminal-write', installationId, data),
   terminalResize: (installationId, cols, rows) =>
     ipcRenderer.invoke('terminal-resize', installationId, cols, rows),
-  terminalRestart: (installationId) =>
-    ipcRenderer.invoke('terminal-restart', installationId),
+  terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
   onTerminalOutput: (callback) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void =>
       callback(data as { installationId: string; data: string })
@@ -721,8 +717,7 @@ const bridge: ComfyTitlePopupBridge = {
     return () => ipcRenderer.removeListener('locale-changed', handler)
   },
   pickerSettingsOnReleaseCacheEnriched: (callback) => {
-    const handler = (_event: IpcRendererEvent, data: unknown) =>
-      callback(data as { repo: string })
+    const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { repo: string })
     ipcRenderer.on('release-cache-enriched', handler)
     return () => ipcRenderer.removeListener('release-cache-enriched', handler)
   },
@@ -742,11 +737,11 @@ const bridge: ComfyTitlePopupBridge = {
     const handler = (): void => cb()
     ipcRenderer.on('comfy-titlepopup:dismiss-modals', handler)
     return () => ipcRenderer.removeListener('comfy-titlepopup:dismiss-modals', handler)
-  },
+  }
 }
 
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('__comfyTitlePopup', bridge)
 } else {
-  ; (globalThis as Record<string, unknown>).__comfyTitlePopup = bridge
+  ;(globalThis as Record<string, unknown>).__comfyTitlePopup = bridge
 }

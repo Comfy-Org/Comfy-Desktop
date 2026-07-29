@@ -23,12 +23,12 @@ export interface ChooserHandoffApi {
    *  close-on-instance-started fallback subscription. */
   prepareChooserHostHandoff: (
     installationId: string,
-    triggersInstanceStart?: boolean,
+    triggersInstanceStart?: boolean
   ) => Promise<void>
   /** Shared launch path for chooser-tile clicks and first-use auto-launch. */
   performChooserLaunch: (
     installation: Installation,
-    onMissingLaunchAction?: () => void,
+    onMissingLaunchAction?: () => void
   ) => Promise<ChooserLaunchOutcome>
   /** Bound to ChooserView's `pick` emit. */
   handleChooserPick: (installation: Installation) => Promise<void>
@@ -47,7 +47,7 @@ export interface ChooserHandoffApi {
 export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   const sessionStore = useSessionStore()
   const { executeAction: executeChooserAction } = useListAction('chooser', {
-    showProgress: opts.showProgress,
+    showProgress: opts.showProgress
   })
 
   /** Fallback close-on-launch subscription, set only when the in-place
@@ -61,7 +61,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
    *  launch-class ops) close this host once `instance-started` fires. */
   async function prepareChooserHostHandoff(
     installationId: string,
-    triggersInstanceStart = true,
+    triggersInstanceStart = true
   ): Promise<void> {
     // Drop any prior subscription so a stale one can't close this host on
     // an unrelated `instance-started`.
@@ -86,7 +86,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
    *  auto-launch → no-op (the chained install already finished). */
   async function performChooserLaunch(
     installation: Installation,
-    onMissingLaunchAction: () => void = () => {},
+    onMissingLaunchAction: () => void = () => {}
   ): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
       // Focus the running window and leave the chooser host alive.
@@ -94,9 +94,8 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
       return 'focused-running'
     }
     const actions = await window.api.getListActions(installation.id)
-    const launchAction = actions.find((a) => a.id === 'launch')
-      ?? actions.find((a) => a.style === 'primary')
-      ?? null
+    const launchAction =
+      actions.find((a) => a.id === 'launch') ?? actions.find((a) => a.style === 'primary') ?? null
     if (!launchAction) {
       onMissingLaunchAction()
       return 'missing-action'
@@ -105,7 +104,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     // staking pre-guard could overwrite a sibling window's claim and attach
     // the install to the wrong window.
     await executeChooserAction(installation, launchAction, {
-      onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
+      onGuardsPassed: () => prepareChooserHostHandoff(installation.id)
     })
     return 'launched'
   }
@@ -122,17 +121,14 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
    *  `prepareChooserHostHandoff` so the host that opened the picker is
    *  preserved; the install opens in its own window. The already-running
    *  guard is belt-and-braces for the IPC-forward-then-running race. */
-  async function performPickerLaunch(
-    installation: Installation,
-  ): Promise<ChooserLaunchOutcome> {
+  async function performPickerLaunch(installation: Installation): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
       await window.api.focusComfyWindow(installation.id)
       return 'focused-running'
     }
     const actions = await window.api.getListActions(installation.id)
-    const launchAction = actions.find((a) => a.id === 'launch')
-      ?? actions.find((a) => a.style === 'primary')
-      ?? null
+    const launchAction =
+      actions.find((a) => a.id === 'launch') ?? actions.find((a) => a.style === 'primary') ?? null
     if (!launchAction) return 'missing-action'
     await executeChooserAction(installation, launchAction)
     return 'launched'
@@ -153,6 +149,6 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     performChooserLaunch,
     handleChooserPick,
     handleChooserShowNewInstall,
-    performPickerLaunch,
+    performPickerLaunch
   }
 }

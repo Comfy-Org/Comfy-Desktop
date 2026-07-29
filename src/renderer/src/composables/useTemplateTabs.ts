@@ -12,7 +12,7 @@ const MODALITY_GLYPH: Record<Modality, Component> = {
   image: ImageIcon,
   video: Video,
   audio: AudioLines,
-  '3d': Box,
+  '3d': Box
 }
 
 export interface TemplateTab {
@@ -24,7 +24,9 @@ export interface TemplateTab {
 
 function modalityOf(option: FieldOption): Modality | null {
   const value = option.data?.modality
-  return (MODALITY_ORDER as readonly string[]).includes(value as string) ? (value as Modality) : null
+  return (MODALITY_ORDER as readonly string[]).includes(value as string)
+    ? (value as Modality)
+    : null
 }
 
 /**
@@ -60,7 +62,7 @@ export function useTemplateTabs(
       modality,
       label: translate(`standalone.modality.${modality}`),
       glyph: MODALITY_GLYPH[modality],
-      count: cardsByModality.value.get(modality)!.length,
+      count: cardsByModality.value.get(modality)!.length
     }))
   )
 

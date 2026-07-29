@@ -47,7 +47,7 @@ import {
   startTemplateDownload,
   abortTemplateDownload,
   requestSkipTemplateDownload,
-  stopTemplateTrayMirror,
+  stopTemplateTrayMirror
 } from '../../sources/standalone/templateDownloadTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
@@ -113,13 +113,29 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       inst.installPath ? `${msg}\n\n${inst.installPath}` : msg
     const dirUnavailableTag =
       dirState === 'no-permission'
-        ? { label: i18n.t('errors.installDirNoPermissionTag'), style: 'danger', detail: withInstallPath(i18n.t('errors.installDirNoPermission')) }
-        : { label: i18n.t('errors.installDirNotFoundTag'), style: 'danger', detail: withInstallPath(i18n.t('errors.installDirNotFound')) }
+        ? {
+            label: i18n.t('errors.installDirNoPermissionTag'),
+            style: 'danger',
+            detail: withInstallPath(i18n.t('errors.installDirNoPermission'))
+          }
+        : {
+            label: i18n.t('errors.installDirNotFoundTag'),
+            style: 'danger',
+            detail: withInstallPath(i18n.t('errors.installDirNotFound'))
+          }
     const statusTag =
       inst.status === 'partial-delete'
-        ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger', detail: i18n.t('errors.deleteInterruptedDetail') }
+        ? {
+            label: i18n.t('errors.deleteInterrupted'),
+            style: 'danger',
+            detail: i18n.t('errors.deleteInterruptedDetail')
+          }
         : inst.status === 'failed'
-          ? { label: i18n.t('errors.installFailed'), style: 'danger', detail: i18n.t('errors.installFailedDetail') }
+          ? {
+              label: i18n.t('errors.installFailed'),
+              style: 'danger',
+              detail: i18n.t('errors.installFailedDetail')
+            }
           : dirUnavailable
             ? dirUnavailableTag
             : source.getStatusTag
@@ -609,7 +625,7 @@ export function registerInstallationHandlers(): void {
     if (running?.port) {
       sections.push({
         tab: 'status',
-        fields: [{ key: 'active-port', label: i18n.t('common.port'), value: String(running.port) }],
+        fields: [{ key: 'active-port', label: i18n.t('common.port'), value: String(running.port) }]
       })
     }
     return sections

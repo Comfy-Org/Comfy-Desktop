@@ -42,7 +42,7 @@ export function saveWindowBounds(installationId: string, window: BrowserWindow):
   const bounds = window.getBounds()
   state[installationId] = {
     ...(maximized ? (state[installationId] ?? bounds) : bounds),
-    maximized,
+    maximized
   }
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = setTimeout(flushWindowState, 500)
@@ -53,7 +53,7 @@ export function getSavedBounds(installationId: string): WindowBounds | undefined
 }
 
 export function getWindowOptions(
-  installationId: string,
+  installationId: string
 ): Partial<Electron.BrowserWindowConstructorOptions> {
   const saved = getSavedBounds(installationId)
   if (!saved) return { width: 1280, height: 900 }

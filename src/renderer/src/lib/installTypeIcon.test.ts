@@ -55,13 +55,13 @@ describe('installTypeMetaForInstall', () => {
 
   it('falls through to the category for non-desktop installs', () => {
     expect(installTypeMetaForInstall({ sourceId: 'standalone', sourceCategory: 'local' }).key).toBe(
-      'standalone',
+      'standalone'
     )
     expect(installTypeMetaForInstall({ sourceId: 'cloud', sourceCategory: 'cloud' }).key).toBe(
-      'cloud',
+      'cloud'
     )
     expect(installTypeMetaForInstall({ sourceId: 'remote', sourceCategory: 'remote' }).key).toBe(
-      'remote',
+      'remote'
     )
   })
 })

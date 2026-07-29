@@ -6,7 +6,7 @@ import { hostInstallEvents, isInstallHost } from './registry'
 import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
-  CHOOSER_HOST_WINDOW_TITLE,
+  CHOOSER_HOST_WINDOW_TITLE
 } from './createHostWindow'
 
 const APP_VERSION = getAppVersion()
@@ -18,7 +18,7 @@ const APP_VERSION = getAppVersion()
  */
 export async function applyAttachHostPreview(
   entry: ComfyWindowEntry,
-  installationId: string,
+  installationId: string
 ): Promise<void> {
   if (entry.window.isDestroyed()) return
   if (isInstallHost(entry)) return
@@ -57,7 +57,7 @@ export async function applyAttachHostPreview(
     entry.titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)
     entry.titleBarView.webContents.send(
       'comfy-titlebar:source-category-changed',
-      entry.sourceCategory,
+      entry.sourceCategory
     )
     entry.titleBarView.webContents.send('comfy-titlebar:preview-mode-changed', true)
   }
@@ -85,7 +85,7 @@ export function clearAttachHostPreview(entry: ComfyWindowEntry): void {
     entry.titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)
     entry.titleBarView.webContents.send(
       'comfy-titlebar:source-category-changed',
-      entry.sourceCategory,
+      entry.sourceCategory
     )
     entry.titleBarView.webContents.send('comfy-titlebar:preview-mode-changed', false)
   }

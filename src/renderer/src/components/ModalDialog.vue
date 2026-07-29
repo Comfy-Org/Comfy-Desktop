@@ -366,7 +366,9 @@ onUnmounted(() => {
           </template>
         </div>
         <div class="modal-actions">
-          <button :data-testid="TID.modalCancel" @click="close(false)">{{ $t('common.cancel') }}</button>
+          <button :data-testid="TID.modalCancel" @click="close(false)">
+            {{ $t('common.cancel') }}
+          </button>
           <button
             :class="confirmClass"
             :disabled="
@@ -435,8 +437,12 @@ onUnmounted(() => {
           <div v-if="error" class="modal-error">{{ error }}</div>
         </div>
         <div class="modal-actions">
-          <button :data-testid="TID.modalCancel" @click="close(null)">{{ $t('common.cancel') }}</button>
-          <button class="primary" :data-testid="TID.modalConfirm" @click="submitPrompt">{{ state.confirmLabel }}</button>
+          <button :data-testid="TID.modalCancel" @click="close(null)">
+            {{ $t('common.cancel') }}
+          </button>
+          <button class="primary" :data-testid="TID.modalConfirm" @click="submitPrompt">
+            {{ state.confirmLabel }}
+          </button>
         </div>
       </div>
 

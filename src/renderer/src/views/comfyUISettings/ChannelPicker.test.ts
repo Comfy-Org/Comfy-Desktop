@@ -121,37 +121,43 @@ describe('ChannelPicker — headline product + version', () => {
 
   it('hides the "Up to date" badge when the card opts out (PyTorch current stack)', () => {
     const wrapper = mountPicker(
-      field([
-        {
-          value: 'stack-cu130',
-          label: 'PyTorch 2.10.0+cu130',
-          data: {
-            productName: 'PyTorch',
-            installedVersion: '2.10.0+cu130',
-            updateAvailable: false,
-            hideUpToDateBadge: true
+      field(
+        [
+          {
+            value: 'stack-cu130',
+            label: 'PyTorch 2.10.0+cu130',
+            data: {
+              productName: 'PyTorch',
+              installedVersion: '2.10.0+cu130',
+              updateAvailable: false,
+              hideUpToDateBadge: true
+            }
           }
-        }
-      ], 'stack-cu130')
+        ],
+        'stack-cu130'
+      )
     )
     expect(wrapper.find('.channel-picker-badge').exists()).toBe(false)
   })
 
   it('still shows the "Update available" badge when the opt-out card has an update', () => {
     const wrapper = mountPicker(
-      field([
-        {
-          value: 'stack-cu130',
-          label: 'PyTorch 2.11.0+cu130',
-          data: {
-            productName: 'PyTorch',
-            installedVersion: '2.10.0+cu130',
-            latestVersion: '2.11.0+cu130',
-            updateAvailable: true,
-            hideUpToDateBadge: true
+      field(
+        [
+          {
+            value: 'stack-cu130',
+            label: 'PyTorch 2.11.0+cu130',
+            data: {
+              productName: 'PyTorch',
+              installedVersion: '2.10.0+cu130',
+              latestVersion: '2.11.0+cu130',
+              updateAvailable: true,
+              hideUpToDateBadge: true
+            }
           }
-        }
-      ], 'stack-cu130')
+        ],
+        'stack-cu130'
+      )
     )
     expect(wrapper.find('.channel-picker-badge').text()).toBe('Update available')
   })
@@ -192,7 +198,12 @@ describe('ChannelPicker — cascading group dropdowns', () => {
           value: 's-cu130-2.10',
           label: 'PyTorch 2.10.0+cu130',
           groupPath: [cu130],
-          data: { productName: 'PyTorch', installedVersion: '2.9.1+cu130', latestVersion: '2.10.0+cu130', updateAvailable: true }
+          data: {
+            productName: 'PyTorch',
+            installedVersion: '2.9.1+cu130',
+            latestVersion: '2.10.0+cu130',
+            updateAvailable: true
+          }
         },
         {
           value: 's-cu130-2.9',
@@ -204,7 +215,12 @@ describe('ChannelPicker — cascading group dropdowns', () => {
           value: 's-cu128-2.11',
           label: 'PyTorch 2.11.0+cu128',
           groupPath: [cu128],
-          data: { productName: 'PyTorch', installedVersion: '2.9.1+cu130', latestVersion: '2.11.0+cu128', updateAvailable: true }
+          data: {
+            productName: 'PyTorch',
+            installedVersion: '2.9.1+cu130',
+            latestVersion: '2.11.0+cu128',
+            updateAvailable: true
+          }
         }
       ]
     } as DetailField
@@ -313,14 +329,27 @@ describe('ChannelPicker — cascading group dropdowns', () => {
       options: [
         { value: 'a1', label: 'A1', groupPath: [{ id: 'nv', label: 'NVIDIA' }, cu130] },
         { value: 'a2', label: 'A2', groupPath: [{ id: 'nv', label: 'NVIDIA' }, cu128] },
-        { value: 'b1', label: 'B1', groupPath: [{ id: 'amd', label: 'AMD' }, { id: 'rocm7', label: 'ROCm 7' }] }
+        {
+          value: 'b1',
+          label: 'B1',
+          groupPath: [
+            { id: 'amd', label: 'AMD' },
+            { id: 'rocm7', label: 'ROCm 7' }
+          ]
+        }
       ]
     } as DetailField)
     const all = selects(wrapper)
     expect(all).toHaveLength(3)
-    expect((all[0].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual(['nv', 'amd'])
+    expect((all[0].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
+      'nv',
+      'amd'
+    ])
     // Second level only shows series under the selected vendor.
-    expect((all[1].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual(['cu130', 'cu128'])
+    expect((all[1].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
+      'cu130',
+      'cu128'
+    ])
     // Switching the outermost level cascades to a concrete option.
     await all[0].vm.$emit('update:modelValue', 'amd')
     const after = selects(wrapper)
@@ -373,7 +402,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     } as DetailField
   }
 
-  it('renders the selected option\'s change-pytorch action as an accent footer button', () => {
+  it("renders the selected option's change-pytorch action as an accent footer button", () => {
     const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
     const button = wrapper.find('[data-testid="update-action-change-pytorch"]')
     expect(button.exists()).toBe(true)
@@ -401,8 +430,12 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     expect(copyButton.classes()).not.toContain('accent')
     expect(copyButton.text()).toContain('Copy & Change PyTorch')
     // Safe alternative sits before the primary action, mirroring Copy & Update.
-    const ids = wrapper.findAll('[data-testid^="update-action-"]').map((b) => b.attributes('data-testid'))
-    expect(ids.indexOf('update-action-copy-pytorch')).toBeLessThan(ids.indexOf('update-action-change-pytorch'))
+    const ids = wrapper
+      .findAll('[data-testid^="update-action-"]')
+      .map((b) => b.attributes('data-testid'))
+    expect(ids.indexOf('update-action-copy-pytorch')).toBeLessThan(
+      ids.indexOf('update-action-change-pytorch')
+    )
   })
 
   it('renders no copy-pytorch button while the current stack is selected', () => {

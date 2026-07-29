@@ -16,13 +16,17 @@ import type {
   ActionTools,
   LaunchCommand,
   StatusTag,
-  TerminalEnv,
+  TerminalEnv
 } from '../types/sources'
 
 export const desktop: SourcePlugin = {
   id: 'desktop',
-  get label() { return t('desktop.label') },
-  get description() { return t('desktop.desc') },
+  get label() {
+    return t('desktop.label')
+  },
+  get description() {
+    return t('desktop.desc')
+  },
   category: 'local',
   hasConsole: true,
   skipInstall: true,
@@ -39,7 +43,7 @@ export const desktop: SourcePlugin = {
       // `skipSharedPaths` on the launch command is the real opt-out; these flags are
       // persisted as `false` only to keep the record's intent obvious in the JSON.
       useSharedModels: false,
-      useSharedInputOutput: false,
+      useSharedInputOutput: false
     }
   },
 
@@ -65,7 +69,7 @@ export const desktop: SourcePlugin = {
         cwd: path.dirname(execPath),
         showWindow: true,
         skipPortWait: true,
-        skipSharedPaths: true,
+        skipSharedPaths: true
       }
     }
     return {
@@ -74,7 +78,7 @@ export const desktop: SourcePlugin = {
       cwd: path.dirname(execPath),
       showWindow: true,
       skipPortWait: true,
-      skipSharedPaths: true,
+      skipSharedPaths: true
     }
   },
 
@@ -94,8 +98,8 @@ export const desktop: SourcePlugin = {
         id: 'launch',
         label: t('actions.launch'),
         style: 'primary',
-        enabled: installation.status === 'installed',
-      },
+        enabled: installation.status === 'installed'
+      }
     ]
   },
 
@@ -108,11 +112,12 @@ export const desktop: SourcePlugin = {
         fields: [
           { label: t('common.installMethod'), value: t('desktop.label') },
           { label: t('desktop.basePath'), value: installation.installPath || '—' },
-          ...(execPath
-            ? [{ label: t('desktop.executable'), value: execPath }]
-            : []),
-          { label: t('desktop.tracked'), value: new Date(installation.createdAt).toLocaleDateString() },
-        ],
+          ...(execPath ? [{ label: t('desktop.executable'), value: execPath }] : []),
+          {
+            label: t('desktop.tracked'),
+            value: new Date(installation.createdAt).toLocaleDateString()
+          }
+        ]
       },
       {
         title: 'Actions',
@@ -129,18 +134,18 @@ export const desktop: SourcePlugin = {
             confirm: {
               title: t('desktop.migrateConfirmTitle'),
               message: t('desktop.migrateConfirmMessage'),
-              confirmLabel: t('desktop.migrateConfirm'),
-            },
+              confirmLabel: t('desktop.migrateConfirm')
+            }
           },
           {
             id: 'open-folder',
             label: t('actions.openDirectory'),
             style: 'default',
-            enabled: !!installation.installPath,
+            enabled: !!installation.installPath
           },
-          untrackAction(),
-        ],
-      },
+          untrackAction()
+        ]
+      }
     ]
   },
 
@@ -158,7 +163,7 @@ export const desktop: SourcePlugin = {
       launchMode: 'external',
       useSharedModels: false,
       useSharedInputOutput: false,
-      desktopExePath: findDesktopExecutable() || undefined,
+      desktopExePath: findDesktopExecutable() || undefined
     }
   },
 
@@ -177,6 +182,5 @@ export const desktop: SourcePlugin = {
     }
 
     return { ok: false, message: `Action "${actionId}" not implemented.` }
-  },
-
+  }
 }

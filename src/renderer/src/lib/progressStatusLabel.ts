@@ -9,7 +9,7 @@ const OP_STATUS_MAP: Record<string, string> = {
   'Stopping…': 'Stopping instance…',
   'Creating Python environment…': 'Setting up environment…',
   'Loading snapshot…': 'Loading snapshot…',
-  Complete: 'Finishing up…',
+  Complete: 'Finishing up…'
 }
 
 type TLike = ComposerTranslation | ((key: string, fallback?: string) => string)

@@ -12,12 +12,12 @@ vi.mock('electron', () => ({
     getPath: (name: string) => {
       if (name === 'home') return os.homedir()
       return path.join(os.tmpdir(), 'comfyui-desktop-2-test')
-    },
+    }
   },
   BrowserWindow: Object.assign(class {}, { getAllWindows: () => [] }),
   dialog: {},
   ipcMain: { handle: vi.fn(), on: vi.fn() },
-  shell: {},
+  shell: {}
 }))
 
 let hasValidExtension: (filename: string) => boolean
@@ -26,7 +26,7 @@ let sanitizeAssetFilename: (filename: string, outputDir: string) => string | nul
 let resolveAssetSavePath: (
   currentSavePath: string,
   serverName: string,
-  outputDir: string,
+  outputDir: string
 ) => string | null
 let parseContentDispositionFilename: (header: string | null) => string | null
 let buildSaveDialogFilters: (suggestedName: string) => Electron.FileFilter[]
@@ -52,7 +52,7 @@ describe('buildExistenceCandidates', () => {
     const ctx = {
       downloadBaseDir: '/install/models',
       modelRoots: ['/install/models', '/external'],
-      extraPaths: [],
+      extraPaths: []
     }
     const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras', 'x.safetensors')
     expect(candidates).toContain(path.join('/install/models', 'loras', 'x.safetensors'))
@@ -66,9 +66,23 @@ describe('buildExistenceCandidates', () => {
       downloadBaseDir: '/install/models',
       modelRoots: ['/install/models'],
       extraPaths: [
-        { section: 's', basePath: null, type: 'loras', rawType: 'loras', dir: '/custom/somedir/myname', isDefault: false },
-        { section: 's', basePath: null, type: 'checkpoints', rawType: 'checkpoints', dir: '/custom/cp', isDefault: false },
-      ],
+        {
+          section: 's',
+          basePath: null,
+          type: 'loras',
+          rawType: 'loras',
+          dir: '/custom/somedir/myname',
+          isDefault: false
+        },
+        {
+          section: 's',
+          basePath: null,
+          type: 'checkpoints',
+          rawType: 'checkpoints',
+          dir: '/custom/cp',
+          isDefault: false
+        }
+      ]
     }
     const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras', 'x.safetensors')
     expect(candidates).toContain(path.join('/custom/somedir/myname', 'x.safetensors'))
@@ -80,9 +94,14 @@ describe('buildExistenceCandidates', () => {
     const ctx = {
       downloadBaseDir: '/install/models',
       modelRoots: ['/install/models'],
-      extraPaths: [],
+      extraPaths: []
     }
-    const candidates = buildExistenceCandidates(ctx, '/install/models', 'controlnet', 'x.safetensors')
+    const candidates = buildExistenceCandidates(
+      ctx,
+      '/install/models',
+      'controlnet',
+      'x.safetensors'
+    )
     // ComfyUI's controlnet defaults also search <root>/t2i_adapter, and the
     // launcher YAML registers it under controlnet, so both must be probed.
     expect(candidates).toContain(path.join('/install/models', 'controlnet', 'x.safetensors'))
@@ -94,8 +113,15 @@ describe('buildExistenceCandidates', () => {
       downloadBaseDir: '/install/models',
       modelRoots: ['/install/models'],
       extraPaths: [
-        { section: 's', basePath: null, type: 'text_encoders', rawType: 'clip', dir: '/custom/clip', isDefault: false },
-      ],
+        {
+          section: 's',
+          basePath: null,
+          type: 'text_encoders',
+          rawType: 'clip',
+          dir: '/custom/clip',
+          isDefault: false
+        }
+      ]
     }
     const candidates = buildExistenceCandidates(ctx, '/install/models', 'clip', 'x.safetensors')
     expect(candidates).toContain(path.join('/custom/clip', 'x.safetensors'))
@@ -106,10 +132,22 @@ describe('buildExistenceCandidates', () => {
       downloadBaseDir: '/install/models',
       modelRoots: ['/install/models'],
       extraPaths: [
-        { section: 's', basePath: null, type: 'loras', rawType: 'loras', dir: '/custom/loras', isDefault: false },
-      ],
+        {
+          section: 's',
+          basePath: null,
+          type: 'loras',
+          rawType: 'loras',
+          dir: '/custom/loras',
+          isDefault: false
+        }
+      ]
     }
-    const candidates = buildExistenceCandidates(ctx, '/install/models', 'loras/sub', 'x.safetensors')
+    const candidates = buildExistenceCandidates(
+      ctx,
+      '/install/models',
+      'loras/sub',
+      'x.safetensors'
+    )
     expect(candidates).toContain(path.join('/custom/loras', 'sub', 'x.safetensors'))
   })
 })
@@ -123,15 +161,12 @@ describe('ALLOWED_EXTENSIONS', () => {
 })
 
 describe('hasValidExtension', () => {
-  it.each([
-    'model.safetensors',
-    'model.sft',
-    'model.ckpt',
-    'model.pth',
-    'model.pt',
-  ])('returns true for %s', (filename) => {
-    expect(hasValidExtension(filename)).toBe(true)
-  })
+  it.each(['model.safetensors', 'model.sft', 'model.ckpt', 'model.pth', 'model.pt'])(
+    'returns true for %s',
+    (filename) => {
+      expect(hasValidExtension(filename)).toBe(true)
+    }
+  )
 
   it('is case-insensitive', () => {
     expect(hasValidExtension('model.SafeTensors')).toBe(true)
@@ -184,21 +219,21 @@ describe('sanitizeAssetFilename', () => {
     (filename) => {
       const root = path.parse(path.resolve('/output')).root
       expect(sanitizeAssetFilename(filename, root)).toBeNull()
-    },
+    }
   )
 
   it.each(['../../etc/passwd', '../secret.txt', 'a/../../b/file.png'])(
     'rejects path traversal in %s',
     (filename) => {
       expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
-    },
+    }
   )
 
   it.each(['/absolute/path.png', '///triple.png', '\\root-relative.png', '\\\\server\\file.png'])(
     'rejects absolute path %s',
     (filename) => {
       expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
-    },
+    }
   )
 
   it('rejects traversal with backslash separators', () => {
@@ -229,29 +264,33 @@ describe('sanitizeAssetFilename', () => {
     'rejects NTFS alternate data stream %s',
     (filename) => {
       expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
-    },
+    }
   )
 
   it.each(['CON', 'NUL.png', 'aux.txt', 'COM1.mp4', 'lpt9', 'sub/nul.png'])(
     'rejects Windows reserved device name %s',
     (filename) => {
       expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
-    },
+    }
   )
 
   it.each(['name.png.', 'name.png ', 'trailing./file.png', 'trailing /file.png'])(
     'rejects trailing dot/space alias %s',
     (filename) => {
       expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
-    },
+    }
   )
 
-  it.each(['file<x>.png', 'file|pipe.png', 'file?.png', 'file*.png', 'file"quote.png', 'file\u0001.png'])(
-    'rejects Windows-invalid character in %s',
-    (filename) => {
-      expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
-    },
-  )
+  it.each([
+    'file<x>.png',
+    'file|pipe.png',
+    'file?.png',
+    'file*.png',
+    'file"quote.png',
+    'file\u0001.png'
+  ])('rejects Windows-invalid character in %s', (filename) => {
+    expect(sanitizeAssetFilename(filename, outputDir)).toBeNull()
+  })
 
   it('does not treat reserved-name prefixes as reserved', () => {
     expect(sanitizeAssetFilename('console.png', outputDir)).toBe('console.png')
@@ -268,8 +307,8 @@ describe('resolveAssetSavePath', () => {
       resolveAssetSavePath(
         path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
         'display-name.mp4',
-        outputDir,
-      ),
+        outputDir
+      )
     ).toBe(path.join(outputDir, 'video', 'ltx', 'display-name.mp4'))
   })
 
@@ -278,8 +317,8 @@ describe('resolveAssetSavePath', () => {
       resolveAssetSavePath(
         path.join(outputDir, 'images', 'remote-name.png'),
         'images/display-name.png',
-        outputDir,
-      ),
+        outputDir
+      )
     ).toBe(path.join(outputDir, 'images', 'display-name.png'))
   })
 
@@ -288,8 +327,8 @@ describe('resolveAssetSavePath', () => {
       resolveAssetSavePath(
         path.join(outputDir, 'remote-name.png'),
         'images/display-name.png',
-        outputDir,
-      ),
+        outputDir
+      )
     ).toBe(path.join(outputDir, 'images', 'display-name.png'))
   })
 
@@ -301,14 +340,14 @@ describe('resolveAssetSavePath', () => {
     'C:outside.mp4',
     '\\\\server\\share\\outside.mp4',
     '\\\\?\\C:\\outside.mp4',
-    '\\\\.\\C:\\outside.mp4',
+    '\\\\.\\C:\\outside.mp4'
   ])('rejects unsafe nested server path %s', (serverName) => {
     expect(
       resolveAssetSavePath(
         path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
         serverName,
-        outputDir,
-      ),
+        outputDir
+      )
     ).toBeNull()
   })
 
@@ -317,20 +356,23 @@ describe('resolveAssetSavePath', () => {
       resolveAssetSavePath(
         path.resolve(outputDir, '..', 'outside', 'remote-name.mp4'),
         'display-name.mp4',
-        outputDir,
-      ),
+        outputDir
+      )
     ).toBeNull()
   })
 
-  it.each(['', '.', '..', '/', '\\'])('rejects an invalid nested server basename %j', (serverName) => {
-    expect(
-      resolveAssetSavePath(
-        path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
-        serverName,
-        outputDir,
-      ),
-    ).toBeNull()
-  })
+  it.each(['', '.', '..', '/', '\\'])(
+    'rejects an invalid nested server basename %j',
+    (serverName) => {
+      expect(
+        resolveAssetSavePath(
+          path.join(outputDir, 'video', 'ltx', 'remote-name.mp4'),
+          serverName,
+          outputDir
+        )
+      ).toBeNull()
+    }
+  )
 
   it('resolves a nested path inside a filesystem-root output directory', () => {
     const root = path.parse(outputDir).root
@@ -338,19 +380,15 @@ describe('resolveAssetSavePath', () => {
       resolveAssetSavePath(
         path.join(root, 'video', 'ltx', 'remote-name.mp4'),
         'display-name.mp4',
-        root,
-      ),
+        root
+      )
     ).toBe(path.join(root, 'video', 'ltx', 'display-name.mp4'))
   })
 
   it('rejects a drive-qualified server path at the output root', () => {
     const root = path.parse(outputDir).root
     expect(
-      resolveAssetSavePath(
-        path.join(root, 'remote-name.mp4'),
-        'C:\\outside.mp4',
-        root,
-      ),
+      resolveAssetSavePath(path.join(root, 'remote-name.mp4'), 'C:\\outside.mp4', root)
     ).toBeNull()
   })
 })
@@ -359,26 +397,30 @@ describe('asset download retries', () => {
   it('preserves a deduplicated nested path resolved from Content-Disposition', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=hash.mp4'
-    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    let willDownload:
+      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
+      | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
       }),
-      downloadURL: vi.fn(),
+      downloadURL: vi.fn()
     } as unknown as Electron.Session
     const webContents = {
       session,
       send: vi.fn(),
-      isDestroyed: () => false,
+      isDestroyed: () => false
     } as unknown as Electron.WebContents
     const win = {
       isDestroyed: () => false,
       setProgressBar: vi.fn(),
-      webContents,
+      webContents
     } as unknown as Electron.BrowserWindow
 
     function createItem(contentDisposition: string | null) {
-      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      let done:
+        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
+        | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [url],
@@ -391,7 +433,7 @@ describe('asset download retries', () => {
         }),
         getTotalBytes: () => 1,
         getReceivedBytes: () => 1,
-        isPaused: () => false,
+        isPaused: () => false
       } as unknown as Electron.DownloadItem
       return { item, setSavePath, getDone: () => done }
     }
@@ -413,7 +455,9 @@ describe('asset download retries', () => {
 
       // Same URL: joins the in-flight download instead of re-registering it,
       // so the duplicate destination cannot clobber the retry params.
-      await expect(mod.startAssetDownload(win, url, 'duplicate/hash.mp4', outputDir)).resolves.toBe(true)
+      await expect(mod.startAssetDownload(win, url, 'duplicate/hash.mp4', outputDir)).resolves.toBe(
+        true
+      )
       expect(session.downloadURL).toHaveBeenCalledTimes(1)
       first.getDone()!({}, 'interrupted')
 
@@ -428,7 +472,9 @@ describe('asset download retries', () => {
       await fs.promises.writeFile(retryTempPath, 'complete')
       retry.getDone()!({}, 'completed')
 
-      await expect(fs.promises.readFile(path.join(nestedDir, 'display (1).mp4'), 'utf8')).resolves.toBe('complete')
+      await expect(
+        fs.promises.readFile(path.join(nestedDir, 'display (1).mp4'), 'utf8')
+      ).resolves.toBe('complete')
     } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
     }
@@ -437,22 +483,24 @@ describe('asset download retries', () => {
   it('starts a single download when the same URL is requested twice in the same tick', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=same-tick.png'
-    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    let willDownload:
+      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
+      | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
       }),
-      downloadURL: vi.fn(),
+      downloadURL: vi.fn()
     } as unknown as Electron.Session
     const webContents = {
       session,
       send: vi.fn(),
-      isDestroyed: () => false,
+      isDestroyed: () => false
     } as unknown as Electron.WebContents
     const win = {
       isDestroyed: () => false,
       setProgressBar: vi.fn(),
-      webContents,
+      webContents
     } as unknown as Electron.BrowserWindow
 
     try {
@@ -461,12 +509,14 @@ describe('asset download retries', () => {
       // download that would save a duplicate file.
       const results = await Promise.all([
         mod.startAssetDownload(win, url, 'same-tick.png', outputDir),
-        mod.startAssetDownload(win, url, 'same-tick.png', outputDir),
+        mod.startAssetDownload(win, url, 'same-tick.png', outputDir)
       ])
       expect(results).toEqual([true, true])
       expect(session.downloadURL).toHaveBeenCalledTimes(1)
 
-      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      let done:
+        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
+        | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [url],
@@ -479,7 +529,7 @@ describe('asset download retries', () => {
         }),
         getTotalBytes: () => 1,
         getReceivedBytes: () => 1,
-        isPaused: () => false,
+        isPaused: () => false
       } as unknown as Electron.DownloadItem
       willDownload!({}, item, null)
       const tempPath = setSavePath.mock.calls[0]?.[0]
@@ -501,18 +551,18 @@ describe('asset download retries', () => {
     const url = 'https://remote.example/api/view?filename=blocked.png'
     const session = {
       on: vi.fn(),
-      downloadURL: vi.fn(),
+      downloadURL: vi.fn()
     } as unknown as Electron.Session
     const send = vi.fn()
     const webContents = {
       session,
       send,
-      isDestroyed: () => false,
+      isDestroyed: () => false
     } as unknown as Electron.WebContents
     const win = {
       isDestroyed: () => false,
       setProgressBar: vi.fn(),
-      webContents,
+      webContents
     } as unknown as Electron.BrowserWindow
 
     try {
@@ -522,16 +572,20 @@ describe('asset download retries', () => {
       await fs.promises.writeFile(blocker, 'file, not a directory')
       const outputDir = path.join(blocker, 'output')
 
-      await expect(mod.startAssetDownload(win, url, 'sub/blocked.png', outputDir)).resolves.toBe(false)
+      await expect(mod.startAssetDownload(win, url, 'sub/blocked.png', outputDir)).resolves.toBe(
+        false
+      )
       expect(session.downloadURL).not.toHaveBeenCalled()
 
       const errorEvents = send.mock.calls.filter(
         ([channel, progress]) =>
           channel === 'desktop2-download-progress' &&
-          (progress as { status?: string }).status === 'error',
+          (progress as { status?: string }).status === 'error'
       )
       expect(errorEvents).toHaveLength(1)
-      expect((errorEvents[0]?.[1] as { error?: string }).error).toMatch(/Failed to create download directory/)
+      expect((errorEvents[0]?.[1] as { error?: string }).error).toMatch(
+        /Failed to create download directory/
+      )
 
       // The reservation is released - the URL is not stuck as an active download.
       expect(mod.getActiveDownloads().some((d) => d.url === url)).toBe(false)
@@ -578,27 +632,31 @@ describe('asset download retries', () => {
   })
 
   function makeAssetHarness() {
-    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    let willDownload:
+      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
+      | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
       }),
-      downloadURL: vi.fn(),
+      downloadURL: vi.fn()
     } as unknown as Electron.Session
     const send = vi.fn()
     const webContents = {
       session,
       send,
-      isDestroyed: () => false,
+      isDestroyed: () => false
     } as unknown as Electron.WebContents
     const win = {
       isDestroyed: () => false,
       setProgressBar: vi.fn(),
-      webContents,
+      webContents
     } as unknown as Electron.BrowserWindow
 
     function createItem(itemUrl: string) {
-      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      let done:
+        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
+        | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [itemUrl],
@@ -611,7 +669,7 @@ describe('asset download retries', () => {
         }),
         getTotalBytes: () => 1,
         getReceivedBytes: () => 1,
-        isPaused: () => false,
+        isPaused: () => false
       } as unknown as Electron.DownloadItem
       return { item, setSavePath, getDone: () => done }
     }
@@ -632,7 +690,9 @@ describe('asset download retries', () => {
       await fs.promises.mkdir(path.join(outputDir, 'subdir'), { recursive: true })
       await fs.promises.writeFile(path.join(outputDir, 'subdir', 'served.png'), 'identical-bytes')
 
-      await expect(mod.startAssetDownload(h.win, url, 'subdir/served.png', outputDir)).resolves.toBe(true)
+      await expect(
+        mod.startAssetDownload(h.win, url, 'subdir/served.png', outputDir)
+      ).resolves.toBe(true)
       const dl = h.createItem(url)
       h.getWillDownload()!({}, dl.item, null)
       const tempPath = dl.setSavePath.mock.calls[0]?.[0]
@@ -640,7 +700,9 @@ describe('asset download retries', () => {
       await fs.promises.writeFile(tempPath!, 'identical-bytes')
       dl.getDone()!({}, 'completed')
 
-      await expect(fs.promises.readdir(path.join(outputDir, 'subdir'))).resolves.toEqual(['served.png'])
+      await expect(fs.promises.readdir(path.join(outputDir, 'subdir'))).resolves.toEqual([
+        'served.png'
+      ])
       const completed = h.send.mock.calls
         .map((c) => c[1] as { status?: string; savePath?: string; filename?: string })
         .filter((p) => p?.status === 'completed')
@@ -670,8 +732,12 @@ describe('asset download retries', () => {
 
       const saved = (await fs.promises.readdir(outputDir)).sort()
       expect(saved).toEqual(['changed (1).png', 'changed.png'])
-      await expect(fs.promises.readFile(path.join(outputDir, 'changed.png'), 'utf8')).resolves.toBe('old-bytes')
-      await expect(fs.promises.readFile(path.join(outputDir, 'changed (1).png'), 'utf8')).resolves.toBe('new-bytes')
+      await expect(fs.promises.readFile(path.join(outputDir, 'changed.png'), 'utf8')).resolves.toBe(
+        'old-bytes'
+      )
+      await expect(
+        fs.promises.readFile(path.join(outputDir, 'changed (1).png'), 'utf8')
+      ).resolves.toBe('new-bytes')
     } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
     }
@@ -684,26 +750,30 @@ describe('asset download retries', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
     const urlA = 'https://remote.example/api/view?filename=a-video.mp4'
     const urlB = 'https://remote.example/api/view?filename=b-video.mp4'
-    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    let willDownload:
+      | ((event: unknown, item: Electron.DownloadItem, webContents: null) => void)
+      | undefined
     const session = {
       on: vi.fn((event: string, handler: typeof willDownload) => {
         if (event === 'will-download') willDownload = handler
       }),
-      downloadURL: vi.fn(),
+      downloadURL: vi.fn()
     } as unknown as Electron.Session
     const webContents = {
       session,
       send: vi.fn(),
-      isDestroyed: () => false,
+      isDestroyed: () => false
     } as unknown as Electron.WebContents
     const win = {
       isDestroyed: () => false,
       setProgressBar: vi.fn(),
-      webContents,
+      webContents
     } as unknown as Electron.BrowserWindow
 
     function createItem(url: string) {
-      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      let done:
+        | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
+        | undefined
       const setSavePath = vi.fn<(savePath: string) => void>()
       const item = {
         getURLChain: () => [url],
@@ -716,7 +786,7 @@ describe('asset download retries', () => {
         }),
         getTotalBytes: () => 1,
         getReceivedBytes: () => 1,
-        isPaused: () => false,
+        isPaused: () => false
       } as unknown as Electron.DownloadItem
       return { item, setSavePath, getDone: () => done }
     }
@@ -742,8 +812,12 @@ describe('asset download retries', () => {
       await fs.promises.writeFile(tempB!, 'content-b')
       a.getDone()!({}, 'completed')
       b.getDone()!({}, 'completed')
-      await expect(fs.promises.readFile(path.join(outputDir, 'a', 'video.mp4'), 'utf8')).resolves.toBe('content-a')
-      await expect(fs.promises.readFile(path.join(outputDir, 'b', 'video.mp4'), 'utf8')).resolves.toBe('content-b')
+      await expect(
+        fs.promises.readFile(path.join(outputDir, 'a', 'video.mp4'), 'utf8')
+      ).resolves.toBe('content-a')
+      await expect(
+        fs.promises.readFile(path.join(outputDir, 'b', 'video.mp4'), 'utf8')
+      ).resolves.toBe('content-b')
     } finally {
       nowSpy.mockRestore()
       await fs.promises.rm(outputDir, { recursive: true, force: true })
@@ -766,15 +840,23 @@ describe('parseContentDispositionFilename', () => {
   })
 
   it('parses RFC 5987 encoded filename*', () => {
-    expect(parseContentDispositionFilename("attachment; filename*=UTF-8''NetaYume_%E7%A7%98.png")).toBe('NetaYume_秘.png')
+    expect(
+      parseContentDispositionFilename("attachment; filename*=UTF-8''NetaYume_%E7%A7%98.png")
+    ).toBe('NetaYume_秘.png')
   })
 
   it('prefers filename* over filename', () => {
-    expect(parseContentDispositionFilename("attachment; filename=\"fallback.png\"; filename*=UTF-8''preferred.png")).toBe('preferred.png')
+    expect(
+      parseContentDispositionFilename(
+        'attachment; filename="fallback.png"; filename*=UTF-8\'\'preferred.png'
+      )
+    ).toBe('preferred.png')
   })
 
   it('parses GCS response-content-disposition format', () => {
-    expect(parseContentDispositionFilename('attachment; filename="NetaYume_Lumina_3.5_00187_.png"')).toBe('NetaYume_Lumina_3.5_00187_.png')
+    expect(
+      parseContentDispositionFilename('attachment; filename="NetaYume_Lumina_3.5_00187_.png"')
+    ).toBe('NetaYume_Lumina_3.5_00187_.png')
   })
 
   it('returns null for header without filename', () => {
@@ -800,11 +882,11 @@ describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
   it('groups jpg and jpeg under the same JPEG family filter', () => {
     expect(buildSaveDialogFilters('photo.jpg')[0]).toEqual({
       name: 'JPEG Image',
-      extensions: ['jpg', 'jpeg'],
+      extensions: ['jpg', 'jpeg']
     })
     expect(buildSaveDialogFilters('photo.jpeg')[0]).toEqual({
       name: 'JPEG Image',
-      extensions: ['jpg', 'jpeg'],
+      extensions: ['jpg', 'jpeg']
     })
   })
 
@@ -817,7 +899,7 @@ describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
     ['voice.wav', 'WAV Audio', 'wav'],
     ['voice.mp3', 'MP3 Audio', 'mp3'],
     ['voice.flac', 'FLAC Audio', 'flac'],
-    ['voice.ogg', 'OGG Audio', 'ogg'],
+    ['voice.ogg', 'OGG Audio', 'ogg']
   ] as const)('maps %s to %s', (filename, expectedName, expectedExt) => {
     const filters = buildSaveDialogFilters(filename)
     expect(filters[0]).toEqual({ name: expectedName, extensions: [expectedExt] })
@@ -827,7 +909,7 @@ describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
   it('is case-insensitive on the input extension', () => {
     expect(buildSaveDialogFilters('CAPS.PNG')[0]).toEqual({
       name: 'PNG Image',
-      extensions: ['png'],
+      extensions: ['png']
     })
   })
 
@@ -838,9 +920,7 @@ describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
   })
 
   it('returns only All Files when there is no extension at all', () => {
-    expect(buildSaveDialogFilters('justname')).toEqual([
-      { name: 'All Files', extensions: ['*'] },
-    ])
+    expect(buildSaveDialogFilters('justname')).toEqual([{ name: 'All Files', extensions: ['*'] }])
   })
 })
 
@@ -849,21 +929,27 @@ describe('template tray-mirror cleanup', () => {
     url,
     filename: url.split('/').pop()!,
     progress: status === 'completed' ? 100 : 40,
-    status,
+    status
   })
 
   it('dismissRecentDownload removes a finished mirrored template row', () => {
-    mod.setTemplateTrayMirror('inst-a', [entry('template-model://checkpoints/m.safetensors', 'completed')])
-    expect(mod.getDownloadsTrayState().recent.some((r) => r.url.includes('m.safetensors'))).toBe(true)
+    mod.setTemplateTrayMirror('inst-a', [
+      entry('template-model://checkpoints/m.safetensors', 'completed')
+    ])
+    expect(mod.getDownloadsTrayState().recent.some((r) => r.url.includes('m.safetensors'))).toBe(
+      true
+    )
 
     expect(mod.dismissRecentDownload('template-model://checkpoints/m.safetensors')).toBe(true)
-    expect(mod.getDownloadsTrayState().recent.some((r) => r.url.includes('m.safetensors'))).toBe(false)
+    expect(mod.getDownloadsTrayState().recent.some((r) => r.url.includes('m.safetensors'))).toBe(
+      false
+    )
   })
 
   it('clearFinishedDownloads purges terminal mirror rows but keeps in-flight ones', () => {
     mod.setTemplateTrayMirror('inst-b', [
       entry('template-model://vae/done.safetensors', 'completed'),
-      entry('template-model://vae/live.safetensors', 'downloading'),
+      entry('template-model://vae/live.safetensors', 'downloading')
     ])
     const removed = mod.clearFinishedDownloads()
     expect(removed).toBeGreaterThanOrEqual(1)
@@ -882,7 +968,7 @@ describe('template mirror visibility in the All-Downloads modal', () => {
     url,
     filename: url.split('/').pop()!,
     progress: 40,
-    status: 'downloading' as const,
+    status: 'downloading' as const
   })
 
   it('getAllDownloads() includes template-mirror rows (modal seed)', () => {
@@ -902,7 +988,9 @@ describe('template mirror visibility in the All-Downloads modal', () => {
       mod.setTemplateTrayMirror('inst-live', [entry('template-model://vae/y.safetensors')])
       const progressCalls = send.mock.calls.filter((c) => c[0] === 'model-download-progress')
       expect(progressCalls.length).toBeGreaterThanOrEqual(1)
-      expect(progressCalls.some((c) => (c[1] as { url: string }).url.includes('y.safetensors'))).toBe(true)
+      expect(
+        progressCalls.some((c) => (c[1] as { url: string }).url.includes('y.safetensors'))
+      ).toBe(true)
     } finally {
       spy.mockRestore()
       mod.clearTemplateTrayMirror('inst-live')
@@ -920,7 +1008,7 @@ describe('areModelsPresent', () => {
     await fs.promises.writeFile(path.join(base, 'checkpoints', 'a.safetensors'), 'x')
     await fs.promises.writeFile(path.join(base, 'vae', 'b.safetensors'), 'x')
     vi.spyOn(settings, 'get').mockImplementation((key) =>
-      key === 'modelsDirs' ? [base] : (settings.defaults as Record<string, unknown>)[key],
+      key === 'modelsDirs' ? [base] : (settings.defaults as Record<string, unknown>)[key]
     )
   })
 
@@ -936,7 +1024,7 @@ describe('areModelsPresent', () => {
   it('returns true only when every model is on disk (shared dir, no install)', async () => {
     const present = await areModelsPresent(null, [
       { directory: 'checkpoints', filename: 'a.safetensors' },
-      { directory: 'vae', filename: 'b.safetensors' },
+      { directory: 'vae', filename: 'b.safetensors' }
     ])
     expect(present).toBe(true)
   })
@@ -944,7 +1032,7 @@ describe('areModelsPresent', () => {
   it('returns false when any single model is missing', async () => {
     const present = await areModelsPresent(null, [
       { directory: 'checkpoints', filename: 'a.safetensors' },
-      { directory: 'vae', filename: 'missing.safetensors' },
+      { directory: 'vae', filename: 'missing.safetensors' }
     ])
     expect(present).toBe(false)
   })

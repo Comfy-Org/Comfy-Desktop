@@ -9,7 +9,7 @@ import path from 'path'
 // holder lets the mock resolve to a disposable temp dir we control per suite.
 const holder = vi.hoisted(() => ({ dataDir: '' }))
 vi.mock('./paths', () => ({
-  dataDir: () => holder.dataDir,
+  dataDir: () => holder.dataDir
 }))
 
 // Module-load dataDir for the YAML_PATH-dependent (shared) tests below. Set
@@ -23,7 +23,7 @@ const {
   syncCustomModelFolders,
   resolveExtraModelPaths,
   resolveInstallModelSearchPaths,
-  mapLegacyFolderType,
+  mapLegacyFolderType
 } = await import('./models')
 
 import type { InstallationRecord } from '../installations'
@@ -231,7 +231,9 @@ describe('resolveExtraModelPaths — mirrors ComfyUI extra_config.py', () => {
 
   it('joins arbitrary per-type subpaths onto an absolute base_path', () => {
     const base = path.join(tmp, 'root')
-    const yaml = writeYaml(`my_section:\n  base_path: ${base}\n  loras: somedir/myname\n  checkpoints: cp/\n`)
+    const yaml = writeYaml(
+      `my_section:\n  base_path: ${base}\n  loras: somedir/myname\n  checkpoints: cp/\n`
+    )
     const resolved = resolveExtraModelPaths(yaml)
     const byType = Object.fromEntries(resolved.map((r) => [r.type, r.dir]))
     expect(byType['loras']).toBe(path.normalize(path.join(base, 'somedir/myname')))
@@ -253,7 +255,9 @@ describe('resolveExtraModelPaths — mirrors ComfyUI extra_config.py', () => {
 
   it('expands multiple newline-delimited dirs for one type', () => {
     const base = path.join(tmp, 'root')
-    const yaml = writeYaml(`s:\n  base_path: ${base}\n  text_encoders: |\n    text_encoders/\n    clip/\n`)
+    const yaml = writeYaml(
+      `s:\n  base_path: ${base}\n  text_encoders: |\n    text_encoders/\n    clip/\n`
+    )
     const dirs = resolveExtraModelPaths(yaml)
       .filter((r) => r.type === 'text_encoders')
       .map((r) => r.dir)
@@ -277,7 +281,9 @@ describe('resolveExtraModelPaths — mirrors ComfyUI extra_config.py', () => {
 
   it('does not register custom_nodes as a model dir', () => {
     const base = path.join(tmp, 'root')
-    const yaml = writeYaml(`s:\n  base_path: ${base}\n  custom_nodes: custom_nodes/\n  loras: loras/\n`)
+    const yaml = writeYaml(
+      `s:\n  base_path: ${base}\n  custom_nodes: custom_nodes/\n  loras: loras/\n`
+    )
     const resolved = resolveExtraModelPaths(yaml)
     expect(resolved.map((r) => r.type)).toEqual(['loras'])
   })
@@ -301,7 +307,7 @@ describe('resolveInstallModelSearchPaths', () => {
       createdAt: '',
       installPath,
       sourceId: 's',
-      ...over,
+      ...over
     } as InstallationRecord
   }
 
@@ -333,11 +339,11 @@ describe('resolveInstallModelSearchPaths', () => {
     const base = path.join(tmp, 'extra-root')
     fs.writeFileSync(
       path.join(inst.installPath, 'ComfyUI', 'extra_model_paths.yaml'),
-      `s:\n  base_path: ${base}\n  loras: custom/loras\n`,
+      `s:\n  base_path: ${base}\n  loras: custom/loras\n`
     )
     const res = resolveInstallModelSearchPaths(inst, [])
     expect(res.extraPaths.find((e) => e.type === 'loras')!.dir).toBe(
-      path.normalize(path.join(base, 'custom/loras')),
+      path.normalize(path.join(base, 'custom/loras'))
     )
   })
 })

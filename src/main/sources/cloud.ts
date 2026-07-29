@@ -7,5 +7,5 @@ export const cloud = createUrlSource({
   descKey: 'cloud.desc',
   category: 'cloud',
   defaultUrl: 'https://cloud.comfy.org/',
-  transformUrl: withCloudDistributionUtm,
+  transformUrl: withCloudDistributionUtm
 })

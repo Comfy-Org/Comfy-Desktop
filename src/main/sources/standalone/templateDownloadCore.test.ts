@@ -6,7 +6,7 @@ import path from 'path'
 // i18n module's relative `locales/` lookup), so the formatter is asserted
 // against real English copy + interpolation.
 const EN = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), 'locales', 'en.json'), 'utf-8'),
+  fs.readFileSync(path.join(process.cwd(), 'locales', 'en.json'), 'utf-8')
 ) as Record<string, Record<string, string>>
 vi.mock('../../lib/i18n', () => ({
   t: (key: string, params?: Record<string, string | number>): string => {
@@ -15,11 +15,11 @@ vi.mock('../../lib/i18n', () => ({
     if (typeof s !== 'string') return key
     if (params) {
       s = s.replace(/\{(\w+)\}/g, (_, p: string) =>
-        params[p] !== undefined ? String(params[p]) : `{${p}}`,
+        params[p] !== undefined ? String(params[p]) : `{${p}}`
       )
     }
     return s
-  },
+  }
 }))
 
 import {
@@ -31,16 +31,31 @@ import {
   summarizeTemplateState,
   formatTemplateSubStatus,
   type TemplateDownloadState,
-  type FileProgress,
+  type FileProgress
 } from './templateDownloadCore'
 
 const GB = 1024 * 1024 * 1024
 
 function file(p: Partial<FileProgress>): FileProgress {
-  return { name: 'm.safetensors', directory: 'checkpoints', received: 0, total: 0, done: false, failed: false, ...p }
+  return {
+    name: 'm.safetensors',
+    directory: 'checkpoints',
+    received: 0,
+    total: 0,
+    done: false,
+    failed: false,
+    ...p
+  }
 }
 function state(p: Partial<TemplateDownloadState>): TemplateDownloadState {
-  return { status: 'downloading', files: [], estimatedTotalBytes: 0, speedMBs: 0, etaSecs: -1, ...p }
+  return {
+    status: 'downloading',
+    files: [],
+    estimatedTotalBytes: 0,
+    speedMBs: 0,
+    etaSecs: -1,
+    ...p
+  }
 }
 
 describe('summarizeTemplateState', () => {
@@ -52,12 +67,14 @@ describe('summarizeTemplateState', () => {
   })
 
   it('sums received across files and reports the active one', () => {
-    const s = summarizeTemplateState(state({
-      files: [
-        file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
-        file({ name: 'b', received: 1 * GB, total: 4 * GB }),
-      ],
-    }))
+    const s = summarizeTemplateState(
+      state({
+        files: [
+          file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
+          file({ name: 'b', received: 1 * GB, total: 4 * GB })
+        ]
+      })
+    )
     expect(s.receivedBytes).toBe(3 * GB)
     expect(s.totalBytes).toBe(6 * GB)
     expect(s.doneCount).toBe(1)
@@ -67,37 +84,47 @@ describe('summarizeTemplateState', () => {
   })
 
   it('falls back to the index estimate before real totals are known', () => {
-    const s = summarizeTemplateState(state({
-      estimatedTotalBytes: 4 * GB,
-      files: [file({ name: 'a', received: 1 * GB, total: 0 })],
-    }))
+    const s = summarizeTemplateState(
+      state({
+        estimatedTotalBytes: 4 * GB,
+        files: [file({ name: 'a', received: 1 * GB, total: 0 })]
+      })
+    )
     expect(s.totalBytes).toBe(4 * GB) // estimate, since no real total yet
     expect(s.percent).toBe(25)
   })
 
   it('clamps in-progress percent to 99 and only "done" reaches 100', () => {
-    const almost = summarizeTemplateState(state({
-      files: [file({ received: 99.9 * GB / 100 * 100, total: 100 })],
-      estimatedTotalBytes: 100,
-    }))
+    const almost = summarizeTemplateState(
+      state({
+        files: [file({ received: ((99.9 * GB) / 100) * 100, total: 100 })],
+        estimatedTotalBytes: 100
+      })
+    )
     expect(almost.percent).toBeLessThanOrEqual(99)
-    const done = summarizeTemplateState(state({ status: 'done', files: [file({ received: 100, total: 100, done: true })] }))
+    const done = summarizeTemplateState(
+      state({ status: 'done', files: [file({ received: 100, total: 100, done: true })] })
+    )
     expect(done.percent).toBe(100)
   })
 
   it('counts a failed file as terminal and advances the pointer past it', () => {
-    const s = summarizeTemplateState(state({
-      files: [file({ name: 'a', failed: true }), file({ name: 'b', received: 1, total: 2 })],
-    }))
+    const s = summarizeTemplateState(
+      state({
+        files: [file({ name: 'a', failed: true }), file({ name: 'b', received: 1, total: 2 })]
+      })
+    )
     expect(s.doneCount).toBe(1) // 'a' failed (terminal); 'b' still in-flight
     expect(s.currentFile).toBe('b') // pointer skipped past the failed 'a'
   })
 
   it('skipped-on-disk files contribute their bytes', () => {
-    const s = summarizeTemplateState(state({
-      status: 'done',
-      files: [file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true })],
-    }))
+    const s = summarizeTemplateState(
+      state({
+        status: 'done',
+        files: [file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true })]
+      })
+    )
     expect(s.receivedBytes).toBe(2 * GB)
     expect(s.totalBytes).toBe(2 * GB)
   })
@@ -106,39 +133,53 @@ describe('summarizeTemplateState', () => {
 describe('runPool', () => {
   it('runs every item exactly once', async () => {
     const seen: number[] = []
-    await runPool([1, 2, 3, 4, 5], 2, async (n) => { seen.push(n) })
+    await runPool([1, 2, 3, 4, 5], 2, async (n) => {
+      seen.push(n)
+    })
     expect(seen.sort()).toEqual([1, 2, 3, 4, 5])
   })
 
   it('never exceeds the concurrency cap', async () => {
     let active = 0
     let peak = 0
-    await runPool(Array.from({ length: 12 }, (_, i) => i), 3, async () => {
-      active++
-      peak = Math.max(peak, active)
-      await new Promise((r) => setTimeout(r, 5))
-      active--
-    })
+    await runPool(
+      Array.from({ length: 12 }, (_, i) => i),
+      3,
+      async () => {
+        active++
+        peak = Math.max(peak, active)
+        await new Promise((r) => setTimeout(r, 5))
+        active--
+      }
+    )
     expect(peak).toBeLessThanOrEqual(3)
   })
 
   it('stops scheduling new items once the signal aborts', async () => {
     const ctrl = new AbortController()
     const done: number[] = []
-    const p = runPool(Array.from({ length: 10 }, (_, i) => i), 2, async (n) => {
-      if (n === 1) ctrl.abort()
-      await new Promise((r) => setTimeout(r, 2))
-      done.push(n)
-    }, ctrl.signal)
+    const p = runPool(
+      Array.from({ length: 10 }, (_, i) => i),
+      2,
+      async (n) => {
+        if (n === 1) ctrl.abort()
+        await new Promise((r) => setTimeout(r, 2))
+        done.push(n)
+      },
+      ctrl.signal
+    )
     await p
     expect(done.length).toBeLessThan(10) // aborted before scheduling all
   })
 
   it('cap is clamped to item count', async () => {
-    let peak = 0, active = 0
+    let peak = 0,
+      active = 0
     await runPool([1, 2], 10, async () => {
-      active++; peak = Math.max(peak, active)
-      await new Promise((r) => setTimeout(r, 2)); active--
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((r) => setTimeout(r, 2))
+      active--
     })
     expect(peak).toBeLessThanOrEqual(2)
   })
@@ -147,7 +188,10 @@ describe('runPool', () => {
 describe('withRetry', () => {
   it('returns the first success without re-running', async () => {
     let calls = 0
-    const out = await withRetry(async () => { calls++; return 'ok' }, 2)
+    const out = await withRetry(async () => {
+      calls++
+      return 'ok'
+    }, 2)
     expect(out).toBe('ok')
     expect(calls).toBe(1)
   })
@@ -166,7 +210,10 @@ describe('withRetry', () => {
   it('rethrows the last error once the budget is exhausted', async () => {
     let calls = 0
     await expect(
-      withRetry(async () => { calls++; throw new Error(`fail ${calls}`) }, 2),
+      withRetry(async () => {
+        calls++
+        throw new Error(`fail ${calls}`)
+      }, 2)
     ).rejects.toThrow('fail 3')
     expect(calls).toBe(3)
   })
@@ -175,10 +222,13 @@ describe('withRetry', () => {
     let calls = 0
     await expect(
       withRetry(
-        async () => { calls++; throw new Error('Download cancelled') },
+        async () => {
+          calls++
+          throw new Error('Download cancelled')
+        },
         2,
-        { isFatal: (e) => (e as Error).message === 'Download cancelled' },
-      ),
+        { isFatal: (e) => (e as Error).message === 'Download cancelled' }
+      )
     ).rejects.toThrow('Download cancelled')
     expect(calls).toBe(1)
   })
@@ -186,9 +236,15 @@ describe('withRetry', () => {
   it('reports each re-attempt number to onRetry', async () => {
     const attempts: number[] = []
     await expect(
-      withRetry(async () => { throw new Error('x') }, 2, {
-        onRetry: (n) => attempts.push(n),
-      }),
+      withRetry(
+        async () => {
+          throw new Error('x')
+        },
+        2,
+        {
+          onRetry: (n) => attempts.push(n)
+        }
+      )
     ).rejects.toThrow()
     expect(attempts).toEqual([2, 3]) // before the 2nd and 3rd tries
   })
@@ -236,20 +292,22 @@ describe('describeDownloadFailure', () => {
   it('does not false-match a 401 inside an unrelated number', () => {
     // 4012 must not trip the gated-repo branch (word-boundary guard).
     expect(describeDownloadFailure('m.safetensors', 'wrote 4012 bytes then reset')).toMatch(
-      /fall back to in-app/i,
+      /fall back to in-app/i
     )
   })
 })
 
 describe('templateStateToTrayEntries', () => {
   it('maps one row per file with the right status', () => {
-    const rows = templateStateToTrayEntries(state({
-      files: [
-        file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
-        file({ name: 'b', received: 1 * GB, total: 4 * GB }),
-        file({ name: 'c', failed: true }),
-      ],
-    }))
+    const rows = templateStateToTrayEntries(
+      state({
+        files: [
+          file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
+          file({ name: 'b', received: 1 * GB, total: 4 * GB }),
+          file({ name: 'c', failed: true })
+        ]
+      })
+    )
     expect(rows.map((r) => r.status)).toEqual(['completed', 'downloading', 'error'])
     expect(rows[1]!.progress).toBeCloseTo(0.25)
   })
@@ -257,38 +315,46 @@ describe('templateStateToTrayEntries', () => {
   it('marks unfinished files cancelled/errored when the task itself settled', () => {
     // A cancelled or errored task must not leave unfinished files as
     // 'downloading' — `getDownloadsTrayState` would count them active forever.
-    const cancelled = templateStateToTrayEntries(state({
-      status: 'cancelled',
-      files: [
-        file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
-        file({ name: 'b', received: 1 * GB, total: 4 * GB }),
-      ],
-    }))
+    const cancelled = templateStateToTrayEntries(
+      state({
+        status: 'cancelled',
+        files: [
+          file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
+          file({ name: 'b', received: 1 * GB, total: 4 * GB })
+        ]
+      })
+    )
     expect(cancelled.map((r) => r.status)).toEqual(['completed', 'cancelled'])
 
-    const errored = templateStateToTrayEntries(state({
-      status: 'error',
-      files: [file({ name: 'b', received: 0, total: 4 * GB })],
-    }))
+    const errored = templateStateToTrayEntries(
+      state({
+        status: 'error',
+        files: [file({ name: 'b', received: 0, total: 4 * GB })]
+      })
+    )
     expect(errored[0]!.status).toBe('error')
   })
 
   it('keys each row by a stable synthetic url so the tray updates in place', () => {
-    const [row] = templateStateToTrayEntries(state({
-      files: [file({ name: 'model.safetensors', directory: 'checkpoints' })],
-    }))
+    const [row] = templateStateToTrayEntries(
+      state({
+        files: [file({ name: 'model.safetensors', directory: 'checkpoints' })]
+      })
+    )
     expect(row!.url).toBe('template-model://checkpoints/model.safetensors')
   })
 
   it('puts speed/ETA only on the first still-running row', () => {
-    const rows = templateStateToTrayEntries(state({
-      speedMBs: 8,
-      etaSecs: 30,
-      files: [
-        file({ name: 'a', received: 1 * GB, total: 2 * GB }),
-        file({ name: 'b', received: 0, total: 4 * GB }),
-      ],
-    }))
+    const rows = templateStateToTrayEntries(
+      state({
+        speedMBs: 8,
+        etaSecs: 30,
+        files: [
+          file({ name: 'a', received: 1 * GB, total: 2 * GB }),
+          file({ name: 'b', received: 0, total: 4 * GB })
+        ]
+      })
+    )
     expect(rows[0]!.speedBytesPerSec).toBeGreaterThan(0)
     expect(rows[0]!.etaSeconds).toBe(30)
     expect(rows[1]!.speedBytesPerSec).toBe(0)
@@ -296,25 +362,34 @@ describe('templateStateToTrayEntries', () => {
   })
 
   it('reports no live speed when nothing is downloading', () => {
-    const rows = templateStateToTrayEntries(state({
-      status: 'done',
-      speedMBs: 5,
-      files: [file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true })],
-    }))
+    const rows = templateStateToTrayEntries(
+      state({
+        status: 'done',
+        speedMBs: 5,
+        files: [file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true })]
+      })
+    )
     expect(rows[0]!.speedBytesPerSec).toBe(0)
   })
 })
 
 describe('formatTemplateSubStatus', () => {
   it('formats the downloading line with file/index/size/speed/eta', () => {
-    const s = summarizeTemplateState(state({
-      speedMBs: 5,
-      etaSecs: 90,
-      files: [
-        file({ name: 'z_image_turbo.safetensors', received: 1.2 * GB, total: 4 * GB, done: false }),
-      ],
-      estimatedTotalBytes: 4 * GB,
-    }))
+    const s = summarizeTemplateState(
+      state({
+        speedMBs: 5,
+        etaSecs: 90,
+        files: [
+          file({
+            name: 'z_image_turbo.safetensors',
+            received: 1.2 * GB,
+            total: 4 * GB,
+            done: false
+          })
+        ],
+        estimatedTotalBytes: 4 * GB
+      })
+    )
     const out = formatTemplateSubStatus(s)
     expect(out).toContain('z_image_turbo.safetensors')
     expect(out).toContain('(1 of 1)')
@@ -322,17 +397,23 @@ describe('formatTemplateSubStatus', () => {
   })
 
   it('uses dedicated strings for terminal states', () => {
-    expect(formatTemplateSubStatus(summarizeTemplateState(state({ status: 'resolving' })))).toMatch(/resolv/i)
-    expect(formatTemplateSubStatus(summarizeTemplateState(state({ status: 'done', files: [] })))).toMatch(/ready/i)
-    expect(formatTemplateSubStatus(summarizeTemplateState(state({ status: 'cancelled' })))).toMatch(/cancel/i)
+    expect(formatTemplateSubStatus(summarizeTemplateState(state({ status: 'resolving' })))).toMatch(
+      /resolv/i
+    )
+    expect(
+      formatTemplateSubStatus(summarizeTemplateState(state({ status: 'done', files: [] })))
+    ).toMatch(/ready/i)
+    expect(formatTemplateSubStatus(summarizeTemplateState(state({ status: 'cancelled' })))).toMatch(
+      /cancel/i
+    )
   })
 
   it('shows a disk-specific message for an insufficient-disk error', () => {
     const noSpace = formatTemplateSubStatus(
-      summarizeTemplateState(state({ status: 'error', error: 'insufficient-disk' })),
+      summarizeTemplateState(state({ status: 'error', error: 'insufficient-disk' }))
     )
     const generic = formatTemplateSubStatus(
-      summarizeTemplateState(state({ status: 'error', error: 'something-else' })),
+      summarizeTemplateState(state({ status: 'error', error: 'something-else' }))
     )
     expect(noSpace).toMatch(/disk space/i)
     expect(noSpace).not.toBe(generic)

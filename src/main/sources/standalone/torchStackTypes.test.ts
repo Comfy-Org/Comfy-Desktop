@@ -1,10 +1,24 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
-  publicVersion, torchLocalTag, stackVersionMatches, torchIndexUrlFor,
-  torchTupleReacquirable, accelBaseForTag, torchTupleMatches, torchPackageTuplesEqual,
-  observedTuple, hasFullObservedTuple, parseIndexStackId, makeIndexStackId, stackAppliesViaPip,
-  parseAmdIndexStackId, makeAmdIndexStackId, parseAnyIndexStackId,
-  torchIndexUrlForSource, torchTupleReacquirableFrom, AMD_MULTI_ARCH_INDEX_URL,
+  publicVersion,
+  torchLocalTag,
+  stackVersionMatches,
+  torchIndexUrlFor,
+  torchTupleReacquirable,
+  accelBaseForTag,
+  torchTupleMatches,
+  torchPackageTuplesEqual,
+  observedTuple,
+  hasFullObservedTuple,
+  parseIndexStackId,
+  makeIndexStackId,
+  stackAppliesViaPip,
+  parseAmdIndexStackId,
+  makeAmdIndexStackId,
+  parseAnyIndexStackId,
+  torchIndexUrlForSource,
+  torchTupleReacquirableFrom,
+  AMD_MULTI_ARCH_INDEX_URL
 } from './torchStackTypes'
 import type { ObservedTorchStack } from './torchStackTypes'
 
@@ -47,7 +61,9 @@ describe('stackVersionMatches', () => {
 
 describe('torchIndexUrlFor / torchTupleReacquirable', () => {
   it('derives the pytorch.org index from known tags', () => {
-    expect(torchIndexUrlFor({ torch: '2.10.0+cu130' })).toBe('https://download.pytorch.org/whl/cu130')
+    expect(torchIndexUrlFor({ torch: '2.10.0+cu130' })).toBe(
+      'https://download.pytorch.org/whl/cu130'
+    )
     expect(torchIndexUrlFor({ torch: '2.10.0+xpu' })).toBe('https://download.pytorch.org/whl/xpu')
     expect(torchIndexUrlFor({ torch: '2.10.0+cpu' })).toBe('https://download.pytorch.org/whl/cpu')
   })
@@ -64,7 +80,9 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
 
   it('serves rocm from pytorch.org on linux but not on windows', () => {
     setPlatform('linux')
-    expect(torchIndexUrlFor({ torch: '2.10.0+rocm7.1' })).toBe('https://download.pytorch.org/whl/rocm7.1')
+    expect(torchIndexUrlFor({ torch: '2.10.0+rocm7.1' })).toBe(
+      'https://download.pytorch.org/whl/rocm7.1'
+    )
     expect(torchTupleReacquirable({ torch: '2.10.0+rocm7.1' })).toBe(true)
     setPlatform('win32')
     expect(torchIndexUrlFor({ torch: '2.9.1+rocm7.2.1' })).toBeNull()
@@ -76,7 +94,9 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
       'https://download.pytorch.org/whl/nightly/cu132'
     )
     expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720+cu132' })).toBe(true)
-    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+xpu' })).toBe('https://download.pytorch.org/whl/nightly/xpu')
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+xpu' })).toBe(
+      'https://download.pytorch.org/whl/nightly/xpu'
+    )
     setPlatform('linux')
     expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720+rocm7.2' })).toBe(
       'https://download.pytorch.org/whl/nightly/rocm7.2'
@@ -88,7 +108,9 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
     // macOS; untagged dev builds elsewhere have no trusted provenance and
     // must not fall back to PyPI (it carries no dev builds).
     setPlatform('darwin')
-    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720' })).toBe('https://download.pytorch.org/whl/nightly/cpu')
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720' })).toBe(
+      'https://download.pytorch.org/whl/nightly/cpu'
+    )
     expect(torchTupleReacquirable({ torch: '2.13.0.dev20260720' })).toBe(true)
     for (const platform of ['win32', 'linux'] as const) {
       setPlatform(platform)
@@ -107,11 +129,19 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
 
   it('recognises all PEP 440 dev spellings but not rc/post releases', () => {
     // implicit-zero and compact dev forms are still nightlies
-    expect(torchIndexUrlFor({ torch: '2.13.0.dev+cu132' })).toBe('https://download.pytorch.org/whl/nightly/cu132')
-    expect(torchIndexUrlFor({ torch: '2.13.0dev1+cu132' })).toBe('https://download.pytorch.org/whl/nightly/cu132')
+    expect(torchIndexUrlFor({ torch: '2.13.0.dev+cu132' })).toBe(
+      'https://download.pytorch.org/whl/nightly/cu132'
+    )
+    expect(torchIndexUrlFor({ torch: '2.13.0dev1+cu132' })).toBe(
+      'https://download.pytorch.org/whl/nightly/cu132'
+    )
     // rc and post releases are stable-index builds, not nightlies
-    expect(torchIndexUrlFor({ torch: '2.13.0rc1+cu130' })).toBe('https://download.pytorch.org/whl/cu130')
-    expect(torchIndexUrlFor({ torch: '2.13.0.post1+cu130' })).toBe('https://download.pytorch.org/whl/cu130')
+    expect(torchIndexUrlFor({ torch: '2.13.0rc1+cu130' })).toBe(
+      'https://download.pytorch.org/whl/cu130'
+    )
+    expect(torchIndexUrlFor({ torch: '2.13.0.post1+cu130' })).toBe(
+      'https://download.pytorch.org/whl/cu130'
+    )
     expect(torchIndexUrlFor({ torch: '2.13.0.post1' })).toBeNull()
     expect(torchTupleReacquirable({ torch: '2.13.0.post1' })).toBe(true)
   })
@@ -132,10 +162,16 @@ describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
   it('falls back to the tag-derived lookup for every other source', () => {
     setPlatform('win32')
     expect(
-      torchIndexUrlForSource({ kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' }, { torch: '2.10.0+cu130' })
+      torchIndexUrlForSource(
+        { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
+        { torch: '2.10.0+cu130' }
+      )
     ).toBe('https://download.pytorch.org/whl/cu130')
     expect(
-      torchTupleReacquirableFrom({ kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v1' }, { torch: '2.10.0+cu130' })
+      torchTupleReacquirableFrom(
+        { kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v1' },
+        { torch: '2.10.0+cu130' }
+      )
     ).toBe(true)
     // Without the AMD source kind, a Windows ROCm tuple has no trusted index.
     expect(torchIndexUrlForSource(null, amdTuple)).toBeNull()
@@ -148,21 +184,24 @@ describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
     for (const torch of [
       '2.10.0+rocm7.13.0', // tag mismatch
       '2.10.0+cu130', // wrong vendor entirely
-      '2.12.0.dev20260720+rocm7.14.0', // dev build - the manifest mints none
+      '2.12.0.dev20260720+rocm7.14.0' // dev build - the manifest mints none
     ]) {
       expect(torchIndexUrlForSource(amdSource, { torch })).toBeNull()
       expect(torchTupleReacquirableFrom(amdSource, { torch })).toBe(false)
     }
     // A non-rocm source tag is never an AMD multi-arch identity.
     expect(
-      torchIndexUrlForSource({ kind: 'amd-multi-arch-index', indexTag: 'cu130' }, { torch: '2.10.0+cu130' })
+      torchIndexUrlForSource(
+        { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
+        { torch: '2.10.0+cu130' }
+      )
     ).toBeNull()
     // Companion packages must carry the same tag: an untagged or mismatched
     // companion pin would resolve to an arbitrary build from AMD's index.
     for (const packages of [
       { ...amdTuple, torchvision: '0.25.0+rocm7.13.0' },
       { ...amdTuple, torchvision: '0.25.0' },
-      { ...amdTuple, torchaudio: '2.10.0+rocm7.13.0' },
+      { ...amdTuple, torchaudio: '2.10.0+rocm7.13.0' }
     ]) {
       expect(torchIndexUrlForSource(amdSource, packages)).toBeNull()
       expect(torchTupleReacquirableFrom(amdSource, packages)).toBe(false)
@@ -172,7 +211,7 @@ describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
       torchIndexUrlForSource(amdSource, {
         ...amdTuple,
         torchvision: '0.25.0+rocm7.14.0',
-        torchaudio: '2.10.0+rocm7.14.0',
+        torchaudio: '2.10.0+rocm7.14.0'
       })
     ).toBe(AMD_MULTI_ARCH_INDEX_URL)
   })
@@ -181,7 +220,10 @@ describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
 describe('parseIndexStackId / makeIndexStackId', () => {
   it('round-trips and strips the local tag from the version key', () => {
     expect(makeIndexStackId('cu128', '2.11.0+cu128')).toBe('pytorch-index:cu128:2.11.0')
-    expect(parseIndexStackId('pytorch-index:cu128:2.11.0')).toEqual({ indexTag: 'cu128', version: '2.11.0' })
+    expect(parseIndexStackId('pytorch-index:cu128:2.11.0')).toEqual({
+      indexTag: 'cu128',
+      version: '2.11.0'
+    })
   })
 
   it('rejects malformed and foreign ids', () => {
@@ -191,17 +233,30 @@ describe('parseIndexStackId / makeIndexStackId', () => {
   })
 
   it('AMD multi-arch ids live in their own namespace - no cross-parse with pytorch-index ids', () => {
-    expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0+rocm7.14.0')).toBe('amd-index:rocm7.14.0:2.10.0')
-    expect(parseAmdIndexStackId('amd-index:rocm7.14.0:2.10.0')).toEqual({ indexTag: 'rocm7.14.0', version: '2.10.0' })
+    expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0+rocm7.14.0')).toBe(
+      'amd-index:rocm7.14.0:2.10.0'
+    )
+    expect(parseAmdIndexStackId('amd-index:rocm7.14.0:2.10.0')).toEqual({
+      indexTag: 'rocm7.14.0',
+      version: '2.10.0'
+    })
     expect(parseAmdIndexStackId('pytorch-index:rocm7.14.0:2.10.0')).toBeNull()
     expect(parseIndexStackId('amd-index:rocm7.14.0:2.10.0')).toBeNull()
     // The same tag + version mints DIFFERENT ids per source kind.
-    expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0')).not.toBe(makeIndexStackId('rocm7.14.0', '2.10.0'))
+    expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0')).not.toBe(
+      makeIndexStackId('rocm7.14.0', '2.10.0')
+    )
   })
 
   it('parseAnyIndexStackId accepts both index-served namespaces, nothing else', () => {
-    expect(parseAnyIndexStackId('pytorch-index:cu128:2.11.0')).toEqual({ indexTag: 'cu128', version: '2.11.0' })
-    expect(parseAnyIndexStackId('amd-index:rocm7.14.0:2.10.0')).toEqual({ indexTag: 'rocm7.14.0', version: '2.10.0' })
+    expect(parseAnyIndexStackId('pytorch-index:cu128:2.11.0')).toEqual({
+      indexTag: 'cu128',
+      version: '2.11.0'
+    })
+    expect(parseAnyIndexStackId('amd-index:rocm7.14.0:2.10.0')).toEqual({
+      indexTag: 'rocm7.14.0',
+      version: '2.10.0'
+    })
     expect(parseAnyIndexStackId('comfy-bundle:win-nvidia:v1.0')).toBeNull()
   })
 })
@@ -233,29 +288,54 @@ describe('accelBaseForTag', () => {
 })
 
 describe('torchTupleMatches (tag-aware)', () => {
-  const installed = { torch: '2.10.0+cu130', torchvision: '0.25.0+cu130', torchaudio: '2.10.0+cu130' }
+  const installed = {
+    torch: '2.10.0+cu130',
+    torchvision: '0.25.0+cu130',
+    torchaudio: '2.10.0+cu130'
+  }
 
   it('matches the same tuple whether or not the expected side carries tags', () => {
-    expect(torchTupleMatches({ torch: '2.10.0+cu130', torchvision: '0.25.0+cu130', torchaudio: '2.10.0+cu130' }, installed)).toBe(true)
-    expect(torchTupleMatches({ torch: '2.10.0', torchvision: '0.25.0', torchaudio: '2.10.0' }, installed)).toBe(true)
+    expect(
+      torchTupleMatches(
+        { torch: '2.10.0+cu130', torchvision: '0.25.0+cu130', torchaudio: '2.10.0+cu130' },
+        installed
+      )
+    ).toBe(true)
+    expect(
+      torchTupleMatches({ torch: '2.10.0', torchvision: '0.25.0', torchaudio: '2.10.0' }, installed)
+    ).toBe(true)
   })
 
   it('distinguishes same public version with different local tags', () => {
-    expect(torchTupleMatches({ torch: '2.10.0+cu128', torchvision: '0.25.0+cu128', torchaudio: '2.10.0+cu128' }, installed)).toBe(false)
+    expect(
+      torchTupleMatches(
+        { torch: '2.10.0+cu128', torchvision: '0.25.0+cu128', torchaudio: '2.10.0+cu128' },
+        installed
+      )
+    ).toBe(false)
   })
 
   it('treats an installed package the stack does not declare as a mismatch', () => {
-    expect(torchTupleMatches({ torch: '2.10.0+cu130', torchvision: '0.25.0+cu130' }, installed)).toBe(false)
+    expect(
+      torchTupleMatches({ torch: '2.10.0+cu130', torchvision: '0.25.0+cu130' }, installed)
+    ).toBe(false)
   })
 })
 
 describe('torchPackageTuplesEqual (tag-aware)', () => {
   it('is symmetric about declared packages', () => {
-    expect(torchPackageTuplesEqual({ torch: '2.10.0+cu130' }, { torch: '2.10.0+cu130', torchaudio: '2.10.0+cu130' })).toBe(false)
+    expect(
+      torchPackageTuplesEqual(
+        { torch: '2.10.0+cu130' },
+        { torch: '2.10.0+cu130', torchaudio: '2.10.0+cu130' }
+      )
+    ).toBe(false)
   })
 
   it('distinguishes local tags when both sides carry them', () => {
-    expect(torchPackageTuplesEqual({ torch: '2.10.0+cu128' }, { torch: '2.10.0+cu130' })).toBe(false)
+    expect(torchPackageTuplesEqual({ torch: '2.10.0+cu128' }, { torch: '2.10.0+cu130' })).toBe(
+      false
+    )
     expect(torchPackageTuplesEqual({ torch: '2.10.0+cu130' }, { torch: '2.10.0' })).toBe(true)
   })
 })
@@ -265,13 +345,25 @@ describe('observedTuple / hasFullObservedTuple', () => {
 
   it('requires both tuple fields to be present (null counts as present)', () => {
     expect(hasFullObservedTuple({ ...base, torchVersion: '2.4.1' })).toBe(false)
-    expect(hasFullObservedTuple({ ...base, torchVersion: '2.4.1', torchvisionVersion: '0.19.1' })).toBe(false)
-    expect(hasFullObservedTuple({ ...base, torchVersion: '2.4.1', torchvisionVersion: '0.19.1', torchaudioVersion: null })).toBe(true)
+    expect(
+      hasFullObservedTuple({ ...base, torchVersion: '2.4.1', torchvisionVersion: '0.19.1' })
+    ).toBe(false)
+    expect(
+      hasFullObservedTuple({
+        ...base,
+        torchVersion: '2.4.1',
+        torchvisionVersion: '0.19.1',
+        torchaudioVersion: null
+      })
+    ).toBe(true)
   })
 
   it('builds a tuple with only the recorded packages', () => {
     const record: ObservedTorchStack = {
-      ...base, torchVersion: '2.4.1+cu121', torchvisionVersion: '0.19.1+cu121', torchaudioVersion: null,
+      ...base,
+      torchVersion: '2.4.1+cu121',
+      torchvisionVersion: '0.19.1+cu121',
+      torchaudioVersion: null
     }
     expect(observedTuple(record)).toEqual({ torch: '2.4.1+cu121', torchvision: '0.19.1+cu121' })
   })

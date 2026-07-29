@@ -17,28 +17,30 @@ const IMAGE_REC: FieldOption = {
   label: 'SDXL Turbo',
   description: 'Fast text-to-image.',
   recommended: true,
-  data: { modality: 'image', sizeBytes: 7 * GB, thumbnailUrl: './x.webp' },
+  data: { modality: 'image', sizeBytes: 7 * GB, thumbnailUrl: './x.webp' }
 }
 const IMAGE_ALT: FieldOption = {
   value: 'flux_schnell',
   label: 'Flux Schnell',
   description: 'Heavier text-to-image.',
-  data: { modality: 'image', sizeBytes: 17 * GB },
+  data: { modality: 'image', sizeBytes: 17 * GB }
 }
 const VIDEO: FieldOption = {
   value: 'wan_video',
   label: 'Wan Video',
   description: 'Text-to-video.',
   recommended: true,
-  data: { modality: 'video', sizeBytes: 16 * GB },
+  data: { modality: 'video', sizeBytes: 16 * GB }
 }
 
-function mountPicker(props: Partial<{
-  options: FieldOption[]
-  selectedValue: string | null
-  diskSpace: DiskSpaceInfo | null
-  diskSpaceLoading: boolean
-}> = {}) {
+function mountPicker(
+  props: Partial<{
+    options: FieldOption[]
+    selectedValue: string | null
+    diskSpace: DiskSpaceInfo | null
+    diskSpaceLoading: boolean
+  }> = {}
+) {
   return mount(TemplatePickerStep, {
     props: {
       options: [NONE, IMAGE_REC, IMAGE_ALT, VIDEO],
@@ -46,9 +48,9 @@ function mountPicker(props: Partial<{
       selectedValue: IMAGE_REC.value,
       diskSpace: null,
       diskSpaceLoading: false,
-      ...props,
+      ...props
     },
-    global: { plugins: [i18n] },
+    global: { plugins: [i18n] }
   })
 }
 
@@ -60,7 +62,7 @@ describe('TemplatePickerStep', () => {
     expect(tabs[1]!.text()).toContain('Video')
   })
 
-  it('shows only the active tab\'s templates and never the none sentinel', () => {
+  it("shows only the active tab's templates and never the none sentinel", () => {
     const rows = mountPicker().findAll('button[role="radio"]')
     // Active tab follows the selected (recommended image) → both image rows show.
     expect(rows).toHaveLength(2)
@@ -94,7 +96,7 @@ describe('TemplatePickerStep', () => {
   it('swaps the size for a glyph when the models are already on disk', () => {
     const present: FieldOption = {
       ...IMAGE_ALT,
-      data: { ...IMAGE_ALT.data, modelsPresent: true },
+      data: { ...IMAGE_ALT.data, modelsPresent: true }
     }
     const rows = mountPicker({ options: [NONE, IMAGE_REC, present] }).findAll(
       'button[role="radio"]'
@@ -111,11 +113,11 @@ describe('TemplatePickerStep', () => {
   it('carries check, badge and glyph together on a selected recommended present card', () => {
     const present: FieldOption = {
       ...IMAGE_REC,
-      data: { ...IMAGE_REC.data, modelsPresent: true },
+      data: { ...IMAGE_REC.data, modelsPresent: true }
     }
     const row = mountPicker({
       options: [NONE, present],
-      selectedValue: present.value,
+      selectedValue: present.value
     }).findAll('button[role="radio"]')[0]!
 
     expect(row.find('.tps__check').exists()).toBe(true)
@@ -169,10 +171,11 @@ describe('TemplatePickerStep', () => {
     const named: FieldOption = {
       value: 'zit',
       label: 'Z-Image-Turbo Text to Image',
-      data: { modality: 'image', sizeBytes: 19 * GB, name: 'Z-Image-Turbo', task: 'Text to Image' },
+      data: { modality: 'image', sizeBytes: 19 * GB, name: 'Z-Image-Turbo', task: 'Text to Image' }
     }
-    const card = mountPicker({ options: [NONE, named], selectedValue: named.value })
-      .findAll('button[role="radio"]')[0]!
+    const card = mountPicker({ options: [NONE, named], selectedValue: named.value }).findAll(
+      'button[role="radio"]'
+    )[0]!
     expect(card.find('.tps__card-title').text()).toBe('Z-Image-Turbo')
     expect(card.find('.tps__card-task').text()).toBe('Text to Image')
     expect(card.find('.tps__card-size').text()).toContain('GB')
@@ -182,11 +185,18 @@ describe('TemplatePickerStep', () => {
     const API_NODE: FieldOption = {
       value: 'api_bytedance_seedream_5_0_pro_image_edit',
       label: 'Seedream 5.0 Pro: Image Edit',
-      data: { modality: 'image', sizeBytes: 0, apiNode: true, name: 'Seedream 5.0 Pro', task: 'Image Edit' },
+      data: {
+        modality: 'image',
+        sizeBytes: 0,
+        apiNode: true,
+        name: 'Seedream 5.0 Pro',
+        task: 'Image Edit'
+      }
     }
     const apiCard = (option: FieldOption = API_NODE) =>
-      mountPicker({ options: [NONE, option], selectedValue: option.value })
-        .findAll('button[role="radio"]')[0]!
+      mountPicker({ options: [NONE, option], selectedValue: option.value }).findAll(
+        'button[role="radio"]'
+      )[0]!
 
     it('badges the card and swaps the size for the crown', () => {
       const card = apiCard()
@@ -211,7 +221,7 @@ describe('TemplatePickerStep', () => {
     it('shows the real size, not the crown, when an API-node template has models', () => {
       const card = apiCard({
         ...API_NODE,
-        data: { ...API_NODE.data, sizeBytes: 9 * GB },
+        data: { ...API_NODE.data, sizeBytes: 9 * GB }
       })
       expect(card.find('.tps__api').exists()).toBe(true)
       expect(card.find('.tps__card-crown').exists()).toBe(false)
@@ -222,7 +232,7 @@ describe('TemplatePickerStep', () => {
       const wrapper = mountPicker({
         options: [NONE, API_NODE],
         selectedValue: API_NODE.value,
-        diskSpace: { total: 100 * GB, free: 1 * GB },
+        diskSpace: { total: 100 * GB, free: 1 * GB }
       })
       expect(wrapper.vm.shownDiskError).toBeNull()
     })
@@ -235,7 +245,10 @@ describe('TemplatePickerStep', () => {
 
   // A single populated modality needs no tab strip.
   it('hides the tab strip when only one modality has templates', () => {
-    const wrapper = mountPicker({ options: [NONE, IMAGE_REC, IMAGE_ALT], selectedValue: IMAGE_REC.value })
+    const wrapper = mountPicker({
+      options: [NONE, IMAGE_REC, IMAGE_ALT],
+      selectedValue: IMAGE_REC.value
+    })
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
     expect(wrapper.findAll('button[role="radio"]')).toHaveLength(2)
   })
@@ -251,7 +264,7 @@ describe('TemplatePickerStep', () => {
     it('exposes the block message when free space is below model + headroom', () => {
       const wrapper = mountPicker({
         selectedValue: VIDEO.value, // 16GB model
-        diskSpace: { free: 1 * GB, total: 500 * GB },
+        diskSpace: { free: 1 * GB, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeTruthy()
     })
@@ -260,7 +273,7 @@ describe('TemplatePickerStep', () => {
       const wrapper = mountPicker({
         selectedValue: VIDEO.value,
         diskSpace: { free: 1 * GB, total: 500 * GB },
-        diskSpaceLoading: true,
+        diskSpaceLoading: true
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
     })
@@ -268,7 +281,7 @@ describe('TemplatePickerStep', () => {
     it('does not block when free space covers the model', () => {
       const wrapper = mountPicker({
         selectedValue: VIDEO.value,
-        diskSpace: { free: 100 * GB, total: 500 * GB },
+        diskSpace: { free: 100 * GB, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
     })
@@ -276,7 +289,7 @@ describe('TemplatePickerStep', () => {
     it('never blocks the model-free none sentinel even on a full disk', () => {
       const wrapper = mountPicker({
         selectedValue: NONE.value,
-        diskSpace: { free: 0, total: 500 * GB },
+        diskSpace: { free: 0, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
     })

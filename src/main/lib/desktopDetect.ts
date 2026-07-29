@@ -95,7 +95,7 @@ export function detectDesktopInstall(): DesktopInstallInfo | null {
     configDir,
     basePath,
     executablePath: findDesktopExecutable(),
-    hasVenv: fs.existsSync(path.join(basePath, '.venv')),
+    hasVenv: fs.existsSync(path.join(basePath, '.venv'))
   }
 }
 
@@ -173,11 +173,10 @@ export async function captureDesktopSnapshot(info: DesktopInstallInfo): Promise<
       ref: 'Legacy Desktop',
       commit: null,
       releaseTag: '',
-      variant: '',
+      variant: ''
     },
     customNodes,
     pipPackages,
-    skipPipSync: true,
+    skipPipSync: true
   }
 }
-

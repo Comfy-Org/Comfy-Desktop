@@ -203,9 +203,7 @@ describe('captureState commit-matching guard', () => {
     mockedReadGitHead.mockReturnValue('abc1234')
     vi.mocked(getActiveUvPath).mockReturnValue('/legacy/.venv/bin/uv')
     vi.mocked(getActivePythonPath).mockReturnValue('/legacy/.venv/bin/python3')
-    vi.mocked(fs.existsSync).mockImplementation(
-      (p) => String(p) === '/legacy/.venv/bin/uv'
-    )
+    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === '/legacy/.venv/bin/uv')
     vi.mocked(pipFreeze).mockResolvedValue({ torch: '2.4.0', numpy: '1.26.4' })
 
     const installation = {
@@ -222,10 +220,7 @@ describe('captureState commit-matching guard', () => {
     const state = await captureState('/installs/adopted', installation)
 
     expect(getActiveUvPath).toHaveBeenCalledWith(installation)
-    expect(pipFreeze).toHaveBeenCalledWith(
-      '/legacy/.venv/bin/uv',
-      '/legacy/.venv/bin/python3'
-    )
+    expect(pipFreeze).toHaveBeenCalledWith('/legacy/.venv/bin/uv', '/legacy/.venv/bin/python3')
     expect(Object.keys(state.pipPackages).length).toBe(2)
   })
 
@@ -324,7 +319,11 @@ describe('captureSnapshotIfChanged telemetry', () => {
       updateChannel: 'stable',
       // Same stack identity as the mocked classifier but an older observedAt —
       // dedupe must compare identity only, or every boot would re-snapshot.
-      torchStack: { kind: 'observed' as const, torchVersion: null, observedAt: '2026-01-01T00:00:00.000Z' }
+      torchStack: {
+        kind: 'observed' as const,
+        torchVersion: null,
+        observedAt: '2026-01-01T00:00:00.000Z'
+      }
     }
     const lastFilename = 'last.json'
     // loadSnapshot reads through `resolveSnapshotPath` which uses
@@ -461,7 +460,12 @@ describe('ensureCurrentSnapshotOnTop', () => {
     // The imported snapshot is kept (retry can still use it).
     expect(
       memory.has(
-        path.join('/test/install', '.launcher', 'snapshots', '20250101_000000_000-manual-imported.json')
+        path.join(
+          '/test/install',
+          '.launcher',
+          'snapshots',
+          '20250101_000000_000-manual-imported.json'
+        )
       )
     ).toBe(true)
     // The written snapshot records the live commit.

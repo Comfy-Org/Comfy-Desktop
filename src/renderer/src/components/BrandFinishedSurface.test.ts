@@ -8,8 +8,8 @@ import BrandFinishedSurface from './BrandFinishedSurface.vue'
 const messages = {
   en: {
     common: { copy: 'Copy' },
-    launch: { viewLogs: 'View logs' },
-  },
+    launch: { viewLogs: 'View logs' }
+  }
 }
 
 function createTestI18n() {
@@ -21,7 +21,7 @@ function createTestI18n() {
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
   props: ['theme', 'vignette', 'ariaLabel'],
-  template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>',
+  template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>'
 }
 
 function mountSurface(props: Record<string, unknown>, slots: Record<string, unknown> = {}) {
@@ -30,8 +30,8 @@ function mountSurface(props: Record<string, unknown>, slots: Record<string, unkn
     slots,
     global: {
       plugins: [createTestI18n()],
-      stubs: { BrandTakeoverLayout: brandTakeoverStub },
-    },
+      stubs: { BrandTakeoverLayout: brandTakeoverStub }
+    }
   })
 }
 
@@ -69,7 +69,7 @@ describe('BrandFinishedSurface', () => {
     it('renders the logs content when the logs prop is set', () => {
       const wrapper = mountSurface({
         title: 'Crashed',
-        logs: 'Traceback (most recent call last):\n  File "...", line 42',
+        logs: 'Traceback (most recent call last):\n  File "...", line 42'
       })
       const logs = wrapper.find('.brand-progress__logs')
       expect(logs.exists()).toBe(true)
@@ -108,13 +108,13 @@ describe('BrandFinishedSurface', () => {
             <BrandFinishedSurface title="A" logs="a-stderr" />
             <BrandFinishedSurface title="B" logs="b-stderr" />
           </div>
-        `,
+        `
       }
       const wrapper = mount(parent, {
         global: {
           plugins: [createTestI18n()],
-          stubs: { BrandTakeoverLayout: brandTakeoverStub },
-        },
+          stubs: { BrandTakeoverLayout: brandTakeoverStub }
+        }
       })
       const toggles = wrapper.findAll('.brand-progress__logs-toggle')
       expect(toggles).toHaveLength(2)
@@ -127,7 +127,7 @@ describe('BrandFinishedSurface', () => {
       const wrapper = mountSurface({
         title: 'Crashed',
         logs: 'stderr',
-        logsLabel: 'Show stderr',
+        logsLabel: 'Show stderr'
       })
       expect(wrapper.text()).toContain('Show stderr')
       expect(wrapper.text()).not.toContain('View logs')
@@ -143,15 +143,15 @@ describe('BrandFinishedSurface', () => {
             h(
               'button',
               { class: 'brand-ghost brand-progress__footer-btn', type: 'button' },
-              'Back',
+              'Back'
             ),
             h(
               'button',
               { class: 'brand-primary brand-progress__footer-btn', type: 'button' },
-              'Restart',
-            ),
-          ],
-        },
+              'Restart'
+            )
+          ]
+        }
       )
       const row = wrapper.find('.brand-progress__error-actions')
       expect(row.exists()).toBe(true)

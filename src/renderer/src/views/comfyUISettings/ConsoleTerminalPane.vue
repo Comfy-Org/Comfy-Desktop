@@ -126,7 +126,7 @@ const menuHasSelection = ref(false)
 const menuItems = computed<ContextMenuItem[]>(() => [
   { id: 'copy', label: t('console.copy'), disabled: !menuHasSelection.value },
   { id: 'paste', label: t('console.paste') },
-  { id: 'selectAll', label: t('console.selectAll'), separator: true },
+  { id: 'selectAll', label: t('console.selectAll'), separator: true }
 ])
 
 function openContextMenu(e: MouseEvent): void {
@@ -183,8 +183,8 @@ async function attach(id: string): Promise<void> {
       brightBlue: cssVar('--accent-hover', '#93c5fd'),
       brightMagenta: cssVar('--accent-plum', '#afa3db'),
       brightCyan: cssVar('--accent-hover', '#93c5fd'),
-      brightWhite: cssVar('--text', '#ffffff'),
-    },
+      brightWhite: cssVar('--text', '#ffffff')
+    }
   })
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
@@ -227,9 +227,7 @@ async function attach(id: string): Promise<void> {
   // Reclaim it for this view on focus so the shell's cursor matches what we
   // render here.
   terminal.element?.addEventListener('focusin', reclaimPtySize)
-  disposers.push(() =>
-    terminal?.element?.removeEventListener('focusin', reclaimPtySize)
-  )
+  disposers.push(() => terminal?.element?.removeEventListener('focusin', reclaimPtySize))
   disposers.push(
     api.onTerminalExited((payload) => {
       if (payload.installationId === id) exited.value = true
@@ -271,9 +269,7 @@ onBeforeUnmount(teardown)
 <template>
   <div ref="paneRef" class="console-pane">
     <header class="console-header" aria-hidden="true">
-      <span class="console-header-dots">
-        <span /><span /><span />
-      </span>
+      <span class="console-header-dots"> <span /><span /><span /> </span>
       <span class="console-header-title">{{ t('console.shellLabel') }}</span>
     </header>
     <div class="console-viewport">
@@ -283,12 +279,7 @@ onBeforeUnmount(teardown)
         :data-testid="TID.consoleTerminal"
         @contextmenu.prevent="openContextMenu"
       />
-      <div
-        v-if="exited"
-        class="console-ended"
-        role="status"
-        :data-testid="TID.consoleSessionEnded"
-      >
+      <div v-if="exited" class="console-ended" role="status" :data-testid="TID.consoleSessionEnded">
         <span class="console-ended-text">{{ t('console.sessionEnded') }}</span>
         <button
           type="button"

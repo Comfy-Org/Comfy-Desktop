@@ -56,8 +56,20 @@ export interface SnapshotExportEnvelope {
 export interface SnapshotDiff {
   comfyuiChanged: boolean
   comfyui?: {
-    from: { ref: string; commit: string | null; baseTag?: string; commitsAhead?: number; formattedVersion: string }
-    to: { ref: string; commit: string | null; baseTag?: string; commitsAhead?: number; formattedVersion: string }
+    from: {
+      ref: string
+      commit: string | null
+      baseTag?: string
+      commitsAhead?: number
+      formattedVersion: string
+    }
+    to: {
+      ref: string
+      commit: string | null
+      baseTag?: string
+      commitsAhead?: number
+      formattedVersion: string
+    }
   }
   updateChannelChanged: boolean
   updateChannel?: { from: string; to: string }

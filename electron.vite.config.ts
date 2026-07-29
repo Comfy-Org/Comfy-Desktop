@@ -20,9 +20,9 @@ export default defineConfig({
       rollupOptions: {
         // node-pty is a native addon; it must stay external (its .node binary
         // can't be bundled) and is loaded from the unpacked node_modules.
-        external: ['node-pty'],
-      },
-    },
+        external: ['node-pty']
+      }
+    }
   },
   preload: {
     build: {
@@ -34,10 +34,10 @@ export default defineConfig({
           comfyTitleBarPreload: resolve(__dirname, 'src/preload/comfyTitleBarPreload.ts'),
           comfyTitlePopupPreload: resolve(__dirname, 'src/preload/comfyTitlePopupPreload.ts'),
           comfyTitleTooltipPreload: resolve(__dirname, 'src/preload/comfyTitleTooltipPreload.ts'),
-          comfySystemModalPreload: resolve(__dirname, 'src/preload/comfySystemModalPreload.ts'),
-        },
-      },
-    },
+          comfySystemModalPreload: resolve(__dirname, 'src/preload/comfySystemModalPreload.ts')
+        }
+      }
+    }
   },
   renderer: {
     build: {
@@ -48,9 +48,9 @@ export default defineConfig({
           comfyTitleBar: resolve(__dirname, 'src/renderer/comfyTitleBar.html'),
           comfyTitlePopup: resolve(__dirname, 'src/renderer/comfyTitlePopup.html'),
           comfyTitleTooltip: resolve(__dirname, 'src/renderer/comfyTitleTooltip.html'),
-          comfySystemModal: resolve(__dirname, 'src/renderer/comfySystemModal.html'),
-        },
-      },
+          comfySystemModal: resolve(__dirname, 'src/renderer/comfySystemModal.html')
+        }
+      }
     },
     resolve: {
       alias: {

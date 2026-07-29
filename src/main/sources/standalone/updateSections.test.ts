@@ -9,11 +9,11 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
-  shell: {},
+  shell: {}
 }))
 
 /**
@@ -24,13 +24,13 @@ vi.mock('electron', () => ({
 
 vi.mock('../../lib/release-cache', () => ({
   getEffectiveInfo: vi.fn(),
-  isUpdateAvailable: vi.fn(() => true),
+  isUpdateAvailable: vi.fn(() => true)
 }))
 vi.mock('../../lib/git', () => ({
-  hasGitDir: vi.fn(() => true),
+  hasGitDir: vi.fn(() => true)
 }))
 vi.mock('./torchStackCatalog', () => ({
-  getCachedTorchStacks: vi.fn(() => []),
+  getCachedTorchStacks: vi.fn(() => [])
 }))
 // No locale is loaded in tests, so the real t() returns the bare key — the
 // same signal production uses for "unknown key". Translate exactly one note
@@ -39,12 +39,11 @@ vi.mock('../../lib/i18n', async (importOriginal) => {
   const mod = await importOriginal<typeof I18nModule>()
   const known: Record<string, string> = {
     'standalone.pytorchIndexNoteCu128': 'Requires CUDA 12.8 drivers',
-    'standalone.pytorchSeriesNoteCu130': 'Current stable CUDA line',
+    'standalone.pytorchSeriesNoteCu130': 'Current stable CUDA line'
   }
   return {
     ...mod,
-    t: (key: string, params?: Record<string, string | number>) =>
-      known[key] ?? mod.t(key, params),
+    t: (key: string, params?: Record<string, string | number>) => known[key] ?? mod.t(key, params)
   }
 })
 
@@ -65,10 +64,20 @@ interface ChannelOption {
   value: string
   data?: { actions?: UpdateAction[] }
 }
-interface UpdateField { id: string; options: ChannelOption[] }
-interface UpdateSection { tab: string; fields?: UpdateField[] }
+interface UpdateField {
+  id: string
+  options: ChannelOption[]
+}
+interface UpdateSection {
+  tab: string
+  fields?: UpdateField[]
+}
 
-function getChannelAction(installation: InstallationRecord, channel: 'stable' | 'latest', actionId: string): UpdateAction | undefined {
+function getChannelAction(
+  installation: InstallationRecord,
+  channel: 'stable' | 'latest',
+  actionId: string
+): UpdateAction | undefined {
   const sections = getDetailSections(installation) as unknown as UpdateSection[]
   const updates = sections.find((s) => s.tab === 'update')
   const channelField = updates?.fields?.find((f) => f.id === 'updateChannel')
@@ -76,7 +85,10 @@ function getChannelAction(installation: InstallationRecord, channel: 'stable' | 
   return option?.data?.actions?.find((a) => a.id === actionId)
 }
 
-function getUpdateAction(installation: InstallationRecord, channel: 'stable' | 'latest'): UpdateAction | undefined {
+function getUpdateAction(
+  installation: InstallationRecord,
+  channel: 'stable' | 'latest'
+): UpdateAction | undefined {
   return getChannelAction(installation, channel, 'update-comfyui')
 }
 
@@ -90,7 +102,7 @@ function baseInstall(overrides: Partial<InstallationRecord> = {}): InstallationR
     createdAt: Date.now(),
     updateChannel: 'stable',
     comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 0 },
-    ...overrides,
+    ...overrides
   } as InstallationRecord
 }
 
@@ -107,7 +119,7 @@ describe('updateSections — update-comfyui action payload', () => {
       commitsAhead: channel === 'latest' ? 12 : 0,
       latestTag: channel === 'latest' ? 'def5678' : 'v0.3.20',
       releaseName: channel === 'latest' ? 'v0.3.20+12' : 'v0.3.20',
-      checkedAt: Date.now(),
+      checkedAt: Date.now()
     }))
   })
 
@@ -115,7 +127,9 @@ describe('updateSections — update-comfyui action payload', () => {
     // commitsAhead > 0 makes getEffectiveChannel report `latest`, so picking the
     // `stable` card is a channel switch.
     const action = getUpdateAction(
-      baseInstall({ comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 5 } } as Partial<InstallationRecord>),
+      baseInstall({
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 5 }
+      } as Partial<InstallationRecord>),
       'stable'
     )
     expect(action).toBeDefined()
@@ -126,7 +140,9 @@ describe('updateSections — update-comfyui action payload', () => {
 
   it('flags isDowngrade=true when commitsAhead is undefined but baseTag exists (older snapshot/install)', () => {
     const action = getUpdateAction(
-      baseInstall({ comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: undefined } } as Partial<InstallationRecord>),
+      baseInstall({
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: undefined }
+      } as Partial<InstallationRecord>),
       'stable'
     )
     expect(action!.data?.isDowngrade).toBe(true)
@@ -135,16 +151,24 @@ describe('updateSections — update-comfyui action payload', () => {
 
   it('flags isDowngrade=false when install is exactly on stable (commitsAhead=0)', () => {
     const action = getUpdateAction(
-      baseInstall({ comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 0 } } as Partial<InstallationRecord>),
+      baseInstall({
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 0 }
+      } as Partial<InstallationRecord>),
       'stable'
     )
     expect(action!.data?.isDowngrade).toBe(false)
     expect(action!.progressTitle).toBe('standalone.updatingTitle')
   })
 
-  it('flags isDowngrade=false when baseTag is missing (no anchor — can\'t tell direction)', () => {
+  it("flags isDowngrade=false when baseTag is missing (no anchor — can't tell direction)", () => {
     const action = getUpdateAction(
-      baseInstall({ comfyVersion: { commit: 'abc1234', baseTag: undefined as unknown as string, commitsAhead: undefined } } as Partial<InstallationRecord>),
+      baseInstall({
+        comfyVersion: {
+          commit: 'abc1234',
+          baseTag: undefined as unknown as string,
+          commitsAhead: undefined
+        }
+      } as Partial<InstallationRecord>),
       'stable'
     )
     expect(action!.data?.isDowngrade).toBe(false)
@@ -153,7 +177,9 @@ describe('updateSections — update-comfyui action payload', () => {
 
   it('never flags isDowngrade on `latest` channel target — moving to master tip is always forward', () => {
     const action = getUpdateAction(
-      baseInstall({ comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 5 } } as Partial<InstallationRecord>),
+      baseInstall({
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 5 }
+      } as Partial<InstallationRecord>),
       'latest'
     )
     expect(action!.data?.isDowngrade).toBe(false)
@@ -185,55 +211,81 @@ describe('updateSections — update-comfyui action payload', () => {
 
 describe('getEffectiveChannel — de-facto channel from git state', () => {
   it('returns the stored channel when the install sits exactly on its base tag', () => {
-    expect(getEffectiveChannel(baseInstall({
-      updateChannel: 'stable',
-      comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 0 },
-    } as Partial<InstallationRecord>))).toBe('stable')
+    expect(
+      getEffectiveChannel(
+        baseInstall({
+          updateChannel: 'stable',
+          comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 0 }
+        } as Partial<InstallationRecord>)
+      )
+    ).toBe('stable')
   })
 
   it('reports `latest` for a stored-`stable` install whose checkout is ahead of its base tag', () => {
     // e.g. a `git pull` outside the app leaves updateChannel stale on `stable`.
-    expect(getEffectiveChannel(baseInstall({
-      updateChannel: 'stable',
-      comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: 59 },
-    } as Partial<InstallationRecord>))).toBe('latest')
+    expect(
+      getEffectiveChannel(
+        baseInstall({
+          updateChannel: 'stable',
+          comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: 59 }
+        } as Partial<InstallationRecord>)
+      )
+    ).toBe('latest')
   })
 
   it('does not infer when commitsAhead is unknown (avoids flicker before enrichment)', () => {
-    expect(getEffectiveChannel(baseInstall({
-      updateChannel: 'stable',
-      comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: undefined },
-    } as Partial<InstallationRecord>))).toBe('stable')
+    expect(
+      getEffectiveChannel(
+        baseInstall({
+          updateChannel: 'stable',
+          comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: undefined }
+        } as Partial<InstallationRecord>)
+      )
+    ).toBe('stable')
   })
 
   it('never overrides an explicit non-stable stored channel', () => {
-    expect(getEffectiveChannel(baseInstall({
-      updateChannel: 'latest',
-      comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: 0 },
-    } as Partial<InstallationRecord>))).toBe('latest')
+    expect(
+      getEffectiveChannel(
+        baseInstall({
+          updateChannel: 'latest',
+          comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: 0 }
+        } as Partial<InstallationRecord>)
+      )
+    ).toBe('latest')
   })
 })
 
 describe('updateSections — channel picker reflects de-facto channel', () => {
   it('marks the latest card current when a stored-stable install is ahead of its base tag', () => {
-    const sections = getDetailSections(baseInstall({
-      updateChannel: 'stable',
-      comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: 59 },
-    } as Partial<InstallationRecord>)) as unknown as UpdateSection[]
-    const field = sections.find((s) => s.tab === 'update')?.fields?.find((f) => f.id === 'updateChannel')
+    const sections = getDetailSections(
+      baseInstall({
+        updateChannel: 'stable',
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.22.3', commitsAhead: 59 }
+      } as Partial<InstallationRecord>)
+    ) as unknown as UpdateSection[]
+    const field = sections
+      .find((s) => s.tab === 'update')
+      ?.fields?.find((f) => f.id === 'updateChannel')
     expect((field as unknown as { value: string }).value).toBe('latest')
   })
 })
 
 describe('updateSections — copy (duplicate) prompt default', () => {
-  interface ActionWithPrompt { id: string; prompt?: { defaultValue?: string; uniquifyDefault?: boolean } }
-  interface ActionsSection { title?: string; actions?: ActionWithPrompt[] }
+  interface ActionWithPrompt {
+    id: string
+    prompt?: { defaultValue?: string; uniquifyDefault?: boolean }
+  }
+  interface ActionsSection {
+    title?: string
+    actions?: ActionWithPrompt[]
+  }
 
   it('pre-fills the duplicate prompt with the source name, flagged to resolve to the numbered name on show', () => {
-    const sections = getDetailSections(baseInstall({ name: 'My Comfy' })) as unknown as ActionsSection[]
-    const copy = sections
-      .flatMap((s) => s.actions ?? [])
-      .find((a) => a.id === 'copy')
+    const sections = getDetailSections(
+      baseInstall({ name: 'My Comfy' })
+    ) as unknown as ActionsSection[]
+    const copy = sections.flatMap((s) => s.actions ?? []).find((a) => a.id === 'copy')
     expect(copy).toBeDefined()
     expect(copy!.prompt?.defaultValue).toBe('My Comfy')
     // uniquifyDefault tells the renderer to show the name it will actually get.
@@ -290,12 +342,14 @@ describe('updateSections — PyTorch picker', () => {
       source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' },
       date: '2026-03-25',
       comfyuiVersion: '',
-      ...overrides,
+      ...overrides
     }
   }
 
   function getIndexOption(): PytorchOption | undefined {
-    const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
+    const options = getPytorchOptions(
+      baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
+    )
     return options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
   }
 
@@ -306,15 +360,21 @@ describe('updateSections — PyTorch picker', () => {
    * break site-packages discovery there (and only there).
    */
   function mockInstalledDistInfo(entries: string[]) {
-    return vi.spyOn(fs, 'readdirSync').mockImplementation(((p: fs.PathLike) =>
-      String(p).includes('site-packages') ? entries : ['python3.13']) as unknown as typeof fs.readdirSync)
+    return vi
+      .spyOn(fs, 'readdirSync')
+      .mockImplementation(((p: fs.PathLike) =>
+        String(p).includes('site-packages')
+          ? entries
+          : ['python3.13']) as unknown as typeof fs.readdirSync)
   }
 
   it('renders an index-served entry as a pip apply: localized note shown, no bundle size, pip confirm copy', () => {
-    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
-      noteKey: 'pytorchIndexNoteCu128',
-      note: 'remote plain-text fallback',
-    })])
+    vi.mocked(getCachedTorchStacks).mockReturnValue([
+      indexEntry({
+        noteKey: 'pytorchIndexNoteCu128',
+        note: 'remote plain-text fallback'
+      })
+    ])
     const option = getIndexOption()
     expect(option).toBeDefined()
     // The known noteKey wins over the remote plain-text fallback.
@@ -328,30 +388,38 @@ describe('updateSections — PyTorch picker', () => {
   })
 
   it('falls back to the plain-text note when the noteKey is unknown to this app version', () => {
-    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
-      noteKey: 'pytorchIndexNoteFromNewerManifest',
-      note: 'Newest CUDA build.',
-    })])
+    vi.mocked(getCachedTorchStacks).mockReturnValue([
+      indexEntry({
+        noteKey: 'pytorchIndexNoteFromNewerManifest',
+        note: 'Newest CUDA build.'
+      })
+    ])
     const option = getIndexOption()
     expect(option!.description).toContain('Newest CUDA build.')
     expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
   })
 
   it('omits the note cleanly when the noteKey is unknown and no plain-text note exists', () => {
-    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
-      noteKey: 'pytorchIndexNoteFromNewerManifest',
-    })])
+    vi.mocked(getCachedTorchStacks).mockReturnValue([
+      indexEntry({
+        noteKey: 'pytorchIndexNoteFromNewerManifest'
+      })
+    ])
     const option = getIndexOption()
     expect(option!.description).not.toContain('pytorchIndexNoteFromNewerManifest')
   })
 
   it('warns when a stack omits torchaudio: switching would uninstall it', () => {
-    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
-      stackId: 'pytorch-index:cu130:2.13.0',
-      packages: { torch: '2.13.0+cu130', torchvision: '0.28.0+cu130' },
-      source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
-    })])
-    const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
+    vi.mocked(getCachedTorchStacks).mockReturnValue([
+      indexEntry({
+        stackId: 'pytorch-index:cu130:2.13.0',
+        packages: { torch: '2.13.0+cu130', torchvision: '0.28.0+cu130' },
+        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' }
+      })
+    ])
+    const options = getPytorchOptions(
+      baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
+    )
     const option = options.find((o) => o.value === 'pytorch-index:cu130:2.13.0')
     expect(option).toBeDefined()
     expect(option!.description).toContain('standalone.pytorchNoTorchaudioNote')
@@ -366,15 +434,20 @@ describe('updateSections — PyTorch picker', () => {
   it('does not warn on the CURRENT stack when it omits torchaudio: nothing gets removed', () => {
     // Installed tuple (dist-info dirs) matches the no-torchaudio stack.
     const readdir = mockInstalledDistInfo([
-      'torch-2.13.0+cu130.dist-info', 'torchvision-0.28.0+cu130.dist-info',
+      'torch-2.13.0+cu130.dist-info',
+      'torchvision-0.28.0+cu130.dist-info'
     ])
     try {
-      vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
-        stackId: 'pytorch-index:cu130:2.13.0',
-        packages: { torch: '2.13.0+cu130', torchvision: '0.28.0+cu130' },
-        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
-      })])
-      const options = getPytorchOptions(baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>))
+      vi.mocked(getCachedTorchStacks).mockReturnValue([
+        indexEntry({
+          stackId: 'pytorch-index:cu130:2.13.0',
+          packages: { torch: '2.13.0+cu130', torchvision: '0.28.0+cu130' },
+          source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' }
+        })
+      ])
+      const options = getPytorchOptions(
+        baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
+      )
       const option = options.find((o) => o.value === 'pytorch-index:cu130:2.13.0')
       expect(option).toBeDefined()
       expect(option!.description).not.toContain('standalone.pytorchNoTorchaudioNote')
@@ -385,9 +458,11 @@ describe('updateSections — PyTorch picker', () => {
   })
 
   it('surfaces a compute-cap mismatch in the description and the confirm dialog, still selectable', () => {
-    vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry({
-      capWarning: { min: 7.5, max: 12.0, detected: [6.1] },
-    })])
+    vi.mocked(getCachedTorchStacks).mockReturnValue([
+      indexEntry({
+        capWarning: { min: 7.5, max: 12.0, detected: [6.1] }
+      })
+    ])
     const option = getIndexOption()
     expect(option!.description).toContain('standalone.pytorchCapWarning')
     const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
@@ -405,7 +480,9 @@ describe('updateSections — PyTorch picker', () => {
 
   it('offers Copy & Change PyTorch beside Change PyTorch, carrying the stackId and a name prompt', () => {
     vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry()])
-    const options = getPytorchOptions(baseInstall({ name: 'My Comfy', variant: 'win-nvidia' } as Partial<InstallationRecord>))
+    const options = getPytorchOptions(
+      baseInstall({ name: 'My Comfy', variant: 'win-nvidia' } as Partial<InstallationRecord>)
+    )
     const option = options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
     const copyChange = option!.data?.actions?.find((a) => a.id === 'copy-pytorch')
     expect(copyChange).toBeDefined()
@@ -417,7 +494,9 @@ describe('updateSections — PyTorch picker', () => {
 
   it('offers neither mutation action on the current stack', () => {
     const readdir = mockInstalledDistInfo([
-      'torch-2.11.0+cu128.dist-info', 'torchvision-0.26.0+cu128.dist-info', 'torchaudio-2.11.0+cu128.dist-info',
+      'torch-2.11.0+cu128.dist-info',
+      'torchvision-0.26.0+cu128.dist-info',
+      'torchaudio-2.11.0+cu128.dist-info'
     ])
     try {
       vi.mocked(getCachedTorchStacks).mockReturnValue([indexEntry()])
@@ -429,20 +508,25 @@ describe('updateSections — PyTorch picker', () => {
   })
 
   describe('backend-series grouping (cascading dropdowns)', () => {
-    const install = (): InstallationRecord => baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
+    const install = (): InstallationRecord =>
+      baseInstall({ variant: 'win-nvidia' } as Partial<InstallationRecord>)
 
     function cudaEntry(tag: string, torch: string): TorchStackEntry {
       return indexEntry({
         stackId: `pytorch-index:${tag}:${torch}`,
-        packages: { torch: `${torch}+${tag}`, torchvision: `0.26.0+${tag}`, torchaudio: `${torch}+${tag}` },
-        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: tag },
+        packages: {
+          torch: `${torch}+${tag}`,
+          torchvision: `0.26.0+${tag}`,
+          torchaudio: `${torch}+${tag}`
+        },
+        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: tag }
       })
     }
 
     it('emits one groupPath level per option when the catalog spans several CUDA series', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
-        cudaEntry('cu128', '2.11.0'),
+        cudaEntry('cu128', '2.11.0')
       ])
       const field = getPytorchField(install())!
       expect(field.groupLabels).toEqual(['standalone.pytorchSeriesLabel'])
@@ -452,7 +536,7 @@ describe('updateSections — PyTorch picker', () => {
       // carries a description; cu128's key is unknown here, so its group has
       // none (a bare i18n key must never leak into the dropdown).
       expect(cu130!.groupPath).toEqual([
-        { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' },
+        { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' }
       ])
       expect(cu128!.groupPath).toEqual([{ id: 'cu128', label: 'CUDA 12.8 (cu128)' }])
     })
@@ -460,17 +544,19 @@ describe('updateSections — PyTorch picker', () => {
     it('splits nightly (dev) builds into their own clearly-labeled series with a standing warning', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu132', '2.13.0.dev20260720'),
-        cudaEntry('cu130', '2.10.0'),
+        cudaEntry('cu130', '2.10.0')
       ])
       const field = getPytorchField(install())!
-      const nightly = field.options.find((o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720')
+      const nightly = field.options.find(
+        (o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720'
+      )
       const stable = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
       // A nightly never shares a series with stable builds - selecting one
       // must be a deliberate step past a labeled fork in the first dropdown.
       expect(nightly!.groupPath?.[0]?.id).toBe('nightly-cu132')
       expect(nightly!.groupPath?.[0]?.label).toContain('pytorchSeriesNightly')
       expect(stable!.groupPath).toEqual([
-        { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' },
+        { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' }
       ])
       expect(nightly!.description).toContain('standalone.pytorchNightlyNote')
       expect(stable!.description).not.toContain('standalone.pytorchNightlyNote')
@@ -479,7 +565,7 @@ describe('updateSections — PyTorch picker', () => {
     it('a nightly and a stable build of the same tag still fork into two series', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu132', '2.13.0.dev20260720'),
-        cudaEntry('cu132', '2.12.0'),
+        cudaEntry('cu132', '2.12.0')
       ])
       const field = getPytorchField(install())!
       const ids = field.options.map((o) => o.groupPath?.[0]?.id)
@@ -491,19 +577,17 @@ describe('updateSections — PyTorch picker', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
         cudaEntry('cu130', '2.9.1'),
-        cudaEntry('cu128', '2.11.0'),
+        cudaEntry('cu128', '2.11.0')
       ])
       const options = getPytorchOptions(install())
-      const ids = options
-        .filter((o) => o.value.includes('cu130'))
-        .map((o) => o.groupPath?.[0]?.id)
+      const ids = options.filter((o) => o.value.includes('cu130')).map((o) => o.groupPath?.[0]?.id)
       expect(ids).toEqual(['cu130', 'cu130'])
     })
 
     it('keeps the flat picker (no groupPath, no groupLabels) for a single series', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
-        cudaEntry('cu130', '2.9.1'),
+        cudaEntry('cu130', '2.9.1')
       ])
       const field = getPytorchField(install())!
       expect(field.groupLabels).toBeUndefined()
@@ -515,12 +599,12 @@ describe('updateSections — PyTorch picker', () => {
       // in the untagged "Default" series while real stacks keep theirs.
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
-        cudaEntry('cu128', '2.11.0'),
+        cudaEntry('cu128', '2.11.0')
       ])
       const options = getPytorchOptions(install())
       const synthetic = options.find((o) => o.value === 'pytorch-current')
       expect(synthetic!.groupPath).toEqual([
-        { id: 'default', label: 'standalone.pytorchSeriesDefault' },
+        { id: 'default', label: 'standalone.pytorchSeriesDefault' }
       ])
     })
 
@@ -531,12 +615,16 @@ describe('updateSections — PyTorch picker', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         indexEntry({
           stackId: 'bundle:cu130:2.9.0',
-          packages: { torch: '2.9.0+cu130', torchvision: '0.24.0+cu130', torchaudio: '2.9.0+cu130' },
+          packages: {
+            torch: '2.9.0+cu130',
+            torchvision: '0.24.0+cu130',
+            torchaudio: '2.9.0+cu130'
+          },
           source: { kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v1' },
-          date: '2026-01-01',
+          date: '2026-01-01'
         }),
         { ...cudaEntry('cu130', '2.10.0'), date: '2026-03-25' },
-        { ...cudaEntry('cu128', '2.11.0'), date: '2026-03-25' },
+        { ...cudaEntry('cu128', '2.11.0'), date: '2026-03-25' }
       ])
       const options = getPytorchOptions(install())
       const cu130Values = options
@@ -551,7 +639,7 @@ describe('updateSections — PyTorch picker', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         { ...cudaEntry('cu126', '2.9.0'), date: '2026-05-01' },
         { ...cudaEntry('cu130', '2.10.0'), date: '2026-01-01' },
-        { ...cudaEntry('cu128', '2.11.0'), date: '2026-03-01' },
+        { ...cudaEntry('cu128', '2.11.0'), date: '2026-03-01' }
       ])
       const seriesOrder = getPytorchOptions(install())
         .map((o) => o.groupPath?.[0]?.id)
@@ -563,7 +651,7 @@ describe('updateSections — PyTorch picker', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         { ...cudaEntry('cu130', '2.9.0'), date: '2026-05-01' },
         { ...cudaEntry('cu130', '2.13.0'), date: '2026-01-01' },
-        { ...cudaEntry('cu130', '2.10.0'), date: '2026-03-01' },
+        { ...cudaEntry('cu130', '2.10.0'), date: '2026-03-01' }
       ])
       // Single series -> flat picker; the synthetic current entry leads.
       const values = getPytorchOptions(install()).map((o) => o.value)
@@ -571,14 +659,14 @@ describe('updateSections — PyTorch picker', () => {
         'pytorch-current',
         'pytorch-index:cu130:2.13.0',
         'pytorch-index:cu130:2.10.0',
-        'pytorch-index:cu130:2.9.0',
+        'pytorch-index:cu130:2.9.0'
       ])
     })
 
     it('sorts nightly series after every stable series', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu132', '2.13.0.dev20260720'),
-        cudaEntry('cu126', '2.9.0'),
+        cudaEntry('cu126', '2.9.0')
       ])
       const seriesOrder = getPytorchOptions(install())
         .map((o) => o.groupPath?.[0]?.id)
@@ -600,7 +688,7 @@ describe('updateSections — PyTorch picker', () => {
     it('grouped options still carry the opaque stackId in their action payload', () => {
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
-        cudaEntry('cu128', '2.11.0'),
+        cudaEntry('cu128', '2.11.0')
       ])
       for (const option of getPytorchOptions(install())) {
         const action = option.data?.actions?.find((a) => a.id === 'change-pytorch')
@@ -622,14 +710,17 @@ describe('updateSections — PyTorch picker', () => {
       function groupedField() {
         vi.mocked(getCachedTorchStacks).mockReturnValue([
           cudaEntry('cu130', '2.10.0'),
-          cudaEntry('cu128', '2.11.0'),
+          cudaEntry('cu128', '2.11.0')
         ])
         return getPytorchField(install())!
       }
 
       it('falls back to remote series plain text when its noteKey is unknown here', () => {
         _setRemoteDefsForTest(null, {
-          cu128: { noteKey: 'pytorchSeriesNoteFromNewerManifest', note: 'Remote series explanation' },
+          cu128: {
+            noteKey: 'pytorchSeriesNoteFromNewerManifest',
+            note: 'Remote series explanation'
+          }
         })
         const field = groupedField()
         const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
@@ -643,10 +734,12 @@ describe('updateSections — PyTorch picker', () => {
         _setRemoteDefsForTest(null, { cu132: { note: 'Newest CUDA line' } })
         vi.mocked(getCachedTorchStacks).mockReturnValue([
           cudaEntry('cu132', '2.13.0.dev20260720'),
-          cudaEntry('cu130', '2.10.0'),
+          cudaEntry('cu130', '2.10.0')
         ])
         const field = getPytorchField(install())!
-        const nightly = field.options.find((o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720')
+        const nightly = field.options.find(
+          (o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720'
+        )
         expect(nightly!.groupPath?.[0]?.id).toBe('nightly-cu132')
         expect(nightly!.groupPath?.[0]?.description).toBe('Newest CUDA line')
       })
@@ -672,7 +765,9 @@ describe('updateSections — PyTorch picker', () => {
           _setNvidiaDriverForTest(detected)
           const field = groupedField()
           const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
-          expect(cu130!.groupPath?.[0]?.description ?? '').not.toContain('standalone.pytorchDriverWarning')
+          expect(cu130!.groupPath?.[0]?.description ?? '').not.toContain(
+            'standalone.pytorchDriverWarning'
+          )
           expect(cu130!.description ?? '').not.toContain('standalone.pytorchDriverWarning')
           const action = cu130!.data?.actions?.find((a) => a.id === 'change-pytorch')
           expect(action!.confirm?.message).not.toContain('standalone.pytorchDriverConfirmWarning')
@@ -683,8 +778,9 @@ describe('updateSections — PyTorch picker', () => {
         // Nothing changes by staying on the current stack, so its own row
         // stays clean; the series dropdown still flags the driver gap.
         const readdir = mockInstalledDistInfo([
-          'torch-2.10.0+cu130.dist-info', 'torchvision-0.26.0+cu130.dist-info',
-          'torchaudio-2.10.0+cu130.dist-info',
+          'torch-2.10.0+cu130.dist-info',
+          'torchvision-0.26.0+cu130.dist-info',
+          'torchaudio-2.10.0+cu130.dist-info'
         ])
         try {
           _setRemoteDefsForTest(null, { cu130: { minDriver } })
@@ -705,17 +801,27 @@ describe('updateSections — PyTorch picker', () => {
         indexEntry({
           stackId: 'pytorch-index:rocm7.2.1:2.10.0',
           variant: 'linux-amd',
-          packages: { torch: '2.10.0+rocm7.2.1', torchvision: '0.26.0+rocm7.2.1', torchaudio: '2.10.0+rocm7.2.1' },
-          source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm7.2.1' },
+          packages: {
+            torch: '2.10.0+rocm7.2.1',
+            torchvision: '0.26.0+rocm7.2.1',
+            torchaudio: '2.10.0+rocm7.2.1'
+          },
+          source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm7.2.1' }
         }),
         indexEntry({
           stackId: 'pytorch-index:rocm6.4:2.9.0',
           variant: 'linux-amd',
-          packages: { torch: '2.9.0+rocm6.4', torchvision: '0.25.0+rocm6.4', torchaudio: '2.9.0+rocm6.4' },
-          source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm6.4' },
-        }),
+          packages: {
+            torch: '2.9.0+rocm6.4',
+            torchvision: '0.25.0+rocm6.4',
+            torchaudio: '2.9.0+rocm6.4'
+          },
+          source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm6.4' }
+        })
       ])
-      const options = getPytorchOptions(baseInstall({ variant: 'linux-amd' } as Partial<InstallationRecord>))
+      const options = getPytorchOptions(
+        baseInstall({ variant: 'linux-amd' } as Partial<InstallationRecord>)
+      )
       const newer = options.find((o) => o.value === 'pytorch-index:rocm7.2.1:2.10.0')
       expect(newer!.groupPath).toEqual([{ id: 'rocm7.2.1', label: 'ROCm 7.2.1' }])
     })

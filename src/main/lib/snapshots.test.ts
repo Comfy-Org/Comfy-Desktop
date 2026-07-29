@@ -358,7 +358,11 @@ describe('validateExportEnvelope', () => {
     const snap = {
       ...makeSnapshot(),
       version: 2 as const,
-      torchStack: { kind: 'observed', torchVersion: '2.4.1', observedAt: '2026-03-01T12:00:00.000Z' } as const
+      torchStack: {
+        kind: 'observed',
+        torchVersion: '2.4.1',
+        observedAt: '2026-03-01T12:00:00.000Z'
+      } as const
     }
     const result = validateExportEnvelope(makeEnvelope([snap]))
     expect(result.snapshots[0]!.torchStack?.kind).toBe('observed')
@@ -368,7 +372,11 @@ describe('validateExportEnvelope', () => {
     const snap = {
       ...makeSnapshot(),
       version: 2 as const,
-      torchStack: { kind: 'observed', torchVersion: null, observedAt: '2026-03-01T12:00:00.000Z' } as const
+      torchStack: {
+        kind: 'observed',
+        torchVersion: null,
+        observedAt: '2026-03-01T12:00:00.000Z'
+      } as const
     }
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).not.toThrow()
   })
@@ -377,7 +385,11 @@ describe('validateExportEnvelope', () => {
     const snap = {
       ...makeSnapshot(),
       version: 2 as const,
-      torchStack: { kind: 'observed', torchVersion: '2.4.1; rm -rf /', observedAt: '2026-03-01T12:00:00.000Z' } as unknown as Snapshot['torchStack']
+      torchStack: {
+        kind: 'observed',
+        torchVersion: '2.4.1; rm -rf /',
+        observedAt: '2026-03-01T12:00:00.000Z'
+      } as unknown as Snapshot['torchStack']
     }
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
       'Invalid snapshot at index 0'
@@ -405,12 +417,19 @@ describe('validateExportEnvelope', () => {
   /** Deep-clone the managed fixture as raw JSON so tests can corrupt it
    *  field-by-field without fighting the discriminated-union types. */
   const rawManagedStack = (): { kind: string; ref: Record<string, unknown> } =>
-    JSON.parse(JSON.stringify(makeManagedTorchStack())) as { kind: string; ref: Record<string, unknown> }
+    JSON.parse(JSON.stringify(makeManagedTorchStack())) as {
+      kind: string
+      ref: Record<string, unknown>
+    }
 
   it('rejects managed torchStack with a raw-URL source (untyped source smuggling)', () => {
     const stack = rawManagedStack()
     stack.ref.source = { kind: 'url', url: 'https://evil.example/torch.whl' }
-    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: stack as unknown as Snapshot['torchStack']
+    }
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
       'Invalid snapshot at index 0'
     )
@@ -419,7 +438,11 @@ describe('validateExportEnvelope', () => {
   it('rejects managed torchStack with invalid torch version string', () => {
     const stack = rawManagedStack()
     ;(stack.ref.packages as Record<string, unknown>).torch = '2.7.0; rm -rf /'
-    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: stack as unknown as Snapshot['torchStack']
+    }
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
       'Invalid snapshot at index 0'
     )
@@ -428,7 +451,11 @@ describe('validateExportEnvelope', () => {
   it('rejects managed torchStack missing packages', () => {
     const stack = rawManagedStack()
     delete stack.ref.packages
-    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: stack as unknown as Snapshot['torchStack']
+    }
     expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
       'Invalid snapshot at index 0'
     )
@@ -438,13 +465,17 @@ describe('validateExportEnvelope', () => {
     for (const stackId of [
       'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
       'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
-      'amd-index:rocm7.14.0:2.11.0', // version disagrees with the tuple
+      'amd-index:rocm7.14.0:2.11.0' // version disagrees with the tuple
     ]) {
       const stack = rawManagedStack()
       stack.ref.stackId = stackId
       stack.ref.packages = { torch: '2.10.0+rocm7.14.0' }
       stack.ref.source = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
-      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+      const snap = {
+        ...makeSnapshot(),
+        version: 2 as const,
+        torchStack: stack as unknown as Snapshot['torchStack']
+      }
       expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
         'Invalid snapshot at index 0'
       )
@@ -455,9 +486,17 @@ describe('validateExportEnvelope', () => {
     const stack = rawManagedStack()
     stack.ref.stackId = 'amd-index:rocm7.14.0:2.10.0'
     stack.ref.variant = 'win-amd'
-    stack.ref.packages = { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' }
+    stack.ref.packages = {
+      torch: '2.10.0+rocm7.14.0',
+      torchvision: '0.25.0+rocm7.14.0',
+      torchaudio: '2.10.0+rocm7.14.0'
+    }
     stack.ref.source = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
-    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: stack as unknown as Snapshot['torchStack']
+    }
     const result = validateExportEnvelope(makeEnvelope([snap]))
     expect(result.snapshots[0]!.torchStack?.kind).toBe('managed')
   })
@@ -472,13 +511,17 @@ describe('validateExportEnvelope', () => {
       // Only rocm tags name AMD multi-arch stacks.
       { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
       // Extra fields (e.g. a smuggled url) mark the source as not ours.
-      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' },
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' }
     ]) {
       const stack = rawManagedStack()
       stack.ref.stackId = 'amd-index:rocm7.14.0:2.10.0'
       stack.ref.packages = { torch: '2.10.0+rocm7.14.0' }
       stack.ref.source = source
-      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+      const snap = {
+        ...makeSnapshot(),
+        version: 2 as const,
+        torchStack: stack as unknown as Snapshot['torchStack']
+      }
       expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
         'Invalid snapshot at index 0'
       )
@@ -939,9 +982,7 @@ describe('staged snapshot envelopes', () => {
 
   it('release is a no-op for unknown/invalid tokens', async () => {
     await expect(releaseStagedSnapshotEnvelope('deadbeef')).resolves.toBeUndefined()
-    await expect(
-      releaseStagedSnapshotEnvelope('0'.repeat(32))
-    ).resolves.toBeUndefined()
+    await expect(releaseStagedSnapshotEnvelope('0'.repeat(32))).resolves.toBeUndefined()
   })
 })
 

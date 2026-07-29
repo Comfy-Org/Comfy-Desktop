@@ -28,7 +28,7 @@ import {
   _markLaunching,
   _operationAborts,
   _pendingPorts,
-  _reservePort,
+  _reservePort
 } from '../shared'
 import type { ChildProcess, InstallationRecord } from '../shared'
 

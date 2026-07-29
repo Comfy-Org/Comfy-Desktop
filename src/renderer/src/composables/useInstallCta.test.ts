@@ -4,14 +4,14 @@ import { ref, shallowRef, triggerRef } from 'vue'
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     // Identity translator so labels are predictable in assertions.
-    t: (_key: string, fallback?: string) => fallback ?? _key,
-  }),
+    t: (_key: string, fallback?: string) => fallback ?? _key
+  })
 }))
 
 // A shallowRef version lets `set*` retrigger the composable's computeds.
 const sessionState = vi.hoisted(() => ({
   running: new Set<string>(),
-  launching: new Set<string>(),
+  launching: new Set<string>()
 }))
 function setRunning(running: Set<string>): void {
   sessionState.running = running
@@ -32,8 +32,8 @@ vi.mock('../stores/sessionStore', () => ({
     isLaunching: (id: string) => {
       void sessionStoreVersion.value
       return sessionState.launching.has(id)
-    },
-  }),
+    }
+  })
 }))
 
 import { useInstallCta } from './useInstallCta'
@@ -51,7 +51,7 @@ beforeEach(() => {
 describe('useInstallCta', () => {
   it('returns Start when the install is not running anywhere', () => {
     const cta = useInstallCta(ref(installation('inst-A')), {
-      activeInstallationId: ref<string | null>(null),
+      activeInstallationId: ref<string | null>(null)
     })
     expect(cta.runningAnywhere.value).toBe(false)
     expect(cta.runningInThisWindow.value).toBe(false)
@@ -63,7 +63,7 @@ describe('useInstallCta', () => {
   it('returns Restart when the install is running in THIS host window', () => {
     sessionState.running.add('inst-A')
     const cta = useInstallCta(ref(installation('inst-A')), {
-      activeInstallationId: ref<string | null>('inst-A'),
+      activeInstallationId: ref<string | null>('inst-A')
     })
     expect(cta.runningAnywhere.value).toBe(true)
     expect(cta.runningInThisWindow.value).toBe(true)
@@ -75,7 +75,7 @@ describe('useInstallCta', () => {
   it('returns Switch when the install is running in ANOTHER host window (issue #749)', () => {
     sessionState.running.add('inst-B')
     const cta = useInstallCta(ref(installation('inst-B')), {
-      activeInstallationId: ref<string | null>('inst-A'),
+      activeInstallationId: ref<string | null>('inst-A')
     })
     expect(cta.runningAnywhere.value).toBe(true)
     expect(cta.runningInThisWindow.value).toBe(false)
@@ -87,7 +87,7 @@ describe('useInstallCta', () => {
   it('returns Switch for a running install on an install-less (dashboard) host', () => {
     sessionState.running.add('inst-A')
     const cta = useInstallCta(ref(installation('inst-A')), {
-      activeInstallationId: ref<string | null>(null),
+      activeInstallationId: ref<string | null>(null)
     })
     expect(cta.runningInThisWindow.value).toBe(false)
     expect(cta.runningElsewhere.value).toBe(true)
@@ -96,7 +96,7 @@ describe('useInstallCta', () => {
 
   it('handles a null installation prop without throwing', () => {
     const cta = useInstallCta(ref<Installation | null>(null), {
-      activeInstallationId: ref<string | null>('inst-A'),
+      activeInstallationId: ref<string | null>('inst-A')
     })
     expect(cta.runningAnywhere.value).toBe(false)
     expect(cta.runningInThisWindow.value).toBe(false)
@@ -131,7 +131,7 @@ describe('useInstallCta', () => {
   it('returns Restart when the install is LAUNCHING in this host window', () => {
     setLaunching(new Set<string>(['inst-A']))
     const cta = useInstallCta(ref(installation('inst-A')), {
-      activeInstallationId: ref<string | null>('inst-A'),
+      activeInstallationId: ref<string | null>('inst-A')
     })
     expect(cta.runningAnywhere.value).toBe(true)
     expect(cta.runningInThisWindow.value).toBe(true)
@@ -143,7 +143,7 @@ describe('useInstallCta', () => {
   it('returns Switch when the install is LAUNCHING in another host window', () => {
     setLaunching(new Set<string>(['inst-B']))
     const cta = useInstallCta(ref(installation('inst-B')), {
-      activeInstallationId: ref<string | null>('inst-A'),
+      activeInstallationId: ref<string | null>('inst-A')
     })
     expect(cta.runningAnywhere.value).toBe(true)
     expect(cta.runningInThisWindow.value).toBe(false)
@@ -155,7 +155,7 @@ describe('useInstallCta', () => {
     // launching → running must stay Restart with no flicker through Start.
     setLaunching(new Set<string>(['inst-A']))
     const cta = useInstallCta(ref(installation('inst-A')), {
-      activeInstallationId: ref<string | null>('inst-A'),
+      activeInstallationId: ref<string | null>('inst-A')
     })
     expect(cta.label.value).toBe('Restart')
     setLaunching(new Set<string>())

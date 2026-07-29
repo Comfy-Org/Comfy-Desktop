@@ -107,7 +107,8 @@ const restoreCancellable = computed<boolean>(
  *  when the row isn't loaded locally yet. */
 const restoreFromLabel = computed<string>(() => {
   const file = restoreOpFile.value
-  if (!file) return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
+  if (!file)
+    return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
   const target = snapshots.value.find((s) => s.filename === file)
   if (target) {
     const trigger = triggerLabel(target.trigger, t)
@@ -140,33 +141,37 @@ function retryRestore(): void {
   clearRestoreTerminal()
   emit('op-retry')
 }
-watch(restoreOp, (op, prev) => {
-  if (!op) return
-  // In-flight → done transition only.
-  if (!op.done || (prev && prev.done)) return
-  if (op.ok) {
-    clearRestoreTerminal()
-    restoreTerminal.value = 'ok'
-    restoreOkTimer = setTimeout(() => {
-      restoreTerminal.value = null
-      restoreOkTimer = null
-      // Reload so the post-restore snapshot lands as the newest entry.
-      void load()
-      emit('refresh-all')
-      emit('op-dismiss')
-    }, 1800)
-  } else if (op.error === MSG_CANCELLED) {
-    clearRestoreTerminal()
-    // An import cancel keeps a card up (the staged target is still retryable),
-    // but as a neutral "cancelled" state — not a red failure.
-    if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
-    else emit('op-dismiss')
-  } else {
-    clearRestoreTerminal()
-    restoreTerminal.value = 'error'
-    restoreErrorMessage.value = op.error ?? ''
-  }
-}, { immediate: true })
+watch(
+  restoreOp,
+  (op, prev) => {
+    if (!op) return
+    // In-flight → done transition only.
+    if (!op.done || (prev && prev.done)) return
+    if (op.ok) {
+      clearRestoreTerminal()
+      restoreTerminal.value = 'ok'
+      restoreOkTimer = setTimeout(() => {
+        restoreTerminal.value = null
+        restoreOkTimer = null
+        // Reload so the post-restore snapshot lands as the newest entry.
+        void load()
+        emit('refresh-all')
+        emit('op-dismiss')
+      }, 1800)
+    } else if (op.error === MSG_CANCELLED) {
+      clearRestoreTerminal()
+      // An import cancel keeps a card up (the staged target is still retryable),
+      // but as a neutral "cancelled" state — not a red failure.
+      if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
+      else emit('op-dismiss')
+    } else {
+      clearRestoreTerminal()
+      restoreTerminal.value = 'error'
+      restoreErrorMessage.value = op.error ?? ''
+    }
+  },
+  { immediate: true }
+)
 onUnmounted(() => {
   clearRestoreTerminal()
   unsubChanges?.()
@@ -822,10 +827,7 @@ async function handleImport(): Promise<void> {
                 <!-- "Release notes": changes vs the previous snapshot.
                      Hidden for the oldest snapshot (no predecessor); copy
                      events interleaved in the timeline don't count. -->
-                <div
-                  v-if="item.snapshotIndex < snapshots.length - 1"
-                  class="snap-diff-accordion"
-                >
+                <div v-if="item.snapshotIndex < snapshots.length - 1" class="snap-diff-accordion">
                   <button
                     type="button"
                     class="snap-diff-trigger"

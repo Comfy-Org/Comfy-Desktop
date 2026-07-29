@@ -24,7 +24,7 @@ describe('buildIndexedDbInjectScript', () => {
     expect(script).toContain('"refreshToken":"rt"')
   })
 
-  it('uses Firebase\'s documented IDB schema', () => {
+  it("uses Firebase's documented IDB schema", () => {
     const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
     expect(script).toContain("'firebaseLocalStorageDb'")
     expect(script).toContain("'firebaseLocalStorage'")
@@ -106,9 +106,7 @@ describe('injectFirebaseSession', () => {
     await expect(injectFirebaseSession(first, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(true)
 
     const second = beginFirebaseSessionInjection(contents)
-    expect(executeJavaScript).toHaveBeenLastCalledWith(
-      expect.stringContaining('= null')
-    )
+    expect(executeJavaScript).toHaveBeenLastCalledWith(expect.stringContaining('= null'))
 
     releaseFirebaseSessionInjection(second)
   })

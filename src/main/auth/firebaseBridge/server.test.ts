@@ -32,7 +32,7 @@ describe('startBridgeServer', () => {
     try {
       const res = await fetch(
         `${handle.url}?error=access_denied&error_description=user+cancelled`,
-        { redirect: 'manual' },
+        { redirect: 'manual' }
       )
       expect(res.status).toBe(200)
       const body = await res.text()

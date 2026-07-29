@@ -47,7 +47,7 @@ function ensureLoaded(): Promise<void> {
     // Capacity + tier in parallel; each fails-closed independently.
     const [capacityResult, tierResult] = await Promise.allSettled([
       source.getCloudCapacity(),
-      source.getCloudUserTier ? source.getCloudUserTier() : Promise.resolve('unknown'),
+      source.getCloudUserTier ? source.getCloudUserTier() : Promise.resolve('unknown')
     ])
     if (capacityResult.status === 'fulfilled') {
       const next = capacityResult.value
@@ -110,7 +110,7 @@ export function useCloudCapacity(): {
       status: status.value,
       tier: userTier.value,
       decision,
-      source,
+      source
     })
   }
 
@@ -128,7 +128,7 @@ export function useCloudCapacity(): {
       message: t('cloud.capacityDegradedHint'),
       confirmLabel: t('cloud.capacityProceed'),
       cancelLabel: t('common.cancel'),
-      tone: 'primary',
+      tone: 'primary'
     })
     const proceeded = result === 'primary'
     emitGate(proceeded ? 'proceeded' : 'declined', source)
@@ -146,6 +146,6 @@ export function useCloudCapacity(): {
     isPaid: () => userTier.value === 'paid',
     effectiveStatus: computeEffective,
     confirmEntry,
-    whenReady: ensureLoaded,
+    whenReady: ensureLoaded
   }
 }

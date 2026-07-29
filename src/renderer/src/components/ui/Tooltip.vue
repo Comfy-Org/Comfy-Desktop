@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
   side: 'top',
   align: 'center',
   delayMs: 100,
-  disabled: false,
+  disabled: false
 })
 
 const triggerRef = ref<HTMLElement | null>(null)
@@ -28,8 +28,8 @@ const { visible, show, hide, bubbleStyle, resolvedSide, arrowStyle } = useToolti
   {
     side: () => props.side,
     align: () => props.align,
-    canShow: () => !props.disabled && !!props.text,
-  },
+    canShow: () => !props.disabled && !!props.text
+  }
 )
 
 const describedBy = computed(() => (visible.value ? bubbleId : undefined))

@@ -15,7 +15,7 @@ interface FakeWebContents {
 function createFakeWebContents(): FakeWebContents {
   return {
     stop: vi.fn(),
-    loadURL: vi.fn().mockResolvedValue(undefined),
+    loadURL: vi.fn().mockResolvedValue(undefined)
   }
 }
 
@@ -49,7 +49,7 @@ describe('showSplashPage', () => {
     const wc = createFakeWebContents()
     await showSplashPage(wc as unknown as Electron.WebContents, SPLASH_DARK, {
       title: 'Starting ComfyUI',
-      desc: 'Launching your ComfyUI instance…',
+      desc: 'Launching your ComfyUI instance…'
     })
     const loadedUrl = decodeURIComponent(wc.loadURL.mock.calls[0]![0] as string)
     expect(loadedUrl).toContain('Starting ComfyUI')
@@ -61,7 +61,9 @@ describe('showSplashPage', () => {
     const wc = createFakeWebContents()
     const order: string[] = []
     wc.stop.mockImplementation(() => order.push('stop'))
-    wc.loadURL.mockImplementation(async () => { order.push('loadURL') })
+    wc.loadURL.mockImplementation(async () => {
+      order.push('loadURL')
+    })
     await showSplashPage(wc as unknown as Electron.WebContents)
     expect(order).toEqual(['stop', 'loadURL'])
   })

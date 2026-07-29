@@ -232,9 +232,7 @@ const showCloudFreeRunsPill = computed(
 onMounted(async () => {
   try {
     cloudFreeRunsEnabled.value = await window.api.getCloudFreeRunsEnabled()
-  } catch {
-   
-  }
+  } catch {}
 })
 function handleNewInstallClick(): void {
   emit('show-new-install')
@@ -314,7 +312,6 @@ function handleNewInstallClick(): void {
 
 <style scoped>
 @import './chooser/chooser-tiles.css';
-
 
 .chooser-bg :deep(.brand-inner-frame) {
   /* Inherit the default justify-content: center from BrandBackground;

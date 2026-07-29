@@ -13,8 +13,8 @@ const props = withDefaults(
   }>(),
   {
     loading: false,
-    label: 'Comfy Desktop',
-  },
+    label: 'Comfy Desktop'
+  }
 )
 
 const emit = defineEmits<{
@@ -25,7 +25,7 @@ const starCountLabel = computed(() => {
   if (props.stars == null) return ''
   return new Intl.NumberFormat(undefined, {
     notation: 'compact',
-    maximumFractionDigits: 1,
+    maximumFractionDigits: 1
   }).format(props.stars)
 })
 </script>
@@ -40,11 +40,7 @@ const starCountLabel = computed(() => {
     <span v-if="loading" class="github-link-stars github-link-stars--skeleton" aria-hidden="true">
       <span class="github-link-skeleton-bar" />
     </span>
-    <span
-      v-else-if="stars != null"
-      class="github-link-stars"
-      :aria-label="`${stars} GitHub stars`"
-    >
+    <span v-else-if="stars != null" class="github-link-stars" :aria-label="`${stars} GitHub stars`">
       <Star :size="12" class="github-link-stars-icon" aria-hidden="true" />
       <span>{{ starCountLabel }}</span>
     </span>

@@ -6,7 +6,7 @@ import os from 'os'
 import path from 'path'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 
 interface FakeChild extends EventEmitter {
@@ -29,14 +29,23 @@ vi.mock('child_process', async (importOriginal) => {
   const actual: object = await importOriginal()
   return {
     ...actual,
-    spawn: vi.fn(() => fakeChild),
+    spawn: vi.fn(() => fakeChild)
   }
 })
 
 import {
-  applyBundleGraft, applyTorchStackTransaction, renameWithLockRetry, runStreamed, undeclaredFamilyPackages,
-  preparePipStack, pipInstallSpecs, pipIndexArgs, planPipReconciliation, amdOverlayCoherenceError,
-  preflightDiskSpace, DiskSpaceError,
+  applyBundleGraft,
+  applyTorchStackTransaction,
+  renameWithLockRetry,
+  runStreamed,
+  undeclaredFamilyPackages,
+  preparePipStack,
+  pipInstallSpecs,
+  pipIndexArgs,
+  planPipReconciliation,
+  amdOverlayCoherenceError,
+  preflightDiskSpace,
+  DiskSpaceError
 } from './torchStackTransaction'
 import { AMD_MULTI_ARCH_INDEX_URL } from './torchStackTypes'
 import type { PreparedBundleStack, PreparedPipStack } from './torchStackTransaction'
@@ -46,13 +55,20 @@ import type { InstallationRecord } from '../../installations'
 
 const tools = {
   sendProgress: (): void => {},
-  update: async (): Promise<void> => {},
+  update: async (): Promise<void> => {}
 }
 
 /** Whether the promise has settled yet, sampled without awaiting it. */
 async function settled(p: Promise<unknown>): Promise<boolean> {
   let done = false
-  void p.then(() => { done = true }, () => { done = true })
+  void p.then(
+    () => {
+      done = true
+    },
+    () => {
+      done = true
+    }
+  )
   // Give already-queued reactions a chance to run.
   await new Promise((r) => setImmediate(r))
   return done
@@ -118,7 +134,8 @@ describe('undeclaredFamilyPackages', () => {
     distInfo('torchvision', '0.25.0+cu126')
     distInfo('torchaudio', '2.10.0+cu126')
     expect(undeclaredFamilyPackages({ torch: '2.11.0+cu126' }, tmpDir).sort()).toEqual([
-      'torchaudio', 'torchvision'
+      'torchaudio',
+      'torchvision'
     ])
   })
 
@@ -155,16 +172,22 @@ describe('planPipReconciliation', () => {
     fs.writeFileSync(path.join(dir, 'METADATA'), `Name: ${name}\nVersion: ${version}\n`)
   }
 
-  const multiArch = (packages: TorchStackPackages): Pick<PreparedPipStack, 'packages' | 'source'> => ({
+  const multiArch = (
+    packages: TorchStackPackages
+  ): Pick<PreparedPipStack, 'packages' | 'source'> => ({
     packages,
-    source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+    source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
   })
-  const pytorchIndex = (packages: TorchStackPackages): Pick<PreparedPipStack, 'packages' | 'source'> => ({
+  const pytorchIndex = (
+    packages: TorchStackPackages
+  ): Pick<PreparedPipStack, 'packages' | 'source'> => ({
     packages,
-    source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm7.1' },
+    source: { kind: 'pytorch-index', backend: 'rocm', indexTag: 'rocm7.1' }
   })
   const fullTuple: TorchStackPackages = {
-    torch: '2.12.0+rocm7.14.0', torchvision: '0.27.0+rocm7.14.0', torchaudio: '2.11.0+rocm7.14.0',
+    torch: '2.12.0+rocm7.14.0',
+    torchvision: '0.27.0+rocm7.14.0',
+    torchaudio: '2.11.0+rocm7.14.0'
   }
 
   it('entering multi-arch sweeps the universal SDK packages and a pytorch.org triton-rocm', () => {
@@ -179,7 +202,14 @@ describe('planPipReconciliation', () => {
     // wheel from the other index (torch is declared by the target).
     distInfo('torch', '2.9.1+rocm7.2.1')
     const plan = planPipReconciliation(multiArch(fullTuple), tmpDir)
-    expect(plan.removals.sort()).toEqual(['rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_devel', 'torch', 'triton-rocm'])
+    expect(plan.removals.sort()).toEqual([
+      'rocm',
+      'rocm_bootstrap',
+      'rocm_sdk_core',
+      'rocm_sdk_devel',
+      'torch',
+      'triton-rocm'
+    ])
     expect(plan.expectAbsent.sort()).toEqual(['pytorch-triton-rocm', 'triton-rocm'])
   })
 
@@ -218,8 +248,12 @@ describe('planPipReconciliation', () => {
     distInfo('amd_torchvision_device_gfx1100', '0.26.0+rocm7.14.0')
     const plan = planPipReconciliation(multiArch(fullTuple), tmpDir)
     expect(plan.removals.sort()).toEqual([
-      'amd_torch_device_gfx1100', 'amd_torch_device_gfx1250', 'amd_torchvision_device_gfx1100',
-      'rocm', 'rocm_sdk_core', 'rocm_sdk_device_gfx1100',
+      'amd_torch_device_gfx1100',
+      'amd_torch_device_gfx1250',
+      'amd_torchvision_device_gfx1100',
+      'rocm',
+      'rocm_sdk_core',
+      'rocm_sdk_device_gfx1100'
     ])
     expect(plan.expectAbsent.sort()).toEqual(['pytorch-triton-rocm', 'triton-rocm'])
   })
@@ -233,12 +267,20 @@ describe('planPipReconciliation', () => {
     distInfo('amd_torchvision_device_gfx1100', '0.26.0+rocm7.14.0')
     distInfo('triton', '3.7.1+git0263a6a6.rocm7.14.0')
     const plan = planPipReconciliation(
-      pytorchIndex({ torch: '2.10.0+rocm7.1', torchvision: '0.25.0+rocm7.1', torchaudio: '2.10.0+rocm7.1' }),
-      tmpDir,
+      pytorchIndex({
+        torch: '2.10.0+rocm7.1',
+        torchvision: '0.25.0+rocm7.1',
+        torchaudio: '2.10.0+rocm7.1'
+      }),
+      tmpDir
     )
     const ecosystem = [
-      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
-      'rocm', 'rocm_bootstrap', 'rocm_sdk_core', 'rocm_sdk_device_gfx1100',
+      'amd_torch_device_gfx1100',
+      'amd_torchvision_device_gfx1100',
+      'rocm',
+      'rocm_bootstrap',
+      'rocm_sdk_core',
+      'rocm_sdk_device_gfx1100'
     ]
     expect(plan.removals.sort()).toEqual([...ecosystem, 'triton'].sort())
     // triton is removed but NOT asserted absent: the target's own dependency
@@ -254,8 +296,15 @@ describe('planPipReconciliation', () => {
     distInfo('rocm_sdk_core', '7.2.1')
     distInfo('triton_rocm', '3.6.0')
     const plan = planPipReconciliation(
-      { packages: { torch: '2.9.1+rocm7.2.1', torchvision: '0.24.1+rocm7.2.1', torchaudio: '2.9.1+rocm7.2.1' }, source: null },
-      tmpDir,
+      {
+        packages: {
+          torch: '2.9.1+rocm7.2.1',
+          torchvision: '0.24.1+rocm7.2.1',
+          torchaudio: '2.9.1+rocm7.2.1'
+        },
+        source: null
+      },
+      tmpDir
     )
     expect(plan.removals).toEqual([])
     expect(plan.expectAbsent).toEqual([])
@@ -263,7 +312,10 @@ describe('planPipReconciliation', () => {
 
   it('still reconciles undeclared family packages and declares omitted optionals absent', () => {
     distInfo('torchvision', '0.26.0+cu126')
-    const plan = planPipReconciliation({ packages: { torch: '2.11.0+cu126' }, source: null }, tmpDir)
+    const plan = planPipReconciliation(
+      { packages: { torch: '2.11.0+cu126' }, source: null },
+      tmpDir
+    )
     expect(plan.removals).toEqual(['torchvision'])
     expect(plan.expectAbsent.sort()).toEqual(['torchaudio', 'torchvision'])
   })
@@ -291,7 +343,9 @@ describe('amdOverlayCoherenceError', () => {
   }
 
   const packages: TorchStackPackages = {
-    torch: '2.12.0+rocm7.14.0', torchvision: '0.27.0+rocm7.14.0', torchaudio: '2.11.0+rocm7.14.0',
+    torch: '2.12.0+rocm7.14.0',
+    torchvision: '0.27.0+rocm7.14.0',
+    torchaudio: '2.11.0+rocm7.14.0'
   }
 
   it('passes when every overlay tracks the core tuple', () => {
@@ -319,7 +373,9 @@ describe('amdOverlayCoherenceError', () => {
 
   it('flags an overlay for a package the target does not declare', () => {
     distInfo('amd_torchvision_device_gfx1100', '0.27.0+rocm7.14.0')
-    expect(amdOverlayCoherenceError(tmpDir, { torch: '2.12.0+rocm7.14.0' })).toContain('declares no torchvision')
+    expect(amdOverlayCoherenceError(tmpDir, { torch: '2.12.0+rocm7.14.0' })).toContain(
+      'declares no torchvision'
+    )
   })
 
   it('ignores unrelated dists and unreadable dirs', () => {
@@ -334,10 +390,14 @@ describe('preparePipStack / pipInstallSpecs', () => {
     stackId: 'amd-index:rocm7.14.0:2.10.0',
     variant: 'win-amd',
     pythonVersion: '',
-    packages: { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' },
+    packages: {
+      torch: '2.10.0+rocm7.14.0',
+      torchvision: '0.25.0+rocm7.14.0',
+      torchaudio: '2.10.0+rocm7.14.0'
+    },
     source: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
     date: '2026-07-15',
-    comfyuiVersion: '',
+    comfyuiVersion: ''
   }
 
   it('carries the AMD source and derives the hardcoded AMD index from it', () => {
@@ -358,15 +418,14 @@ describe('preparePipStack / pipInstallSpecs', () => {
     expect(pipInstallSpecs(preparePipStack(amdEntry.packages, amdEntry))).toEqual([
       'torch[device-all]==2.10.0+rocm7.14.0',
       'torchvision[device-all]==0.25.0+rocm7.14.0',
-      'torchaudio==2.10.0+rocm7.14.0',
+      'torchaudio==2.10.0+rocm7.14.0'
     ])
   })
 
   it('leaves ordinary sources on bare pins', () => {
-    expect(pipInstallSpecs(preparePipStack({ torch: '2.11.0+cu130', torchvision: '0.26.0+cu130' }, null))).toEqual([
-      'torch==2.11.0+cu130',
-      'torchvision==0.26.0+cu130',
-    ])
+    expect(
+      pipInstallSpecs(preparePipStack({ torch: '2.11.0+cu130', torchvision: '0.26.0+cu130' }, null))
+    ).toEqual(['torch==2.11.0+cu130', 'torchvision==0.26.0+cu130'])
   })
 
   it('passes AMD as the EXTRA index over a default-PyPI --index-url, in exactly that order', () => {
@@ -374,14 +433,17 @@ describe('preparePipStack / pipInstallSpecs', () => {
     // strategy): were AMD the --index-url, uv would resolve the torch
     // project against PyPI (the extra) and fail the +rocm pins.
     expect(pipIndexArgs(preparePipStack(amdEntry.packages, amdEntry))).toEqual([
-      '--index-url', 'https://pypi.org/simple',
-      '--extra-index-url', AMD_MULTI_ARCH_INDEX_URL,
+      '--index-url',
+      'https://pypi.org/simple',
+      '--extra-index-url',
+      AMD_MULTI_ARCH_INDEX_URL
     ])
   })
 
   it('passes the derived index alone for ordinary sources, and nothing for PyPI tuples', () => {
     expect(pipIndexArgs(preparePipStack({ torch: '2.11.0+cu130' }, null))).toEqual([
-      '--index-url', 'https://download.pytorch.org/whl/cu130',
+      '--index-url',
+      'https://download.pytorch.org/whl/cu130'
     ])
     expect(pipIndexArgs(preparePipStack({ torch: '2.11.0' }, null))).toEqual([])
   })
@@ -401,7 +463,9 @@ describe('preflightDiskSpace (pip estimates)', () => {
 
   // The machine's real free space decides pass/fail; the estimate under
   // test is visible either way (result or DiskSpaceError both carry it).
-  async function requiredBytesFor(opts?: Parameters<typeof preflightDiskSpace>[3]): Promise<number> {
+  async function requiredBytesFor(
+    opts?: Parameters<typeof preflightDiskSpace>[3]
+  ): Promise<number> {
     const installation = { id: 'disk-test', installPath: tmpDir } as unknown as InstallationRecord
     try {
       return (await preflightDiskSpace(installation, null, undefined, opts)).requiredBytes
@@ -414,10 +478,10 @@ describe('preflightDiskSpace (pip estimates)', () => {
   it('charges the larger AMD multi-arch staging estimate only for that source', async () => {
     const generic = await requiredBytesFor()
     const pytorchIndex = await requiredBytesFor({
-      pipSource: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' },
+      pipSource: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu130' }
     })
     const amd = await requiredBytesFor({
-      pipSource: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' },
+      pipSource: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
     })
     expect(pytorchIndex).toBe(generic)
     // 24 GiB AMD estimate vs the 8 GiB generic pip fallback.
@@ -452,31 +516,54 @@ describe('applyBundleGraft (real fs)', () => {
     // Universal ROCm 7.2.1 bundle: torch family + rocm dist metadata, pure
     // shims, and the `_`-prefixed SDK payload packages find_libraries needs.
     for (const name of [
-      'torch', 'torch-2.9.1+rocm7.2.1.dist-info',
-      'torchvision', 'torchvision-0.24.1+rocm7.2.1.dist-info',
-      'torchaudio', 'torchaudio-2.9.1+rocm7.2.1.dist-info',
-      'rocm_sdk', 'rocm-7.2.1.dist-info',
-      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.2.1.dist-info',
-      'rocm_sdk_devel', '_rocm_sdk_devel', 'rocm_sdk_devel-7.2.1.dist-info',
-      'rocm_sdk_libraries', '_rocm_sdk_libraries_custom', 'rocm_sdk_libraries_custom-7.2.1.dist-info',
-    ]) fileIn(srcSite, name, 'FILE')
+      'torch',
+      'torch-2.9.1+rocm7.2.1.dist-info',
+      'torchvision',
+      'torchvision-0.24.1+rocm7.2.1.dist-info',
+      'torchaudio',
+      'torchaudio-2.9.1+rocm7.2.1.dist-info',
+      'rocm_sdk',
+      'rocm-7.2.1.dist-info',
+      'rocm_sdk_core',
+      '_rocm_sdk_core',
+      'rocm_sdk_core-7.2.1.dist-info',
+      'rocm_sdk_devel',
+      '_rocm_sdk_devel',
+      'rocm_sdk_devel-7.2.1.dist-info',
+      'rocm_sdk_libraries',
+      '_rocm_sdk_libraries_custom',
+      'rocm_sdk_libraries_custom-7.2.1.dist-info'
+    ])
+      fileIn(srcSite, name, 'FILE')
     fileIn(srcSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll')
 
     // Venv on the multi-arch 7.14 stack, exactly as the forward switch
     // leaves it - including AMD's device-overlay .kpack payload inside
     // torch/ and unrelated packages that must survive.
     for (const name of [
-      'torch', 'torch-2.11.0+rocm7.14.0.dist-info',
-      'torchvision', 'torchvision-0.26.0+rocm7.14.0.dist-info',
-      'torchaudio', 'torchaudio-2.11.0+rocm7.14.0.dist-info',
-      'rocm_sdk', 'rocm-7.14.0.dist-info',
-      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
-      'rocm_sdk_core', '_rocm_sdk_core', 'rocm_sdk_core-7.14.0.dist-info',
-      'rocm_sdk_libraries', '_rocm_sdk_libraries', 'rocm_sdk_libraries-7.14.0.dist-info',
-      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      'torch',
+      'torch-2.11.0+rocm7.14.0.dist-info',
+      'torchvision',
+      'torchvision-0.26.0+rocm7.14.0.dist-info',
+      'torchaudio',
+      'torchaudio-2.11.0+rocm7.14.0.dist-info',
+      'rocm_sdk',
+      'rocm-7.14.0.dist-info',
+      'rocm_bootstrap',
+      'rocm_bootstrap-0.1.0.dist-info',
+      'rocm_sdk_core',
+      '_rocm_sdk_core',
+      'rocm_sdk_core-7.14.0.dist-info',
+      'rocm_sdk_libraries',
+      '_rocm_sdk_libraries',
+      'rocm_sdk_libraries-7.14.0.dist-info',
+      'rocm_sdk_device',
+      '_rocm_sdk_device_gfx1100',
+      'rocm_sdk_device_gfx1100-7.14.0.dist-info',
       'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
-      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
-    ]) fileIn(dstSite, name, 'FILE')
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info'
+    ])
+      fileIn(dstSite, name, 'FILE')
     fileIn(dstSite, 'torch', '.kpack', 'torch_gfx1100.kpack')
     fileIn(dstSite, 'torchvision', '.kpack', 'torchvision_gfx1100.kpack')
     fileIn(dstSite, 'torchsde', 'FILE')
@@ -487,17 +574,25 @@ describe('applyBundleGraft (real fs)', () => {
       stackId: 'comfy-bundle:win-amd:old-env',
       variant: 'win-amd',
       pythonVersion: '3.12.9',
-      packages: { torch: '2.9.1+rocm7.2.1', torchvision: '0.24.1+rocm7.2.1', torchaudio: '2.9.1+rocm7.2.1' },
+      packages: {
+        torch: '2.9.1+rocm7.2.1',
+        torchvision: '0.24.1+rocm7.2.1',
+        torchaudio: '2.9.1+rocm7.2.1'
+      },
       source: { kind: 'comfy-bundle', variant: 'win-amd', bundleTag: 'old-env' },
       date: '2026-01-01',
-      comfyuiVersion: '0.0.0',
+      comfyuiVersion: '0.0.0'
     }
     const removed = await applyBundleGraft(
-      { kind: 'bundle', srcSite, stagingDir: tmpDir, entry }, dstSite)
+      { kind: 'bundle', srcSite, stagingDir: tmpDir, entry },
+      dstSite
+    )
 
     // Universal SDK payload is complete - this is what the E2E switch-back
     // verification failed on (hipblas.dll unreachable via _rocm_sdk_*).
-    expect(fs.existsSync(path.join(dstSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll'))).toBe(true)
+    expect(
+      fs.existsSync(path.join(dstSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll'))
+    ).toBe(true)
     expect(fs.existsSync(path.join(dstSite, '_rocm_sdk_core'))).toBe(true)
     expect(fs.existsSync(path.join(dstSite, '_rocm_sdk_devel'))).toBe(true)
     expect(fs.existsSync(path.join(dstSite, 'rocm_sdk_core-7.2.1.dist-info'))).toBe(true)
@@ -505,14 +600,20 @@ describe('applyBundleGraft (real fs)', () => {
 
     // No trace of the multi-arch stack: dists, payloads, device overlays.
     for (const name of [
-      'torch-2.11.0+rocm7.14.0.dist-info', 'rocm-7.14.0.dist-info',
-      'rocm_bootstrap', 'rocm_bootstrap-0.1.0.dist-info',
+      'torch-2.11.0+rocm7.14.0.dist-info',
+      'rocm-7.14.0.dist-info',
+      'rocm_bootstrap',
+      'rocm_bootstrap-0.1.0.dist-info',
       'rocm_sdk_core-7.14.0.dist-info',
-      '_rocm_sdk_libraries', 'rocm_sdk_libraries-7.14.0.dist-info',
-      'rocm_sdk_device', '_rocm_sdk_device_gfx1100', 'rocm_sdk_device_gfx1100-7.14.0.dist-info',
+      '_rocm_sdk_libraries',
+      'rocm_sdk_libraries-7.14.0.dist-info',
+      'rocm_sdk_device',
+      '_rocm_sdk_device_gfx1100',
+      'rocm_sdk_device_gfx1100-7.14.0.dist-info',
       'amd_torch_device_gfx1100-2.11.0+rocm7.14.0.dist-info',
-      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info',
-    ]) expect(fs.existsSync(path.join(dstSite, name)), name).toBe(false)
+      'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info'
+    ])
+      expect(fs.existsSync(path.join(dstSite, name)), name).toBe(false)
     // The device overlays' .kpack payload went with the torch dir swap.
     expect(fs.existsSync(path.join(dstSite, 'torch', '.kpack'))).toBe(false)
     expect(fs.existsSync(path.join(dstSite, 'torchvision', '.kpack'))).toBe(false)
@@ -523,8 +624,10 @@ describe('applyBundleGraft (real fs)', () => {
 
     // Swept dists are reported so verification asserts they stayed gone.
     expect(removed.sort()).toEqual([
-      'amd_torch_device_gfx1100', 'amd_torchvision_device_gfx1100',
-      'rocm_bootstrap', 'rocm_sdk_device_gfx1100',
+      'amd_torch_device_gfx1100',
+      'amd_torchvision_device_gfx1100',
+      'rocm_bootstrap',
+      'rocm_sdk_device_gfx1100'
     ])
   })
 })
@@ -577,7 +680,7 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     return {
       id: 'txn-test',
       installPath,
-      lastVerifiedTorchStack: { stackId: 'comfy-bundle:win-cpu:old-env' },
+      lastVerifiedTorchStack: { stackId: 'comfy-bundle:win-cpu:old-env' }
     } as unknown as InstallationRecord
   }
 
@@ -589,7 +692,7 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
       packages: { torch: '2.9.9' },
       source: { kind: 'comfy-bundle', variant: 'win-cpu', bundleTag: 'test-env' },
       date: '2026-01-01',
-      comfyuiVersion: '0.0.0',
+      comfyuiVersion: '0.0.0'
     }
     return { kind: 'bundle', srcSite, stagingDir, entry }
   }
@@ -600,7 +703,8 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     // the full rollback path.
     const update = vi.fn(async () => {})
     const result = await applyTorchStackTransaction(makeInstallation(), makePrepared(), {
-      sendProgress: () => {}, update,
+      sendProgress: () => {},
+      update
     })
 
     expect(result.ok).toBe(false)
@@ -629,7 +733,7 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     }
     expect(update).toHaveBeenLastCalledWith({
       lastVerifiedTorchStack: { stackId: 'comfy-bundle:win-cpu:old-env' },
-      observedTorchStack: null,
+      observedTorchStack: null
     })
 
     // The staging dir is always cleaned up.
@@ -641,7 +745,9 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     controller.abort()
     const update = vi.fn(async () => {})
     const result = await applyTorchStackTransaction(makeInstallation(), makePrepared(), {
-      sendProgress: () => {}, update, signal: controller.signal,
+      sendProgress: () => {},
+      update,
+      signal: controller.signal
     })
 
     expect(result.ok).toBe(false)
@@ -656,7 +762,8 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     fs.mkdirSync(venvDir + '.torch-backup', { recursive: true })
     const update = vi.fn(async () => {})
     const result = await applyTorchStackTransaction(makeInstallation(), makePrepared(), {
-      sendProgress: () => {}, update,
+      sendProgress: () => {},
+      update
     })
 
     expect(result.ok).toBe(false)
@@ -679,7 +786,8 @@ describe('renameWithLockRetry', () => {
   }
 
   it('retries a transient EPERM until the rename succeeds', async () => {
-    const rename = vi.spyOn(fs.promises, 'rename')
+    const rename = vi
+      .spyOn(fs.promises, 'rename')
       .mockRejectedValueOnce(lockError('EPERM'))
       .mockRejectedValueOnce(lockError('EBUSY'))
       .mockResolvedValueOnce(undefined)
@@ -698,8 +806,9 @@ describe('renameWithLockRetry', () => {
   })
 
   it('does not retry non-lock errors', async () => {
-    const rename = vi.spyOn(fs.promises, 'rename').mockRejectedValue(
-      Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' }))
+    const rename = vi
+      .spyOn(fs.promises, 'rename')
+      .mockRejectedValue(Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' }))
 
     await expect(renameWithLockRetry('a', 'b')).rejects.toThrow('ENOENT')
     expect(rename).toHaveBeenCalledTimes(1)

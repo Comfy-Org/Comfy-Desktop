@@ -147,10 +147,7 @@ describe('selectPrimaryGpu', () => {
   })
 
   it('matches AMD via Radeon-branded model with empty vendor', () => {
-    const gpus = [
-      gpu('', 'NVIDIA GeForce RTX 4090', 24576),
-      gpu('', 'Radeon RX 7900 XTX', 24576)
-    ]
+    const gpus = [gpu('', 'NVIDIA GeForce RTX 4090', 24576), gpu('', 'Radeon RX 7900 XTX', 24576)]
     expect(selectPrimaryGpu(gpus, 'amd')?.model).toBe('Radeon RX 7900 XTX')
   })
 })

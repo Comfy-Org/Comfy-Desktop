@@ -6,14 +6,14 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import {
@@ -23,7 +23,7 @@ import {
   _operationAborts,
   cancelLaunching,
   _test_addRunningSession,
-  _test_clearRunningSessions,
+  _test_clearRunningSessions
 } from './shared'
 
 const INSTALL = 'install-under-test'
@@ -95,9 +95,13 @@ describe('cancelLaunching', () => {
   it('aborts an in-flight launch and resolves true once it settles', async () => {
     const launch = _beginLaunch(INSTALL)
     // Simulate the handler: unwind (endLaunch) only after the abort fires.
-    launch.abort.signal.addEventListener('abort', () => {
-      setTimeout(() => _endLaunch(INSTALL, launch), 10)
-    }, { once: true })
+    launch.abort.signal.addEventListener(
+      'abort',
+      () => {
+        setTimeout(() => _endLaunch(INSTALL, launch), 10)
+      },
+      { once: true }
+    )
 
     await expect(cancelLaunching(INSTALL)).resolves.toBe(true)
     expect(launch.abort.signal.aborted).toBe(true)

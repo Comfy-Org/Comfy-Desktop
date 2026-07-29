@@ -9,7 +9,7 @@ import type { ActionDef, DetailFieldOption, DetailSection } from '../types/ipc'
 export function findActionById(
   sections: DetailSection[],
   actionId: string,
-  currentChannelValue?: string | null,
+  currentChannelValue?: string | null
 ): ActionDef | null {
   for (const section of sections) {
     const match = section.actions?.find((a) => a.id === actionId)

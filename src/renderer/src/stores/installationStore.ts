@@ -35,6 +35,6 @@ export const useInstallationStore = defineStore('installation', () => {
     installations,
     loading,
     fetchInstallations,
-    getById,
+    getById
   }
 })

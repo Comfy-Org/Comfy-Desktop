@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 
 import { getTorchVendorMismatch, repairTorch } from './torchRepair'
@@ -20,7 +20,12 @@ let tmpDir: string
 function makeVenvWithTorch(
   installPath: string,
   torchVersion: string | null,
-  accel: { cuda?: string | null; hip?: string | null; rocm?: string | null; xpu?: string | null } = {},
+  accel: {
+    cuda?: string | null
+    hip?: string | null
+    rocm?: string | null
+    xpu?: string | null
+  } = {}
 ): string {
   const venv = path.join(installPath, 'ComfyUI', '.venv')
   const sitePackages =
@@ -45,15 +50,21 @@ function makeVenvWithTorch(
         `hip: Optional[str] = ${lit(accel.hip)}`,
         `rocm: Optional[str] = ${lit(accel.rocm)}`,
         `xpu: Optional[str] = ${lit(accel.xpu)}`,
-        ``,
-      ].join('\n'),
+        ``
+      ].join('\n')
     )
   }
   return sitePackages
 }
 
 function install(over: Partial<InstallationRecord> = {}): InstallationRecord {
-  return { id: 'i', name: 'i', installPath: tmpDir, sourceId: 'standalone', ...over } as unknown as InstallationRecord
+  return {
+    id: 'i',
+    name: 'i',
+    installPath: tmpDir,
+    sourceId: 'standalone',
+    ...over
+  } as unknown as InstallationRecord
 }
 
 beforeEach(() => {
@@ -61,7 +72,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  } catch {}
 })
 
 describe('getTorchVendorMismatch', () => {
@@ -159,7 +172,7 @@ describe('getTorchVendorMismatch', () => {
 describe('repairTorch dispatch', () => {
   const tools = {
     sendProgress: (): void => {},
-    update: async (): Promise<void> => {},
+    update: async (): Promise<void> => {}
   }
 
   it('routes a verified index-served stack to the pip path, not the bundle', async () => {
@@ -169,9 +182,13 @@ describe('repairTorch dispatch', () => {
         stackId: 'pytorch-index:cu128:2.11.0',
         variant: 'win-nvidia',
         pythonVersion: '',
-        packages: { torch: '2.11.0+cu128', torchvision: '0.26.0+cu128', torchaudio: '2.11.0+cu128' },
-        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' },
-      },
+        packages: {
+          torch: '2.11.0+cu128',
+          torchvision: '0.26.0+cu128',
+          torchaudio: '2.11.0+cu128'
+        },
+        source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' }
+      }
     })
     // No venv exists in tmpDir, so the pip path (routed through the journaled
     // stack transaction) fails at its venv check — proving dispatch reached
@@ -199,7 +216,7 @@ describe('repairTorch dispatch', () => {
       variant: 'win-nvidia',
       pythonVersion: '',
       packages: { torch: '2.11.0+cu126', torchvision: '0.26.0+cu126', torchaudio: '2.11.0+cu126' },
-      source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu126' },
+      source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu126' }
     })
     expect(result.ok).toBe(false)
     expect(result.message).toContain('installation venv not found')

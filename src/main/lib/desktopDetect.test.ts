@@ -3,14 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import fs from 'fs'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 
 vi.mock('./nodes', () => ({
-  scanCustomNodes: vi.fn().mockResolvedValue([]),
+  scanCustomNodes: vi.fn().mockResolvedValue([])
 }))
 
-import { detectDesktopInstall, findDesktopExecutable, captureDesktopSnapshot } from './desktopDetect'
+import {
+  detectDesktopInstall,
+  findDesktopExecutable,
+  captureDesktopSnapshot
+} from './desktopDetect'
 import type { DesktopInstallInfo } from './desktopDetect'
 
 const originalPlatform = process.platform
@@ -54,7 +58,9 @@ describe('detectDesktopInstall', () => {
 
   it('returns null when config.json does not exist', () => {
     stubProcess('win32', { APPDATA: '/mock/AppData/Roaming' })
-    readFileSyncSpy.mockImplementation(() => { throw new Error('ENOENT') })
+    readFileSyncSpy.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
     expect(detectDesktopInstall()).toBeNull()
   })
 
@@ -78,7 +84,9 @@ describe('detectDesktopInstall', () => {
       return p.toString() === '/mock/Documents/ComfyUI'
     })
     const eacces = Object.assign(new Error('EACCES'), { code: 'EACCES' })
-    accessSyncSpy.mockImplementation(() => { throw eacces })
+    accessSyncSpy.mockImplementation(() => {
+      throw eacces
+    })
     expect(() => detectDesktopInstall()).toThrow(/folderPermissionDenied|denied access/)
   })
 
@@ -190,7 +198,7 @@ describe('captureDesktopSnapshot', () => {
       configDir: '/config/ComfyUI',
       basePath: '/data/ComfyUI',
       executablePath: null,
-      hasVenv: false,
+      hasVenv: false
     }
 
     const snapshot = await captureDesktopSnapshot(info)
@@ -206,7 +214,7 @@ describe('captureDesktopSnapshot', () => {
   it('scans custom nodes from basePath', async () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(false)
     const fakeNodes = [
-      { id: 'test-node', type: 'cnr' as const, dirName: 'test-node', enabled: true, version: '1.0' },
+      { id: 'test-node', type: 'cnr' as const, dirName: 'test-node', enabled: true, version: '1.0' }
     ]
     mockScan.mockResolvedValue(fakeNodes)
 
@@ -214,7 +222,7 @@ describe('captureDesktopSnapshot', () => {
       configDir: '/config/ComfyUI',
       basePath: '/data/ComfyUI',
       executablePath: null,
-      hasVenv: false,
+      hasVenv: false
     }
 
     const snapshot = await captureDesktopSnapshot(info)
@@ -229,7 +237,7 @@ describe('captureDesktopSnapshot', () => {
       configDir: '/config/ComfyUI',
       basePath: '/data/ComfyUI',
       executablePath: null,
-      hasVenv: false,
+      hasVenv: false
     }
 
     const snapshot = await captureDesktopSnapshot(info)

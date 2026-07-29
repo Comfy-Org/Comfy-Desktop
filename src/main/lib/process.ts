@@ -207,7 +207,9 @@ export function waitForPort(
       const elapsed = Date.now() - start
       if (elapsed > timeoutMs) {
         settle(() =>
-          reject(new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`))
+          reject(
+            new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`)
+          )
         )
         return
       }

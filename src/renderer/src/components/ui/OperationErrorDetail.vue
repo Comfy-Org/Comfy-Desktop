@@ -19,7 +19,9 @@ const { t } = useI18n()
 
 <template>
   <div class="op-error-detail" :class="{ 'is-compact': compact }">
-    <pre class="op-error-detail__text" :data-testid="TID.pickerOpErrorMessage">{{ props.error }}</pre>
+    <pre class="op-error-detail__text" :data-testid="TID.pickerOpErrorMessage">{{
+      props.error
+    }}</pre>
     <BaseCopyButton
       class="op-error-detail__copy"
       :get-value="() => props.error"

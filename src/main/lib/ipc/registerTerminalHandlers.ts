@@ -8,7 +8,7 @@ import {
   resizeTerminal,
   restartTerminal,
   getTerminalRestore,
-  type TerminalRestore,
+  type TerminalRestore
 } from '../terminal'
 import { openTerminalPopout } from '../terminalPopoutWindow'
 
@@ -28,12 +28,12 @@ import { openTerminalPopout } from '../terminalPopoutWindow'
 const EMPTY_RESTORE: TerminalRestore = {
   buffer: [],
   size: { cols: 80, rows: 30 },
-  exited: true,
+  exited: true
 }
 
 function resolveInstallationId(
   event: IpcMainInvokeEvent,
-  explicit: string | null | undefined,
+  explicit: string | null | undefined
 ): string | null {
   if (explicit) return explicit
   return findInstallationIdByComfySender(event.sender)
@@ -46,7 +46,7 @@ export function registerTerminalHandlers(): void {
       const id = resolveInstallationId(event, installationId)
       if (!id) return EMPTY_RESTORE
       return subscribeTerminal(id, event.sender)
-    },
+    }
   )
 
   ipcMain.handle('terminal-unsubscribe', (event, installationId?: string | null) => {
@@ -64,7 +64,7 @@ export function registerTerminalHandlers(): void {
     (event, installationId: string | null, cols: number, rows: number) => {
       const id = resolveInstallationId(event, installationId)
       if (id) resizeTerminal(id, cols, rows)
-    },
+    }
   )
 
   ipcMain.handle(
@@ -73,17 +73,14 @@ export function registerTerminalHandlers(): void {
       const id = resolveInstallationId(event, installationId)
       if (!id) return EMPTY_RESTORE
       return restartTerminal(id)
-    },
+    }
   )
 
-  ipcMain.handle(
-    'terminal-restore',
-    (event, installationId?: string | null): TerminalRestore => {
-      const id = resolveInstallationId(event, installationId)
-      if (!id) return EMPTY_RESTORE
-      return getTerminalRestore(id) ?? EMPTY_RESTORE
-    },
-  )
+  ipcMain.handle('terminal-restore', (event, installationId?: string | null): TerminalRestore => {
+    const id = resolveInstallationId(event, installationId)
+    if (!id) return EMPTY_RESTORE
+    return getTerminalRestore(id) ?? EMPTY_RESTORE
+  })
 
   // Pop the inline terminal out into a standalone Electron window.
   // Caller (the inline injection in the comfyView) doesn't pass an
@@ -95,6 +92,6 @@ export function registerTerminalHandlers(): void {
       const id = resolveInstallationId(event, installationId)
       if (!id) return
       await openTerminalPopout(id)
-    },
+    }
   )
 }

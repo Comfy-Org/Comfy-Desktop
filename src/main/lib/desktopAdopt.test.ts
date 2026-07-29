@@ -565,10 +565,7 @@ describe('deriveLaunchArgs', () => {
   })
 
   it('does not override an explicit disabled CPU setting', () => {
-    const { launchArgs } = deriveLaunchArgs(
-      { 'Comfy.Server.LaunchArgs': { cpu: false } },
-      'cpu'
-    )
+    const { launchArgs } = deriveLaunchArgs({ 'Comfy.Server.LaunchArgs': { cpu: false } }, 'cpu')
     expect(launchArgs.split(' ')).not.toContain('--cpu')
   })
 })

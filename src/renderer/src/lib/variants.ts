@@ -5,7 +5,7 @@ export const variantImages: Record<string, string> = {
   nvidia: './images/nvidia-logo.jpg',
   amd: './images/amd-logo.png',
   'intel-xpu': './images/intel-logo.png',
-  mps: './images/apple-mps-logo.png',
+  mps: './images/apple-mps-logo.png'
 }
 
 /** Preferred display order for variant cards */
@@ -29,7 +29,7 @@ export const variantLabels: Record<string, string> = {
   amd: 'AMD',
   mps: 'Apple Silicon',
   'intel-xpu': 'Intel Arc',
-  cpu: 'CPU',
+  cpu: 'CPU'
 }
 
 /** Extract a human-readable GPU label from a variant ID like "win-nvidia-cu128" -> "NVIDIA" */
@@ -45,7 +45,10 @@ export function getVariantGpuLabel(variantId: string): string | null {
  * Pick the best default variant from a list of options, preferring the
  * GPU-recommended option, then a match to the snapshot's variant, then first.
  */
-export function findBestVariant(options: FieldOption[], snapshotVariantId: string): FieldOption | null {
+export function findBestVariant(
+  options: FieldOption[],
+  snapshotVariantId: string
+): FieldOption | null {
   const recommended = options.find((o) => o.recommended)
   if (recommended) return recommended
   const stripped = stripVariantPrefix(snapshotVariantId)

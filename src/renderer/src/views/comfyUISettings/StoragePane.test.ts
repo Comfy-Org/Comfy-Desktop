@@ -20,7 +20,7 @@ function installMockBridge(): BridgeState {
     setModelsDirsCalls: [],
     openPathCalls: [],
     revealPathCalls: [],
-    browseFolderReturn: null,
+    browseFolderReturn: null
   }
   const bridge = {
     globalSettingsUpdateField: async (id: string, value: unknown) => {
@@ -37,7 +37,7 @@ function installMockBridge(): BridgeState {
     globalSettingsSetModelsDirs: async (dirs: string[]) => {
       state.setModelsDirsCalls.push([...dirs])
       return { ok: true }
-    },
+    }
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
@@ -52,9 +52,9 @@ function makeSnapshot(): StorageSnapshot {
     sharedDirectoriesFields: [],
     modelsDirs: [
       { path: '/home/u/ComfyUI/models', isPrimary: true },
-      { path: '/mnt/extra/models', isPrimary: false },
+      { path: '/mnt/extra/models', isPrimary: false }
     ],
-    modelsSystemDefault: '/home/u/ComfyUI/models',
+    modelsSystemDefault: '/home/u/ComfyUI/models'
   }
 }
 
@@ -64,10 +64,10 @@ function mountPane(snapshot: StorageSnapshot = makeSnapshot()) {
       installation: null,
       snapshot,
       sections: [],
-      pendingRestartFieldIds: new Set<string>(),
+      pendingRestartFieldIds: new Set<string>()
     },
     global: { plugins: [makeI18n()] },
-    attachTo: document.body,
+    attachTo: document.body
   })
 }
 
@@ -82,12 +82,36 @@ function makeStorageSections(
   return [
     {
       fields: [
-        { id: 'useSharedModels', label: 'Use Shared Models', value: opts.sharedOn ?? false, editable: true, editType: 'boolean' },
-        { id: 'modelDirs', label: 'Model Directories', value: modelDirs, editable: true, editType: 'model-dirs' },
-        { id: 'modelDirsPrimary', label: 'modelDirsPrimary', value: opts.primary ?? null, editable: true, editType: 'hidden' },
-        { id: 'installModelsDir', label: 'installModelsDir', value: opts.own ?? '/own/models', editable: false, editType: 'hidden' },
-      ],
-    },
+        {
+          id: 'useSharedModels',
+          label: 'Use Shared Models',
+          value: opts.sharedOn ?? false,
+          editable: true,
+          editType: 'boolean'
+        },
+        {
+          id: 'modelDirs',
+          label: 'Model Directories',
+          value: modelDirs,
+          editable: true,
+          editType: 'model-dirs'
+        },
+        {
+          id: 'modelDirsPrimary',
+          label: 'modelDirsPrimary',
+          value: opts.primary ?? null,
+          editable: true,
+          editType: 'hidden'
+        },
+        {
+          id: 'installModelsDir',
+          label: 'installModelsDir',
+          value: opts.own ?? '/own/models',
+          editable: false,
+          editType: 'hidden'
+        }
+      ]
+    }
   ]
 }
 
@@ -96,13 +120,43 @@ function makeIoSections(opts: { inputDir?: string; outputDir?: string } = {}) {
   return [
     {
       fields: [
-        { id: 'useSharedInputOutput', label: 'Use Shared Input/Output Folders', value: false, editable: true, editType: 'boolean' },
-        { id: 'inputDir', label: 'Input Folder', value: opts.inputDir ?? '', editable: true, editType: 'path' },
-        { id: 'outputDir', label: 'Output Folder', value: opts.outputDir ?? '', editable: true, editType: 'path' },
-        { id: 'inputDirDefault', label: 'Input Folder', value: '/own/input', editable: false, editType: 'hidden' },
-        { id: 'outputDirDefault', label: 'Output Folder', value: '/own/output', editable: false, editType: 'hidden' },
-      ],
-    },
+        {
+          id: 'useSharedInputOutput',
+          label: 'Use Shared Input/Output Folders',
+          value: false,
+          editable: true,
+          editType: 'boolean'
+        },
+        {
+          id: 'inputDir',
+          label: 'Input Folder',
+          value: opts.inputDir ?? '',
+          editable: true,
+          editType: 'path'
+        },
+        {
+          id: 'outputDir',
+          label: 'Output Folder',
+          value: opts.outputDir ?? '',
+          editable: true,
+          editType: 'path'
+        },
+        {
+          id: 'inputDirDefault',
+          label: 'Input Folder',
+          value: '/own/input',
+          editable: false,
+          editType: 'hidden'
+        },
+        {
+          id: 'outputDirDefault',
+          label: 'Output Folder',
+          value: '/own/output',
+          editable: false,
+          editType: 'hidden'
+        }
+      ]
+    }
   ]
 }
 
@@ -115,10 +169,10 @@ function mountPaneWithSections(
       installation: { id: 'inst-1' } as never,
       snapshot,
       sections: sections as never,
-      pendingRestartFieldIds: new Set<string>(),
+      pendingRestartFieldIds: new Set<string>()
     },
     global: { plugins: [makeI18n()] },
-    attachTo: document.body,
+    attachTo: document.body
   })
 }
 
@@ -158,9 +212,7 @@ describe('StoragePane', () => {
     const makePrimary = wrapper.find('.models-dir-menu button[role="menuitem"]')
     await makePrimary.trigger('click')
     await flushPromises()
-    expect(bridge.setModelsDirsCalls).toEqual([
-      ['/mnt/extra/models', '/home/u/ComfyUI/models'],
-    ])
+    expect(bridge.setModelsDirsCalls).toEqual([['/mnt/extra/models', '/home/u/ComfyUI/models']])
   })
 
   it('closes the dir menu on Escape and restores focus to the toggle', async () => {
@@ -185,9 +237,7 @@ describe('StoragePane', () => {
     const browseBtns = wrapper.findAll('.models-dir-row .models-dir-action')
     await browseBtns[0]!.trigger('click')
     await flushPromises()
-    expect(bridge.setModelsDirsCalls).toEqual([
-      ['/mnt/new/models', '/mnt/extra/models'],
-    ])
+    expect(bridge.setModelsDirsCalls).toEqual([['/mnt/new/models', '/mnt/extra/models']])
   })
 
   it('leaves dirs unchanged when the browse picker is canceled', async () => {
@@ -378,9 +428,7 @@ describe('StoragePane', () => {
       await flushPromises()
       await wrapper.find('.models-dir-menu button[role="menuitem"]').trigger('click')
       await flushPromises()
-      expect(bridge.setModelsDirsCalls).toEqual([
-        ['/mnt/extra/models', '/home/u/ComfyUI/models'],
-      ])
+      expect(bridge.setModelsDirsCalls).toEqual([['/mnt/extra/models', '/home/u/ComfyUI/models']])
     })
   })
 
@@ -446,8 +494,8 @@ describe('StoragePane', () => {
         ...makeSnapshot(),
         sharedDirectoriesFields: [
           { id: 'inputDir', label: 'Shared Input', value: '/shared/in', type: 'path' },
-          { id: 'outputDir', label: 'Shared Output', value: '/shared/out', type: 'path' },
-        ] as never,
+          { id: 'outputDir', label: 'Shared Output', value: '/shared/out', type: 'path' }
+        ] as never
       }
     }
 
@@ -460,10 +508,10 @@ describe('StoragePane', () => {
               label: 'Use Shared Input/Output Folders',
               value: true,
               editable: true,
-              editType: 'boolean',
-            },
-          ],
-        },
+              editType: 'boolean'
+            }
+          ]
+        }
       ]
     }
 
@@ -512,9 +560,19 @@ describe('StoragePane', () => {
         basePathExists: true,
         isDefault: false,
         dirs: [
-          { type: 'checkpoints', rawType: 'checkpoints', dir: '/ext/base/checkpoints', dirExists: true },
-          { type: 'controlnet', rawType: 'controlnet', dir: '/ext/base/t2i_adapter', dirExists: false },
-        ],
+          {
+            type: 'checkpoints',
+            rawType: 'checkpoints',
+            dir: '/ext/base/checkpoints',
+            dirExists: true
+          },
+          {
+            type: 'controlnet',
+            rawType: 'controlnet',
+            dir: '/ext/base/t2i_adapter',
+            dirExists: false
+          }
+        ]
       }
     }
 
@@ -522,18 +580,52 @@ describe('StoragePane', () => {
       return [
         {
           fields: [
-            { id: 'useSharedModels', label: 'Use Shared Models', value: false, editable: true, editType: 'boolean' },
-            { id: 'modelDirs', label: 'Model Directories', value: [], editable: true, editType: 'model-dirs' },
-            { id: 'modelDirsPrimary', label: 'modelDirsPrimary', value: null, editable: true, editType: 'hidden' },
-            { id: 'installModelsDir', label: 'installModelsDir', value: '/own/models', editable: false, editType: 'hidden' },
-            { id: 'extraModelPaths', label: 'extraModelPaths', value: view, editable: false, editType: 'hidden' },
-          ],
-        },
+            {
+              id: 'useSharedModels',
+              label: 'Use Shared Models',
+              value: false,
+              editable: true,
+              editType: 'boolean'
+            },
+            {
+              id: 'modelDirs',
+              label: 'Model Directories',
+              value: [],
+              editable: true,
+              editType: 'model-dirs'
+            },
+            {
+              id: 'modelDirsPrimary',
+              label: 'modelDirsPrimary',
+              value: null,
+              editable: true,
+              editType: 'hidden'
+            },
+            {
+              id: 'installModelsDir',
+              label: 'installModelsDir',
+              value: '/own/models',
+              editable: false,
+              editType: 'hidden'
+            },
+            {
+              id: 'extraModelPaths',
+              label: 'extraModelPaths',
+              value: view,
+              editable: false,
+              editType: 'hidden'
+            }
+          ]
+        }
       ]
     }
 
     function extraView() {
-      return { yamlPath: '/own/extra_model_paths.yaml', exists: true, sections: [makeExtraSection()] }
+      return {
+        yamlPath: '/own/extra_model_paths.yaml',
+        exists: true,
+        sections: [makeExtraSection()]
+      }
     }
 
     function findExtraRow(wrapper: ReturnType<typeof mountPaneWithSections>) {
@@ -581,15 +673,17 @@ describe('StoragePane', () => {
             basePath: '/nas/models',
             basePathExists: true,
             isDefault: true,
-            dirs: [{ type: 'loras', rawType: 'loras', dir: '/nas/models/loras', dirExists: true }],
-          },
-        ],
+            dirs: [{ type: 'loras', rawType: 'loras', dir: '/nas/models/loras', dirExists: true }]
+          }
+        ]
       }
       const wrapper = mountPaneWithSections(sectionsWithExtra(view))
       await nextTick()
       // Two sections, but only one row in the list.
       expect(
-        wrapper.findAll('.models-dir-row').filter((r) => r.text().includes('extra_model_paths.yaml'))
+        wrapper
+          .findAll('.models-dir-row')
+          .filter((r) => r.text().includes('extra_model_paths.yaml'))
       ).toHaveLength(1)
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
       await nextTick()

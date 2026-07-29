@@ -1,21 +1,24 @@
-import {
-  installations, i18n,
-  sourceMap,
-  _operationAborts,
-  MSG_CANCELLED,
-} from '../shared'
+import { installations, i18n, sourceMap, _operationAborts, MSG_CANCELLED } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
 
-export async function handleDelegateToSource({ event, installationId, inst, actionData }: ActionContext, actionId: string): Promise<ActionResult> {
+export async function handleDelegateToSource(
+  { event, installationId, inst, actionData }: ActionContext,
+  actionId: string
+): Promise<ActionResult> {
   const abort = new AbortController()
   _operationAborts.set(installationId, abort)
   const sender = event.sender
   const sendProgress = (phase: string, detail: Record<string, unknown>): void => {
-    try { if (!sender.isDestroyed()) sender.send('install-progress', { installationId, phase, ...detail }) } catch {}
+    try {
+      if (!sender.isDestroyed())
+        sender.send('install-progress', { installationId, phase, ...detail })
+    } catch {}
   }
   const sendOutput = (text: string): void => {
-    try { if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text }) } catch {}
+    try {
+      if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
+    } catch {}
     appendLog(installationId, text)
   }
   const update = (data: Record<string, unknown>): Promise<void> =>
@@ -37,7 +40,12 @@ export async function handleDelegateToSource({ event, installationId, inst, acti
     }
   }
   try {
-    const result = await source.handleAction(actionId, inst, actionData, { update, sendProgress, sendOutput, signal: abort.signal })
+    const result = await source.handleAction(actionId, inst, actionData, {
+      update,
+      sendProgress,
+      sendOutput,
+      signal: abort.signal
+    })
     if (!result.ok && result.message && !result.cancelled) {
       logFailure(result.message)
     }

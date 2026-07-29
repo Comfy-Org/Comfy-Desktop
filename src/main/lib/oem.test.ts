@@ -22,7 +22,9 @@ function writeManifest(data: Record<string, unknown>): void {
 }
 
 function createLocalInstall(installPath: string): void {
-  fs.mkdirSync(path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows'), { recursive: true })
+  fs.mkdirSync(path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows'), {
+    recursive: true
+  })
 }
 
 beforeEach(() => {
@@ -47,13 +49,13 @@ beforeEach(() => {
       getPath: (name: string) => {
         if (name === 'home') return homePath
         return userDataPath
-      },
-    },
+      }
+    }
   }))
   vi.stubGlobal('process', {
     ...process,
     platform: 'win32',
-    env: { ...process.env, ProgramData: programDataPath },
+    env: { ...process.env, ProgramData: programDataPath }
   })
 })
 
@@ -75,19 +77,37 @@ describe('syncOemSeed', () => {
     createLocalInstall(secondInstallPath)
 
     const { settings, installations, syncOemSeed } = await loadModules()
-    await installations.add({ name: 'Standalone A', installPath: firstInstallPath, sourceId: 'standalone', status: 'installed' })
+    await installations.add({
+      name: 'Standalone A',
+      installPath: firstInstallPath,
+      sourceId: 'standalone',
+      status: 'installed'
+    })
     await new Promise((resolve) => setTimeout(resolve, 5))
-    await installations.add({ name: 'Standalone B', installPath: secondInstallPath, sourceId: 'standalone', status: 'installed' })
+    await installations.add({
+      name: 'Standalone B',
+      installPath: secondInstallPath,
+      sourceId: 'standalone',
+      status: 'installed'
+    })
 
     await syncOemSeed()
 
     expect(settings.get('modelsDirs')).toEqual([
       path.join(homePath, 'ComfyUI-Shared', 'models'),
-      path.join(oemRoot, 'models'),
+      path.join(oemRoot, 'models')
     ])
-    expect(fs.readFileSync(path.join(firstInstallPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'), 'utf-8'))
-      .toBe('{"name":"seed"}')
-    expect(fs.existsSync(path.join(secondInstallPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'))).toBe(false)
+    expect(
+      fs.readFileSync(
+        path.join(firstInstallPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'),
+        'utf-8'
+      )
+    ).toBe('{"name":"seed"}')
+    expect(
+      fs.existsSync(
+        path.join(secondInstallPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json')
+      )
+    ).toBe(false)
 
     expect(settings.get('oemManagedModelDirs')).toEqual([path.join(oemRoot, 'models')])
     expect(settings.get('oemWorkflowImportVersion')).toBe(1)
@@ -105,11 +125,18 @@ describe('syncOemSeed', () => {
 
     const installPath = path.join(tmpRoot, 'portable')
     createLocalInstall(installPath)
-    await installations.add({ name: 'Portable', installPath, sourceId: 'portable', status: 'installed' })
+    await installations.add({
+      name: 'Portable',
+      installPath,
+      sourceId: 'portable',
+      status: 'installed'
+    })
 
     await syncOemSeed()
 
-    expect(fs.existsSync(path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'))).toBe(true)
+    expect(
+      fs.existsSync(path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'))
+    ).toBe(true)
     expect(settings.get('oemWorkflowImportVersion')).toBe(1)
   })
 
@@ -132,17 +159,28 @@ describe('syncOemSeed', () => {
     fs.mkdirSync(outsideModels, { recursive: true })
     fs.mkdirSync(outsideWorkflows, { recursive: true })
     fs.writeFileSync(path.join(outsideWorkflows, 'seed.json'), '{"name":"outside"}', 'utf-8')
-    writeManifest({ version: 1, modelDirs: ['../outside-models'], workflowDirs: ['../outside-workflows'] })
+    writeManifest({
+      version: 1,
+      modelDirs: ['../outside-models'],
+      workflowDirs: ['../outside-workflows']
+    })
 
     const installPath = path.join(tmpRoot, 'standalone')
     createLocalInstall(installPath)
 
     const { settings, installations, syncOemSeed } = await loadModules()
-    await installations.add({ name: 'Standalone', installPath, sourceId: 'standalone', status: 'installed' })
+    await installations.add({
+      name: 'Standalone',
+      installPath,
+      sourceId: 'standalone',
+      status: 'installed'
+    })
 
     await syncOemSeed()
 
     expect(settings.get('modelsDirs')).toEqual([path.join(homePath, 'ComfyUI-Shared', 'models')])
-    expect(fs.existsSync(path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'))).toBe(false)
+    expect(
+      fs.existsSync(path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows', 'seed.json'))
+    ).toBe(false)
   })
 })

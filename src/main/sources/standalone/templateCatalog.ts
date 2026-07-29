@@ -17,7 +17,7 @@ import {
   TEMPLATE_MODALITY_ORDER,
   thumbnailUrlFor,
   type TemplateModality,
-  type TemplateSnapshot,
+  type TemplateSnapshot
 } from './curatedTemplates'
 
 /** A curated template merged with its (optional) live index metadata, ready to
@@ -110,7 +110,7 @@ const DEFAULT_TASK: Record<TemplateModality, string> = {
   image: 'Text to Image',
   video: 'Text to Video',
   audio: 'Text to Audio',
-  '3d': 'Image to 3D',
+  '3d': 'Image to 3D'
 }
 
 /** The template's task (e.g. "Text to Image", "Image Edit") from its `tags`,
@@ -152,14 +152,15 @@ function hydrateOne(card: {
   const { id, modality, recommended, apiNode, location, snapshot } = card
   const entry = location?.entry
 
-  const title =
-    typeof entry?.title === 'string' ? entry.title : (snapshot?.title ?? id)
+  const title = typeof entry?.title === 'string' ? entry.title : (snapshot?.title ?? id)
   const description =
     typeof entry?.description === 'string' ? entry.description : (snapshot?.description ?? '')
   const sizeBytes =
     typeof entry?.size === 'number' && entry.size > 0 ? entry.size : (snapshot?.sizeBytes ?? 0)
   const mediaSubtype =
-    typeof entry?.mediaSubtype === 'string' ? entry.mediaSubtype : (snapshot?.mediaSubtype ?? 'webp')
+    typeof entry?.mediaSubtype === 'string'
+      ? entry.mediaSubtype
+      : (snapshot?.mediaSubtype ?? 'webp')
 
   const task = taskOf(entry?.tags, modality)
 
@@ -174,7 +175,7 @@ function hydrateOne(card: {
     sizeBytes,
     apiNode,
     thumbnailUrl: thumbnailUrlFor(id, mediaSubtype),
-    category: location?.category ?? '',
+    category: location?.category ?? ''
   }
 }
 
@@ -246,7 +247,9 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
     const location = byId.get(curated.id)
     if (location || !online) {
       used.add(curated.id)
-      catalog.push(hydrateOne({ id: curated.id, modality, recommended, apiNode, location, snapshot }))
+      catalog.push(
+        hydrateOne({ id: curated.id, modality, recommended, apiNode, location, snapshot })
+      )
       continue
     }
 
@@ -264,7 +267,14 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
     } else {
       used.add(curated.id)
       catalog.push(
-        hydrateOne({ id: curated.id, modality, recommended, apiNode, location: undefined, snapshot })
+        hydrateOne({
+          id: curated.id,
+          modality,
+          recommended,
+          apiNode,
+          location: undefined,
+          snapshot
+        })
       )
     }
   }
@@ -277,7 +287,7 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
 function firstUnusedOfModality(
   byId: Map<string, IndexLocation>,
   modality: TemplateModality,
-  used: Set<string>,
+  used: Set<string>
 ): IndexLocation | null {
   for (const location of byId.values()) {
     const { entry } = location

@@ -12,8 +12,13 @@ export interface InstallUpdateOverride {
 
 export const installUpdateOverrides = new Map<string, InstallUpdateOverride>()
 
-export function lookupInstallUpdateOverride(installationId: string): InstallUpdateOverride | undefined {
-  return installUpdateOverrides.get(installationId) ?? installUpdateOverrides.get(INSTALL_UPDATE_GLOBAL_KEY)
+export function lookupInstallUpdateOverride(
+  installationId: string
+): InstallUpdateOverride | undefined {
+  return (
+    installUpdateOverrides.get(installationId) ??
+    installUpdateOverrides.get(INSTALL_UPDATE_GLOBAL_KEY)
+  )
 }
 
 // IPC invocation log (E2E only) so tests can assert a fast-path skipped a

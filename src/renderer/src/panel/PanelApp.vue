@@ -122,7 +122,7 @@ const firstUseChain = useFirstUseChain({
   handleShowProgress: (showOpts) => overlays.handleShowProgress(showOpts),
   performChooserLaunch: (inst, onMissing) => chooserHandoff.performChooserLaunch(inst, onMissing),
   openFirstUseTakeover: (firstUseOpts) => overlays.openFirstUseTakeover(firstUseOpts),
-  resetFirstUseSpinner: () => firstUseRef.value?.resetContinue(),
+  resetFirstUseSpinner: () => firstUseRef.value?.resetContinue()
 })
 const {
   chainingFirstUseToNewInstall,

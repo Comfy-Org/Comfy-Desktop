@@ -55,12 +55,15 @@ describe('useModal', () => {
     it('sets messageDetails on state when provided', () => {
       const details = [
         { label: 'Group A', items: ['item 1', 'item 2'] },
-        { label: 'Group B', items: ['item 3'] },
+        { label: 'Group B', items: ['item 3'] }
       ]
       modal.confirm({ title: 'T', message: 'M', messageDetails: details })
 
       expect(modal.state.messageDetails).toHaveLength(2)
-      expect(modal.state.messageDetails[0]).toEqual({ label: 'Group A', items: ['item 1', 'item 2'] })
+      expect(modal.state.messageDetails[0]).toEqual({
+        label: 'Group A',
+        items: ['item 1', 'item 2']
+      })
       expect(modal.state.messageDetails[1]).toEqual({ label: 'Group B', items: ['item 3'] })
     })
 
@@ -151,7 +154,11 @@ describe('useModal', () => {
 
     it('clears variant state on reset', () => {
       modal.confirm({ title: 'T', message: 'M' })
-      modal.updateConfirm({ variantCards: [variantA], selectedVariant: variantA, variantLoading: true })
+      modal.updateConfirm({
+        variantCards: [variantA],
+        selectedVariant: variantA,
+        variantLoading: true
+      })
       modal.close(false)
 
       expect(modal.state.variantCards).toEqual([])
@@ -200,7 +207,7 @@ describe('useModal', () => {
     it('resolves select as null', async () => {
       const promise = modal.select({
         title: 'T',
-        items: [{ value: 'a', label: 'A' }],
+        items: [{ value: 'a', label: 'A' }]
       })
       modal.dismiss()
       await expect(promise).resolves.toBeNull()
@@ -216,7 +223,7 @@ describe('useModal', () => {
       const promise = modal.confirmWithOptions({
         title: 'T',
         message: 'M',
-        options: [{ id: 'opt1', label: 'Option 1' }],
+        options: [{ id: 'opt1', label: 'Option 1' }]
       })
       modal.dismiss()
       await expect(promise).resolves.toBeNull()

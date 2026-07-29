@@ -7,29 +7,29 @@ import { attachContextMenu } from '../lib/contextMenu'
 import {
   attachSessionDownloadHandler,
   detachWindowDownloads,
-  getDownloadsTrayState,
+  getDownloadsTrayState
 } from '../lib/comfyDownloadManager'
 import {
   handleFirebasePopup,
   isFirebaseAuthHandlerUrl,
-  type SignInFailureContext,
+  type SignInFailureContext
 } from '../auth/firebaseBridge'
 import {
   isCheckoutReturnUrl,
   isCheckoutUrl,
   isLikelyDownloadUrl,
-  shouldOpenInPopup,
+  shouldOpenInPopup
 } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
 import {
   TITLEBAR_HEIGHT,
   TRAFFIC_LIGHT_POSITION,
-  titleBarOverlayForTheme,
+  titleBarOverlayForTheme
 } from '../lib/titleBarOverlay'
 import {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
-  resolveTheme,
+  resolveTheme
 } from '../lib/ipc/shared'
 import * as mainTelemetry from '../lib/telemetry'
 import { getUserTier } from '../lib/userTier'
@@ -55,7 +55,7 @@ import {
   revealColdStartHostIfPending,
   setLastFocusedInstallationId,
   shouldConfirmKillForEntry,
-  unregisterHostEntry,
+  unregisterHostEntry
 } from './registry'
 import type { ComfyWindowEntry, ComfyPanelKey } from './registry'
 
@@ -90,7 +90,7 @@ export function buildFirebaseAuthForwardedError(
     source,
     message: 'Firebase sign-in failed',
     level: 'warn',
-    context: { origin: 'main-process', ...failure },
+    context: { origin: 'main-process', ...failure }
   }
 }
 
@@ -114,7 +114,7 @@ export function shouldBailAfterConsult(consult: CloseConsultResult, forceClose: 
 export function installCloseNeedsConfirm(
   confirmEnabled: boolean,
   killsLocalSession: boolean,
-  isLastInstallWindow: boolean,
+  isLastInstallWindow: boolean
 ): boolean {
   return confirmEnabled && (killsLocalSession || isLastInstallWindow)
 }
@@ -130,12 +130,12 @@ export function shouldShowInstallCloseConfirm(
   consult: CloseConsultResult,
   killsLocalSession: boolean,
   forceClose: boolean,
-  isLastInstallWindow: boolean,
+  isLastInstallWindow: boolean
 ): boolean {
   return (
-    installCloseNeedsConfirm(confirmEnabled, killsLocalSession, isLastInstallWindow)
-    && consult === 'defer'
-    && !forceClose
+    installCloseNeedsConfirm(confirmEnabled, killsLocalSession, isLastInstallWindow) &&
+    consult === 'defer' &&
+    !forceClose
   )
 }
 
@@ -143,7 +143,10 @@ export function shouldShowInstallCloseConfirm(
  *  modal? `cancel` keeps the window open, but a force-close override
  *  (the caller pre-cleared mid-modal) must still proceed — same override
  *  as {@link shouldBailAfterConsult}. */
-export function shouldBailAfterCloseChoice(choice: CloseWindowChoice, forceClose: boolean): boolean {
+export function shouldBailAfterCloseChoice(
+  choice: CloseWindowChoice,
+  forceClose: boolean
+): boolean {
   return choice === 'cancel' && !forceClose
 }
 
@@ -174,7 +177,7 @@ export interface HostWindowFactories {
    *    - `defer`    — no overlay; main owns the close-window confirm
    *  Falls back to `defer` when the renderer is unreachable. */
   consultPanelRendererClose: (
-    panelView: WebContentsView | null | undefined,
+    panelView: WebContentsView | null | undefined
   ) => Promise<'cleared' | 'aborted' | 'defer'>
   /** Shell-level "Close Window" confirm, owned by main so a hidden panel
    *  renderer can't swallow it. Shared with the Close Window menu entry.
@@ -184,7 +187,7 @@ export interface HostWindowFactories {
     window: BrowserWindow,
     isLastWindow: boolean,
     stopsLocalComfy: boolean,
-    theme: { bg: string; text: string },
+    theme: { bg: string; text: string }
   ) => Promise<CloseWindowChoice>
   /** Detach the install currently bound to a host entry (in-place flip). */
   detachInstallImpl: (entry: ComfyWindowEntry) => void
@@ -193,7 +196,7 @@ export interface HostWindowFactories {
   preClearedClose: WeakSet<BrowserWindow>
   /** Compute whether an install has a pending in-app update. */
   computeInstallUpdateAvailable: (
-    installationId: string,
+    installationId: string
   ) => Promise<{ available: boolean; version?: string }>
 }
 
@@ -215,10 +218,7 @@ function getFactories(): HostWindowFactories {
  * Inject a fixed warning banner into auth popups (Google, GitHub) so users
  * know to use password + OTP instead of passkeys.
  */
-const PASSKEY_BANNER_PREFIXES = [
-  'https://accounts.google.com/',
-  'https://github.com/login',
-]
+const PASSKEY_BANNER_PREFIXES = ['https://accounts.google.com/', 'https://github.com/login']
 
 const PASSKEY_BANNER_CSS =
   `#comfy-passkey-banner{position:fixed;top:0;left:0;right:0;z-index:999999;` +
@@ -227,16 +227,16 @@ const PASSKEY_BANNER_CSS =
 
 const PASSKEY_BANNER_JS =
   `(function(){` +
-    `if(document.getElementById('comfy-passkey-banner'))return;` +
-    `const b=document.createElement('div');b.id='comfy-passkey-banner';` +
-    `b.textContent='\\u24d8 Passkeys are not supported in Comfy Desktop on macOS. Please use your password or verification code to sign in.';` +
-    `document.body.prepend(b);` +
-    `document.body.style.paddingTop=(b.offsetHeight)+'px';` +
-    `new MutationObserver(function(){` +
-      `if(!document.getElementById('comfy-passkey-banner')){` +
-        `document.body.prepend(b);document.body.style.paddingTop=(b.offsetHeight)+'px'` +
-      `}` +
-    `}).observe(document.body,{childList:true});` +
+  `if(document.getElementById('comfy-passkey-banner'))return;` +
+  `const b=document.createElement('div');b.id='comfy-passkey-banner';` +
+  `b.textContent='\\u24d8 Passkeys are not supported in Comfy Desktop on macOS. Please use your password or verification code to sign in.';` +
+  `document.body.prepend(b);` +
+  `document.body.style.paddingTop=(b.offsetHeight)+'px';` +
+  `new MutationObserver(function(){` +
+  `if(!document.getElementById('comfy-passkey-banner')){` +
+  `document.body.prepend(b);document.body.style.paddingTop=(b.offsetHeight)+'px'` +
+  `}` +
+  `}).observe(document.body,{childList:true});` +
   `})()`
 
 function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
@@ -287,13 +287,16 @@ function checkoutPopupBounds(parent: BrowserWindow): Electron.Rectangle {
   const height = clamp(
     Math.round(workArea.height * CHECKOUT_HEIGHT_FRACTION),
     CHECKOUT_MIN_HEIGHT,
-    Math.min(CHECKOUT_MAX_HEIGHT, workArea.height),
+    Math.min(CHECKOUT_MAX_HEIGHT, workArea.height)
   )
   const maxWidth = Math.min(CHECKOUT_MAX_WIDTH, workArea.width)
   const width = clamp(
-    Math.max(Math.round(workArea.width * CHECKOUT_WIDTH_FRACTION), Math.round(height * CHECKOUT_MIN_ASPECT)),
+    Math.max(
+      Math.round(workArea.width * CHECKOUT_WIDTH_FRACTION),
+      Math.round(height * CHECKOUT_MIN_ASPECT)
+    ),
     Math.min(CHECKOUT_MIN_WIDTH, maxWidth),
-    maxWidth,
+    maxWidth
   )
 
   // Center over the parent, then nudge fully inside the work area.
@@ -318,7 +321,7 @@ function wireCheckoutPopup(
   childWindow: BrowserWindow,
   parent: BrowserWindow,
   hostContents: Electron.WebContents,
-  openedAt: number,
+  openedAt: number
 ): void {
   const close = (): void => {
     if (!childWindow.isDestroyed()) childWindow.close()
@@ -347,7 +350,7 @@ function wireCheckoutPopup(
     // conversion off this event.
     mainTelemetry.capture('comfy.desktop.billing.checkout_returned', {
       duration_ms: Date.now() - openedAt,
-      user_tier: getUserTier(),
+      user_tier: getUserTier()
     })
     if (hostContents.isDestroyed()) {
       close()
@@ -400,7 +403,7 @@ const CHECKOUT_CLOSE_BUTTON_SIZE = 48
 
 function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
   const overlay = new WebContentsView({
-    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false },
+    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
   })
   overlay.setBackgroundColor('#00000000')
   childWindow.contentView.addChildView(overlay)
@@ -411,7 +414,7 @@ function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => vo
       x: Math.max(0, width - CHECKOUT_CLOSE_BUTTON_SIZE),
       y: 0,
       width: CHECKOUT_CLOSE_BUTTON_SIZE,
-      height: CHECKOUT_CLOSE_BUTTON_SIZE,
+      height: CHECKOUT_CLOSE_BUTTON_SIZE
     })
   }
   place()
@@ -508,7 +511,7 @@ const CASCADE_STEP_PX = 30
  */
 export function cascadeOffsetForCollisions(
   windowOptions: Partial<Electron.BrowserWindowConstructorOptions>,
-  existingOrigins: ReadonlyArray<{ x: number; y: number }>,
+  existingOrigins: ReadonlyArray<{ x: number; y: number }>
 ): Partial<Electron.BrowserWindowConstructorOptions> {
   if (typeof windowOptions.x !== 'number' || typeof windowOptions.y !== 'number') {
     return windowOptions
@@ -576,7 +579,7 @@ function findLiveSiblingOrigin(boundsKey: string): { x: number; y: number } | nu
  *  minimized window reports a bogus content size on Windows, collapsing the
  *  child views (the grey-screen bug). */
 export function isWindowLayoutable(
-  win: Pick<BrowserWindow, 'isDestroyed' | 'isMinimized'>,
+  win: Pick<BrowserWindow, 'isDestroyed' | 'isMinimized'>
 ): boolean {
   return !win.isDestroyed() && !win.isMinimized()
 }
@@ -622,8 +625,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       : { titleBarOverlay: opts.titleBarOverlay }),
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true,
-    },
+      contextIsolation: true
+    }
   })
   comfyWindow.setMenuBarVisibility(false)
 
@@ -654,8 +657,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       // remain on, so renderer JS still has no Node access.
       // Tracked: issue #521 (build-time chunk inlining to re-enable sandbox).
       sandbox: false,
-      preload: path.join(__dirname, '../preload/comfyTitleBarPreload.js'),
-    },
+      preload: path.join(__dirname, '../preload/comfyTitleBarPreload.js')
+    }
   })
   titleBarView.setBackgroundColor(opts.titleBarBackground)
   loadTitleBarUrl(titleBarView, opts.titleBarInstallationIdParam)
@@ -831,21 +834,18 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       // (see `loadTitleBarUrl` callers); the URL `installationId`
       // query param is only a cold-boot seed for the renderer's
       // initial `isInstallLess` paint.
-      titleBarView.webContents.send(
-        'comfy-titlebar:installation-id-changed',
-        entry.installationId,
-      )
+      titleBarView.webContents.send('comfy-titlebar:installation-id-changed', entry.installationId)
       // Replay preview-mode so a re-mount during an in-progress preview
       // keeps showing the install-type icon next to the previewed name
       // instead of the bare chooser-host identity.
       titleBarView.webContents.send(
         'comfy-titlebar:preview-mode-changed',
-        entry.previewInstallationId !== null,
+        entry.previewInstallationId !== null
       )
       if (!entry.comfyView.webContents.isDestroyed()) {
         titleBarView.webContents.send(
           'comfy-titlebar:zoom-changed',
-          entry.comfyView.webContents.getZoomLevel(),
+          entry.comfyView.webContents.getZoomLevel()
         )
       }
     }
@@ -854,7 +854,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     // (and detached install-backed hosts) skip it cleanly.
     titleBarView.webContents.send(
       'comfy-titlebar:app-update-state-changed',
-      updater.getCurrentUpdateState(),
+      updater.getCurrentUpdateState()
     )
     titleBarView.webContents.send('comfy-titlebar:downloads-changed', getDownloadsTrayState())
     const installId = entry?.installationId ?? null
@@ -941,15 +941,15 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
             consult,
             shouldConfirmKillForEntry(entryForClose),
             fx.preClearedClose.has(comfyWindow),
-            isLastInstallWindow,
-          )
-          && entryForClose
+            isLastInstallWindow
+          ) &&
+          entryForClose
         ) {
           const closeChoice = await fx.confirmCloseInstanceWindow(
             comfyWindow,
             isLastWindow,
             shouldConfirmKillForEntry(entryForClose),
-            entryForClose.lastTheme,
+            entryForClose.lastTheme
           )
           if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
         }
@@ -979,7 +979,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
               message,
               stack,
               level: 'error',
-              context: { origin: 'main-process', windowKey: String(windowKey) },
+              context: { origin: 'main-process', windowKey: String(windowKey) }
             })
           }
         }
@@ -987,10 +987,12 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
           if (entry?._installCleanup) entry._installCleanup()
         })
         safeTeardown('host-window-close-detach-downloads', () => detachWindowDownloads(comfyWindow))
-        safeTeardown('host-window-close-unregister-broadcast-target',
-          () => _unregisterExtraBroadcastTarget(titleBarView.webContents))
-        safeTeardown('host-window-close-unregister-telemetry-relay',
-          () => mainTelemetry.unregisterTelemetryRelayTarget(titleBarView.webContents))
+        safeTeardown('host-window-close-unregister-broadcast-target', () =>
+          _unregisterExtraBroadcastTarget(titleBarView.webContents)
+        )
+        safeTeardown('host-window-close-unregister-telemetry-relay', () =>
+          mainTelemetry.unregisterTelemetryRelayTarget(titleBarView.webContents)
+        )
         // Re-read the entry from the live registry: rebuildComfyViewIfNeeded
         // can have swapped `entry.comfyView` since the closure was captured
         // (in-place attach onto a chooser host with a different partition),
@@ -1001,8 +1003,9 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
         if (liveEntry) {
           safeTeardown('host-window-close-destroy-panel-view', () => destroyPanelView(liveEntry))
         }
-        safeTeardown('host-window-close-title-bar-webcontents-close',
-          () => titleBarView.webContents.close())
+        safeTeardown('host-window-close-title-bar-webcontents-close', () =>
+          titleBarView.webContents.close()
+        )
         safeTeardown('host-window-close-comfy-webcontents-close', () => {
           // `webContents` can come back undefined on a reused chooser
           // comfyView after the install's navigation churn — the optional
@@ -1063,7 +1066,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     coldStartPendingReveal: false,
     _installCleanup: null,
     // Bound below so it can self-reference the freshly-created entry.
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
   // Bind the detach method to the freestanding impl. Done
   // post-literal so the closure captures the registered entry by
@@ -1096,19 +1099,15 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
  * fullscreen-changed (macOS), app-update-state-changed,
  * downloads-changed, install-update-changed (install-backed only).
  */
-export function loadTitleBarUrl(
-  titleBarView: WebContentsView,
-  installationId: string,
-): void {
+export function loadTitleBarUrl(titleBarView: WebContentsView, installationId: string): void {
   const isDev = !!process.env['ELECTRON_RENDERER_URL']
   const tbLoad = isDev
     ? titleBarView.webContents.loadURL(
-        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/comfyTitleBar.html?installationId=${encodeURIComponent(installationId)}`,
+        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/comfyTitleBar.html?installationId=${encodeURIComponent(installationId)}`
       )
-    : titleBarView.webContents.loadFile(
-        path.join(__dirname, '../renderer/comfyTitleBar.html'),
-        { query: { installationId } },
-      )
+    : titleBarView.webContents.loadFile(path.join(__dirname, '../renderer/comfyTitleBar.html'), {
+        query: { installationId }
+      })
   void tbLoad.catch(() => {})
 }
 
@@ -1136,7 +1135,7 @@ export function expectedPartitionFor(installation: InstallationRecord): string {
 export function buildComfyView(
   comfyWindow: BrowserWindow,
   webPreferences: Electron.WebPreferences,
-  windowKey: number,
+  windowKey: number
 ): WebContentsView {
   /**
    * Map the `monospace` generic to a real face. Electron leaves it unmapped,
@@ -1149,10 +1148,10 @@ export function buildComfyView(
         ? 'Menlo'
         : process.platform === 'win32'
           ? 'Consolas'
-          : 'monospace',
+          : 'monospace'
   }
   const comfyView = new WebContentsView({
-    webPreferences: { ...webPreferences, defaultFontFamily },
+    webPreferences: { ...webPreferences, defaultFontFamily }
   })
   comfyView.setBackgroundColor(COMFY_BG)
 
@@ -1193,7 +1192,7 @@ export function buildComfyView(
         parentWindow: comfyWindow,
         onError: (failure) => {
           forwardDatadogError(buildFirebaseAuthForwardedError(failure))
-        },
+        }
       })
       return { action: 'deny' }
     }
@@ -1209,7 +1208,7 @@ export function buildComfyView(
       nextCheckoutOpenedAt = Date.now()
       mainTelemetry.capture('comfy.desktop.billing.checkout_opened', {
         source: 'cloud_webview',
-        user_tier: getUserTier(),
+        user_tier: getUserTier()
       })
       const bounds = checkoutPopupBounds(comfyWindow)
       return {
@@ -1223,14 +1222,17 @@ export function buildComfyView(
           backgroundColor: COMFY_BG,
           title: 'Purchase Credits',
           show: false,
-          webPreferences: { preload: undefined },
-        },
+          webPreferences: { preload: undefined }
+        }
       }
     }
     if (shouldOpenInPopup(childUrl)) {
       // preload: undefined strips our title-bar bridge so OAuth/cloud-login
       // popups can't reach the file menu IPCs.
-      return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { preload: undefined } } }
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: { webPreferences: { preload: undefined } }
+      }
     }
     // Capture downloads that the previous unconditional
     // `shell.openExternal` branch was leaking to the system browser.
@@ -1265,7 +1267,7 @@ export function buildComfyView(
  */
 export function rebuildComfyViewIfNeeded(
   entry: ComfyWindowEntry,
-  installation: InstallationRecord,
+  installation: InstallationRecord
 ): void {
   const expectedPartition = expectedPartitionFor(installation)
   if (entry.constructedPartition === expectedPartition) return
@@ -1278,9 +1280,9 @@ export function rebuildComfyViewIfNeeded(
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/comfyPreload.js'),
-      partition: expectedPartition,
+      partition: expectedPartition
     },
-    entry.windowKey,
+    entry.windowKey
   )
   entry.window.contentView.addChildView(newView)
   oldView.setVisible(false)
@@ -1360,7 +1362,7 @@ export interface OpenChooserHostWindowOptions {
 
 export function openChooserHostWindow(
   initialPanel: ComfyPanelKey = 'comfy',
-  opts: OpenChooserHostWindowOptions = {},
+  opts: OpenChooserHostWindowOptions = {}
 ): BrowserWindow {
   // Install-less wrapper. The shared `createHostWindow()` builds
   // the BrowserWindow + 2 views skeleton, layoutViews, macOS
@@ -1384,13 +1386,14 @@ export function openChooserHostWindow(
     windowTitle: CHOOSER_HOST_WINDOW_TITLE,
     boundsKey: CHOOSER_HOST_BOUNDS_KEY,
     initialTheme: initialChooserTheme,
-    titleBarOverlay: process.platform === 'darwin'
-      ? undefined
-      // Every host — install-less chooser AND install-backed instance —
-      // uses the same `titleBarOverlayForTheme` (TITLEBAR_BG) for the OS
-      // overlay so the close/min/max region matches the Vue title bar
-      // above it. The overlay never adapts to ComfyUI's in-page theme.
-      : titleBarOverlayForTheme(resolveTheme() === 'dark'),
+    titleBarOverlay:
+      process.platform === 'darwin'
+        ? undefined
+        : // Every host — install-less chooser AND install-backed instance —
+          // uses the same `titleBarOverlayForTheme` (TITLEBAR_BG) for the OS
+          // overlay so the close/min/max region matches the Vue title bar
+          // above it. The overlay never adapts to ComfyUI's in-page theme.
+          titleBarOverlayForTheme(resolveTheme() === 'dark'),
     // Dummy comfyView. Kept so layoutViews doesn't have to special-
     // case the install-less branch — its body always resolves to
     // the panelView. Uses the same comfy preload + `persist:shared`
@@ -1406,7 +1409,7 @@ export function openChooserHostWindow(
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/comfyPreload.js'),
-      partition: 'persist:shared',
+      partition: 'persist:shared'
     },
     titleBarBackground: initialChooserTheme.bg,
     // Empty installationId URL param tells the title-bar Vue to enter
@@ -1418,7 +1421,7 @@ export function openChooserHostWindow(
     // so the source-category icon stays unset.
     initialTitleBarText: CHOOSER_HOST_TITLE_TEXT,
     initialSourceCategory: null,
-    initiallyHidden: true,
+    initiallyHidden: true
   })
 
   // Startup restore holds the window hidden (no pending cold-start reveal) until

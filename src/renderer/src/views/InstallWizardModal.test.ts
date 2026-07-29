@@ -13,8 +13,8 @@ function mountModal() {
   return mount(InstallWizardModal, {
     global: {
       plugins: [makeI18n()],
-      stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } },
-    },
+      stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } }
+    }
   })
 }
 
@@ -30,7 +30,7 @@ beforeEach(() => {
     getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
-    validateInstallPath: vi.fn().mockResolvedValue([]),
+    validateInstallPath: vi.fn().mockResolvedValue([])
   } as unknown as typeof window.api
 })
 

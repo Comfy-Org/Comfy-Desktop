@@ -81,11 +81,11 @@ function migrateRecord(record: InstallationRecord): InstallationRecord {
   return {
     ...rest,
     useSharedModels: true,
-    useSharedInputOutput: typeof legacy === 'boolean' ? legacy : true,
+    useSharedInputOutput: typeof legacy === 'boolean' ? legacy : true
   } as InstallationRecord
 }
 
-const dataPath = path.join(dataDir(), "installations.json")
+const dataPath = path.join(dataDir(), 'installations.json')
 
 /**
  * Monotonic install-id generator. A naive `inst-${Date.now()}` collides when
@@ -110,7 +110,10 @@ function nextInstallId(): string {
 let _queue: Promise<void> = Promise.resolve()
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   const p = _queue.then(fn)
-  _queue = p.then(() => {}, () => {})
+  _queue = p.then(
+    () => {},
+    () => {}
+  )
   return p
 }
 
@@ -169,7 +172,11 @@ export async function hasNameConflict(id: string, name: string): Promise<boolean
   return all.some((i) => i.id !== id && i.name === name)
 }
 
-export function uniqueName(baseName: string, existing: InstallationRecord[], excludeId?: string): string {
+export function uniqueName(
+  baseName: string,
+  existing: InstallationRecord[],
+  excludeId?: string
+): string {
   const names = new Set(existing.filter((i) => i.id !== excludeId).map((i) => i.name))
   if (!names.has(baseName)) return baseName
   // On conflict, strip a trailing " (N)" so an already-suffixed name renumbers
@@ -189,7 +196,7 @@ export async function add(installation: Record<string, unknown>): Promise<Instal
     const entry = {
       id: nextInstallId(),
       createdAt: new Date().toISOString(),
-      ...installation,
+      ...installation
     } as InstallationRecord
     installations.unshift(entry)
     await save(installations)
@@ -207,7 +214,10 @@ export async function remove(id: string): Promise<void> {
   installationEvents.emit('changed')
 }
 
-export async function update(id: string, data: Record<string, unknown>): Promise<InstallationRecord | null> {
+export async function update(
+  id: string,
+  data: Record<string, unknown>
+): Promise<InstallationRecord | null> {
   const updated = await enqueue(async () => {
     const installations = await load()
     const index = installations.findIndex((i) => i.id === id)
@@ -231,7 +241,9 @@ export async function get(id: string): Promise<InstallationRecord | null> {
 export async function reorder(orderedIds: string[]): Promise<void> {
   await enqueue(async () => {
     const installations = await load()
-    const byId: Record<string, InstallationRecord> = Object.fromEntries(installations.map((i) => [i.id, i]))
+    const byId: Record<string, InstallationRecord> = Object.fromEntries(
+      installations.map((i) => [i.id, i])
+    )
     const reordered: InstallationRecord[] = orderedIds
       .map((id) => byId[id])
       .filter((inst): inst is InstallationRecord => inst != null)
@@ -251,7 +263,7 @@ export async function ensureExists(sourceId: string, data: Record<string, unknow
     existing.push({
       id: nextInstallId(),
       createdAt: new Date().toISOString(),
-      ...data,
+      ...data
     } as InstallationRecord)
     await save(existing)
     return true
@@ -289,7 +301,7 @@ export async function enforceCloudName(): Promise<void> {
  */
 export async function markLaunched(
   installationId: string,
-  resolveCategory?: (inst: InstallationRecord) => string | undefined,
+  resolveCategory?: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
   const updated = await enqueue(async () => {
     const list = await load()
@@ -303,9 +315,7 @@ export async function markLaunched(
     const merged: InstallationRecord = {
       ...existing,
       lastLaunchedAt: now,
-      ...(category
-        ? { lastLaunchedAtByCategory: { ...existingByCategory, [category]: now } }
-        : {}),
+      ...(category ? { lastLaunchedAtByCategory: { ...existingByCategory, [category]: now } } : {})
     }
     list[index] = merged
     await save(list)
@@ -363,7 +373,7 @@ export async function getRecent(): Promise<InstallationRecord | null> {
  */
 export async function getRecentByCategory(
   category: string,
-  resolveCategory: (inst: InstallationRecord) => string | undefined,
+  resolveCategory: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
   const list = await load()
   let best: InstallationRecord | null = null
@@ -396,7 +406,7 @@ export async function getRecentByCategory(
  *  - any other string → look up by id; null when the id is gone (caller
  *    treats that as "stale selection, fall back to dashboard silently"). */
 export async function resolveAutoLaunchInstall(
-  autoLaunchValue: string | undefined | null,
+  autoLaunchValue: string | undefined | null
 ): Promise<InstallationRecord | null> {
   if (autoLaunchValue == null || autoLaunchValue === '' || autoLaunchValue === 'none') {
     return null
@@ -415,8 +425,8 @@ export async function seedDefaults(defaults: Record<string, unknown>[]): Promise
       installations.push({
         id: nextInstallId(),
         createdAt: new Date().toISOString(),
-        status: "installed",
-        ...entry,
+        status: 'installed',
+        ...entry
       } as InstallationRecord)
     }
     if (installations.length > 0) {

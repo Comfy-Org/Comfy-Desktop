@@ -98,7 +98,7 @@ const tabs = computed(() => [
 const storageSnapshot = computed(() => ({
   sharedDirectoriesFields: props.snapshot.sharedDirectoriesFields,
   modelsDirs: props.snapshot.modelsDirs,
-  modelsSystemDefault: props.snapshot.modelsSystemDefault,
+  modelsSystemDefault: props.snapshot.modelsSystemDefault
 }))
 
 const languageSections = computed<DetailSection[]>(() => [
@@ -283,7 +283,11 @@ onMounted(() => {
         <template v-if="activeTab === 'general'">
           <!-- Locale picker first, no microsection header — it's a single
                control and the lone "Language" label on it is enough. -->
-          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" @open-path="handleOpenPath" />
+          <SettingsSectionList
+            :sections="languageSections"
+            @update-field="handleUpdateField"
+            @open-path="handleOpenPath"
+          />
 
           <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
             <SettingsSectionList

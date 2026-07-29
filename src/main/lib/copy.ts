@@ -30,7 +30,9 @@ export async function collectFiles(dir: string): Promise<CollectResult> {
 export async function copyDirWithProgress(
   src: string,
   dest: string,
-  onProgress: ((copied: number, total: number, elapsedSecs: number, etaSecs: number) => void) | null,
+  onProgress:
+    | ((copied: number, total: number, elapsedSecs: number, etaSecs: number) => void)
+    | null,
   options?: { signal?: AbortSignal }
 ): Promise<void> {
   const { files, symlinks } = await collectFiles(src)
@@ -60,28 +62,30 @@ export async function copyDirWithProgress(
 
   let i = 0
   while (i < files.length) {
-    if (signal?.aborted) throw new Error("Cancelled")
+    if (signal?.aborted) throw new Error('Cancelled')
     const batch = files.slice(i, i + concurrency)
-    await Promise.all(batch.map(async (rel) => {
-      const destPath = path.join(dest, rel)
-      await ensureDir(path.dirname(destPath))
-      await fs.promises.copyFile(path.join(src, rel), destPath)
-      copied++
-      reportProgress()
-    }))
+    await Promise.all(
+      batch.map(async (rel) => {
+        const destPath = path.join(dest, rel)
+        await ensureDir(path.dirname(destPath))
+        await fs.promises.copyFile(path.join(src, rel), destPath)
+        copied++
+        reportProgress()
+      })
+    )
     i += concurrency
   }
 
   // Recreate symlinks, rewriting absolute targets that point inside src
   for (const rel of symlinks) {
-    if (signal?.aborted) throw new Error("Cancelled")
+    if (signal?.aborted) throw new Error('Cancelled')
     const srcLink = path.join(src, rel)
     const destLink = path.join(dest, rel)
     await ensureDir(path.dirname(destLink))
     let target = await fs.promises.readlink(srcLink)
     if (path.isAbsolute(target)) {
       const relToSrc = path.relative(src, target)
-      if (!relToSrc.startsWith("..") && !path.isAbsolute(relToSrc)) {
+      if (!relToSrc.startsWith('..') && !path.isAbsolute(relToSrc)) {
         target = path.join(dest, relToSrc)
       }
     }

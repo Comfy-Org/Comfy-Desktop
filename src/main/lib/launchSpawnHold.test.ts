@@ -4,14 +4,14 @@ import {
   armLaunchSpawnHold,
   isLaunchSpawnHeld,
   releaseLaunchSpawnHold,
-  waitLaunchSpawnHold,
+  waitLaunchSpawnHold
 } from './e2eOverrides'
 
 /** Resolves true if `p` settles within `ms`, false otherwise. */
 function settlesWithin(p: Promise<unknown>, ms: number): Promise<boolean> {
   return Promise.race([
     p.then(() => true),
-    new Promise<false>((resolve) => setTimeout(() => resolve(false), ms)),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), ms))
   ])
 }
 

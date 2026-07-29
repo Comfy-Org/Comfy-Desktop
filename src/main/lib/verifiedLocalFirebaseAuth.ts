@@ -36,9 +36,7 @@ function normalizeUserId(value: unknown): string | null {
 
 function readBindings(): Record<string, string> {
   try {
-    const parsed: unknown = JSON.parse(
-      fs.readFileSync(verifiedLocalFirebaseAuthPath(), 'utf-8')
-    )
+    const parsed: unknown = JSON.parse(fs.readFileSync(verifiedLocalFirebaseAuthPath(), 'utf-8'))
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
     const bindings: Record<string, string> = {}
     for (const [rawOrigin, rawUserId] of Object.entries(parsed).slice(
@@ -76,7 +74,9 @@ export function persistVerifiedLocalFirebaseUser(origin: string, userId: string)
   const normalizedOrigin = normalizeLoopbackOrigin(origin)
   const normalizedUserId = normalizeUserId(userId)
   if (!normalizedOrigin || !normalizedUserId) return false
-  const entries = Object.entries(readBindings()).filter(([candidate]) => candidate !== normalizedOrigin)
+  const entries = Object.entries(readBindings()).filter(
+    ([candidate]) => candidate !== normalizedOrigin
+  )
   entries.push([normalizedOrigin, normalizedUserId])
   return writeBindings(Object.fromEntries(entries.slice(-MAX_VERIFIED_LOCAL_ORIGINS)))
 }

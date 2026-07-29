@@ -232,7 +232,7 @@ function writeLog(stream: WriteStream, text: string): void {
 export function _cleanupFailedLaunchSetup(
   installationId: string,
   abort: AbortController,
-  opts: { port?: number; logStream?: { end: () => unknown } } = {},
+  opts: { port?: number; logStream?: { end: () => unknown } } = {}
 ): void {
   opts.logStream?.end()
   if (opts.port !== undefined) _releasePort(opts.port)
@@ -262,14 +262,15 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   try {
     return await runLaunch(ctx, launch.abort)
   } finally {
-    if (_operationAborts.get(installationId) === launch.abort) _operationAborts.delete(installationId)
+    if (_operationAborts.get(installationId) === launch.abort)
+      _operationAborts.delete(installationId)
     _endLaunch(installationId, launch)
   }
 }
 
 async function runLaunch(
   { event, installationId, inst: instArg, actionData }: ActionContext,
-  abort: AbortController,
+  abort: AbortController
 ): Promise<ActionResult> {
   let inst = instArg
   // Synthetic repair steps that ran during launch prep, prepended to the launch
@@ -360,7 +361,7 @@ async function runLaunch(
   // reachable; an unexpected throw there must tear those down, not leak them.
   async function guardLaunchSetup<T>(
     step: () => Promise<T> | T,
-    opts: { port?: number; logStream?: WriteStream } = {},
+    opts: { port?: number; logStream?: WriteStream } = {}
   ): Promise<T> {
     try {
       return await step()
@@ -385,12 +386,12 @@ async function runLaunch(
       const execTap = createExecutionTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null
       })
       const hwTap = createHardwareTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null
       })
       const tracker = await armLaunchTracker()
       return { logStream, execTap, hwTap, tracker }
@@ -447,27 +448,33 @@ async function runLaunch(
     // fails the launch closed — reconciliation/repair/ComfyUI must not run
     // against a venv in an unknown state (the backup remains for retry).
     try {
-      const { recoverTorchStackTransaction } = await import(
-        '../../../sources/standalone/torchStackTransaction'
-      )
+      const { recoverTorchStackTransaction } =
+        await import('../../../sources/standalone/torchStackTransaction')
       await recoverTorchStackTransaction(inst)
     } catch (err) {
       console.warn('PyTorch stack transaction recovery failed:', err)
-      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+      return {
+        ok: false,
+        message: i18n.t('errors.recoveryFailed', { message: (err as Error).message })
+      }
     }
     // Recover a torch-family swap (startup repair) that died mid-rename: an
     // uncommitted swap's backups hold the only good copies of the live venv's
     // torch packages, so a failed rollback fails the launch closed too - the
     // marker stays behind for the next attempt.
     try {
-      const { recoverTorchFamilyBackups } = await import('../../../sources/standalone/torchFamilyFs')
+      const { recoverTorchFamilyBackups } =
+        await import('../../../sources/standalone/torchFamilyFs')
       const { findSitePackages } = await import('../../../sources/standalone/envPaths')
       const { getActiveVenvDir } = await import('../../pythonEnv')
       const liveSite = findSitePackages(getActiveVenvDir(inst))
       if (liveSite) await recoverTorchFamilyBackups(liveSite)
     } catch (err) {
       console.warn('PyTorch family swap recovery failed:', err)
-      return { ok: false, message: i18n.t('errors.recoveryFailed', { message: (err as Error).message }) }
+      return {
+        ok: false,
+        message: i18n.t('errors.recoveryFailed', { message: (err as Error).message })
+      }
     }
     // Reconcile the persisted stack state with what's actually in the venv
     // (e.g. a manual terminal install). Never mutates the venv; must run
@@ -483,9 +490,8 @@ async function runLaunch(
     // reverting to the install-time bundle.
     let preReconcileVerified: PersistedTorchStack | null = null
     try {
-      const { reconcileTorchStack, getLastVerifiedTorchStack } = await import(
-        '../../../sources/standalone/torchStackCatalog'
-      )
+      const { reconcileTorchStack, getLastVerifiedTorchStack } =
+        await import('../../../sources/standalone/torchStackCatalog')
       preReconcileVerified = getLastVerifiedTorchStack(inst)
       await reconcileTorchStack(inst, updateFn)
       inst = (await installations.get(installationId)) || inst
@@ -501,9 +507,8 @@ async function runLaunch(
     // launch cancels the repair too and no second operation can overlap it.
     if (stackStateTrusted) {
       try {
-        const { maybeRepairTorch, getTorchVendorMismatch } = await import(
-          '../../../sources/standalone/torchRepair'
-        )
+        const { maybeRepairTorch, getTorchVendorMismatch } =
+          await import('../../../sources/standalone/torchRepair')
         // Arm the launch stepper BEFORE the (slow, multi-GB) copy so it shows as a
         // live `torchRepair` step rather than flashing a flat status. Detection is
         // a cheap sync check; arming only when a repair will actually run.
@@ -511,12 +516,16 @@ async function runLaunch(
           preLaunchPhases.push('torchRepair')
           await armLaunchTracker()
         }
-        const repaired = await maybeRepairTorch(inst, {
-          sendProgress,
-          sendOutput: makeSendOutput(event.sender, installationId),
-          update: updateFn,
-          signal: abort.signal,
-        }, { preReconcileVerified })
+        const repaired = await maybeRepairTorch(
+          inst,
+          {
+            sendProgress,
+            sendOutput: makeSendOutput(event.sender, installationId),
+            update: updateFn,
+            signal: abort.signal
+          },
+          { preReconcileVerified }
+        )
         if (repaired) inst = (await installations.get(installationId)) || inst
       } catch (err) {
         if (abort.signal.aborted) {
@@ -593,7 +602,7 @@ async function runLaunch(
     remote: Boolean(launchCmd.remote),
     installPath: inst.installPath,
     securityLevel: inst.managerSecurityLevel,
-    networkMode: inst.managerNetworkMode,
+    networkMode: inst.managerNetworkMode
   })
   if (!managerReconcile.ok) {
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
@@ -892,18 +901,26 @@ async function runLaunch(
       return { ok: false, cancelled: true }
     }
 
-    const { proc, getStderr } = await guardLaunchSetup(async () => {
-      hwTap.beginBoot()
-      const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
-      try {
-        return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
-      } catch (err) {
-        // Stream wiring failed: kill and WAIT for the child so the settled
-        // handler can't outlive a live process.
-        await killProcessTree(p)
-        throw err
-      }
-    }, { logStream })
+    const { proc, getStderr } = await guardLaunchSetup(
+      async () => {
+        hwTap.beginBoot()
+        const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
+          showWindow: launchCmd.showWindow
+        })
+        try {
+          return {
+            proc: p,
+            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker)
+          }
+        } catch (err) {
+          // Stream wiring failed: kill and WAIT for the child so the settled
+          // handler can't outlive a live process.
+          await killProcessTree(p)
+          throw err
+        }
+      },
+      { logStream }
+    )
 
     if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     const mode = (inst.launchMode as string | undefined) || 'window'
@@ -1034,7 +1051,11 @@ async function runLaunch(
         }
       }
       if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-      return { ok: false, message, portConflict: { port: launchCmd.port, pids: existingPids, isComfy, nextPort } }
+      return {
+        ok: false,
+        message,
+        portConflict: { port: launchCmd.port, pids: existingPids, isComfy, nextPort }
+      }
     }
   }
 
@@ -1085,17 +1106,22 @@ async function runLaunch(
   // marker's renderer broadcast can throw, and every throw after either
   // exists must tear them back down before the handler settles. Pre-armed
   // tracker so the synchronous relaunch loop can reuse the single instance.
-  const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(() => {
-    _reservePort(launchCmd.port!, inst.name)
-    _markLaunching(installationId, inst.name)
-    return acquireLaunchResources()
-  }, { port: launchCmd.port! })
+  const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(
+    () => {
+      _reservePort(launchCmd.port!, inst.name)
+      _markLaunching(installationId, inst.name)
+      return acquireLaunchResources()
+    },
+    { port: launchCmd.port! }
+  )
 
   async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected; model-usage counts persist across the launch.
     hwTap.beginBoot()
-    const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, { showWindow: launchCmd.showWindow })
+    const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
+      showWindow: launchCmd.showWindow
+    })
     try {
       return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
     } catch (err) {
@@ -1114,7 +1140,17 @@ async function runLaunch(
   // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
   const bootId = randomUUID()
 
-  const tryLaunch = async (): Promise<{ ok: true; proc: ChildProcess; getStderr: () => string } | { ok: false; message: string; cancelled?: boolean; stderr?: string; exitCode?: number | null; signal?: string | null }> => {
+  const tryLaunch = async (): Promise<
+    | { ok: true; proc: ChildProcess; getStderr: () => string }
+    | {
+        ok: false
+        message: string
+        cancelled?: boolean
+        stderr?: string
+        exitCode?: number | null
+        signal?: string | null
+      }
+  > => {
     // E2E-only: parks the launch here - launching marker set, port reserved,
     // no process yet - so tests can exercise restart-during-boot without
     // racing real boot speed. No-op in production and when not armed.
@@ -1126,10 +1162,12 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
-    const cmdLine = [launchCmd.cmd!, ...launchCmd.args!].map((a, ci, ca) => {
-      if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
-      return /\s/.test(a) ? `"${a}"` : a
-    }).join(' ')
+    const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
+      .map((a, ci, ca) => {
+        if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
+        return /\s/.test(a) ? `"${a}"` : a
+      })
+      .join(' ')
     sendProgress('launch', { percent: -1, status: i18n.t('launch.starting') })
     if (!sender.isDestroyed()) {
       sender.send('comfy-output', { installationId, text: `> ${cmdLine}\n\n` })
@@ -1214,7 +1252,14 @@ async function runLaunch(
       // never respawn via the reboot/port retries.
       if (abort.signal.aborted) {
         await killProcessTree(spawned.proc)
-        return { ok: false, message: (err as Error).message, cancelled: true, stderr: spawned.getStderr(), exitCode, signal: exitSignal }
+        return {
+          ok: false,
+          message: (err as Error).message,
+          cancelled: true,
+          stderr: spawned.getStderr(),
+          exitCode,
+          signal: exitSignal
+        }
       }
       // WAIT for the failed spawn's whole tree to die before any retry below:
       // the reboot path reuses the same port, and an overlapping old process
@@ -1232,7 +1277,12 @@ async function runLaunch(
       // Auto-switching ports is only allowed under the same policy as the
       // pre-launch conflict checks: never override an explicitly chosen port,
       // and never switch when the conflict mode is not 'auto'.
-      if (isPortConflict && portConflictMode === 'auto' && !portIsExplicit && portRetries < PORT_RETRY_MAX) {
+      if (
+        isPortConflict &&
+        portConflictMode === 'auto' &&
+        !portIsExplicit &&
+        portRetries < PORT_RETRY_MAX
+      ) {
         portRetries++
         try {
           const reservedPorts = new Set(_pendingPorts.keys())
@@ -1253,18 +1303,26 @@ async function runLaunch(
       // report the actual error. The buffer lives in main (survives a hard
       // child crash) but was previously discarded on the failure path.
       const failureStderr = spawned.getStderr()
-      return { ok: false, message: (err as Error).message, stderr: failureStderr, exitCode, signal: exitSignal }
+      return {
+        ok: false,
+        message: (err as Error).message,
+        stderr: failureStderr,
+        exitCode,
+        signal: exitSignal
+      }
     }
   }
 
   // A throw that escapes tryLaunch (sync spawn failure, telemetry, boot-phase
   // buffering) must still route through the standard failure cleanup below -
   // port release, marker clear, operation-slot release.
-  const launchResult = await tryLaunch().catch((err: unknown): Awaited<ReturnType<typeof tryLaunch>> => ({
-    ok: false,
-    message: err instanceof Error ? err.message : String(err),
-    ...(abort.signal.aborted ? { cancelled: true } : {}),
-  }))
+  const launchResult = await tryLaunch().catch(
+    (err: unknown): Awaited<ReturnType<typeof tryLaunch>> => ({
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+      ...(abort.signal.aborted ? { cancelled: true } : {})
+    })
+  )
   if (!launchResult.ok) {
     logStream.end()
     _releasePort(launchCmd.port!)

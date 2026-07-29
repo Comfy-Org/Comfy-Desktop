@@ -2,9 +2,24 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 import { killProcTree } from '../../lib/process'
-import { resolveLocalVersion, clearVersionCache, type LatestTagOverride } from '../../lib/version-resolve'
-import { readGitHead, rollbackComfySource, fetchTags, findLatestVersionTag, revParseRef } from '../../lib/git'
-import { PYTORCH_RE, installFilteredRequirementsDetailed, runUvPipDetailed, getPipIndexArgs } from '../../lib/pip'
+import {
+  resolveLocalVersion,
+  clearVersionCache,
+  type LatestTagOverride
+} from '../../lib/version-resolve'
+import {
+  readGitHead,
+  rollbackComfySource,
+  fetchTags,
+  findLatestVersionTag,
+  revParseRef
+} from '../../lib/git'
+import {
+  PYTORCH_RE,
+  installFilteredRequirementsDetailed,
+  runUvPipDetailed,
+  getPipIndexArgs
+} from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
@@ -14,7 +29,12 @@ import * as settings from '../../settings'
 import * as snapshots from '../../lib/snapshots'
 import { repairMacBinaries } from './macRepair'
 import { getActivePythonPath, getActiveUvPath, getMasterPythonPath } from './envPaths'
-import { writeOpMarker, completeOpMarker, readOpMarker, rollbackStatusMessage } from '../../lib/opMarker'
+import {
+  writeOpMarker,
+  completeOpMarker,
+  readOpMarker,
+  rollbackStatusMessage
+} from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
 
 interface ScriptResult {
@@ -66,16 +86,18 @@ export function spawnCommand(
   cwd: string,
   onStdout: ((text: string) => void) | undefined,
   onStderr: ((text: string) => void) | undefined,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   if (signal?.aborted) return Promise.resolve({ code: 1, stdout: '', stderr: '' })
   return new Promise((resolve) => {
     const proc = spawn(command, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      windowsHide: true
     })
-    const onAbort = (): void => { killProcTree(proc) }
+    const onAbort = (): void => {
+      killProcTree(proc)
+    }
     signal?.addEventListener('abort', onAbort, { once: true })
     if (signal?.aborted) onAbort()
 
@@ -108,7 +130,7 @@ function spawnUpdateScript(
   comfyuiDir: string,
   channelArgs: string[],
   sendOutput: ((text: string) => void) | undefined,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<ScriptResult> {
   const updateScript = getBundledScriptPath('update_comfyui.py')
   const markers: Record<string, string> = {}
@@ -120,10 +142,12 @@ function spawnUpdateScript(
   const exitCode = new Promise<number>((resolve) => {
     const proc = spawn(masterPython, ['-s', updateScript, comfyuiDir, ...channelArgs], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      windowsHide: true
     })
     if (signal) {
-      const onAbort = (): void => { proc.kill() }
+      const onAbort = (): void => {
+        proc.kill()
+      }
       signal.addEventListener('abort', onAbort, { once: true })
       if (signal.aborted) onAbort()
       proc.on('close', () => signal.removeEventListener('abort', onAbort))
@@ -164,36 +188,49 @@ function spawnUpdateScript(
   })
 }
 
-export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promise<UpdateOrchestrationResult> {
+export async function runComfyUIUpdate(
+  opts: UpdateOrchestrationOptions
+): Promise<UpdateOrchestrationResult> {
   const {
-    installPath, channel, update, sendProgress, signal,
+    installPath,
+    channel,
+    update,
+    sendProgress,
+    signal,
     dryRunConflictCheck = false,
     saveRollback = false,
-    preUpdateSnapshot = false,
+    preUpdateSnapshot = false
   } = opts
   let { installation } = opts
   const sendOutput = opts.sendOutput
   const comfyuiDir = path.join(installPath, 'ComfyUI')
   // Adopted installs run the updater against the legacy `.venv` Python (it has
   // pygit2 from adoption); `update_comfyui.py` only needs pygit2 + stdlib.
-  const updaterPython = installation.adopted === true
-    ? (installation.adoptedPythonPath as string)
-    : getMasterPythonPath(installPath)
+  const updaterPython =
+    installation.adopted === true
+      ? (installation.adoptedPythonPath as string)
+      : getMasterPythonPath(installPath)
   // `targetTag` (vMAJOR.MINOR.PATCH) wins over channel: the user explicitly
   // picked a specific release in the install wizard or IPP, and `--tag` and
   // `--stable` are mutually exclusive script-side. The orchestration record
   // still keeps `channel` for downstream bookkeeping (release-cache, snapshots).
   const channelArgs = opts.targetTag
     ? ['--tag', opts.targetTag]
-    : channel === 'stable' ? ['--stable'] : []
+    : channel === 'stable'
+      ? ['--stable']
+      : []
 
   const reqPath = path.join(comfyuiDir, 'requirements.txt')
   let preReqs = ''
-  try { preReqs = await fs.promises.readFile(reqPath, 'utf-8') } catch {}
+  try {
+    preReqs = await fs.promises.readFile(reqPath, 'utf-8')
+  } catch {}
 
   const mgrReqPath = path.join(comfyuiDir, 'manager_requirements.txt')
   let preMgrReqs = ''
-  try { preMgrReqs = await fs.promises.readFile(mgrReqPath, 'utf-8') } catch {}
+  try {
+    preMgrReqs = await fs.promises.readFile(mgrReqPath, 'utf-8')
+  } catch {}
 
   let preUpdateFilename: string | undefined
   if (preUpdateSnapshot) {
@@ -238,7 +275,10 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
   if (result.markers.BACKUP_BRANCH && preOpHead) {
     const existingMarker = readOpMarker(installPath)
     if (existingMarker && !existingMarker.postHead) {
-      await writeOpMarker(installPath, { ...existingMarker, backupBranch: result.markers.BACKUP_BRANCH })
+      await writeOpMarker(installPath, {
+        ...existingMarker,
+        backupBranch: result.markers.BACKUP_BRANCH
+      })
     }
   }
 
@@ -248,7 +288,11 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
   // source against the old venv (crashes on import). Roll it back. The marker is
   // left in place so recoverInterruptedComfyOp retries next launch if this fails.
   let rollbackNote = ''
-  if ((signal?.aborted || result.exitCode !== 0) && preOpHead && readGitHead(comfyuiDir) !== preOpHead) {
+  if (
+    (signal?.aborted || result.exitCode !== 0) &&
+    preOpHead &&
+    readGitHead(comfyuiDir) !== preOpHead
+  ) {
     const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
     rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
   }
@@ -258,7 +302,13 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
   if (signal?.aborted) return { ok: false, message: `Cancelled${rollbackNote}`, installation }
 
   if (result.exitCode !== 0) {
-    const detail = [result.stderrBuf, result.stdoutBuf].filter(Boolean).join('\n').trim().split('\n').slice(-20).join('\n')
+    const detail = [result.stderrBuf, result.stdoutBuf]
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+      .split('\n')
+      .slice(-20)
+      .join('\n')
     if (sendOutput) {
       let message: string
       if (detail) {
@@ -270,21 +320,29 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       }
       return { ok: false, message: message + rollbackNote, installation }
     }
-    console.warn(`Auto-update script failed (exit ${result.exitCode}):\n${detail.split('\n').slice(-10).join('\n')}${rollbackNote}`)
+    console.warn(
+      `Auto-update script failed (exit ${result.exitCode}):\n${detail.split('\n').slice(-10).join('\n')}${rollbackNote}`
+    )
     return { ok: false, installation }
   }
 
   const { markers } = result
 
   let postReqs = ''
-  try { postReqs = await fs.promises.readFile(reqPath, 'utf-8') } catch {}
+  try {
+    postReqs = await fs.promises.readFile(reqPath, 'utf-8')
+  } catch {}
 
   // Re-sync deps when reqs changed (the historical trigger), OR when git HEAD
   // moved (source can import new APIs without bumping requirements.txt — saw
   // this with `comfy_aimdo.vram_buffer` showing up in `model_management.py`
   // between aimdo bumps), OR when the caller demands it (first-run auto-update
   // reconciling the bundled venv against the bundled requirements.txt).
-  const headMoved = !!(markers.PRE_UPDATE_HEAD && markers.POST_UPDATE_HEAD && markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD)
+  const headMoved = !!(
+    markers.PRE_UPDATE_HEAD &&
+    markers.POST_UPDATE_HEAD &&
+    markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD
+  )
   const reqsChanged = preReqs !== postReqs
   const shouldSyncDeps = (reqsChanged || headMoved || !!opts.forceDepsSync) && postReqs.length > 0
 
@@ -300,24 +358,47 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       depFailure = 'Python environment or uv not found while installing updated dependencies'
     } else if (!signal?.aborted) {
       if (dryRunConflictCheck) {
-        const filteredReqs = postReqs.split('\n').filter((l) => !PYTORCH_RE.test(l.trim())).join('\n')
+        const filteredReqs = postReqs
+          .split('\n')
+          .filter((l) => !PYTORCH_RE.test(l.trim()))
+          .join('\n')
         const filteredReqPath = path.join(installPath, '.comfyui-reqs-filtered.txt')
         await fs.promises.writeFile(filteredReqPath, filteredReqs, 'utf-8')
 
         try {
-          const indexArgs = getPipIndexArgs(settings.get('pypiMirror'), settings.get('useChineseMirrors') === true)
+          const indexArgs = getPipIndexArgs(
+            settings.get('pypiMirror'),
+            settings.get('useChineseMirrors') === true
+          )
           sendProgress('deps', { percent: -1, status: t('standalone.updateDepsDryRun') })
 
           if (!signal?.aborted) {
             const dryRunResult = await spawnCommand(
-              uvPath, ['pip', 'install', '--dry-run', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
-              installPath, undefined, undefined, signal
+              uvPath,
+              [
+                'pip',
+                'install',
+                '--dry-run',
+                '-r',
+                filteredReqPath,
+                '--python',
+                activeEnvPython,
+                ...indexArgs
+              ],
+              installPath,
+              undefined,
+              undefined,
+              signal
             )
 
             // Dry-run conflicts are advisory only — never a rollback trigger.
             if (dryRunResult.code !== 0) {
-              sendOutput?.(`\n⚠ Requirements dry-run detected potential conflicts:\n${dryRunResult.stderr || dryRunResult.stdout}\n`)
-              sendOutput?.('Proceeding with install attempt — some conflicts may be benign.\nTip: Use "Copy & Update" for a risk-free update that leaves this installation untouched.\n')
+              sendOutput?.(
+                `\n⚠ Requirements dry-run detected potential conflicts:\n${dryRunResult.stderr || dryRunResult.stdout}\n`
+              )
+              sendOutput?.(
+                'Proceeding with install attempt — some conflicts may be benign.\nTip: Use "Copy & Update" for a risk-free update that leaves this installation untouched.\n'
+              )
             } else if (dryRunResult.stderr) {
               sendOutput?.(dryRunResult.stderr)
             }
@@ -326,28 +407,45 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
           if (!signal?.aborted) {
             sendProgress('deps', { percent: -1, status: t('standalone.updateDepsInstalling') })
             const pipResult = await runUvPipDetailed(
-              uvPath, ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
-              installPath, sendOutput ?? (() => {}), signal
+              uvPath,
+              ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
+              installPath,
+              sendOutput ?? (() => {}),
+              signal
             )
             if (pipResult.code !== 0) {
-              depFailure = withOutputTail(`requirements install exited with code ${pipResult.code}`, pipResult.output)
+              depFailure = withOutputTail(
+                `requirements install exited with code ${pipResult.code}`,
+                pipResult.output
+              )
             }
           }
         } catch (err) {
           depFailure = `requirements install failed: ${(err as Error).message}`
         } finally {
-          try { await fs.promises.unlink(filteredReqPath) } catch {}
+          try {
+            await fs.promises.unlink(filteredReqPath)
+          } catch {}
         }
       } else {
         sendProgress('update', { percent: -1, status: 'Installing updated dependencies' })
         const logFn = sendOutput ?? console.log
         try {
           const installResult = await installFilteredRequirementsDetailed(
-            reqPath, uvPath, activeEnvPython, installPath,
-            '.post-install-reqs.txt', logFn, signal, settings.getMirrorConfig()
+            reqPath,
+            uvPath,
+            activeEnvPython,
+            installPath,
+            '.post-install-reqs.txt',
+            logFn,
+            signal,
+            settings.getMirrorConfig()
           )
           if (installResult.code !== 0) {
-            depFailure = withOutputTail(`requirements install exited with code ${installResult.code}`, installResult.output)
+            depFailure = withOutputTail(
+              `requirements install exited with code ${installResult.code}`,
+              installResult.output
+            )
           }
         } catch (err) {
           depFailure = `requirements install failed: ${(err as Error).message}`
@@ -359,7 +457,9 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
   }
 
   let postMgrReqs = ''
-  try { postMgrReqs = await fs.promises.readFile(mgrReqPath, 'utf-8') } catch {}
+  try {
+    postMgrReqs = await fs.promises.readFile(mgrReqPath, 'utf-8')
+  } catch {}
 
   // Fail fast: skip the manager requirements sync if the main one already failed.
   if (!depFailure && !signal?.aborted && preMgrReqs !== postMgrReqs && postMgrReqs.length > 0) {
@@ -376,12 +476,20 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       const logFn = sendOutput ?? console.log
       try {
         const mgrResult = await installFilteredRequirementsDetailed(
-          mgrReqPath, uvPath, activeEnvPython, installPath,
+          mgrReqPath,
+          uvPath,
+          activeEnvPython,
+          installPath,
           dryRunConflictCheck ? '.manager-reqs-filtered.txt' : '.post-install-mgr-reqs.txt',
-          logFn, signal, settings.getMirrorConfig()
+          logFn,
+          signal,
+          settings.getMirrorConfig()
         )
         if (mgrResult.code !== 0) {
-          depFailure = withOutputTail(`manager requirements install exited with code ${mgrResult.code}`, mgrResult.output)
+          depFailure = withOutputTail(
+            `manager requirements install exited with code ${mgrResult.code}`,
+            mgrResult.output
+          )
         }
       } catch (err) {
         depFailure = `manager requirements install failed: ${(err as Error).message}`
@@ -435,22 +543,26 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
   let comfyVersion: ComfyVersion | undefined
   if (fullPostHead) {
     comfyVersion = await resolveLocalVersion(
-      comfyuiDir, fullPostHead, checkedOutTag, latestTagOverride
+      comfyuiDir,
+      fullPostHead,
+      checkedOutTag,
+      latestTagOverride
     )
   }
 
   const installedTag = comfyVersion
     ? formatComfyVersion(comfyVersion, 'short')
-    : (checkedOutTag || 'unknown')
+    : checkedOutTag || 'unknown'
 
-  const existing = (installation.updateInfoByChannel as Record<string, Record<string, unknown>> | undefined) || {}
+  const existing =
+    (installation.updateInfoByChannel as Record<string, Record<string, unknown>> | undefined) || {}
   const updateData: Record<string, unknown> = {
     ...(comfyVersion ? { comfyVersion } : {}),
     updateChannel: channel,
     updateInfoByChannel: {
       ...existing,
-      [channel]: { installedTag },
-    },
+      [channel]: { installedTag }
+    }
   }
 
   if (saveRollback) {
@@ -459,7 +571,7 @@ export async function runComfyUIUpdate(opts: UpdateOrchestrationOptions): Promis
       postUpdateHead: fullPostHead,
       backupBranch: markers.BACKUP_BRANCH || null,
       channel,
-      updatedAt: Date.now(),
+      updatedAt: Date.now()
     }
   }
 

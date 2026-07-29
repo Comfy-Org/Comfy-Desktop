@@ -43,11 +43,10 @@ export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
   'image',
   'video',
   '3d',
-  'audio',
+  'audio'
 ]
 
-const RAW_TEMPLATES_REPO =
-  'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
+const RAW_TEMPLATES_REPO = 'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
 export const RAW_TEMPLATES_BASE = `${RAW_TEMPLATES_REPO}/templates`
 export const TEMPLATE_INPUT_BASE = `${RAW_TEMPLATES_REPO}/input`
 
@@ -127,8 +126,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.',
       sizeBytes: 20830591386,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'api_bytedance_seedream_5_0_pro_image_edit',
@@ -139,8 +138,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 2 output images through an optional Painter node and preview. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.',
       sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'sdxlturbo_example',
@@ -149,8 +148,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'SDXL Turbo',
       description: 'Generate images in a single step using SDXL Turbo.',
       sizeBytes: 6936372183,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'image_pixeldit_t2i',
@@ -160,8 +159,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         "Input a text prompt and optional negative prompt. Generate a 1024px image using PixelDiT's VAE-free pixel diffusion transformer.",
       sizeBytes: 7838315315,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
 
   // --- Video ---
@@ -173,8 +172,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'Wan 2.1 Text to Video',
       description: 'Generate videos from text prompts using Wan 2.1.',
       sizeBytes: 9824737690,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'api_seedance2_0_r2v',
@@ -185,8 +184,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Generate cinematic videos from reference images and text prompts. Preserve subject identity and composition while adding expressive motion with synchronized audio. Control camera movement and lighting through detailed prompts.',
       sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'wan2.1_fun_inp',
@@ -195,8 +194,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'Wan 2.1 Inpainting',
       description: 'Generate videos from start and end frames using Wan 2.1 inpainting.',
       sizeBytes: 11381663334,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'video_wan2.1_fun_camera_v1.1_1.3B',
@@ -206,8 +205,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Generate dynamic videos with cinematic camera movements using Wan 2.1 Fun Camera 1.3B model.',
       sizeBytes: 11489037517,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
 
   // --- 3D ---
@@ -220,8 +219,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.',
       sizeBytes: 3972844749,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'api_tripo3_1_image_to_model',
@@ -232,8 +231,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Upload a reference image of your object. Generate a high-detail 3D model with dense geometry and PBR-ready materials.',
       sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: '3d_moge_perspective_to_mesh',
@@ -243,8 +242,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Upload an image to estimate its perspective geometry. Generate a 3D depth map and surface normals from the input.',
       sizeBytes: 644245094,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: '3d_hunyuan3d_multiview_to_model_turbo',
@@ -253,8 +252,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'HY 3D 2.0 MV Turbo',
       description: 'Generate 3D models from multiple views using Hunyuan3D 2.0 MV Turbo.',
       sizeBytes: 4928474972,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
 
   // --- Audio ---
@@ -267,8 +266,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.',
       sizeBytes: 15676630630,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'api_bytedance_seed_audio1_0_t2a',
@@ -279,8 +278,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Input a text prompt to generate speech, dialogue, background music, and sound effects in one audio file. Describe voices, emotion, and scene details to create multi-speaker audio up to 2 minutes.',
       sizeBytes: 0,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'audio_stable_audio_example',
@@ -289,8 +288,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'Stable Audio 1.0: Text to Audio',
       description: 'Generate audio from text prompts using Stable Audio.',
       sizeBytes: 5690831667,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'audio_ace_step_1_5_checkpoint',
@@ -300,7 +299,7 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.',
       sizeBytes: 10737418240,
-      mediaSubtype: 'mp3',
-    },
-  },
+      mediaSubtype: 'mp3'
+    }
+  }
 ] as const

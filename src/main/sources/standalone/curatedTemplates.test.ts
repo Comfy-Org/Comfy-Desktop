@@ -6,7 +6,7 @@ import {
   CURATED_TEMPLATES,
   NO_TEMPLATE_VALUE,
   TEMPLATE_MODALITY_ORDER,
-  RAW_TEMPLATES_BASE,
+  RAW_TEMPLATES_BASE
 } from './curatedTemplates'
 
 describe('isPersistableTemplateId', () => {
@@ -61,7 +61,9 @@ describe('buildTemplateDeeplink', () => {
 
 describe('thumbnailUrlFor', () => {
   it('builds the <id>-1.<sub> preview URL for image subtypes', () => {
-    expect(thumbnailUrlFor('flux_schnell', 'webp')).toBe(`${RAW_TEMPLATES_BASE}/flux_schnell-1.webp`)
+    expect(thumbnailUrlFor('flux_schnell', 'webp')).toBe(
+      `${RAW_TEMPLATES_BASE}/flux_schnell-1.webp`
+    )
     expect(thumbnailUrlFor('foo', 'PNG')).toBe(`${RAW_TEMPLATES_BASE}/foo-1.png`)
   })
 

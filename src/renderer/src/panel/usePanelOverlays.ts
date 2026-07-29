@@ -162,8 +162,7 @@ export function firstUseModeForOverlaySwap(
     return 'loading-lockdown'
   }
   if (nextIsProgress || isFirstUseTakeover(next)) return null
-  const isChainHandoff =
-    isFirstUseTakeover(prev) && next?.kind === 'takeover' && chainActive
+  const isChainHandoff = isFirstUseTakeover(prev) && next?.kind === 'takeover' && chainActive
   return isChainHandoff ? null : 'none'
 }
 
@@ -360,7 +359,10 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
-      await newInstallRef.value?.open({ entrypoint, ...(cameFromLocalBranch ? { cameFromLocalBranch } : {}) })
+      await newInstallRef.value?.open({
+        entrypoint,
+        ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
+      })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
     else if (component === 'quick-install') await quickInstallRef.value?.open()

@@ -50,9 +50,7 @@ function markerPath(installPath: string): string {
  * messages can't drift apart.
  */
 export function backupBranchHint(branchName: string | undefined): string {
-  return branchName
-    ? ` Your previous state is preserved on local git branch "${branchName}".`
-    : ''
+  return branchName ? ` Your previous state is preserved on local git branch "${branchName}".` : ''
 }
 
 /**
@@ -62,7 +60,7 @@ export function backupBranchHint(branchName: string | undefined): string {
 export function rollbackStatusMessage(
   rolledBack: boolean,
   headSha: string,
-  backupBranch: string | undefined,
+  backupBranch: string | undefined
 ): string {
   return rolledBack
     ? `ComfyUI source was rolled back to ${headSha.slice(0, 7)}.`
@@ -79,7 +77,9 @@ export async function writeOpMarker(installPath: string, marker: OpMarker): Prom
     await fs.promises.rename(tmp, target)
   } catch (err) {
     console.warn('Failed to write op-in-progress marker:', err)
-    await fs.promises.rm(tmp, { force: true }).catch(() => { /* best-effort cleanup */ })
+    await fs.promises.rm(tmp, { force: true }).catch(() => {
+      /* best-effort cleanup */
+    })
   }
 }
 
@@ -89,12 +89,18 @@ export function readOpMarker(installPath: string): OpMarker | null {
     if ((m.op === 'update' || m.op === 'restore') && typeof m.preHead === 'string' && m.preHead) {
       return m
     }
-  } catch { /* missing or malformed — nothing to recover */ }
+  } catch {
+    /* missing or malformed — nothing to recover */
+  }
   return null
 }
 
 export async function clearOpMarker(installPath: string): Promise<void> {
-  try { await fs.promises.unlink(markerPath(installPath)) } catch { /* already gone */ }
+  try {
+    await fs.promises.unlink(markerPath(installPath))
+  } catch {
+    /* already gone */
+  }
 }
 
 /**
@@ -129,7 +135,7 @@ export async function completeOpMarker(installPath: string): Promise<void> {
 export async function recoverInterruptedComfyOp(
   installPath: string,
   sendOutput?: (text: string) => void,
-  onRollback?: () => void,
+  onRollback?: () => void
 ): Promise<boolean> {
   const marker = readOpMarker(installPath)
   if (!marker) return false
@@ -144,7 +150,9 @@ export async function recoverInterruptedComfyOp(
   const comfyuiDir = path.join(installPath, 'ComfyUI')
   if (readGitHead(comfyuiDir) !== marker.preHead) {
     // The source genuinely moved and we're rolling it back: a real interrupted op.
-    sendOutput?.(`\nDetected an interrupted ${marker.op}; rolling ComfyUI source back to keep it consistent…\n`)
+    sendOutput?.(
+      `\nDetected an interrupted ${marker.op}; rolling ComfyUI source back to keep it consistent…\n`
+    )
     const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput)
     if (!ok || readGitHead(comfyuiDir) !== marker.preHead) {
       const attempts = (marker.recoveryAttempts ?? 0) + 1
@@ -160,14 +168,20 @@ export async function recoverInterruptedComfyOp(
         // permanent launch lockout — and the user can re-run an update to repair.
         // If the update script saved a local backup branch, name it so the user
         // has an offline restore point when automatic rollback can't finish.
-        console.warn(`Giving up rolling ComfyUI source back after ${attempts} attempts; dropping recovery marker.`)
-        sendOutput?.(`\n⚠ Could not roll ComfyUI source back after ${attempts} attempts; continuing launch. Re-run an update if ComfyUI fails to start.${backupHint}\n`)
+        console.warn(
+          `Giving up rolling ComfyUI source back after ${attempts} attempts; dropping recovery marker.`
+        )
+        sendOutput?.(
+          `\n⚠ Could not roll ComfyUI source back after ${attempts} attempts; continuing launch. Re-run an update if ComfyUI fails to start.${backupHint}\n`
+        )
         await clearOpMarker(installPath)
         return true
       }
       // Persist the attempt count and block this launch so the next one retries.
       await writeOpMarker(installPath, { ...marker, recoveryAttempts: attempts })
-      throw new Error(`could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`)
+      throw new Error(
+        `could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`
+      )
     }
     // Successfully recovered a hard-killed op — informational signal (PostHog).
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })

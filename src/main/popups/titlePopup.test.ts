@@ -6,14 +6,14 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 // The menu-click handler emits PostHog Node telemetry on every activation;
@@ -30,7 +30,7 @@ import {
   isFlowMenuItemId,
   type FlowMenuItemId,
   type InstancePickerInstall,
-  type TitlePopupHostBindings,
+  type TitlePopupHostBindings
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 
@@ -45,24 +45,26 @@ interface FakeComfyWebContents {
   getZoomLevel: () => number
 }
 
-function makeEntry(opts: {
-  installationId?: string | null
-  activePanel?: ComfyWindowEntry['activePanel']
-  firstUseMode?: ComfyWindowEntry['firstUseMode']
-  comfyDestroyed?: boolean
-  zoomLevel?: number
-} = {}): ComfyWindowEntry {
+function makeEntry(
+  opts: {
+    installationId?: string | null
+    activePanel?: ComfyWindowEntry['activePanel']
+    firstUseMode?: ComfyWindowEntry['firstUseMode']
+    comfyDestroyed?: boolean
+    zoomLevel?: number
+  } = {}
+): ComfyWindowEntry {
   const wc: FakeComfyWebContents = {
     destroyed: opts.comfyDestroyed ?? false,
     zoomLevel: opts.zoomLevel ?? 0,
     isDestroyed: () => wc.destroyed,
-    getZoomLevel: () => wc.zoomLevel,
+    getZoomLevel: () => wc.zoomLevel
   }
   return {
     windowKey: nextWindowKey(),
     window: {} as ComfyWindowEntry['window'],
     comfyView: {
-      webContents: wc as unknown,
+      webContents: wc as unknown
     } as unknown as ComfyWindowEntry['comfyView'],
     titleBarView: { webContents: {} } as unknown as ComfyWindowEntry['titleBarView'],
     panelView: null,
@@ -78,7 +80,7 @@ function makeEntry(opts: {
     previewInstallationId: null,
     coldStartPendingReveal: false,
     _installCleanup: null,
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
 }
 
@@ -90,7 +92,7 @@ describe('computePopupHeight', () => {
       { kind: 'separator' },
       { id: 'b', label: 'B' },
       { kind: 'separator' },
-      { id: 'c', label: 'C' },
+      { id: 'c', label: 'C' }
     ])
     expect(h).toBe(112)
   })
@@ -156,7 +158,7 @@ describe('buildTitlePopupMenuItems', () => {
       'settings',
       'feedback',
       'exit-window',
-      'close-all-windows',
+      'close-all-windows'
     ])
   })
 
@@ -171,7 +173,7 @@ describe('buildTitlePopupMenuItems', () => {
       'settings',
       'feedback',
       'exit-window',
-      'close-all-windows',
+      'close-all-windows'
     ])
     const closeWindow = items.find((i) => i.id === 'exit-window')
     expect(closeWindow?.label).toBe('Close Window')
@@ -191,9 +193,7 @@ describe('buildTitlePopupMenuItems', () => {
   })
 
   it('exposes Reset Zoom on install host when comfy zoom is non-zero', () => {
-    const zoomed = buildTitlePopupMenuItems(
-      makeEntry({ installationId: 'inst-1', zoomLevel: 2 }),
-    )
+    const zoomed = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const resetZoom = zoomed.find((i) => i.id === 'reset-zoom')
     expect(resetZoom).toBeDefined()
     expect(resetZoom?.label).toBe('Reset Zoom (144%)')
@@ -201,7 +201,7 @@ describe('buildTitlePopupMenuItems', () => {
 
   it('omits Reset Zoom from the install host menu when the comfy webContents has been destroyed', () => {
     const items = buildTitlePopupMenuItems(
-      makeEntry({ installationId: 'inst-1', comfyDestroyed: true, zoomLevel: 2 }),
+      makeEntry({ installationId: 'inst-1', comfyDestroyed: true, zoomLevel: 2 })
     )
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
@@ -228,7 +228,7 @@ describe('buildTitlePopupMenuItems', () => {
     for (const installationId of [null, 'inst-1'] as const) {
       const normal = buildTitlePopupMenuItems(makeEntry({ installationId }))
       const locked = buildTitlePopupMenuItems(
-        makeEntry({ installationId, firstUseMode: 'loading-lockdown' }),
+        makeEntry({ installationId, firstUseMode: 'loading-lockdown' })
       )
       expect(locked.map((i) => i.id ?? null)).toEqual(normal.map((i) => i.id ?? null))
     }
@@ -244,7 +244,7 @@ describe('activateTitlePopupMenuItem', () => {
     return {
       kind: 'menu',
       parentEntryId,
-      view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() },
+      view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() }
     } as unknown as Parameters<typeof activateTitlePopupMenuItem>[0]
   }
 
@@ -303,7 +303,7 @@ describe('resolvePickerSelectedInstallId', () => {
       name: 'X',
       sourceLabel: 'Standalone',
       sourceCategory: 'local',
-      ...overrides,
+      ...overrides
     } as InstancePickerInstall
   }
 
@@ -322,7 +322,7 @@ describe('resolvePickerSelectedInstallId', () => {
     const installs = [
       makeInstall({ id: 'a', lastLaunchedAt: 1000 }),
       makeInstall({ id: 'b', lastLaunchedAt: 5000 }),
-      makeInstall({ id: 'c', lastLaunchedAt: 2000 }),
+      makeInstall({ id: 'c', lastLaunchedAt: 2000 })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('b')
   })
@@ -337,7 +337,7 @@ describe('resolvePickerSelectedInstallId', () => {
     const installs = [
       makeInstall({ id: 'cloud', sourceCategory: 'cloud' }),
       makeInstall({ id: 'local-a', sourceCategory: 'local' }),
-      makeInstall({ id: 'local-b', sourceCategory: 'local' }),
+      makeInstall({ id: 'local-b', sourceCategory: 'local' })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('local-a')
   })
@@ -345,7 +345,7 @@ describe('resolvePickerSelectedInstallId', () => {
   it('still defaults to cloud when it was genuinely launched most-recently', () => {
     const installs = [
       makeInstall({ id: 'local-a', sourceCategory: 'local', lastLaunchedAt: 1000 }),
-      makeInstall({ id: 'cloud', sourceCategory: 'cloud', lastLaunchedAt: 5000 }),
+      makeInstall({ id: 'cloud', sourceCategory: 'cloud', lastLaunchedAt: 5000 })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('cloud')
   })
@@ -367,27 +367,24 @@ describe('buildInstancePickerSnapshot', () => {
       name: 'X',
       sourceLabel: 'Standalone',
       sourceCategory: 'local',
-      ...overrides,
+      ...overrides
     } as InstancePickerInstall
   }
 
   const EMPTY_STORAGE = {
     sharedDirectoriesFields: [],
     modelsDirs: [],
-    modelsSystemDefault: '',
+    modelsSystemDefault: ''
   }
 
   it('forwards the install array verbatim under `installs`', () => {
-    const installs = [
-      makeInstall({ id: 'a', name: 'A' }),
-      makeInstall({ id: 'b', name: 'B' }),
-    ]
+    const installs = [makeInstall({ id: 'a', name: 'A' }), makeInstall({ id: 'b', name: 'B' })]
     const snap = buildInstancePickerSnapshot({
       installs,
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.installs).toEqual(installs)
   })
@@ -398,7 +395,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: 'a',
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBe('a')
   })
@@ -409,7 +406,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBeNull()
   })
@@ -420,7 +417,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: ['b', 'a', 'c'],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.runningInstallationIds).toEqual(['b', 'a', 'c'])
   })
@@ -431,7 +428,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.runningInstallationIds).toEqual([])
   })
@@ -445,7 +442,7 @@ describe('buildInstancePickerSnapshot', () => {
       previewInstallationId: 'a',
       runningInstallationIds: [],
       launchingInstallationIds: ['a'],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBe('a')
   })
@@ -458,7 +455,7 @@ describe('buildInstancePickerSnapshot', () => {
       previewInstallationId: 'b',
       runningInstallationIds: ['a'],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBe('a')
   })
@@ -469,7 +466,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: ['a', 'b'],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.launchingInstallationIds).toEqual(['a', 'b'])
   })
@@ -482,7 +479,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(0)
   })
@@ -494,7 +491,7 @@ describe('buildInstancePickerSnapshot', () => {
       runningInstallationIds: [],
       launchingInstallationIds: [],
       pickerSelectionEpoch: 7,
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(7)
   })

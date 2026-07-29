@@ -5,8 +5,8 @@ import type { CloudCapacityStatus, CloudUserTier } from '../types/ipc'
 // vue-i18n: t() echoes its key so dialog copy is deterministic.
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key,
-  }),
+    t: (key: string) => key
+  })
 }))
 
 // Hoisted so the mock factories can capture calls. The composable reads
@@ -17,11 +17,11 @@ const confirmSpy = vi.hoisted(() => vi.fn())
 const emitSpy = vi.hoisted(() => vi.fn())
 
 vi.mock('./useDialogs', () => ({
-  useDialogs: () => ({ confirm: confirmSpy }),
+  useDialogs: () => ({ confirm: confirmSpy })
 }))
 
 vi.mock('../lib/telemetry', () => ({
-  emitTelemetryAction: emitSpy,
+  emitTelemetryAction: emitSpy
 }))
 
 const ENTRY_BLOCKED = 'comfy.desktop.cloud.entry_blocked'
@@ -37,17 +37,14 @@ interface MockApi {
  * userTier / loadPromise) starts clean and re-reads `window.api` from
  * scratch. Returns the composable handle plus the effectScope to stop.
  */
-async function loadComposable(opts: {
-  status: CloudCapacityStatus
-  tier: CloudUserTier
-}): Promise<{
+async function loadComposable(opts: { status: CloudCapacityStatus; tier: CloudUserTier }): Promise<{
   composable: ReturnType<Awaited<ReturnType<typeof importComposable>>>
   scope: ReturnType<typeof effectScope>
   api: MockApi
 }> {
   const api: MockApi = {
     getCloudCapacity: vi.fn().mockResolvedValue(opts.status),
-    getCloudUserTier: vi.fn().mockResolvedValue(opts.tier),
+    getCloudUserTier: vi.fn().mockResolvedValue(opts.tier)
   }
   ;(window as unknown as { api: MockApi }).api = api
 
@@ -100,7 +97,7 @@ describe('useCloudCapacity.confirmEntry — cloud.entry_blocked telemetry', () =
       status: 'degraded',
       tier: 'free',
       decision: 'proceeded',
-      source: 'picker',
+      source: 'picker'
     })
     scope.stop()
   })
@@ -120,7 +117,7 @@ describe('useCloudCapacity.confirmEntry — cloud.entry_blocked telemetry', () =
       status: 'degraded',
       tier: 'free',
       decision: 'declined',
-      source: 'picker',
+      source: 'picker'
     })
     scope.stop()
   })
@@ -137,7 +134,7 @@ describe('useCloudCapacity.confirmEntry — cloud.entry_blocked telemetry', () =
       status: 'disabled',
       tier: 'free',
       decision: 'no_op',
-      source: 'picker',
+      source: 'picker'
     })
     scope.stop()
   })
@@ -158,7 +155,7 @@ describe('useCloudCapacity.confirmEntry — cloud.entry_blocked telemetry', () =
       status: 'disabled',
       tier: 'paid',
       decision: 'proceeded',
-      source: 'picker',
+      source: 'picker'
     })
     scope.stop()
   })
@@ -176,7 +173,7 @@ describe('useCloudCapacity.confirmEntry — cloud.entry_blocked telemetry', () =
       status: 'disabled',
       tier: 'paid',
       decision: 'declined',
-      source: 'picker',
+      source: 'picker'
     })
     scope.stop()
   })
@@ -191,7 +188,7 @@ describe('useCloudCapacity.confirmEntry — cloud.entry_blocked telemetry', () =
       status: 'degraded',
       tier: 'unknown',
       decision: 'proceeded',
-      source: 'first_use',
+      source: 'first_use'
     })
     scope.stop()
   })

@@ -12,7 +12,7 @@ import {
   buildExistenceCandidates,
   getModelsBaseDir,
   regularFileExists,
-  resolveDownloadContextById,
+  resolveDownloadContextById
 } from './modelDownloadPaths'
 
 /** Asset (output) downloads whose final file is itself an image we can preview. */
@@ -49,7 +49,7 @@ export function buildSaveDialogFilters(suggestedName: string): Electron.FileFilt
     wav: { name: 'WAV Audio', extensions: ['wav'] },
     mp3: { name: 'MP3 Audio', extensions: ['mp3'] },
     flac: { name: 'FLAC Audio', extensions: ['flac'] },
-    ogg: { name: 'OGG Audio', extensions: ['ogg'] },
+    ogg: { name: 'OGG Audio', extensions: ['ogg'] }
   }
 
   const primary = FAMILIES[ext]
@@ -130,8 +130,14 @@ function filesHaveEqualContent(a: string, b: string): boolean {
   } catch {
     return false
   } finally {
-    if (fdA !== undefined) try { fs.closeSync(fdA) } catch { }
-    if (fdB !== undefined) try { fs.closeSync(fdB) } catch { }
+    if (fdA !== undefined)
+      try {
+        fs.closeSync(fdA)
+      } catch {}
+    if (fdB !== undefined)
+      try {
+        fs.closeSync(fdB)
+      } catch {}
   }
 }
 let mainWindow: BrowserWindow | null = null
@@ -346,7 +352,10 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
     return null
   }
 
-  safe = safe.split('/').filter((seg) => seg !== '.').join('/')
+  safe = safe
+    .split('/')
+    .filter((seg) => seg !== '.')
+    .join('/')
 
   if (safe === '') return null
 
@@ -384,7 +393,7 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
 export function resolveAssetSavePath(
   currentSavePath: string,
   serverName: string,
-  outputDir: string,
+  outputDir: string
 ): string | null {
   if (!isPathContained(currentSavePath, outputDir)) return null
 
@@ -392,8 +401,7 @@ export function resolveAssetSavePath(
   const normalizedServerName = serverName.replace(/\\/g, '/')
   const safeServerName = sanitizeAssetFilename(normalizedServerName, outputDir)
   if (!safeServerName) return null
-  const serverPath =
-    currentDirectory === '.' ? safeServerName : path.basename(safeServerName)
+  const serverPath = currentDirectory === '.' ? safeServerName : path.basename(safeServerName)
   const relativePath =
     currentDirectory === '.' ? serverPath : path.join(currentDirectory, serverPath)
   const safeRelativePath = sanitizeAssetFilename(relativePath, outputDir)
@@ -411,7 +419,12 @@ export function isPathContained(filePath: string, baseDir: string): boolean {
   const resolved = path.resolve(filePath)
   const resolvedBase = path.resolve(baseDir)
   const relative = path.relative(resolvedBase, resolved)
-  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+  return (
+    relative !== '' &&
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  )
 }
 
 export function hasValidExtension(filename: string): boolean {
@@ -502,10 +515,13 @@ export function parseContentDispositionFilename(header: string | null): string |
   // Try filename*= (RFC 5987 encoded)
   const starMatch = header.match(/filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;\s]+)/i)
   if (starMatch?.[1]) {
-    try { return decodeURIComponent(starMatch[1]) } catch { }
+    try {
+      return decodeURIComponent(starMatch[1])
+    } catch {}
   }
   // Try filename="..." or filename=...
-  const match = header.match(/filename\s*=\s*"([^"]+)"/i) || header.match(/filename\s*=\s*([^;\s]+)/i)
+  const match =
+    header.match(/filename\s*=\s*"([^"]+)"/i) || header.match(/filename\s*=\s*([^;\s]+)/i)
   return match?.[1] ?? null
 }
 
@@ -521,7 +537,7 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
       const rcd = new URL(u).searchParams.get('response-content-disposition')
       const rcdName = parseContentDispositionFilename(rcd)
       if (rcdName) return rcdName
-    } catch { }
+    } catch {}
   }
 
   return null
@@ -544,7 +560,7 @@ export async function startModelDownload(
   rawFilename: string,
   directory: string,
   senderContents?: Electron.WebContents,
-  installationId?: string | null,
+  installationId?: string | null
 ): Promise<boolean> {
   const filename = stripQueryParams(rawFilename)
   // Resolve the initiating install so destination + existence check follow its
@@ -565,30 +581,32 @@ export async function startModelDownload(
     directory,
     window: win,
     senderContents,
-    installationId: resolvedInstallId,
+    installationId: resolvedInstallId
   })
 
-  const makeProgress = (
-    overrides: Partial<DownloadProgress>,
-  ): DownloadProgress => ({
+  const makeProgress = (overrides: Partial<DownloadProgress>): DownloadProgress => ({
     url,
     filename,
     directory,
     progress: 0,
     status: 'pending',
-    ...overrides,
+    ...overrides
   })
 
   if (!isPathContained(savePath, baseDir)) {
-    reportProgress(makeProgress({ status: 'error', error: 'Save path is outside models directory' }))
+    reportProgress(
+      makeProgress({ status: 'error', error: 'Save path is outside models directory' })
+    )
     return false
   }
 
   if (!hasValidExtension(filename)) {
-    reportProgress(makeProgress({
-      status: 'error',
-      error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`,
-    }))
+    reportProgress(
+      makeProgress({
+        status: 'error',
+        error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
+      })
+    )
     return false
   }
 
@@ -635,7 +653,7 @@ export async function startModelDownload(
     subscriberWindows: new Set(),
     lastProgress: initial,
     lastSpeedBytes: 0,
-    lastSpeedTime: Date.now(),
+    lastSpeedTime: Date.now()
   })
 
   const sess = (senderContents || win.webContents).session
@@ -652,7 +670,7 @@ export async function startAssetDownload(
   filename: string,
   outputDir: string,
   authToken?: string,
-  senderContents?: Electron.WebContents,
+  senderContents?: Electron.WebContents
 ): Promise<boolean> {
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return false
@@ -688,10 +706,10 @@ export async function startAssetDownload(
       filename: path.basename(safeFilename),
       directory: '',
       progress: 0,
-      status: 'pending',
+      status: 'pending'
     },
     lastSpeedBytes: 0,
-    lastSpeedTime: Date.now(),
+    lastSpeedTime: Date.now()
   }
   pendingDownloads.set(url, pending)
 
@@ -706,7 +724,7 @@ export async function startAssetDownload(
     reportProgress({
       ...pending.lastProgress,
       status: 'error',
-      error: `Failed to prepare save path: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Failed to prepare save path: ${err instanceof Error ? err.message : String(err)}`
     })
     pendingDownloads.delete(url)
     return false
@@ -729,7 +747,7 @@ export async function startAssetDownload(
     reportProgress({
       ...pending.lastProgress,
       status: 'error',
-      error: `Failed to create download directory: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Failed to create download directory: ${err instanceof Error ? err.message : String(err)}`
     })
     pendingDownloads.delete(url)
     return false
@@ -749,7 +767,7 @@ export async function startAssetDownload(
     outputDir,
     authToken,
     window: win,
-    senderContents,
+    senderContents
   })
 
   const sess = (senderContents || win.webContents).session
@@ -812,7 +830,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       totalBytes: total,
       speedBytesPerSec: speed,
       etaSeconds: eta,
-      status: item.isPaused() ? 'paused' : 'downloading',
+      status: item.isPaused() ? 'paused' : 'downloading'
     })
   })
 
@@ -831,8 +849,12 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         pending.requestedSavePath !== pending.savePath &&
         filesHaveEqualContent(pending.tempPath, pending.requestedSavePath)
       ) {
-        try { fs.unlinkSync(pending.tempPath) } catch { }
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        try {
+          fs.unlinkSync(pending.tempPath)
+        } catch {}
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
         pending.savePath = pending.requestedSavePath
         pending.filename = path.basename(pending.requestedSavePath)
         pending.tempPath = undefined
@@ -842,7 +864,9 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         try {
           fs.renameSync(pending.tempPath, pending.savePath)
         } catch {
-          try { fs.unlinkSync(pending.tempPath) } catch { }
+          try {
+            fs.unlinkSync(pending.tempPath)
+          } catch {}
           if (!fs.existsSync(pending.savePath)) {
             reportProgress({
               url: pending.url,
@@ -850,14 +874,16 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
               directory: pending.directory,
               progress: 0,
               status: 'error',
-              error: 'Failed to move downloaded file to final location',
+              error: 'Failed to move downloaded file to final location'
             })
             pendingDownloads.delete(pending.url)
             return
           }
         }
         // Try to remove the temp directory if it's now empty (safe - fails silently if not empty)
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
       }
       reportProgress({
         url: pending.url,
@@ -866,24 +892,32 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         savePath: pending.savePath,
         progress: 1,
         status: 'completed',
-        isImage: isImageAsset(pending),
+        isImage: isImageAsset(pending)
       })
     } else if (state === 'cancelled') {
       if (pending.tempPath) {
-        try { fs.unlinkSync(pending.tempPath) } catch { }
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        try {
+          fs.unlinkSync(pending.tempPath)
+        } catch {}
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
       }
       reportProgress({
         url: pending.url,
         filename: pending.filename,
         directory: pending.directory,
         progress: 0,
-        status: 'cancelled',
+        status: 'cancelled'
       })
     } else {
       if (pending.tempPath) {
-        try { fs.unlinkSync(pending.tempPath) } catch { }
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        try {
+          fs.unlinkSync(pending.tempPath)
+        } catch {}
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
       }
       reportProgress({
         url: pending.url,
@@ -891,7 +925,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         directory: pending.directory,
         progress: 0,
         status: 'error',
-        error: `Download failed: ${state}`,
+        error: `Download failed: ${state}`
       })
     }
     pendingDownloads.delete(pending.url)
@@ -936,7 +970,10 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
               fs.mkdirSync(path.dirname(candidate), { recursive: true })
               pending.savePath = candidate
               pending.filename = path.basename(candidate)
-              pending.tempPath = path.join(path.dirname(pending.tempPath), tempFileNameFor(pending.filename))
+              pending.tempPath = path.join(
+                path.dirname(pending.tempPath),
+                tempFileNameFor(pending.filename)
+              )
               pending.lastProgress = { ...pending.lastProgress, filename: pending.filename }
               const retryParams = retryParamsByUrl.get(pending.url)
               if (retryParams?.kind === 'asset') {
@@ -961,13 +998,14 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       // (Electron only sets it for page-initiated ones), so fall back to the
       // focused window for the Save dialog parent.
       const sourceWin = webContents ? BrowserWindow.fromWebContents(webContents) : null
-      const win = sourceWin ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
+      const win =
+        sourceWin ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
 
       let savePath: string | undefined
       if (win) {
         const filePath = dialog.showSaveDialogSync(win, {
           defaultPath: path.join(startDir, suggestedName),
-          filters: buildSaveDialogFilters(suggestedName),
+          filters: buildSaveDialogFilters(suggestedName)
         })
         if (filePath) {
           savePath = filePath
@@ -1004,7 +1042,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
         item,
         lastProgress: { url, filename, progress: 0, status: 'pending' },
         lastSpeedBytes: 0,
-        lastSpeedTime: Date.now(),
+        lastSpeedTime: Date.now()
       }
       pendingDownloads.set(url, general)
       reportProgress(general.lastProgress)
@@ -1022,7 +1060,7 @@ export function pauseModelDownload(url: string): boolean {
     pending.item.pause()
     reportProgress({
       ...pending.lastProgress,
-      status: 'paused',
+      status: 'paused'
     })
   }
   return true
@@ -1035,7 +1073,7 @@ export function resumeModelDownload(url: string): boolean {
     pending.item.resume()
     reportProgress({
       ...pending.lastProgress,
-      status: 'downloading',
+      status: 'downloading'
     })
   }
   return true
@@ -1054,7 +1092,7 @@ export function cancelModelDownload(url: string): boolean {
       filename: pending.filename,
       directory: pending.directory,
       progress: 0,
-      status: 'cancelled',
+      status: 'cancelled'
     })
   }
   return true
@@ -1091,7 +1129,14 @@ export function retryDownload(url: string): boolean {
     // download simply re-enters `error` and stays retryable.
     void startAssetDownload(win, url, params.filename, params.outputDir!, params.authToken, sender)
   } else {
-    void startModelDownload(win, url, params.filename, params.directory ?? '', sender, params.installationId)
+    void startModelDownload(
+      win,
+      url,
+      params.filename,
+      params.directory ?? '',
+      sender,
+      params.installationId
+    )
   }
   return true
 }
@@ -1244,10 +1289,10 @@ export function detachWindowDownloads(win: BrowserWindow): void {
 export async function cleanupTempDownloads(): Promise<void> {
   try {
     await fs.promises.rm(getTempDir(), { recursive: true, force: true })
-  } catch { }
+  } catch {}
   try {
     await fs.promises.rm(getAssetTempDir(), { recursive: true, force: true })
-  } catch { }
+  } catch {}
 }
 
 /** Test-only: replace the in-memory buffers with `snapshot` and emit
@@ -1264,7 +1309,7 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
       subscriberWindows: new Set(),
       lastProgress: { ...entry },
       lastSpeedBytes: 0,
-      lastSpeedTime: Date.now(),
+      lastSpeedTime: Date.now()
     }
     pendingDownloads.set(entry.url, stub)
   }

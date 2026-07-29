@@ -1,11 +1,7 @@
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
-import {
-  ensureManagerConfig,
-  isManagerSecurityLevel,
-  isManagerNetworkMode
-} from './managerConfig'
+import { ensureManagerConfig, isManagerSecurityLevel, isManagerNetworkMode } from './managerConfig'
 
 export type ManagerReconcileResult = { ok: true } | { ok: false; error: unknown }
 

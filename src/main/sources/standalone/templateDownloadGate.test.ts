@@ -15,7 +15,7 @@ vi.mock('../../lib/download', () => ({ download: (...a: unknown[]) => download(.
 vi.mock('../../lib/disk', () => ({ getDiskSpace: () => getDiskSpace() }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   setTemplateTrayMirror: vi.fn(),
-  clearTemplateTrayMirror: vi.fn(),
+  clearTemplateTrayMirror: vi.fn()
 }))
 vi.mock('../../lib/modelDownloadPaths', () => ({ getModelsBaseDir: () => '/tmp/models' }))
 // Keep the task hermetic — never touch the real filesystem. `stat` rejects so
@@ -24,9 +24,9 @@ vi.mock('fs', () => ({
   default: {
     promises: {
       stat: vi.fn().mockRejectedValue(new Error('ENOENT')),
-      mkdir: vi.fn().mockResolvedValue(undefined),
-    },
-  },
+      mkdir: vi.fn().mockResolvedValue(undefined)
+    }
+  }
 }))
 
 import {
@@ -34,7 +34,7 @@ import {
   requestSkipTemplateDownload,
   abortTemplateDownload,
   startTemplateDownload,
-  getTemplateDownloadState,
+  getTemplateDownloadState
 } from './templateDownloadTask'
 import { setTemplateTrayMirror } from '../../lib/comfyDownloadManager'
 
@@ -45,7 +45,7 @@ function makeInstall(id: string) {
   return {
     id,
     bundledTemplateId: 't',
-    bundledTemplateModelBytes: 1024,
+    bundledTemplateModelBytes: 1024
   } as unknown as Parameters<typeof startTemplateDownload>[0]
 }
 
@@ -96,7 +96,9 @@ describe('awaitTemplateDownloadSettled', () => {
   })
 
   it("resolves 'error' on a disk-space pre-flight failure", async () => {
-    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
     getDiskSpace.mockResolvedValue({ free: 1, total: 1e15 })
     startTemplateDownload(makeInstall('err-disk'), 10 * 1024 ** 3, { sendOutput })
     await flush()
@@ -109,8 +111,15 @@ describe('awaitTemplateDownloadSettled', () => {
   it("resolves 'cancelled' after abortTemplateDownload", async () => {
     // A never-resolving download keeps the task in-flight so abort can land.
     let release!: () => void
-    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
-    download.mockImplementation(() => new Promise<void>((res) => { release = res }))
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    download.mockImplementation(
+      () =>
+        new Promise<void>((res) => {
+          release = res
+        })
+    )
     startTemplateDownload(makeInstall('cancel-1'), 0, { sendOutput })
     await flush()
 
@@ -121,8 +130,15 @@ describe('awaitTemplateDownloadSettled', () => {
   })
 
   it("resolves 'skipped' when the user requests skip mid-download", async () => {
-    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
-    download.mockImplementation(() => new Promise<void>(() => { /* hangs */ }))
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    download.mockImplementation(
+      () =>
+        new Promise<void>(() => {
+          /* hangs */
+        })
+    )
     startTemplateDownload(makeInstall('skip-1'), 0, { sendOutput })
     await flush()
     expect(getTemplateDownloadState('skip-1')?.status).not.toBe('done')
@@ -135,8 +151,15 @@ describe('awaitTemplateDownloadSettled', () => {
   })
 
   it('mirrors the download into the tray from the start, before any Skip (#1173)', async () => {
-    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
-    download.mockImplementation(() => new Promise<void>(() => { /* hangs */ }))
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    download.mockImplementation(
+      () =>
+        new Promise<void>(() => {
+          /* hangs */
+        })
+    )
     startTemplateDownload(makeInstall('mirror-1'), 0, { sendOutput })
     await flush()
     await vi.advanceTimersByTimeAsync(600) // let the 500 ms mirror poll tick
@@ -144,13 +167,20 @@ describe('awaitTemplateDownloadSettled', () => {
     // Reflected into the downloads tray without anyone requesting a skip.
     expect(mockSetTrayMirror).toHaveBeenCalledWith(
       'mirror-1',
-      expect.arrayContaining([expect.objectContaining({ filename: 'm.safetensors' })]),
+      expect.arrayContaining([expect.objectContaining({ filename: 'm.safetensors' })])
     )
   })
 
   it("resolves 'aborted' when the gate's own signal aborts (launch teardown)", async () => {
-    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
-    download.mockImplementation(() => new Promise<void>(() => { /* hangs */ }))
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    download.mockImplementation(
+      () =>
+        new Promise<void>(() => {
+          /* hangs */
+        })
+    )
     startTemplateDownload(makeInstall('abort-1'), 0, { sendOutput })
     await flush()
 
@@ -161,8 +191,15 @@ describe('awaitTemplateDownloadSettled', () => {
   })
 
   it('clears the skip flag on settle so a later download for the same id is not pre-skipped', async () => {
-    resolveTemplateModels.mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
-    download.mockImplementation(() => new Promise<void>(() => { /* hangs */ }))
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    download.mockImplementation(
+      () =>
+        new Promise<void>(() => {
+          /* hangs */
+        })
+    )
     startTemplateDownload(makeInstall('skip-clear'), 0, { sendOutput })
     await flush()
 

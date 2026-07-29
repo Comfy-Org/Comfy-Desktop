@@ -41,25 +41,57 @@ import type { InstallationRecord } from '../../installations'
 
 describe('isProtectedPackage', () => {
   it.each([
-    'pip', 'setuptools', 'wheel', 'uv',
-    'torch', 'torchvision', 'torchaudio', 'torio', 'functorch',
-    'torch-tensorrt', 'torch_scatter',
-    'nvidia-cublas-cu12', 'triton', 'triton-windows', 'pytorch-triton-rocm',
-    'cuda-bindings', 'Torch', 'TorchVision',
+    'pip',
+    'setuptools',
+    'wheel',
+    'uv',
+    'torch',
+    'torchvision',
+    'torchaudio',
+    'torio',
+    'functorch',
+    'torch-tensorrt',
+    'torch_scatter',
+    'nvidia-cublas-cu12',
+    'triton',
+    'triton-windows',
+    'pytorch-triton-rocm',
+    'cuda-bindings',
+    'Torch',
+    'TorchVision',
     // AMD multi-arch stack: rocm-sdk family plus per-arch device overlays,
     // installable only via [device-all] extras against AMD's index.
-    'rocm', 'rocm-sdk-core', 'rocm-bootstrap',
-    'amd-torch-device-gfx1100', 'amd-torchvision-device-gfx908',
+    'rocm',
+    'rocm-sdk-core',
+    'rocm-bootstrap',
+    'amd-torch-device-gfx1100',
+    'amd-torchvision-device-gfx908',
     'amd-torchaudio-device-gfx1200',
     // Intel XPU stack: torch +xpu wheels pull the oneAPI runtime family as
     // plain pip dependencies. Every name observed leaking across vendors in
     // cross-vendor restore validation is pinned here.
-    'dpcpp-cpp-rt', 'intel-cmplr-lib-rt', 'intel-cmplr-lib-ur',
-    'intel-cmplr-lic-rt', 'intel-opencl-rt', 'intel-openmp', 'intel-pti',
-    'intel-sycl-rt', 'mkl', 'onemkl-license', 'onemkl-sycl-blas',
-    'onemkl-sycl-dft', 'onemkl-sycl-lapack', 'onemkl-sycl-rng',
-    'onemkl-sycl-sparse', 'pyelftools', 'tbb', 'tcmlib', 'umf',
-    'oneccl-bind-pt', 'impi-rt', 'level-zero'
+    'dpcpp-cpp-rt',
+    'intel-cmplr-lib-rt',
+    'intel-cmplr-lib-ur',
+    'intel-cmplr-lic-rt',
+    'intel-opencl-rt',
+    'intel-openmp',
+    'intel-pti',
+    'intel-sycl-rt',
+    'mkl',
+    'onemkl-license',
+    'onemkl-sycl-blas',
+    'onemkl-sycl-dft',
+    'onemkl-sycl-lapack',
+    'onemkl-sycl-rng',
+    'onemkl-sycl-sparse',
+    'pyelftools',
+    'tbb',
+    'tcmlib',
+    'umf',
+    'oneccl-bind-pt',
+    'impi-rt',
+    'level-zero'
   ])('protects %s', (name) => {
     expect(isProtectedPackage(name)).toBe(true)
   })
@@ -68,22 +100,34 @@ describe('isProtectedPackage', () => {
   // stack itself) stay pip-managed — protecting them would make snapshots
   // that record them unrestorable, since nothing else reconciles them.
   it.each([
-    'numpy', 'requests', 'pillow', 'transformers', 'safetensors', 'curl-cffi',
-    'torchsde', 'torchmetrics', 'torchdiffeq',
+    'numpy',
+    'requests',
+    'pillow',
+    'transformers',
+    'safetensors',
+    'curl-cffi',
+    'torchsde',
+    'torchmetrics',
+    'torchdiffeq',
     // 'amd' alone is not a protected prefix: ordinary AMD-published libraries
     // must stay snapshot-restorable.
-    'amd-quark', 'amdsmi',
+    'amd-quark',
+    'amdsmi',
     // Intel/oneAPI protection is exact-name or narrow-prefix: ordinary
     // Intel-published libraries must stay snapshot-restorable, and
     // delimiter-based matching must not swallow lookalike names.
-    'mkl-fft', 'mkl-service', 'mkl-random', 'intel-extension-for-pytorch',
-    'intelhex', 'mkldnn', 'onednn', 'umap-learn', 'tbats'
-  ])(
-    'does not protect %s',
-    (name) => {
-      expect(isProtectedPackage(name)).toBe(false)
-    }
-  )
+    'mkl-fft',
+    'mkl-service',
+    'mkl-random',
+    'intel-extension-for-pytorch',
+    'intelhex',
+    'mkldnn',
+    'onednn',
+    'umap-learn',
+    'tbats'
+  ])('does not protect %s', (name) => {
+    expect(isProtectedPackage(name)).toBe(false)
+  })
 })
 
 describe('buildProtectedConstraints', () => {
@@ -146,7 +190,9 @@ describe('protectedPackageDrift', () => {
   it('returns [] when every protected package matches the snapshot', async () => {
     withEnv({ torch: '2.4.1+cu121', torchvision: '0.19.1+cu121', numpy: '1.26.4' })
     const drift = await protectedPackageDrift(inst, {
-      torch: '2.4.1+cu121', torchvision: '0.19.1+cu121', numpy: '2.0.0'
+      torch: '2.4.1+cu121',
+      torchvision: '0.19.1+cu121',
+      numpy: '2.0.0'
     })
     expect(drift).toEqual([])
   })
@@ -154,7 +200,8 @@ describe('protectedPackageDrift', () => {
   it('reports protected packages whose live version differs', async () => {
     withEnv({ torch: '2.6.0+cu126', torchvision: '0.19.1+cu121' })
     const drift = await protectedPackageDrift(inst, {
-      torch: '2.4.1+cu121', torchvision: '0.19.1+cu121'
+      torch: '2.4.1+cu121',
+      torchvision: '0.19.1+cu121'
     })
     expect(drift).toEqual([{ name: 'torch', target: '2.4.1+cu121', live: '2.6.0+cu126' }])
   })
@@ -162,24 +209,31 @@ describe('protectedPackageDrift', () => {
   it('reports protected packages absent live or absent from the snapshot', async () => {
     withEnv({ torch: '2.4.1', 'nvidia-cublas-cu12': '12.1.3.1' })
     const drift = await protectedPackageDrift(inst, { torch: '2.4.1', torchaudio: '2.4.1' })
-    expect(drift).toEqual(expect.arrayContaining([
-      { name: 'torchaudio', target: '2.4.1', live: null },
-      { name: 'nvidia-cublas-cu12', target: null, live: '12.1.3.1' }
-    ]))
+    expect(drift).toEqual(
+      expect.arrayContaining([
+        { name: 'torchaudio', target: '2.4.1', live: null },
+        { name: 'nvidia-cublas-cu12', target: null, live: '12.1.3.1' }
+      ])
+    )
     expect(drift).toHaveLength(2)
   })
 
   it('treats PEP 503 name variants as the same package (case and separators)', async () => {
     withEnv({ torch: '2.4.1+cu121', 'nvidia-cublas-cu12': '12.1.3.1' })
     const drift = await protectedPackageDrift(inst, {
-      Torch: '2.4.1+cu121', nvidia_cublas_cu12: '12.1.3.1'
+      Torch: '2.4.1+cu121',
+      nvidia_cublas_cu12: '12.1.3.1'
     })
     expect(drift).toEqual([])
   })
 
   it('ignores drift in unprotected packages', async () => {
     withEnv({ torch: '2.4.1', numpy: '1.26.4', torchsde: '0.2.6' })
-    const drift = await protectedPackageDrift(inst, { torch: '2.4.1', numpy: '2.0.0', torchsde: '0.2.5' })
+    const drift = await protectedPackageDrift(inst, {
+      torch: '2.4.1',
+      numpy: '2.0.0',
+      torchsde: '0.2.5'
+    })
     expect(drift).toEqual([])
   })
 })

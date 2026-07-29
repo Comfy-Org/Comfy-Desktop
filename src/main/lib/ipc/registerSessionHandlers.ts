@@ -1,16 +1,18 @@
 import {
   ipcMain,
-  installations, i18n,
+  installations,
+  i18n,
   killByPort,
   findPidsByPort,
   removePortLock,
   REQUIRES_STOPPED,
   _onStop,
-  _operationAborts, _runningSessions,
+  _operationAborts,
+  _runningSessions,
   _getPublicSessions,
   _getLaunchingInstances,
   _getStoppingInstallationIds,
-  stopRunning,
+  stopRunning
 } from './shared'
 import { dispatchSessionAction } from './sessionActions'
 import { recordIpcInvocation } from '../e2eOverrides'
@@ -56,23 +58,31 @@ export function registerSessionHandlers(): void {
     return { ok: remaining.length === 0 }
   })
 
-  ipcMain.handle('run-action', async (_event, installationId: string, actionId: string, actionData?: Record<string, unknown>) => {
-    recordIpcInvocation('run-action', { installationId, actionId, actionData })
-    const maybeInst = await installations.get(installationId)
-    if (!maybeInst) return { ok: false, message: 'Installation not found.' }
-    const inst = maybeInst
-    if (REQUIRES_STOPPED.has(actionId) && _runningSessions.has(installationId)) {
-      return { ok: false, message: i18n.t('errors.stopRequired'), running: true }
-    }
-    if (REQUIRES_STOPPED.has(actionId) && _operationAborts.has(installationId)) {
-      // Substitute the `{operation}` placeholder with the localized label, falling back to
-      // the raw action id so the renderer never paints the bare template.
-      const labelKey = `actions.${actionId}`
-      const label = i18n.t(labelKey)
-      const operation = label === labelKey ? actionId : label
-      return { ok: false, message: i18n.t('errors.operationInProgress', { operation }) }
-    }
+  ipcMain.handle(
+    'run-action',
+    async (
+      _event,
+      installationId: string,
+      actionId: string,
+      actionData?: Record<string, unknown>
+    ) => {
+      recordIpcInvocation('run-action', { installationId, actionId, actionData })
+      const maybeInst = await installations.get(installationId)
+      if (!maybeInst) return { ok: false, message: 'Installation not found.' }
+      const inst = maybeInst
+      if (REQUIRES_STOPPED.has(actionId) && _runningSessions.has(installationId)) {
+        return { ok: false, message: i18n.t('errors.stopRequired'), running: true }
+      }
+      if (REQUIRES_STOPPED.has(actionId) && _operationAborts.has(installationId)) {
+        // Substitute the `{operation}` placeholder with the localized label, falling back to
+        // the raw action id so the renderer never paints the bare template.
+        const labelKey = `actions.${actionId}`
+        const label = i18n.t(labelKey)
+        const operation = label === labelKey ? actionId : label
+        return { ok: false, message: i18n.t('errors.operationInProgress', { operation }) }
+      }
 
-    return dispatchSessionAction({ event: _event, installationId, inst, actionData }, actionId)
-  })
+      return dispatchSessionAction({ event: _event, installationId, inst, actionData }, actionId)
+    }
+  )
 }

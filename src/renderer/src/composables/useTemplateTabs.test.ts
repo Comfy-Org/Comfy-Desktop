@@ -11,7 +11,7 @@ const opt = (value: string, modality: string, recommended = false): FieldOption 
   value,
   label: value,
   recommended,
-  data: { modality },
+  data: { modality }
 })
 
 const IMG_A = opt('img_a', 'image', true)
@@ -36,7 +36,7 @@ describe('useTemplateTabs', () => {
     expect(tabs.value.find((tab) => tab.modality === 'video')!.count).toBe(1)
   })
 
-  it('defaults the active tab to the selected template\'s modality', () => {
+  it("defaults the active tab to the selected template's modality", () => {
     const { activeModality } = setup([NONE, IMG_A, IMG_B, VID], VID.value)
     expect(activeModality.value).toBe('video')
   })
@@ -46,7 +46,7 @@ describe('useTemplateTabs', () => {
     expect(activeModality.value).toBe('video')
   })
 
-  it('exposes only the active tab\'s cards', () => {
+  it("exposes only the active tab's cards", () => {
     const tabs = setup([NONE, IMG_A, IMG_B, VID], IMG_A.value)
     expect(tabs.visibleCards.value.map((c) => c.value)).toEqual(['img_a', 'img_b'])
     tabs.selectTab('video')

@@ -21,7 +21,12 @@ import {
 } from './snapshots'
 import type { Snapshot, RequirementsRepairResult } from './snapshots'
 import { getInstalledTorchTuple } from '../sources/standalone/envPaths'
-import { torchTupleMatches, stackVersionMatches, observedTuple, hasFullObservedTuple } from '../sources/standalone/torchStackTypes'
+import {
+  torchTupleMatches,
+  stackVersionMatches,
+  observedTuple,
+  hasFullObservedTuple
+} from '../sources/standalone/torchStackTypes'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -157,13 +162,18 @@ async function resolveStandaloneInstallData(
  * but the imported envelope must then not be committed to history, since the
  * install was never in exactly the recorded state.
  */
-function torchSubstitutionNote(installation: InstallationRecord, targetSnapshot: Snapshot): string | null {
+function torchSubstitutionNote(
+  installation: InstallationRecord,
+  targetSnapshot: Snapshot
+): string | null {
   const snapTorch = targetSnapshot.torchStack
   if (!snapTorch) return null
   const installed = getInstalledTorchTuple(installation)
   if (snapTorch.kind === 'managed') {
     if (torchTupleMatches(snapTorch.ref.packages, installed)) return null
-    return i18n.t('standalone.pytorchSnapshotStackKeptLocal', { version: snapTorch.ref.packages.torch })
+    return i18n.t('standalone.pytorchSnapshotStackKeptLocal', {
+      version: snapTorch.ref.packages.torch
+    })
   }
   if (snapTorch.torchVersion) {
     // Full-tuple observed records compare as a stack: matching torch alone is
@@ -267,19 +277,31 @@ export async function restoreSnapshotIntoInstallation(
     // record packages this machine resolves differently, and the sync's
     // remove-extras step must never leave core or nodes missing dependencies.
     let repairResult: RequirementsRepairResult = { changed: [], errors: [] }
-    if (coreOk && !signal.aborted && !targetSnapshot.skipPipSync &&
-        pipResult && pipResult.failed.length === 0) {
+    if (
+      coreOk &&
+      !signal.aborted &&
+      !targetSnapshot.skipPipSync &&
+      pipResult &&
+      pipResult.failed.length === 0
+    ) {
       sendOutput('\n── Repair Requirements ──\n')
       sendProgress('restore-pip', { percent: -1, status: i18n.t('standalone.snapshotRepairPhase') })
       try {
         repairResult = await repairNodeRequirements(
-          freshInst.installPath, freshInst, sendOutput, signal, settings.getMirrorConfig()
+          freshInst.installPath,
+          freshInst,
+          sendOutput,
+          signal,
+          settings.getMirrorConfig()
         )
       } catch (err) {
         // A rejected repair pass (freeze/constraints IO failure) leaves the
         // drift unknown; record it as a repair error so the envelope is not
         // committed, instead of failing the whole restore.
-        repairResult = { changed: [], errors: [`Requirements repair failed: ${(err as Error).message}`] }
+        repairResult = {
+          changed: [],
+          errors: [`Requirements repair failed: ${(err as Error).message}`]
+        }
       }
       if (repairResult.changed.length > 0) {
         sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
@@ -308,7 +330,9 @@ export async function restoreSnapshotIntoInstallation(
         protectedDriftCount = drift.length
         if (drift.length > 0) {
           const note = i18n.t('standalone.snapshotProtectedDrift', { count: drift.length })
-          sendOutput(`\n${note}\n${drift.map((d) => `  ${d.name}: ${d.live ?? '(absent)'} (snapshot: ${d.target ?? '(absent)'})`).join('\n')}\n`)
+          sendOutput(
+            `\n${note}\n${drift.map((d) => `  ${d.name}: ${d.live ?? '(absent)'} (snapshot: ${d.target ?? '(absent)'})`).join('\n')}\n`
+          )
         }
       } catch (err) {
         // Unknown drift blocks the envelope commit below; disclose WHY the
@@ -345,9 +369,13 @@ export async function restoreSnapshotIntoInstallation(
     // drift or repair errors) don't fail the restore, but they do mean the
     // install never reached exactly the recorded state — the envelope must not
     // be committed.
-    const reachedTarget = restoreSucceeded && !torchNote &&
-      repairResult.changed.length === 0 && repairResult.errors.length === 0 &&
-      protectedDriftCount === 0 && !protectedDriftUnknown
+    const reachedTarget =
+      restoreSucceeded &&
+      !torchNote &&
+      repairResult.changed.length === 0 &&
+      repairResult.errors.length === 0 &&
+      protectedDriftCount === 0 &&
+      !protectedDriftUnknown
 
     const updatedInst = { ...freshInst, ...restoreState }
     currentForSnapshot = updatedInst
@@ -357,7 +385,11 @@ export async function restoreSnapshotIntoInstallation(
     // snapshot: the envelope may carry the source install's older history,
     // states this install has never been in.
     if (reachedTarget) {
-      await importSnapshots(freshInst.installPath, { ...importEnvelope, snapshots: [targetSnapshot] }, entry.id)
+      await importSnapshots(
+        freshInst.installPath,
+        { ...importEnvelope, snapshots: [targetSnapshot] },
+        entry.id
+      )
     }
     if (restoreSucceeded) {
       try {

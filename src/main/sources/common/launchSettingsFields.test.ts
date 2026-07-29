@@ -15,7 +15,7 @@ const holder = vi.hoisted(() => ({ comfyDir: '', resolved: [] as ResolvedExtraPa
 // models.ts reads `dataDir()` at module load (for YAML_PATH); the real one calls
 // electron `app.getPath`, which crashes outside Electron. Stub it to a temp dir.
 vi.mock('../../lib/paths', () => ({
-  dataDir: () => os.tmpdir(),
+  dataDir: () => os.tmpdir()
 }))
 
 // Real English strings so label/tooltip assertions catch missing locale keys
@@ -31,11 +31,12 @@ vi.mock('../../lib/models', async (importOriginal) => {
   return {
     ...actual,
     resolveComfyDir: () => holder.comfyDir,
-    resolveExtraModelPaths: () => holder.resolved,
+    resolveExtraModelPaths: () => holder.resolved
   }
 })
 
-const { buildExtraModelPathsView, buildLaunchSettingsFields } = await import('./launchSettingsFields')
+const { buildExtraModelPathsView, buildLaunchSettingsFields } =
+  await import('./launchSettingsFields')
 
 let tmp: string
 
@@ -54,7 +55,7 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(buildExtraModelPathsView({} as never)).toEqual({
       yamlPath: '',
       exists: false,
-      sections: [],
+      sections: []
     })
   })
 
@@ -66,8 +67,22 @@ describe('buildExtraModelPathsView — grouping', () => {
     const missing = path.join(base, 't2i_adapter') // not created
 
     holder.resolved = [
-      { section: 'ext', basePath: base, type: 'checkpoints', rawType: 'checkpoints', dir: ckpt, isDefault: false },
-      { section: 'ext', basePath: base, type: 'controlnet', rawType: 'controlnet', dir: missing, isDefault: false },
+      {
+        section: 'ext',
+        basePath: base,
+        type: 'checkpoints',
+        rawType: 'checkpoints',
+        dir: ckpt,
+        isDefault: false
+      },
+      {
+        section: 'ext',
+        basePath: base,
+        type: 'controlnet',
+        rawType: 'controlnet',
+        dir: missing,
+        isDefault: false
+      }
     ]
 
     const view = buildExtraModelPathsView({ installPath: tmp } as never)
@@ -80,16 +95,37 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(s.basePathExists).toBe(true)
     expect(s.dirs).toEqual([
       { type: 'checkpoints', rawType: 'checkpoints', dir: ckpt, dirExists: true },
-      { type: 'controlnet', rawType: 'controlnet', dir: missing, dirExists: false },
+      { type: 'controlnet', rawType: 'controlnet', dir: missing, dirExists: false }
     ])
   })
 
   it('keeps sections separate and preserves declaration order', () => {
     fs.writeFileSync(path.join(tmp, 'extra_model_paths.yaml'), 'x')
     holder.resolved = [
-      { section: 'first', basePath: null, type: 'loras', rawType: 'loras', dir: path.join(tmp, 'a'), isDefault: true },
-      { section: 'second', basePath: path.join(tmp, 'b'), type: 'vae', rawType: 'vae', dir: path.join(tmp, 'b', 'vae'), isDefault: false },
-      { section: 'first', basePath: null, type: 'vae', rawType: 'vae', dir: path.join(tmp, 'c'), isDefault: true },
+      {
+        section: 'first',
+        basePath: null,
+        type: 'loras',
+        rawType: 'loras',
+        dir: path.join(tmp, 'a'),
+        isDefault: true
+      },
+      {
+        section: 'second',
+        basePath: path.join(tmp, 'b'),
+        type: 'vae',
+        rawType: 'vae',
+        dir: path.join(tmp, 'b', 'vae'),
+        isDefault: false
+      },
+      {
+        section: 'first',
+        basePath: null,
+        type: 'vae',
+        rawType: 'vae',
+        dir: path.join(tmp, 'c'),
+        isDefault: true
+      }
     ]
 
     const view = buildExtraModelPathsView({ installPath: tmp } as never)
@@ -131,7 +167,7 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
       'Strict',
       'Standard (recommended)',
       'Relaxed',
-      'Permissive',
+      'Permissive'
     ])
     expect(field.label).toBe('Manager Security Level')
     // Guard against a raw key leaking into the UI if the locale entry is removed.
@@ -150,7 +186,7 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
     }
   })
 
-  it('reads each install\'s own persisted level (per-install isolation)', () => {
+  it("reads each install's own persisted level (per-install isolation)", () => {
     expect(managerField({ managerSecurityLevel: 'weak' }).value).toBe('weak')
     expect(managerField({ managerSecurityLevel: 'strong' }).value).toBe('strong')
   })
@@ -192,13 +228,13 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
       'public',
       'private',
       'offline',
-      'personal_cloud',
+      'personal_cloud'
     ])
     expect(field.options?.map((o) => o.label)).toEqual([
       'Public (default)',
       'Private',
       'Offline',
-      'Personal cloud',
+      'Personal cloud'
     ])
     expect(field.label).toBe('Manager Network Mode')
     // Guard against a raw key leaking into the UI if the locale entry is removed.
@@ -221,7 +257,7 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
     expect(desc).toContain('--listen')
   })
 
-  it('reads each install\'s own persisted mode (per-install isolation)', () => {
+  it("reads each install's own persisted mode (per-install isolation)", () => {
     expect(networkField({ managerNetworkMode: 'personal_cloud' }).value).toBe('personal_cloud')
     expect(networkField({ managerNetworkMode: 'offline' }).value).toBe('offline')
   })

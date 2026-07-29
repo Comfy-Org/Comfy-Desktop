@@ -30,7 +30,10 @@ export function _resetTorchCatalogFloorForTest(): void {
 /** Refresh the torch stack catalog, deduplicating concurrent calls. The
  *  floor advances only on full success so a failed fetch retries on the
  *  next check instead of being suppressed for the floor window. */
-function _refreshTorchCatalog(installations: InstallationRecord[], now: () => number): Promise<void> {
+function _refreshTorchCatalog(
+  installations: InstallationRecord[],
+  now: () => number
+): Promise<void> {
   _torchCatalogRefresh ??= refreshTorchStackCatalogs(installations)
     .then((ok) => {
       if (ok) _torchCatalogCheckedAt = now()
@@ -64,7 +67,7 @@ export async function runStartupReleaseChecks(
     now?: () => number
     /** Ignore the `STARTUP_RECHECK_MS` floor; used by the periodic poll. */
     bypassFloor?: boolean
-  } = {},
+  } = {}
 ): Promise<void> {
   const now = options.now ?? (() => Date.now())
 
@@ -83,16 +86,18 @@ export async function runStartupReleaseChecks(
     }
 
     tasks.push(
-      releaseCache.getOrFetch(
-        COMFYUI_REPO,
-        channel,
-        async () => {
-          const release = await fetchLatestRelease(channel)
-          if (!release) return null
-          return releaseCache.buildCacheEntry(release)
-        },
-        /* force */ true,
-      ).catch(() => null),
+      releaseCache
+        .getOrFetch(
+          COMFYUI_REPO,
+          channel,
+          async () => {
+            const release = await fetchLatestRelease(channel)
+            if (!release) return null
+            return releaseCache.buildCacheEntry(release)
+          },
+          /* force */ true
+        )
+        .catch(() => null)
     )
   }
   // Refresh the switchable-PyTorch-stack catalog alongside the release fetch
@@ -120,7 +125,7 @@ const PERIODIC_RECHECK_INTERVAL_MS = 15 * 60 * 1000
  */
 export function startPeriodicReleaseChecks(
   getInstallations: () => Promise<InstallationRecord[]>,
-  options: { onRefreshed?: () => void; intervalMs?: number } = {},
+  options: { onRefreshed?: () => void; intervalMs?: number } = {}
 ): () => void {
   const intervalMs = options.intervalMs ?? PERIODIC_RECHECK_INTERVAL_MS
   const timer = setInterval(() => {
@@ -129,7 +134,7 @@ export function startPeriodicReleaseChecks(
         const installs = await getInstallations()
         await runStartupReleaseChecks(installs, {
           onRefreshed: options.onRefreshed,
-          bypassFloor: true,
+          bypassFloor: true
         })
       } catch {
         // never let the periodic poll crash the timer

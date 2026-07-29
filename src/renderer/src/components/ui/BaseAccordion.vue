@@ -29,8 +29,7 @@ withDefaults(defineProps<Props>(), { duration: 220 })
 .ui-accordion {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--ui-accordion-duration)
-    cubic-bezier(0.32, 0.72, 0, 1);
+  transition: grid-template-rows var(--ui-accordion-duration) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .ui-accordion.is-open {

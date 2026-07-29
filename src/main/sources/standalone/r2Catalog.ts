@@ -48,7 +48,8 @@ function isValidVariant(v: unknown): v is R2Variant {
   if (typeof r.file !== 'string' || !isSafeFilename(r.file)) return false
   if (typeof r.size !== 'number' || !Number.isFinite(r.size) || r.size <= 0) return false
   if (typeof r.python_version !== 'string' || typeof r.torch_version !== 'string') return false
-  if (!isOptionalString(r.torchvision_version) || !isOptionalString(r.torchaudio_version)) return false
+  if (!isOptionalString(r.torchvision_version) || !isOptionalString(r.torchaudio_version))
+    return false
   if (typeof r.comfyui_version !== 'string' || typeof r.comfyui_commit !== 'string') return false
   if (typeof r.build !== 'number' || typeof r.date !== 'string') return false
   return true
@@ -72,7 +73,10 @@ export async function fetchR2Latest(refresh = true): Promise<R2Latest> {
 
 /** Fetch the full bundle history for one vendor variant, newest first.
  *  Malformed entries are dropped, not returned. */
-export async function fetchR2VendorReleases(vendorId: string, refresh = true): Promise<R2Variant[]> {
+export async function fetchR2VendorReleases(
+  vendorId: string,
+  refresh = true
+): Promise<R2Variant[]> {
   if (!SAFE_SEGMENT.test(vendorId)) throw new Error(`invalid vendor id: ${vendorId}`)
   const data = await fetchJSON(`${R2_BASE_URL}/${vendorId}/releases.json`, { refresh })
   if (!data || typeof data !== 'object') {

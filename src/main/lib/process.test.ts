@@ -52,9 +52,9 @@ describe('findAvailablePort', () => {
     const base = 49400
     const excluded = new Set([base, base + 1, base + 2])
 
-    await expect(
-      findAvailablePort('127.0.0.1', base, base + 2, excluded)
-    ).rejects.toThrow('No available ports found')
+    await expect(findAvailablePort('127.0.0.1', base, base + 2, excluded)).rejects.toThrow(
+      'No available ports found'
+    )
   })
 
   it('skips a port that is actually in use', async () => {

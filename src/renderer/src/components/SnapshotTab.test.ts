@@ -7,7 +7,7 @@ import { createI18n } from 'vue-i18n'
 const { mockModalConfirm, mockModalAlert, mockCheckBeforeAction } = vi.hoisted(() => ({
   mockModalConfirm: vi.fn(),
   mockModalAlert: vi.fn(),
-  mockCheckBeforeAction: vi.fn(),
+  mockCheckBeforeAction: vi.fn()
 }))
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({
@@ -15,11 +15,11 @@ vi.mock('../composables/useModal', () => ({
     alert: mockModalAlert,
     prompt: vi.fn(),
     confirmWithOptions: vi.fn(),
-    updateConfirm: vi.fn(),
-  }),
+    updateConfirm: vi.fn()
+  })
 }))
 vi.mock('../composables/useActionGuard', () => ({
-  useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction }),
+  useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction })
 }))
 
 import SnapshotTab from './SnapshotTab.vue'
@@ -33,14 +33,14 @@ const messages = {
       importTorchNoticeTitle: 'Snapshot uses a different PyTorch',
       createSnapshot: 'Create Snapshot',
       exportAllSnapshots: 'Export All',
-      empty: 'No snapshots yet.',
+      empty: 'No snapshots yet.'
     },
     standalone: {
       snapshotRestore: 'Restore',
-      snapshotRestoringTitle: 'Restoring snapshot',
+      snapshotRestoringTitle: 'Restoring snapshot'
     },
-    common: { loading: 'Loading' },
-  },
+    common: { loading: 'Loading' }
+  }
 } as const
 
 function makeListData() {
@@ -53,12 +53,12 @@ function makeListData() {
         label: null,
         comfyuiVersion: 'v0.3.20',
         nodeCount: 0,
-        pipPackageCount: 0,
-      },
+        pipPackageCount: 0
+      }
     ],
     copyEvents: [],
     totalCount: 1,
-    context: { updateChannel: 'stable', pythonVersion: '3.12', variant: 'cpu', variantLabel: 'CPU' },
+    context: { updateChannel: 'stable', pythonVersion: '3.12', variant: 'cpu', variantLabel: 'CPU' }
   }
 }
 
@@ -68,8 +68,8 @@ function installApi(confirmResult: Record<string, unknown>): void {
     importSnapshotsPreview: vi.fn().mockResolvedValue({
       ok: true,
       preview: {
-        snapshots: [{ label: 'Marker', filename: 'snap.json', createdAt: new Date().toISOString() }],
-      },
+        snapshots: [{ label: 'Marker', filename: 'snap.json', createdAt: new Date().toISOString() }]
+      }
     }),
     importSnapshotsDiff: vi.fn().mockResolvedValue({
       ok: true,
@@ -84,12 +84,12 @@ function installApi(confirmResult: Record<string, unknown>): void {
           nodesChanged: [],
           pipsAdded: [],
           pipsRemoved: [],
-          pipsChanged: [],
+          pipsChanged: []
         },
-        empty: true,
-      },
+        empty: true
+      }
     }),
-    importSnapshotsConfirm: vi.fn().mockResolvedValue(confirmResult),
+    importSnapshotsConfirm: vi.fn().mockResolvedValue(confirmResult)
   }
 }
 
@@ -98,8 +98,8 @@ async function mountTab(): Promise<VueWrapper> {
     props: { installationId: 'install-A' },
     global: {
       plugins: [createI18n({ legacy: false, locale: 'en', messages })],
-      stubs: { SnapshotInspector: true, RestoreModal: true, ImportPreviewModal: true },
-    },
+      stubs: { SnapshotInspector: true, RestoreModal: true, ImportPreviewModal: true }
+    }
   })
   await flushPromises()
   return wrapper as VueWrapper
@@ -119,7 +119,8 @@ async function driveImportToRestoreConfirm(w: VueWrapper): Promise<void> {
 // compatible restore keeps the local stack. That substitution must be
 // disclosed BEFORE the restore runs, and the user must be able to back out.
 describe('SnapshotTab import flow: kept-local PyTorch disclosure', () => {
-  const NOTICE = "The snapshot's PyTorch build (2.11.0+xpu) is not available for this machine; the current PyTorch will be kept."
+  const NOTICE =
+    "The snapshot's PyTorch build (2.11.0+xpu) is not available for this machine; the current PyTorch will be kept."
 
   beforeEach(() => {
     mockModalConfirm.mockReset()
@@ -137,7 +138,7 @@ describe('SnapshotTab import flow: kept-local PyTorch disclosure', () => {
     expect(mockModalConfirm).toHaveBeenCalledTimes(1)
     expect(mockModalConfirm.mock.calls[0]![0]).toMatchObject({
       title: 'Snapshot uses a different PyTorch',
-      message: NOTICE,
+      message: NOTICE
     })
     const runs = w.emitted('run-action')
     expect(runs).toHaveLength(1)

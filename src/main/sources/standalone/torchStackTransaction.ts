@@ -35,8 +35,19 @@ import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
-import { copyTorchFamily, isAmdMultiArchOverlayDist, listRocmEcosystemDists, removeStaleRocmEntries, removeTorchFamilyPackages } from './torchFamilyFs'
-import { stackVersionMatches, torchLocalTag, torchIndexUrlForSource, accelBaseForTag } from './torchStackTypes'
+import {
+  copyTorchFamily,
+  isAmdMultiArchOverlayDist,
+  listRocmEcosystemDists,
+  removeStaleRocmEntries,
+  removeTorchFamilyPackages
+} from './torchFamilyFs'
+import {
+  stackVersionMatches,
+  torchLocalTag,
+  torchIndexUrlForSource,
+  accelBaseForTag
+} from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
@@ -124,7 +135,7 @@ export type PreparedStack = PreparedBundleStack | PreparedPipStack
  */
 export function preparePipStack(
   packages: TorchStackPackages,
-  entry: TorchStackEntry | null,
+  entry: TorchStackEntry | null
 ): PreparedPipStack {
   const source = entry?.source ?? null
   return {
@@ -133,18 +144,18 @@ export function preparePipStack(
     source,
     indexUrl: torchIndexUrlForSource(source, packages),
     entry,
-    accelVariant: accelBaseForTag(torchLocalTag(packages.torch)),
+    accelVariant: accelBaseForTag(torchLocalTag(packages.torch))
   }
 }
 
 export class DiskSpaceError extends Error {
   constructor(
     public readonly requiredBytes: number,
-    public readonly freeBytes: number,
+    public readonly freeBytes: number
   ) {
     super(
       `Not enough disk space for a safe PyTorch change: ` +
-      `${formatGB(requiredBytes)} required (venv backup + bundle staging), ${formatGB(freeBytes)} free.`
+        `${formatGB(requiredBytes)} required (venv backup + bundle staging), ${formatGB(freeBytes)} free.`
     )
     this.name = 'DiskSpaceError'
   }
@@ -184,12 +195,14 @@ export async function preflightDiskSpace(
   installation: InstallationRecord,
   entry: TorchStackEntry | null,
   signal?: AbortSignal,
-  opts?: { staged?: boolean; pipSource?: TorchStackSource | null },
+  opts?: { staged?: boolean; pipSource?: TorchStackSource | null }
 ): Promise<{ requiredBytes: number; freeBytes: number }> {
   const venvDir = getActiveVenvDir(installation)
   const venvSize = await getDirectorySize(venvDir, signal)
-  const pipEstimate = opts?.pipSource?.kind === 'amd-multi-arch-index'
-    ? AMD_MULTI_ARCH_STAGING_BYTES : PIP_FALLBACK_STAGING_BYTES
+  const pipEstimate =
+    opts?.pipSource?.kind === 'amd-multi-arch-index'
+      ? AMD_MULTI_ARCH_STAGING_BYTES
+      : PIP_FALLBACK_STAGING_BYTES
   const pendingBytes = entry?.bundle ? entry.bundle.size * (1 + EXTRACT_FACTOR) : pipEstimate
   const stagingBytes = opts?.staged ? 0 : pendingBytes
   const requiredBytes = Math.ceil((venvSize + stagingBytes) * (1 + DISK_MARGIN))
@@ -206,7 +219,7 @@ export async function preflightDiskSpace(
 export async function prepareBundleStack(
   installation: InstallationRecord,
   entry: TorchStackEntry,
-  tools: TorchStackTools,
+  tools: TorchStackTools
 ): Promise<PreparedBundleStack> {
   const bundle = entry.bundle
   if (!bundle) throw new Error(`stack ${entry.stackId} has no bundle artifact to download`)
@@ -218,7 +231,10 @@ export async function prepareBundleStack(
   // extract, missing site-packages) removes it so no caller path can leak a
   // multi-GB directory.
   try {
-    const cache = createCache(settings.get('cacheDir') as string, settings.get('maxCachedDownloads') as number)
+    const cache = createCache(
+      settings.get('cacheDir') as string,
+      settings.get('maxCachedDownloads') as number
+    )
     const ctx = { sendProgress: tools.sendProgress, download, cache, extract, signal: tools.signal }
     const bundleTag = entry.source.kind === 'comfy-bundle' ? entry.source.bundleTag : entry.stackId
 
@@ -264,14 +280,19 @@ function versionMatches(installed: string | null, expected: string): boolean {
   return stackVersionMatches(installed, expected)
 }
 
-function runImportProbe(pythonPath: string, cwd: string, packages: TorchStackPackages): Promise<string | null> {
+function runImportProbe(
+  pythonPath: string,
+  cwd: string,
+  packages: TorchStackPackages
+): Promise<string | null> {
   const imports = ['torch']
   if (packages.torchvision) imports.push('torchvision')
   if (packages.torchaudio) imports.push('torchaudio')
   const script = `import ${imports.join(', ')}\nimport torch\nt = torch.ones(2) + torch.ones(2)\nassert float(t.sum()) == 4.0\nprint('ok')`
   return new Promise((resolve) => {
     execFile(
-      pythonPath, ['-c', script],
+      pythonPath,
+      ['-c', script],
       { cwd, windowsHide: true, timeout: IMPORT_PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
       (err, _stdout, stderr) => {
         if (err) resolve(stderr ? stderr.slice(-1000) : err.message)
@@ -285,15 +306,21 @@ function runImportProbe(pythonPath: string, cwd: string, packages: TorchStackPac
  *  CPU and MPS builds carry no accelerator fields, so nothing to assert. */
 function expectedAcceleratorOk(variant: string, sitePackages: string): string | null {
   const base = stripPlatform(variant)
-  const wants = base === 'nvidia' || base.startsWith('nvidia-') ? 'cuda'
-    : base === 'amd' || base.startsWith('amd-') ? 'hip'
-    : base === 'intel-xpu' || base.startsWith('intel-xpu-') ? 'xpu'
-    : null
+  const wants =
+    base === 'nvidia' || base.startsWith('nvidia-')
+      ? 'cuda'
+      : base === 'amd' || base.startsWith('amd-')
+        ? 'hip'
+        : base === 'intel-xpu' || base.startsWith('intel-xpu-')
+          ? 'xpu'
+          : null
   if (!wants) return null
   try {
     const txt = fs.readFileSync(path.join(sitePackages, 'torch', 'version.py'), 'utf-8')
-    const m = txt.match(new RegExp(`^${wants}\\s*(?::[^=\\n]+)?=\\s*(None|'([^']*)'|"([^"]*)")`, 'm'))
-    const present = !!m && m[1] !== 'None' && ((m[2] ?? m[3] ?? '').trim()).length > 0
+    const m = txt.match(
+      new RegExp(`^${wants}\\s*(?::[^=\\n]+)?=\\s*(None|'([^']*)'|"([^"]*)")`, 'm')
+    )
+    const present = !!m && m[1] !== 'None' && (m[2] ?? m[3] ?? '').trim().length > 0
     return present ? null : `installed torch has no ${wants} support (torch/version.py)`
   } catch {
     return `could not read torch/version.py to confirm ${wants} support`
@@ -312,9 +339,10 @@ function venvPython(venvDir: string): string {
 /** uv binary inside a venv dir (Legacy Desktop pip-installs uv into its
  *  venv); null when absent. */
 function venvUv(venvDir: string): string | null {
-  const p = process.platform === 'win32'
-    ? path.join(venvDir, 'Scripts', 'uv.exe')
-    : path.join(venvDir, 'bin', 'uv')
+  const p =
+    process.platform === 'win32'
+      ? path.join(venvDir, 'Scripts', 'uv.exe')
+      : path.join(venvDir, 'bin', 'uv')
   return fs.existsSync(p) ? p : null
 }
 
@@ -322,7 +350,7 @@ async function verifyStack(
   installation: InstallationRecord,
   packages: TorchStackPackages,
   accelVariant: string | null,
-  opts?: { expectAbsent?: readonly string[]; amdMultiArch?: boolean },
+  opts?: { expectAbsent?: readonly string[]; amdMultiArch?: boolean }
 ): Promise<string | null> {
   const venvDir = getActiveVenvDir(installation)
   const site = findSitePackages(venvDir)
@@ -376,9 +404,14 @@ const PIP_FAMILY = ['torch', ...PIP_FAMILY_OPTIONAL] as const
 /** Family packages installed in `site` but not declared by the tuple — the
  *  pip path must remove them (a torchvision built against a different torch
  *  would break at import), and verification asserts they stayed gone. */
-export function undeclaredFamilyPackages(packages: TorchStackPackages, site: string | null): string[] {
+export function undeclaredFamilyPackages(
+  packages: TorchStackPackages,
+  site: string | null
+): string[] {
   if (!site) return []
-  return PIP_FAMILY_OPTIONAL.filter((pkg) => !packages[pkg] && readDistInfoVersion(site, pkg) !== null)
+  return PIP_FAMILY_OPTIONAL.filter(
+    (pkg) => !packages[pkg] && readDistInfoVersion(site, pkg) !== null
+  )
 }
 
 /**
@@ -411,7 +444,7 @@ export interface PipReconciliationPlan {
 
 export function planPipReconciliation(
   prepared: Pick<PreparedPipStack, 'packages' | 'source'>,
-  site: string | null,
+  site: string | null
 ): PipReconciliationPlan {
   const removals = [...undeclaredFamilyPackages(prepared.packages, site)]
   const expectAbsent: string[] = PIP_FAMILY_OPTIONAL.filter((pkg) => !prepared.packages[pkg])
@@ -426,9 +459,11 @@ export function planPipReconciliation(
     // regardless of which index supplied it, so a same-version cross-index
     // switch would keep the other family's core wheels. Force the reinstall
     // by removing every installed core dist the target declares.
-    removals.push(...PIP_FAMILY.filter(
-      (pkg) => prepared.packages[pkg] && readDistInfoVersion(site, pkg) !== null,
-    ))
+    removals.push(
+      ...PIP_FAMILY.filter(
+        (pkg) => prepared.packages[pkg] && readDistInfoVersion(site, pkg) !== null
+      )
+    )
   }
   if (amdMultiArchTarget) {
     // pytorch.org ROCm ships its triton build as `triton-rocm` (older
@@ -450,7 +485,10 @@ export function planPipReconciliation(
  *  torch/ was built against a different torch and fails at kernel dispatch
  *  rather than import. dist-info dir names normalize '-' to '_' and never
  *  contain '-' in the name part, so the first '-' splits name from version. */
-export function amdOverlayCoherenceError(site: string, packages: TorchStackPackages): string | null {
+export function amdOverlayCoherenceError(
+  site: string,
+  packages: TorchStackPackages
+): string | null {
   let entries: string[]
   try {
     entries = fs.readdirSync(site)
@@ -462,11 +500,15 @@ export function amdOverlayCoherenceError(site: string, packages: TorchStackPacka
     if (!m) continue
     const [, name, kind, version] = m
     const expected = kind!.toLowerCase() === 'torchvision' ? packages.torchvision : packages.torch
-    if (!expected) return `${name} is "${version}" after swap, but the target stack declares no ${kind}`
+    if (!expected)
+      return `${name} is "${version}" after swap, but the target stack declares no ${kind}`
     // Strict comparison including the local tag: AMD overlay wheels always
     // carry the full core version, so a missing/foreign tag is incoherent
     // even though stackVersionMatches tolerates one-sided tags elsewhere.
-    if (!stackVersionMatches(version!, expected) || torchLocalTag(version) !== torchLocalTag(expected)) {
+    if (
+      !stackVersionMatches(version!, expected) ||
+      torchLocalTag(version) !== torchLocalTag(expected)
+    ) {
       return `${name} is "${version}" after swap, expected "${expected}"`
     }
   }
@@ -480,7 +522,8 @@ export function amdOverlayCoherenceError(site: string, packages: TorchStackPacka
 export function pipInstallSpecs(prepared: PreparedPipStack): string[] {
   const extras = prepared.source?.kind === 'amd-multi-arch-index' ? '[device-all]' : ''
   const specs = [`torch${extras}==${prepared.packages.torch}`]
-  if (prepared.packages.torchvision) specs.push(`torchvision${extras}==${prepared.packages.torchvision}`)
+  if (prepared.packages.torchvision)
+    specs.push(`torchvision${extras}==${prepared.packages.torchvision}`)
   if (prepared.packages.torchaudio) specs.push(`torchaudio==${prepared.packages.torchaudio}`)
   return specs
 }
@@ -503,7 +546,12 @@ export function pipIndexArgs(prepared: Pick<PreparedPipStack, 'source' | 'indexU
   return ['--index-url', prepared.indexUrl]
 }
 
-export function runStreamed(cmd: string, args: string[], failMessage: string, tools: TorchStackTools): Promise<void> {
+export function runStreamed(
+  cmd: string,
+  args: string[],
+  failMessage: string,
+  tools: TorchStackTools
+): Promise<void> {
   tools.sendOutput?.(`\n$ ${path.basename(cmd)} ${args.join(' ')}\n`)
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { windowsHide: true, signal: tools.signal })
@@ -545,10 +593,14 @@ export function runStreamed(cmd: string, args: string[], failMessage: string, to
  * Returns the removed package names so verification can assert they stayed
  * gone. Operates on the transaction's candidate copy, never the live venv.
  */
-export async function applyBundleGraft(prepared: PreparedBundleStack, dstSite: string): Promise<string[]> {
+export async function applyBundleGraft(
+  prepared: PreparedBundleStack,
+  dstSite: string
+): Promise<string[]> {
   await copyTorchFamily(prepared.srcSite, dstSite)
-  const familyRemoved = undeclaredFamilyPackages(prepared.entry.packages, dstSite)
-    .filter((pkg) => readDistInfoVersion(prepared.srcSite, pkg) === null)
+  const familyRemoved = undeclaredFamilyPackages(prepared.entry.packages, dstSite).filter(
+    (pkg) => readDistInfoVersion(prepared.srcSite, pkg) === null
+  )
   if (familyRemoved.length > 0) {
     await removeTorchFamilyPackages(dstSite, familyRemoved)
   }
@@ -574,14 +626,15 @@ async function runPipTorchInstall(
   prepared: PreparedPipStack,
   candidateVenv: string,
   backupVenv: string,
-  tools: TorchStackTools,
+  tools: TorchStackTools
 ): Promise<string[]> {
   const python = venvPython(candidateVenv)
   const activeUv = getActiveUvPath(installation)
   const uv = venvUv(backupVenv) ?? (fs.existsSync(activeUv) ? activeUv : null)
-  const pipCmd = (verb: string, args: string[]): [string, string[]] => uv
-    ? [uv, ['pip', verb, '--python', python, ...args]]
-    : [python, ['-m', 'pip', verb, ...(verb === 'uninstall' ? ['-y'] : []), ...args]]
+  const pipCmd = (verb: string, args: string[]): [string, string[]] =>
+    uv
+      ? [uv, ['pip', verb, '--python', python, ...args]]
+      : [python, ['-m', 'pip', verb, ...(verb === 'uninstall' ? ['-y'] : []), ...args]]
 
   const candidateSite = findSitePackages(candidateVenv)
   const plan = planPipReconciliation(prepared, candidateSite)
@@ -607,7 +660,11 @@ const RENAME_RETRY_TOTAL_MS = 30_000
 /** The signal is only passed for the pre-mutation rename (venv -> backup):
  *  until that rename succeeds nothing has been touched, so aborting there is
  *  a clean cancel. Rollback and commit renames must never be cancellable. */
-export async function renameWithLockRetry(src: string, dst: string, signal?: AbortSignal): Promise<void> {
+export async function renameWithLockRetry(
+  src: string,
+  dst: string,
+  signal?: AbortSignal
+): Promise<void> {
   const deadline = Date.now() + RENAME_RETRY_TOTAL_MS
   for (let delay = 250; ; delay = Math.min(delay * 2, 4_000)) {
     try {
@@ -646,11 +703,12 @@ export interface TorchStackResult {
 export async function applyTorchStackTransaction(
   installation: InstallationRecord,
   prepared: PreparedStack,
-  tools: TorchStackTools,
+  tools: TorchStackTools
 ): Promise<TorchStackResult> {
-  const { entry, packages } = prepared.kind === 'bundle'
-    ? { entry: prepared.entry, packages: prepared.entry.packages }
-    : { entry: prepared.entry, packages: prepared.packages }
+  const { entry, packages } =
+    prepared.kind === 'bundle'
+      ? { entry: prepared.entry, packages: prepared.entry.packages }
+      : { entry: prepared.entry, packages: prepared.packages }
   const accelVariant = prepared.kind === 'bundle' ? prepared.entry.variant : prepared.accelVariant
   const installPath = installation.installPath
   const venvPath = getActiveVenvDir(installation)
@@ -669,7 +727,10 @@ export async function applyTorchStackTransaction(
 
     // Refuse to start over the debris of a previous run (recovery owns that).
     if (fs.existsSync(backupPath)) {
-      return { ok: false, message: 'a previous PyTorch change did not finish; relaunch the app to recover, then retry' }
+      return {
+        ok: false,
+        message: 'a previous PyTorch change did not finish; relaunch the app to recover, then retry'
+      }
     }
     // Post-commit trash from a previous run whose deletion failed/died —
     // sweep it now so the commit rename below can't collide.
@@ -678,8 +739,9 @@ export async function applyTorchStackTransaction(
     }
 
     await writeJournal(installPath, {
-      version: 1, startedAt: Date.now(),
-      stackId: entry ? entry.stackId : `pip:${packages.torch}`,
+      version: 1,
+      startedAt: Date.now(),
+      stackId: entry ? entry.stackId : `pip:${packages.torch}`
     })
 
     try {
@@ -692,7 +754,10 @@ export async function applyTorchStackTransaction(
       tools.sendProgress('torch-swap', { percent: -1, status: 'Copying environment…' })
       await copyDirWithProgress(backupPath, venvPath, (copied, total) => {
         const percent = total > 0 ? Math.round((copied / total) * 60) : 0
-        tools.sendProgress('torch-swap', { percent, status: `Copying environment…  ${copied} / ${total}` })
+        tools.sendProgress('torch-swap', {
+          percent,
+          status: `Copying environment…  ${copied} / ${total}`
+        })
       })
 
       // 5. Swap the torch-family payload inside the copy: graft the bundle's
@@ -702,7 +767,8 @@ export async function applyTorchStackTransaction(
       let expectAbsent: string[]
       if (prepared.kind === 'bundle') {
         const dstSite = findSitePackages(venvPath)
-        if (!dstSite || !fs.existsSync(dstSite)) throw new Error('could not locate venv site-packages')
+        if (!dstSite || !fs.existsSync(dstSite))
+          throw new Error('could not locate venv site-packages')
         expectAbsent = await applyBundleGraft(prepared, dstSite)
       } else {
         expectAbsent = await runPipTorchInstall(installation, prepared, venvPath, backupPath, tools)
@@ -715,7 +781,7 @@ export async function applyTorchStackTransaction(
       tools.sendProgress('torch-swap', { percent: 85, status: 'Verifying PyTorch…' })
       const verifyErr = await verifyStack(installation, packages, accelVariant, {
         expectAbsent,
-        amdMultiArch: prepared.kind === 'pip' && prepared.source?.kind === 'amd-multi-arch-index',
+        amdMultiArch: prepared.kind === 'pip' && prepared.source?.kind === 'amd-multi-arch-index'
       })
       if (verifyErr) throw new Error(`verification failed: ${verifyErr}`)
 
@@ -731,8 +797,8 @@ export async function applyTorchStackTransaction(
             torchVersion: packages.torch,
             torchvisionVersion: packages.torchvision ?? null,
             torchaudioVersion: packages.torchaudio ?? null,
-            observedAt: new Date().toISOString(),
-          },
+            observedAt: new Date().toISOString()
+          }
         })
       }
 
@@ -743,7 +809,9 @@ export async function applyTorchStackTransaction(
       tools.sendProgress('torch-swap', { percent: 95, status: 'Cleaning up…' })
       await renameWithLockRetry(backupPath, gcPath)
     } catch (err) {
-      tools.sendOutput?.(`\nPyTorch change failed: ${(err as Error).message}\nRestoring previous environment…\n`)
+      tools.sendOutput?.(
+        `\nPyTorch change failed: ${(err as Error).message}\nRestoring previous environment…\n`
+      )
       try {
         await rollback(venvPath, backupPath)
         // Undo the step-7 metadata persist if the failure came after it (e.g.
@@ -754,17 +822,23 @@ export async function applyTorchStackTransaction(
         // from the actual installed tuple, and repair is skipped until it does.
         let metadataNote = ''
         try {
-          await tools.update({ lastVerifiedTorchStack: priorVerified, observedTorchStack: priorObserved })
+          await tools.update({
+            lastVerifiedTorchStack: priorVerified,
+            observedTorchStack: priorObserved
+          })
         } catch (mdErr) {
           metadataNote = ` (stack metadata could not be reset: ${(mdErr as Error).message}; it will be reconciled on next launch)`
         }
         await fs.promises.rm(journalPath(installPath), { force: true }).catch(() => {})
-        return { ok: false, message: `${(err as Error).message} — the previous environment was restored${metadataNote}` }
+        return {
+          ok: false,
+          message: `${(err as Error).message} — the previous environment was restored${metadataNote}`
+        }
       } catch (rbErr) {
         // Leave the journal in place: launch-time recovery retries the rollback.
         return {
           ok: false,
-          message: `${(err as Error).message} — rollback also failed (${(rbErr as Error).message}); it will be retried on next launch`,
+          message: `${(err as Error).message} — rollback also failed (${(rbErr as Error).message}); it will be retried on next launch`
         }
       }
     }
@@ -798,7 +872,9 @@ export async function applyTorchStackTransaction(
  * Throws when the rollback itself fails — launching over a half-swapped venv
  * would defeat the transaction, so callers must fail the launch closed.
  */
-export async function recoverTorchStackTransaction(installation: InstallationRecord): Promise<boolean> {
+export async function recoverTorchStackTransaction(
+  installation: InstallationRecord
+): Promise<boolean> {
   const installPath = installation.installPath
   const venvPath = getActiveVenvDir(installation)
   const backupPath = venvPath + BACKUP_SUFFIX
@@ -807,8 +883,10 @@ export async function recoverTorchStackTransaction(installation: InstallationRec
   // Debris sweeps are best-effort: staging from a kill during prepare, gc
   // from a kill during post-commit deletion. Neither affects correctness.
   const staging = path.join(installPath, STAGING_DIR)
-  if (fs.existsSync(staging)) await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {})
-  if (fs.existsSync(gcPath)) await fs.promises.rm(gcPath, { recursive: true, force: true }).catch(() => {})
+  if (fs.existsSync(staging))
+    await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {})
+  if (fs.existsSync(gcPath))
+    await fs.promises.rm(gcPath, { recursive: true, force: true }).catch(() => {})
   await fs.promises.rm(`${journalPath(installPath)}.tmp`, { force: true }).catch(() => {})
 
   const hasJournal = fs.existsSync(journalPath(installPath))

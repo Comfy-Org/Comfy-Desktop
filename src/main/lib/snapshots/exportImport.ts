@@ -74,7 +74,12 @@ function isValidTorchStack(v: unknown): boolean {
   if (obj.kind !== 'managed') return false
   const ref = obj.ref as Record<string, unknown> | undefined
   if (!ref || typeof ref !== 'object') return false
-  if (typeof ref.stackId !== 'string' || typeof ref.variant !== 'string' || typeof ref.pythonVersion !== 'string') return false
+  if (
+    typeof ref.stackId !== 'string' ||
+    typeof ref.variant !== 'string' ||
+    typeof ref.pythonVersion !== 'string'
+  )
+    return false
   const packages = ref.packages as Record<string, unknown> | undefined
   if (!packages || typeof packages !== 'object') return false
   if (!isVersionValid(packages.torch)) return false
@@ -87,8 +92,11 @@ function isValidTorchStack(v: unknown): boolean {
     return typeof source.variant === 'string' && typeof source.bundleTag === 'string'
   }
   if (source.kind === 'pytorch-index') {
-    return ['cuda', 'xpu', 'rocm', 'cpu'].includes(source.backend as string) &&
-      typeof source.indexTag === 'string' && /^[a-z0-9.]+$/.test(source.indexTag as string)
+    return (
+      ['cuda', 'xpu', 'rocm', 'cpu'].includes(source.backend as string) &&
+      typeof source.indexTag === 'string' &&
+      /^[a-z0-9.]+$/.test(source.indexTag as string)
+    )
   }
   // AMD multi-arch entries carry only a rocm tag that must match the torch
   // build itself - the index URL is a hardcoded app constant, so a snapshot
@@ -106,7 +114,8 @@ function isValidSnapshot(s: unknown): s is Snapshot {
   const obj = s as Record<string, unknown>
   if (obj.version !== 1 && obj.version !== 2) return false
   // torchStack is a v2 concept; a v1 snapshot carrying one is malformed.
-  if (obj.torchStack !== undefined && (obj.version !== 2 || !isValidTorchStack(obj.torchStack))) return false
+  if (obj.torchStack !== undefined && (obj.version !== 2 || !isValidTorchStack(obj.torchStack)))
+    return false
   if (typeof obj.createdAt !== 'string' || isNaN(Date.parse(obj.createdAt))) return false
   if (typeof obj.trigger !== 'string' || !VALID_TRIGGERS.has(obj.trigger)) return false
   if (obj.comfyui == null || typeof obj.comfyui !== 'object') return false

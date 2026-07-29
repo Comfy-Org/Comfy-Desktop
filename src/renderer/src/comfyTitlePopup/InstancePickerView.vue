@@ -169,13 +169,8 @@ const installations = computed<Installation[]>(
   () => props.snapshot.installs as unknown as Installation[]
 )
 const installationsRef = toRef(() => installations.value)
-const {
-  searchQuery,
-  activeFilter,
-  visibleInstalls,
-  showEmptyHint,
-  lastLaunchedShortLabel
-} = useInstallList({ installations: installationsRef })
+const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } =
+  useInstallList({ installations: installationsRef })
 
 const visibleChips = computed(() => {
   return FILTER_CHIPS.filter((chip) => {
@@ -359,7 +354,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
   // opts.actionData may be a Vue reactive proxy, which can't cross the
   // contextBridge structured-clone boundary; deep-clone to a plain object.
   const rawActionData = opts.actionData
-    ? JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>
+    ? (JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>)
     : undefined
   const { routing, successChoice } = resolveProgressRouting(
     opts,
@@ -378,7 +373,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       cancellable: opts.cancellable ?? false,
       title: opts.title,
       actionId: opts.actionId,
-      actionData: rawActionData,
+      actionData: rawActionData
     })
     selectedId.value = opts.installationId
     bridge?.pickerStartBackgroundOp({
@@ -387,7 +382,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       actionData: rawActionData,
       title: opts.title,
       cancellable: opts.cancellable,
-      opKind: opts.opKind,
+      opKind: opts.opKind
     })
     return
   }
@@ -420,7 +415,7 @@ function handleInlineProgressRetry(): void {
     actionId: op.actionId,
     actionData: op.actionData,
     title: op.title,
-    cancellable: op.cancellable,
+    cancellable: op.cancellable
   })
 }
 
@@ -461,12 +456,9 @@ const instanceActions = useInstanceActions({
       messageDetails: [
         {
           label: t('instancePicker.confirmHeadsUp'),
-          items: [
-            t('instancePicker.restartConfirmItem1'),
-            t('instancePicker.restartConfirmItem2'),
-          ],
-        },
-      ],
+          items: [t('instancePicker.restartConfirmItem1'), t('instancePicker.restartConfirmItem2')]
+        }
+      ]
     })
     return result === 'primary'
   },
@@ -487,15 +479,12 @@ const instanceActions = useInstanceActions({
       messageDetails: [
         {
           label: t('instancePicker.confirmHeadsUp'),
-          items: [
-            t('instancePicker.switchConfirmItem1'),
-            t('instancePicker.switchConfirmItem2'),
-          ],
-        },
-      ],
+          items: [t('instancePicker.switchConfirmItem1'), t('instancePicker.switchConfirmItem2')]
+        }
+      ]
     })
     return result === 'primary' ? 'switch' : result === 'secondary' ? 'new-window' : 'cancel'
-  },
+  }
 })
 
 async function handleExpandedNav(decision: NavDecision): Promise<void> {
@@ -565,7 +554,10 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     <div class="picker-body">
       <div class="picker-left">
         <div class="picker-list-section">
-          <div class="picker-list-section-title">{{ $t('instancePicker.instances') }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" /></div>
+          <div class="picker-list-section-title">
+            {{ $t('instancePicker.instances')
+            }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
+          </div>
 
           <TransitionGroup
             tag="div"

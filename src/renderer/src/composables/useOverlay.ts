@@ -34,13 +34,11 @@ export interface TakeoverOverlay {
   onCancel?: () => void
 }
 
-export type Overlay =
-  | ProgressOverlay
-  | TakeoverOverlay
+export type Overlay = ProgressOverlay | TakeoverOverlay
 
 const TIER: Record<OverlayKind, 2 | 3> = {
   progress: 2,
-  takeover: 3,
+  takeover: 3
 }
 
 export function tierOf(o: Overlay | null): 0 | 2 | 3 {
@@ -76,7 +74,7 @@ export function useOverlay(): UseOverlayApi {
         title: t('overlay.quitSetupTitle'),
         message: t('overlay.quitSetupMessage'),
         confirmLabel: t('overlay.quitSetupConfirm'),
-        confirmStyle: 'danger',
+        confirmStyle: 'danger'
       })
     }
     if (cur.kind === 'takeover' && cur.cancelCopyKey === 'discard-setup') {
@@ -84,11 +82,11 @@ export function useOverlay(): UseOverlayApi {
         title: t('overlay.discardSetupTitle'),
         message: t('overlay.discardSetupMessage'),
         confirmLabel: t('overlay.discardSetupConfirm'),
-        confirmStyle: 'danger',
+        confirmStyle: 'danger'
       })
     }
     const curName =
-      (cur.kind === 'progress' || cur.kind === 'takeover') ? cur.operationName : undefined
+      cur.kind === 'progress' || cur.kind === 'takeover' ? cur.operationName : undefined
     const title = curName
       ? t('overlay.cancelNamedTitle', { name: curName })
       : t('overlay.cancelCurrentTitle')
@@ -96,7 +94,7 @@ export function useOverlay(): UseOverlayApi {
       title,
       message: t('overlay.cancelMessage'),
       confirmLabel: t('overlay.cancelConfirm'),
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
   }
 

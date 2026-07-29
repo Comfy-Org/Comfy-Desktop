@@ -11,7 +11,7 @@ withDefaults(
     side?: TooltipSide
     align?: TooltipAlign
   }>(),
-  { text: undefined, side: 'top', align: 'center' },
+  { text: undefined, side: 'top', align: 'center' }
 )
 </script>
 

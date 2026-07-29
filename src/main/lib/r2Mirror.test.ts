@@ -3,9 +3,7 @@ import { R2_BASE_URL, R2_MIRROR_BASE_URL, r2MirrorUrl } from './r2Mirror'
 
 describe('r2MirrorUrl', () => {
   it('rewrites the host while preserving the path', () => {
-    expect(r2MirrorUrl(`${R2_BASE_URL}/latest.json`)).toBe(
-      `${R2_MIRROR_BASE_URL}/latest.json`
-    )
+    expect(r2MirrorUrl(`${R2_BASE_URL}/latest.json`)).toBe(`${R2_MIRROR_BASE_URL}/latest.json`)
     expect(r2MirrorUrl(`${R2_BASE_URL}/linux-nvidia/v0.20.1-env1/foo.7z`)).toBe(
       `${R2_MIRROR_BASE_URL}/linux-nvidia/v0.20.1-env1/foo.7z`
     )

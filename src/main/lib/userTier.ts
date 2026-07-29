@@ -18,7 +18,7 @@ const PAID_TIER_NAMES: ReadonlySet<string> = new Set([
   'STANDARD',
   'CREATOR',
   'PRO',
-  'FOUNDERS_EDITION',
+  'FOUNDERS_EDITION'
 ])
 
 const PERSIST_FILENAME = 'cloud-user-tier.json'
@@ -52,7 +52,7 @@ export function initUserTier(): Promise<void> {
     } catch {
       // first launch, missing file, or corrupt — stay 'unknown'
     }
-     
+
     console.log('[user-tier] init: persisted=', cached)
   })()
   return initPromise
@@ -89,17 +89,12 @@ async function setTier(rawTierName: string | null | undefined): Promise<void> {
   if (previous === 'free' || previous === 'paid') {
     telemetry.capture('comfy.desktop.billing.tier_changed', {
       from_tier: previous,
-      to_tier: next,
+      to_tier: next
     })
   }
   try {
-    await fs.writeFile(
-      getPersistPath(),
-      JSON.stringify({ tier: next, ts: Date.now() }),
-      'utf-8',
-    )
+    await fs.writeFile(getPersistPath(), JSON.stringify({ tier: next, ts: Date.now() }), 'utf-8')
   } catch (err) {
-     
     console.log('[user-tier] persist failed:', err)
   }
 }
@@ -158,15 +153,13 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
       return
     }
     if (result.error) {
-       
       console.log('[user-tier] refresh skipped:', result.error)
       return
     }
     await setTier(result.tier ?? null)
-     
+
     console.log('[user-tier] refresh: raw=', result.tier, '→ cached=', cached)
   } catch (err) {
-     
     console.log('[user-tier] executeJavaScript failed:', err)
   }
 }

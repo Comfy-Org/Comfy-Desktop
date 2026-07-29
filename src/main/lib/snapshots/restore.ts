@@ -1,10 +1,23 @@
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
-import { readGitHead, isGitAvailable, gitClone, gitCheckoutCommit, gitFetchAndCheckout, type ProcessResult } from '../git'
+import {
+  readGitHead,
+  isGitAvailable,
+  gitClone,
+  gitCheckoutCommit,
+  gitFetchAndCheckout,
+  type ProcessResult
+} from '../git'
 import { rewriteCloneUrl } from '../github-mirror'
 import { scanCustomNodes, nodeKey } from '../nodes'
-import { pipFreeze, runUvPip as sharedRunUvPip, installFilteredRequirements, getPipIndexArgs, type PipMirrorConfig } from '../pip'
+import {
+  pipFreeze,
+  runUvPip as sharedRunUvPip,
+  installFilteredRequirements,
+  getPipIndexArgs,
+  type PipMirrorConfig
+} from '../pip'
 import { installCnrNode, switchCnrVersion, isSafePathComponent } from '../cnr'
 import { killProcTree } from '../process'
 import { formatComfyVersion } from '../version'
@@ -22,16 +35,31 @@ import * as settings from '../../settings'
  *  restore fine (torchsde, torchmetrics, torchdiffeq…) must stay managed by
  *  the pip sync, or v1 snapshots could never fully restore. */
 const PROTECTED_EXACT = new Set([
-  'pip', 'setuptools', 'wheel', 'uv',
-  'torch', 'torchvision', 'torchaudio', 'torio', 'functorch', 'triton',
+  'pip',
+  'setuptools',
+  'wheel',
+  'uv',
+  'torch',
+  'torchvision',
+  'torchaudio',
+  'torio',
+  'functorch',
+  'triton',
   // Intel XPU runtime family members protected by exact name because a
   // prefix would swallow unrelated user packages (mkl-fft, mkl-service,
   // intel-extension-for-pytorch, ...). 'pyelftools' is general-purpose but
   // a hard dependency of the XPU triton build - the sync removing it breaks
   // the protected triton, so it is protected with it (tradeoff: a snapshot
   // recording pyelftools for its own sake will not install it either).
-  'mkl', 'intel-opencl-rt', 'intel-openmp', 'intel-pti', 'intel-sycl-rt',
-  'tbb', 'tcmlib', 'umf', 'pyelftools',
+  'mkl',
+  'intel-opencl-rt',
+  'intel-openmp',
+  'intel-pti',
+  'intel-sycl-rt',
+  'tbb',
+  'tcmlib',
+  'umf',
+  'pyelftools'
 ])
 // Prefixes matched as `<prefix>` / `<prefix>-*` / `<prefix>_*` (never a bare
 // substring — 'torchsde' must not match 'torch'): torch-tensorrt and
@@ -54,16 +82,29 @@ const PROTECTED_EXACT = new Set([
 // intel-extension-for-pytorch) must stay snapshot-restorable - the
 // remaining runtime members are protected by exact name above.
 const PROTECTED_PREFIXES = [
-  'torch', 'nvidia', 'triton', 'pytorch-triton', 'cuda', 'rocm',
-  'amd-torch-device', 'amd-torchvision-device', 'amd-torchaudio-device',
-  'intel-cmplr', 'onemkl', 'dpcpp', 'oneccl', 'impi', 'level-zero',
+  'torch',
+  'nvidia',
+  'triton',
+  'pytorch-triton',
+  'cuda',
+  'rocm',
+  'amd-torch-device',
+  'amd-torchvision-device',
+  'amd-torchaudio-device',
+  'intel-cmplr',
+  'onemkl',
+  'dpcpp',
+  'oneccl',
+  'impi',
+  'level-zero'
 ]
 
 export function isProtectedPackage(name: string): boolean {
   const lower = name.toLowerCase()
   if (PROTECTED_EXACT.has(lower)) return true
-  return PROTECTED_PREFIXES.some((prefix) =>
-    lower === prefix || lower.startsWith(`${prefix}-`) || lower.startsWith(`${prefix}_`))
+  return PROTECTED_PREFIXES.some(
+    (prefix) => lower === prefix || lower.startsWith(`${prefix}-`) || lower.startsWith(`${prefix}_`)
+  )
 }
 
 /** Constraint pins for the currently installed protected packages. Only plain
@@ -72,7 +113,10 @@ export function isProtectedPackage(name: string): boolean {
  *  are skipped — the post-repair freeze diff still flags any drift on them. */
 export function buildProtectedConstraints(freeze: Record<string, string>): string[] {
   return Object.entries(freeze)
-    .filter(([name, version]) => isProtectedPackage(name) && /^\d/.test(version) && !version.includes('://'))
+    .filter(
+      ([name, version]) =>
+        isProtectedPackage(name) && /^\d/.test(version) && !version.includes('://')
+    )
     .map(([name, version]) => `${name}==${version}`)
 }
 
@@ -94,7 +138,7 @@ export interface ProtectedDriftEntry {
  */
 export async function protectedPackageDrift(
   installation: InstallationRecord,
-  targetPips: Record<string, string>,
+  targetPips: Record<string, string>
 ): Promise<ProtectedDriftEntry[]> {
   const uvPath = getActiveUvPath(installation)
   const pythonPath = getActivePythonPath(installation)
@@ -108,8 +152,12 @@ export async function protectedPackageDrift(
   // case-insensitive and treat -/_/. as equivalent, so snapshot `Torch` and
   // live `torch` are the same package, not one missing and one extra.
   const canon = (name: string): string => name.toLowerCase().replace(/[-_.]+/g, '-')
-  const liveByCanon = new Map(Object.entries(live).map(([name, version]) => [canon(name), { name, version }]))
-  const targetByCanon = new Map(Object.entries(targetPips).map(([name, version]) => [canon(name), { name, version }]))
+  const liveByCanon = new Map(
+    Object.entries(live).map(([name, version]) => [canon(name), { name, version }])
+  )
+  const targetByCanon = new Map(
+    Object.entries(targetPips).map(([name, version]) => [canon(name), { name, version }])
+  )
   const drift: ProtectedDriftEntry[] = []
   for (const [key, target] of targetByCanon) {
     if (!isProtectedPackage(key)) continue
@@ -262,7 +310,10 @@ export async function restoreComfyUIVersion(
   }
 
   const currentHead = readGitHead(comfyuiDir)
-  if (currentHead && (currentHead.startsWith(targetCommit) || targetCommit.startsWith(currentHead))) {
+  if (
+    currentHead &&
+    (currentHead.startsWith(targetCommit) || targetCommit.startsWith(currentHead))
+  ) {
     return { changed: false, commit: currentHead }
   }
 
@@ -296,9 +347,10 @@ export async function restoreComfyUIVersion(
  * update preference; omit it to leave whatever channel the install was built
  * with (the restore re-applies the channel via buildPostRestoreState).
  */
-export function frozenSnapshotInstallOverrides(
-  snapshotUpdateChannel?: string
-): { autoUpdateComfyUI: false; updateChannel?: 'stable' | 'latest' } {
+export function frozenSnapshotInstallOverrides(snapshotUpdateChannel?: string): {
+  autoUpdateComfyUI: false
+  updateChannel?: 'stable' | 'latest'
+} {
   return {
     autoUpdateComfyUI: false,
     ...(snapshotUpdateChannel !== undefined
@@ -328,7 +380,7 @@ export function buildPostRestoreState(
     restoredComfyVersion = {
       commit: headCommit,
       baseTag: targetSnapshot.comfyui.baseTag,
-      commitsAhead: targetSnapshot.comfyui.commitsAhead,
+      commitsAhead: targetSnapshot.comfyui.commitsAhead
     }
   } else {
     restoredComfyVersion = currentComfyVersion
@@ -346,12 +398,12 @@ export function buildPostRestoreState(
       postUpdateHead: headCommit,
       backupBranch: null,
       channel: targetChannel,
-      updatedAt: Date.now(),
+      updatedAt: Date.now()
     },
     updateInfoByChannel: {
       ...(existingUpdateInfo || {}),
-      [targetChannel]: { installedTag },
-    },
+      [targetChannel]: { installedTag }
+    }
   }
 
   return state
@@ -368,8 +420,12 @@ export async function restorePipPackages(
   mirrors?: PipMirrorConfig
 ): Promise<RestoreResult> {
   const result: RestoreResult = {
-    installed: [], removed: [], changed: [],
-    protectedSkipped: [], failed: [], errors: [],
+    installed: [],
+    removed: [],
+    changed: [],
+    protectedSkipped: [],
+    failed: [],
+    errors: []
   }
 
   const uvPath = getActiveUvPath(installation)
@@ -431,7 +487,8 @@ export async function restorePipPackages(
   if (newPkgs.length > 0) pipPlanParts.push(`install ${newPkgs.length}`)
   if (result.changed.length > 0) pipPlanParts.push(`change ${result.changed.length}`)
   if (toRemove.length > 0) pipPlanParts.push(`remove ${toRemove.length}`)
-  if (result.protectedSkipped.length > 0) pipPlanParts.push(`${result.protectedSkipped.length} protected (skipped)`)
+  if (result.protectedSkipped.length > 0)
+    pipPlanParts.push(`${result.protectedSkipped.length} protected (skipped)`)
   if (pipPlanParts.length > 0) {
     sendOutput(`\nPlan: ${pipPlanParts.join(', ')} package(s)\n\n`)
   } else {
@@ -457,7 +514,7 @@ export async function restorePipPackages(
 
   const packagesToBackup = [
     ...toInstall.filter((p) => p.name in currentPips).map((p) => p.name),
-    ...toRemove,
+    ...toRemove
   ]
 
   let backupDir: string | null = null
@@ -476,7 +533,13 @@ export async function restorePipPackages(
 
       // Try bulk install first
       sendOutput(`\nInstalling ${specs.length} package(s)…\n`)
-      const bulkResult = await runUvPip(uvPath, ['pip', 'install', ...specs, '--python', pythonPath, ...indexArgs], installPath, sendOutput, signal)
+      const bulkResult = await runUvPip(
+        uvPath,
+        ['pip', 'install', ...specs, '--python', pythonPath, ...indexArgs],
+        installPath,
+        sendOutput,
+        signal
+      )
 
       if (bulkResult !== 0) {
         sendOutput('\n⚠ Bulk install failed, falling back to one-by-one with --no-deps\n\n')
@@ -489,7 +552,11 @@ export async function restorePipPackages(
           sendProgress('restore', { percent, status: `Installing ${name}…` })
 
           const singleResult = await runUvPip(
-            uvPath, ['pip', 'install', spec, '--no-deps', '--python', pythonPath, ...indexArgs], installPath, sendOutput, signal
+            uvPath,
+            ['pip', 'install', spec, '--no-deps', '--python', pythonPath, ...indexArgs],
+            installPath,
+            sendOutput,
+            signal
           )
 
           if (singleResult !== 0) {
@@ -510,11 +577,18 @@ export async function restorePipPackages(
 
     // 5. Remove extra packages (present in current but absent from snapshot)
     if (toRemove.length > 0 && !signal?.aborted) {
-      sendProgress('restore', { percent: 75, status: `Removing ${toRemove.length} extra package(s)…` })
+      sendProgress('restore', {
+        percent: 75,
+        status: `Removing ${toRemove.length} extra package(s)…`
+      })
       sendOutput(`\nRemoving ${toRemove.length} extra package(s)…\n`)
 
       const removeResult = await runUvPip(
-        uvPath, ['pip', 'uninstall', ...toRemove, '--python', pythonPath], installPath, sendOutput, signal
+        uvPath,
+        ['pip', 'uninstall', ...toRemove, '--python', pythonPath],
+        installPath,
+        sendOutput,
+        signal
       )
 
       if (removeResult === 0) {
@@ -522,7 +596,11 @@ export async function restorePipPackages(
       } else {
         for (const name of toRemove) {
           const singleResult = await runUvPip(
-            uvPath, ['pip', 'uninstall', name, '--python', pythonPath], installPath, sendOutput, signal
+            uvPath,
+            ['pip', 'uninstall', name, '--python', pythonPath],
+            installPath,
+            sendOutput,
+            signal
           )
           if (singleResult === 0) {
             result.removed.push(name)
@@ -548,7 +626,10 @@ export async function restorePipPackages(
       // partially installed packages without populating result.installed.
       if (newPkgNames.length > 0) {
         await runUvPip(
-          uvPath, ['pip', 'uninstall', ...newPkgNames, '--python', pythonPath], installPath, sendOutput
+          uvPath,
+          ['pip', 'uninstall', ...newPkgNames, '--python', pythonPath],
+          installPath,
+          sendOutput
         ).catch(() => {})
       }
 
@@ -634,9 +715,14 @@ export async function repairNodeRequirements(
       const label = path.relative(comfyuiDir, reqPath)
       try {
         const code = await installFilteredRequirements(
-          reqPath, uvPath, pythonPath, installPath,
+          reqPath,
+          uvPath,
+          pythonPath,
+          installPath,
           `.repair-reqs-${normalizeDistInfoName(path.basename(path.dirname(reqPath)))}.txt`,
-          sendOutput, signal, mirrors,
+          sendOutput,
+          signal,
+          mirrors,
           constraintLines.length > 0 ? ['--constraint', constraintPath] : undefined
         )
         if (code !== 0) result.errors.push(`Requirements repair failed for ${label} (exit ${code})`)
@@ -698,9 +784,20 @@ async function runPostInstallScripts(
   const reqPath = path.join(nodePath, 'requirements.txt')
   if (fs.existsSync(reqPath)) {
     try {
-      await installFilteredRequirements(reqPath, uvPath, pythonPath, installPath, `.restore-reqs-${path.basename(nodePath)}.txt`, sendOutput, signal, mirrors)
+      await installFilteredRequirements(
+        reqPath,
+        uvPath,
+        pythonPath,
+        installPath,
+        `.restore-reqs-${path.basename(nodePath)}.txt`,
+        sendOutput,
+        signal,
+        mirrors
+      )
     } catch (err) {
-      sendOutput(`⚠ requirements.txt failed for ${path.basename(nodePath)}: ${(err as Error).message}\n`)
+      sendOutput(
+        `⚠ requirements.txt failed for ${path.basename(nodePath)}: ${(err as Error).message}\n`
+      )
     }
   }
 
@@ -711,7 +808,7 @@ async function runPostInstallScripts(
         const proc = spawn(pythonPath, ['-s', installScript], {
           cwd: nodePath,
           stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
+          windowsHide: true
         })
 
         const onAbort = () => {
@@ -756,8 +853,14 @@ export async function restoreCustomNodes(
   mirrors?: PipMirrorConfig
 ): Promise<NodeRestoreResult> {
   const result: NodeRestoreResult = {
-    installed: [], switched: [], enabled: [], disabled: [],
-    removed: [], skipped: [], failed: [], unreportable: [],
+    installed: [],
+    switched: [],
+    enabled: [],
+    disabled: [],
+    removed: [],
+    skipped: [],
+    failed: [],
+    unreportable: []
   }
 
   const comfyuiDir = path.join(installPath, 'ComfyUI')
@@ -769,14 +872,15 @@ export async function restoreCustomNodes(
   const currentNodes = await scanCustomNodes(comfyuiDir)
   const currentByKey = new Map(currentNodes.map((n) => [nodeKey(n), n]))
   const targetByKey = new Map(targetSnapshot.customNodes.map((n) => [nodeKey(n), n]))
-  sendOutput(`Found ${currentNodes.length} current node(s), target snapshot has ${targetSnapshot.customNodes.length}\n`)
+  sendOutput(
+    `Found ${currentNodes.length} current node(s), target snapshot has ${targetSnapshot.customNodes.length}\n`
+  )
 
   // Check git availability for git node operations
-  const needsGit = targetSnapshot.customNodes.some((n) =>
-    n.type === 'git' && (
-      !currentByKey.has(nodeKey(n)) ||
-      currentByKey.get(nodeKey(n))?.commit !== n.commit
-    )
+  const needsGit = targetSnapshot.customNodes.some(
+    (n) =>
+      n.type === 'git' &&
+      (!currentByKey.has(nodeKey(n)) || currentByKey.get(nodeKey(n))?.commit !== n.commit)
   )
   const gitAvailable = needsGit ? await isGitAvailable() : false
   if (needsGit && !gitAvailable) {
@@ -803,9 +907,17 @@ export async function restoreCustomNodes(
     } else if (currentNode.enabled && !targetNode.enabled) {
       toDisable.push(targetNode.id)
     } else if (targetNode.enabled || currentNode.enabled) {
-      if (targetNode.type === 'cnr' && targetNode.version && currentNode.version !== targetNode.version) {
+      if (
+        targetNode.type === 'cnr' &&
+        targetNode.version &&
+        currentNode.version !== targetNode.version
+      ) {
         toSwitch.push(targetNode.id)
-      } else if (targetNode.type === 'git' && targetNode.commit && currentNode.commit !== targetNode.commit) {
+      } else if (
+        targetNode.type === 'git' &&
+        targetNode.commit &&
+        currentNode.commit !== targetNode.commit
+      ) {
         toSwitch.push(targetNode.id)
       }
     }
@@ -840,7 +952,10 @@ export async function restoreCustomNodes(
         result.removed.push(currentNode.id)
         sendOutput(`Removed ${currentNode.id}\n`)
       } catch (err) {
-        result.failed.push({ id: currentNode.id, error: `remove failed: ${(err as Error).message}` })
+        result.failed.push({
+          id: currentNode.id,
+          error: `remove failed: ${(err as Error).message}`
+        })
       }
     }
   }
@@ -902,18 +1017,29 @@ export async function restoreCustomNodes(
         }
         try {
           const dest = path.join(customNodesDir, targetNode.dirName)
-          const cloneUrl = rewriteCloneUrl(targetNode.url, settings.get('useChineseMirrors') === true)
+          const cloneUrl = rewriteCloneUrl(
+            targetNode.url,
+            settings.get('useChineseMirrors') === true
+          )
           const cloneResult = await gitClone(cloneUrl, dest, sendOutput, signal)
           if (signal?.aborted) {
             await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
             break
           }
           if (cloneResult.exitCode !== 0) {
-            result.failed.push({ id: targetNode.id, error: gitFailureMessage('git clone', cloneResult) })
+            result.failed.push({
+              id: targetNode.id,
+              error: gitFailureMessage('git clone', cloneResult)
+            })
             continue
           }
           if (targetNode.commit) {
-            const checkoutResult = await gitCheckoutCommit(dest, targetNode.commit, sendOutput, signal)
+            const checkoutResult = await gitCheckoutCommit(
+              dest,
+              targetNode.commit,
+              sendOutput,
+              signal
+            )
             if (signal?.aborted) {
               await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
               break
@@ -922,7 +1048,10 @@ export async function restoreCustomNodes(
               // Remove the fresh clone so the failed restore doesn't leave a
               // wrong-commit node behind to be scanned as installed on next boot.
               await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
-              result.failed.push({ id: targetNode.id, error: gitFailureMessage('git checkout', checkoutResult) })
+              result.failed.push({
+                id: targetNode.id,
+                error: gitFailureMessage('git checkout', checkoutResult)
+              })
               continue
             }
           }
@@ -962,7 +1091,10 @@ export async function restoreCustomNodes(
         result.disabled.push(targetNode.id)
         sendOutput(`Disabled ${targetNode.id}\n`)
       } catch (err) {
-        result.failed.push({ id: targetNode.id, error: `disable failed: ${(err as Error).message}` })
+        result.failed.push({
+          id: targetNode.id,
+          error: `disable failed: ${(err as Error).message}`
+        })
       }
       continue
     }
@@ -971,7 +1103,11 @@ export async function restoreCustomNodes(
     if (targetNode.enabled || currentNode.enabled) {
       const nodePath = path.join(customNodesDir, currentNode.dirName)
 
-      if (targetNode.type === 'cnr' && targetNode.version && currentNode.version !== targetNode.version) {
+      if (
+        targetNode.type === 'cnr' &&
+        targetNode.version &&
+        currentNode.version !== targetNode.version
+      ) {
         try {
           await switchCnrVersion(targetNode.id, targetNode.version, nodePath, sendOutput)
           result.switched.push(targetNode.id)
@@ -980,17 +1116,29 @@ export async function restoreCustomNodes(
           if (signal?.aborted) break
           result.failed.push({ id: targetNode.id, error: (err as Error).message })
         }
-      } else if (targetNode.type === 'git' && targetNode.commit && currentNode.commit !== targetNode.commit) {
+      } else if (
+        targetNode.type === 'git' &&
+        targetNode.commit &&
+        currentNode.commit !== targetNode.commit
+      ) {
         if (!gitAvailable) {
           result.failed.push({ id: targetNode.id, error: 'git not available' })
         } else {
-          const checkoutResult = await gitCheckoutCommit(nodePath, targetNode.commit, sendOutput, signal)
+          const checkoutResult = await gitCheckoutCommit(
+            nodePath,
+            targetNode.commit,
+            sendOutput,
+            signal
+          )
           if (signal?.aborted) break
           if (checkoutResult.exitCode === 0) {
             result.switched.push(targetNode.id)
             nodesNeedingPostInstall.push(nodePath)
           } else {
-            result.failed.push({ id: targetNode.id, error: gitFailureMessage('git checkout', checkoutResult) })
+            result.failed.push({
+              id: targetNode.id,
+              error: gitFailureMessage('git checkout', checkoutResult)
+            })
           }
         }
       } else {
@@ -1011,7 +1159,15 @@ export async function restoreCustomNodes(
       for (const nodePath of nodesNeedingPostInstall) {
         if (signal?.aborted) break
         sendOutput(`\nRunning post-install for ${path.basename(nodePath)}…\n`)
-        await runPostInstallScripts(nodePath, uvPath, pythonPath, installPath, sendOutput, signal, mirrors)
+        await runPostInstallScripts(
+          nodePath,
+          uvPath,
+          pythonPath,
+          installPath,
+          sendOutput,
+          signal,
+          mirrors
+        )
       }
     } else {
       sendOutput('⚠ Cannot run post-install scripts: uv or Python environment not found\n')
@@ -1028,7 +1184,16 @@ export async function restoreCustomNodes(
       if (pythonPath && fs.existsSync(uvPath)) {
         sendOutput('\nInstalling manager requirements…\n')
         try {
-          const mgrResult = await installFilteredRequirements(mgrReqPath, uvPath, pythonPath, installPath, '.restore-mgr-reqs.txt', sendOutput, signal, mirrors)
+          const mgrResult = await installFilteredRequirements(
+            mgrReqPath,
+            uvPath,
+            pythonPath,
+            installPath,
+            '.restore-mgr-reqs.txt',
+            sendOutput,
+            signal,
+            mirrors
+          )
           if (mgrResult !== 0) {
             sendOutput(`⚠ manager requirements install exited with code ${mgrResult}\n`)
           }

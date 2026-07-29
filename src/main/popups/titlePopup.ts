@@ -1246,13 +1246,19 @@ function computeCenteredCardBounds(
 ): { x: number; y: number; width: number; height: number } {
   const clamp = CENTERED_CARD_CLAMPS[kind]
   const { width: cw, height: ch } = parent.getContentBounds()
-  const width = Math.min(clamp.maxWidth, Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio)))
+  const width = Math.min(
+    clamp.maxWidth,
+    Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio))
+  )
   const height = Math.min(
     clamp.maxHeight,
     Math.max(clamp.minHeight, Math.round(ch * clamp.heightRatio))
   )
   const x = Math.max(0, Math.round((cw - width) / 2))
-  const y = Math.max(TITLEBAR_HEIGHT, Math.round(TITLEBAR_HEIGHT + (ch - TITLEBAR_HEIGHT - height) / 2))
+  const y = Math.max(
+    TITLEBAR_HEIGHT,
+    Math.round(TITLEBAR_HEIGHT + (ch - TITLEBAR_HEIGHT - height) / 2)
+  )
   return { x, y, width, height }
 }
 
@@ -1593,7 +1599,10 @@ export interface TitlePopupHostBindings {
    *  the picker's host untouched so the current instance keeps running.
    *  `allowDuplicate` opens a second window for an install that already owns one
    *  (cloud-self; no local process to collide). */
-  openInstallInNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => Promise<void> | void
+  openInstallInNewWindow: (
+    installationId: string,
+    opts?: { allowDuplicate?: boolean }
+  ) => Promise<void> | void
   /** Picker → Restart on a running install. Gracefully stops the running
    *  session and re-launches via the same focus-or-launch path the picker
    *  normally uses. `parentEntryId` threads the picker's host through so
@@ -2624,7 +2633,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const confirmed = payload?.confirmed === true
       hideTitlePopup(entry, { releaseFocusToParent: false })
       Promise.resolve(
-        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed }),
+        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
       ).catch((err) => console.error('pickInstallFromPicker failed:', err))
     }
   )
@@ -2640,7 +2649,9 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       if (typeof installationId !== 'string' || installationId.length === 0) return
       hideTitlePopup(entry, { releaseFocusToParent: false })
       Promise.resolve(
-        bindings.openInstallInNewWindow(installationId, { allowDuplicate: payload?.allowDuplicate === true }),
+        bindings.openInstallInNewWindow(installationId, {
+          allowDuplicate: payload?.allowDuplicate === true
+        })
       ).catch((err) => console.error('openInstallInNewWindow failed:', err))
     }
   )
@@ -2663,7 +2674,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const confirmed = payload?.confirmed === true
       hideTitlePopup(entry, { releaseFocusToParent: false })
       Promise.resolve(
-        bindings.restartInstallFromPicker(installationId, entry.parentEntryId, { confirmed }),
+        bindings.restartInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
       ).catch((err) => console.error('restartInstallFromPicker failed:', err))
     }
   )
@@ -2972,12 +2983,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   // Reveal a file in the OS file manager (highlights it in its parent folder),
   // e.g. extra_model_paths.yaml, which shouldn't open in its default app.
-  ipcMain.on('comfy-titlepopup:global-settings-reveal-path', (event, payload: { path?: unknown }) => {
-    if (!settingsEntryFor(event.sender.id)) return
-    const targetPath = payload?.path
-    if (typeof targetPath !== 'string' || targetPath.length === 0) return
-    shell.showItemInFolder(targetPath)
-  })
+  ipcMain.on(
+    'comfy-titlepopup:global-settings-reveal-path',
+    (event, payload: { path?: unknown }) => {
+      if (!settingsEntryFor(event.sender.id)) return
+      const targetPath = payload?.path
+      if (typeof targetPath !== 'string' || targetPath.length === 0) return
+      shell.showItemInFolder(targetPath)
+    }
+  )
 
   // External URL — restricted to http/https.
   ipcMain.on(

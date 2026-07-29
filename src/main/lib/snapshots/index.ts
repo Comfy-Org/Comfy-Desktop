@@ -9,10 +9,15 @@ export type {
   SnapshotDetailData,
   SnapshotDiffData,
   RestoreResult,
-  NodeRestoreResult,
+  NodeRestoreResult
 } from './types'
 
-export { formatSnapshotVersion, resolveSnapshotVersion, diffSnapshots, diffAgainstCurrent } from './diff'
+export {
+  formatSnapshotVersion,
+  resolveSnapshotVersion,
+  diffSnapshots,
+  diffAgainstCurrent
+} from './diff'
 
 export {
   captureSnapshotIfChanged,
@@ -24,7 +29,7 @@ export {
   statesMatch,
   ensureCurrentSnapshotOnTop,
   deduplicatePreUpdateSnapshot,
-  pruneAutoSnapshots,
+  pruneAutoSnapshots
 } from './store'
 
 export {

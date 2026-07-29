@@ -5,7 +5,7 @@ import { RefreshCcw, Loader2, ArrowLeft } from 'lucide-vue-next'
 import { useSessionStore } from '../stores/sessionStore'
 import {
   useReturnToDashboardConfirm,
-  type ReturnToDashboardReason,
+  type ReturnToDashboardReason
 } from '../composables/useReturnToDashboardConfirm'
 import { emitTelemetryAction } from '../lib/telemetry'
 import BrandFinishedSurface from '../components/BrandFinishedSurface.vue'

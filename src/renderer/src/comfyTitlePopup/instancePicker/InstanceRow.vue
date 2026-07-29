@@ -30,7 +30,7 @@ const props = withDefaults(defineProps<Props>(), {
   isCurrent: false,
   updateAvailable: false,
   operating: false,
-  capacityStatus: 'normal',
+  capacityStatus: 'normal'
 })
 
 const isCloud = computed(() => props.installation.sourceCategory === 'cloud')
@@ -67,21 +67,9 @@ function handleClick(): void {
     >
       <div class="picker-row-icon" :title="$t(typeMeta.labelKey)">
         <component :is="typeMeta.icon" :size="20" />
-        <span
-          v-if="operating"
-          class="picker-row-op-dot"
-          aria-hidden="true"
-        ></span>
-        <span
-          v-else-if="updateAvailable"
-          class="picker-row-update-dot"
-          aria-hidden="true"
-        ></span>
-        <span
-          v-else-if="running"
-          class="picker-row-running-dot"
-          aria-hidden="true"
-        ></span>
+        <span v-if="operating" class="picker-row-op-dot" aria-hidden="true"></span>
+        <span v-else-if="updateAvailable" class="picker-row-update-dot" aria-hidden="true"></span>
+        <span v-else-if="running" class="picker-row-running-dot" aria-hidden="true"></span>
       </div>
       <div class="picker-row-body">
         <span class="picker-row-name">{{ installation.name }}</span>
@@ -216,7 +204,9 @@ function handleClick(): void {
   animation: op-dot-spin 0.8s linear infinite;
 }
 @keyframes op-dot-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .picker-row-current-pill {

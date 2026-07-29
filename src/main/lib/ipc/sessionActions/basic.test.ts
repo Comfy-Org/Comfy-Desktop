@@ -12,11 +12,14 @@ vi.mock('../shared', () => ({
     },
     get update() {
       return update
-    },
+    }
   },
-  i18n: { t: (key: string, vars?: Record<string, unknown>) => (vars ? `${key}:${JSON.stringify(vars)}` : key) },
+  i18n: {
+    t: (key: string, vars?: Record<string, unknown>) =>
+      vars ? `${key}:${JSON.stringify(vars)}` : key
+  },
   fs: {},
-  openPath: vi.fn(),
+  openPath: vi.fn()
 }))
 
 import { handleRename } from './basic'
@@ -28,7 +31,7 @@ function ctx(overrides: Partial<ActionContext> = {}): ActionContext {
     installationId: 'inst-1',
     inst: { id: 'inst-1', name: 'Old Name' } as ActionContext['inst'],
     actionData: { name: 'New Name' },
-    ...overrides,
+    ...overrides
   }
 }
 

@@ -1,12 +1,24 @@
 import {
-  path, fs,
-  installations, settings, i18n,
-  deleteDir, formatDeleteStatus,
-  download, createCache, extract,
+  path,
+  fs,
+  installations,
+  settings,
+  i18n,
+  deleteDir,
+  formatDeleteStatus,
+  download,
+  createCache,
+  extract,
   MARKER_FILE,
-  sourceMap, findDuplicatePath, uniqueName, sanitizeDirName, allocateUniqueDir,
-  performCopy, copyBrowserPartition,
-  makeSendProgress, makeSendOutput,
+  sourceMap,
+  findDuplicatePath,
+  uniqueName,
+  sanitizeDirName,
+  allocateUniqueDir,
+  performCopy,
+  copyBrowserPartition,
+  makeSendProgress,
+  makeSendOutput
 } from '../shared'
 import type { FieldOption, InstallationRecord } from '../shared'
 import { parseAnyIndexStackId } from '../../../sources/standalone/torchStackTypes'
@@ -43,12 +55,14 @@ export async function handleCopyUpdate(ctx: ActionContext): Promise<ActionResult
   const sendOutput = makeSendOutput(sender, installationId)
 
   return withAbortableSessionAction(ctx, async (signal) => {
-    sendProgress('steps', { steps: [
-      { phase: 'copy', label: i18n.t('actions.copyingFiles') },
-      { phase: 'prepare', label: i18n.t('standalone.updatePrepare') },
-      { phase: 'run', label: i18n.t('standalone.updateRun') },
-      { phase: 'deps', label: i18n.t('standalone.updateDeps') },
-    ] })
+    sendProgress('steps', {
+      steps: [
+        { phase: 'copy', label: i18n.t('actions.copyingFiles') },
+        { phase: 'prepare', label: i18n.t('standalone.updatePrepare') },
+        { phase: 'run', label: i18n.t('standalone.updateRun') },
+        { phase: 'deps', label: i18n.t('standalone.updateDeps') }
+      ]
+    })
 
     const { entry } = await performCopy(inst, name, sendProgress, signal, 'copy-update')
 
@@ -66,19 +80,28 @@ export async function handleCopyUpdate(ctx: ActionContext): Promise<ActionResult
       const newInst = await installations.get(entry.id)
       const newUpdate = (data: Record<string, unknown>): Promise<void> =>
         installations.update(entry.id, data).then(() => {})
-      const updateResult = await source.handleAction('update-comfyui', newInst!, {}, {
-        update: newUpdate,
-        sendProgress: updateSendProgress,
-        sendOutput,
-        signal,
-      })
+      const updateResult = await source.handleAction(
+        'update-comfyui',
+        newInst!,
+        {},
+        {
+          update: newUpdate,
+          sendProgress: updateSendProgress,
+          sendOutput,
+          signal
+        }
+      )
       if (updateResult && !updateResult.ok) {
         sendOutput(`\n⚠ Update: ${updateResult.message}\n`)
-        sendOutput('The copy was created successfully. You can retry the update from the new installation.\n')
+        sendOutput(
+          'The copy was created successfully. You can retry the update from the new installation.\n'
+        )
       }
     } catch (updateErr) {
       sendOutput(`\n⚠ Update failed: ${(updateErr as Error).message}\n`)
-      sendOutput('The copy was created successfully. You can retry the update from the new installation.\n')
+      sendOutput(
+        'The copy was created successfully. You can retry the update from the new installation.\n'
+      )
     }
 
     // Channel switches happen inside the source's window; omitting
@@ -112,11 +135,18 @@ export async function handleCopyChangePytorch(ctx: ActionContext): Promise<Actio
     // Same viaPip judgment as the change-pytorch handler (which re-declares
     // its own steps; those are filtered below in favor of these).
     const viaPip = inst.adopted === true || parseAnyIndexStackId(stackId) !== null
-    sendProgress('steps', { steps: [
-      { phase: 'copy', label: i18n.t('actions.copyingFiles') },
-      { phase: 'torch-prepare', label: i18n.t(viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
-      { phase: 'torch-swap', label: i18n.t('standalone.pytorchSwapPhase') },
-    ] })
+    sendProgress('steps', {
+      steps: [
+        { phase: 'copy', label: i18n.t('actions.copyingFiles') },
+        {
+          phase: 'torch-prepare',
+          label: i18n.t(
+            viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase'
+          )
+        },
+        { phase: 'torch-swap', label: i18n.t('standalone.pytorchSwapPhase') }
+      ]
+    })
 
     const { entry } = await performCopy(inst, name, sendProgress, signal, 'copy-pytorch')
 
@@ -129,19 +159,28 @@ export async function handleCopyChangePytorch(ctx: ActionContext): Promise<Actio
       const newInst = await installations.get(entry.id)
       const newUpdate = (data: Record<string, unknown>): Promise<void> =>
         installations.update(entry.id, data).then(() => {})
-      const changeResult = await source.handleAction('change-pytorch', newInst!, { stackId }, {
-        update: newUpdate,
-        sendProgress: changeSendProgress,
-        sendOutput,
-        signal,
-      })
+      const changeResult = await source.handleAction(
+        'change-pytorch',
+        newInst!,
+        { stackId },
+        {
+          update: newUpdate,
+          sendProgress: changeSendProgress,
+          sendOutput,
+          signal
+        }
+      )
       if (changeResult && !changeResult.ok) {
         sendOutput(`\n⚠ PyTorch change: ${changeResult.message}\n`)
-        sendOutput('The copy was created successfully. You can retry the PyTorch change from the new installation.\n')
+        sendOutput(
+          'The copy was created successfully. You can retry the PyTorch change from the new installation.\n'
+        )
       }
     } catch (changeErr) {
       sendOutput(`\n⚠ PyTorch change failed: ${(changeErr as Error).message}\n`)
-      sendOutput('The copy was created successfully. You can retry the PyTorch change from the new installation.\n')
+      sendOutput(
+        'The copy was created successfully. You can retry the PyTorch change from the new installation.\n'
+      )
     }
 
     return { ok: true, navigate: 'list', newInstallationId: entry.id }
@@ -164,7 +203,7 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   const installData = source.buildInstallation({
     release: releaseSelection as unknown as FieldOption,
-    variant: variantSelection as unknown as FieldOption,
+    variant: variantSelection as unknown as FieldOption
   })
 
   const parentDir = path.dirname(inst.installPath)
@@ -181,20 +220,25 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
   const sendOutput = makeSendOutput(sender, installationId)
 
   return withAbortableSessionAction(ctx, async (signal) => {
-    sendProgress('steps', { steps: [
-      { phase: 'download', label: i18n.t('common.download') },
-      { phase: 'extract', label: i18n.t('common.extract') },
-      { phase: 'setup', label: i18n.t('standalone.setupEnv') },
-      { phase: 'migrate', label: i18n.t('migrate.filePhase') },
-      { phase: 'deps', label: i18n.t('migrate.depsPhase') },
-    ] })
+    sendProgress('steps', {
+      steps: [
+        { phase: 'download', label: i18n.t('common.download') },
+        { phase: 'extract', label: i18n.t('common.extract') },
+        { phase: 'setup', label: i18n.t('standalone.setupEnv') },
+        { phase: 'migrate', label: i18n.t('migrate.filePhase') },
+        { phase: 'deps', label: i18n.t('migrate.depsPhase') }
+      ]
+    })
 
     let entry: InstallationRecord | null = null
     let installComplete = false
     try {
       fs.mkdirSync(destPath, { recursive: true })
       const installRecord = { ...installData, installPath: destPath } as InstallationRecord
-      const cache = createCache(settings.get('cacheDir') as string, settings.get('maxCachedDownloads') as number)
+      const cache = createCache(
+        settings.get('cacheDir') as string,
+        settings.get('maxCachedDownloads') as number
+      )
       await source.install!(installRecord, { sendProgress, download, cache, extract, signal })
 
       const finalName = await uniqueName(name)
@@ -210,9 +254,11 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
         copiedFrom: inst.id,
         copiedFromName: inst.name,
         copiedAt: new Date().toISOString(),
-        copyReason: 'release-update' as const,
+        copyReason: 'release-update' as const
       })
-      try { fs.writeFileSync(path.join(destPath, MARKER_FILE), entry.id) } catch {}
+      try {
+        fs.writeFileSync(path.join(destPath, MARKER_FILE), entry.id)
+      } catch {}
       await copyBrowserPartition(inst.id, entry.id, inst.browserPartition as string | undefined)
 
       const newUpdate = (data: Record<string, unknown>): Promise<void> =>
@@ -230,7 +276,7 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
         allUserData: true,
         models: true,
         input: true,
-        output: true,
+        output: true
       }
       let migrateError: string | null = null
       try {
@@ -238,7 +284,7 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
           update: newUpdate,
           sendProgress: migrateSendProgress,
           sendOutput,
-          signal,
+          signal
         })
         if (migrateResult && !migrateResult.ok) {
           migrateError = migrateResult.message || 'Unknown migration error'
@@ -249,11 +295,19 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
 
       if (migrateError) {
         sendOutput(`\n⚠ ${migrateError}\n`)
-        sendProgress('migrate', { percent: -1, status: i18n.t('standalone.releaseUpdateCleaningUp') })
-        try { await installations.remove(entry.id) } catch {}
+        sendProgress('migrate', {
+          percent: -1,
+          status: i18n.t('standalone.releaseUpdateCleaningUp')
+        })
+        try {
+          await installations.remove(entry.id)
+        } catch {}
         try {
           await deleteDir(destPath, (p) => {
-            sendProgress('migrate', { percent: p.percent, status: formatDeleteStatus(p, i18n.t('standalone.releaseUpdateCleaningUp')) })
+            sendProgress('migrate', {
+              percent: p.percent,
+              status: formatDeleteStatus(p, i18n.t('standalone.releaseUpdateCleaningUp'))
+            })
           })
         } catch {}
         return { ok: false, message: migrateError }
@@ -263,8 +317,13 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
     } catch (err) {
       // Wipe the half-built install (disk + registry) before re-throwing.
       if (!installComplete) {
-        if (entry) try { await installations.remove(entry.id) } catch {}
-        try { await fs.promises.rm(destPath, { recursive: true, force: true }) } catch {}
+        if (entry)
+          try {
+            await installations.remove(entry.id)
+          } catch {}
+        try {
+          await fs.promises.rm(destPath, { recursive: true, force: true })
+        } catch {}
       }
       throw err
     }

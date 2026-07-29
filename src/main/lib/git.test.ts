@@ -2,19 +2,50 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('child_process', async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>
+  const actual = (await importOriginal()) as Record<string, unknown>
   return { ...actual, execFile: vi.fn(), spawn: vi.fn() }
 })
 
 import { execFile, spawn } from 'child_process'
 import { EventEmitter } from 'events'
-import { countCommitsAhead, findNearestTag, findLatestVersionTag, lsRemoteLatestTag, lsRemoteRef, isAncestorOf, findMergeBase, revParseRef, fetchTags, configurePygit2, isGitAvailable, isPygit2Configured, getPygit2Status, resetPygit2State, probePygit2, resetGitAvailableCache, countUniqueCommits, gitClone, gitCheckoutCommit, gitFetchAndCheckout, isPygit2AuthFailure, isForcePygit2, isSystemGitAvailable } from './git'
+import {
+  countCommitsAhead,
+  findNearestTag,
+  findLatestVersionTag,
+  lsRemoteLatestTag,
+  lsRemoteRef,
+  isAncestorOf,
+  findMergeBase,
+  revParseRef,
+  fetchTags,
+  configurePygit2,
+  isGitAvailable,
+  isPygit2Configured,
+  getPygit2Status,
+  resetPygit2State,
+  probePygit2,
+  resetGitAvailableCache,
+  countUniqueCommits,
+  gitClone,
+  gitCheckoutCommit,
+  gitFetchAndCheckout,
+  isPygit2AuthFailure,
+  isForcePygit2,
+  isSystemGitAvailable
+} from './git'
 import * as telemetry from './telemetry'
 
 const mockedExecFile = vi.mocked(execFile)
 const mockedSpawn = vi.mocked(spawn)
 
-function mockExecFile(cb: (cmd: string, args: string[], opts: Record<string, unknown>, callback: (err: Error | null, stdout: string, stderr: string) => void) => void): void {
+function mockExecFile(
+  cb: (
+    cmd: string,
+    args: string[],
+    opts: Record<string, unknown>,
+    callback: (err: Error | null, stdout: string, stderr: string) => void
+  ) => void
+): void {
   mockedExecFile.mockImplementation(cb as never)
 }
 
@@ -37,7 +68,9 @@ function mockSpawn(exitCode: number, stdout = '', stderr = ''): void {
 }
 
 /** Mock spawn to succeed on the Nth call (0-indexed) and fail others. */
-function mockSpawnSequence(results: Array<{ exitCode: number; stdout?: string; stderr?: string }>): void {
+function mockSpawnSequence(
+  results: Array<{ exitCode: number; stdout?: string; stderr?: string }>
+): void {
   let callIdx = 0
   mockedSpawn.mockImplementation((() => {
     const r = results[callIdx] ?? { exitCode: 1 }
@@ -47,183 +80,265 @@ function mockSpawnSequence(results: Array<{ exitCode: number; stdout?: string; s
 }
 
 describe('countCommitsAhead', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns the count when git succeeds', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '21\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '21\n', '')
+    })
     expect(await countCommitsAhead('/repo', 'v0.14.2')).toBe(21)
   })
 
   it('returns 0 when on the tag exactly', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '0\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '0\n', '')
+    })
     expect(await countCommitsAhead('/repo', 'v0.14.2')).toBe(0)
   })
 
   it('returns undefined when git fails', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('not found'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('not found'), '', '')
+    })
     expect(await countCommitsAhead('/repo', 'v0.14.2')).toBeUndefined()
   })
 
   it('returns undefined for non-numeric output', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'bad\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'bad\n', '')
+    })
     expect(await countCommitsAhead('/repo', 'v0.14.2')).toBeUndefined()
   })
 })
 
 describe('findNearestTag', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns the tag when git describe succeeds', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'v0.17.0\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'v0.17.0\n', '')
+    })
     expect(await findNearestTag('/repo')).toBe('v0.17.0')
   })
 
   it('returns undefined when git fails', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('no tags'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('no tags'), '', '')
+    })
     expect(await findNearestTag('/repo')).toBeUndefined()
   })
 
   it('returns undefined for empty output', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '\n', '')
+    })
     expect(await findNearestTag('/repo')).toBeUndefined()
   })
 })
 
 describe('findLatestVersionTag', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns the first tag from version-sorted output', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'v0.17.1\nv0.17.0\nv0.16.4\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'v0.17.1\nv0.17.0\nv0.16.4\n', '')
+    })
     expect(await findLatestVersionTag('/repo')).toBe('v0.17.1')
   })
 
   it('returns the tag when only one exists', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'v0.17.1\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'v0.17.1\n', '')
+    })
     expect(await findLatestVersionTag('/repo')).toBe('v0.17.1')
   })
 
   it('returns undefined when git fails', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('no tags'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('no tags'), '', '')
+    })
     expect(await findLatestVersionTag('/repo')).toBeUndefined()
   })
 
   it('returns undefined for empty output', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '\n', '')
+    })
     expect(await findLatestVersionTag('/repo')).toBeUndefined()
   })
 })
 
 describe('isAncestorOf', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns true when git exits with 0', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '', '')
+    })
     expect(await isAncestorOf('/repo', 'v0.17.0', 'v0.17.1')).toBe(true)
   })
 
   it('returns false when git exits with error', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('not ancestor'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('not ancestor'), '', '')
+    })
     expect(await isAncestorOf('/repo', 'v0.18.0', 'v0.17.1')).toBe(false)
   })
 })
 
 describe('findMergeBase', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns SHA when git succeeds', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'abc123def456\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'abc123def456\n', '')
+    })
     expect(await findMergeBase('/repo', 'v0.17.0', 'HEAD')).toBe('abc123def456')
   })
 
   it('returns undefined when git fails', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('no merge base'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('no merge base'), '', '')
+    })
     expect(await findMergeBase('/repo', 'v0.17.0', 'HEAD')).toBeUndefined()
   })
 })
 
 describe('revParseRef', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns SHA when git succeeds', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'abc123def\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'abc123def\n', '')
+    })
     expect(await revParseRef('/repo', 'v0.17.0')).toBe('abc123def')
   })
 
   it('returns undefined when git fails', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('bad ref'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('bad ref'), '', '')
+    })
     expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
   })
 })
 
 describe('fetchTags', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns true when git exits with 0', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '', '')
+    })
     expect(await fetchTags('/repo')).toBe(true)
   })
 
   it('returns false when git exits with error', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('network error'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('network error'), '', '')
+    })
     expect(await fetchTags('/repo')).toBe(false)
   })
 })
 
 describe('isGitAvailable (system git)', () => {
-  beforeEach(() => { vi.resetAllMocks(); resetGitAvailableCache() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+    resetGitAvailableCache()
+  })
 
   it('returns true when git --version succeeds', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'git version 2.40.0\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'git version 2.40.0\n', '')
+    })
     expect(await isGitAvailable()).toBe(true)
   })
 
   it('returns false when git is not found', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('ENOENT'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('ENOENT'), '', '')
+    })
     expect(await isGitAvailable()).toBe(false)
   })
 
   it('coalesces concurrent callers into a single git --version probe', async () => {
     let spawnCount = 0
-    mockExecFile((_cmd, _args, _opts, cb) => { spawnCount++; cb(null, 'git version 2.40.0\n', '') })
-    const results = await Promise.all([isSystemGitAvailable(), isSystemGitAvailable(), isGitAvailable()])
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      spawnCount++
+      cb(null, 'git version 2.40.0\n', '')
+    })
+    const results = await Promise.all([
+      isSystemGitAvailable(),
+      isSystemGitAvailable(),
+      isGitAvailable()
+    ])
     expect(results).toEqual([true, true, true])
     expect(spawnCount).toBe(1)
   })
 })
 
 describe('countUniqueCommits (system git)', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns the count when git succeeds', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '3\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '3\n', '')
+    })
     expect(await countUniqueCommits('/repo', 'v0.17.0', 'v0.17.1')).toBe(3)
   })
 
   it('returns 0 when no unique commits', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '0\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '0\n', '')
+    })
     expect(await countUniqueCommits('/repo', 'v0.17.0', 'v0.17.1')).toBe(0)
   })
 
   it('returns undefined when git fails', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('fail'), '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(new Error('fail'), '', '')
+    })
     expect(await countUniqueCommits('/repo', 'v0.17.0', 'v0.17.1')).toBeUndefined()
   })
 
   it('returns undefined for non-numeric output', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'bad\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'bad\n', '')
+    })
     expect(await countUniqueCommits('/repo', 'v0.17.0', 'v0.17.1')).toBeUndefined()
   })
 })
 
 describe('gitClone (system git)', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns exitCode 0 on success', async () => {
     mockSpawn(0, '', 'Cloning into...\n')
     const output: string[] = []
     const result = await gitClone('https://github.com/test/repo', '/dest', (t) => output.push(t))
     expect(result.exitCode).toBe(0)
-    expect(mockedSpawn).toHaveBeenCalledWith('git', ['clone', 'https://github.com/test/repo', '/dest'], expect.anything())
+    expect(mockedSpawn).toHaveBeenCalledWith(
+      'git',
+      ['clone', 'https://github.com/test/repo', '/dest'],
+      expect.anything()
+    )
   })
 
   it('returns exitCode 1 on failure', async () => {
@@ -243,14 +358,21 @@ describe('gitClone (system git)', () => {
   it('returns immediately when signal is already aborted', async () => {
     const controller = new AbortController()
     controller.abort()
-    const result = await gitClone('https://github.com/test/repo', '/dest', () => {}, controller.signal)
+    const result = await gitClone(
+      'https://github.com/test/repo',
+      '/dest',
+      () => {},
+      controller.signal
+    )
     expect(result.exitCode).toBe(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
   })
 })
 
 describe('gitCheckoutCommit (system git)', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('returns exitCode 0 when direct checkout succeeds', async () => {
     mockSpawn(0)
@@ -261,9 +383,9 @@ describe('gitCheckoutCommit (system git)', () => {
 
   it('fetches and retries when direct checkout fails', async () => {
     mockSpawnSequence([
-      { exitCode: 1, stderr: 'error: pathspec' },  // checkout fails
-      { exitCode: 0 },                              // fetch --unshallow succeeds
-      { exitCode: 0 },                              // retry checkout succeeds
+      { exitCode: 1, stderr: 'error: pathspec' }, // checkout fails
+      { exitCode: 0 }, // fetch --unshallow succeeds
+      { exitCode: 0 } // retry checkout succeeds
     ])
     const result = await gitCheckoutCommit('/repo', 'abc123', () => {})
     expect(result.exitCode).toBe(0)
@@ -280,14 +402,16 @@ describe('gitCheckoutCommit (system git)', () => {
 })
 
 describe('gitFetchAndCheckout (system git)', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
 
   it('fetches master, creates branch, and checks out commit', async () => {
     mockSpawnSequence([
-      { exitCode: 0 },  // fetch --unshallow --tags origin refspec
-      { exitCode: 0 },  // checkout --detach HEAD
-      { exitCode: 0 },  // branch -f master
-      { exitCode: 0 },  // checkout commit
+      { exitCode: 0 }, // fetch --unshallow --tags origin refspec
+      { exitCode: 0 }, // checkout --detach HEAD
+      { exitCode: 0 }, // branch -f master
+      { exitCode: 0 } // checkout commit
     ])
     const result = await gitFetchAndCheckout('/repo', 'abc123', () => {})
     expect(result.exitCode).toBe(0)
@@ -296,11 +420,11 @@ describe('gitFetchAndCheckout (system git)', () => {
 
   it('falls back to regular fetch when unshallow fails', async () => {
     mockSpawnSequence([
-      { exitCode: 1 },  // fetch --unshallow fails
-      { exitCode: 0 },  // fetch (no --unshallow) succeeds
-      { exitCode: 0 },  // checkout --detach HEAD
-      { exitCode: 0 },  // branch -f master
-      { exitCode: 0 },  // checkout commit
+      { exitCode: 1 }, // fetch --unshallow fails
+      { exitCode: 0 }, // fetch (no --unshallow) succeeds
+      { exitCode: 0 }, // checkout --detach HEAD
+      { exitCode: 0 }, // branch -f master
+      { exitCode: 0 } // checkout commit
     ])
     const result = await gitFetchAndCheckout('/repo', 'abc123', () => {})
     expect(result.exitCode).toBe(0)
@@ -346,26 +470,34 @@ describe('pygit2 fallback', () => {
 
   describe('countCommitsAhead', () => {
     it('passes correct subcommand and parses count', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '21\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '21\n', '')
+      })
       expect(await countCommitsAhead('/repo', 'v0.14.2')).toBe(21)
       const args = expectPygit2Call()
       expect(args).toEqual(['rev-list-count', '/repo', 'v0.14.2', 'HEAD'])
     })
 
     it('returns 0 when on the tag exactly', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '0\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '0\n', '')
+      })
       expect(await countCommitsAhead('/repo', 'v0.14.2')).toBe(0)
     })
 
     it('returns undefined on error', async () => {
       const errWithCode = new Error('fail') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await countCommitsAhead('/repo', 'v0.14.2')).toBeUndefined()
     })
 
     it('passes custom commit ref', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '5\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '5\n', '')
+      })
       expect(await countCommitsAhead('/repo', 'v0.14.2', 'abc123')).toBe(5)
       const args = expectPygit2Call()
       expect(args).toEqual(['rev-list-count', '/repo', 'v0.14.2', 'abc123'])
@@ -374,7 +506,9 @@ describe('pygit2 fallback', () => {
 
   describe('findNearestTag', () => {
     it('passes correct subcommand and parses tag', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'v0.17.0\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'v0.17.0\n', '')
+      })
       expect(await findNearestTag('/repo')).toBe('v0.17.0')
       const args = expectPygit2Call()
       expect(args).toEqual(['describe-tags', '/repo', 'HEAD'])
@@ -383,19 +517,25 @@ describe('pygit2 fallback', () => {
     it('returns undefined on error', async () => {
       const errWithCode = new Error('no tags') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await findNearestTag('/repo')).toBeUndefined()
     })
 
     it('returns undefined for empty output', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '\n', '')
+      })
       expect(await findNearestTag('/repo')).toBeUndefined()
     })
   })
 
   describe('findLatestVersionTag', () => {
     it('passes correct subcommand and parses first tag', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'v0.17.1\nv0.17.0\nv0.16.4\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'v0.17.1\nv0.17.0\nv0.16.4\n', '')
+      })
       expect(await findLatestVersionTag('/repo')).toBe('v0.17.1')
       const args = expectPygit2Call()
       expect(args).toEqual(['tag-list', '/repo'])
@@ -404,19 +544,25 @@ describe('pygit2 fallback', () => {
     it('returns undefined on error', async () => {
       const errWithCode = new Error('fail') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await findLatestVersionTag('/repo')).toBeUndefined()
     })
 
     it('returns undefined for empty output', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '\n', '')
+      })
       expect(await findLatestVersionTag('/repo')).toBeUndefined()
     })
   })
 
   describe('lsRemoteLatestTag', () => {
     it('passes correct subcommand and parses first tag', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'v0.18.3\nv0.18.2\nv0.18.1\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'v0.18.3\nv0.18.2\nv0.18.1\n', '')
+      })
       expect(await lsRemoteLatestTag('https://github.com/Comfy-Org/ComfyUI.git')).toBe('v0.18.3')
       const args = expectPygit2Call()
       expect(args).toEqual(['ls-remote-tags', 'https://github.com/Comfy-Org/ComfyUI.git'])
@@ -425,40 +571,62 @@ describe('pygit2 fallback', () => {
     it('returns undefined on error', async () => {
       const errWithCode = new Error('fail') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await lsRemoteLatestTag('https://github.com/Comfy-Org/ComfyUI.git')).toBeUndefined()
     })
 
     it('returns undefined for empty output', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '\n', '')
+      })
       expect(await lsRemoteLatestTag('https://github.com/Comfy-Org/ComfyUI.git')).toBeUndefined()
     })
   })
 
   describe('lsRemoteRef', () => {
     it('passes correct subcommand and returns SHA', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'abc123def456\n', '') })
-      expect(await lsRemoteRef('https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master')).toBe('abc123def456')
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'abc123def456\n', '')
+      })
+      expect(
+        await lsRemoteRef('https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master')
+      ).toBe('abc123def456')
       const args = expectPygit2Call()
-      expect(args).toEqual(['ls-remote-ref', 'https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master'])
+      expect(args).toEqual([
+        'ls-remote-ref',
+        'https://github.com/Comfy-Org/ComfyUI.git',
+        'refs/heads/master'
+      ])
     })
 
     it('returns null on error', async () => {
       const errWithCode = new Error('fail') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
-      expect(await lsRemoteRef('https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master')).toBeNull()
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
+      expect(
+        await lsRemoteRef('https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master')
+      ).toBeNull()
     })
 
     it('returns null for empty output', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '\n', '') })
-      expect(await lsRemoteRef('https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master')).toBeNull()
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '\n', '')
+      })
+      expect(
+        await lsRemoteRef('https://github.com/Comfy-Org/ComfyUI.git', 'refs/heads/master')
+      ).toBeNull()
     })
   })
 
   describe('countUniqueCommits', () => {
     it('passes correct subcommand and parses count', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '3\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '3\n', '')
+      })
       expect(await countUniqueCommits('/repo', 'v0.17.0', 'v0.17.1')).toBe(3)
       const args = expectPygit2Call()
       expect(args).toEqual(['cherry-pick-count', '/repo', 'v0.17.0', 'v0.17.1'])
@@ -467,14 +635,18 @@ describe('pygit2 fallback', () => {
     it('returns undefined on error', async () => {
       const errWithCode = new Error('fail') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await countUniqueCommits('/repo', 'v0.17.0', 'v0.17.1')).toBeUndefined()
     })
   })
 
   describe('isAncestorOf', () => {
     it('returns true when script exits with 0', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '', '')
+      })
       expect(await isAncestorOf('/repo', 'v0.17.0', 'v0.17.1')).toBe(true)
       const args = expectPygit2Call()
       expect(args).toEqual(['is-ancestor', '/repo', 'v0.17.0', 'v0.17.1'])
@@ -483,14 +655,18 @@ describe('pygit2 fallback', () => {
     it('returns false when script exits with error', async () => {
       const errWithCode = new Error('not ancestor') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await isAncestorOf('/repo', 'v0.18.0', 'v0.17.1')).toBe(false)
     })
   })
 
   describe('findMergeBase', () => {
     it('returns SHA when script succeeds', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'abc123def456\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'abc123def456\n', '')
+      })
       expect(await findMergeBase('/repo', 'v0.17.0', 'HEAD')).toBe('abc123def456')
       const args = expectPygit2Call()
       expect(args).toEqual(['merge-base', '/repo', 'v0.17.0', 'HEAD'])
@@ -499,14 +675,18 @@ describe('pygit2 fallback', () => {
     it('returns undefined on error', async () => {
       const errWithCode = new Error('no merge base') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await findMergeBase('/repo', 'v0.17.0', 'HEAD')).toBeUndefined()
     })
   })
 
   describe('revParseRef', () => {
     it('returns SHA when script succeeds', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'abc123def\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'abc123def\n', '')
+      })
       expect(await revParseRef('/repo', 'v0.17.0')).toBe('abc123def')
       const args = expectPygit2Call()
       expect(args).toEqual(['rev-parse', '/repo', 'v0.17.0'])
@@ -515,14 +695,18 @@ describe('pygit2 fallback', () => {
     it('returns undefined on error', async () => {
       const errWithCode = new Error('bad ref') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
     })
   })
 
   describe('fetchTags', () => {
     it('returns true when script succeeds', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, '', '')
+      })
       expect(await fetchTags('/repo')).toBe(true)
       const args = expectPygit2Call()
       expect(args).toEqual(['fetch-tags', '/repo'])
@@ -531,7 +715,9 @@ describe('pygit2 fallback', () => {
     it('returns false on error', async () => {
       const errWithCode = new Error('network error') as Error & { code: number }
       errWithCode.code = 1
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(errWithCode, '', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(errWithCode, '', '')
+      })
       expect(await fetchTags('/repo')).toBe(false)
     })
   })
@@ -575,7 +761,12 @@ describe('pygit2 fallback', () => {
     it('returns immediately when signal is already aborted', async () => {
       const controller = new AbortController()
       controller.abort()
-      const result = await gitClone('https://github.com/test/repo', '/dest', () => {}, controller.signal)
+      const result = await gitClone(
+        'https://github.com/test/repo',
+        '/dest',
+        () => {},
+        controller.signal
+      )
       expect(result.exitCode).toBe(1)
       expect(mockedSpawn).not.toHaveBeenCalled()
     })
@@ -647,19 +838,35 @@ describe('system git fallback on pygit2 auth failure', () => {
 
   describe('isPygit2AuthFailure', () => {
     it('classifies the libgit2 no-callback error as auth failure', () => {
-      expect(isPygit2AuthFailure({ exitCode: 1, stdout: '', stderr: 'authentication required but no callback set' })).toBe(true)
+      expect(
+        isPygit2AuthFailure({
+          exitCode: 1,
+          stdout: '',
+          stderr: 'authentication required but no callback set'
+        })
+      ).toBe(true)
     })
 
     it('classifies unsupported URL protocol (ssh) as auth failure', () => {
-      expect(isPygit2AuthFailure({ exitCode: 1, stdout: '', stderr: 'unsupported URL protocol' })).toBe(true)
+      expect(
+        isPygit2AuthFailure({ exitCode: 1, stdout: '', stderr: 'unsupported URL protocol' })
+      ).toBe(true)
     })
 
     it('does not classify a generic failure as auth failure', () => {
-      expect(isPygit2AuthFailure({ exitCode: 1, stdout: '', stderr: 'fatal: not a git repository' })).toBe(false)
+      expect(
+        isPygit2AuthFailure({ exitCode: 1, stdout: '', stderr: 'fatal: not a git repository' })
+      ).toBe(false)
     })
 
     it('never classifies a success as auth failure', () => {
-      expect(isPygit2AuthFailure({ exitCode: 0, stdout: '', stderr: 'authentication required but no callback set' })).toBe(false)
+      expect(
+        isPygit2AuthFailure({
+          exitCode: 0,
+          stdout: '',
+          stderr: 'authentication required but no callback set'
+        })
+      ).toBe(false)
     })
   })
 
@@ -677,25 +884,33 @@ describe('system git fallback on pygit2 auth failure', () => {
   describe('gitClone', () => {
     it('retries with system git when pygit2 fails with an auth error', async () => {
       // git --version probe for isSystemGitAvailable succeeds.
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'git version 2.43.0\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'git version 2.43.0\n', '')
+      })
       mockSpawnSequence([
         { exitCode: 1, stderr: 'authentication required but no callback set\n' }, // pygit2
-        { exitCode: 0, stderr: 'Cloning...\n' }, // system git
+        { exitCode: 0, stderr: 'Cloning...\n' } // system git
       ])
       const result = await gitClone('https://github.com/test/repo', '/dest', () => {})
       expect(result.exitCode).toBe(0)
       // First spawn is pygit2; second is the system `git clone`.
       expect(mockedSpawn.mock.calls[0]![0]).toBe('/usr/bin/python3')
       expect(mockedSpawn.mock.calls[1]![0]).toBe('git')
-      expect(mockedSpawn.mock.calls[1]![1]).toEqual(['clone', 'https://github.com/test/repo', '/dest'])
+      expect(mockedSpawn.mock.calls[1]![1]).toEqual([
+        'clone',
+        'https://github.com/test/repo',
+        '/dest'
+      ])
     })
 
     it('emits a system_fallback telemetry event when it falls back', async () => {
       const emitSpy = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'git version 2.43.0\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'git version 2.43.0\n', '')
+      })
       mockSpawnSequence([
         { exitCode: 1, stderr: 'authentication required but no callback set\n' }, // pygit2
-        { exitCode: 0, stderr: 'Cloning...\n' }, // system git
+        { exitCode: 0, stderr: 'Cloning...\n' } // system git
       ])
       await gitClone('https://github.com/test/repo', '/dest', () => {})
       expect(emitSpy).toHaveBeenCalledWith(
@@ -716,9 +931,7 @@ describe('system git fallback on pygit2 auth failure', () => {
 
     it('does NOT fall back when COMFY_FORCE_PYGIT2=1, even on an auth error', async () => {
       process.env.COMFY_FORCE_PYGIT2 = '1'
-      mockSpawnSequence([
-        { exitCode: 1, stderr: 'authentication required but no callback set\n' },
-      ])
+      mockSpawnSequence([{ exitCode: 1, stderr: 'authentication required but no callback set\n' }])
       const result = await gitClone('https://github.com/test/repo', '/dest', () => {})
       expect(result.exitCode).toBe(1)
       expect(mockedSpawn.mock.calls).toHaveLength(1) // only pygit2, no retry
@@ -726,20 +939,20 @@ describe('system git fallback on pygit2 auth failure', () => {
 
     it('does NOT fall back when no system git is available', async () => {
       // git --version probe fails -> no system git.
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(new Error('not found'), '', '') })
-      mockSpawnSequence([
-        { exitCode: 1, stderr: 'authentication required but no callback set\n' },
-      ])
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(new Error('not found'), '', '')
+      })
+      mockSpawnSequence([{ exitCode: 1, stderr: 'authentication required but no callback set\n' }])
       const result = await gitClone('https://github.com/test/repo', '/dest', () => {})
       expect(result.exitCode).toBe(1)
       expect(mockedSpawn.mock.calls).toHaveLength(1)
     })
 
     it('does NOT fall back on a non-auth pygit2 failure', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'git version 2.43.0\n', '') })
-      mockSpawnSequence([
-        { exitCode: 1, stderr: 'fatal: repository not found\n' },
-      ])
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'git version 2.43.0\n', '')
+      })
+      mockSpawnSequence([{ exitCode: 1, stderr: 'fatal: repository not found\n' }])
       const result = await gitClone('https://github.com/test/repo', '/dest', () => {})
       expect(result.exitCode).toBe(1)
       expect(mockedSpawn.mock.calls).toHaveLength(1)
@@ -748,13 +961,15 @@ describe('system git fallback on pygit2 auth failure', () => {
 
   describe('gitFetchAndCheckout', () => {
     it('retries with system git when pygit2 fails with an auth error', async () => {
-      mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'git version 2.43.0\n', '') })
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(null, 'git version 2.43.0\n', '')
+      })
       mockSpawnSequence([
         { exitCode: 1, stderr: 'authentication required but no callback set\n' }, // pygit2
         { exitCode: 0 }, // git fetch --unshallow --tags
         { exitCode: 0 }, // git checkout --detach
         { exitCode: 0 }, // git branch -f master
-        { exitCode: 0 }, // git checkout commit
+        { exitCode: 0 } // git checkout commit
       ])
       const result = await gitFetchAndCheckout('/repo', 'abc123', () => {})
       expect(result.exitCode).toBe(0)
@@ -765,15 +980,22 @@ describe('system git fallback on pygit2 auth failure', () => {
 })
 
 describe('probePygit2', () => {
-  beforeEach(() => { vi.resetAllMocks(); resetPygit2State() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+    resetPygit2State()
+  })
 
   it('returns ok when healthcheck prints the success marker', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'ok pygit2 1.18.0\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'ok pygit2 1.18.0\n', '')
+    })
     expect(await probePygit2('/usr/bin/python3', '/path/script.py')).toEqual({ ok: true })
   })
 
   it('runs the healthcheck subcommand against the bundled Python', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'ok pygit2 1.18.0\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'ok pygit2 1.18.0\n', '')
+    })
     await probePygit2('/usr/bin/python3', '/path/script.py')
     expect(mockedExecFile).toHaveBeenCalled()
     const call = mockedExecFile.mock.calls[0]!
@@ -784,14 +1006,18 @@ describe('probePygit2', () => {
   it('returns failure with stderr when the helper exits non-zero', async () => {
     const err = new Error('non-zero exit') as Error & { code: number }
     err.code = 1
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(err, '', 'ImportError: pygit2 missing\n') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(err, '', 'ImportError: pygit2 missing\n')
+    })
     const result = await probePygit2('/usr/bin/python3', '/path/script.py')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toContain('ImportError')
   })
 
   it('returns failure when the marker is missing from stdout', async () => {
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, 'something else\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, 'something else\n', '')
+    })
     const result = await probePygit2('/usr/bin/python3', '/path/script.py')
     expect(result.ok).toBe(false)
   })
@@ -808,7 +1034,9 @@ describe('pygit2 circuit breaker', () => {
     // Each call simulates a timeout (killed=true ⇒ launch failure)
     const timeoutErr = new Error('timeout') as Error & { killed: boolean }
     timeoutErr.killed = true
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(timeoutErr, '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(timeoutErr, '', '')
+    })
 
     expect(isPygit2Configured()).toBe(true)
     expect(await countCommitsAhead('/repo', 'v0.1.0')).toBeUndefined()
@@ -826,7 +1054,9 @@ describe('pygit2 circuit breaker', () => {
     // exit code 1 with no killed/signal ⇒ helper ran fine, just returned non-zero
     const exitErr = new Error('exit 1') as Error & { code: number }
     exitErr.code = 1
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(exitErr, '', 'no such ref\n') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(exitErr, '', 'no such ref\n')
+    })
 
     for (let i = 0; i < 5; i++) {
       await countCommitsAhead('/repo', 'v0.1.0')
@@ -838,16 +1068,22 @@ describe('pygit2 circuit breaker', () => {
   it('resets failure counter after a successful call', async () => {
     const timeoutErr = new Error('timeout') as Error & { killed: boolean }
     timeoutErr.killed = true
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(timeoutErr, '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(timeoutErr, '', '')
+    })
     await countCommitsAhead('/repo', 'v0.1.0')
     await countCommitsAhead('/repo', 'v0.1.0')
 
     // Healthy run resets the counter
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '7\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '7\n', '')
+    })
     expect(await countCommitsAhead('/repo', 'v0.1.0')).toBe(7)
 
     // Two more launch failures should not trip the breaker (counter was reset)
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(timeoutErr, '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(timeoutErr, '', '')
+    })
     await countCommitsAhead('/repo', 'v0.1.0')
     await countCommitsAhead('/repo', 'v0.1.0')
     expect(isPygit2Configured()).toBe(true)
@@ -856,14 +1092,18 @@ describe('pygit2 circuit breaker', () => {
   it('falls back to system git (not pygit2) once disabled', async () => {
     const timeoutErr = new Error('timeout') as Error & { killed: boolean }
     timeoutErr.killed = true
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(timeoutErr, '', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(timeoutErr, '', '')
+    })
     for (let i = 0; i < 3; i++) await countCommitsAhead('/repo', 'v0.1.0')
     expect(isPygit2Configured()).toBe(false)
 
     // After disable, calls take the system-git branch — the Python path
     // should no longer appear in execFile invocations.
     mockedExecFile.mockClear()
-    mockExecFile((_cmd, _args, _opts, cb) => { cb(null, '7\n', '') })
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(null, '7\n', '')
+    })
     expect(await countCommitsAhead('/repo', 'v0.1.0')).toBe(7)
     const call = mockedExecFile.mock.calls[0]!
     expect(call[0]).toBe('git')

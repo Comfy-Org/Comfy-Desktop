@@ -602,7 +602,7 @@ describe('FirstUseTakeover hardware warning', () => {
   it('renders the validateHardware warning under the Local pick', async () => {
     ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
       supported: true,
-      warning: KFD_WARNING,
+      warning: KFD_WARNING
     })
     const wrapper = mountTakeover()
     await flushPromises()
@@ -615,7 +615,7 @@ describe('FirstUseTakeover hardware warning', () => {
   it('hides the warning when Cloud is picked', async () => {
     ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
       supported: true,
-      warning: KFD_WARNING,
+      warning: KFD_WARNING
     })
     const wrapper = mountTakeover()
     await flushPromises()

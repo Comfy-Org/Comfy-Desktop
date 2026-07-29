@@ -38,7 +38,14 @@ import { fetchJSON } from '../../lib/fetch'
 import { compareVersions, detectNvidiaDriverVersion } from '../../lib/gpu'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
 import { stripPlatform } from './envPaths'
-import { isDevVersion, makeAmdIndexStackId, makeIndexStackId, publicVersion, torchIndexUrlForSource, torchLocalTag } from './torchStackTypes'
+import {
+  isDevVersion,
+  makeAmdIndexStackId,
+  makeIndexStackId,
+  publicVersion,
+  torchIndexUrlForSource,
+  torchLocalTag
+} from './torchStackTypes'
 import type { TorchStackPackages, TorchStackSource } from './torchStackTypes'
 import type { TorchStackEntry } from './torchStackCatalog'
 
@@ -107,7 +114,7 @@ const INDEX_SERIES: Readonly<Record<string, TorchSeriesInfo>> = {
   'rocm7.1': { noteKey: 'pytorchSeriesNoteRocm71' },
   'rocm7.14.0': { noteKey: 'pytorchSeriesNoteRocm714' },
   xpu: { noteKey: 'pytorchSeriesNoteXpu' },
-  cpu: { noteKey: 'pytorchSeriesNoteCpu' },
+  cpu: { noteKey: 'pytorchSeriesNoteCpu' }
 }
 
 /**
@@ -125,7 +132,7 @@ const INDEX_STACKS: readonly TorchIndexStackDef[] = [
     packages: { torch: '2.11.0+cu126', torchvision: '0.26.0+cu126', torchaudio: '2.11.0+cu126' },
     date: '2026-03-25',
     computeCap: { min: 5.0, max: 9.0 },
-    noteKey: 'pytorchIndexNoteCu126',
+    noteKey: 'pytorchIndexNoteCu126'
   },
   {
     indexTag: 'cu128',
@@ -134,8 +141,8 @@ const INDEX_STACKS: readonly TorchIndexStackDef[] = [
     packages: { torch: '2.11.0+cu128', torchvision: '0.26.0+cu128', torchaudio: '2.11.0+cu128' },
     date: '2026-03-25',
     computeCap: { min: 7.5, max: 12.0 },
-    noteKey: 'pytorchIndexNoteCu128',
-  },
+    noteKey: 'pytorchIndexNoteCu128'
+  }
 ]
 
 // ---------------------------------------------------------------------------
@@ -171,7 +178,8 @@ const DRIVER_VERSION = /^\d+(\.\d+)*$/
 function parseRemoteSeriesEntry(v: unknown): TorchSeriesInfo | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null
   const r = v as Record<string, unknown>
-  if (r.noteKey !== undefined && (typeof r.noteKey !== 'string' || !SAFE_SEGMENT.test(r.noteKey))) return null
+  if (r.noteKey !== undefined && (typeof r.noteKey !== 'string' || !SAFE_SEGMENT.test(r.noteKey)))
+    return null
   if (r.note !== undefined && !isSafeNote(r.note)) return null
   let minDriver: TorchSeriesInfo['minDriver']
   if (r.minDriver !== undefined) {
@@ -187,7 +195,7 @@ function parseRemoteSeriesEntry(v: unknown): TorchSeriesInfo | null {
   return {
     ...(r.noteKey ? { noteKey: r.noteKey as string } : {}),
     ...(r.note ? { note: r.note as string } : {}),
-    ...(minDriver ? { minDriver } : {}),
+    ...(minDriver ? { minDriver } : {})
   }
 }
 
@@ -238,7 +246,11 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   if (!pkgs || typeof pkgs !== 'object') return null
   if (typeof pkgs.torch !== 'string' || !SAFE_VERSION.test(pkgs.torch)) return null
   for (const opt of ['torchvision', 'torchaudio'] as const) {
-    if (pkgs[opt] !== undefined && (typeof pkgs[opt] !== 'string' || !SAFE_VERSION.test(pkgs[opt] as string))) return null
+    if (
+      pkgs[opt] !== undefined &&
+      (typeof pkgs[opt] !== 'string' || !SAFE_VERSION.test(pkgs[opt] as string))
+    )
+      return null
   }
   // The kind and the versions must agree. Stable entries reject dev
   // versions: nightlies live in a separate index namespace with ~60-day
@@ -278,11 +290,15 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
   // (`torchIndexUrlFor`), so a disagreeing entry would mint a stackId lying
   // about its install source (e.g. accel `amd` served from the cpu index).
   const tagOk =
-    r.accel === 'nvidia' ? /^cu\d+$/.test(r.indexTag)
-    : r.accel === 'amd' ? /^rocm[\d.]+$/.test(r.indexTag)
-    : r.accel === 'intel-xpu' ? r.indexTag === 'xpu'
-    : r.accel === 'cpu' ? r.indexTag === 'cpu'
-    : r.indexTag === 'pypi'
+    r.accel === 'nvidia'
+      ? /^cu\d+$/.test(r.indexTag)
+      : r.accel === 'amd'
+        ? /^rocm[\d.]+$/.test(r.indexTag)
+        : r.accel === 'intel-xpu'
+          ? r.indexTag === 'xpu'
+          : r.accel === 'cpu'
+            ? r.indexTag === 'cpu'
+            : r.indexTag === 'pypi'
   if (!tagOk) return null
   const torchTag = torchLocalTag(pkgs.torch)
   if (r.accel === 'mps') {
@@ -318,7 +334,8 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
     if (!Array.isArray(r.pythonAbis) || r.pythonAbis.length === 0) return null
     if (!r.pythonAbis.every((a) => typeof a === 'string' && PYTHON_ABI.test(a))) return null
   }
-  if (r.noteKey !== undefined && (typeof r.noteKey !== 'string' || !SAFE_SEGMENT.test(r.noteKey))) return null
+  if (r.noteKey !== undefined && (typeof r.noteKey !== 'string' || !SAFE_SEGMENT.test(r.noteKey)))
+    return null
   if (r.note !== undefined && !isSafeNote(r.note)) return null
   return {
     indexTag: r.indexTag,
@@ -329,13 +346,20 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
     packages: {
       torch: pkgs.torch,
       ...(pkgs.torchvision ? { torchvision: pkgs.torchvision as string } : {}),
-      ...(pkgs.torchaudio ? { torchaudio: pkgs.torchaudio as string } : {}),
+      ...(pkgs.torchaudio ? { torchaudio: pkgs.torchaudio as string } : {})
     },
     date: r.date,
-    ...(r.computeCap ? { computeCap: { min: (r.computeCap as { min: number }).min, max: (r.computeCap as { max: number }).max } } : {}),
+    ...(r.computeCap
+      ? {
+          computeCap: {
+            min: (r.computeCap as { min: number }).min,
+            max: (r.computeCap as { max: number }).max
+          }
+        }
+      : {}),
     ...(r.pythonAbis ? { pythonAbis: r.pythonAbis as string[] } : {}),
     ...(r.noteKey ? { noteKey: r.noteKey } : {}),
-    ...(r.note ? { note: r.note } : {}),
+    ...(r.note ? { note: r.note } : {})
   }
 }
 
@@ -348,7 +372,9 @@ function parseRemoteStackDef(v: unknown): TorchIndexStackDef | null {
  *  `stacks: []`. Entries whose stackId collides are all dropped — the
  *  renderer round-trips only the id, so duplicates could display one tuple
  *  and install another. */
-function parseRemoteManifest(data: unknown): { defs: TorchIndexStackDef[]; series: Record<string, TorchSeriesInfo> } | null {
+function parseRemoteManifest(
+  data: unknown
+): { defs: TorchIndexStackDef[]; series: Record<string, TorchSeriesInfo> } | null {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   const doc = data as Record<string, unknown>
   if (doc.schemaVersion !== 1) return null
@@ -379,7 +405,10 @@ let _remoteAttempted = false
 let _remoteRefresh: Promise<void> | null = null
 
 /** Test-only: reset/override remote manifest state. */
-export function _setRemoteDefsForTest(defs: TorchIndexStackDef[] | null, series?: Record<string, TorchSeriesInfo> | null): void {
+export function _setRemoteDefsForTest(
+  defs: TorchIndexStackDef[] | null,
+  series?: Record<string, TorchSeriesInfo> | null
+): void {
   _remoteDefs = defs
   _remoteSeries = series ?? null
   _remoteDiskLoaded = true
@@ -424,7 +453,10 @@ async function fetchRemoteIndexStacks(): Promise<void> {
       _remoteSeries = parsed.series
       _remoteDiskLoaded = true
       try {
-        writeFileSafe(REMOTE_CACHE_FILE(), JSON.stringify({ schemaVersion: 1, series: parsed.series, stacks: parsed.defs }, null, 2))
+        writeFileSafe(
+          REMOTE_CACHE_FILE(),
+          JSON.stringify({ schemaVersion: 1, series: parsed.series, stacks: parsed.defs }, null, 2)
+        )
       } catch {
         // cache persistence is best-effort
       }
@@ -459,12 +491,17 @@ export function ensureRemoteIndexStacks(): Promise<void> {
 }
 
 function sourceFor(def: TorchIndexStackDef): TorchStackSource {
-  if (def.kind === 'amd-multi-arch-index') return { kind: 'amd-multi-arch-index', indexTag: def.indexTag }
+  if (def.kind === 'amd-multi-arch-index')
+    return { kind: 'amd-multi-arch-index', indexTag: def.indexTag }
   if (def.accel === 'mps') return { kind: 'pypi', backend: 'mps' }
-  const backend = def.accel === 'nvidia' ? 'cuda'
-    : def.accel === 'amd' ? 'rocm'
-    : def.accel === 'intel-xpu' ? 'xpu'
-    : 'cpu'
+  const backend =
+    def.accel === 'nvidia'
+      ? 'cuda'
+      : def.accel === 'amd'
+        ? 'rocm'
+        : def.accel === 'intel-xpu'
+          ? 'xpu'
+          : 'cpu'
   return { kind: 'pytorch-index', backend, indexTag: def.indexTag }
 }
 
@@ -480,7 +517,9 @@ export function _setComputeCapsForTest(caps: number[] | null | undefined): void 
 
 /** Test-only: replace the nvidia-smi probe (child_process can't be mocked
  *  under the vitest setup). Pass undefined to restore the real probe. */
-export function _setComputeCapProbeForTest(probe: (() => Promise<number[] | null>) | undefined): void {
+export function _setComputeCapProbeForTest(
+  probe: (() => Promise<number[] | null>) | undefined
+): void {
   _probeFn = probe ?? probeComputeCaps
 }
 
@@ -488,11 +527,13 @@ export function _setComputeCapProbeForTest(probe: (() => Promise<number[] | null
 function probeComputeCaps(): Promise<number[] | null> {
   return new Promise((resolve) => {
     execFile(
-      'nvidia-smi', ['--query-gpu=compute_cap', '--format=csv,noheader'],
+      'nvidia-smi',
+      ['--query-gpu=compute_cap', '--format=csv,noheader'],
       { windowsHide: true, timeout: 10_000, maxBuffer: 64 * 1024 },
       (err, stdout) => {
         if (err) return resolve(null)
-        const caps = stdout.split('\n')
+        const caps = stdout
+          .split('\n')
           .map((line) => Number.parseFloat(line.trim()))
           .filter((n) => Number.isFinite(n) && n > 0)
         resolve(caps.length > 0 ? caps : null)
@@ -524,11 +565,14 @@ export function _setNvidiaDriverForTest(version: string | null | undefined): voi
   _nvidiaDriver = version
 }
 
-let _driverProbeFn: () => Promise<string | null> = async () => (await detectNvidiaDriverVersion()) ?? null
+let _driverProbeFn: () => Promise<string | null> = async () =>
+  (await detectNvidiaDriverVersion()) ?? null
 
 /** Test-only: replace the nvidia-smi driver probe. Pass undefined to
  *  restore the real probe. */
-export function _setNvidiaDriverProbeForTest(probe: (() => Promise<string | null>) | undefined): void {
+export function _setNvidiaDriverProbeForTest(
+  probe: (() => Promise<string | null>) | undefined
+): void {
   _driverProbeFn = probe ?? (async () => (await detectNvidiaDriverVersion()) ?? null)
 }
 
@@ -567,7 +611,9 @@ export function torchSeriesInfo(seriesId: string): TorchSeriesInfo | null {
  * a series - detection can be wrong (multi-GPU, probe before a driver
  * install), so the user keeps the full catalog and the final word.
  */
-export function nvidiaDriverMismatch(info: TorchSeriesInfo | null): { required: string; detected: string } | null {
+export function nvidiaDriverMismatch(
+  info: TorchSeriesInfo | null
+): { required: string; detected: string } | null {
   const required = info?.minDriver?.[process.platform as 'win32' | 'linux' | 'darwin']
   if (!required || !_nvidiaDriver) return null
   if (compareVersions(_nvidiaDriver, required) >= 0) return null
@@ -582,7 +628,9 @@ export function nvidiaDriverMismatch(info: TorchSeriesInfo | null): { required: 
  *  catalog and the final word. Unknown caps (never probed, probe failed)
  *  produce no warning; warnings appear once check-update refreshes the
  *  catalog - same cadence as bundle entries. */
-function capMismatch(def: TorchIndexStackDef): { min: number; max: number; detected: number[] } | null {
+function capMismatch(
+  def: TorchIndexStackDef
+): { min: number; max: number; detected: number[] } | null {
   if (!def.computeCap) return null
   if (_computeCaps == null || _computeCaps.length === 0) return null
   const { min, max } = def.computeCap
@@ -615,7 +663,7 @@ function entryFromDef(def: TorchIndexStackDef, variant: string): TorchStackEntry
     ...(def.noteKey ? { noteKey: def.noteKey } : {}),
     ...(def.note ? { note: def.note } : {}),
     ...(def.pythonAbis ? { pythonAbis: [...def.pythonAbis] } : {}),
-    ...(mismatch ? { capWarning: mismatch } : {}),
+    ...(mismatch ? { capWarning: mismatch } : {})
   }
 }
 
@@ -644,17 +692,22 @@ function nightlyFresh(def: TorchIndexStackDef): boolean {
  */
 export function indexStacksForVariant(variant: string): TorchStackEntry[] {
   const accel = stripPlatform(variant)
-  return activeDefs()
-    .filter((def) => def.accel === accel)
-    .filter((def) => def.platforms.includes(process.platform))
-    .filter(nightlyFresh)
-    // Only tuples a trusted index serves, judged from the entry's SOURCE
-    // (an amd-multi-arch-index source is served by AMD's hardcoded index
-    // even on Windows, where the tag-derived lookup refuses rocm tags);
-    // MPS is PyPI-served and must be untagged (a tagged build has no PyPI
-    // source).
-    .filter((def) => torchIndexUrlForSource(sourceFor(def), def.packages) !== null
-      || (def.accel === 'mps' && torchLocalTag(def.packages.torch) === ''))
-    .map((def) => entryFromDef(def, variant))
-    .sort((a, b) => b.date.localeCompare(a.date))
+  return (
+    activeDefs()
+      .filter((def) => def.accel === accel)
+      .filter((def) => def.platforms.includes(process.platform))
+      .filter(nightlyFresh)
+      // Only tuples a trusted index serves, judged from the entry's SOURCE
+      // (an amd-multi-arch-index source is served by AMD's hardcoded index
+      // even on Windows, where the tag-derived lookup refuses rocm tags);
+      // MPS is PyPI-served and must be untagged (a tagged build has no PyPI
+      // source).
+      .filter(
+        (def) =>
+          torchIndexUrlForSource(sourceFor(def), def.packages) !== null ||
+          (def.accel === 'mps' && torchLocalTag(def.packages.torch) === '')
+      )
+      .map((def) => entryFromDef(def, variant))
+      .sort((a, b) => b.date.localeCompare(a.date))
+  )
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
 vi.mock('../main', () => ({
-  i18n: { global: { t: (k: string) => k } },
+  i18n: { global: { t: (k: string) => k } }
 }))
 
 import { useDialogs } from '../composables/useDialogs'

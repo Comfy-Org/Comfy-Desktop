@@ -4,23 +4,27 @@ import { getActiveVenvDir } from '../../lib/pythonEnv'
 import type { InstalledTorchTuple } from './torchStackTypes'
 import type { InstallationRecord } from '../../installations'
 export {
-  getUvPath, getActivePythonPath, getActiveUvPath, getVenvDir, getVenvPythonPath,
+  getUvPath,
+  getActivePythonPath,
+  getActiveUvPath,
+  getVenvDir,
+  getVenvPythonPath
 } from '../../lib/pythonEnv'
 export const MANIFEST_FILE = 'manifest.json'
 export const DEFAULT_LAUNCH_ARGS = '--enable-manager'
 
 const VARIANT_LABELS: Record<string, string> = {
-  'nvidia': 'NVIDIA',
+  nvidia: 'NVIDIA',
   'intel-xpu': 'Intel Arc (XPU)',
-  'amd': 'AMD',
-  'cpu': 'CPU',
-  'mps': 'Apple Silicon (MPS)',
+  amd: 'AMD',
+  cpu: 'CPU',
+  mps: 'Apple Silicon (MPS)'
 }
 
 export const PLATFORM_PREFIX: Record<string, string> = {
   win32: 'win-',
   darwin: 'mac-',
-  linux: 'linux-',
+  linux: 'linux-'
 }
 
 export function stripPlatform(variantId: string): string {

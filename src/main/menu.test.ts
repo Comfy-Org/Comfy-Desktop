@@ -2,15 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { setApplicationMenu, buildFromTemplate } = vi.hoisted(() => ({
   setApplicationMenu: vi.fn(),
-  buildFromTemplate: vi.fn((template: unknown) => ({ __template: template })),
+  buildFromTemplate: vi.fn((template: unknown) => ({ __template: template }))
 }))
 
 vi.mock('electron', () => ({
   app: { name: 'ComfyUI' },
   Menu: {
     setApplicationMenu,
-    buildFromTemplate,
-  },
+    buildFromTemplate
+  }
 }))
 
 import { installAppMenu } from './menu'
@@ -30,9 +30,7 @@ describe('installAppMenu', () => {
       label?: string
       submenu?: Array<{ role?: string; label?: string }>
     }>
-    expect(template).toEqual([
-      { label: 'View', submenu: [{ role: 'togglefullscreen' }] },
-    ])
+    expect(template).toEqual([{ label: 'View', submenu: [{ role: 'togglefullscreen' }] }])
   }
 
   it('installs a fullscreen-only View menu on win32 without dev overrides', () => {
@@ -60,9 +58,9 @@ describe('installAppMenu', () => {
         submenu: expect.arrayContaining([
           expect.objectContaining({ role: 'togglefullscreen' }),
           expect.objectContaining({ role: 'reload' }),
-          expect.objectContaining({ label: 'Toggle Developer Tools', click: expect.any(Function) }),
-        ]),
-      }),
+          expect.objectContaining({ label: 'Toggle Developer Tools', click: expect.any(Function) })
+        ])
+      })
     ])
   })
 
@@ -92,7 +90,7 @@ describe('installAppMenu', () => {
     expect(windowRoles).not.toContain('closeAllWindows')
 
     const collectRoles = (
-      items: Array<{ role?: string; submenu?: unknown }> | undefined,
+      items: Array<{ role?: string; submenu?: unknown }> | undefined
     ): string[] => {
       if (!items) return []
       const out: string[] = []
@@ -104,7 +102,9 @@ describe('installAppMenu', () => {
       }
       return out
     }
-    const allRoles = collectRoles(template as unknown as Array<{ role?: string; submenu?: unknown }>)
+    const allRoles = collectRoles(
+      template as unknown as Array<{ role?: string; submenu?: unknown }>
+    )
     expect(allRoles).not.toContain('close')
     expect(allRoles).not.toContain('closeAllWindows')
   })

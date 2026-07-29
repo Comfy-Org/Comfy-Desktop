@@ -4,7 +4,7 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
   ipcMain: { handle: vi.fn() },
   BrowserWindow: { getAllWindows: () => [] },
-  globalShortcut: { register: vi.fn(), unregister: vi.fn() },
+  globalShortcut: { register: vi.fn(), unregister: vi.fn() }
 }))
 
 vi.mock('@todesktop/runtime', () => ({ default: { autoUpdater: null } }))

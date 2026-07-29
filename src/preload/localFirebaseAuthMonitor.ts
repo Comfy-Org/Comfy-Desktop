@@ -8,11 +8,7 @@ const POLL_INTERVAL_MS = 1000
 function isLoopbackPage(): boolean {
   if (typeof location === 'undefined') return false
   const hostname = location.hostname.toLowerCase()
-  return (
-    hostname === 'localhost' ||
-    hostname === '[::1]' ||
-    hostname.startsWith('127.')
-  )
+  return hostname === 'localhost' || hostname === '[::1]' || hostname.startsWith('127.')
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {

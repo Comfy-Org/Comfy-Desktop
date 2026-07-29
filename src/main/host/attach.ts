@@ -17,11 +17,15 @@ import {
   deactivateFirebaseAuthReporter
 } from '../lib/firebaseAuthIdentity'
 import { convertLevelToZoomPercent } from '../lib/zoom'
-import { clearPendingTemplateOpen, installationEvents, type InstallationRecord } from '../installations'
+import {
+  clearPendingTemplateOpen,
+  installationEvents,
+  type InstallationRecord
+} from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import {
   abortTemplateDownload,
-  stopTemplateTrayMirror,
+  stopTemplateTrayMirror
 } from '../sources/standalone/templateDownloadTask'
 import {
   dropInstallationIndex,
@@ -612,9 +616,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // installs don't load the local frontend that reads the param, so they're skipped.
   let urlToLoad = comfyUrl
   const pendingTemplate =
-    typeof installation.pendingTemplateOpen === 'string'
-      ? installation.pendingTemplateOpen
-      : null
+    typeof installation.pendingTemplateOpen === 'string' ? installation.pendingTemplateOpen : null
   if (isLocal && pendingTemplate) {
     urlToLoad = buildTemplateDeeplink(comfyUrl, pendingTemplate)
     void clearPendingTemplateOpen(installationId).catch((err) => {

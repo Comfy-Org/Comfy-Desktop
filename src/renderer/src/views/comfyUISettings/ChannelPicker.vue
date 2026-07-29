@@ -282,7 +282,11 @@ const checkUpdateAction = computed<ActionDef | undefined>(() =>
 
 const promotedPrimaryActions = computed<ActionDef[]>(() =>
   selectedActions.value.filter(
-    (a) => a.id === 'update-comfyui' || a.id === 'copy-update' || a.id === 'change-pytorch' || a.id === 'copy-pytorch'
+    (a) =>
+      a.id === 'update-comfyui' ||
+      a.id === 'copy-update' ||
+      a.id === 'change-pytorch' ||
+      a.id === 'copy-pytorch'
   )
 )
 
@@ -332,11 +336,7 @@ const footerActions = computed<
   for (const action of otherSecondaryActions.value) {
     // Switch Channel is the primary intent after picking a channel, so accent it.
     const variant =
-      action.id === 'switch-channel'
-        ? 'accent'
-        : action.style === 'danger'
-          ? 'danger'
-          : 'default'
+      action.id === 'switch-channel' ? 'accent' : action.style === 'danger' ? 'danger' : 'default'
     out.push({ action, variant })
   }
 
@@ -415,7 +415,11 @@ const cascadeLevels = computed<CascadeLevel[]>(() => {
     levels.push({
       label: props.field.groupLabels?.[level],
       selected: path[level] ?? '',
-      options: [...groups].map(([value, g]) => ({ value, label: g.label, description: g.description }))
+      options: [...groups].map(([value, g]) => ({
+        value,
+        label: g.label,
+        description: g.description
+      }))
     })
   }
   return levels
@@ -462,7 +466,6 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
           {{ statusBadge }}
         </span>
       </div>
-
     </div>
 
     <dl v-if="statRows.length > 0" class="channel-picker-stats">
@@ -479,12 +482,7 @@ const selectOptions = computed<BaseSelectOption[]>(() => {
 
     <!-- Hint shown while `commitsAhead` is still being computed; self-hides
          after the max window if enrichment never completes. -->
-    <p
-      v-if="showEnrichingHint"
-      class="channel-picker-enriching"
-      role="status"
-      aria-live="polite"
-    >
+    <p v-if="showEnrichingHint" class="channel-picker-enriching" role="status" aria-live="polite">
       <Loader2 :size="12" class="channel-picker-enriching-spinner" aria-hidden="true" />
       {{ t('channelCards.computingCommitsAhead', 'Computing commits ahead…') }}
     </p>

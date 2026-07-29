@@ -32,9 +32,9 @@ export async function getGithubStarCount(repo: string): Promise<number | null> {
     const res = await fetch(`https://api.github.com/repos/${repo}`, {
       headers: {
         Accept: 'application/vnd.github+json',
-        'User-Agent': 'Comfy-Desktop',
+        'User-Agent': 'Comfy-Desktop'
       },
-      signal: controller.signal,
+      signal: controller.signal
     })
     if (!res.ok) return null
     const data = (await res.json()) as { stargazers_count?: unknown }

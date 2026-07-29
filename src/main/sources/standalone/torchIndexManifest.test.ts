@@ -3,24 +3,36 @@ import fs from 'fs'
 import path from 'path'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 vi.mock('../../lib/fetch', () => ({
-  fetchJSON: vi.fn(),
+  fetchJSON: vi.fn()
 }))
 vi.mock('../../lib/paths', async () => {
   const os = await import('os')
   const path = await import('path')
-  const dir = path.join(os.tmpdir(), `torch-manifest-test-${process.pid}-${Math.random().toString(36).slice(2)}`)
+  const dir = path.join(
+    os.tmpdir(),
+    `torch-manifest-test-${process.pid}-${Math.random().toString(36).slice(2)}`
+  )
   return { dataDir: () => dir }
 })
 import { fetchJSON } from '../../lib/fetch'
 import { dataDir } from '../../lib/paths'
 import {
-  indexStacksForVariant, refreshComputeCaps, refreshRemoteIndexStacks, ensureRemoteIndexStacks,
-  torchSeriesInfo, nvidiaDriverMismatch, refreshNvidiaDriver,
-  _setComputeCapsForTest, _setComputeCapProbeForTest, _setRemoteDefsForTest, _resetRemoteForTest,
-  _setNvidiaDriverForTest, _setNvidiaDriverProbeForTest,
+  indexStacksForVariant,
+  refreshComputeCaps,
+  refreshRemoteIndexStacks,
+  ensureRemoteIndexStacks,
+  torchSeriesInfo,
+  nvidiaDriverMismatch,
+  refreshNvidiaDriver,
+  _setComputeCapsForTest,
+  _setComputeCapProbeForTest,
+  _setRemoteDefsForTest,
+  _resetRemoteForTest,
+  _setNvidiaDriverForTest,
+  _setNvidiaDriverProbeForTest
 } from './torchIndexManifest'
 
 const realPlatform = process.platform
@@ -59,8 +71,11 @@ describe('indexStacksForVariant', () => {
   it('annotates (never hides) stacks whose wheels lack kernels for the detected GPU', () => {
     setPlatform('win32')
     _setComputeCapsForTest([12.0]) // Blackwell — beyond cu126's sm range
-    expect(entryByTag('win-nvidia', 'cu126')?.capWarning)
-      .toEqual({ min: 5.0, max: 9.0, detected: [12.0] })
+    expect(entryByTag('win-nvidia', 'cu126')?.capWarning).toEqual({
+      min: 5.0,
+      max: 9.0,
+      detected: [12.0]
+    })
     expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toBeUndefined()
   })
 
@@ -68,8 +83,11 @@ describe('indexStacksForVariant', () => {
     setPlatform('win32')
     _setComputeCapsForTest([6.1]) // GTX 10-series
     expect(entryByTag('win-nvidia', 'cu126')?.capWarning).toBeUndefined()
-    expect(entryByTag('win-nvidia', 'cu128')?.capWarning)
-      .toEqual({ min: 7.5, max: 12.0, detected: [6.1] })
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toEqual({
+      min: 7.5,
+      max: 12.0,
+      detected: [6.1]
+    })
   })
 
   it('a stack serving at least one of multiple GPUs carries no warning', () => {
@@ -109,8 +127,11 @@ describe('indexStacksForVariant', () => {
     _setComputeCapProbeForTest(async () => [6.1])
     expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toBeUndefined()
     await refreshComputeCaps()
-    expect(entryByTag('win-nvidia', 'cu128')?.capWarning)
-      .toEqual({ min: 7.5, max: 12.0, detected: [6.1] })
+    expect(entryByTag('win-nvidia', 'cu128')?.capWarning).toEqual({
+      min: 7.5,
+      max: 12.0,
+      detected: [6.1]
+    })
   })
 
   it('produces resolvable pip-applied entries with no bundle', () => {
@@ -137,12 +158,17 @@ describe('remote manifest', () => {
     platforms: ['win32', 'linux'],
     packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu130', torchaudio: '2.11.0+cu130' },
     date: '2026-04-01',
-    note: 'Newest CUDA build.',
+    note: 'Newest CUDA build.'
   }
-  const doc = (stacks: unknown[], schemaVersion = 1): Record<string, unknown> => ({ schemaVersion, stacks })
+  const doc = (stacks: unknown[], schemaVersion = 1): Record<string, unknown> => ({
+    schemaVersion,
+    stacks
+  })
 
   function nvidiaTags(): string[] {
-    return indexStacksForVariant('win-nvidia').map((e) => (e.source as { indexTag: string }).indexTag)
+    return indexStacksForVariant('win-nvidia').map(
+      (e) => (e.source as { indexTag: string }).indexTag
+    )
   }
 
   beforeEach(() => {
@@ -182,7 +208,7 @@ describe('remote manifest', () => {
       kind: 'amd-windows-sdk',
       indexTag: 'rocm7.14',
       accel: 'amd',
-      packages: { torch: '2.12.0+rocm7.14' },
+      packages: { torch: '2.12.0+rocm7.14' }
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([futureAmdEntry, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -197,9 +223,11 @@ describe('remote manifest', () => {
     const untaggedOnIndex = { ...cu130Entry, packages: { torch: '2.11.0' } }
     const companionMismatch = {
       ...cu130Entry,
-      packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu128' },
+      packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu128' }
     }
-    vi.mocked(fetchJSON).mockResolvedValue(doc([mismatched, untaggedOnIndex, companionMismatch, cu130Entry]))
+    vi.mocked(fetchJSON).mockResolvedValue(
+      doc([mismatched, untaggedOnIndex, companionMismatch, cu130Entry])
+    )
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(['cu130'])
   })
@@ -208,18 +236,20 @@ describe('remote manifest', () => {
     const nightlyTorch = {
       ...cu130Entry,
       indexTag: 'cu132',
-      packages: { torch: '2.13.0.dev20260720+cu132' },
+      packages: { torch: '2.13.0.dev20260720+cu132' }
     }
     const nightlyCompanion = {
       ...cu130Entry,
-      packages: { torch: '2.11.0+cu130', torchvision: '0.26.0.dev20260720+cu130' },
+      packages: { torch: '2.11.0+cu130', torchvision: '0.26.0.dev20260720+cu130' }
     }
     // PEP 440 implicit-zero dev spelling must not slip through either
     const implicitZeroDev = {
       ...cu130Entry,
-      packages: { torch: '2.11.0+cu130', torchaudio: '2.11.0.dev+cu130' },
+      packages: { torch: '2.11.0+cu130', torchaudio: '2.11.0.dev+cu130' }
     }
-    vi.mocked(fetchJSON).mockResolvedValue(doc([nightlyTorch, nightlyCompanion, implicitZeroDev, cu130Entry]))
+    vi.mocked(fetchJSON).mockResolvedValue(
+      doc([nightlyTorch, nightlyCompanion, implicitZeroDev, cu130Entry])
+    )
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(['cu130'])
   })
@@ -237,9 +267,9 @@ describe('remote manifest', () => {
     packages: {
       torch: `2.13.0.dev${nightlyDate(daysAgo)}+cu132`,
       torchvision: `0.28.0.dev${nightlyDate(daysAgo)}+cu132`,
-      torchaudio: `2.13.0.dev${nightlyDate(daysAgo)}+cu132`,
+      torchaudio: `2.13.0.dev${nightlyDate(daysAgo)}+cu132`
     },
-    date: recentIso(daysAgo),
+    date: recentIso(daysAgo)
   })
 
   it('serves pytorch-nightly-index entries with coherent dev tuples', async () => {
@@ -258,7 +288,7 @@ describe('remote manifest', () => {
     const stableUnderNightlyKind = { ...nightlyEntry(2), packages: { torch: '2.13.0+cu132' } }
     const mixedTuple = {
       ...nightlyEntry(2),
-      packages: { ...(nightlyEntry(2).packages as object), torchvision: '0.28.0+cu132' },
+      packages: { ...(nightlyEntry(2).packages as object), torchvision: '0.28.0+cu132' }
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([stableUnderNightlyKind, mixedTuple, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -272,7 +302,7 @@ describe('remote manifest', () => {
       accel: 'mps',
       platforms: ['darwin'],
       packages: { torch: `2.13.0.dev${nightlyDate(2)}` },
-      date: recentIso(2),
+      date: recentIso(2)
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([mpsNightly, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -304,8 +334,8 @@ describe('remote manifest', () => {
       ...nightlyEntry(2),
       packages: {
         ...(nightlyEntry(2).packages as object),
-        torchaudio: `2.13.0.dev${nightlyDate(3)}+cu132`,
-      },
+        torchaudio: `2.13.0.dev${nightlyDate(3)}+cu132`
+      }
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([mixedDates, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -333,9 +363,9 @@ describe('remote manifest', () => {
       packages: {
         torch: '2.13.0.dev20260231+cu132',
         torchvision: '0.28.0.dev20260231+cu132',
-        torchaudio: '2.13.0.dev20260231+cu132',
+        torchaudio: '2.13.0.dev20260231+cu132'
       },
-      date: '2026-02-31',
+      date: '2026-02-31'
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([impossible, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -344,19 +374,30 @@ describe('remote manifest', () => {
 
   it('drops entries whose accel, mechanism, and index tag are not one coherent source', async () => {
     const amdFromCpuIndex = {
-      ...cu130Entry, indexTag: 'cpu', accel: 'amd', platforms: ['linux'],
-      packages: { torch: '2.11.0+cpu' },
+      ...cu130Entry,
+      indexTag: 'cpu',
+      accel: 'amd',
+      platforms: ['linux'],
+      packages: { torch: '2.11.0+cpu' }
     }
     const wrongKind = { ...cu130Entry, kind: 'pypi' }
     const taggedMps = {
-      ...cu130Entry, indexTag: 'pypi', accel: 'mps', platforms: ['darwin'],
-      packages: { torch: '2.11.0+cu130' },
+      ...cu130Entry,
+      indexTag: 'pypi',
+      accel: 'mps',
+      platforms: ['darwin'],
+      packages: { torch: '2.11.0+cu130' }
     }
     const mpsOffMac = {
-      ...cu130Entry, indexTag: 'pypi', accel: 'mps', platforms: ['darwin', 'win32'],
-      packages: { torch: '2.11.0' },
+      ...cu130Entry,
+      indexTag: 'pypi',
+      accel: 'mps',
+      platforms: ['darwin', 'win32'],
+      packages: { torch: '2.11.0' }
     }
-    vi.mocked(fetchJSON).mockResolvedValue(doc([amdFromCpuIndex, wrongKind, taggedMps, mpsOffMac, cu130Entry]))
+    vi.mocked(fetchJSON).mockResolvedValue(
+      doc([amdFromCpuIndex, wrongKind, taggedMps, mpsOffMac, cu130Entry])
+    )
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(['cu130'])
     expect(indexStacksForVariant('linux-amd')).toEqual([])
@@ -366,8 +407,11 @@ describe('remote manifest', () => {
 
   it('rejects Windows AMD entries at parse time — schema 1 has no mechanism for them', async () => {
     const winRocm = {
-      ...cu130Entry, indexTag: 'rocm7.1', accel: 'amd', platforms: ['win32', 'linux'],
-      packages: { torch: '2.10.0+rocm7.1' },
+      ...cu130Entry,
+      indexTag: 'rocm7.1',
+      accel: 'amd',
+      platforms: ['win32', 'linux'],
+      packages: { torch: '2.10.0+rocm7.1' }
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([winRocm, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -381,8 +425,12 @@ describe('remote manifest', () => {
     indexTag: 'rocm7.14.0',
     accel: 'amd',
     platforms: ['win32', 'linux'],
-    packages: { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' },
-    date: '2026-07-15',
+    packages: {
+      torch: '2.10.0+rocm7.14.0',
+      torchvision: '0.25.0+rocm7.14.0',
+      torchaudio: '2.10.0+rocm7.14.0'
+    },
+    date: '2026-07-15'
   }
 
   it('serves amd-multi-arch-index entries on Windows AND Linux with the AMD source', async () => {
@@ -407,7 +455,9 @@ describe('remote manifest', () => {
     vi.mocked(fetchJSON).mockResolvedValue(doc([amdMultiArchEntry, pytorchTwin]))
     await refreshRemoteIndexStacks()
     setPlatform('linux')
-    const ids = indexStacksForVariant('linux-amd').map((e) => e.stackId).sort()
+    const ids = indexStacksForVariant('linux-amd')
+      .map((e) => e.stackId)
+      .sort()
     expect(ids).toEqual(['amd-index:rocm7.14.0:2.10.0', 'pytorch-index:rocm7.14.0:2.10.0'])
   })
 
@@ -425,7 +475,7 @@ describe('remote manifest', () => {
     // serves them), but on AMD's broad index an untagged pin is ambiguous.
     const untagged = {
       ...amdMultiArchEntry,
-      packages: { ...amdMultiArchEntry.packages, torchvision: '0.25.0' },
+      packages: { ...amdMultiArchEntry.packages, torchvision: '0.25.0' }
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([untagged, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -436,7 +486,7 @@ describe('remote manifest', () => {
   it('drops dev tuples under the amd-multi-arch kind - it is stable-only', async () => {
     const dev = {
       ...amdMultiArchEntry,
-      packages: { torch: '2.12.0.dev20260720+rocm7.14.0' },
+      packages: { torch: '2.12.0.dev20260720+rocm7.14.0' }
     }
     vi.mocked(fetchJSON).mockResolvedValue(doc([dev, cu130Entry]))
     await refreshRemoteIndexStacks()
@@ -455,7 +505,10 @@ describe('remote manifest', () => {
   })
 
   it('drops all entries sharing a stackId — the renderer round-trips only the id', async () => {
-    const sibling = { ...cu130Entry, packages: { torch: '2.11.0+cu130', torchaudio: '2.11.0+cu130' } }
+    const sibling = {
+      ...cu130Entry,
+      packages: { torch: '2.11.0+cu130', torchaudio: '2.11.0+cu130' }
+    }
     vi.mocked(fetchJSON).mockResolvedValue(doc([cu130Entry, sibling]))
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(expect.arrayContaining(['cu126', 'cu128']))
@@ -473,7 +526,10 @@ describe('remote manifest', () => {
     vi.mocked(fetchJSON).mockResolvedValue(doc([cu130Entry]))
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(['cu130'])
-    const evil = { ...cu130Entry, packages: { torch: '2.11.0+cu130 --index-url https://evil.example' } }
+    const evil = {
+      ...cu130Entry,
+      packages: { torch: '2.11.0+cu130 --index-url https://evil.example' }
+    }
     vi.mocked(fetchJSON).mockResolvedValue(doc([evil]))
     await refreshRemoteIndexStacks()
     // The all-invalid response is indistinguishable from garbage — the
@@ -482,7 +538,10 @@ describe('remote manifest', () => {
   })
 
   it('drops entries with unsafe package versions (built-ins retained on a first fetch)', async () => {
-    const evil = { ...cu130Entry, packages: { torch: '2.11.0+cu130 --index-url https://evil.example' } }
+    const evil = {
+      ...cu130Entry,
+      packages: { torch: '2.11.0+cu130 --index-url https://evil.example' }
+    }
     vi.mocked(fetchJSON).mockResolvedValue(doc([evil]))
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(expect.arrayContaining(['cu126', 'cu128']))
@@ -492,9 +551,15 @@ describe('remote manifest', () => {
   it('a poisoned disk cache cannot suppress the built-in list', () => {
     // The cache file is re-validated on load; an all-invalid document parses
     // to null (indistinguishable from garbage) and built-ins stay.
-    const evil = { ...cu130Entry, packages: { torch: '2.11.0+cu130 --index-url https://evil.example' } }
+    const evil = {
+      ...cu130Entry,
+      packages: { torch: '2.11.0+cu130 --index-url https://evil.example' }
+    }
     fs.mkdirSync(dataDir(), { recursive: true })
-    fs.writeFileSync(path.join(dataDir(), 'torch-index-manifest-cache.json'), JSON.stringify(doc([evil])))
+    fs.writeFileSync(
+      path.join(dataDir(), 'torch-index-manifest-cache.json'),
+      JSON.stringify(doc([evil]))
+    )
     _resetRemoteForTest()
     expect(nvidiaTags()).toEqual(expect.arrayContaining(['cu126', 'cu128']))
     expect(nvidiaTags()).not.toContain('cu130')
@@ -502,7 +567,11 @@ describe('remote manifest', () => {
 
   it('a concurrent refresh and ensure share one in-flight fetch', async () => {
     let release!: (value: unknown) => void
-    vi.mocked(fetchJSON).mockReturnValue(new Promise((resolve) => { release = resolve }) as Promise<unknown>)
+    vi.mocked(fetchJSON).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve
+      }) as Promise<unknown>
+    )
     const refresh = refreshRemoteIndexStacks()
     const ensure = ensureRemoteIndexStacks()
     release(doc([cu130Entry]))
@@ -515,13 +584,15 @@ describe('remote manifest', () => {
     // pytorch.org publishes no Windows ROCm wheels — AMD's own channel is a
     // mechanism this app doesn't support, so the trusted-index gate hides
     // the entry on win32 while Linux (which pytorch.org serves) keeps it.
-    _setRemoteDefsForTest([{
-      indexTag: 'rocm7.1',
-      accel: 'amd',
-      platforms: ['win32', 'linux'],
-      packages: { torch: '2.10.0+rocm7.1' },
-      date: '2026-04-01',
-    }])
+    _setRemoteDefsForTest([
+      {
+        indexTag: 'rocm7.1',
+        accel: 'amd',
+        platforms: ['win32', 'linux'],
+        packages: { torch: '2.10.0+rocm7.1' },
+        date: '2026-04-01'
+      }
+    ])
     expect(indexStacksForVariant('win-amd')).toEqual([])
     setPlatform('linux')
     expect(indexStacksForVariant('linux-amd')).toHaveLength(1)
@@ -559,12 +630,12 @@ describe('series metadata', () => {
     accel: 'nvidia',
     platforms: ['win32', 'linux'],
     packages: { torch: '2.11.0+cu130', torchvision: '0.26.0+cu130', torchaudio: '2.11.0+cu130' },
-    date: '2026-04-01',
+    date: '2026-04-01'
   }
   const doc = (series?: unknown): Record<string, unknown> => ({
     schemaVersion: 1,
     stacks: [cu130Entry],
-    ...(series !== undefined ? { series } : {}),
+    ...(series !== undefined ? { series } : {})
   })
 
   beforeEach(() => {
@@ -581,12 +652,17 @@ describe('series metadata', () => {
   })
 
   it('a remote series entry replaces the whole built-in entry for its tag only', async () => {
-    vi.mocked(fetchJSON).mockResolvedValue(doc({
-      cu130: { note: 'Remote note', minDriver: { win32: '590.00' } },
-    }))
+    vi.mocked(fetchJSON).mockResolvedValue(
+      doc({
+        cu130: { note: 'Remote note', minDriver: { win32: '590.00' } }
+      })
+    )
     await refreshRemoteIndexStacks()
     // The remote entry wins wholesale: no merging of built-in noteKey/minDriver.
-    expect(torchSeriesInfo('cu130')).toEqual({ note: 'Remote note', minDriver: { win32: '590.00' } })
+    expect(torchSeriesInfo('cu130')).toEqual({
+      note: 'Remote note',
+      minDriver: { win32: '590.00' }
+    })
     // Tags the remote map does not mention keep their built-in metadata.
     expect(torchSeriesInfo('cu126')?.noteKey).toBe('pytorchSeriesNoteCu126')
   })
@@ -598,13 +674,15 @@ describe('series metadata', () => {
   })
 
   it('drops malformed series entries one by one, falling back per tag', async () => {
-    vi.mocked(fetchJSON).mockResolvedValue(doc({
-      cu130: { note: 'ok' },
-      cu128: { noteKey: 'bad key!' }, // unsafe i18n key
-      cu126: { minDriver: { win32: 'not-a-version' } }, // non-numeric driver
-      cu132: { minDriver: { android: '1.0' } }, // unknown platform
-      xpu: { minDriver: {} }, // empty map declares nothing
-    }))
+    vi.mocked(fetchJSON).mockResolvedValue(
+      doc({
+        cu130: { note: 'ok' },
+        cu128: { noteKey: 'bad key!' }, // unsafe i18n key
+        cu126: { minDriver: { win32: 'not-a-version' } }, // non-numeric driver
+        cu132: { minDriver: { android: '1.0' } }, // unknown platform
+        xpu: { minDriver: {} } // empty map declares nothing
+      })
+    )
     await refreshRemoteIndexStacks()
     expect(torchSeriesInfo('cu130')).toEqual({ note: 'ok' })
     // Each rejected entry falls back to the built-in default for its tag.
@@ -676,7 +754,9 @@ describe('nvidiaDriverMismatch', () => {
     // fetches - a rejection would take the whole catalog refresh down. And
     // the previous detection must not keep warning about a replaced driver.
     _setNvidiaDriverForTest('576.02')
-    _setNvidiaDriverProbeForTest(async () => { throw new Error('nvidia-smi exploded') })
+    _setNvidiaDriverProbeForTest(async () => {
+      throw new Error('nvidia-smi exploded')
+    })
     await expect(refreshNvidiaDriver()).resolves.toBeUndefined()
     expect(nvidiaDriverMismatch(info)).toBeNull()
   })

@@ -10,7 +10,14 @@ import { copyDirWithProgress } from '../../lib/copy'
 // Top-level names owned by the torch stack wheels themselves (torch ships
 // torch/torchgen/functorch, torchaudio ships torio, plus dist-info and .libs
 // sidecars, which packageKey/stripLibs map back to these).
-const TORCH_FAMILY_EXACT = new Set(['torch', 'torchgen', 'torchvision', 'torchaudio', 'torio', 'functorch'])
+const TORCH_FAMILY_EXACT = new Set([
+  'torch',
+  'torchgen',
+  'torchvision',
+  'torchaudio',
+  'torio',
+  'functorch'
+])
 // Separator-prefixed families, matched as `<p>` or `<p>_*` AFTER normalizing
 // '-' to '_' - NEVER as a bare substring: ordinary ecosystem packages like
 // torchsde/torchmetrics must not match, or a bundle graft would overwrite the
@@ -21,7 +28,15 @@ const TORCH_FAMILY_EXACT = new Set(['torch', 'torchgen', 'torchvision', 'torchau
 // (_rocm_sdk_core, _rocm_sdk_libraries_custom): rocm_sdk.find_libraries
 // imports them under exactly that name, so a graft that replaced the
 // dist-info without the payload would strand torch on the old SDK's DLLs.
-const TORCH_FAMILY_PREFIXES = ['torch', 'nvidia', 'triton', 'pytorch_triton', 'cuda', 'rocm', '_rocm_sdk']
+const TORCH_FAMILY_PREFIXES = [
+  'torch',
+  'nvidia',
+  'triton',
+  'pytorch_triton',
+  'cuda',
+  'rocm',
+  '_rocm_sdk'
+]
 const STAGING_PREFIX = '.torchrepair-'
 // Backup names taken by the old packages during the swap. Shares the staging
 // prefix so the leftover sweep and the swap loop's skip check cover both.
@@ -143,7 +158,9 @@ export async function recoverTorchFamilyBackups(site: string): Promise<void> {
     // invisible to pip and unrepairable, so never guess destructively: keep
     // the stranger. At worst that leaves duplicate metadata (two dist-infos
     // of one package), which the next successful swap backs up and cleans.
-    console.warn('torch-family swap marker was unreadable; rolled backups back without sweeping placed entries - duplicate package metadata may remain until the next stack swap')
+    console.warn(
+      'torch-family swap marker was unreadable; rolled backups back without sweeping placed entries - duplicate package metadata may remain until the next stack swap'
+    )
   }
   await fs.promises.rm(path.join(site, SWAP_MARKER), { force: true })
 }
@@ -161,8 +178,14 @@ export async function recoverTorchFamilyBackups(site: string): Promise<void> {
  * deps a snapshot restore or custom node installed (torchsde, torchmetrics)
  * are left untouched.
  */
-export async function copyTorchFamily(srcSite: string, dstSite: string, signal?: AbortSignal): Promise<void> {
-  const srcEntries = fs.readdirSync(srcSite, { withFileTypes: true }).filter((e) => isTorchFamilyEntry(e.name))
+export async function copyTorchFamily(
+  srcSite: string,
+  dstSite: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const srcEntries = fs
+    .readdirSync(srcSite, { withFileTypes: true })
+    .filter((e) => isTorchFamilyEntry(e.name))
   const providedKeys = new Set(srcEntries.map((e) => packageKey(e.name)))
 
   // Recover leftovers from a prior run that died mid-swap, then sweep pure
@@ -187,8 +210,14 @@ export async function copyTorchFamily(srcSite: string, dstSite: string, signal?:
 
   // 2. Journal the swap plan BEFORE the first rename, so an interruption
   //    anywhere in the rename phase is distinguishable from committed debris.
-  const toBackup = fs.readdirSync(dstSite).filter((entry) =>
-    !entry.startsWith(STAGING_PREFIX) && isTorchFamilyEntry(entry) && providedKeys.has(packageKey(entry)))
+  const toBackup = fs
+    .readdirSync(dstSite)
+    .filter(
+      (entry) =>
+        !entry.startsWith(STAGING_PREFIX) &&
+        isTorchFamilyEntry(entry) &&
+        providedKeys.has(packageKey(entry))
+    )
   await writeSwapMarker(dstSite, { backups: toBackup, placed: staged.map((s) => s.name) })
 
   // 3. Swap via renames only (fast metadata ops, each individually atomic):
@@ -212,15 +241,20 @@ export async function copyTorchFamily(srcSite: string, dstSite: string, signal?:
     // recovery retries, and the caller must know the live venv is incomplete.
     const rollbackErrors: string[] = []
     for (const final of placed) {
-      await fs.promises.rm(final, { recursive: true, force: true })
+      await fs.promises
+        .rm(final, { recursive: true, force: true })
         .catch((e: Error) => rollbackErrors.push(`remove ${path.basename(final)}: ${e.message}`))
     }
     for (const b of backups) {
-      await fs.promises.rename(b.bak, path.join(dstSite, b.name))
+      await fs.promises
+        .rename(b.bak, path.join(dstSite, b.name))
         .catch((e: Error) => rollbackErrors.push(`restore ${b.name}: ${e.message}`))
     }
     if (rollbackErrors.length > 0) {
-      throw new Error(`${(err as Error).message}; rollback incomplete: ${rollbackErrors.join(', ')}`, { cause: err })
+      throw new Error(
+        `${(err as Error).message}; rollback incomplete: ${rollbackErrors.join(', ')}`,
+        { cause: err }
+      )
     }
     await fs.promises.rm(path.join(dstSite, SWAP_MARKER), { force: true }).catch(() => {})
     throw err
@@ -241,7 +275,7 @@ export async function copyTorchFamily(srcSite: string, dstSite: string, signal?:
 // import against the wrong torchaudio - or nothing at all).
 const DIST_OWNED_EXTRAS: Record<string, readonly string[]> = {
   torch: ['torchgen', 'functorch'],
-  torchaudio: ['torio'],
+  torchaudio: ['torio']
 }
 
 /** ROCm-SDK-ecosystem site-packages entry: the SDK distributions' metadata
@@ -255,12 +289,16 @@ const DIST_OWNED_EXTRAS: Record<string, readonly string[]> = {
 function isRocmEcosystemEntry(name: string): boolean {
   const key = packageKey(stripLibs(name))
   const base = key.startsWith('_') ? key.slice(1) : key
-  return base === 'rocm'
-    || base === 'rocm_bootstrap'
-    || base === 'rocm_sdk'
-    || base.startsWith('rocm_sdk_')
-    || base === 'amd_torch_device' || base.startsWith('amd_torch_device_')
-    || base === 'amd_torchvision_device' || base.startsWith('amd_torchvision_device_')
+  return (
+    base === 'rocm' ||
+    base === 'rocm_bootstrap' ||
+    base === 'rocm_sdk' ||
+    base.startsWith('rocm_sdk_') ||
+    base === 'amd_torch_device' ||
+    base.startsWith('amd_torch_device_') ||
+    base === 'amd_torchvision_device' ||
+    base.startsWith('amd_torchvision_device_')
+  )
 }
 
 /** Normalized dist names of every installed ROCm-ecosystem distribution in
@@ -290,9 +328,11 @@ export function listRocmEcosystemDists(site: string): string[] {
  *  libraries) - their presence marks a venv as multi-arch-built. */
 export function isAmdMultiArchOverlayDist(name: string): boolean {
   const key = name.toLowerCase().replace(/-/g, '_')
-  return key.startsWith('amd_torch_device')
-    || key.startsWith('amd_torchvision_device')
-    || key.startsWith('rocm_sdk_device')
+  return (
+    key.startsWith('amd_torch_device') ||
+    key.startsWith('amd_torchvision_device') ||
+    key.startsWith('rocm_sdk_device')
+  )
 }
 
 /**
@@ -326,7 +366,10 @@ export async function removeStaleRocmEntries(srcSite: string, dstSite: string): 
  * target stack omits - it operates on the transaction's candidate copy, never
  * the live venv.
  */
-export async function removeTorchFamilyPackages(site: string, names: readonly string[]): Promise<void> {
+export async function removeTorchFamilyPackages(
+  site: string,
+  names: readonly string[]
+): Promise<void> {
   const keys = new Set(names.map((n) => n.toLowerCase().replace(/-/g, '_')))
   for (const name of [...keys]) {
     for (const extra of DIST_OWNED_EXTRAS[name] ?? []) keys.add(extra)
