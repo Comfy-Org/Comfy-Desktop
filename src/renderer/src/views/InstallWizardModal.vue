@@ -240,10 +240,6 @@ async function handleConfigureContinue(): Promise<void> {
     })
     return
   }
-  if (templateIsApiNode.value) {
-    const none = templateOptions.value.find((o) => o.value === NO_TEMPLATE_VALUE)
-    if (none) selections.value.bundledTemplate = none
-  }
   await handleSave()
 }
 
