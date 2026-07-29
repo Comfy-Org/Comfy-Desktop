@@ -249,14 +249,12 @@ async function runLaunch(
   const sender = event.sender
   const sendProgress = makeSendProgress(sender, installationId)
 
-  // Show the starter-template model-download phase in THIS launch only on the
-  // first launch after install (one-shot `pendingTemplateOpen`), and only when a
-  // background download task actually exists for it. Covers the skip cases
-  // (no template / consent off / zero-model / relaunch).
+  /** Show template model-download phase for first launch if needed. */
   const showTemplatePhase =
     inst.sourceId === 'standalone' &&
     !!inst.bundledTemplateId &&
     inst.downloadTemplateModels === true &&
+    (inst.bundledTemplateSizeBytes ?? 0) > 0 &&
     !!inst.pendingTemplateOpen &&
     getTemplateDownloadState(installationId) !== undefined
 
