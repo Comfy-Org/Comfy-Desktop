@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { app, BrowserWindow, dialog, nativeImage } from 'electron'
 import { EventEmitter } from 'events'
 import fs from 'fs'
@@ -266,6 +267,16 @@ function getAssetTempDir(): string {
 const WIN_MAX_PATH = 259
 const DEDUP_RESERVE = 6
 
+/**
+ * Unique temp file name for an in-flight download. A random nonce (not just
+ * a timestamp) prevents collisions when two downloads with the same leaf
+ * name start in the same millisecond - plausible now that nested output
+ * subfolders make identical basenames (a/video.mp4, b/video.mp4) common.
+ */
+function tempFileNameFor(filename: string): string {
+  return `${Date.now()}-${randomUUID().slice(0, 8)}-${filename}.tmp`
+}
+
 // Reserved DOS device names; Windows treats these as devices even with an
 // extension (e.g. "NUL.png").
 const WIN_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
@@ -353,6 +364,13 @@ export function resolveAssetSavePath(
   return safeRelativePath ? path.join(outputDir, safeRelativePath) : null
 }
 
+/**
+ * Lexical containment check - deliberately no realpath. Symlinks/junctions
+ * the user created inside the output/models directory are respected: a save
+ * path under `outputDir/mylink/...` passes and the write follows the link to
+ * its target. Only the local user can create such links (a remote server
+ * cannot), so following them is user intent, not an escape vector.
+ */
 export function isPathContained(filePath: string, baseDir: string): boolean {
   const resolved = path.resolve(filePath)
   const resolvedBase = path.resolve(baseDir)
@@ -501,7 +519,7 @@ export async function startModelDownload(
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const savePath = path.join(baseDir, directory, filename)
   const tempDir = modelTempDirFor(baseDir)
-  const tempPath = path.join(tempDir, `${Date.now()}-${filename}.tmp`)
+  const tempPath = path.join(tempDir, tempFileNameFor(filename))
 
   // Capture before the validation early-returns so even a synchronous
   // error (bad path / extension) lands a retryable terminal entry.
@@ -607,7 +625,7 @@ export async function startAssetDownload(
   // Temp dir is a sibling of the output dir — same filesystem for atomic rename,
   // but outside the output dir so ComfyUI won't scan it.
   const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
-  const tempPath = path.join(tempDir, `${Date.now()}-${savedFilename}.tmp`)
+  const tempPath = path.join(tempDir, tempFileNameFor(savedFilename))
 
   const makeProgress = (
     overrides: Partial<DownloadProgress>,
@@ -826,7 +844,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
               fs.mkdirSync(path.dirname(candidate), { recursive: true })
               pending.savePath = candidate
               pending.filename = path.basename(candidate)
-              pending.tempPath = path.join(path.dirname(pending.tempPath), `${Date.now()}-${pending.filename}.tmp`)
+              pending.tempPath = path.join(path.dirname(pending.tempPath), tempFileNameFor(pending.filename))
               pending.lastProgress = { ...pending.lastProgress, filename: pending.filename }
               const retryParams = retryParamsByUrl.get(pending.url)
               if (retryParams?.kind === 'asset') {

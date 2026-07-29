@@ -433,6 +433,79 @@ describe('asset download retries', () => {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
     }
   })
+
+  it('allocates distinct temp paths for same-named downloads started in the same millisecond', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    // Freeze the clock: with a timestamp-only temp name these two downloads
+    // would collide on the same temp file.
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+    const urlA = 'https://remote.example/api/view?filename=a-video.mp4'
+    const urlB = 'https://remote.example/api/view?filename=b-video.mp4'
+    let willDownload: ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn(),
+    } as unknown as Electron.Session
+    const webContents = {
+      session,
+      send: vi.fn(),
+      isDestroyed: () => false,
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents,
+    } as unknown as Electron.BrowserWindow
+
+    function createItem(url: string) {
+      let done: ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void) | undefined
+      const setSavePath = vi.fn<(savePath: string) => void>()
+      const item = {
+        getURLChain: () => [url],
+        getURL: () => url,
+        getContentDisposition: () => null,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn((event: string, handler: typeof done) => {
+          if (event === 'done') done = handler
+        }),
+        getTotalBytes: () => 1,
+        getReceivedBytes: () => 1,
+        isPaused: () => false,
+      } as unknown as Electron.DownloadItem
+      return { item, setSavePath, getDone: () => done }
+    }
+
+    try {
+      await mod.startAssetDownload(win, urlA, 'a/video.mp4', outputDir)
+      await mod.startAssetDownload(win, urlB, 'b/video.mp4', outputDir)
+      expect(willDownload).toBeTypeOf('function')
+
+      const a = createItem(urlA)
+      const b = createItem(urlB)
+      willDownload!({}, a.item, null)
+      willDownload!({}, b.item, null)
+
+      const tempA = a.setSavePath.mock.calls[0]?.[0]
+      const tempB = b.setSavePath.mock.calls[0]?.[0]
+      expect(tempA).toBeTypeOf('string')
+      expect(tempB).toBeTypeOf('string')
+      expect(tempA).not.toBe(tempB)
+
+      // Complete both so they land on their own nested destinations.
+      await fs.promises.writeFile(tempA!, 'content-a')
+      await fs.promises.writeFile(tempB!, 'content-b')
+      a.getDone()!({}, 'completed')
+      b.getDone()!({}, 'completed')
+      await expect(fs.promises.readFile(path.join(outputDir, 'a', 'video.mp4'), 'utf8')).resolves.toBe('content-a')
+      await expect(fs.promises.readFile(path.join(outputDir, 'b', 'video.mp4'), 'utf8')).resolves.toBe('content-b')
+    } finally {
+      nowSpy.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('parseContentDispositionFilename', () => {
