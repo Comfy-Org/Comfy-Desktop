@@ -36,6 +36,8 @@ export interface HydratedTemplate {
   description: string
   /** Coarse total download estimate (bytes); 0 when unknown. */
   sizeBytes: number
+  /** Runs on API nodes — nothing to download, but each run spends credits. */
+  apiNode: boolean
   /** Card preview image URL, or `null` for non-image previews (audio → glyph). */
   thumbnailUrl: string | null
   /** Index `title` (e.g. "Image", "Video") of the category the template lives
@@ -100,8 +102,7 @@ function indexById(index: unknown): Map<string, IndexLocation> {
   return byId
 }
 
-/** Bare modality labels that aren't a task — dropped when picking the task tag. */
-const MODALITY_TAGS = new Set(['image', 'video', 'audio', '3d'])
+const NON_TASK_TAGS = new Set(['image', 'video', 'audio', '3d', '3d model', 'api'])
 
 /** Subtitle shown when a template's `tags` carry no specific task, so a card is
  *  never left with a blank descriptor (e.g. Wan Fun Camera, tags: ['Video']). */
@@ -113,13 +114,13 @@ const DEFAULT_TASK: Record<TemplateModality, string> = {
 }
 
 /** The template's task (e.g. "Text to Image", "Image Edit") from its `tags`,
- *  skipping the bare modality label; falls back to the modality default. */
+ *  skipping kind labels; falls back to the modality default. */
 function taskOf(tags: unknown, modality: TemplateModality): string {
   if (Array.isArray(tags)) {
     for (const tag of tags) {
       if (typeof tag !== 'string') continue
       const trimmed = tag.trim()
-      if (trimmed && !MODALITY_TAGS.has(trimmed.toLowerCase())) return trimmed
+      if (trimmed && !NON_TASK_TAGS.has(trimmed.toLowerCase())) return trimmed
     }
   }
   return DEFAULT_TASK[modality]
@@ -140,13 +141,15 @@ function nameOf(title: string, task: string): string {
 /** Build a card from a template `id` + its live index location (when present),
  *  preferring live metadata and falling back to the offline `snapshot` (which a
  *  substituted, non-curated id won't have). */
-function hydrateOne(
-  id: string,
-  modality: TemplateModality,
-  recommended: boolean,
-  location: IndexLocation | undefined,
-  snapshot?: TemplateSnapshot,
-): HydratedTemplate {
+function hydrateOne(card: {
+  id: string
+  modality: TemplateModality
+  recommended: boolean
+  apiNode: boolean
+  location: IndexLocation | undefined
+  snapshot?: TemplateSnapshot
+}): HydratedTemplate {
+  const { id, modality, recommended, apiNode, location, snapshot } = card
   const entry = location?.entry
 
   const title =
@@ -169,6 +172,7 @@ function hydrateOne(
     task,
     description,
     sizeBytes,
+    apiNode,
     thumbnailUrl: thumbnailUrlFor(id, mediaSubtype),
     category: location?.category ?? '',
   }
@@ -235,26 +239,32 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
   for (const curated of CURATED_TEMPLATES) {
     if (!curated?.id || used.has(curated.id) || !curated.snapshot) continue
 
+    const recommended = curated.recommended === true
+    const apiNode = curated.apiNode === true
+
+    const { modality, snapshot } = curated
     const location = byId.get(curated.id)
     if (location || !online) {
       used.add(curated.id)
-      catalog.push(
-        hydrateOne(curated.id, curated.modality, curated.recommended === true, location, curated.snapshot)
-      )
+      catalog.push(hydrateOne({ id: curated.id, modality, recommended, apiNode, location, snapshot }))
       continue
     }
 
     // Curated id has vanished upstream: show the first live template of the same
     // modality we haven't already used, so the slot still offers a real,
-    // installable pick rather than a stale snapshot card.
-    const sub = firstUnusedOfModality(byId, curated.modality, used)
+    // installable pick rather than a stale snapshot card. An API-node slot keeps
+    // its snapshot — substituting would put a multi-GB download behind a badge
+    // that promises none.
+    const sub = apiNode ? null : firstUnusedOfModality(byId, modality, used)
     if (sub) {
       used.add(sub.entry.name)
-      catalog.push(hydrateOne(sub.entry.name, curated.modality, curated.recommended === true, sub))
+      catalog.push(
+        hydrateOne({ id: sub.entry.name, modality, recommended, apiNode: false, location: sub })
+      )
     } else {
       used.add(curated.id)
       catalog.push(
-        hydrateOne(curated.id, curated.modality, curated.recommended === true, undefined, curated.snapshot)
+        hydrateOne({ id: curated.id, modality, recommended, apiNode, location: undefined, snapshot })
       )
     }
   }
