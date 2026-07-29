@@ -127,6 +127,24 @@ describe('executionTap', () => {
     expect(errs[0]!.ctx).toMatchObject({ error_class: 'RuntimeError' })
   })
 
+  it('recognizes exceptions from uppercase module packages like PIL', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        '  File "nodes.py", line 5, in load_image',
+        '    img = Image.open(path)',
+        "PIL.UnidentifiedImageError: cannot identify image file 'x.png'",
+        '',
+        'next-line'
+      ].join('\n'),
+      'stderr'
+    )
+    const errs = captured.filter((c) => c.event === 'comfy.desktop.execution.error')
+    expect(errs.length).toBe(1)
+    expect(errs[0]!.ctx).toMatchObject({ error_class: 'PIL.UnidentifiedImageError' })
+  })
+
   it('emits one error using the outer exception in chained Python tracebacks', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest(

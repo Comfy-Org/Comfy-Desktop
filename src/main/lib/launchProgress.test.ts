@@ -68,6 +68,31 @@ describe('createLaunchProgressTracker', () => {
     expect(order[order.length - 1]).toBe('startingServer')
   })
 
+  it('re-observes phases for telemetry after resetPhaseObservation without regressing UI progress', () => {
+    const emits: Emit[] = []
+    const observed: string[] = []
+    const tracker = createLaunchProgressTracker({
+      phases: DEFAULT_LAUNCH_PHASES,
+      sendProgress: (phase, detail) => emits.push({ phase, ...detail }),
+      onPhaseEnter: (phase) => observed.push(phase)
+    })
+    tracker.start()
+    tracker.ingest('Total VRAM 8192 MB\n')
+    tracker.ingest('Starting server\n')
+    expect(observed).toEqual(['launchStart', 'gpu', 'startingServer'])
+
+    // Reboot retry: the respawned process re-logs its boot from the top. The
+    // per-attempt buffer must see those milestones again...
+    observed.length = 0
+    const uiEmitsBefore = emits.length
+    tracker.resetPhaseObservation()
+    tracker.ingest('Total VRAM 8192 MB\n')
+    tracker.ingest('Starting server\n')
+    expect(observed).toEqual(['launchStart', 'gpu', 'startingServer'])
+    // ...while the monotonic UI progress does not regress or re-emit entries.
+    expect(emits.slice(uiEmitsBefore).every((e) => e.phase === 'startingServer')).toBe(true)
+  })
+
   it('start() emits steps + the synthetic first phase active before any stdout', () => {
     const emits: Emit[] = []
     const tracker = createLaunchProgressTracker({

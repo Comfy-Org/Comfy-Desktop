@@ -51,7 +51,10 @@ export function forwardDatadogError(payload: DatadogForwardedError): void {
       level: scrubbed.level ?? null
     })
     if (accepted) {
+      // Carry the context through so Datadog keeps reason/exitCode/type for
+      // child/renderer crashes; forwardExceptionToRenderer allow-lists keys.
       mainTelemetry.forwardExceptionToRenderer({
+        ...(scrubbed.context || {}),
         origin: 'main-process',
         source: scrubbed.source,
         level: scrubbed.level ?? null

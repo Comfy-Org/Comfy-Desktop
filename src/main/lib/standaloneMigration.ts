@@ -31,6 +31,7 @@ import type { SourcePlugin, FieldOption } from '../types/sources'
 import type { ComfyVersion } from './version'
 import { assertReadable } from './desktopDetect'
 import * as telemetry from './telemetry'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 const MARKER_FILE = '.comfyui-desktop-2'
 
@@ -596,9 +597,14 @@ export async function migrateToStandaloneFromSnapshot(
     // after the successful env install must not condemn the new install - it
     // is bootable, and its newest snapshot already records the actual state
     // (#1255). Finish the migration and report the failure to the caller.
-    // `emitError: true` because the error is swallowed here: the canonical
-    // flow step never sees it, so the step must emit its own error event.
+    // `canonicalError` + `emitError: false` isolate the step: a tolerated
+    // failure must not poison the canonical flow scope's `failed_stage` (a
+    // later step's failure would be misattributed), and a cancellation must
+    // not emit an error event on top of the flow-level one. The catch below
+    // emits the step error itself for the tolerated (non-cancel) case, since
+    // the swallowed error never reaches the canonical flow step.
     let restoreError: string | undefined
+    const restoreStartedAt = Date.now()
     try {
       await telemetry.trackedStep(
         'comfy.desktop.migrate.restore_snapshot',
@@ -612,11 +618,16 @@ export async function migrateToStandaloneFromSnapshot(
             update
           )
         },
-        { emitError: true }
+        { canonicalError: true, emitError: false }
       )
     } catch (err) {
       if (signal.aborted) throw err
       restoreError = (err as Error).message
+      telemetry.emit('comfy.desktop.migrate.restore_snapshot.error', {
+        ...installContext,
+        duration_ms: Date.now() - restoreStartedAt,
+        ...buildErrorFields(err)
+      })
       // Drop the retry pointer so a later re-install can't replay the failed
       // restore, and release the staged file if this migration owns it.
       await update({ pendingSnapshotRestore: undefined })

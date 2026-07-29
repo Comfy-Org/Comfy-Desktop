@@ -88,7 +88,14 @@ export function killProcessTree(proc: ChildProcess | null): Promise<void> {
       if ((err as NodeJS.ErrnoException).code === 'ESRCH') return done()
     }
 
+    // Bounded: a group member stuck in uninterruptible sleep (or persistently
+    // EPERM) would otherwise trap this poll forever and hang every caller that
+    // awaits the kill (launch cancel, relaunch). Resolving on the cap is the
+    // lesser evil - the caller proceeds against a possibly-lingering process
+    // instead of deadlocking the lifecycle.
+    const killDeadline = Date.now() + 5000
     const waitForGroupExit = (): void => {
+      if (Date.now() > killDeadline) return done()
       try {
         process.kill(processGroup, 0)
         setTimeout(waitForGroupExit, 25).unref()
@@ -185,15 +192,26 @@ export function waitForPort(
       attempt++
       if (onPoll) onPoll({ attempt, elapsedMs: elapsed })
 
+      // Idempotency guard: `req.destroy()` on timeout synchronously emits
+      // 'error', so without it each timed-out attempt schedules TWO retry
+      // polls and the pollers multiply.
+      let settled = false
+      const retry = (): void => {
+        if (settled) return
+        settled = true
+        setTimeout(poll, intervalMs)
+      }
       const req = http.get({ host, port, path: '/', timeout: 2000 }, (res) => {
         res.resume()
+        if (settled) return
+        settled = true
         resolve()
       })
 
-      req.on('error', () => setTimeout(poll, intervalMs))
+      req.on('error', retry)
       req.on('timeout', () => {
         req.destroy()
-        setTimeout(poll, intervalMs)
+        retry()
       })
     }
 
@@ -224,15 +242,25 @@ export function waitForUrl(
       attempt++
       if (onPoll) onPoll({ attempt, elapsedMs: elapsed })
 
+      // Same idempotency guard as waitForPort: destroy-on-timeout emits
+      // 'error', which must not schedule a second retry poll.
+      let settled = false
+      const retry = (): void => {
+        if (settled) return
+        settled = true
+        setTimeout(poll, intervalMs)
+      }
       const req = client.get(url, { timeout: 2000 }, (res) => {
         res.resume()
+        if (settled) return
+        settled = true
         resolve()
       })
 
-      req.on('error', () => setTimeout(poll, intervalMs))
+      req.on('error', retry)
       req.on('timeout', () => {
         req.destroy()
-        setTimeout(poll, intervalMs)
+        retry()
       })
     }
 

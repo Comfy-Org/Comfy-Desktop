@@ -1156,6 +1156,10 @@ async function runLaunch(
     // actually fails (or succeeds). The tracker's `onPhaseEnter` feeds it;
     // it is flushed only on the terminal failure path below.
     startBootPhases(installationId, (inst.variant as string | undefined) ?? null)
+    // Re-arm per-attempt phase observation: the UI tracker's index is
+    // monotonic across retries, so without this the respawned boot's re-hit
+    // milestones would never reach the fresh buffer above.
+    tracker.resetPhaseObservation()
     const spawned = await spawnComfy()
 
     let earlyExit: string | null = null
