@@ -47,6 +47,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Format
+            command: pnpm run format:check
           - name: Lint
             command: pnpm run lint
           - name: Typecheck
