@@ -21,7 +21,7 @@ export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 /**
  * Build "Save as type" filters for the generic Save dialog from the suggested
  * filename. Electron's `showSaveDialog`/`showSaveDialogSync` does not infer
- * filters from the default filename — on Windows the dropdown collapses to
+ * filters from the default filename - on Windows the dropdown collapses to
  * "All Files (*.*)" if you omit `filters`, which is the symptom field-reported
  * as "Can't save image from Preview Image node" (#989). Pick a primary filter
  * matching the file's actual extension so the dialog opens on the right
@@ -54,7 +54,7 @@ export function buildSaveDialogFilters(suggestedName: string): Electron.FileFilt
 
   const primary = FAMILIES[ext]
   if (primary) return [primary, ALL_FILES]
-  // Unknown extension — keep it as a literal filter so the dialog still shows
+  // Unknown extension - keep it as a literal filter so the dialog still shows
   // the user what file type they're saving instead of collapsing to *.
   return [{ name: `${ext.toUpperCase()} File`, extensions: [ext] }, ALL_FILES]
 }
@@ -177,7 +177,7 @@ function isTerminalStatus(status: DownloadProgress['status']): boolean {
 /**
  * Template-model downloads mirrored into the tray after the user skips ahead to
  * ComfyUI. The resume-capable background task stays the byte-owner; this is a
- * read-only reflection merged into the tray view-state, NOT a real download — so
+ * read-only reflection merged into the tray view-state, NOT a real download - so
  * it never touches `pendingDownloads`' DownloadItem lifecycle (cancel/retry/
  * temp-rename stay untouched). Scoped per install so concurrent installs can each
  * mirror their own rows without clobbering one another. */
@@ -447,7 +447,7 @@ function broadcastProgress(progress: DownloadProgress): void {
       }
     }
   }
-  // Fan out to every renderer so the Settings → Downloads tab and popup store
+  // Fan out to every renderer so the Settings -> Downloads tab and popup store
   // both receive live progress events.
   _broadcastToRenderer('model-download-progress', progress)
   // Push terminal entries to the recent buffer first so the snapshot the
@@ -472,7 +472,7 @@ function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress): voi
 }
 
 /** First-seen timestamp per URL, preserved across status transitions and the
- *  pending→recent migration; cleared on full eviction from `recentDownloads`. */
+ *  pending->recent migration; cleared on full eviction from `recentDownloads`. */
 const createdAtByUrl = new Map<string, number>()
 
 function reportProgress(progress: DownloadProgress): void {
@@ -695,15 +695,24 @@ export async function startAssetDownload(
   }
   pendingDownloads.set(url, pending)
 
+  // Failures below report a terminal `error` entry and resolve false instead
+  // of rethrowing: `retryDownload` re-dispatches fire-and-forget, so a
+  // rejection here would surface as an unhandled promise rejection rather
+  // than an error row, unlike `startModelDownload`'s failure paths.
   let savePath: string
   try {
     savePath = await deduplicatePath(path.join(outputDir, safeFilename))
   } catch (err) {
+    reportProgress({
+      ...pending.lastProgress,
+      status: 'error',
+      error: `Failed to prepare save path: ${err instanceof Error ? err.message : String(err)}`,
+    })
     pendingDownloads.delete(url)
-    throw err
+    return false
   }
   const savedFilename = path.basename(savePath)
-  // Temp dir is a sibling of the output dir — same filesystem for atomic rename,
+  // Temp dir is a sibling of the output dir - same filesystem for atomic rename,
   // but outside the output dir so ComfyUI won't scan it.
   const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
   pending.savePath = savePath
@@ -717,8 +726,13 @@ export async function startAssetDownload(
   } catch (err) {
     // Release the reservation so the URL is not stuck pointing at a download
     // that never started.
+    reportProgress({
+      ...pending.lastProgress,
+      status: 'error',
+      error: `Failed to create download directory: ${err instanceof Error ? err.message : String(err)}`,
+    })
     pendingDownloads.delete(url)
-    throw err
+    return false
   }
 
   if (win.isDestroyed()) {
@@ -842,7 +856,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
             return
           }
         }
-        // Try to remove the temp directory if it's now empty (safe — fails silently if not empty)
+        // Try to remove the temp directory if it's now empty (safe - fails silently if not empty)
         try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
       }
       reportProgress({
@@ -892,7 +906,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
     const pending = findPendingForItem(item)
 
     if (pending) {
-      // Managed download — auto-save to the resolved path
+      // Managed download - auto-save to the resolved path
       pending.item = item
 
       // Resolve a better asset filename from the server response: cloud uses
@@ -936,7 +950,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       item.setSavePath(pending.tempPath!)
       attachDownloadListeners(item, pending)
     } else {
-      // General download — browser-like save dialog
+      // General download - browser-like save dialog
       const suggestedName = item.getFilename()
       const downloadsDir = app.getPath('downloads')
       // Seed the dialog with the directory the user last saved to, matching
@@ -1033,7 +1047,7 @@ export function cancelModelDownload(url: string): boolean {
   if (pending.item) {
     pending.item.cancel()
   } else {
-    // Download hasn't reached will-download yet — clean up immediately
+    // Download hasn't reached will-download yet - clean up immediately
     pendingDownloads.delete(url)
     reportProgress({
       url,
@@ -1073,7 +1087,7 @@ export function retryDownload(url: string): boolean {
   downloadEvents.emit('tray-state-changed')
 
   if (params.kind === 'asset') {
-    // Best-effort token reuse — if the captured token has expired the
+    // Best-effort token reuse - if the captured token has expired the
     // download simply re-enters `error` and stays retryable.
     void startAssetDownload(win, url, params.filename, params.outputDir!, params.authToken, sender)
   } else {
@@ -1101,7 +1115,7 @@ const thumbnailCache = new Map<string, string>()
  *  Lazy + cached so it only runs for visible image rows.
  *
  *  `savePath` is a LOCAL filesystem path (a download's `savePath`), never a
- *  remote/source URL — this only ever reads from disk, never the network. A
+ *  remote/source URL - this only ever reads from disk, never the network. A
  *  value with a URL scheme is rejected so a caller passing the wrong field
  *  (e.g. the entry's `url`) can't trigger a path-resolve on a URL. */
 export async function getDownloadThumbnail(savePath: unknown): Promise<string | null> {
@@ -1143,7 +1157,7 @@ export async function getDownloadThumbnail(savePath: unknown): Promise<string | 
   }
 }
 
-/** Full snapshot for the renderer store to seed from on mount — active entries
+/** Full snapshot for the renderer store to seed from on mount - active entries
  *  plus the recent terminal buffer. */
 export function getAllDownloads(): DownloadProgress[] {
   const result: DownloadProgress[] = []

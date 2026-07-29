@@ -494,6 +494,53 @@ describe('asset download retries', () => {
     }
   })
 
+  it('resolves false with an error entry when the save directory cannot be created', async () => {
+    // `retryDownload` re-dispatches fire-and-forget, so a setup failure must
+    // surface as an error progress event, never a rejected promise.
+    const base = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://remote.example/api/view?filename=blocked.png'
+    const session = {
+      on: vi.fn(),
+      downloadURL: vi.fn(),
+    } as unknown as Electron.Session
+    const send = vi.fn()
+    const webContents = {
+      session,
+      send,
+      isDestroyed: () => false,
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents,
+    } as unknown as Electron.BrowserWindow
+
+    try {
+      // The output dir's parent component is a regular file, so mkdir of the
+      // nested save directory fails.
+      const blocker = path.join(base, 'blocker')
+      await fs.promises.writeFile(blocker, 'file, not a directory')
+      const outputDir = path.join(blocker, 'output')
+
+      await expect(mod.startAssetDownload(win, url, 'sub/blocked.png', outputDir)).resolves.toBe(false)
+      expect(session.downloadURL).not.toHaveBeenCalled()
+
+      const errorEvents = send.mock.calls.filter(
+        ([channel, progress]) =>
+          channel === 'desktop2-download-progress' &&
+          (progress as { status?: string }).status === 'error',
+      )
+      expect(errorEvents).toHaveLength(1)
+      expect((errorEvents[0]?.[1] as { error?: string }).error).toMatch(/Failed to create download directory/)
+
+      // The reservation is released - the URL is not stuck as an active download.
+      expect(mod.getActiveDownloads().some((d) => d.url === url)).toBe(false)
+    } finally {
+      mod.dismissRecentDownload(url)
+      await fs.promises.rm(base, { recursive: true, force: true })
+    }
+  })
+
   it('re-downloads a URL that completed earlier and keeps a single copy when identical', async () => {
     // The same output event can be delivered again after the download has
     // already finished (a replay across a reconnect, a second view of the
