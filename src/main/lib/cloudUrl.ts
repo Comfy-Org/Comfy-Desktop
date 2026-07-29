@@ -1,11 +1,7 @@
 import { getDeviceId } from './deviceId'
+import { DEFAULT_UTM_PARAMS } from '../../shared/utmParams'
 
 const CLOUD_DISTRIBUTION_HOST = 'cloud.comfy.org'
-
-const DEFAULT_UTM_PARAMS: Record<string, string> = {
-  utm_source: 'comfy.desktop',
-  utm_medium: 'app_feature'
-}
 
 // Query param used to forward the Desktop telemetry distinct_id into
 // the cloud webContents so cloud.comfy.org's posthog-js can call

@@ -47,7 +47,6 @@
     "menuMigrate": "Migrate to Standalone",
     "menuRestoreSnapshot": "Restore Snapshot",
     "menuRevealInFolder": "Open Folder",
-    "menuDeployDistribution": "Deploy as Distribution",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running instance first.",
     "menuDismissError": "Dismiss Error",
@@ -1177,7 +1176,8 @@
       }
     },
     "deploy": {
-      "confirmBody": "Publishing happens in Comfy Builder, which opens in your browser. Seed the new distribution with a snapshot exported from this menu's Share action. That import is approximate, so finish tuning the distribution in Builder rather than importing again.",
+      "menuLabel": "Deploy as Distribution",
+      "confirmBody": "Publishing happens in Comfy Builder, which opens in your browser. To seed the new distribution, launch this instance once, then export a snapshot with this menu's Share action. That import is approximate, so finish tuning the distribution in Builder rather than importing again.",
       "carriedLabel": "Carried over by a snapshot",
       "carriedNodes": "Custom nodes and their versions",
       "carriedPythonPins": "Python package pins",

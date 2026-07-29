@@ -18,6 +18,7 @@ vi.mock('./useModal', () => ({
 }))
 
 import { useInstallContextMenu } from './useInstallContextMenu'
+import { builderHandoffUrl } from '../devplatform/builderWeb'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
@@ -48,13 +49,13 @@ const messages = {
       menuMigrate: 'Migrate to Standalone',
       menuRestoreSnapshot: 'Restore Snapshot',
       menuRevealInFolder: 'Open Folder',
-      menuDeployDistribution: 'Deploy as Distribution',
       menuDelete: 'Uninstall',
     },
     devPlatform: {
       deploy: {
+        menuLabel: 'Deploy as Distribution',
         confirmBody:
-          "Publishing happens in Comfy Builder, which opens in your browser. Seed the new distribution with a snapshot exported from this menu's Share action. That import is approximate, so finish tuning the distribution in Builder rather than importing again.",
+          "Publishing happens in Comfy Builder, which opens in your browser. To seed the new distribution, launch this instance once, then export a snapshot with this menu's Share action. That import is approximate, so finish tuning the distribution in Builder rather than importing again.",
         carriedLabel: 'Carried over by a snapshot',
         carriedNodes: 'Custom nodes and their versions',
         carriedPythonPins: 'Python package pins',
@@ -524,10 +525,6 @@ describe('useInstallContextMenu — deploy-distribution (hand off to Builder on 
     expect(findItem(menu.ctxMenuItems.value, 'deploy-distribution')).toBeUndefined()
   })
 
-  // A distribution-backed install reports `sourceCategory: 'local'`, so the
-  // local-like gate alone would let it through. Its contents already live in
-  // Builder faithfully; re-publishing would degrade them through the lossy
-  // snapshot import. Share stays — it exports rather than re-publishes.
   it('hides the item for a distribution-backed install but keeps Share', () => {
     const { menu } = mountHarness(
       makeInstall({ sourceId: 'comfybuilder', distributionId: 'dist-1' } as Partial<Installation>),
@@ -585,8 +582,7 @@ describe('useInstallContextMenu — deploy-distribution (hand off to Builder on 
     await menu.triggerAction('deploy-distribution', inst)
 
     expect(apiMock.openExternal).toHaveBeenCalledTimes(1)
-    const url = new URL(apiMock.openExternal.mock.calls[0]![0] as string)
-    expect(url.host).toBe('platform.comfy.org')
+    expect(apiMock.openExternal).toHaveBeenCalledWith(builderHandoffUrl())
     expect(modalMock.alert).not.toHaveBeenCalled()
   })
 

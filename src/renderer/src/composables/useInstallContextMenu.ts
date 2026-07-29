@@ -8,7 +8,7 @@ import { revealInFolderLabel } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import { shareLatestSnapshot } from '../lib/snapshots'
 import { isDistributionInstall } from '../devplatform/distributionState'
-import { buildDeployDistributionUrl } from '../devplatform/builderWeb'
+import { builderHandoffUrl } from '../devplatform/builderWeb'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
@@ -88,6 +88,11 @@ export function useInstallContextMenu(opts: {
     return !!inst.installPath
   }
 
+  /** An installed local install with files on disk. */
+  function isLocalInstallOnDisk(inst: Installation): boolean {
+    return isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)
+  }
+
   /** True when REQUIRES_STOPPED actions would no-op: install is running,
    *  stopping, or has an op in flight. Drives the `disabled` flag. */
   function isStoppedActionGated(inst: Installation): boolean {
@@ -114,7 +119,7 @@ export function useInstallContextMenu(opts: {
       if (hasMigratePrompt(inst)) {
         items.push({ id: 'migrate', label: t('chooser.menuMigrate'), disabled: stoppedActionGated, title: gatedTitle })
       }
-      if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+      if (isLocalInstallOnDisk(inst)) {
         items.push({ id: 'restore-snapshot', label: t('chooser.menuRestoreSnapshot'), disabled: stoppedActionGated, title: gatedTitle })
       }
     }
@@ -129,17 +134,14 @@ export function useInstallContextMenu(opts: {
 
     // Share — export the latest snapshot. Local-only and post-boot, so
     // gate on installed + local.
-    if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+    if (isLocalInstallOnDisk(inst)) {
       items.push({ id: 'share', label: t('actions.share', 'Share') })
     }
 
-    // Deploy as Distribution — hands off to Builder on the web, so it joins
-    // Share's group and stays enabled while the install runs. Hidden for
-    // distribution-backed installs: Builder already holds their contents
-    // faithfully, and re-publishing would round-trip them through a lossy
-    // snapshot import.
-    if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isDistributionInstall(inst)) {
-      items.push({ id: 'deploy-distribution', label: t('chooser.menuDeployDistribution') })
+    // Deploy as Distribution — outward action, joins Share's group. Hidden for
+    // distribution-backed installs (Builder already owns those).
+    if (isLocalInstallOnDisk(inst) && !isDistributionInstall(inst)) {
+      items.push({ id: 'deploy-distribution', label: t('devPlatform.deploy.menuLabel') })
     }
 
     // Copy Installation — standalone source only. REQUIRES_STOPPED.
@@ -269,10 +271,9 @@ export function useInstallContextMenu(opts: {
         await modal.alert({ title: label, message: (err as Error)?.message || String(err) })
       }
     } else if (id === 'deploy-distribution') {
-      // Desktop hands off; Builder owns the publish. Spell out what a
-      // snapshot import carries before the browser takes focus, so the
-      // action can't imply a faithful clone. Cancel is a silent no-op.
-      const label = t('chooser.menuDeployDistribution')
+      // Spell out what a snapshot import carries before the browser takes
+      // focus. Cancel is a silent no-op.
+      const label = t('devPlatform.deploy.menuLabel')
       const confirmed = await modal.confirm({
         title: label,
         message: t('devPlatform.deploy.confirmBody'),
@@ -299,7 +300,7 @@ export function useInstallContextMenu(opts: {
       })
       if (!confirmed) return
       try {
-        await window.api.openExternal(buildDeployDistributionUrl())
+        await window.api.openExternal(builderHandoffUrl())
       } catch (err) {
         await modal.alert({ title: label, message: (err as Error)?.message || String(err) })
       }

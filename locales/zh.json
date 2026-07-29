@@ -47,7 +47,6 @@
     "menuMigrate": "迁移到独立版",
     "menuRestoreSnapshot": "恢复快照",
     "menuRevealInFolder": "打开文件夹",
-    "menuDeployDistribution": "发布为分发版本",
     "menuDelete": "卸载",
     "stoppedActionGatedReason": "请先停止正在运行的实例。",
     "menuDismissError": "忽略错误",
@@ -1177,7 +1176,8 @@
       }
     },
     "deploy": {
-      "confirmBody": "发布在 Comfy Builder 中完成，它会在浏览器中打开。请使用此菜单中“分享”操作导出的快照来创建新的分发版本。该导入并不完整，请在 Builder 中继续调整，而不是重新导入。",
+      "menuLabel": "发布为分发版本",
+      "confirmBody": "发布在 Comfy Builder 中完成，它会在浏览器中打开。若要为新的分发版本提供初始内容，请先启动一次此实例，然后用此菜单中的“分享”操作导出快照。该导入并不完整，请在 Builder 中继续调整，而不是重新导入。",
       "carriedLabel": "快照会带过去的内容",
       "carriedNodes": "自定义节点及其版本",
       "carriedPythonPins": "Python 包版本锁定",
