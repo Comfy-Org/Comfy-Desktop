@@ -35,6 +35,15 @@ export function isBlockedDistribution(dist: Pick<Distribution, 'state'>): boolea
   return BLOCKED_DISTRIBUTION_STATES.includes(dist.state)
 }
 
+/** A version as a number, or null if it isn't one. Digits only: `Number` reads
+ *  '' and ' ' as 0, which would advertise an update over every published
+ *  version, and accepts '-1' and '1e3' as integers. */
+function versionNumber(raw: unknown): number | null {
+  if (typeof raw !== 'string' || !/^\d+$/.test(raw)) return null
+  const num = Number(raw)
+  return Number.isSafeInteger(num) ? num : null
+}
+
 /** The distribution version this install would move to, or '' when there is
  *  nothing to promise. Compares THIS install against its catalog row rather than
  *  reading the row's `state`, which is computed against the highest installed
@@ -47,15 +56,12 @@ export function distributionUpdateVersion(
   // The linked id is the whole identity check: no id, no claim.
   const id = inst.distributionId
   if (typeof id !== 'string' || !id) return ''
-  // `Number('')` is 0, which would read as "behind everything".
-  const current = typeof inst.distributionVersion === 'string' ? inst.distributionVersion : ''
-  if (!current) return ''
-  const currentNum = Number(current)
-  if (!Number.isInteger(currentNum)) return ''
+  const currentNum = versionNumber(inst.distributionVersion)
+  if (currentNum === null) return ''
 
   const row = distributions.find((dist) => dist.id === id)
   if (!row || isBlockedDistribution(row)) return ''
-  const latestNum = Number(row.version)
-  if (!row.version || !Number.isInteger(latestNum)) return ''
+  const latestNum = versionNumber(row.version)
+  if (latestNum === null) return ''
   return latestNum > currentNum ? String(latestNum) : ''
 }

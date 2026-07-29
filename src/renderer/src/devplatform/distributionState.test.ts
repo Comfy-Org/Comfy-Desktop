@@ -53,6 +53,25 @@ describe('distributionUpdateVersion', () => {
     expect(distributionUpdateVersion(makeInstall({}), [makeDist()])).toBe('')
   })
 
+  // `Number(' ')` is 0, so a blank-but-not-empty version would otherwise read
+  // as behind every published version.
+  it('treats a whitespace-only version as unknown on either side', () => {
+    expect(distributionUpdateVersion(makeInstall({ distributionVersion: '  ' }), [makeDist()])).toBe(
+      ''
+    )
+    expect(
+      distributionUpdateVersion(makeInstall({ distributionVersion: '7' }), [makeDist({ version: ' ' })])
+    ).toBe('')
+  })
+
+  it('rejects versions that are numeric but not plain integers', () => {
+    for (const version of ['-1', '1e3', '1.5', ' 7 ']) {
+      expect(
+        distributionUpdateVersion(makeInstall({ distributionVersion: version }), [makeDist()])
+      ).toBe('')
+    }
+  })
+
   it('claims nothing when either side is not an integer version', () => {
     expect(
       distributionUpdateVersion(makeInstall({ distributionVersion: 'beta' }), [makeDist()])
