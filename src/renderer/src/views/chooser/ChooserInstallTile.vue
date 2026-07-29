@@ -11,6 +11,8 @@ import type { Installation } from '../../types/ipc'
 
 interface Props {
   installation: Installation
+  /** Cloud free-runs pill (resolved by the parent; presentational here). */
+  showFreeRunsPill?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
   /** Pre-formatted recency label — "Launched 3h ago" / "Not launched yet". */
@@ -199,7 +201,15 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Stacked tiers (name → meta → recency); each truncates on its own row. -->
     <div class="chooser-tile-body">
-      <TruncatedText class="chooser-tile-name" :text="inst.name" />
+      <div class="chooser-tile-name-row">
+        <TruncatedText class="chooser-tile-name" :text="inst.name" />
+        <span
+          v-if="props.showFreeRunsPill"
+          class="chooser-cloud-runs-pill"
+          data-testid="chooser-cloud-runs-pill"
+          >{{ $t('firstUse.cloudFreeRunsPill') }}</span
+        >
+      </div>
       <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
         <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
         <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
@@ -236,4 +246,28 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
 <style scoped>
 @import './chooser-tiles.css';
+
+.chooser-tile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Same treatment as FirstUseTakeover's start-cloud-runs-pill. */
+.chooser-cloud-runs-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--comfy-yellow);
+  color: var(--neutral-900);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: normal;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 </style>

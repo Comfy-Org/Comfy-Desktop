@@ -228,6 +228,9 @@ const cloudCapacity = useCloudCapacity()
 /** Mirrors FirstUseTakeover's fail-closed default so the pill never
  *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
+const showCloudFreeRunsPill = computed(
+  () => cloudFreeRunsEnabled.value && !cloudCapacity.isDisabled() && !cloudCapacity.isPaid()
+)
 onMounted(async () => {
   try {
     cloudFreeRunsEnabled.value = await window.api.getCloudFreeRunsEnabled()
@@ -279,15 +282,7 @@ function handleNewInstallClick(): void {
           @click="handleNewInstallClick"
         >
           <div class="chooser-tile-icon"><Plus :size="32" /></div>
-          <div class="chooser-tile-name">
-            {{ t('chooser.newInstall') }}
-            <span
-              v-if="cloudFreeRunsEnabled && !cloudCapacity.isDisabled() && !cloudCapacity.isPaid()"
-              class="chooser-cloud-runs-pill"
-              data-testid="chooser-cloud-runs-pill"
-              >{{ t('firstUse.cloudFreeRunsPill') }}</span
-            >
-          </div>
+          <div class="chooser-tile-name">{{ t('chooser.newInstall') }}</div>
           <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
         </button>
 
@@ -295,6 +290,7 @@ function handleNewInstallClick(): void {
           v-for="inst in visibleInstalls"
           :key="inst.id"
           :installation="inst"
+          :show-free-runs-pill="showCloudFreeRunsPill && inst.sourceCategory === 'cloud'"
           :is-stopped-action-gated="isStoppedActionGated(inst)"
           :last-launched-label="lastLaunchedLabel(inst)"
           @pick="pickInstall"
@@ -321,22 +317,6 @@ function handleNewInstallClick(): void {
 <style scoped>
 @import './chooser/chooser-tiles.css';
 
-/* Same treatment as FirstUseTakeover's start-cloud-runs-pill. */
-.chooser-cloud-runs-pill {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--comfy-yellow);
-  color: var(--neutral-900);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: normal;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
 
 .chooser-bg :deep(.brand-inner-frame) {
   /* Inherit the default justify-content: center from BrandBackground;
