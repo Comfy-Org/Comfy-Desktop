@@ -281,8 +281,12 @@ describe('refreshTorchStackCatalogs', () => {
     expect(vi.mocked(fetchR2VendorReleases)).not.toHaveBeenCalled()
   })
 
-  it('never throws when a variant refresh fails', async () => {
+  it('never throws when a variant refresh fails, and reports the failure', async () => {
     vi.mocked(fetchR2VendorReleases).mockRejectedValueOnce(new Error('offline'))
-    await expect(refreshTorchStackCatalogs([install('3.13.2')])).resolves.toBeUndefined()
+    await expect(refreshTorchStackCatalogs([install('3.13.2')])).resolves.toBe(false)
+  })
+
+  it('resolves true when every variant refresh succeeds', async () => {
+    await expect(refreshTorchStackCatalogs([install('3.13.2')])).resolves.toBe(true)
   })
 })
