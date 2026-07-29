@@ -420,11 +420,13 @@ describe('ChooserView', () => {
     expect(pill.exists()).toBe(true)
     expect(pill.text().trim()).toBe('Update')
     // Both versions read off the tile — no hover needed to learn the target.
-    const meta = tile.find('.chooser-tile-meta-line')
+    const meta = tile.find('.chooser-tile-meta-row')
     expect(meta.text()).toContain('v0.22.3')
     expect(meta.find('.chooser-tile-meta-target').text()).toBe('v0.24.1')
     // The one emphasised element moves to the target; the current one recedes.
     expect(meta.find('.chooser-tile-meta-version--superseded').text()).toBe('v0.22.3')
+    // The delta sits outside the ellipsised facts, so it can't be truncated away.
+    expect(meta.find('.chooser-tile-meta-line').text()).not.toContain('v0.24.1')
   })
 
   it('leaves the meta row untouched when there is no update to point at', async () => {
@@ -432,7 +434,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Current'))!
-    const meta = tile.find('.chooser-tile-meta-line')
+    const meta = tile.find('.chooser-tile-meta-row')
     expect(meta.find('.chooser-tile-meta-version').text()).toBe('v0.24.1')
     expect(meta.find('.chooser-tile-meta-target').exists()).toBe(false)
     expect(meta.find('.chooser-tile-meta-arrow').exists()).toBe(false)
@@ -645,7 +647,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('BuiltThing'))!
-    const meta = tile.find('.chooser-tile-meta-line')
+    const meta = tile.find('.chooser-tile-meta-row')
     // "Dist v7 → v9": one governing label, so the target can't be read as a
     // ComfyUI version either.
     expect(meta.find('.chooser-tile-meta-version--superseded').text()).toBe('Dist v7')

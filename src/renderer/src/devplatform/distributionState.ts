@@ -35,23 +35,16 @@ export function isBlockedDistribution(dist: Pick<Distribution, 'state'>): boolea
   return BLOCKED_DISTRIBUTION_STATES.includes(dist.state)
 }
 
-/**
- * The distribution version this install would move to, or '' when there is
- * nothing to promise.
- *
- * Compares THIS install against its catalog row rather than reading the row's
- * `state`: that state is computed against the highest installed version of the
- * distribution, so a second install left behind at v5 would read `installable`.
- * The blocked gate still applies — never point at a build this machine can't run.
- *
- * Matching is by `distributionId` only. The chooser's name fallback is fine for
- * hiding a duplicate card; claiming a version needs a certain link.
- */
+/** The distribution version this install would move to, or '' when there is
+ *  nothing to promise. Compares THIS install against its catalog row rather than
+ *  reading the row's `state`, which is computed against the highest installed
+ *  version. Matching is by `distributionId` only — the chooser's name fallback
+ *  is fine for hiding a duplicate card, not for claiming a version. */
 export function distributionUpdateVersion(
   inst: Installation,
   distributions: readonly Distribution[]
 ): string {
-  if (!isDistributionInstall(inst)) return ''
+  // The linked id is the whole identity check: no id, no claim.
   const id = inst.distributionId
   if (typeof id !== 'string' || !id) return ''
   // `Number('')` is 0, which would read as "behind everything".

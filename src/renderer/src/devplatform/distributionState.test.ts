@@ -32,12 +32,12 @@ describe('distributionUpdateVersion', () => {
     ).toBe('')
   })
 
-  // The row's state is computed against the HIGHEST installed version, so a
-  // second install stuck at v5 sits under an `installable` row and must still
-  // learn it is behind.
+  // The row's state is computed against the HIGHEST installed version, so it
+  // answers a different question: an `update-available` row says SOME install of
+  // this distribution is behind, not that this one is.
   it('compares per-install, not against the row state', () => {
-    const rows = [makeDist({ state: 'installable', version: '9' })]
-    expect(distributionUpdateVersion(makeInstall({ distributionVersion: '5' }), rows)).toBe('9')
+    const rows = [makeDist({ state: 'update-available', version: '9' })]
+    expect(distributionUpdateVersion(makeInstall({ distributionVersion: '9' }), rows)).toBe('')
   })
 
   it('never points at a build this machine cannot run', () => {
@@ -83,10 +83,10 @@ describe('distributionUpdateVersion', () => {
     ).toBe('')
   })
 
-  it('ignores an install that did not come from a distribution', () => {
+  it('ignores an install with no linked distribution id', () => {
     expect(
       distributionUpdateVersion(
-        makeInstall({ sourceId: 'standalone', distributionId: undefined, distributionVersion: '7' }),
+        makeInstall({ sourceId: 'comfybuilder', distributionId: undefined, distributionVersion: '7' }),
         [makeDist()]
       )
     ).toBe('')

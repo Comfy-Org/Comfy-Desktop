@@ -121,14 +121,21 @@
   color: var(--text);
 }
 
-/* Version delta ("v0.22.3 → v0.24.1"). The row keeps exactly one emphasised
- * element: the current version steps back a rung and the target takes the slot,
- * so an updatable tile is no louder than a current one.
- *
- * Neutral ramp, not `--text-muted` / `--text-faint`: those invert between the
- * themes while these tiles sit on the dark surface in both, which would flip the
- * emphasis in light mode. The superseded/arrow hover rules must stay AFTER the
- * `--text` lift above — equal specificity, source order decides. */
+/* Version delta ("v0.22.3 → v0.24.1"): one emphasised element per row — the
+ * current version steps back a rung and the target takes the slot. The
+ * superseded/arrow hover rules must stay AFTER the `--text` lift above — equal
+ * specificity, source order decides. */
+.chooser-tile-meta-row {
+  display: flex;
+  font-size: 12px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Never shrinks: the facts truncate first so the delta stays readable. */
+.chooser-tile-meta-delta {
+  flex-shrink: 0;
+}
 .chooser-tile-meta-version--superseded {
   color: var(--neutral-300);
   font-weight: 400;

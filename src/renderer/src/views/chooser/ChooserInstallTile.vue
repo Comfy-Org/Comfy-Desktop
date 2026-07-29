@@ -127,14 +127,13 @@ const targetFact = computed(() => {
   return hasUpdate.value ? inst.value.statusTag?.version || '' : ''
 })
 
-const metaLine = computed(() => {
-  const facts = [leadingFact.value, trailingFact.value].filter(Boolean).join(' · ')
-  return targetFact.value ? `${facts} → ${targetFact.value}` : facts
-})
+const metaLine = computed(() =>
+  [leadingFact.value, trailingFact.value].filter(Boolean).join(' · ')
+)
 
 
 /** The single update/migrate affordance, or null when the install has neither.
- *  The Update tooltip surfaces the target version the bare pill hides. */
+ *  The target version reads off the meta row, so the pill stays bare. */
 const actionPill = computed(() => {
   if (hasUpdate.value)
     return {
@@ -246,22 +245,25 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     <div class="chooser-tile-body">
       <TruncatedText class="chooser-tile-name" :text="inst.name" />
       <div v-if="metaLine || actionPill" class="chooser-tile-footer">
-        <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-          <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
-          <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep">·</span>
-          <!-- With an update pending the roles shift down a seat: what you have
-               recedes and what you'd get takes the emphasis slot. -->
-          <span
-            v-if="trailingFact"
-            class="chooser-tile-meta-version"
-            :class="{ 'chooser-tile-meta-version--superseded': targetFact }"
-            >{{ trailingFact }}</span
-          >
-          <template v-if="targetFact">
-            <span class="chooser-tile-meta-arrow">→</span>
+        <div v-if="metaLine" class="chooser-tile-meta-row">
+          <TruncatedText class="chooser-tile-meta-line" :text="metaLine">
+            <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
+            <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep">·</span>
+            <!-- With an update pending the roles shift down a seat: what you have
+                 recedes and what you'd get takes the emphasis slot. -->
+            <span
+              v-if="trailingFact"
+              class="chooser-tile-meta-version"
+              :class="{ 'chooser-tile-meta-version--superseded': targetFact }"
+              >{{ trailingFact }}</span
+            >
+          </TruncatedText>
+          <!-- Outside the ellipsised facts: the source label gives way first. -->
+          <span v-if="targetFact" class="chooser-tile-meta-delta">
+            <span class="chooser-tile-meta-arrow" aria-hidden="true">→</span>
             <span class="chooser-tile-meta-target">{{ targetFact }}</span>
-          </template>
-        </TruncatedText>
+          </span>
+        </div>
         <!-- Action pill; pinned right by its own margin, never truncates. -->
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
           <span
