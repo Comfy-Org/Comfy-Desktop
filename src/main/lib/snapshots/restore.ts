@@ -16,14 +16,113 @@ import type { InstallationRecord } from '../../installations'
 import type { ComfyVersion } from '../version'
 import * as settings from '../../settings'
 
-/** Packages never modified during snapshot restore (Manager's skip list plus core tooling). */
-const PROTECTED_EXACT = new Set(['pip', 'setuptools', 'wheel', 'uv'])
-const PROTECTED_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
+/** Packages never modified during snapshot restore: core tooling plus the
+ *  torch stack itself (owned by the torch transaction, not pip sync). Stack
+ *  packages are named EXACTLY — ordinary torch-ecosystem deps a snapshot can
+ *  restore fine (torchsde, torchmetrics, torchdiffeq…) must stay managed by
+ *  the pip sync, or v1 snapshots could never fully restore. */
+const PROTECTED_EXACT = new Set([
+  'pip', 'setuptools', 'wheel', 'uv',
+  'torch', 'torchvision', 'torchaudio', 'torio', 'functorch', 'triton',
+  // Intel XPU runtime family members protected by exact name because a
+  // prefix would swallow unrelated user packages (mkl-fft, mkl-service,
+  // intel-extension-for-pytorch, ...). 'pyelftools' is general-purpose but
+  // a hard dependency of the XPU triton build - the sync removing it breaks
+  // the protected triton, so it is protected with it (tradeoff: a snapshot
+  // recording pyelftools for its own sake will not install it either).
+  'mkl', 'intel-opencl-rt', 'intel-openmp', 'intel-pti', 'intel-sycl-rt',
+  'tbb', 'tcmlib', 'umf', 'pyelftools',
+])
+// Prefixes matched as `<prefix>` / `<prefix>-*` / `<prefix>_*` (never a bare
+// substring — 'torchsde' must not match 'torch'): torch-tensorrt and
+// torch_scatter compile against torch's ABI, 'nvidia' covers
+// nvidia-cublas-cu12 etc., 'triton' covers triton-windows,
+// 'pytorch-triton' covers pytorch-triton-rocm, 'cuda' covers cuda-bindings.
+// The 'amd-*-device' prefixes cover AMD's multi-arch per-architecture
+// device-overlay wheels (amd-torch-device-gfx*, amd-torchvision-device-gfx*):
+// they only resolve from AMD's index via the torch [device-all] extras, so
+// the torch phase owns them - a plain pip sync can neither install nor
+// remove them safely. Deliberately NOT a bare 'amd' prefix, so ordinary
+// AMD-published libraries (e.g. amd-quark) stay snapshot-restorable.
+// The oneAPI prefixes cover the XPU stack's runtime family (dpcpp-cpp-rt,
+// intel-cmplr-*, onemkl-sycl-*, oneccl/impi bindings, level-zero): pip
+// installs them as ordinary dependencies of torch +xpu wheels, so without
+// protection a snapshot from another vendor uninstalls them from an Intel
+// install (breaking the local stack) and an Intel snapshot installs them
+// onto AMD/NVIDIA installs. Deliberately NOT bare 'intel' or 'mkl'
+// prefixes: ordinary Intel-published libraries (mkl-fft, mkl-service,
+// intel-extension-for-pytorch) must stay snapshot-restorable - the
+// remaining runtime members are protected by exact name above.
+const PROTECTED_PREFIXES = [
+  'torch', 'nvidia', 'triton', 'pytorch-triton', 'cuda', 'rocm',
+  'amd-torch-device', 'amd-torchvision-device', 'amd-torchaudio-device',
+  'intel-cmplr', 'onemkl', 'dpcpp', 'oneccl', 'impi', 'level-zero',
+]
 
-function isProtectedPackage(name: string): boolean {
+export function isProtectedPackage(name: string): boolean {
   const lower = name.toLowerCase()
   if (PROTECTED_EXACT.has(lower)) return true
-  return PROTECTED_PREFIXES.some((prefix) => lower === prefix || lower.startsWith(prefix + '-') || lower.startsWith(prefix + '_'))
+  return PROTECTED_PREFIXES.some((prefix) =>
+    lower === prefix || lower.startsWith(`${prefix}-`) || lower.startsWith(`${prefix}_`))
+}
+
+/** Constraint pins for the currently installed protected packages. Only plain
+ *  `name==version` pins are valid in a constraints file: editable installs
+ *  (`-e ...`) and PEP 508 direct references (bare URL values from pipFreeze)
+ *  are skipped — the post-repair freeze diff still flags any drift on them. */
+export function buildProtectedConstraints(freeze: Record<string, string>): string[] {
+  return Object.entries(freeze)
+    .filter(([name, version]) => isProtectedPackage(name) && /^\d/.test(version) && !version.includes('://'))
+    .map(([name, version]) => `${name}==${version}`)
+}
+
+export interface ProtectedDriftEntry {
+  name: string
+  /** Version the snapshot records; null when the package is not in the snapshot. */
+  target: string | null
+  /** Version installed now; null when the package is absent. */
+  live: string | null
+}
+
+/**
+ * Protected packages whose live version differs from the snapshot's freeze.
+ * The exact pip sync never mutates protected packages (torch stack, CUDA
+ * runtime, core tooling), so after a restore this diff is what tells the
+ * caller whether the live state actually reached the snapshot's recorded
+ * state — the torch transaction reconciles the stack itself, but e.g. a v1
+ * snapshot with a different torchvision has no stack record to reconcile it.
+ */
+export async function protectedPackageDrift(
+  installation: InstallationRecord,
+  targetPips: Record<string, string>,
+): Promise<ProtectedDriftEntry[]> {
+  const uvPath = getActiveUvPath(installation)
+  const pythonPath = getActivePythonPath(installation)
+  // Throw rather than return [] — "can't measure" must surface as unknown
+  // drift, never as known-zero.
+  if (!pythonPath || !fs.existsSync(uvPath)) {
+    throw new Error('Python environment or uv not found')
+  }
+  const live = await pipFreeze(uvPath, pythonPath)
+  // Compare under PEP 503 canonical names — distribution names are
+  // case-insensitive and treat -/_/. as equivalent, so snapshot `Torch` and
+  // live `torch` are the same package, not one missing and one extra.
+  const canon = (name: string): string => name.toLowerCase().replace(/[-_.]+/g, '-')
+  const liveByCanon = new Map(Object.entries(live).map(([name, version]) => [canon(name), { name, version }]))
+  const targetByCanon = new Map(Object.entries(targetPips).map(([name, version]) => [canon(name), { name, version }]))
+  const drift: ProtectedDriftEntry[] = []
+  for (const [key, target] of targetByCanon) {
+    if (!isProtectedPackage(key)) continue
+    const lv = liveByCanon.get(key)
+    if ((lv?.version ?? null) !== target.version) {
+      drift.push({ name: target.name, target: target.version, live: lv?.version ?? null })
+    }
+  }
+  for (const [key, lv] of liveByCanon) {
+    if (!isProtectedPackage(key)) continue
+    if (!targetByCanon.has(key)) drift.push({ name: lv.name, target: null, live: lv.version })
+  }
+  return drift
 }
 
 /** Normalize a package name for dist-info directory matching (PEP 503). */
@@ -474,6 +573,99 @@ export async function restorePipPackages(
   return result
 }
 
+export interface RequirementsRepairResult {
+  /** Freeze diff of the repair pass: installs, version changes, and removals
+   *  (`to: '(removed)'`). */
+  changed: Array<{ name: string; from: string | null; to: string }>
+  /** Non-fatal per-file install failures, plus any (should-be-impossible)
+   *  protected-package drift the constraint pins failed to prevent. */
+  errors: string[]
+}
+
+/**
+ * Additive repair pass for compatible-mode restores, run AFTER the exact pip
+ * sync: re-install ComfyUI core requirements and every enabled custom node's
+ * requirements so the sync's remove-extras step can never leave the install
+ * missing dependencies (the snapshot's freeze may not contain packages this
+ * machine resolves differently). Only installs; never removes. The returned
+ * freeze diff tells the caller whether the live state drifted from the
+ * snapshot target.
+ */
+export async function repairNodeRequirements(
+  installPath: string,
+  installation: InstallationRecord,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal,
+  mirrors?: PipMirrorConfig
+): Promise<RequirementsRepairResult> {
+  const result: RequirementsRepairResult = { changed: [], errors: [] }
+  const uvPath = getActiveUvPath(installation)
+  const pythonPath = getActivePythonPath(installation)
+  if (!pythonPath || !fs.existsSync(uvPath)) return result
+
+  const comfyuiDir = path.join(installPath, 'ComfyUI')
+  const reqFiles: string[] = []
+  const coreReq = path.join(comfyuiDir, 'requirements.txt')
+  if (fs.existsSync(coreReq)) reqFiles.push(coreReq)
+  const mgrReq = path.join(comfyuiDir, 'manager_requirements.txt')
+  if (fs.existsSync(mgrReq)) reqFiles.push(mgrReq)
+  const nodes = await scanCustomNodes(comfyuiDir)
+  for (const node of nodes) {
+    if (!node.enabled || node.type === 'file') continue
+    const reqPath = path.join(comfyuiDir, 'custom_nodes', node.dirName, 'requirements.txt')
+    if (fs.existsSync(reqPath)) reqFiles.push(reqPath)
+  }
+  if (reqFiles.length === 0) return result
+
+  const before = await pipFreeze(uvPath, pythonPath)
+
+  // Pin every currently installed protected package (torch stack, core
+  // tooling) via a constraints file so a node requirement's transitive
+  // dependencies can never swap the PyTorch stack out from under the restore.
+  // A requirement that conflicts with the pins fails its install (recorded as
+  // a repair error) instead of changing the stack.
+  const constraintLines = buildProtectedConstraints(before)
+  const constraintPath = path.join(installPath, '.repair-constraints.txt')
+  await fs.promises.writeFile(constraintPath, constraintLines.join('\n'), 'utf-8')
+
+  try {
+    for (const reqPath of reqFiles) {
+      if (signal?.aborted) break
+      const label = path.relative(comfyuiDir, reqPath)
+      try {
+        const code = await installFilteredRequirements(
+          reqPath, uvPath, pythonPath, installPath,
+          `.repair-reqs-${normalizeDistInfoName(path.basename(path.dirname(reqPath)))}.txt`,
+          sendOutput, signal, mirrors,
+          constraintLines.length > 0 ? ['--constraint', constraintPath] : undefined
+        )
+        if (code !== 0) result.errors.push(`Requirements repair failed for ${label} (exit ${code})`)
+      } catch (err) {
+        result.errors.push(`Requirements repair failed for ${label}: ${(err as Error).message}`)
+      }
+    }
+  } finally {
+    await fs.promises.unlink(constraintPath).catch(() => {})
+  }
+
+  // Diff the freeze even when aborted mid-loop: callers must see any drift the
+  // completed installs already caused. Union of keys so removals count too.
+  const after = await pipFreeze(uvPath, pythonPath)
+  const names = new Set([...Object.keys(before), ...Object.keys(after)])
+  for (const name of names) {
+    const prev = before[name] ?? null
+    const next = after[name] ?? null
+    if (prev !== next) result.changed.push({ name, from: prev, to: next ?? '(removed)' })
+  }
+  const protectedChanged = result.changed.filter((c) => isProtectedPackage(c.name))
+  if (protectedChanged.length > 0) {
+    result.errors.push(
+      `Requirements repair unexpectedly altered protected package(s): ${protectedChanged.map((c) => c.name).join(', ')}`
+    )
+  }
+  return result
+}
+
 function isManagerNode(node: ScannedNode): boolean {
   return node.id.toLowerCase().includes('comfyui-manager')
 }
@@ -688,6 +880,14 @@ export async function restoreCustomNodes(
           result.failed.push({ id: targetNode.id, error: (err as Error).message })
         }
       } else if (targetNode.type === 'git') {
+        // Phantom entry from an older buggy scan (#1253): a directory recorded
+        // with no source at all cannot be restored and never could — skip it
+        // instead of failing the whole restore.
+        if (!targetNode.url && !targetNode.commit) {
+          result.skipped.push(targetNode.id)
+          sendOutput(`Skipped ${targetNode.id}: snapshot records no source for it\n`)
+          continue
+        }
         if (!gitAvailable) {
           result.failed.push({ id: targetNode.id, error: 'git not available' })
           continue

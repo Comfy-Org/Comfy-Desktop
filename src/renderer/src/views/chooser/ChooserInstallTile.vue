@@ -11,6 +11,7 @@ import type { Installation } from '../../types/ipc'
 
 interface Props {
   installation: Installation
+  showFreeRunsPill?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
   /** Pre-formatted recency label — "Launched 3h ago" / "Not launched yet". */
@@ -150,6 +151,12 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
     <div class="chooser-tile-actions">
+      <span
+        v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
+        class="chooser-cloud-runs-pill"
+        data-testid="chooser-cloud-runs-pill"
+        >{{ $t('firstUse.cloudFreeRunsPill') }}</span
+      >
       <button
         v-if="hasError"
         type="button"
@@ -236,4 +243,20 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
 <style scoped>
 @import './chooser-tiles.css';
+
+.chooser-cloud-runs-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--comfy-yellow);
+  color: var(--neutral-900);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: normal;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 </style>

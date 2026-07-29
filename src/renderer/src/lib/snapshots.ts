@@ -86,6 +86,7 @@ export function formatRelative(iso: string, t: Translator): string {
 export function copyReasonLabel(reason: string, t: Translator): string {
   switch (reason) {
     case 'copy-update': return t('snapshots.copyUpdatedAs')
+    case 'copy-pytorch': return t('snapshots.copyPytorchAs')
     case 'release-update': return t('snapshots.releaseUpdatedAs')
     default: return t('snapshots.copiedAs')
   }

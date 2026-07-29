@@ -40,11 +40,11 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle('cancel-operation', (_event, installationId: string) => {
     recordIpcInvocation('cancel-operation', installationId)
-    const abort = _operationAborts.get(installationId)
-    if (abort) {
-      abort.abort()
-      _operationAborts.delete(installationId)
-    }
+    // Abort only — the owning handler deletes its own map entry when it
+    // actually exits. Deleting here would drop the in-progress guard while
+    // the operation is still mutating (e.g. a torch transaction past its
+    // cancellation point), letting a second operation start over it.
+    _operationAborts.get(installationId)?.abort()
   })
 
   ipcMain.handle('kill-port-process', async (_event, port: number) => {

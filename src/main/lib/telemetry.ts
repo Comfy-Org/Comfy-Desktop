@@ -27,8 +27,8 @@
  *      get scrubbed by `scrubAll()` as a safety net, but the discipline is
  *      to send `directory_bucket: 'checkpoints'` not raw `directory: '/Users/x/foo'`.
  *      Use helpers in `src/renderer/src/lib/telemetry.ts` (`toSizeBucket`,
- *      `toCountBucket`, `toErrorBucket`, `toModelDirectoryBucket`,
- *      `deriveGpuTier`, etc.) — extend them instead of inlining new bucketing.
+ *      `toCountBucket`, `toErrorBucket`, `toModelDirectoryBucket`) and
+ *      `src/shared/gpuTier.ts` — extend them instead of inlining new bucketing.
  *   4. If the event is a *failure* (`*.error`, crash, install failure, etc.),
  *      add the event name to `DATADOG_MIRRORED_EVENT_NAMES` so it also
  *      reaches Datadog and a monitor can fire on it.

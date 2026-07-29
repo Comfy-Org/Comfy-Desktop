@@ -9,6 +9,14 @@ import {
   resolveExtraModelPaths,
 } from '../../lib/models'
 import type { InstallationRecord } from '../../installations'
+import {
+  DEFAULT_MANAGER_SECURITY_LEVEL,
+  MANAGER_SECURITY_LEVELS,
+  isManagerSecurityLevel,
+  DEFAULT_MANAGER_NETWORK_MODE,
+  MANAGER_NETWORK_MODES,
+  isManagerNetworkMode,
+} from '../../lib/managerConfig'
 
 /** One resolved per-type dir in an `extra_model_paths.yaml` section.
  *  `dirExists` lets the UI flag missing folders. */
@@ -193,18 +201,44 @@ export function buildLaunchSettingsFields(
       value: (installation.launchArgs as string | undefined) ?? defaultLaunchArgs,
       editable: true, editType: 'args-builder', tooltip: t('tooltips.startupArgs'),
       requiresRestart: true },
+    // Not CLI arguments: Manager reads `security_level` / `network_mode` from
+    // its config.ini, which launch reconciles from these per-install values
+    // before every local start (see reconcileManagerConfigForLaunch). The
+    // shared rowGroup renders them side-by-side in one row.
+    { id: 'managerSecurityLevel', label: t('common.managerSecurityLevel'),
+      value: isManagerSecurityLevel(installation.managerSecurityLevel)
+        ? installation.managerSecurityLevel
+        : DEFAULT_MANAGER_SECURITY_LEVEL,
+      editable: true, editType: 'select', options: MANAGER_SECURITY_LEVELS.map((level) => ({
+        value: level, label: t(`common.managerSecurityLevel_${level}`),
+        description: t(`common.managerSecurityLevel_${level}_desc`),
+      })), tooltip: t('tooltips.managerSecurityLevel'), requiresRestart: true,
+      rowGroup: 'manager' },
+    { id: 'managerNetworkMode', label: t('common.managerNetworkMode'),
+      value: isManagerNetworkMode(installation.managerNetworkMode)
+        ? installation.managerNetworkMode
+        : DEFAULT_MANAGER_NETWORK_MODE,
+      editable: true, editType: 'select', options: MANAGER_NETWORK_MODES.map((mode) => ({
+        value: mode, label: t(`common.managerNetworkMode_${mode}`),
+        description: t(`common.managerNetworkMode_${mode}_desc`),
+      })), tooltip: t('tooltips.managerNetworkMode'), requiresRestart: true,
+      rowGroup: 'manager' },
+    // Paired on one row (like the Manager fields above) to keep the tab
+    // compact and leave more room for the env-var rows below.
     { id: 'launchMode', label: t('common.launchMode'),
       value: (installation.launchMode as string | undefined) || defaultLaunchMode,
       editable: true, editType: 'select', options: [
         { value: 'window', label: t('common.launchModeWindow') },
         { value: 'console', label: t('common.launchModeConsole') },
-      ], tooltip: t('tooltips.launchMode'), requiresRestart: true },
+      ], tooltip: t('tooltips.launchMode'), requiresRestart: true,
+      rowGroup: 'launch-window' },
     { id: 'browserPartition', label: t('common.browserPartition'),
       value: (installation.browserPartition as string | undefined) || defaultBrowserPartition,
       editable: true, editType: 'select', options: [
         { value: 'shared', label: t('common.partitionShared') },
         { value: 'unique', label: t('common.partitionUnique') },
-      ], tooltip: t('tooltips.browserPartition'), requiresRestart: true },
+      ], tooltip: t('tooltips.browserPartition'), requiresRestart: true,
+      rowGroup: 'launch-window' },
     { id: 'portConflict', label: t('common.portConflict'),
       value: (installation.portConflict as string | undefined) || defaultPortConflict,
       editable: true, editType: 'select', options: [

@@ -9,7 +9,8 @@ import {
   sourceMap,
   uniqueName,
   makeSendProgress,
-  makeSendOutput
+  makeSendOutput,
+  snapshotRestoreFailureResult
 } from '../shared'
 import type { InstallationRecord } from '../shared'
 import { adoptDesktopInstall, type AdoptPromptKind, type UserChoice } from '../../desktopAdopt'
@@ -365,6 +366,11 @@ export async function handleMigrateToStandalone({
     destPath = result.destPath
 
     _operationAborts.delete(installationId)
+    if (result.restoreError) {
+      // The new install exists and is bootable; only the snapshot could not be
+      // fully applied. Report the failure without deleting the install.
+      return snapshotRestoreFailureResult(installationId, result.restoreError)
+    }
     sendProgress('done', { percent: 100, status: 'Complete' })
     return { ok: true, navigate: 'list' }
   } catch (err) {

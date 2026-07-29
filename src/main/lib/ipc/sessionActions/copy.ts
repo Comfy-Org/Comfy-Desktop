@@ -9,6 +9,7 @@ import {
   makeSendProgress, makeSendOutput,
 } from '../shared'
 import type { FieldOption, InstallationRecord } from '../shared'
+import { parseAnyIndexStackId } from '../../../sources/standalone/torchStackTypes'
 import type { ActionContext, ActionResult } from './types'
 import { withAbortableSessionAction } from './withAbortable'
 
@@ -86,6 +87,64 @@ export async function handleCopyUpdate(ctx: ActionContext): Promise<ActionResult
     return isChannelSwitch
       ? { ok: true, navigate: 'list' }
       : { ok: true, navigate: 'list', newInstallationId: entry.id }
+  })
+}
+
+/** Copy & Change PyTorch: copy the whole install first, then run the normal
+ *  `change-pytorch` transaction on the copy. Same principle as Copy & Update:
+ *  a failed change keeps the finished copy (the user retries from there) and
+ *  the original install is never touched. */
+export async function handleCopyChangePytorch(ctx: ActionContext): Promise<ActionResult> {
+  const { event, installationId, inst, actionData } = ctx
+  const name = actionData?.name as string | undefined
+  const stackId = actionData?.stackId as string | undefined
+  if (!name) return { ok: false, message: 'No name provided.' }
+  if (!stackId) return { ok: false, message: 'No PyTorch stack specified.' }
+  if (!inst.installPath || !fs.existsSync(inst.installPath)) {
+    return { ok: false, message: i18n.t('errors.dirNotExist', { path: inst.installPath || '' }) }
+  }
+
+  const sender = event.sender
+  const sendProgress = makeSendProgress(sender, installationId)
+  const sendOutput = makeSendOutput(sender, installationId)
+
+  return withAbortableSessionAction(ctx, async (signal) => {
+    // Same viaPip judgment as the change-pytorch handler (which re-declares
+    // its own steps; those are filtered below in favor of these).
+    const viaPip = inst.adopted === true || parseAnyIndexStackId(stackId) !== null
+    sendProgress('steps', { steps: [
+      { phase: 'copy', label: i18n.t('actions.copyingFiles') },
+      { phase: 'torch-prepare', label: i18n.t(viaPip ? 'standalone.pytorchPreparePhasePip' : 'standalone.pytorchPreparePhase') },
+      { phase: 'torch-swap', label: i18n.t('standalone.pytorchSwapPhase') },
+    ] })
+
+    const { entry } = await performCopy(inst, name, sendProgress, signal, 'copy-pytorch')
+
+    const changeSendProgress = (phase: string, detail: Record<string, unknown>): void => {
+      if (phase !== 'steps') sendProgress(phase, detail)
+    }
+    try {
+      const source = sourceMap[inst.sourceId]
+      if (!source) throw new Error(i18n.t('errors.unknownSource'))
+      const newInst = await installations.get(entry.id)
+      const newUpdate = (data: Record<string, unknown>): Promise<void> =>
+        installations.update(entry.id, data).then(() => {})
+      const changeResult = await source.handleAction('change-pytorch', newInst!, { stackId }, {
+        update: newUpdate,
+        sendProgress: changeSendProgress,
+        sendOutput,
+        signal,
+      })
+      if (changeResult && !changeResult.ok) {
+        sendOutput(`\n⚠ PyTorch change: ${changeResult.message}\n`)
+        sendOutput('The copy was created successfully. You can retry the PyTorch change from the new installation.\n')
+      }
+    } catch (changeErr) {
+      sendOutput(`\n⚠ PyTorch change failed: ${(changeErr as Error).message}\n`)
+      sendOutput('The copy was created successfully. You can retry the PyTorch change from the new installation.\n')
+    }
+
+    return { ok: true, navigate: 'list', newInstallationId: entry.id }
   })
 }
 

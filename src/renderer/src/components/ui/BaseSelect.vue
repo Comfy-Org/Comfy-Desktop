@@ -385,9 +385,8 @@ onBeforeUnmount(() => {
 .ui-select-option-desc {
   color: var(--text-muted);
   font-size: var(--takeover-fs-caption);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .ui-select-option-check {

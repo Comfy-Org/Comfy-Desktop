@@ -111,6 +111,26 @@ function isNestedField(field: DetailField): boolean {
   return field.nested === true
 }
 
+/** Chunk a section's fields into rows: consecutive fields sharing a
+ *  `rowGroup` render side-by-side; everything else gets its own row.
+ *  Only adjacency groups, so unrelated fields never merge. */
+function fieldRows(section: DetailSection): DetailField[][] {
+  const rows: DetailField[][] = []
+  for (const field of section.fields ?? []) {
+    const prev = rows[rows.length - 1]
+    if (field.rowGroup && prev && prev[0]?.rowGroup === field.rowGroup) {
+      prev.push(field)
+    } else {
+      rows.push([field])
+    }
+  }
+  return rows
+}
+
+function rowKey(row: DetailField[]): string {
+  return row.map((f) => f.id).join('|')
+}
+
 function hasChannelPicker(section: DetailSection): boolean {
   return (section.fields ?? []).some((f) => f.editType === 'channel-cards')
 }
@@ -207,7 +227,13 @@ function fieldOwnsLabel(field: DetailField): boolean {
       </div>
 
       <div
-        v-for="field in section.fields"
+        v-for="row in fieldRows(section)"
+        :key="rowKey(row)"
+        class="settings-v2-field-row"
+        :class="{ 'is-paired': row.length > 1 }"
+      >
+      <div
+        v-for="field in row"
         :key="field.id"
         class="settings-v2-field"
         :class="{
@@ -349,6 +375,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
           <ShieldAlert :size="14" class="settings-v2-field-description-icon" aria-hidden="true" />
           <span>{{ field.description }}</span>
         </p>
+      </div>
       </div>
 
       <div
@@ -495,6 +522,25 @@ function fieldOwnsLabel(field: DetailField): boolean {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Row wrapper around every field. Single-field rows are layout-transparent
+ * (display: contents) so the section's flex gap and nested-field margins keep
+ * working exactly as before; paired rows place their fields side-by-side with
+ * equal widths, wrapping back to stacked on narrow layouts. */
+.settings-v2-field-row {
+  display: contents;
+}
+
+.settings-v2-field-row.is-paired {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.settings-v2-field-row.is-paired > .settings-v2-field {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
 .settings-v2-field {
@@ -745,7 +791,9 @@ function fieldOwnsLabel(field: DetailField): boolean {
   border-bottom: 1px solid var(--chooser-surface-border);
 }
 
-.settings-v2-section.is-readonly-list .settings-v2-field:last-child {
+/* Each field sits alone inside a display:contents row wrapper, so "last row
+ * in the section" is the wrapper's :last-child, not the field's. */
+.settings-v2-section.is-readonly-list .settings-v2-field-row:last-child .settings-v2-field {
   border-bottom: none;
 }
 

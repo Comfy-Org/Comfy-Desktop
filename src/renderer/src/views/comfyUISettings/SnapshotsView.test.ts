@@ -8,6 +8,25 @@ import { TID } from '../../../../shared/testIds'
 import SnapshotsView from './SnapshotsView.vue'
 import type { SnapshotSummary, SnapshotListData, CopyEvent } from '../../types/ipc'
 
+// The import flow drives promise-based dialogs and the busy guard; stub both
+// so tests can script the user's choices without a DialogHost/session store.
+const { mockConfirm, mockAlert, mockCheckBeforeAction } = vi.hoisted(() => ({
+  mockConfirm: vi.fn(),
+  mockAlert: vi.fn(),
+  mockCheckBeforeAction: vi.fn(),
+}))
+vi.mock('../../composables/useDialogs', () => ({
+  useDialogs: () => ({
+    confirm: mockConfirm,
+    alert: mockAlert,
+    prompt: vi.fn(),
+    actionSheet: vi.fn(),
+  }),
+}))
+vi.mock('../../composables/useActionGuard', () => ({
+  useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction }),
+}))
+
 // Tests the snapshots tab + inline restore op-card state machine: in-flight, success (auto-dismiss 1.8s), error (Retry/Dismiss), cancelled.
 
 const messages = {
@@ -25,6 +44,8 @@ const messages = {
       restoringFrom: 'from {label}',
       restored: 'Snapshot restored',
       restoredFrom: 'Rolled back to {label}',
+      restoredImported: 'Applied imported snapshot',
+      importTorchNoticeTitle: 'Snapshot uses a different PyTorch',
       restoreFailed: 'Restore failed',
       tryAgain: 'Try again',
       restore: 'Restore',
@@ -248,6 +269,32 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(apiGetSnapshots).toHaveBeenCalledWith('install-A')
   })
 
+  it('success for an imported snapshot says "Applied imported snapshot", never "Rolled back" (an import is an apply, not a rollback)', async () => {
+    vi.useFakeTimers()
+    const actionData = { restoreToken: '0123456789abcdef0123456789abcdef' }
+    const w = await mountView({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: false, ok: null, error: null,
+        percent: 90, status: 'Complete',
+        actionData,
+      },
+    })
+    await w.setProps({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: true, ok: true, error: null,
+        percent: 100, status: 'Complete',
+        actionData,
+      },
+    })
+    await flushPromises()
+
+    const target = w.find('.snapshots-op-card.is-success .snapshots-op-card-target')
+    expect(target.text()).toBe('Applied imported snapshot')
+    expect(target.text()).not.toMatch(/Rolled back/)
+  })
+
   it('error: shows red card with message + Retry / Dismiss; clicks emit op-retry / op-dismiss', async () => {
     const w = await mountView({
       activeOperation: {
@@ -400,6 +447,85 @@ describe('comfyUISettings/SnapshotsView', () => {
     await nextTick()
 
     expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+  })
+
+  // A cross-vendor envelope's PyTorch stack can't be applied here; the
+  // compatible restore keeps the local stack. That substitution must be
+  // disclosed BEFORE the restore runs, and the user must be able to back out.
+  describe('import flow: kept-local PyTorch disclosure', () => {
+    const NOTICE = "The snapshot's PyTorch build (2.11.0+xpu) is not available for this machine; the current PyTorch will be kept."
+
+    function installImportApi(confirmResult: Record<string, unknown>): {
+      importSnapshotsConfirm: ReturnType<typeof vi.fn>
+    } {
+      const api = {
+        getSnapshots: vi.fn().mockResolvedValue(makeListData()),
+        getSnapshotDiff: vi.fn().mockResolvedValue(null),
+        runAction: vi.fn(),
+        exportSnapshot: vi.fn(),
+        exportAllSnapshots: vi.fn(),
+        importSnapshotsPreview: vi.fn().mockResolvedValue({
+          ok: true,
+          preview: {
+            snapshots: [{ label: 'Marker', filename: 'snap.json', createdAt: new Date().toISOString() }],
+          },
+        }),
+        importSnapshotsDiff: vi.fn().mockResolvedValue({
+          ok: true,
+          diff: { mode: 'current', baseLabel: 'Current state', diff: {}, empty: false },
+        }),
+        importSnapshotsConfirm: vi.fn().mockResolvedValue(confirmResult),
+      }
+      ;(window as unknown as { api: Record<string, unknown> }).api = api
+      return api
+    }
+
+    beforeEach(() => {
+      mockConfirm.mockReset()
+      mockCheckBeforeAction.mockReset().mockResolvedValue(true)
+    })
+
+    it('shows the notice as a second confirm before the restore, then runs it on Restore', async () => {
+      installImportApi({ ok: true, imported: 1, restoreToken: 'tok-1', torchStackNotice: NOTICE })
+      mockConfirm.mockResolvedValue('primary')
+
+      const w = await mountView()
+      await w.find(`[data-testid="${TID.snapshotsImport}"]`).trigger('click')
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(2)
+      expect(mockConfirm.mock.calls[1]![0]).toMatchObject({
+        title: 'Snapshot uses a different PyTorch',
+        message: NOTICE,
+      })
+      const runs = w.emitted('run-action')
+      expect(runs).toHaveLength(1)
+      expect(runs![0]![0]).toMatchObject({ id: 'snapshot-restore', data: { restoreToken: 'tok-1' } })
+    })
+
+    it('cancelling the notice backs out without running the restore', async () => {
+      installImportApi({ ok: true, imported: 1, restoreToken: 'tok-1', torchStackNotice: NOTICE })
+      mockConfirm.mockResolvedValueOnce('primary').mockResolvedValueOnce(false)
+
+      const w = await mountView()
+      await w.find(`[data-testid="${TID.snapshotsImport}"]`).trigger('click')
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(2)
+      expect(w.emitted('run-action')).toBeUndefined()
+    })
+
+    it('an applicable (or same-stack) snapshot shows no extra dialog and restores directly', async () => {
+      installImportApi({ ok: true, imported: 1, restoreToken: 'tok-1', torchStackNotice: null })
+      mockConfirm.mockResolvedValue('primary')
+
+      const w = await mountView()
+      await w.find(`[data-testid="${TID.snapshotsImport}"]`).trigger('click')
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(1)
+      expect(w.emitted('run-action')).toHaveLength(1)
+    })
   })
 
   // Regression for #1007: a "Copied from/as X" event that sorts above the

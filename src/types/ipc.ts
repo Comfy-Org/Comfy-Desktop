@@ -2,6 +2,7 @@
 // This file is the single source of truth — do not duplicate these types elsewhere.
 
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
 // Unsubscribe function returned by event listeners
@@ -111,11 +112,25 @@ export interface DetailItem {
   actions?: ActionDef[]
 }
 
+/** One level of a cascading picker path (id is stable, label is display). */
+export interface DetailOptionGroup {
+  id: string
+  label: string
+  /** Shown under the label in the group dropdown (e.g. what a CUDA series
+   *  is for, or a too-old-driver warning). */
+  description?: string
+}
+
 export interface DetailFieldOption {
   value: string
   label: string
   description?: string
   recommended?: boolean
+  /** Cascading picker path for `channel-cards`: options sharing a path
+   *  prefix sit behind one dropdown per level (e.g. PyTorch backend series
+   *  -> version). The field builder emits it only when it distinguishes
+   *  (two or more groups); absent = today's flat single dropdown. */
+  groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
 }
 
@@ -138,17 +153,20 @@ export interface DetailField {
   value: string | boolean | number | string[] | Record<string, string> | null
   editable?: boolean
   editType?:
-  | 'select'
-  | 'boolean'
-  | 'text'
-  | 'number'
-  | 'path'
-  | 'channel-cards'
-  | 'args-builder'
-  | 'env-vars'
-  | 'model-dirs'
-  | 'hidden'
+    | 'select'
+    | 'boolean'
+    | 'text'
+    | 'number'
+    | 'path'
+    | 'channel-cards'
+    | 'args-builder'
+    | 'env-vars'
+    | 'model-dirs'
+    | 'hidden'
   options?: DetailFieldOption[]
+  /** Display names for each `groupPath` level of a cascading `channel-cards`
+   *  picker (e.g. ["Backend"]); indexes match `groupPath` depth. */
+  groupLabels?: string[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
    *  (e.g. switching update channel triggers `check-update`). */
@@ -161,6 +179,11 @@ export interface DetailField {
    *  nesting from the field id, since ids like `outputDir` are reused
    *  for equal-weight rows in the Shared Directories section. */
   nested?: boolean
+  /** Consecutive fields sharing the same rowGroup render side-by-side in one
+   *  row (equal widths, stacking again on narrow layouts) instead of each
+   *  taking the full width. Set by the field builder; the renderer only
+   *  groups adjacent fields so unrelated fields never merge. */
+  rowGroup?: string
   tooltip?: string
   /** Marks fields that only take effect on next process start.
    *  Renderer shows a per-field tag + promotes the footer Restart
@@ -559,6 +582,11 @@ export interface GPUInfo {
 export interface HardwareValidation {
   supported: boolean
   error?: string
+  /** Non-blocking, user-actionable problem on otherwise supported hardware
+   *  (e.g. a Linux AMD GPU whose /dev/kfd compute node the user cannot
+   *  access). Install may proceed, but GPU acceleration will not work until
+   *  the user resolves it. */
+  warning?: string
 }
 
 export interface NvidiaDriverCheck {
@@ -625,6 +653,9 @@ export interface SystemInfo {
   gpu_model: string | null
   /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
   gpu_vram_mb: number | null
+  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  gpu_vram_gb: number | null
+  gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
@@ -804,7 +835,7 @@ export interface CopyEvent {
   installationId: string
   installationName: string
   copiedAt: string
-  copyReason: 'copy' | 'copy-update' | 'release-update'
+  copyReason: 'copy' | 'copy-update' | 'copy-pytorch' | 'release-update'
   exists: boolean
   /** `out` = another install was copied FROM the install whose rail this is
    *  shown on (installationName is the destination's name).
@@ -1237,16 +1268,16 @@ export interface ElectronApi {
   importSnapshotsDiff(
     installationId: string
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
-  importSnapshotsConfirm(
-    installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
-  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
-  previewDesktopMigration(): Promise<{
+  importSnapshotsConfirm(installationId: string): Promise<{
     ok: boolean
+    imported?: number
+    restoreToken?: string
+    /** Kept-local disclosure: set when the snapshot's managed PyTorch stack
+     *  cannot be applied here, so the restore will keep the local stack. */
+    torchStackNotice?: string | null
     message?: string
-    preview?: SnapshotFilePreview
-    snapshotPath?: string
   }>
+  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string
@@ -1287,6 +1318,12 @@ export interface ElectronApi {
    *  unavailable. Renderers consume this via `useCloudCapacity`. */
   getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Whether the free tier is live, for the "5 free runs" trial pill.
+   *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
+   *  tracks the real rollout. False for everyone today; flips on its own
+   *  when the ramp lands. Fails CLOSED — the pill asserts a live
+   *  entitlement, so an unresolvable flag means we don't claim it. */
+  getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
@@ -1351,9 +1388,7 @@ export interface ElectronApi {
    *  reaches the launching window). Lets any open dashboard show the red
    *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
-  onTerminalOutput(
-    callback: (data: { installationId: string; data: string }) => void
-  ): Unsubscribe
+  onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): Unsubscribe
   onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
   onComfyBootLog(callback: (data: ComfyBootLogData) => void): Unsubscribe
   onInstanceLaunching(
@@ -1523,13 +1558,13 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-      | 'install-update'
-      | 'app-update-restart-prompt'
-      | 'app-update-download-prompt'
-      | 'open-settings'
-      | 'picker-pick-install'
-      | 'picker-install-action'
-      | 'picker-show-progress'
+        | 'install-update'
+        | 'app-update-restart-prompt'
+        | 'app-update-download-prompt'
+        | 'open-settings'
+        | 'picker-pick-install'
+        | 'picker-install-action'
+        | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>
@@ -1556,7 +1591,7 @@ export interface ElectronApi {
 
 /** Action IDs that auto-relaunch ComfyUI after completing (stop→op→launch).
  *  Shared between main and renderer so both sides agree on the relaunch contract. */
-export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore'])
+export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
 /** Action IDs that require the installation to be stopped before running.
  *  Shared between main and renderer processes. */
@@ -1564,11 +1599,13 @@ export const REQUIRES_STOPPED = new Set([
   'delete',
   'copy',
   'copy-update',
+  'copy-pytorch',
   'release-update',
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
-  'migrate-from'
+  'migrate-from',
+  'change-pytorch'
 ])
 
 /** Title-popup kind tags — the discriminant for popup config/opts across main,
@@ -1612,7 +1649,6 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
-  previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',

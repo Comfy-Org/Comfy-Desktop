@@ -29,7 +29,17 @@ function readTomlProjectField(tomlPath: string, field: string): string | null {
   }
 }
 
-function identifyNode(nodePath: string): Omit<ScannedNode, 'enabled'> {
+/** True if the directory contains any top-level Python source (ComfyUI loads
+ *  a custom-node directory as a module, so a real node always has one). */
+function hasTopLevelPython(nodePath: string): boolean {
+  try {
+    return fs.readdirSync(nodePath).some((name) => name.endsWith('.py'))
+  } catch {
+    return false
+  }
+}
+
+function identifyNode(nodePath: string): Omit<ScannedNode, 'enabled'> | null {
   const dirName = path.basename(nodePath)
   const trackingPath = path.join(nodePath, '.tracking')
   const tomlPath = path.join(nodePath, 'pyproject.toml')
@@ -48,9 +58,20 @@ function identifyNode(nodePath: string): Omit<ScannedNode, 'enabled'> {
     return { id: dirName, type: 'git', dirName, commit, url }
   }
 
-  // Unknown directory: treat as git without metadata
-  return { id: dirName, type: 'git', dirName }
+  // Unmanaged directory: only a node if it carries a node marker
+  // (pyproject.toml) or actually contains Python code. Stray directories
+  // (e.g. accidentally created model folders, #1253) would otherwise be
+  // captured in snapshots as git nodes that can never be restored.
+  if (fs.existsSync(tomlPath) || hasTopLevelPython(nodePath)) {
+    return { id: dirName, type: 'git', dirName }
+  }
+  return null
 }
+
+/** File nodes shipped inside the ComfyUI core checkout itself. They are
+ *  restored by the core git checkout, not by node management, and listing
+ *  them in snapshots only confuses users (#278). */
+const CORE_FILE_NODES = new Set(['websocket_image_save.py'])
 
 export async function scanCustomNodes(comfyuiDir: string): Promise<ScannedNode[]> {
   const customNodesDir = path.join(comfyuiDir, 'custom_nodes')
@@ -63,8 +84,9 @@ export async function scanCustomNodes(comfyuiDir: string): Promise<ScannedNode[]
       if (entry.name.startsWith('.') || entry.name === '__pycache__') continue
       const fullPath = path.join(customNodesDir, entry.name)
       if (entry.isDirectory()) {
-        nodes.push({ ...identifyNode(fullPath), enabled: true })
-      } else if (entry.name.endsWith('.py')) {
+        const identified = identifyNode(fullPath)
+        if (identified) nodes.push({ ...identified, enabled: true })
+      } else if (entry.name.endsWith('.py') && !CORE_FILE_NODES.has(entry.name)) {
         nodes.push({ id: entry.name, type: 'file', dirName: entry.name, enabled: true })
       }
     }
@@ -75,7 +97,8 @@ export async function scanCustomNodes(comfyuiDir: string): Promise<ScannedNode[]
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === '__pycache__') continue
       if (entry.isDirectory()) {
-        nodes.push({ ...identifyNode(path.join(disabledDir, entry.name)), enabled: false })
+        const identified = identifyNode(path.join(disabledDir, entry.name))
+        if (identified) nodes.push({ ...identified, enabled: false })
       }
     }
   } catch {}

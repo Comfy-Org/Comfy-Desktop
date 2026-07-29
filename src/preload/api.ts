@@ -162,7 +162,6 @@ export function buildElectronApi(): ElectronApi {
     importSnapshotsConfirm: (installationId: string) =>
       ipcRenderer.invoke('import-snapshots-confirm', installationId),
     previewSnapshotFile: () => ipcRenderer.invoke('preview-snapshot-file'),
-    previewDesktopMigration: () => ipcRenderer.invoke('preview-desktop-migration'),
     previewLocalMigration: (installationId: string) =>
       ipcRenderer.invoke('preview-local-migration', installationId),
     previewSnapshotPath: (filePath: string) =>
@@ -191,6 +190,7 @@ export function buildElectronApi(): ElectronApi {
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudCapacity: () => ipcRenderer.invoke('get-cloud-capacity'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
+    getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),

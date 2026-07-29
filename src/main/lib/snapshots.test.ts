@@ -86,7 +86,7 @@ function makeEntry(overrides?: Partial<Snapshot>): SnapshotEntry {
 function makeEnvelope(snapshots?: Snapshot[]): SnapshotExportEnvelope {
   return {
     type: 'comfyui-desktop-2-snapshot',
-    version: 1,
+    version: 2,
     exportedAt: '2026-03-02T12:00:00.000Z',
     installationName: 'Test Install',
     snapshots: snapshots ?? [makeSnapshot()]
@@ -132,10 +132,41 @@ describe('validateExportEnvelope', () => {
     expect(() => validateExportEnvelope(rest)).toThrow('not a Comfy Desktop snapshot export')
   })
 
-  it('rejects wrong version', () => {
-    expect(() => validateExportEnvelope({ ...makeEnvelope(), version: 2 })).toThrow(
-      'Unsupported snapshot version'
+  it('accepts a v1 envelope with v1 snapshots', () => {
+    const result = validateExportEnvelope({ ...makeEnvelope(), version: 1 })
+    expect(result.version).toBe(1)
+  })
+
+  it('rejects a v1 envelope containing a v2 snapshot', () => {
+    // The envelope version is the compatibility gate older clients check; a v1
+    // envelope smuggling v2 snapshots would slip torch-aware data past it.
+    expect(() =>
+      validateExportEnvelope({
+        ...makeEnvelope([{ ...makeSnapshot(), version: 2 }]),
+        version: 1
+      })
+    ).toThrow('snapshot version exceeds envelope version')
+  })
+
+  it('rejects a newer version with an update-the-app hint', () => {
+    // A higher integer version means the file came from a newer Desktop; the
+    // error must point at the likely fix instead of looking like corruption.
+    expect(() => validateExportEnvelope({ ...makeEnvelope(), version: 3 })).toThrow(
+      /Unsupported snapshot version: 3.*updating the app/
     )
+  })
+
+  it('rejects an unrecognizable version without the update hint', () => {
+    for (const version of ['2', 2.5, -1, null]) {
+      let message = ''
+      try {
+        validateExportEnvelope({ ...makeEnvelope(), version })
+      } catch (err) {
+        message = (err as Error).message
+      }
+      expect(message).toContain('Unsupported snapshot version')
+      expect(message).not.toContain('updating the app')
+    }
   })
 
   it('rejects empty snapshots array', () => {
@@ -158,9 +189,14 @@ describe('validateExportEnvelope', () => {
 
   // Snapshot-level validation
 
-  it('rejects snapshot with wrong version', () => {
+  it('accepts a v2 snapshot without torchStack', () => {
+    const result = validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 2 }]))
+    expect(result.snapshots[0]!.version).toBe(2)
+  })
+
+  it('rejects snapshot with unknown version', () => {
     expect(() =>
-      validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 2 as never }]))
+      validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 3 as never }]))
     ).toThrow('Invalid snapshot at index 0')
   })
 
@@ -299,6 +335,165 @@ describe('validateExportEnvelope', () => {
     expect(Object.keys(result.snapshots[0]!.pipPackages)).toHaveLength(6)
   })
 
+  // torchStack validation (v2)
+
+  const makeManagedTorchStack = (): Snapshot['torchStack'] => ({
+    kind: 'managed',
+    ref: {
+      stackId: 'comfy-bundle:win-nvidia:v0.4.2-env3',
+      variant: 'win-nvidia',
+      pythonVersion: '3.12.9',
+      packages: { torch: '2.7.0+cu128', torchvision: '0.22.0+cu128', torchaudio: '2.7.0+cu128' },
+      source: { kind: 'comfy-bundle', variant: 'win-nvidia', bundleTag: 'v0.4.2-env3' }
+    }
+  })
+
+  it('accepts v2 snapshot with a managed torchStack', () => {
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: makeManagedTorchStack() }
+    const result = validateExportEnvelope(makeEnvelope([snap]))
+    expect(result.snapshots[0]!.torchStack?.kind).toBe('managed')
+  })
+
+  it('accepts v2 snapshot with an observed torchStack', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'observed', torchVersion: '2.4.1', observedAt: '2026-03-01T12:00:00.000Z' } as const
+    }
+    const result = validateExportEnvelope(makeEnvelope([snap]))
+    expect(result.snapshots[0]!.torchStack?.kind).toBe('observed')
+  })
+
+  it('accepts observed torchStack with null torchVersion', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'observed', torchVersion: null, observedAt: '2026-03-01T12:00:00.000Z' } as const
+    }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).not.toThrow()
+  })
+
+  it('rejects observed torchStack with malformed torchVersion', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'observed', torchVersion: '2.4.1; rm -rf /', observedAt: '2026-03-01T12:00:00.000Z' } as unknown as Snapshot['torchStack']
+    }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects torchStack on a v1 snapshot', () => {
+    const snap = { ...makeSnapshot(), torchStack: makeManagedTorchStack() }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects torchStack with unknown kind', () => {
+    const snap = {
+      ...makeSnapshot(),
+      version: 2 as const,
+      torchStack: { kind: 'evil' } as unknown as Snapshot['torchStack']
+    }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  /** Deep-clone the managed fixture as raw JSON so tests can corrupt it
+   *  field-by-field without fighting the discriminated-union types. */
+  const rawManagedStack = (): { kind: string; ref: Record<string, unknown> } =>
+    JSON.parse(JSON.stringify(makeManagedTorchStack())) as { kind: string; ref: Record<string, unknown> }
+
+  it('rejects managed torchStack with a raw-URL source (untyped source smuggling)', () => {
+    const stack = rawManagedStack()
+    stack.ref.source = { kind: 'url', url: 'https://evil.example/torch.whl' }
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects managed torchStack with invalid torch version string', () => {
+    const stack = rawManagedStack()
+    ;(stack.ref.packages as Record<string, unknown>).torch = '2.7.0; rm -rf /'
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects managed torchStack missing packages', () => {
+    const stack = rawManagedStack()
+    delete stack.ref.packages
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+      'Invalid snapshot at index 0'
+    )
+  })
+
+  it('rejects an amd-multi-arch-index source whose stackId does not name its tag + tuple', () => {
+    for (const stackId of [
+      'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
+      'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
+      'amd-index:rocm7.14.0:2.11.0', // version disagrees with the tuple
+    ]) {
+      const stack = rawManagedStack()
+      stack.ref.stackId = stackId
+      stack.ref.packages = { torch: '2.10.0+rocm7.14.0' }
+      stack.ref.source = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+      expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+        'Invalid snapshot at index 0'
+      )
+    }
+  })
+
+  it('accepts a managed torchStack with an amd-multi-arch-index source', () => {
+    const stack = rawManagedStack()
+    stack.ref.stackId = 'amd-index:rocm7.14.0:2.10.0'
+    stack.ref.variant = 'win-amd'
+    stack.ref.packages = { torch: '2.10.0+rocm7.14.0', torchvision: '0.25.0+rocm7.14.0', torchaudio: '2.10.0+rocm7.14.0' }
+    stack.ref.source = { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
+    const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+    const result = validateExportEnvelope(makeEnvelope([snap]))
+    expect(result.snapshots[0]!.torchStack?.kind).toBe('managed')
+  })
+
+  it('rejects an amd-multi-arch-index source with a malformed or missing indexTag', () => {
+    for (const source of [
+      { kind: 'amd-multi-arch-index' },
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0 --index-url https://evil.example' },
+      // The index URL is a hardcoded app constant; a snapshot supplying one
+      // must not validate.
+      { kind: 'amd-multi-arch-index', indexTag: 'https://evil.example/' },
+      // Only rocm tags name AMD multi-arch stacks.
+      { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
+      // Extra fields (e.g. a smuggled url) mark the source as not ours.
+      { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' },
+    ]) {
+      const stack = rawManagedStack()
+      stack.ref.stackId = 'amd-index:rocm7.14.0:2.10.0'
+      stack.ref.packages = { torch: '2.10.0+rocm7.14.0' }
+      stack.ref.source = source
+      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack as unknown as Snapshot['torchStack'] }
+      expect(() => validateExportEnvelope(makeEnvelope([snap]))).toThrow(
+        'Invalid snapshot at index 0'
+      )
+    }
+  })
+
+  it('accepts torch versions with local build tags (+rocm7.1, +xpu)', () => {
+    for (const torch of ['2.7.0+rocm7.1', '2.9.0+xpu', '2.8.0']) {
+      const stack = makeManagedTorchStack()!
+      if (stack.kind === 'managed') stack.ref.packages.torch = torch
+      const snap = { ...makeSnapshot(), version: 2 as const, torchStack: stack }
+      expect(() => validateExportEnvelope(makeEnvelope([snap]))).not.toThrow()
+    }
+  })
+
   it('reports correct index for invalid snapshot in multi-snapshot envelope', () => {
     expect(() =>
       validateExportEnvelope(
@@ -315,7 +510,7 @@ describe('buildExportEnvelope', () => {
     const entry = makeEntry()
     const result = buildExportEnvelope('My Install', [entry])
     expect(result.type).toBe('comfyui-desktop-2-snapshot')
-    expect(result.version).toBe(1)
+    expect(result.version).toBe(2)
     expect(result.installationName).toBe('My Install')
     expect(result.snapshots).toHaveLength(1)
     expect(result.snapshots[0]).toBe(entry.snapshot)
@@ -698,7 +893,7 @@ describe('staged snapshot envelopes', () => {
     const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snapshot-stage-'))
     try {
       const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
-      const token = await stageSnapshotEnvelope(envelope)
+      const token = await stageSnapshotEnvelope(envelope, 'install-1')
       // Token is an opaque 32-char hex string (the shape doubles as
       // path-traversal defense when resolving the staged file back).
       expect(token).toMatch(/^[a-f0-9]{32}$/)
@@ -707,24 +902,39 @@ describe('staged snapshot envelopes', () => {
       const history = await listSnapshots(tmpDir)
       expect(history).toHaveLength(0)
 
-      const loaded = await loadStagedSnapshotEnvelope(token)
+      const loaded = await loadStagedSnapshotEnvelope(token, 'install-1')
       expect(loaded.snapshots).toHaveLength(1)
       expect(loaded.snapshots[0]!.label).toBe('staged-target')
 
       await releaseStagedSnapshotEnvelope(token)
-      await expect(loadStagedSnapshotEnvelope(token)).rejects.toThrow()
+      await expect(loadStagedSnapshotEnvelope(token, 'install-1')).rejects.toThrow()
     } finally {
       await fs.promises.rm(tmpDir, { recursive: true, force: true })
     }
   })
 
   it('rejects an invalid/traversal token', async () => {
-    await expect(loadStagedSnapshotEnvelope('not-a-token')).rejects.toThrow(
+    await expect(loadStagedSnapshotEnvelope('not-a-token', 'install-1')).rejects.toThrow(
       /invalid staged snapshot token/i
     )
-    await expect(loadStagedSnapshotEnvelope('../../etc/passwd')).rejects.toThrow(
+    await expect(loadStagedSnapshotEnvelope('../../etc/passwd', 'install-1')).rejects.toThrow(
       /invalid staged snapshot token/i
     )
+  })
+
+  it('rejects a token staged for a different installation', async () => {
+    const envelope = makeEnvelope([makeSnapshot({ label: 'bound-target' })])
+    const token = await stageSnapshotEnvelope(envelope, 'install-a')
+    try {
+      await expect(loadStagedSnapshotEnvelope(token, 'install-b')).rejects.toThrow(
+        /invalid staged snapshot token/i
+      )
+      // Still loadable for the installation it was staged for.
+      const loaded = await loadStagedSnapshotEnvelope(token, 'install-a')
+      expect(loaded.snapshots[0]!.label).toBe('bound-target')
+    } finally {
+      await releaseStagedSnapshotEnvelope(token)
+    }
   })
 
   it('release is a no-op for unknown/invalid tokens', async () => {

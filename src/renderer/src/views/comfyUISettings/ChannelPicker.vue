@@ -45,23 +45,66 @@ watch(
 
 const currentValue = computed(() => String(props.field.value ?? ''))
 
-const selectedOption = computed<DetailFieldOption | undefined>(() => {
-  return props.field.options?.find((o) => o.value === state.draft)
+// --- Cascading group dropdowns (generic, driven by `groupPath`) ---
+// Options sharing a path prefix sit behind one dropdown per level (e.g.
+// PyTorch backend series -> version). Every group selection maps to a
+// concrete option so preview/actions always describe a real choice.
+
+const groupDepth = computed(() => {
+  let depth = 0
+  for (const opt of props.field.options ?? []) {
+    depth = Math.max(depth, opt.groupPath?.length ?? 0)
+  }
+  return depth
 })
+
+// Cascade only when every option carries a full-depth path; mixed or partial
+// paths fall back to the flat picker so no option becomes unreachable.
+const cascadeActive = computed(
+  () =>
+    groupDepth.value > 0 &&
+    (props.field.options ?? []).every((o) => (o.groupPath?.length ?? 0) === groupDepth.value)
+)
+
+const selectedOption = computed<DetailFieldOption | undefined>(() => {
+  const opts = props.field.options ?? []
+  const exact = opts.find((o) => o.value === state.draft)
+  // In cascade mode an unknown draft (e.g. the value vanished in an options
+  // refresh) falls back to the first option so the group dropdowns, concrete
+  // dropdown, preview, and actions all describe the same real choice; flat
+  // mode keeps exact-match semantics.
+  return exact ?? (cascadeActive.value ? opts[0] : undefined)
+})
+
+/** The value the concrete dropdown displays: the effective (possibly
+ *  fallen-back) selection in cascade mode, the raw draft when flat. */
+const concreteValue = computed(() =>
+  cascadeActive.value ? (selectedOption.value?.value ?? state.draft) : state.draft
+)
 
 const selectedActions = computed<ActionDef[]>(() => {
   const data = selectedOption.value?.data as Record<string, unknown> | undefined
   return (data?.actions as ActionDef[] | undefined) ?? []
 })
 
-const draftIsCurrent = computed(() => state.draft === currentValue.value)
+const draftIsCurrent = computed(() => concreteValue.value === currentValue.value)
 
 interface PreviewData {
+  /** What this card updates ("ComfyUI", "PyTorch"); keeps the headline
+   *  self-identifying when the Update tab shows several update cards. */
+  productName?: string
   installedVersion?: string
   latestVersion?: string
+  /** Overrides the "Latest" stat-row label - e.g. the PyTorch card says
+   *  "Selected" because the user may have picked a downgrade. */
+  latestLabel?: string
   lastChecked?: string
   lastCheckedAt?: number
   updateAvailable?: boolean
+  /** Suppress the "Up to date" badge when there is no update. The PyTorch
+   *  card sets this: other stacks are still selectable in the picker, so
+   *  "Up to date" would wrongly imply nothing is available. */
+  hideUpToDateBadge?: boolean
   /** True while `commitsAhead` is still being computed; drives the
    *  "Computing commits ahead…" hint so the label swap isn't a surprise. */
   enriching?: boolean
@@ -71,11 +114,14 @@ const preview = computed<PreviewData | null>(() => {
   const data = selectedOption.value?.data as PreviewData | undefined
   if (!data) return null
   return {
+    productName: data.productName,
     installedVersion: data.installedVersion,
     latestVersion: data.latestVersion,
+    latestLabel: data.latestLabel,
     lastChecked: data.lastChecked,
     lastCheckedAt: data.lastCheckedAt,
     updateAvailable: data.updateAvailable,
+    hideUpToDateBadge: data.hideUpToDateBadge,
     enriching: data.enriching
   }
 })
@@ -136,10 +182,11 @@ const versionsMatch = computed(() => {
   return installed === latest
 })
 
-const headline = computed(() => {
-  if (preview.value?.installedVersion) {
-    return formatVersionLabel(preview.value.installedVersion)
-  }
+/** Product prefix ("ComfyUI", "PyTorch") so multiple update cards on the
+ *  same tab each say what they update. */
+const headlineProduct = computed(() => preview.value?.productName ?? '')
+
+const headlineVersion = computed(() => {
   if (!preview.value) {
     return draftIsCurrent.value
       ? t('channelCards.upToDate', 'Up to date')
@@ -147,7 +194,9 @@ const headline = computed(() => {
   }
   if (preview.value.updateAvailable) {
     const ver = preview.value.latestVersion
-    return ver ? formatVersionLabel(ver) : t('channelCards.updateAvailable', 'Update available')
+    return ver && ver !== '—'
+      ? formatVersionLabel(ver)
+      : t('channelCards.updateAvailable', 'Update available')
   }
   return formatVersionLabel(preview.value.installedVersion)
 })
@@ -157,6 +206,7 @@ const statusBadge = computed(() => {
   if (preview.value.updateAvailable) {
     return t('channelCards.updateAvailable', 'Update available')
   }
+  if (preview.value.hideUpToDateBadge) return null
   return t('channelCards.upToDate', 'Up to date')
 })
 
@@ -205,7 +255,7 @@ const statRows = computed<StatRow[]>(() => {
   if (updateAvailable && preview.value.latestVersion && !versionsMatch.value) {
     rows.push({
       id: 'latest',
-      label: t('channelCards.latestVersion', 'Latest'),
+      label: preview.value.latestLabel ?? t('channelCards.latestVersion', 'Latest'),
       value: formatVersionLabel(preview.value.latestVersion),
       highlight: true
     })
@@ -231,7 +281,9 @@ const checkUpdateAction = computed<ActionDef | undefined>(() =>
 )
 
 const promotedPrimaryActions = computed<ActionDef[]>(() =>
-  selectedActions.value.filter((a) => a.id === 'update-comfyui' || a.id === 'copy-update')
+  selectedActions.value.filter(
+    (a) => a.id === 'update-comfyui' || a.id === 'copy-update' || a.id === 'change-pytorch' || a.id === 'copy-pytorch'
+  )
 )
 
 const otherSecondaryActions = computed<ActionDef[]>(() =>
@@ -240,6 +292,7 @@ const otherSecondaryActions = computed<ActionDef[]>(() =>
       a.id !== 'check-update' &&
       a.id !== 'update-comfyui' &&
       a.id !== 'copy-update' &&
+      a.id !== 'copy-pytorch' &&
       a.style !== 'primary' &&
       a.style !== 'accent'
   )
@@ -298,6 +351,20 @@ const footerActions = computed<
     out.push({ action: updateNow, variant: 'accent' })
   }
 
+  // Copy & Change PyTorch is the safe alternative, so it sits before the
+  // accented Change button, mirroring Copy & Update vs Update Now.
+  const copyPytorch = promotedPrimaryActions.value.find((a) => a.id === 'copy-pytorch')
+  if (copyPytorch) {
+    out.push({ action: copyPytorch, variant: 'default' })
+  }
+
+  // The PyTorch card's per-option switch action; accented for the same
+  // reason as Update Now (it is the primary intent after picking a stack).
+  const changePytorch = promotedPrimaryActions.value.find((a) => a.id === 'change-pytorch')
+  if (changePytorch) {
+    out.push({ action: changePytorch, variant: 'accent' })
+  }
+
   return out
 })
 
@@ -311,24 +378,85 @@ function optionLabel(opt: DetailFieldOption): string {
   return opt.label
 }
 
-const selectOptions = computed<BaseSelectOption[]>(() =>
-  (props.field.options ?? []).map((opt) => ({
-    value: opt.value,
-    label: optionLabel(opt),
-    description: opt.description
-  }))
-)
+function toSelectOption(opt: DetailFieldOption): BaseSelectOption {
+  return { value: opt.value, label: optionLabel(opt), description: opt.description }
+}
+
+/** Group-id path of the selected option; anchors every level dropdown.
+ *  `selectedOption` already falls back to the first option in cascade mode,
+ *  so a transiently unknown draft can't blank the cascade. */
+const selectedPath = computed<string[]>(() => {
+  if (!cascadeActive.value) return []
+  return (selectedOption.value?.groupPath ?? []).map((g) => g.id)
+})
+
+interface CascadeLevel {
+  label?: string
+  selected: string
+  options: BaseSelectOption[]
+}
+
+const cascadeLevels = computed<CascadeLevel[]>(() => {
+  if (!cascadeActive.value) return []
+  const opts = props.field.options ?? []
+  const path = selectedPath.value
+  const levels: CascadeLevel[] = []
+  for (let level = 0; level < groupDepth.value; level++) {
+    const prefix = path.slice(0, level)
+    const groups = new Map<string, { label: string; description?: string }>()
+    for (const opt of opts) {
+      const gp = opt.groupPath ?? []
+      const entry = gp[level]
+      if (!entry) continue
+      if (prefix.every((id, i) => gp[i]?.id === id) && !groups.has(entry.id)) {
+        groups.set(entry.id, { label: entry.label, description: entry.description })
+      }
+    }
+    levels.push({
+      label: props.field.groupLabels?.[level],
+      selected: path[level] ?? '',
+      options: [...groups].map(([value, g]) => ({ value, label: g.label, description: g.description }))
+    })
+  }
+  return levels
+})
+
+/** Selecting a group jumps to the first (newest - main emits newest-first)
+ *  concrete option under the new prefix, keeping preview/actions real. */
+function selectCascadeGroup(level: number, groupId: string): void {
+  const prefix = [...selectedPath.value.slice(0, level), groupId]
+  const match = (props.field.options ?? []).find((opt) =>
+    prefix.every((id, i) => opt.groupPath?.[i]?.id === id)
+  )
+  if (match) state.draft = match.value
+}
+
+/** Options for the final (concrete) dropdown: the whole list when flat, only
+ *  the selected group's options when cascading. */
+const selectOptions = computed<BaseSelectOption[]>(() => {
+  const opts = props.field.options ?? []
+  if (!cascadeActive.value) return opts.map(toSelectOption)
+  const path = selectedPath.value
+  return opts
+    .filter((opt) => path.every((id, i) => opt.groupPath?.[i]?.id === id))
+    .map(toSelectOption)
+})
 </script>
 
 <template>
   <div class="channel-picker">
     <div class="channel-picker-status">
       <div class="channel-picker-headline-row">
-        <p
-          class="channel-picker-headline"
-          :class="{ 'is-update-available': preview?.updateAvailable }"
-        >
-          {{ headline }}
+        <p class="channel-picker-headline">
+          <span v-if="headlineProduct" class="channel-picker-headline-product">
+            {{ headlineProduct }}
+          </span>
+          <span
+            class="channel-picker-headline-version"
+            :class="{ 'is-update-available': preview?.updateAvailable }"
+          >
+            {{ headlineVersion }}
+          </span>
         </p>
         <span v-if="statusBadge && preview" class="channel-picker-badge" :class="statusBadgeTone">
           {{ statusBadge }}
@@ -374,6 +502,7 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
           :class="{ 'is-running': isActionRunning(checkUpdateAction.id) }"
           :disabled="checkUpdateAction.enabled === false || isActionRunning(checkUpdateAction.id)"
           :title="checkUpdateAction.tooltip"
+          :data-testid="TID.updateActionButton(checkUpdateAction.id)"
           @click="emit('action', checkUpdateAction)"
         >
           <Loader2
@@ -386,8 +515,22 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
       </div>
 
       <div class="channel-picker-channel">
+        <div
+          v-for="(level, i) in cascadeLevels"
+          :key="i"
+          class="channel-picker-cascade-level"
+          :data-testid="TID.channelGroupSelect(i)"
+        >
+          <span v-if="level.label" class="channel-picker-field-label">{{ level.label }}</span>
+          <BaseSelect
+            :model-value="level.selected"
+            :options="level.options"
+            :aria-label="level.label ?? field.label"
+            @update:model-value="selectCascadeGroup(i, $event)"
+          />
+        </div>
         <BaseSelect
-          :model-value="state.draft"
+          :model-value="concreteValue"
           :options="selectOptions"
           :aria-label="field.label"
           @update:model-value="state.draft = $event"
@@ -444,14 +587,19 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
 
 .channel-picker-headline {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   font-size: 18px;
   font-weight: 600;
   line-height: 24px;
   color: var(--text);
 }
 
-.channel-picker-headline.is-update-available {
-  color: var(--accent);
+.channel-picker-headline-version.is-update-available {
+  color: var(--success, #4ade80);
+  font-weight: 700;
 }
 
 .channel-picker-badge {
@@ -537,6 +685,12 @@ const selectOptions = computed<BaseSelectOption[]>(() =>
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.channel-picker-cascade-level {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .channel-picker-field-label {
