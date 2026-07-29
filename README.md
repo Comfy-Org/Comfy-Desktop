@@ -253,4 +253,4 @@ Issues and pull requests are welcome. Before opening a PR, please run `pnpm run 
 
 ## License
 
-Released under the [MIT License](LICENSE). © Comfy Org.
+Released under the [GNU Affero General Public License v3.0 or later](LICENSE). © Comfy Org.
