@@ -250,9 +250,10 @@ export async function refreshTorchStackCatalog(installation: InstallationRecord)
 
 /** Refresh the catalog for every unique variant among installed standalone
  *  installs. One refresh per variant suffices: the cache is keyed by variant,
- *  so every install sharing it reads the refreshed data. Best-effort; never
- *  throws. */
-export async function refreshTorchStackCatalogs(installations: InstallationRecord[]): Promise<void> {
+ *  so every install sharing it reads the refreshed data. Never throws;
+ *  resolves `true` only when every variant refresh succeeded, so callers can
+ *  treat a partial or total failure as "still stale". */
+export async function refreshTorchStackCatalogs(installations: InstallationRecord[]): Promise<boolean> {
   const byVariant = new Map<string, InstallationRecord>()
   for (const inst of installations) {
     if (inst.status !== 'installed' || inst.sourceId !== 'standalone') continue
@@ -260,7 +261,8 @@ export async function refreshTorchStackCatalogs(installations: InstallationRecor
     if (!variant || byVariant.has(variant)) continue
     byVariant.set(variant, inst)
   }
-  await Promise.allSettled([...byVariant.values()].map((inst) => refreshTorchStackCatalog(inst)))
+  const results = await Promise.allSettled([...byVariant.values()].map((inst) => refreshTorchStackCatalog(inst)))
+  return results.every((r) => r.status === 'fulfilled')
 }
 
 /** Synchronous cached read for `getDetailSections`. Bundle entries are empty

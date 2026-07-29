@@ -14,14 +14,32 @@ const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 /** Source IDs that read from the shared ComfyUI release cache. */
 const COMFYUI_SOURCE_IDS = new Set(['standalone', 'portable'])
 
-/** Last time these checks refreshed the torch stack catalog. In-memory on
- *  purpose: catalog freshness is independent of the persisted release cache,
- *  and every app start must refresh the catalog at least once. */
+/** Last successful torch-stack-catalog refresh. In-memory on purpose:
+ *  catalog freshness is independent of the persisted release cache, and
+ *  every app start must refresh the catalog at least once. */
 let _torchCatalogCheckedAt = 0
+/** In-flight catalog refresh; concurrent checks join it instead of refetching. */
+let _torchCatalogRefresh: Promise<void> | null = null
 
 /** Test-only: reset the in-memory torch-catalog floor to cold start. */
 export function _resetTorchCatalogFloorForTest(): void {
   _torchCatalogCheckedAt = 0
+  _torchCatalogRefresh = null
+}
+
+/** Refresh the torch stack catalog, deduplicating concurrent calls. The
+ *  floor advances only on full success so a failed fetch retries on the
+ *  next check instead of being suppressed for the floor window. */
+function _refreshTorchCatalog(installations: InstallationRecord[], now: () => number): Promise<void> {
+  _torchCatalogRefresh ??= refreshTorchStackCatalogs(installations)
+    .then((ok) => {
+      if (ok) _torchCatalogCheckedAt = now()
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      _torchCatalogRefresh = null
+    })
+  return _torchCatalogRefresh
 }
 
 function _isComfyUIInstall(inst: InstallationRecord): boolean {
@@ -84,8 +102,7 @@ export async function runStartupReleaseChecks(
   // independent of the persisted release cache, so the refresh must not
   // depend on release fetch tasks being scheduled.
   if (options.bypassFloor || now() - _torchCatalogCheckedAt >= STARTUP_RECHECK_MS) {
-    _torchCatalogCheckedAt = now()
-    tasks.push(refreshTorchStackCatalogs(installations).catch(() => null))
+    tasks.push(_refreshTorchCatalog(installations, now))
   }
 
   if (tasks.length === 0) return
