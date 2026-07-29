@@ -471,4 +471,26 @@ describe('ChooserView', () => {
     // Confirms activeFilter is reachable from vm for the other filter tests.
     expect((wrapper.vm as unknown as { activeFilter: FilterKey }).activeFilter).toBe('all')
   })
+
+  it('shows the free-runs pill on cloud install tiles when the flag is on', async () => {
+    const cloudInst = makeInstall({ id: 'cloud-1', name: 'Comfy Cloud', sourceCategory: 'cloud' })
+    const api = installMockApi([cloudInst])
+    ;(api as unknown as { getCloudFreeRunsEnabled: unknown }).getCloudFreeRunsEnabled = vi
+      .fn()
+      .mockResolvedValue(true)
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(true)
+    expect(wrapper.find('.chooser-tile-new [data-testid="chooser-cloud-runs-pill"]').exists()).toBe(
+      false
+    )
+  })
+
+  it('keeps local tiles and the flag-off state pill-free', async () => {
+    const localInst = makeInstall({ id: 'local-1', sourceCategory: 'local' })
+    installMockApi([localInst])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(false)
+  })
 })
