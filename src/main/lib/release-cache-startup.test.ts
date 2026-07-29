@@ -14,7 +14,11 @@ vi.mock('../sources/standalone/torchStackCatalog', () => ({
   refreshTorchStackCatalogs: vi.fn(async () => {}),
 }))
 
-import { runStartupReleaseChecks, startPeriodicReleaseChecks } from './release-cache-startup'
+import {
+  runStartupReleaseChecks,
+  startPeriodicReleaseChecks,
+  _resetTorchCatalogFloorForTest,
+} from './release-cache-startup'
 import * as releaseCache from './release-cache'
 import { refreshTorchStackCatalogs } from '../sources/standalone/torchStackCatalog'
 
@@ -37,6 +41,7 @@ beforeEach(() => {
   vi.mocked(releaseCache.get).mockReturnValue(null)
   vi.mocked(releaseCache.getOrFetch).mockResolvedValue(null)
   vi.mocked(refreshTorchStackCatalogs).mockResolvedValue(undefined)
+  _resetTorchCatalogFloorForTest()
 })
 
 describe('runStartupReleaseChecks', () => {
@@ -48,11 +53,35 @@ describe('runStartupReleaseChecks', () => {
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledWith(installs)
   })
 
-  it('skips the PyTorch refresh when every channel cache is fresh', async () => {
+  it('still refreshes the PyTorch catalog when every channel cache is fresh (first boot after upgrade)', async () => {
+    // The persisted release cache survives Desktop upgrades, so on the first
+    // boot of a new version every channel can be fresh while the torch
+    // catalog was never fetched at all. The catalog refresh must not depend
+    // on release fetch tasks being scheduled.
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
-    await runStartupReleaseChecks([install()])
+    const onRefreshed = vi.fn()
+    await runStartupReleaseChecks([install()], { onRefreshed })
     expect(vi.mocked(releaseCache.getOrFetch)).not.toHaveBeenCalled()
-    expect(vi.mocked(refreshTorchStackCatalogs)).not.toHaveBeenCalled()
+    expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
+    expect(onRefreshed).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips the PyTorch refresh inside the floor window within one app run (dashboard prewarm spam guard)', async () => {
+    vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
+    let clock = 100_000_000 // beyond the floor relative to the cold-start timestamp of 0
+    const now = () => clock
+    await runStartupReleaseChecks([install()], { now })
+    expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
+
+    // Dashboard refreshes shortly after boot must not refetch the catalog...
+    clock += 5 * 60 * 1000
+    await runStartupReleaseChecks([install()], { now })
+    expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
+
+    // ...but once the floor elapses it refreshes again.
+    clock += 60 * 60 * 1000
+    await runStartupReleaseChecks([install()], { now })
+    expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(2)
   })
 
   it('does not run at all without ComfyUI installs', async () => {
