@@ -176,17 +176,11 @@ function loadPersistedEpochState(): void {
 export function bindMainVerifiedFirebaseUser(
   userId: string,
   properties: Record<string, mainTelemetry.TelemetryValue> = {},
-  source?: WebContents
+  source: WebContents
 ): void {
   const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
   if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
   loadPersistedEpochState()
-  if (!source) {
-    if (!clearUnmergeableEpoch()) return
-    requestedUserId = normalizedUserId
-    mainTelemetry.bindUserId(normalizedUserId, properties)
-    return
-  }
   const origin = originOf(source.getURL())
   if (!origin) return
   trackFirebaseAuthReporter(source)
