@@ -310,14 +310,12 @@ async function runLaunch(
   const sender = event.sender
   const sendProgress = makeSendProgress(sender, installationId)
 
-  // Show the starter-template model-download phase in THIS launch only on the
-  // first launch after install (one-shot `pendingTemplateOpen`), and only when a
-  // background download task actually exists for it. Covers the skip cases
-  // (no template / consent off / zero-model / relaunch).
+  /** Show template model-download phase for first launch if needed. */
   const showTemplatePhase =
     inst.sourceId === 'standalone' &&
     !!inst.bundledTemplateId &&
     inst.downloadTemplateModels === true &&
+    (inst.bundledTemplateSizeBytes ?? 0) > 0 &&
     !!inst.pendingTemplateOpen &&
     getTemplateDownloadState(installationId) !== undefined
 
@@ -823,9 +821,8 @@ async function runLaunch(
 
   // Remote connection
   if (launchCmd.remote) {
-    // Display the host only — the full `launchCmd.url` carries UTM + a long
-    // desktop_device_id (see `withCloudDistributionUtm`) that mustn't leak
-    // into the user-facing status. `waitForUrl` below still gets the real URL.
+    // Display the host only — the full `launchCmd.url` may carry UTM params
+    // that do not belong in user-facing status. `waitForUrl` gets the real URL.
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
     sendProgress('launch', {
       percent: -1,

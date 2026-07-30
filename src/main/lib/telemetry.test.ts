@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
+import type { TelemetryValue } from './telemetry'
 
 vi.mock('electron', () => ({
   app: {
@@ -49,16 +50,13 @@ interface CapturedCall {
 }
 const captured: CapturedCall[] = []
 
-interface AliasCall {
-  distinctId: string
-  alias: string
-}
-const aliases: AliasCall[] = []
-let aliasImmediateFailure: Error | null = null
-
 interface IdentifyCall {
   distinctId: string
-  properties?: { $set?: Record<string, unknown>; $set_once?: Record<string, unknown> }
+  properties?: {
+    $set?: Record<string, unknown>
+    $set_once?: Record<string, unknown>
+    $anon_distinct_id?: string
+  }
 }
 const identifies: IdentifyCall[] = []
 
@@ -68,14 +66,51 @@ interface ExceptionCall {
   properties?: Record<string, unknown>
 }
 const exceptions: ExceptionCall[] = []
+const featureFlagCalls: Array<{
+  key: string
+  distinctId: string
+  options?: { sendFeatureFlagEvents?: boolean }
+}> = []
+
+const posthogClientMock = vi.hoisted(() => ({
+  failNextCaptures: 0,
+  failNextFlushes: 0,
+  autoFailNextIdentifies: 0
+}))
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
+    private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
+    private queuedIdentifies: Array<Record<string, unknown>> = []
+
+    on(event: string, listener: (...args: unknown[]) => void): () => void {
+      const listeners = this.listeners.get(event) ?? new Set()
+      listeners.add(listener)
+      this.listeners.set(event, listeners)
+      return () => listeners.delete(listener)
+    }
+    private emit(event: string, ...args: unknown[]): void {
+      for (const listener of this.listeners.get(event) ?? []) listener(...args)
+    }
     capture(call: CapturedCall): void {
+      if (posthogClientMock.failNextCaptures > 0) {
+        posthogClientMock.failNextCaptures--
+        throw new Error('sdk rejected capture')
+      }
       captured.push(call)
     }
     identify(call: IdentifyCall): void {
       identifies.push(call)
+      if (posthogClientMock.autoFailNextIdentifies > 0) {
+        posthogClientMock.autoFailNextIdentifies--
+        queueMicrotask(() => this.emit('error', new Error('auto-flush failed')))
+        return
+      }
+      this.queuedIdentifies.push({
+        event: '$identify',
+        distinct_id: call.distinctId,
+        properties: call.properties
+      })
     }
     captureException(
       error: unknown,
@@ -84,155 +119,210 @@ vi.mock('posthog-node', () => ({
     ): void {
       exceptions.push({ error, distinctId, properties })
     }
-    alias(call: AliasCall): void {
-      aliases.push(call)
-    }
-    aliasImmediate(call: AliasCall): Promise<void> {
-      aliases.push(call)
-      if (aliasImmediateFailure) return Promise.reject(aliasImmediateFailure)
-      return Promise.resolve()
-    }
     flush(): Promise<void> {
+      if (posthogClientMock.failNextFlushes > 0) {
+        posthogClientMock.failNextFlushes--
+        this.queuedIdentifies = []
+        this.emit('error', new Error('offline'))
+        return Promise.reject(new Error('offline'))
+      }
+      const sent = this.queuedIdentifies
+      this.queuedIdentifies = []
+      if (sent.length > 0) this.emit('flush', sent)
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
       return Promise.resolve()
     }
-    getFeatureFlag(): Promise<undefined> {
+    getFeatureFlag(
+      key: string,
+      distinctId: string,
+      options?: { sendFeatureFlagEvents?: boolean }
+    ): Promise<undefined> {
+      featureFlagCalls.push({ key, distinctId, options })
       return Promise.resolve(undefined)
     }
   }
 }))
 
+const anonymousIdentityMock = vi.hoisted(() => ({
+  rotations: ['anonymous-next-1', 'anonymous-next-2', 'anonymous-next-3'],
+  index: 0,
+  fail: false
+}))
+
+const pendingIdentityMergeMock = vi.hoisted(() => ({
+  entries: [] as Array<{
+    id: string
+    anonymousId: string
+    userId: string
+    nextAnonymousId: string
+    installationId: string
+    personSet: Record<string, boolean | number | string | null>
+    personSetOnce?: Record<string, boolean | number | string | null>
+  }>,
+  nextId: 1
+}))
+
+vi.mock('./anonymousIdentity', () => ({
+  rotatePersistedAnonymousDistinctId: () => {
+    if (anonymousIdentityMock.fail) return null
+    return anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
+  }
+}))
+
+vi.mock('./pendingIdentityMerge', () => ({
+  readPendingIdentityMerges: () => [...pendingIdentityMergeMock.entries],
+  reservePendingIdentityMerge: (
+    merge: Omit<(typeof pendingIdentityMergeMock.entries)[number], 'id' | 'nextAnonymousId'>
+  ) => {
+    if (anonymousIdentityMock.fail) return null
+    const nextAnonymousId = anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
+    if (!nextAnonymousId) return null
+    const entry = {
+      ...merge,
+      nextAnonymousId,
+      id: `merge-${pendingIdentityMergeMock.nextId++}`
+    }
+    pendingIdentityMergeMock.entries.push(entry)
+    return entry
+  },
+  clearPendingIdentityMerges: (ids: ReadonlySet<string>) => {
+    pendingIdentityMergeMock.entries = pendingIdentityMergeMock.entries.filter(
+      (entry) => !ids.has(entry.id)
+    )
+    return true
+  }
+}))
+
 const telemetry = await import('./telemetry')
 
-async function flushTelemetryAliasTasks(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
+function bindTestAnonymous(id: string, properties: Record<string, TelemetryValue> = {}): void {
+  telemetry.bindAnonymousId(id, id, properties)
+}
+
+interface SetupTelemetryOptions {
+  /** Consent state to apply after init; `null` leaves the post-reset 'undecided'. */
+  consent?: 'granted' | 'denied' | 'undecided' | null
+  /** Anonymous D to bind after the consent transition; `null` skips binding. */
+  bind?: string | null
+  appVersion?: string
+  appEnv?: string
+}
+
+/**
+ * Reset module state and the capture buffers, then run the standard boot
+ * sequence: init → consent → bind D. Volume guards are reset LAST so the
+ * `session.started` flushed by a granted-consent bind never counts toward a
+ * test's rate-limit or session-cap totals. Buffers are cleared at the start
+ * only — tests that measure from a later point clear `captured` themselves.
+ */
+function setupTelemetry(options: SetupTelemetryOptions = {}): void {
+  const {
+    consent = 'granted',
+    bind = 'test-distinct-id',
+    appVersion = '0.0.0',
+    appEnv = 'test'
+  } = options
+  captured.length = 0
+  identifies.length = 0
+  exceptions.length = 0
+  featureFlagCalls.length = 0
+  process.env['POSTHOG_API_KEY'] = 'test-key'
+  process.env['POSTHOG_ENABLED'] = '1'
+  telemetry._resetForTest()
+  telemetry._resetTelemetryRelayTargets()
+  telemetry.initTelemetry({ appVersion, appEnv, isPackaged: true })
+  if (consent) telemetry.setConsentState(consent)
+  if (bind) bindTestAnonymous(bind)
+  telemetry._test_resetVolumeGuards()
 }
 
 afterEach(() => {
-  aliasImmediateFailure = null
+  anonymousIdentityMock.index = 0
+  anonymousIdentityMock.fail = false
+  posthogClientMock.failNextCaptures = 0
+  posthogClientMock.failNextFlushes = 0
+  posthogClientMock.autoFailNextIdentifies = 0
+  pendingIdentityMergeMock.entries = []
+  pendingIdentityMergeMock.nextId = 1
+  delete process.env['POSTHOG_API_KEY']
+  delete process.env['POSTHOG_ENABLED']
+  telemetry._resetForTest()
+  telemetry._resetTelemetryRelayTargets()
 })
 
 describe('telemetry.bucketError', () => {
-  it('classifies cancellation messages', () => {
-    expect(telemetry.bucketError('Operation cancelled by user')).toBe('cancelled')
-  })
-  it('classifies timeouts', () => {
-    expect(telemetry.bucketError('request timeout after 30s')).toBe('timeout')
-  })
-  it('classifies network errors', () => {
-    expect(telemetry.bucketError('fetch failed: network unreachable')).toBe('network')
-  })
-  it('classifies disk-space errors', () => {
-    expect(telemetry.bucketError('No space left on disk')).toBe('disk')
-  })
-  it('classifies permission errors', () => {
-    expect(telemetry.bucketError('permission denied: /var/log')).toBe('permissions')
-  })
-  it('falls back to "other" for unknown messages', () => {
-    expect(telemetry.bucketError('something blew up')).toBe('other')
-  })
-  it('returns "unknown" for empty input', () => {
-    expect(telemetry.bucketError('')).toBe('unknown')
-  })
-  it('accepts Error instances', () => {
-    expect(telemetry.bucketError(new Error('connection timeout'))).toBe('timeout')
-  })
-  it('uses messages from serialized error objects', () => {
-    expect(telemetry.bucketError({ message: 'ECONNRESET' })).toBe('network')
-  })
-  // extended vocabulary
-  it('classifies CUDA / system / Linux OOM-killer as oom', () => {
-    expect(telemetry.bucketError('CUDA out of memory')).toBe('oom')
-    expect(telemetry.bucketError('torch.cuda.OutOfMemoryError: blah')).toBe('oom')
-    expect(telemetry.bucketError('Killed: process exceeded memory')).toBe('oom')
-  })
-  it('classifies CUDA init failures', () => {
-    expect(telemetry.bucketError('CUDA not available')).toBe('cuda_init')
-    expect(telemetry.bucketError('no CUDA-capable device is detected')).toBe('cuda_init')
-  })
-  it('classifies ImportError / ModuleNotFoundError', () => {
-    expect(telemetry.bucketError('ImportError: cannot import name xformers')).toBe('import_error')
-    expect(telemetry.bucketError('ModuleNotFoundError: No module named foo')).toBe('import_error')
-  })
-  it('classifies custom-node-missing', () => {
-    expect(telemetry.bucketError('node not found: SomeCustomNode')).toBe('node_missing')
-    expect(telemetry.bucketError('Unknown node type FooNode')).toBe('node_missing')
-  })
-  it('falls back to "python" for generic <Class>Error messages', () => {
-    expect(telemetry.bucketError('RuntimeError: something broke')).toBe('python')
-    expect(telemetry.bucketError('ValueError: bad input')).toBe('python')
-  })
-  it('falls back to "python" even when the class is mid-message (no ^ anchor)', () => {
+  it.each([
+    ['Operation cancelled by user', 'cancelled'],
+    ['request timeout after 30s', 'timeout'],
+    ['fetch failed: network unreachable', 'network'],
+    ['No space left on disk', 'disk'],
+    ['permission denied: /var/log', 'permissions'],
+    // CUDA / system / Linux OOM-killer
+    ['CUDA out of memory', 'oom'],
+    ['torch.cuda.OutOfMemoryError: blah', 'oom'],
+    ['Killed: process exceeded memory', 'oom'],
+    ['CUDA not available', 'cuda_init'],
+    ['no CUDA-capable device is detected', 'cuda_init'],
+    ['ImportError: cannot import name xformers', 'import_error'],
+    ['ModuleNotFoundError: No module named foo', 'import_error'],
+    ['node not found: SomeCustomNode', 'node_missing'],
+    ['Unknown node type FooNode', 'node_missing'],
+    // Generic <Class>Error messages fall back to "python".
+    ['RuntimeError: something broke', 'python'],
+    ['ValueError: bad input', 'python'],
     // scrubAll can strip a leading path and leave the class name in the
     // middle; previously the `^`-anchored regex would miss this and the
     // event landed in `other`.
-    expect(telemetry.bucketError('execution failed -> RuntimeError: bad input')).toBe('python')
-    expect(telemetry.bucketError('Got AttributeError while computing')).toBe('python')
-  })
-  it('does NOT false-positive on lowercase noise like "module.error"', () => {
+    ['execution failed -> RuntimeError: bad input', 'python'],
+    ['Got AttributeError while computing', 'python'],
     // The python regex requires an uppercase first letter on the class
-    // name — without that, "user.error: oops" or "config.exception in foo"
-    // would slide into the python bucket and pollute the dashboard.
-    expect(telemetry.bucketError('see module.error somewhere in foo.py')).toBe('other')
-    expect(telemetry.bucketError('the user.exception field is set')).toBe('other')
+    // name — without that, lowercase noise like "user.error: oops" or
+    // "config.exception in foo" would slide into the python bucket and
+    // pollute the dashboard.
+    ['see module.error somewhere in foo.py', 'other'],
+    ['the user.exception field is set', 'other'],
+    // Tensor / shape mismatches
+    ['size mismatch for transformer.h.0.weight', 'shape_mismatch'],
+    ["shape '[1, 4, 64, 64]' is invalid for input of size 16384", 'shape_mismatch'],
+    ['expected 4 dimensions but got 3', 'shape_mismatch'],
+    // Model-load failures
+    ['Error while deserializing header: invalid byte 0x12', 'model_load'],
+    ['Missing key(s) in state_dict: "transformer.h.0.weight"', 'model_load'],
+    ['safetensors_rust.SafetensorError: corrupted', 'model_load'],
+    // Workflow-validation failures
+    ['Prompt outputs failed validation', 'validation'],
+    ['validation_failed for node 5', 'validation'],
+    // Migration source-missing failures, observed at launch: gitcode mirror
+    // clones that stall mid-stream, and Desktop 1 trees that lost their
+    // ComfyUI source path so the adopter has neither a staged copy nor a
+    // working clone to source.
+    [
+      'source-missing: Downloading ComfyUI source from https://gitcode.com/gh_mirrors/co/ComfyUI.git',
+      'source_missing'
+    ],
+    ['source_missing', 'source_missing'],
+    // No known signal
+    ['something blew up', 'other'],
+    ['this is just a sentence', 'other'],
+    ['', 'unknown']
+  ])('buckets %j as %s', (message, bucket) => {
+    expect(telemetry.bucketError(message)).toBe(bucket)
   })
-  it('classifies tensor / shape mismatches', () => {
-    expect(telemetry.bucketError('size mismatch for transformer.h.0.weight')).toBe('shape_mismatch')
-    expect(telemetry.bucketError("shape '[1, 4, 64, 64]' is invalid for input of size 16384")).toBe(
-      'shape_mismatch'
-    )
-    expect(telemetry.bucketError('expected 4 dimensions but got 3')).toBe('shape_mismatch')
+
+  it('accepts Error instances', () => {
+    expect(telemetry.bucketError(new Error('connection timeout'))).toBe('timeout')
   })
-  it('classifies model-load failures', () => {
-    expect(telemetry.bucketError('Error while deserializing header: invalid byte 0x12')).toBe(
-      'model_load'
-    )
-    expect(telemetry.bucketError('Missing key(s) in state_dict: "transformer.h.0.weight"')).toBe(
-      'model_load'
-    )
-    expect(telemetry.bucketError('safetensors_rust.SafetensorError: corrupted')).toBe('model_load')
-  })
-  it('classifies workflow-validation failures', () => {
-    expect(telemetry.bucketError('Prompt outputs failed validation')).toBe('validation')
-    expect(telemetry.bucketError('validation_failed for node 5')).toBe('validation')
-  })
-  it('classifies migration source-missing failures', () => {
-    // Observed at launch: gitcode mirror clones that stall mid-stream,
-    // and Desktop 1 trees that lost their ComfyUI source path so the
-    // adopter has neither a staged copy nor a working clone to source.
-    expect(
-      telemetry.bucketError(
-        'source-missing: Downloading ComfyUI source from https://gitcode.com/gh_mirrors/co/ComfyUI.git'
-      )
-    ).toBe('source_missing')
-    expect(telemetry.bucketError('source_missing')).toBe('source_missing')
-  })
-  it('keeps "other" for messages with no known signal', () => {
-    expect(telemetry.bucketError('this is just a sentence')).toBe('other')
+
+  it('uses messages from serialized error objects', () => {
+    expect(telemetry.bucketError({ message: 'ECONNRESET' })).toBe('network')
   })
 })
 
 describe('telemetry default event properties', () => {
-  beforeEach(() => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry._resetForTest()
-  })
-
   it('injects app_version, app_channel, app_env, platform, arch, client on every capture', () => {
-    telemetry.initTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '0.7.0-beta.3', appEnv: 'prod', bind: 'id' })
     captured.length = 0
 
     telemetry.capture('comfy.desktop.test.event', { foo: 'bar' })
@@ -246,41 +336,39 @@ describe('telemetry default event properties', () => {
       is_packaged: true,
       platform: process.platform,
       arch: process.arch,
-      client: 'desktop'
+      client: 'desktop',
+      $process_person_profile: false
     })
   })
 
   it('derives stable channel for a clean semver and unknown for an unfamiliar suffix', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     captured.length = 0
     telemetry.capture('any.event')
     expect(captured[0]!.properties).toMatchObject({ app_channel: 'stable' })
 
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '1.0.0-rc.1', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0-rc.1', appEnv: 'prod', bind: 'id' })
     captured.length = 0
     telemetry.capture('any.event')
     expect(captured[0]!.properties).toMatchObject({ app_channel: 'unknown' })
   })
 
   it('per-call properties override defaults on key collision', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     captured.length = 0
 
-    telemetry.capture('any.event', { app_version: 'override-value' })
-    expect(captured[0]!.properties).toMatchObject({ app_version: 'override-value' })
+    telemetry.capture('any.event', {
+      app_version: 'override-value',
+      $process_person_profile: true
+    })
+    expect(captured[0]!.properties).toMatchObject({
+      app_version: 'override-value',
+      $process_person_profile: false
+    })
   })
 
   it('merges the same defaults into captureException payloads', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     exceptions.length = 0
 
     telemetry.captureException(new Error('boom'), { foo: 'bar' })
@@ -289,14 +377,13 @@ describe('telemetry default event properties', () => {
     expect(exceptions[0]!.properties).toMatchObject({
       foo: 'bar',
       app_version: '1.0.0',
-      client: 'desktop'
+      client: 'desktop',
+      $process_person_profile: false
     })
   })
 
   it('scrubs exception messages, stacks, and properties at the SDK boundary', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('id')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     exceptions.length = 0
 
     const error = new Error('failed at C:\\Users\\alice\\plugin.py?token=secret123')
@@ -311,9 +398,7 @@ describe('telemetry default event properties', () => {
   })
 
   it('stamps installation_id (the bound device id) on every captured event', () => {
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('install-abc123')
-    telemetry.setConsentState('granted')
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'install-abc123' })
     captured.length = 0
 
     // A main-process event and a renderer-routed event both go through
@@ -326,34 +411,37 @@ describe('telemetry default event properties', () => {
     expect(captured[1]!.properties).toMatchObject({ installation_id: 'install-abc123' })
   })
 
-  it('does not pass installation_id to identify() (anon-id invariant holds)', () => {
-    identifies.length = 0
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('install-abc123')
-    telemetry.setConsentState('granted')
+  it('does not identify installation_id or anonymous D at boot', () => {
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'install-abc123' })
 
-    // identify() stamps installation_id as an event default but must NEVER
-    // call client.identify() with it — only login (bindUserId) identifies.
+    // bindAnonymousId stamps installation_id only as a property. Only the
+    // Firebase UID login path may call the SDK's identify.
     expect(identifies).toHaveLength(0)
+  })
+})
+
+describe('telemetry anonymous flag reads', () => {
+  it('disables PostHog implicit feature-flag capture', async () => {
+    setupTelemetry({ consent: null, bind: null })
+    telemetry.bindAnonymousId('anonymous-flag-id', 'installation-id')
+    featureFlagCalls.length = 0
+
+    await telemetry.getOpsFlag('desktop-cloud-capacity', 'anonymous-flag-id', 100)
+
+    expect(featureFlagCalls).toEqual([
+      {
+        key: 'desktop-cloud-capacity',
+        distinctId: 'anonymous-flag-id',
+        options: { sendFeatureFlagEvents: false }
+      }
+    ])
   })
 })
 
 describe('telemetry.captureInstallCompleted', () => {
   beforeEach(() => {
+    setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'install-xyz' })
     captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '1.0.0', appEnv: 'prod', isPackaged: true })
-    telemetry.identify('install-xyz')
-    telemetry.setConsentState('granted')
-    captured.length = 0
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry._resetForTest()
   })
 
   it('fires comfy.desktop.install.completed exactly once with method + express + installation_id', () => {
@@ -379,12 +467,12 @@ describe('telemetry.captureInstallCompleted', () => {
       express: false
     })
 
-    const personSet = captured.find(
-      (c) => c.event === 'comfy.desktop.person.set' && c.properties?.$set_once
+    // The milestone stays deferred while anonymous and lands on Firebase UID.
+    expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toBeUndefined()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(identifies.at(-1)?.properties?.$set_once).toHaveProperty(
+      'first_local_install_completed_at'
     )
-    expect(
-      (personSet?.properties as { $set_once?: Record<string, unknown> })?.$set_once
-    ).toHaveProperty('first_local_install_completed_at')
   })
 
   it.each([
@@ -434,19 +522,8 @@ describe('telemetry.captureInstallCompleted', () => {
 })
 
 describe('telemetry.trackedStep', () => {
-  beforeEach(async () => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await telemetry.identify('test-distinct-id')
-    telemetry.setConsent(true)
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    vi.restoreAllMocks()
+  beforeEach(() => {
+    setupTelemetry()
   })
 
   it('emits .start and .end with duration_ms on success', async () => {
@@ -482,7 +559,6 @@ describe('telemetry.trackedStep', () => {
     captured.length = 0
     await telemetry.trackedStep('test.step', {}, async () => 'ok')
     expect(captured).toHaveLength(0)
-    telemetry.setConsent(true)
   })
 
   it('scrubs error_message before emit so user paths never leave the process', async () => {
@@ -549,18 +625,8 @@ describe('telemetry.trackedStep', () => {
 })
 
 describe('telemetry SDK-level privacy safety nets', () => {
-  beforeEach(async () => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await telemetry.identify('test-distinct-id')
-    telemetry.setConsent(true)
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+  beforeEach(() => {
+    setupTelemetry()
   })
 
   it('does not strip $ip: PostHog needs it to derive country (GeoIP enabled)', () => {
@@ -614,26 +680,14 @@ describe('telemetry SDK-level privacy safety nets', () => {
 })
 
 describe('telemetry consent state (3-state)', () => {
-  beforeEach(async () => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    // Reset module state so each test starts with fresh pendingSessionStart etc.
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    // identify *after* state changes per test so the deferral path is exercised.
+  beforeEach(() => {
+    // Bind D after state changes per test so the deferral path is exercised.
+    setupTelemetry({ consent: null, bind: null })
   })
 
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    // Reset to granted so other test blocks behave like the legacy default.
-    telemetry.setConsentState('granted')
-  })
-
-  it('undecided suppresses regular events but allows the consent_decision event', async () => {
+  it('undecided suppresses regular events but allows the consent_decision event', () => {
     telemetry.setConsentState('undecided')
-    telemetry.identify('test-distinct-id')
+    bindTestAnonymous('test-distinct-id')
     captured.length = 0
 
     telemetry.capture('comfy.desktop.execution.started', { foo: 'bar' })
@@ -643,7 +697,7 @@ describe('telemetry consent state (3-state)', () => {
     expect(events).toEqual(['comfy.desktop.first_use.consent_decision'])
   })
 
-  it('denied suppresses everything EXCEPT the consent_decision allow-list entry', async () => {
+  it('denied suppresses everything EXCEPT the consent_decision allow-list entry', () => {
     // Regression for the 2026-06-03 finding: 232 accepts and 0 declines in
     // 30 days, traced to the renderer's "Continue" handler awaiting the
     // setting write (which flips state to 'denied') BEFORE emitting the
@@ -651,7 +705,7 @@ describe('telemetry consent state (3-state)', () => {
     // allow-list, every decline is dropped by its own decision and we
     // lose 100% of decline signal.
     telemetry.setConsentState('denied')
-    telemetry.identify('test-distinct-id')
+    bindTestAnonymous('test-distinct-id')
     captured.length = 0
 
     telemetry.capture('comfy.desktop.execution.started', {})
@@ -667,11 +721,11 @@ describe('telemetry consent state (3-state)', () => {
     })
   })
 
-  it('defers session.started + identify person properties until consent flips to granted', async () => {
+  it('defers session.started while consent is undecided', () => {
     telemetry.setConsentState('undecided')
-    telemetry.identify('deferred-id', { app_version: '1.2.3' })
+    bindTestAnonymous('deferred-id', { app_version: '1.2.3' })
 
-    // Nothing should have shipped yet — neither the identify nor session.started.
+    // Nothing should have shipped yet.
     expect(captured).toHaveLength(0)
 
     telemetry.setConsentState('granted')
@@ -685,7 +739,7 @@ describe('telemetry consent state (3-state)', () => {
 
   it('legacy setConsent(true) maps to granted; setConsent(false) maps to denied', () => {
     telemetry.setConsent(true)
-    telemetry.identify('legacy-id')
+    bindTestAnonymous('legacy-id')
     captured.length = 0
     telemetry.capture('any.event', {})
     expect(captured).toHaveLength(1)
@@ -698,7 +752,7 @@ describe('telemetry consent state (3-state)', () => {
 
   it('captureException is suppressed outside granted', () => {
     telemetry.setConsentState('denied')
-    telemetry.identify('any')
+    bindTestAnonymous('any')
     exceptions.length = 0
     telemetry.captureException(new Error('boom'), {})
     expect(exceptions).toHaveLength(0)
@@ -714,146 +768,68 @@ describe('telemetry consent state (3-state)', () => {
     telemetry.captureException(new Error('boom'), {})
     expect(exceptions).toHaveLength(1)
   })
+
+  it('discards deferred data when consent is denied', () => {
+    telemetry.setConsentState('undecided')
+    bindTestAnonymous('anonymous-id')
+
+    telemetry.registerPersonProperties({ plan: 'pro' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+    telemetry.captureFirstLaunch({ id_class: 'random_uuid' })
+    telemetry.setConsentState('denied')
+
+    telemetry.registerPersonProperties({ locale: 'en' })
+    telemetry.captureFirstLaunch({ id_class: 'random_uuid' })
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+
+    expect(captured.some((call) => call.event === 'comfy.desktop.app.first_launch')).toBe(false)
+    expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('plan')
+    expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('locale')
+    expect(identifies.at(-1)?.properties?.$set_once).toBeUndefined()
+  })
 })
 
-describe('telemetry.registerPersonProperties pre-consent merge', () => {
+describe('telemetry pre-consent person properties', () => {
   beforeEach(() => {
-    captured.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    setupTelemetry({ consent: null, bind: null })
   })
 
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
-  })
-
-  it('merges multiple pre-consent property writes into one capture-$set on grant (latest-wins per key)', () => {
+  it('applies latest $set and first $set_once values at Firebase bind', () => {
     telemetry.setConsentState('undecided')
-    telemetry.identify('id', { app_version: '1.0.0' })
-    identifies.length = 0
-    captured.length = 0
+    bindTestAnonymous('id', { app_version: '1.0.0' })
 
     telemetry.registerPersonProperties({ gpu_tier: 'low', locale: 'en' })
     telemetry.registerPersonProperties({ gpu_tier: 'mid', theme: 'dark' })
-    // Nothing should have shipped yet.
-    expect(captured).toHaveLength(0)
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'second' })
 
     telemetry.setConsentState('granted')
+    expect(identifies).toHaveLength(0)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
 
-    // CRITICAL: anonymous person-prop writes must NOT go through identify()
-    // (which would burn the anon id and break the login alias merge).
-    expect(identifies.some((i) => i.distinctId === 'id')).toBe(false)
-
-    // Exactly one capture-$set carrying the merged $set, with the
-    // second gpu_tier value winning over the first.
-    const merged = captured.find((c) => c.event === 'comfy.desktop.person.set')
-    expect(merged?.distinctId).toBe('id')
-    expect((merged?.properties as { $set?: Record<string, unknown> })?.$set).toMatchObject({
+    expect(identifies.at(-1)?.properties?.$set).toMatchObject({
       app_version: '1.0.0',
       gpu_tier: 'mid',
       locale: 'en',
       theme: 'dark'
     })
-  })
-})
-
-describe('telemetry.registerPersonPropertiesOnce ($set_once)', () => {
-  beforeEach(() => {
-    captured.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
-  })
-
-  it('ships the property under $set_once (not $set) when consent is already granted', () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('id')
-    captured.length = 0
-
-    telemetry.registerPersonPropertiesOnce({ first_generation_at: '2026-06-12T00:00:00.000Z' })
-
-    // Person props ship as a $set_once on a `comfy.desktop.person.set`
-    // capture, NEVER an identify() on the anon id (would burn the stitch).
-    expect(identifies).toHaveLength(0)
-    const sets = captured.filter((c) => c.event === 'comfy.desktop.person.set')
-    expect(sets).toHaveLength(1)
-    expect(sets[0]?.properties?.$set_once).toMatchObject({
-      first_generation_at: '2026-06-12T00:00:00.000Z'
+    expect(identifies.at(-1)?.properties?.$set_once).toEqual({
+      first_generation_at: 'first'
     })
-    expect(sets[0]?.properties?.$set).toBeUndefined()
-  })
-
-  it('defers the $set_once write until consent flips to granted', () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('id')
-    captured.length = 0
-
-    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
-    // Nothing ships pre-consent.
-    expect(captured.filter((c) => c.event === 'comfy.desktop.person.set')).toHaveLength(0)
-
-    telemetry.setConsentState('granted')
-
-    const once = captured.find(
-      (c) => c.event === 'comfy.desktop.person.set' && c.properties?.$set_once
-    )
-    expect(once?.properties?.$set_once).toMatchObject({ first_generation_at: 'first' })
-    expect(identifies).toHaveLength(0)
-  })
-
-  it('carries $set and $set_once in the same identify when both are queued pre-consent', () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('id')
-    captured.length = 0
-
-    telemetry.registerPersonProperties({ gpu_tier: 'mid' })
-    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
-
-    telemetry.setConsentState('granted')
-
-    // Both queued writes flush together on one person.set capture.
-    const call = captured.find(
-      (c) => c.event === 'comfy.desktop.person.set' && c.properties?.$set_once
-    )
-    expect(call?.properties?.$set).toMatchObject({ gpu_tier: 'mid' })
-    expect(call?.properties?.$set_once).toMatchObject({ first_generation_at: 'first' })
-    expect(identifies).toHaveLength(0)
   })
 })
 
 describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
   beforeEach(() => {
-    captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
+    setupTelemetry({ consent: null, bind: null })
   })
 
   it('queues on a fresh install (undecided) and ships on the grant transition', () => {
     // This is the real first-boot path: consent undecided, guard already
     // consumed. A plain capture would be dropped here and never re-fire.
     telemetry.setConsentState('undecided')
-    telemetry.identify('install-id')
+    bindTestAnonymous('install-id')
     captured.length = 0
 
     telemetry.captureFirstLaunch({ id_class: 'machine_derived', locale: 'en' })
@@ -866,20 +842,9 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     expect(ev?.properties).toMatchObject({ id_class: 'machine_derived', locale: 'en' })
   })
 
-  it('never ships when the user declines (denied), no later flush', () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('install-id')
-    captured.length = 0
-
-    telemetry.captureFirstLaunch({ id_class: 'machine_derived', locale: 'en' })
-    telemetry.setConsentState('denied')
-
-    expect(captured.find((c) => c.event === 'comfy.desktop.app.first_launch')).toBeUndefined()
-  })
-
   it('captures immediately when consent is already granted', () => {
     telemetry.setConsentState('granted')
-    telemetry.identify('install-id')
+    bindTestAnonymous('install-id')
     captured.length = 0
 
     telemetry.captureFirstLaunch({ id_class: 'random_uuid', locale: 'fr' })
@@ -889,481 +854,209 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
   })
 })
 
-describe('telemetry deferMigrationAlias', () => {
+describe('telemetry Firebase consensus identity lifecycle', () => {
   beforeEach(() => {
-    captured.length = 0
-    aliases.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    setupTelemetry({ bind: null })
+    telemetry.bindAnonymousId('anonymous-start', 'installation-id-fake')
   })
 
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
-  })
-
-  it('fires alias + identity.migrated immediately when consent already granted', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('new-id')
-    aliases.length = 0
-    captured.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferMigrationAlias({
-      legacyId: 'legacy-uuid-abc',
-      installationId: 'new-id',
-      idClass: 'machine_derived',
-      onAliased
-    })
-
-    // Async microtask + the aliasImmediate await chain.
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toContainEqual({ distinctId: 'new-id', alias: 'legacy-uuid-abc' })
-    const migrated = captured.find((c) => c.event === 'comfy.desktop.identity.migrated')
-    expect(migrated?.properties).toMatchObject({
-      installation_id: 'new-id',
-      id_class: 'machine_derived'
-    })
-    // Privacy hygiene: the legacy id is intentionally NOT shipped as an
-    // event property — the alias call above already merges the person
-    // records, so re-publishing the legacy id would scatter it across
-    // the events column for no analytical benefit.
-    expect(migrated?.properties).not.toHaveProperty('from_id')
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('defers until consent flips to granted (undecided → granted)', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('new-id')
-    aliases.length = 0
-    captured.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferMigrationAlias({
-      legacyId: 'legacy-uuid-abc',
-      installationId: 'new-id',
-      idClass: 'machine_derived',
-      onAliased
-    })
-
-    // Nothing should have shipped while undecided.
-    await flushTelemetryAliasTasks()
-    expect(aliases).toHaveLength(0)
-    expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
-    expect(onAliased).not.toHaveBeenCalled()
-
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toContainEqual({ distinctId: 'new-id', alias: 'legacy-uuid-abc' })
-    expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeDefined()
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not fire onAliased while denied; fires on subsequent grant', async () => {
-    telemetry.setConsentState('denied')
-    telemetry.identify('new-id')
-    aliases.length = 0
-    captured.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferMigrationAlias({
-      legacyId: 'legacy-uuid-abc',
-      installationId: 'new-id',
-      idClass: 'machine_derived',
-      onAliased
-    })
-
-    await flushTelemetryAliasTasks()
-    expect(aliases).toHaveLength(0)
-    expect(onAliased).not.toHaveBeenCalled()
-
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toHaveLength(1)
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not double-fire on repeated grant transitions', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('new-id')
-    aliases.length = 0
-    const onAliased = vi.fn()
-    telemetry.deferMigrationAlias({
-      legacyId: 'legacy-uuid-abc',
-      installationId: 'new-id',
-      idClass: 'machine_derived',
-      onAliased
-    })
-
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-    telemetry.setConsentState('denied')
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toHaveLength(1)
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not clean up persisted retry state when aliasImmediate fails', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('new-id')
-    aliases.length = 0
-    captured.length = 0
-    aliasImmediateFailure = new Error('alias failed')
-
-    const onAliased = vi.fn()
-    telemetry.deferMigrationAlias({
-      legacyId: 'legacy-uuid-abc',
-      installationId: 'new-id',
-      idClass: 'machine_derived',
-      onAliased
-    })
-
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toEqual([{ distinctId: 'new-id', alias: 'legacy-uuid-abc' }])
-    expect(captured.find((c) => c.event === 'comfy.desktop.identity.migrated')).toBeUndefined()
-    // onAliased clears the on-disk pending-alias file; skipping it preserves
-    // retry state for the next boot.
-    expect(onAliased).not.toHaveBeenCalled()
-  })
-})
-
-describe('telemetry deferDownloadTokenAlias', () => {
-  beforeEach(() => {
-    captured.length = 0
-    aliases.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-    telemetry.setConsentState('granted')
-  })
-
-  it('does not attach the token to pre-consent allow-listed events', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      onAliased
-    })
-    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
-
-    telemetry.capture('comfy.desktop.first_use.consent_decision', {
-      decision: 'accept',
-      telemetry_enabled: true
-    })
-
-    expect(captured).toHaveLength(1)
-    expect(captured[0]?.properties).not.toHaveProperty('download_token')
-    expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
-    expect(aliases).toHaveLength(0)
-    expect(onAliased).not.toHaveBeenCalled()
-
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toContainEqual({ distinctId: 'install-id', alias: 'AbC123xYz789' })
-    const attributed = captured.find(
-      (c) => c.event === 'comfy.desktop.identity.download_attributed'
-    )
-    expect(attributed?.properties).toMatchObject({
-      installation_id: 'install-id',
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
-    })
-    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
-    expect(firstLaunch?.properties).toMatchObject({
-      installation_id: 'install-id',
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename',
-      id_class: 'machine_derived'
-    })
-    const session = captured.find((c) => c.event === 'comfy.desktop.session.started')
-    expect(session?.properties).toMatchObject({
-      installation_id: 'install-id'
-    })
-    expect(session?.properties).not.toHaveProperty('download_token')
-    expect(session?.properties).not.toHaveProperty('download_token_source')
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not attach the token to unrelated later events', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      onAliased: vi.fn()
-    })
-    await flushTelemetryAliasTasks()
-    captured.length = 0
-
-    telemetry.capture('comfy.desktop.execution.started', {
-      mode: 'test'
-    })
-
-    expect(captured).toHaveLength(1)
-    expect(captured[0]?.properties).toMatchObject({
-      installation_id: 'install-id',
-      mode: 'test'
-    })
-    expect(captured[0]?.properties).not.toHaveProperty('download_token')
-    expect(captured[0]?.properties).not.toHaveProperty('download_token_source')
-  })
-
-  it('attaches the token to only one first-launch event in a process', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      onAliased: vi.fn()
-    })
-
-    telemetry.captureFirstLaunch({ sequence: 'first' })
-    telemetry.captureFirstLaunch({ sequence: 'second' })
-    await flushTelemetryAliasTasks()
-
-    const firstLaunches = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
-    expect(firstLaunches).toHaveLength(2)
-    expect(firstLaunches[0]?.properties).toMatchObject({
-      sequence: 'first',
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
-    })
-    expect(firstLaunches[1]?.properties).toMatchObject({ sequence: 'second' })
-    expect(firstLaunches[1]?.properties).not.toHaveProperty('download_token')
-    expect(firstLaunches[1]?.properties).not.toHaveProperty('download_token_source')
-  })
-
-  it('attaches the token to an already queued first-launch event', async () => {
-    telemetry.setConsentState('undecided')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-
-    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      onAliased: vi.fn()
-    })
-
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-
-    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
-    expect(firstLaunch?.properties).toMatchObject({
-      id_class: 'machine_derived',
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
-    })
-  })
-
-  it('retries attribution without attaching the token to first-launch after the first boot', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      attachToFirstLaunch: false,
-      onAliased
-    })
-    telemetry.captureFirstLaunch({ sequence: 'not-first-boot' })
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'AbC123xYz789' }])
-    const attributed = captured.find(
-      (c) => c.event === 'comfy.desktop.identity.download_attributed'
-    )
-    expect(attributed?.properties).toMatchObject({
-      installation_id: 'install-id',
-      download_token: 'AbC123xYz789',
-      download_token_source: 'windows_installer_filename'
-    })
-    const firstLaunch = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
-    expect(firstLaunch?.properties).toMatchObject({ sequence: 'not-first-boot' })
-    expect(firstLaunch?.properties).not.toHaveProperty('download_token')
-    expect(firstLaunch?.properties).not.toHaveProperty('download_token_source')
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not clean up persisted download-token retry state when aliasImmediate fails', async () => {
-    telemetry.setConsentState('granted')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-    aliasImmediateFailure = new Error('alias failed')
-
-    const onAliased = vi.fn()
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'AbC123xYz789',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      attachToFirstLaunch: false,
-      onAliased
-    })
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'AbC123xYz789' }])
-    expect(
-      captured.find((c) => c.event === 'comfy.desktop.identity.download_attributed')
-    ).toBeUndefined()
-    expect(onAliased).not.toHaveBeenCalled()
-  })
-
-  it('queues the alias while denied and clears only after a later grant', async () => {
-    telemetry.setConsentState('denied')
-    telemetry.identify('install-id')
-    captured.length = 0
-    aliases.length = 0
-
-    const onAliased = vi.fn()
-    telemetry.deferDownloadTokenAlias({
-      downloadToken: 'ZyX987wVu654',
-      installationId: 'install-id',
-      source: 'windows_installer_filename',
-      onAliased
-    })
-
-    await flushTelemetryAliasTasks()
-    expect(aliases).toHaveLength(0)
-    expect(onAliased).not.toHaveBeenCalled()
-
-    telemetry.setConsentState('granted')
-    await flushTelemetryAliasTasks()
-
-    expect(aliases).toEqual([{ distinctId: 'install-id', alias: 'ZyX987wVu654' }])
-    expect(onAliased).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('telemetry identity lifecycle (bindUserId / unbindUserId)', () => {
-  beforeEach(() => {
-    captured.length = 0
-    aliases.length = 0
-    identifies.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry._resetForTest()
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    telemetry.setConsentState('granted')
-    telemetry.identify('installation-id-fake')
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
-  })
-
-  it('bindUserId aliases the installation_id into the user_id and fires app:user_logged_in', () => {
-    aliases.length = 0
+  it('identifies Firebase UID with the active W/D and deferred person properties', () => {
     identifies.length = 0
     captured.length = 0
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonProperties({ email_domain: 'example.com' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
 
-    telemetry.bindUserId('user-123', { email_domain: 'example.com' })
+    expect(captured).toHaveLength(0)
 
-    expect(aliases).toEqual([{ distinctId: 'user-123', alias: 'installation-id-fake' }])
+    telemetry.applyFirebaseUserConsensus('user-123')
+
     const last = identifies.at(-1)!
     expect(last.distinctId).toBe('user-123')
+    expect(last.properties?.$anon_distinct_id).toBe('anonymous-start')
     expect(last.properties?.$set).toMatchObject({
       is_authenticated: true,
-      email_domain: 'example.com'
+      email_domain: 'example.com',
+      gpu_tier: 'high',
+      installation_id: 'installation-id-fake'
     })
-    expect(captured.find((c) => c.event === 'app:user_logged_in')?.distinctId).toBe('user-123')
+    expect(last.properties?.$set_once).toEqual({ first_generation_at: 'first' })
+    expect(captured.find((c) => c.event === 'app:user_logged_in')).toBeUndefined()
+    telemetry.capture('authenticated.event')
+    expect(captured.at(-1)?.properties).not.toHaveProperty('$process_person_profile')
   })
 
-  it('unbindUserId switches distinct_id back to the installation_id (NOT a reset)', () => {
-    telemetry.bindUserId('user-123')
-    aliases.length = 0
+  it('keeps pre-first-login enrichment through a signed-out report while unbound', () => {
+    identifies.length = 0
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    expect(anonymousIdentityMock.index).toBe(0)
+    expect(captured.find((c) => c.event === 'comfy.desktop.person.set')).toBeUndefined()
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    const last = identifies.at(-1)!
+    expect(last.properties?.$set).toMatchObject({ gpu_tier: 'high' })
+    expect(last.properties?.$set_once).toEqual({ first_generation_at: 'first' })
+  })
+
+  it('replays an unacknowledged identity merge after restart', async () => {
+    // Reproduce posthog-node's auto-flush race: identify is removed from the
+    // SDK queue after an HTTP failure, then our explicit empty flush resolves.
+    posthogClientMock.autoFailNextIdentifies = 1
+
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+    telemetry.applyFirebaseUserConsensus('user-123')
+    await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(1))
+
+    telemetry._resetForTest()
+    identifies.length = 0
+    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anonymous-next-1', 'installation-id-fake')
+
+    await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(0))
+    expect(identifies).toContainEqual({
+      distinctId: 'user-123',
+      properties: {
+        $set: {
+          gpu_tier: 'high',
+          installation_id: 'installation-id-fake',
+          is_authenticated: true
+        },
+        $set_once: { first_generation_at: 'first' },
+        $anon_distinct_id: 'anonymous-start'
+      }
+    })
+  })
+
+  it('keeps repeated binds of the same Firebase UID idempotent', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    expect(identifies).toHaveLength(1)
+    expect(anonymousIdentityMock.index).toBe(1)
+    captured.length = 0
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(identifies).toHaveLength(1)
+    expect(anonymousIdentityMock.index).toBe(1)
+    expect(captured).toHaveLength(0)
+
+    telemetry.registerPersonProperties({ plan: 'pro' })
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(identifies).toHaveLength(1)
+    expect(anonymousIdentityMock.index).toBe(1)
+    expect(captured.filter((call) => call.event === 'app:user_logged_in')).toHaveLength(0)
+    expect(captured).toHaveLength(1)
+    expect(captured[0]).toMatchObject({
+      distinctId: 'user-123',
+      event: 'comfy.desktop.person.set',
+      properties: { $set: { plan: 'pro' } }
+    })
+  })
+
+  it('anonymous consensus adopts the fresh D reserved before bind', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
     identifies.length = 0
     captured.length = 0
 
-    telemetry.unbindUserId()
+    telemetry.applyFirebaseAnonymousConsensus()
 
-    // No new alias call on logout (we're not merging anything).
-    expect(aliases).toHaveLength(0)
-    // CRITICAL: logout must NOT call identify() on the anonymous id. Doing
-    // so would re-burn the installation_id as an identified person and
-    // break the NEXT login's alias merge (the 0/13,528-stitched bug).
-    expect(identifies.some((i) => i.distinctId === 'installation-id-fake')).toBe(false)
-    // is_authenticated flipped to false on the anonymous identity via a
-    // capture-$set instead.
+    expect(identifies).toHaveLength(0)
     const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
-    expect(personSet?.distinctId).toBe('installation-id-fake')
+    expect(personSet?.distinctId).toBe('user-123')
     expect((personSet?.properties as { $set?: Record<string, unknown> })?.$set).toEqual({
       is_authenticated: false
     })
 
-    // Subsequent events ride under the installation id again.
     telemetry.capture('any.event', { foo: 1 })
-    expect(captured.at(-1)?.distinctId).toBe('installation-id-fake')
+    expect(captured.at(-1)?.distinctId).toBe('anonymous-next-1')
+    expect(captured.at(-1)?.properties).toMatchObject({
+      installation_id: 'installation-id-fake',
+      $process_person_profile: false
+    })
   })
 
-  it('bindUserId is suppressed outside consent granted', () => {
-    telemetry.setConsentState('denied')
-    aliases.length = 0
+  it('uses a different anonymous D for an account switch', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebaseUserConsensus('user-456')
+
+    expect(identifies.at(-1)).toMatchObject({
+      distinctId: 'user-456',
+      properties: { $anon_distinct_id: 'anonymous-next-1' }
+    })
+    expect(
+      captured.find(
+        (call) => call.event === 'comfy.desktop.person.set' && call.distinctId === 'user-123'
+      )
+    ).toBeDefined()
+
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.capture('after.switch.logout')
+    expect(captured.at(-1)?.distinctId).toBe('anonymous-next-2')
+  })
+
+  it('defers Firebase UID until consent is granted', () => {
+    telemetry.setConsentState('undecided')
     identifies.length = 0
     captured.length = 0
-    telemetry.bindUserId('user-456')
-    expect(aliases).toHaveLength(0)
+    telemetry.applyFirebaseUserConsensus('user-456')
     expect(identifies).toHaveLength(0)
     expect(captured).toHaveLength(0)
+
+    telemetry.setConsentState('granted')
+
+    expect(identifies.at(-1)).toMatchObject({
+      distinctId: 'user-456',
+      properties: { $anon_distinct_id: 'anonymous-start' }
+    })
+  })
+
+  it('binds a main-verified interactive sign-in through the consensus path', () => {
+    telemetry.bindUserId('bridge-user', { plan: 'pro' })
+
+    expect(identifies).toHaveLength(1)
+    expect(identifies.at(-1)).toMatchObject({
+      distinctId: 'bridge-user',
+      properties: expect.objectContaining({
+        $anon_distinct_id: 'anonymous-start',
+        $set: expect.objectContaining({ plan: 'pro' })
+      })
+    })
+    expect(captured.find((c) => c.event === 'app:user_logged_in')).toMatchObject({
+      distinctId: 'bridge-user'
+    })
+
+    telemetry.bindUserId('bridge-user', { plan: 'pro' })
+    expect(identifies).toHaveLength(1)
+  })
+
+  it('fails closed without identifying when the next D cannot be persisted', () => {
+    anonymousIdentityMock.fail = true
+    identifies.length = 0
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.capture('still.anonymous')
+
+    expect(identifies).toHaveLength(0)
+    expect(captured.at(-1)).toMatchObject({
+      distinctId: 'anonymous-start',
+      properties: { $process_person_profile: false }
+    })
   })
 })
 
 describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
-  beforeEach(async () => {
-    telemetry._resetTelemetryRelayTargets()
+  beforeEach(() => {
+    setupTelemetry()
     captured.length = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await telemetry.identify('test-distinct-id')
-    telemetry.setConsent(true)
-    telemetry._test_resetVolumeGuards()
-    captured.length = 0
-  })
-
-  afterEach(() => {
-    telemetry._resetTelemetryRelayTargets()
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
   })
 
   it('forwards to every registered relay target with mainAlreadyCaptured=true', () => {
@@ -1484,7 +1177,6 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     telemetry.setConsent(false)
     telemetry.forwardToRenderer('comfy.desktop.execution.error', {})
     expect(a.sends).toHaveLength(0)
-    telemetry.setConsent(true)
   })
 
   it('skips destroyed relay targets', () => {
@@ -1523,24 +1215,14 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
 })
 
 describe('telemetry SDK-level volume guards', () => {
-  beforeEach(async () => {
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
-    telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
-    await telemetry.identify('test-distinct-id')
-    telemetry.setConsent(true)
-    telemetry._test_resetVolumeGuards()
-    // Clear AFTER setConsent — granting consent flushes the deferred
+  beforeEach(() => {
+    setupTelemetry()
+    // Clear AFTER the boot sequence — granting consent flushes the deferred
     // `comfy.desktop.session.started` event into `captured`, which would
     // otherwise count toward each test's product-event totals and
     // throw the per-process cap assertions off by one (and make the
     // 5000-cap test loop runaway-guard out, eating the 5s timeout).
     captured.length = 0
-  })
-
-  afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
   })
 
   it('per-event sliding window caps at 60/window and emits exactly one rate_limited warning', () => {
@@ -1554,8 +1236,24 @@ describe('telemetry SDK-level volume guards', () => {
     expect(warnings[0]?.properties).toMatchObject({
       event_name: 'comfy.desktop.test.event',
       limit: 60,
-      window_ms: 60_000
+      window_ms: 60_000,
+      $process_person_profile: false
     })
+  })
+
+  it('does not consume the event or process budget when the SDK capture throws', () => {
+    posthogClientMock.failNextCaptures = 1
+    expect(telemetry.capture('comfy.desktop.test.event', { attempt: 0 })).toBe(false)
+
+    for (let i = 0; i < 60; i++) {
+      expect(telemetry.capture('comfy.desktop.test.event', { attempt: i + 1 })).toBe(true)
+    }
+    expect(telemetry.capture('comfy.desktop.test.event', { attempt: 61 })).toBe(false)
+
+    const product = captured.filter((c) => c.event === 'comfy.desktop.test.event')
+    const warnings = captured.filter((c) => c.event === 'comfy.desktop.telemetry.rate_limited')
+    expect(product).toHaveLength(60)
+    expect(warnings).toHaveLength(1)
   })
 
   it('warning fires once per (event-name, process) — no warning spam', () => {

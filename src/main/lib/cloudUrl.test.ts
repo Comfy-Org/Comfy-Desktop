@@ -1,18 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { displayLaunchUrl, withCloudDistributionUtm } from './cloudUrl'
 
-// The default deviceIdProvider reads (and may write) a file under the
-// user data dir via `getDeviceId`. Inject a no-op provider so the UTM
-// assertions don't depend on disk state and don't leak fixtures.
-const noDeviceId = () => null
-
 describe('withCloudDistributionUtm', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
   it('adds default UTM params for cloud distribution links', () => {
-    const result = withCloudDistributionUtm('https://cloud.comfy.org/', noDeviceId)
+    const result = withCloudDistributionUtm('https://cloud.comfy.org/')
     const url = new URL(result)
 
     expect(url.hostname).toBe('cloud.comfy.org')
@@ -23,8 +18,7 @@ describe('withCloudDistributionUtm', () => {
 
   it('preserves existing query params and UTM overrides', () => {
     const result = withCloudDistributionUtm(
-      'https://cloud.comfy.org/path?plan=pro&utm_source=custom-source',
-      noDeviceId
+      'https://cloud.comfy.org/path?plan=pro&utm_source=custom-source'
     )
     const url = new URL(result)
 
@@ -37,47 +31,31 @@ describe('withCloudDistributionUtm', () => {
   it('does not modify non-cloud URLs', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const input = 'https://example.com/path?plan=pro'
-    expect(withCloudDistributionUtm(input, noDeviceId)).toBe(input)
+    expect(withCloudDistributionUtm(input)).toBe(input)
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('returns invalid URLs unchanged', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(withCloudDistributionUtm('not a url', noDeviceId)).toBe('not a url')
+    const input = 'not a url'
+    expect(withCloudDistributionUtm(input)).toBe(input)
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
-  it('appends desktop_device_id when a device id is available', () => {
-    const url = new URL(
-      withCloudDistributionUtm('https://cloud.comfy.org/path', () => 'abc-123')
-    )
-
-    expect(url.searchParams.get('desktop_device_id')).toBe('abc-123')
-    expect(url.searchParams.get('utm_source')).toBe('comfy.desktop')
-  })
-
-  it('does not append desktop_device_id when the provider returns null', () => {
-    const url = new URL(
-      withCloudDistributionUtm('https://cloud.comfy.org/path', () => null)
-    )
-
-    expect(url.searchParams.has('desktop_device_id')).toBe(false)
-  })
-
-  it('preserves caller-supplied desktop_device_id over the provider', () => {
+  it('never exposes Desktop identity or installation metadata in the URL', () => {
     const url = new URL(
       withCloudDistributionUtm(
-        'https://cloud.comfy.org/path?desktop_device_id=caller-explicit',
-        () => 'provider-id'
+        'https://cloud.comfy.org/path?desktop_device_id=legacy&installation_id=hash'
       )
     )
-
-    expect(url.searchParams.get('desktop_device_id')).toBe('caller-explicit')
+    expect(url.searchParams.has('desktop_device_id')).toBe(false)
+    expect(url.searchParams.has('installation_id')).toBe(false)
+    expect(url.searchParams.get('utm_source')).toBe('comfy.desktop')
   })
 })
 
 describe('displayLaunchUrl', () => {
-  it('strips UTM + desktop_device_id and the path down to the host', () => {
+  it('strips query params and the path down to the host', () => {
     expect(
       displayLaunchUrl(
         'https://cloud.comfy.org/workflows/123?utm_source=comfy.desktop&desktop_device_id=abc'

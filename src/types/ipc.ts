@@ -1474,23 +1474,9 @@ export interface ElectronApi {
   }): void
   /**
    * Update person-level cohort properties on the current PostHog person.
-   * Replaces the renderer's previous `registerPostHog(properties)` calls.
-   * Main routes this to `posthog.identify({ distinctId, properties: { $set: ... } })`.
+   * Main holds pre-auth properties until a verified Firebase user is bound.
    */
   registerTelemetryProperties(properties: Record<string, unknown>): void
-  /**
-   * Bind a user_id on the current PostHog identity after a successful login.
-   * Main aliases the anonymous installation_id into user_id (PostHog merges
-   * histories), sets `is_authenticated: true`, and fires `app:user_logged_in`.
-   * The renderer remains responsible for Datadog `setUser` on its own SDK.
-   */
-  telemetryBindUserId(payload: { userId: string; properties?: Record<string, unknown> }): void
-  /**
-   * Unbind user_id on logout. Switches distinct_id back to the anonymous
-   * installation_id (NOT posthog.reset, which would clobber installation_id
-   * and download_token). Renderer also clears Datadog setUser.
-   */
-  telemetryUnbindUserId(): void
   /**
    * Look up an A/B experiment / feature-flag variant for this user.
    * Returns the cached value (string for multivariate, boolean for a

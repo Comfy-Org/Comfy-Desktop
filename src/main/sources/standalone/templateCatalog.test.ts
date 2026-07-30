@@ -91,6 +91,43 @@ describe('loadTemplateCatalog', () => {
     expect(card.task).toBe('Text to Image')
   })
 
+  it('skips the API tag so an API-node card is not subtitled "API"', async () => {
+    const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
+    mockedFetchJSON.mockResolvedValue(
+      indexFor({ [apiTemplate.id]: { title: 'Seedream 5.0 Pro: Image Edit', tags: ['API', 'Image Edit'] } })
+    )
+    const card = (await loadTemplateCatalog()).find((c) => c.id === apiTemplate.id)!
+    expect(card.task).toBe('Image Edit')
+    expect(card.name).toBe('Seedream 5.0 Pro')
+  })
+
+  it('treats "3D Model" as a kind, not a task', async () => {
+    const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode && t.modality === '3d')!
+    mockedFetchJSON.mockResolvedValue(
+      indexFor({ [apiTemplate.id]: { title: 'Tripo H3.1: Image to Model', tags: ['3D Model', 'API'] } }, '3D Model')
+    )
+    const card = (await loadTemplateCatalog()).find((c) => c.id === apiTemplate.id)!
+    expect(card.task).toBe('Image to 3D')
+  })
+
+  it('flags API-node templates from the manifest, offline included', async () => {
+    mockedFetchJSON.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+    const catalog = await loadTemplateCatalog()
+    for (const curated of CURATED_TEMPLATES) {
+      expect(catalog.find((c) => c.id === curated.id)!.apiNode, curated.id).toBe(curated.apiNode === true)
+    }
+  })
+
+  it('does not infer API-node status from a closed-source index flag', async () => {
+    const local = CURATED_TEMPLATES.find((t) => !t.apiNode)!
+    mockedFetchJSON.mockResolvedValue(
+      indexFor({ [local.id]: { openSource: false, size: 142_000_000_000 } })
+    )
+    const card = (await loadTemplateCatalog()).find((c) => c.id === local.id)!
+    expect(card.apiNode).toBe(false)
+    expect(card.sizeBytes).toBe(142_000_000_000)
+  })
+
   it('falls back to the snapshot when the index omits a curated id', async () => {
     const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue([])
@@ -179,6 +216,24 @@ describe('loadTemplateCatalog', () => {
     mockedFetchJSON.mockResolvedValue(imageCategory([{ name: 'api_only', title: 'Cloud', size: 0 }]))
     const catalog = await loadTemplateCatalog()
     expect(catalog.find((c) => c.id === first.id)!.title).toBe(first.snapshot.title)
+  })
+
+  it('never substitutes a local download into a vanished API-node slot', async () => {
+    const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode && t.modality === 'image')!
+    mockedFetchJSON.mockResolvedValue(
+      imageCategory([
+        { name: 'sub_a', title: 'A', size: 1 },
+        { name: 'sub_b', title: 'B', size: 2 },
+        { name: 'sub_c', title: 'C', size: 3 },
+        { name: 'sub_d', title: 'D', size: 4 },
+      ])
+    )
+    const catalog = await loadTemplateCatalog()
+    const card = catalog.find((c) => c.id === apiTemplate.id)
+    expect(card, 'API-node slot kept its snapshot').toBeDefined()
+    expect(card!.apiNode).toBe(true)
+    expect(card!.sizeBytes).toBe(0)
+    expect(catalog.some((c) => c.id === 'sub_d'), 'no local substitute took the slot').toBe(false)
   })
 
   it('keeps the curated snapshot card when offline (empty index → no substitution)', async () => {

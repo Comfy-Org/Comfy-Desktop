@@ -387,15 +387,14 @@ async function initializeProviders(): Promise<void> {
     } catch {}
   }
 
-  // PostHog Browser SDK init removed Main process owns
-  // PostHog capture via `posthog-node`; renderer forwards every event
+  // Main owns PostHog capture via `posthog-node`; renderer forwards every event
   // through `window.api.captureTelemetry` / `captureExceptionTelemetry` /
   // `registerTelemetryProperties` IPC bridges. The `comfy.desktop.session.started`
-  // event is still owned by main's `identify()` and fires on consent grant.
+  // event is owned by main and fires when consent permits it.
 
-  // Cohort context + device-id binding fire regardless of Datadog state —
-  // main's posthog-node handles the IPC capture even if Datadog is
-  // configured off.
+  // registerCohortContext always runs, but its Datadog context writes — like
+  // the setUser below — only take effect once Datadog is initialized. PostHog
+  // person properties route through main.
   void registerCohortContext({ appVersion, telemetryEnabled: consent })
   window.api
     .getDeviceId()
@@ -405,8 +404,6 @@ async function initializeProviders(): Promise<void> {
           datadogRum.setUser({ id })
         } catch {}
       }
-      // PostHog identify happens in main's boot block — no renderer call
-      // needed. Person-property upserts ride through registerTelemetryProperties.
     })
     .catch(() => {})
 

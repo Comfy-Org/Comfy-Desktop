@@ -22,7 +22,9 @@ import {
   checkDiskSpaceOrWarn,
   checkTemplateDiskOrBlock,
   isTemplateDiskBlocked,
-  minTemplateModelBytes
+  minTemplateModelBytes,
+  isApiNodeTemplate,
+  templateSizeBytes
 } from '../lib/installHelpers'
 import TakeoverBack from '../components/TakeoverBack.vue'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
@@ -134,6 +136,8 @@ const templateHasModels = computed(() => {
   return typeof size === 'number' && size > 0
 })
 
+const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
+
 /** Proactive disk guard — shares `isTemplateDiskBlocked` with TemplatePickerStep
  *  so the alert, the disabled Install button, and the save-time hard block can't
  *  drift. */
@@ -182,9 +186,8 @@ const templateOptions = computed<FieldOption[]>(
  *  while disk space is unknown/loading — we only skip on a confirmed shortfall. */
 const diskTooSmallForAnyTemplate = computed(() => {
   if (diskSpaceLoading.value || !diskSpace.value) return false
-  const cheapest = minTemplateModelBytes(
-    templateOptions.value.map((o) => (o.data?.sizeBytes as number | undefined) ?? 0)
-  )
+  if (templateOptions.value.some(isApiNodeTemplate)) return false
+  const cheapest = minTemplateModelBytes(templateOptions.value.map(templateSizeBytes))
   return isTemplateDiskBlocked(diskSpace.value, cheapest)
 })
 
@@ -209,7 +212,8 @@ function selectTemplate(option: FieldOption): void {
     const sizeBytes = (option.data?.sizeBytes as number | undefined) ?? 0
     emitTelemetryAction('comfy.desktop.template.selected', {
       template_id: option.value,
-      size_bucket: toSizeBucket(sizeBytes)
+      size_bucket: toSizeBucket(sizeBytes),
+      is_api_node: isApiNodeTemplate(option)
     })
   }
 }
@@ -253,6 +257,7 @@ async function handleTemplateInstall(): Promise<void> {
     template_id: tpl?.value ?? NO_TEMPLATE_VALUE,
     size_bucket: toSizeBucket((tpl?.data?.sizeBytes as number | undefined) ?? 0),
     has_models: templateHasModels.value,
+    is_api_node: templateIsApiNode.value,
     dont_show_again: dontShowTemplatePicker.value
   })
   await persistDontShowAgain()
@@ -1042,10 +1047,7 @@ defineExpose({ open })
                     type="button"
                     role="radio"
                     :aria-checked="currentSource?.id === s.id"
-                    :class="[
-                      'brand-pill',
-                      { 'brand-pill--selected': currentSource?.id === s.id }
-                    ]"
+                    :class="['brand-pill', { 'brand-pill--selected': currentSource?.id === s.id }]"
                     @click="selectSourceCard(s)"
                   >
                     <span>{{ s.label }}</span>

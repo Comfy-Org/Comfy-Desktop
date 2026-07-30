@@ -115,11 +115,9 @@ export function initExperiments(opts: {
 }): Promise<void> {
   // Idempotent within a process: repeated calls return the same in-flight
   // promise without re-running the cache load or fetch. The `opts.distinctId`
-  // and `opts.personProperties` of subsequent calls are intentionally ignored
-  // — identity changes mid-session (e.g. after `bindUserId`) do not
-  // re-evaluate experiments. Variant stability for an installation is a
-  // property we want; rotating variants when a user logs in would
-  // contaminate the experiment population.
+  // and `opts.personProperties` of subsequent calls are intentionally ignored.
+  // The caller supplies the installation-stable assignment key, so anonymous
+  // rotation and Firebase consensus changes cannot move experiment arms.
   if (initPromise) return initPromise
   cached = readCacheSync() ?? {}
   initPromise = mainTelemetry

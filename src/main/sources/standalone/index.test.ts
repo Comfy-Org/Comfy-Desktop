@@ -132,6 +132,18 @@ describe('standalone.buildInstallation', () => {
       ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {}),
     })
 
+    it('records an API-node pick for auto-open even though it downloads nothing', () => {
+      const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(apiTemplate.id, 0),
+      })
+      expect(result.bundledTemplateId).toBe(apiTemplate.id)
+      expect(result.pendingTemplateOpen).toBe(apiTemplate.id)
+      // Zero bytes is what keeps the launch stepper from showing a model phase.
+      expect(result.bundledTemplateSizeBytes).toBe(0)
+    })
+
     it('"Skip & Install" (template = none) builds NO model download', () => {
       const result = standalone.buildInstallation({ ...base, bundledTemplate: template(NO_TEMPLATE_VALUE) })
       expect(result.bundledTemplateId).toBeUndefined()
@@ -247,6 +259,16 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
     expect(card.description).toBe('Live desc')
     expect(card.data!.sizeBytes).toBe(999)
     expect(card.data!.category).toBe('Image')
+  })
+
+  it('carries the API-node flag to the card, and never on the skip option', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    expect(options.find((o) => o.value === NO_TEMPLATE_VALUE)!.data?.apiNode).toBeUndefined()
+    for (const curated of CURATED_TEMPLATES) {
+      const card = options.find((o) => o.value === curated.id)!
+      expect(card.data!.apiNode, curated.id).toBe(curated.apiNode === true)
+    }
   })
 })
 

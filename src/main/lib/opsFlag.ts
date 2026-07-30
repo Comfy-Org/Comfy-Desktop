@@ -4,8 +4,8 @@
  * Ops flags are server config pushed TO the client (kill switches, rollout gates), not
  * analytics collected FROM the user, so they read through `getOpsFlag`, which deliberately
  * BYPASSES the consent gate — a user who declined telemetry still gets the kill switch, and
- * pre-consent surfaces can still resolve a value. Only the anonymous distinct id and the flag
- * key leave the device.
+ * pre-consent surfaces can still resolve a value. The evaluation request supplies only the
+ * installation-stable key and the flag key; implicit flag events are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so a kill
  * switch isn't accidentally consent-gated. Fetched once at boot; running apps pick up new

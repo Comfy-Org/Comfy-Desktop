@@ -12,6 +12,10 @@ import { noteCloudEntered } from '../lib/cloudEntry'
 import { noteCanvasRendered } from '../lib/canvasEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
+import {
+  activateFirebaseAuthReporter,
+  deactivateFirebaseAuthReporter
+} from '../lib/firebaseAuthIdentity'
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { clearPendingTemplateOpen, installationEvents, type InstallationRecord } from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
@@ -139,6 +143,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const comfyContents = entry.comfyView.webContents
   const comfyWindow = entry.window
   const titleBarView = entry.titleBarView
+  activateFirebaseAuthReporter(comfyContents)
 
   // Seed entry install state. The secondary index is the source of
   // truth for `getEntryByInstallationId(id)` — keep it in lockstep
@@ -626,6 +631,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
+    deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
     if (!comfyContents.isDestroyed()) {
