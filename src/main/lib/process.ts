@@ -177,15 +177,38 @@ export function waitForPort(
   return new Promise((resolve, reject) => {
     const start = Date.now()
     let attempt = 0
+    let done = false
+    let activeReq: http.ClientRequest | undefined
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-    const poll = (): void => {
-      if (signal && signal.aborted) {
+    // Settle the outer promise exactly once: tear down the abort listener,
+    // any pending retry, and the in-flight request so a late response can't
+    // resolve after cancellation.
+    const settle = (fn: () => void): void => {
+      if (done) return
+      done = true
+      signal?.removeEventListener('abort', onAbort)
+      if (retryTimer !== undefined) clearTimeout(retryTimer)
+      activeReq?.destroy()
+      fn()
+    }
+    const onAbort = (): void => settle(() => reject(new Error('Launch cancelled.')))
+
+    if (signal) {
+      if (signal.aborted) {
         reject(new Error('Launch cancelled.'))
         return
       }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    const poll = (): void => {
+      if (done) return
       const elapsed = Date.now() - start
       if (elapsed > timeoutMs) {
-        reject(new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`))
+        settle(() =>
+          reject(new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`))
+        )
         return
       }
 
@@ -195,18 +218,19 @@ export function waitForPort(
       // Idempotency guard: `req.destroy()` on timeout synchronously emits
       // 'error', so without it each timed-out attempt schedules TWO retry
       // polls and the pollers multiply.
-      let settled = false
+      let attemptSettled = false
       const retry = (): void => {
-        if (settled) return
-        settled = true
-        setTimeout(poll, intervalMs)
+        if (attemptSettled || done) return
+        attemptSettled = true
+        retryTimer = setTimeout(poll, intervalMs)
       }
       const req = http.get({ host, port, path: '/', timeout: 2000 }, (res) => {
         res.resume()
-        if (settled) return
-        settled = true
-        resolve()
+        if (attemptSettled || done) return
+        attemptSettled = true
+        settle(resolve)
       })
+      activeReq = req
 
       req.on('error', retry)
       req.on('timeout', () => {
@@ -227,15 +251,38 @@ export function waitForUrl(
   return new Promise((resolve, reject) => {
     const start = Date.now()
     let attempt = 0
+    let done = false
+    let activeReq: http.ClientRequest | undefined
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-    const poll = (): void => {
-      if (signal && signal.aborted) {
+    // Same single-settlement teardown as waitForPort: an abort must cancel
+    // the in-flight request and pending retries so a late response can't
+    // resolve after cancellation.
+    const settle = (fn: () => void): void => {
+      if (done) return
+      done = true
+      signal?.removeEventListener('abort', onAbort)
+      if (retryTimer !== undefined) clearTimeout(retryTimer)
+      activeReq?.destroy()
+      fn()
+    }
+    const onAbort = (): void => settle(() => reject(new Error('Launch cancelled.')))
+
+    if (signal) {
+      if (signal.aborted) {
         reject(new Error('Launch cancelled.'))
         return
       }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    const poll = (): void => {
+      if (done) return
       const elapsed = Date.now() - start
       if (elapsed > timeoutMs) {
-        reject(new Error(`Timed out waiting for ${url} after ${Math.round(elapsed / 1000)}s`))
+        settle(() =>
+          reject(new Error(`Timed out waiting for ${url} after ${Math.round(elapsed / 1000)}s`))
+        )
         return
       }
 
@@ -244,18 +291,19 @@ export function waitForUrl(
 
       // Same idempotency guard as waitForPort: destroy-on-timeout emits
       // 'error', which must not schedule a second retry poll.
-      let settled = false
+      let attemptSettled = false
       const retry = (): void => {
-        if (settled) return
-        settled = true
-        setTimeout(poll, intervalMs)
+        if (attemptSettled || done) return
+        attemptSettled = true
+        retryTimer = setTimeout(poll, intervalMs)
       }
       const req = client.get(url, { timeout: 2000 }, (res) => {
         res.resume()
-        if (settled) return
-        settled = true
-        resolve()
+        if (attemptSettled || done) return
+        attemptSettled = true
+        settle(resolve)
       })
+      activeReq = req
 
       req.on('error', retry)
       req.on('timeout', () => {

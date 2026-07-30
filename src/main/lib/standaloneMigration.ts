@@ -622,7 +622,7 @@ export async function migrateToStandaloneFromSnapshot(
       )
     } catch (err) {
       if (signal.aborted) throw err
-      restoreError = (err as Error).message
+      restoreError = buildErrorFields(err).error_message
       telemetry.emit('comfy.desktop.migrate.restore_snapshot.error', {
         ...installContext,
         duration_ms: Date.now() - restoreStartedAt,
