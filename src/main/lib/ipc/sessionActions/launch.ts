@@ -1216,7 +1216,10 @@ async function runLaunch(
         await killProcessTree(spawned.proc)
         return { ok: false, message: (err as Error).message, cancelled: true, stderr: spawned.getStderr(), exitCode, signal: exitSignal }
       }
-      killProcessTree(spawned.proc)
+      // WAIT for the failed spawn's whole tree to die before any retry below:
+      // the reboot path reuses the same port, and an overlapping old process
+      // can hold it (or its stream handlers) into the replacement's boot.
+      await killProcessTree(spawned.proc)
       if (checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
         rebootRetries++
         sendOutput('\n--- Manager requested restart during startup, respawning… ---\n\n')
@@ -1226,7 +1229,10 @@ async function runLaunch(
       const isPortConflict =
         stderr.includes('address already in use') ||
         (stderr.includes('port') && stderr.includes('in use'))
-      if (isPortConflict && portRetries < PORT_RETRY_MAX) {
+      // Auto-switching ports is only allowed under the same policy as the
+      // pre-launch conflict checks: never override an explicitly chosen port,
+      // and never switch when the conflict mode is not 'auto'.
+      if (isPortConflict && portConflictMode === 'auto' && !portIsExplicit && portRetries < PORT_RETRY_MAX) {
         portRetries++
         try {
           const reservedPorts = new Set(_pendingPorts.keys())
