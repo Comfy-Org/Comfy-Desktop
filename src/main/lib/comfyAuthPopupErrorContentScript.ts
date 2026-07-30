@@ -3,9 +3,10 @@
  * produced when Desktop denies the embedded auth popup and takes over with its
  * system-browser sign-in flow.
  *
- * Both Cloud and local ComfyUI views use the same Firebase popup interception,
- * so the suppressor must run in both. It only matches the raw popup-blocked
- * error or the frontend's dedicated user-facing sign-in failure copy.
+ * Cloud views already include this suppression in their existing patch bundle.
+ * Local ComfyUI uses the same popup interception, so this script adds only the
+ * missing local behavior. It matches the raw popup-blocked error or the
+ * frontend's dedicated user-facing sign-in failure copy.
  */
 export function getComfyAuthPopupErrorContentScript(): string {
   return (

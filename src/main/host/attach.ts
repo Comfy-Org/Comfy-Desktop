@@ -290,15 +290,24 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `})()`
 
   /**
-   * Two cloud-only patches injected on every dom-ready of the comfy view:
+   * Three cloud-only patches injected on every dom-ready of the comfy view:
    *
-   *   1. post-signin flicker hide — when the bridge's IndexedDB inject
+   *   1. popup-blocked toast suppressor — observes new toast DOM nodes
+   *      and removes any that mention `auth/popup-blocked` OR the
+   *      user-friendly variants the cloud frontend now maps that code
+   *      to ("Something went wrong while signing you in…"). That error
+   *      is fired by the cloud frontend's Firebase SDK every time our
+   *      `setWindowOpenHandler` denies the auth popup (so the bridge
+   *      can take over), and the user has no way to dismiss the toast
+   *      in time before the bridge completes the sign-in.
+   *
+   *   2. post-signin flicker hide — when the bridge's IndexedDB inject
    *      flips a sessionStorage flag before `location.reload()`, this
    *      script hides documentElement for ~1s on the next load so the
    *      user doesn't see the cloud login page flash before the
    *      Firebase rehydrate redirects to the workspace.
    *
-   *   2. cloud-onboarding "Download ComfyUI" CTA hider — desktop users
+   *   3. cloud-onboarding "Download ComfyUI" CTA hider — desktop users
    *      who hit the cloud onboarding screen see a bottom-right CTA
    *      ("Want to run ComfyUI locally instead? — Download ComfyUI")
    *      pointing at comfy.org/download. They already have desktop;
@@ -331,6 +340,20 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `(document.head||document.documentElement).appendChild(st);` +
     `}` +
     `}catch(_){}` +
+    `function looksBlocked(n){` +
+    `if(!n||n.nodeType!==1)return false;` +
+    `var t=(n.textContent||'').toLowerCase();` +
+    // Raw SDK error code (older cloud frontend builds surface it
+    // directly) + the user-friendly text current builds map it to.
+    // Both phrases are specific enough to the sign-in popup path
+    // that matching them won't catch unrelated toasts.
+    `return t.indexOf('auth/popup-blocked')>=0` +
+    `||t.indexOf('signing you in')>=0;` +
+    `}` +
+    `function nukeToast(n){` +
+    `var root=(n.closest&&n.closest('.p-toast-message,.p-toast-item,[role=alert]'))||n;` +
+    `try{root.remove()}catch(_){}` +
+    `}` +
     `function tagDownloadCta(){` +
     `var els=document.querySelectorAll('button,a,[role="button"]');` +
     `for(var i=0;i<els.length;i++){` +
@@ -355,7 +378,20 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `}` +
     `tagDownloadCta();` +
     `try{` +
-    `new MutationObserver(function(){` +
+    `new MutationObserver(function(muts){` +
+    `for(var i=0;i<muts.length;i++){` +
+    `var added=muts[i].addedNodes;` +
+    `for(var j=0;j<added.length;j++){` +
+    `var n=added[j];` +
+    `if(looksBlocked(n)){nukeToast(n);continue;}` +
+    `if(n.querySelectorAll){` +
+    `var hits=n.querySelectorAll('*');` +
+    `for(var k=0;k<hits.length;k++){` +
+    `if(looksBlocked(hits[k])){nukeToast(hits[k]);break;}` +
+    `}` +
+    `}` +
+    `}` +
+    `}` +
     `tagDownloadCta();` +
     `}).observe(document.documentElement,{childList:true,subtree:true});` +
     `}catch(_){}` +
@@ -370,11 +406,14 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
-    // Firebase's signInWithPopup rejects when Desktop denies the embedded
-    // popup and takes over in the system browser. Suppress that false error in
-    // every ComfyUI view; local and Cloud both use the same interception.
-    comfyContents.executeJavaScript(getComfyAuthPopupErrorContentScript()).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
+    // Local views were missing the false popup-error suppression already
+    // included in the Cloud patches below.
+    if (isLocal) {
+      comfyContents
+        .executeJavaScript(getComfyAuthPopupErrorContentScript())
+        .catch(() => {})
+    }
     // Inject the Terminal bottom-panel tab on local managed installs that
     // back it with a per-install shell (standalone, portable, git). They all
     // ship the same served frontend and expose the same
@@ -393,7 +432,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
     }
-    // Cloud-only patches (post-signin flicker hide + onboarding CTA removal).
+    // Cloud-only patches (popup-blocked toast suppression + post-signin
+    // flicker hide). Skipped for local installs — they don't load cloud
+    // frontend, never see the toast or the redirect flash.
     if (!isLocal) {
       comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
       // Refresh the cached subscription tier off the cloud view's
