@@ -75,13 +75,19 @@ const featureFlagCalls: Array<{
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
   failNextFlushes: 0,
-  autoFailNextIdentifies: 0
+  autoFailNextIdentifies: 0,
+  failNextExceptionCaptures: 0,
+  constructorOptions: [] as Array<Record<string, unknown>>
 }))
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
     private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
     private queuedIdentifies: Array<Record<string, unknown>> = []
+
+    constructor(_apiKey: string, options: Record<string, unknown>) {
+      posthogClientMock.constructorOptions.push(options)
+    }
 
     on(event: string, listener: (...args: unknown[]) => void): () => void {
       const listeners = this.listeners.get(event) ?? new Set()
@@ -117,6 +123,10 @@ vi.mock('posthog-node', () => ({
       distinctId: string,
       properties?: Record<string, unknown>
     ): void {
+      if (posthogClientMock.failNextExceptionCaptures > 0) {
+        posthogClientMock.failNextExceptionCaptures--
+        throw new Error('sdk rejected exception')
+      }
       exceptions.push({ error, distinctId, properties })
     }
     flush(): Promise<void> {
@@ -244,6 +254,8 @@ afterEach(() => {
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
   posthogClientMock.autoFailNextIdentifies = 0
+  posthogClientMock.failNextExceptionCaptures = 0
+  posthogClientMock.constructorOptions.length = 0
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
@@ -435,6 +447,17 @@ describe('telemetry anonymous flag reads', () => {
         options: { sendFeatureFlagEvents: false }
       }
     ])
+  })
+
+  it('constructs the client with sendFeatureFlagEvent: false so NO flag read can emit $feature_flag_called', () => {
+    // Client-level default, not just the getOpsFlag per-call opt-out: a
+    // future getFeatureFlag/isFeatureEnabled call site must not silently
+    // reintroduce a per-evaluation event (3.37M/28d at its peak, 91.7% of it
+    // the boot-time desktop-cloud-capacity read).
+    setupTelemetry()
+    expect(posthogClientMock.constructorOptions.at(-1)).toMatchObject({
+      sendFeatureFlagEvent: false
+    })
   })
 })
 
@@ -952,10 +975,14 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(identifies).toHaveLength(1)
     expect(anonymousIdentityMock.index).toBe(1)
     expect(captured.filter((call) => call.event === 'app:user_logged_in')).toHaveLength(0)
+    // The authenticated update rides the next event instead of spending a
+    // dedicated person.set capture.
+    expect(captured).toHaveLength(0)
+    telemetry.capture('comfy.desktop.execution.completed')
     expect(captured).toHaveLength(1)
     expect(captured[0]).toMatchObject({
       distinctId: 'user-123',
-      event: 'comfy.desktop.person.set',
+      event: 'comfy.desktop.execution.completed',
       properties: { $set: { plan: 'pro' } }
     })
   })
@@ -1050,6 +1077,121 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
       distinctId: 'anonymous-start',
       properties: { $process_person_profile: false }
     })
+  })
+})
+
+/**
+ * The dedicated `comfy.desktop.person.set` event was 15.2M events/28d whose
+ * only job was carrying `$set`. Authenticated person-property updates now
+ * ride the next captured event (PostHog applies `$set`/`$set_once` from any
+ * event's properties); the dedicated event remains ONLY as the eager flush at
+ * identity boundaries so updates can't land on the wrong person.
+ */
+describe('telemetry authenticated person-property carrier', () => {
+  beforeEach(() => {
+    setupTelemetry({ bind: null })
+    telemetry.bindAnonymousId('anonymous-start', 'installation-id-fake')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+  })
+
+  it('rides $set on the next captured event instead of a dedicated person.set', () => {
+    telemetry.registerPersonProperties({ gpu_tier: 'high' })
+    expect(captured).toHaveLength(0)
+
+    telemetry.capture('comfy.desktop.execution.completed', { duration_seconds: 3 })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]).toMatchObject({
+      distinctId: 'user-123',
+      event: 'comfy.desktop.execution.completed',
+      properties: { duration_seconds: 3, $set: { gpu_tier: 'high' } }
+    })
+    expect(captured.some((c) => c.event === 'comfy.desktop.person.set')).toBe(false)
+  })
+
+  it('clears the queue after a successful carrier; later events ship without $set', () => {
+    telemetry.registerPersonProperties({ theme: 'dark' })
+
+    telemetry.capture('carrier.event')
+    telemetry.capture('later.event')
+
+    expect(captured[0]!.properties).toMatchObject({ $set: { theme: 'dark' } })
+    expect(captured[1]!.properties).not.toHaveProperty('$set')
+  })
+
+  it('merges successive updates: last write wins for $set, first for $set_once', () => {
+    telemetry.registerPersonProperties({ gpu_tier: 'low', locale: 'en' })
+    telemetry.registerPersonProperties({ gpu_tier: 'mid' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'first' })
+    telemetry.registerPersonPropertiesOnce({ first_generation_at: 'second' })
+
+    telemetry.capture('carrier.event')
+
+    expect(captured[0]!.properties).toMatchObject({
+      $set: { gpu_tier: 'mid', locale: 'en' },
+      $set_once: { first_generation_at: 'first' }
+    })
+  })
+
+  it('keeps the queue when the carrier capture is dropped, so no update is ever lost silently', () => {
+    telemetry.registerPersonProperties({ plan: 'pro' })
+    posthogClientMock.failNextCaptures = 1
+
+    telemetry.capture('dropped.event')
+    expect(captured).toHaveLength(0)
+
+    telemetry.capture('next.event')
+    expect(captured[0]!.properties).toMatchObject({ $set: { plan: 'pro' } })
+  })
+
+  it('session.ended at shutdown is the guaranteed last carrier of a clean session', async () => {
+    telemetry.registerPersonProperties({ plan: 'pro' })
+
+    await telemetry.shutdown('quit')
+
+    const ended = captured.find((c) => c.event === 'comfy.desktop.session.ended')
+    expect(ended?.properties).toMatchObject({ $set: { plan: 'pro' } })
+  })
+
+  it('flushes to the OLD person as a dedicated person.set at logout, never the next identity', () => {
+    telemetry.registerPersonProperties({ plan: 'pro' })
+
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSet?.distinctId).toBe('user-123')
+    expect((personSet?.properties as { $set?: Record<string, unknown> })?.$set).toMatchObject({
+      plan: 'pro',
+      is_authenticated: false
+    })
+
+    telemetry.capture('post.logout.event')
+    expect(captured.at(-1)?.distinctId).toBe('anonymous-next-1')
+    expect(captured.at(-1)?.properties).not.toHaveProperty('$set')
+  })
+
+  it('scrubs queued person properties before they leave the process', () => {
+    telemetry.registerPersonProperties({
+      failure_note: "ENOENT 'C:\\Users\\64911\\Documents\\workflow.json'"
+    })
+
+    telemetry.capture('carrier.event')
+
+    const set = (captured[0]!.properties as { $set?: Record<string, string> }).$set
+    expect(set?.failure_note).toContain('[REDACTED]')
+    expect(set?.failure_note).not.toContain('64911')
+  })
+
+  it('discards the queue when consent is revoked', () => {
+    telemetry.registerPersonProperties({ plan: 'pro' })
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+
+    telemetry.capture('after.regrant.event')
+
+    expect(captured.at(-1)?.event).toBe('after.regrant.event')
+    expect(captured.at(-1)?.properties).not.toHaveProperty('$set')
   })
 })
 
@@ -1329,5 +1471,61 @@ describe('telemetry SDK-level volume guards', () => {
     expect(
       captured.filter((c) => c.event === 'comfy.desktop.telemetry.session_cap_hit')
     ).toHaveLength(1)
+  })
+})
+
+/**
+ * Crash-loop guard: 93.9% of ~1.9M `$exception`/mo was four Electron
+ * crash-loop messages, with individual machines emitting thousands each.
+ * Identical messages are capped per process; first occurrences (the actual
+ * signal) always ship, and distinct messages are unaffected.
+ */
+describe('telemetry $exception per-message session cap', () => {
+  beforeEach(() => {
+    setupTelemetry()
+    exceptions.length = 0
+  })
+
+  it('ships the first 5 identical exception messages, then drops the rest for the session', () => {
+    for (let i = 0; i < 20; i++) {
+      expect(telemetry.captureException(new Error('Renderer process gone: launch-failed'))).toBe(
+        i < 5
+      )
+    }
+    expect(exceptions).toHaveLength(5)
+    expect((exceptions[0]!.error as Error).message).toBe('Renderer process gone: launch-failed')
+  })
+
+  it('tracks distinct messages independently — a new failure mode always ships', () => {
+    for (let i = 0; i < 7; i++) {
+      telemetry.captureException(new Error('Child process GPU exited: crashed'))
+      telemetry.captureException(new Error('Child process Utility exited: crashed'))
+    }
+
+    expect(exceptions).toHaveLength(10)
+    telemetry.captureException(new Error('brand-new failure'))
+    expect(exceptions).toHaveLength(11)
+  })
+
+  it('keys on the scrubbed name+message so PII variation cannot defeat the cap', () => {
+    for (let i = 0; i < 7; i++) {
+      // Distinct raw strings that scrub to the same redacted message must
+      // count as one crash loop, not seven distinct failures.
+      telemetry.captureException(
+        new Error(`ENOENT 'C:\\Users\\user-${i}\\Documents\\workflow.json'`)
+      )
+    }
+    expect(exceptions).toHaveLength(5)
+  })
+
+  it('does not burn a cap slot when the SDK rejects the exception', () => {
+    posthogClientMock.failNextExceptionCaptures = 1
+    expect(telemetry.captureException(new Error('flaky'))).toBe(false)
+
+    for (let i = 0; i < 5; i++) {
+      expect(telemetry.captureException(new Error('flaky'))).toBe(true)
+    }
+    expect(telemetry.captureException(new Error('flaky'))).toBe(false)
+    expect(exceptions).toHaveLength(5)
   })
 })

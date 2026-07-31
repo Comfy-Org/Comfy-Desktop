@@ -289,6 +289,87 @@ describe('app-update telemetry dedup (volume regression)', () => {
 })
 
 /**
+ * Volume cut for `comfy.desktop.app_update.error` (2.6M/28d): a broken
+ * install re-fails the 10-minute auto-check forever, so identical error
+ * messages are capped at 5 emits per app session. First occurrences (the
+ * signal) always ship; a NEW failure mode mid-session still gets through.
+ */
+describe('app_update.error per-session message cap', () => {
+  let emitTelemetryMock: ReturnType<typeof vi.fn>
+  let listeners: Record<string, Array<(...args: unknown[]) => void>>
+  let fakeUpdater: { on: typeof vi.fn; checkForUpdates: ReturnType<typeof vi.fn> }
+
+  beforeEach(async () => {
+    vi.resetModules()
+    // Fake timers make Date.now deterministic so stepping past the existing
+    // 1s identical-error repeat guard is exact, not wall-clock dependent.
+    vi.useFakeTimers()
+    listeners = {}
+    emitTelemetryMock = vi.fn()
+    fakeUpdater = {
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] = listeners[event] || []
+        listeners[event].push(cb)
+      }) as unknown as typeof vi.fn,
+      checkForUpdates: vi.fn(async () => ({}))
+    }
+    vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
+    vi.doMock('./telemetry', () => ({
+      emit: emitTelemetryMock,
+      bucketError: (s: string) => s
+    }))
+    vi.doMock('../settings', () => ({
+      get: vi.fn(),
+      set: vi.fn()
+    }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function fireError(message: string): void {
+    for (const cb of listeners['error'] || []) cb(new Error(message))
+    // Step past the 1s repeat guard so every fire counts as a distinct
+    // occurrence from that guard's perspective.
+    vi.advanceTimersByTime(1_001)
+  }
+
+  function errorEmits(): unknown[][] {
+    return emitTelemetryMock.mock.calls.filter((c) => c[0] === 'comfy.desktop.app_update.error')
+  }
+
+  it('emits the first 5 occurrences of an identical message, then drops the rest', async () => {
+    await bootUpdater()
+
+    for (let i = 0; i < 12; i++) fireError('net::ERR_CONNECTION_RESET')
+
+    expect(errorEmits()).toHaveLength(5)
+  })
+
+  it('caps per distinct message — a new failure mode still ships after another is capped', async () => {
+    await bootUpdater()
+
+    for (let i = 0; i < 12; i++) fireError('net::ERR_CONNECTION_RESET')
+    for (let i = 0; i < 3; i++) fireError('ENOSPC: no space left on device')
+
+    const emits = errorEmits()
+    expect(emits).toHaveLength(8)
+    const last = emits.at(-1)?.[1] as { error_message?: string }
+    expect(last?.error_message).toContain('ENOSPC')
+  })
+
+  it('keeps the 1s identical-error repeat guard intact underneath the cap', async () => {
+    await bootUpdater()
+
+    for (const cb of listeners['error'] || []) cb(new Error('burst'))
+    for (const cb of listeners['error'] || []) cb(new Error('burst'))
+
+    expect(errorEmits()).toHaveLength(1)
+  })
+})
+
+/**
  * Issue #1065 — install staged Desktop updates at startup instead of
  * silently on quit, and never spawn the installer while the OS session is
  * ending. Installing on quit is what a Windows shutdown interrupts mid-write,
