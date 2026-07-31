@@ -57,16 +57,23 @@ const POST_REDEEM_RETRY_GRACE_MS = 120_000
 
 const DESKTOP_LOGIN_CODE_FLOW = 'desktop_login_code'
 
+type DesktopLoginCodeOutcome = 'handled' | 'fallback'
+
+interface ActiveDesktopLoginCodeFlow {
+  controller: AbortController
+  comfyContents: WebContents
+  loginUrl: string | null
+  outcome: Promise<DesktopLoginCodeOutcome>
+}
+
 /**
- * In-flight flow, aborted on re-entry (mirror of firebaseBridge's
- * `activeBridgeFlow`): if the user clicks Sign in again while a previous
- * attempt is still parked on an open browser tab, the stale poll loop is
- * cancelled before the new one starts.
+ * The in-flight login-code attempt. Repeat clicks reuse this flow and reopen
+ * its exact browser URL; replacing it requires the explicit `startOver` opt.
  */
-let activeFlow: AbortController | null = null
+let activeFlow: ActiveDesktopLoginCodeFlow | null = null
 
 function cancelActiveFlow(): void {
-  activeFlow?.abort()
+  activeFlow?.controller.abort()
   activeFlow = null
 }
 
@@ -86,11 +93,28 @@ function cancelActiveFlow(): void {
  * 'handled': restarting the legacy bridge would fight the login tab the
  * user may be halfway through.
  */
-export async function signInViaDesktopLoginCode(
+export function signInViaDesktopLoginCode(
   interceptedAuthUrl: string,
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
-): Promise<'handled' | 'fallback'> {
+): Promise<DesktopLoginCodeOutcome> {
+  const existing = activeFlow
+  if (
+    existing &&
+    !opts.startOver &&
+    !existing.controller.signal.aborted &&
+    !existing.comfyContents.isDestroyed()
+  ) {
+    if (existing.loginUrl) openExternalSafely(existing.loginUrl)
+    // Only the original caller may start the legacy fallback if code creation
+    // fails. Repeat callers merely re-open/join the one active attempt.
+    return existing.outcome.then(
+      () => 'handled',
+      () => 'handled'
+    )
+  }
+  if (existing) cancelActiveFlow()
+
   const sessionTargetOrigin = originOf(comfyContents.getURL())
   const firebaseEnv = detectFirebaseEnv(interceptedAuthUrl)
   const cloudOrigin = cloudLoginOriginForUrl(
@@ -103,15 +127,39 @@ export async function signInViaDesktopLoginCode(
   // (whose /api fronts a matching dev backend) can serve the dev flow, so
   // anything else hands off to the legacy loopback bridge.
   if (firebaseEnv === 'dev' && cloudOrigin === CLOUD_LOGIN_ORIGIN) {
-    cancelActiveFlow()
     runBannerCleanup()
     closeActiveBridge()
-    return 'fallback'
+    return Promise.resolve('fallback')
   }
 
-  cancelActiveFlow()
   const controller = new AbortController()
-  activeFlow = controller
+  const outcome = runDesktopLoginCodeFlow(
+    interceptedAuthUrl,
+    comfyContents,
+    opts,
+    sessionTargetOrigin,
+    firebaseEnv,
+    cloudOrigin,
+    controller
+  )
+  activeFlow = {
+    controller,
+    comfyContents,
+    loginUrl: null,
+    outcome
+  }
+  return outcome
+}
+
+async function runDesktopLoginCodeFlow(
+  interceptedAuthUrl: string,
+  comfyContents: WebContents,
+  opts: HandleFirebasePopupOpts,
+  sessionTargetOrigin: string | null,
+  firebaseEnv: ReturnType<typeof detectFirebaseEnv>,
+  cloudOrigin: string,
+  controller: AbortController
+): Promise<DesktopLoginCodeOutcome> {
   // Clear a prior attempt's "copy link" card so this attempt doesn't
   // stack a second one, and kill any stale legacy loopback bridge so it
   // can't complete a competing sign-in underneath this flow (same hygiene
@@ -150,12 +198,12 @@ export async function signInViaDesktopLoginCode(
     // transparently and emit its own funnel events. A superseded attempt
     // reports 'handled' instead so the caller doesn't start a second
     // sign-in underneath the newer one.
-    if (activeFlow === controller) activeFlow = null
+    if (activeFlow?.controller === controller) activeFlow = null
     releaseFirebaseSessionInjection(sessionInjection)
     return controller.signal.aborted || comfyContents.isDestroyed() ? 'handled' : 'fallback'
   }
   if (controller.signal.aborted || comfyContents.isDestroyed()) {
-    if (activeFlow === controller) activeFlow = null
+    if (activeFlow?.controller === controller) activeFlow = null
     releaseFirebaseSessionInjection(sessionInjection)
     return 'handled'
   }
@@ -175,6 +223,7 @@ export async function signInViaDesktopLoginCode(
     // installation_id or any auth material.
     const loginUrl = new URL('/cloud/login', cloudOrigin)
     loginUrl.searchParams.set('desktop_login_code', grant.code)
+    if (activeFlow?.controller === controller) activeFlow.loginUrl = loginUrl.href
     openExternalSafely(loginUrl.href)
     showCopyLinkBanner(comfyContents, loginUrl.href)
 
@@ -217,9 +266,9 @@ export async function signInViaDesktopLoginCode(
         throw new Error('desktop login code expired before sign-in completed')
       }
     }
-    // A re-click may supersede this flow at any await from here on —
-    // check before every await/side-effect so a stale flow never signs
-    // in, injects a user, or steals focus underneath the newer one.
+    // An explicit start-over may supersede this flow at any await from here
+    // on — check before every await/side-effect so a stale flow never signs in,
+    // injects a user, or steals focus underneath the newer one.
     if (controller.signal.aborted) return 'handled'
     if (comfyContents.isDestroyed()) {
       controller.abort()
@@ -278,7 +327,7 @@ export async function signInViaDesktopLoginCode(
   } finally {
     // Capture ownership before nulling: a superseded flow finishing late
     // must not tear down the banner the newer flow just put up.
-    const ownsUx = activeFlow === controller
+    const ownsUx = activeFlow?.controller === controller
     if (ownsUx) {
       activeFlow = null
       runBannerCleanup()

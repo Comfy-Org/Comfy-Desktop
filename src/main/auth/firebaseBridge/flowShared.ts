@@ -84,6 +84,8 @@ export interface HandleFirebasePopupOpts {
   /** Window restored after sign-in completes. */
   parentWindow?: BrowserWindow
   onError?: (failure: SignInFailureContext) => void
+  /** Explicitly replace an in-flight Desktop login-code attempt. */
+  startOver?: boolean
 }
 
 /** Keep in sync with the countdown rendered by the legacy bridge page. */
