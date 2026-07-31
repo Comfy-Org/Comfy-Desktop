@@ -249,7 +249,7 @@ describe('grant timing validation', () => {
   it.each([
     ['expires_in', 1.5, 3],
     ['poll_interval', 300, 1.5],
-    ['expires_in', 901, 3],
+    ['expires_in', 1801, 3],
     ['poll_interval', 300, 31],
     ['expires_in', 0, 3],
     ['poll_interval', 300, 0]
@@ -277,6 +277,11 @@ describe('grant timing validation', () => {
   it('accepts the one-second minimum poll interval issued by Cloud', async () => {
     const grant = await grantFrom(300, 1)
     expect(grant).toEqual({ code: 'dlc_abc', expires_in: 300, poll_interval: 1 })
+  })
+
+  it('accepts a 30-minute code lifetime', async () => {
+    const grant = await grantFrom(1800, 1)
+    expect(grant).toEqual({ code: 'dlc_abc', expires_in: 1800, poll_interval: 1 })
   })
 })
 

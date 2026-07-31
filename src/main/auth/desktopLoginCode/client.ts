@@ -9,7 +9,7 @@ const REQUEST_TIMEOUT_MS = 8000
 
 const MIN_POLL_INTERVAL_SEC = 1
 const MAX_POLL_INTERVAL_SEC = 30
-const MAX_EXPIRES_IN_SEC = 900
+const MAX_EXPIRES_IN_SEC = 1800
 
 function isIntegerInRange(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
