@@ -5,6 +5,8 @@
  * URL to configure.
  */
 
+import { net } from 'electron'
+
 const REQUEST_TIMEOUT_MS = 8000
 
 const MIN_POLL_INTERVAL_SEC = 1
@@ -94,11 +96,15 @@ export async function postJson(
   if (opts.signal?.aborted) controller.abort()
   else opts.signal?.addEventListener('abort', forwardAbort, { once: true })
   try {
-    const resp = await fetch(url, {
+    // net.fetch (Chromium's stack), not Node's undici: it resolves the OS
+    // proxy, which is the only route to Google endpoints for many CN users.
+    // credentials 'omit' keeps the request cookie-free, matching undici.
+    const resp = await net.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'omit'
     })
     // Fetch resolves when response headers arrive. Consume the body before
     // clearing the timer so a headers-only response cannot stall auth forever.

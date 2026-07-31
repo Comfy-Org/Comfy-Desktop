@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { BRIDGE_PORT, startBridgeServer } from './server'
+
+// oauth.ts goes through Chromium's net.fetch; delegate to the global fetch so
+// the raw-OAuth initiator arm keeps its pre-existing live-call behavior here.
+vi.mock('electron', () => ({
+  net: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) }
+}))
 
 describe('startBridgeServer', () => {
   it('serves a 204 for /favicon.ico', async () => {

@@ -33,6 +33,7 @@ vi.mock('electron', () => ({
       return h.appIsPackaged
     }
   },
+  net: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) },
   shell: { openExternal: h.openExternal }
 }))
 

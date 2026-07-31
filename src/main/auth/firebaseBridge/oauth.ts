@@ -1,6 +1,10 @@
+import { net } from 'electron'
+
 import type { FirebaseProjectConfig } from './config'
 import type { SupportedProvider } from './intercept'
 
+// Reached via net.fetch (Chromium's stack), not Node's undici: it resolves
+// the OS proxy, which is the only route to Google endpoints for many CN users.
 const IDP_BASE = 'https://identitytoolkit.googleapis.com/v1'
 
 interface CreateAuthUriResponse {
@@ -50,10 +54,11 @@ export async function createOauthAuthUri(
 ): Promise<CreateAuthUriResponse> {
   // Scopes mirror Firebase's signInWithPopup to keep the consent screen identical.
   const oauthScope = providerId === 'github.com' ? 'read:user user:email' : 'profile email'
-  const resp = await fetch(`${IDP_BASE}/accounts:createAuthUri?key=${apiKey}`, {
+  const resp = await net.fetch(`${IDP_BASE}/accounts:createAuthUri?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providerId, continueUri, oauthScope })
+    body: JSON.stringify({ providerId, continueUri, oauthScope }),
+    credentials: 'omit'
   })
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
@@ -80,7 +85,7 @@ export async function signInWithIdpExchange(
   const queryParams = queryStart >= 0 ? requestUri.slice(queryStart + 1) : ''
   // Firebase expects providerId echoed in the postBody alongside the raw OAuth response.
   const postBody = `${queryParams}&providerId=${encodeURIComponent(providerId)}`
-  const resp = await fetch(`${IDP_BASE}/accounts:signInWithIdp?key=${apiKey}`, {
+  const resp = await net.fetch(`${IDP_BASE}/accounts:signInWithIdp?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -89,7 +94,8 @@ export async function signInWithIdpExchange(
       sessionId,
       returnIdpCredential: true,
       returnSecureToken: true
-    })
+    }),
+    credentials: 'omit'
   })
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
