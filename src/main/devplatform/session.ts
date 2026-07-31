@@ -6,9 +6,6 @@
  * sign-in, workspace switch, or sign-out is reflected everywhere without any of
  * them owning their own token state. The client pulls a bearer token from the
  * session's `TokenProvider` per request; the token never leaves this process.
- *
- * `./config` is imported first, for its side effect: it seeds the staging
- * `COMFY_CLOUD_ISSUER` default before the cloud library's config reads it.
  */
 import { BUILDER_BASE_URL } from './config'
 import { CloudSession } from '../cloud'
