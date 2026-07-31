@@ -624,7 +624,7 @@
     "pickLead": "Choose the setup that fits how you work. You can switch later.",
     "cloudTagline": "Full power. Instant setup.",
     "cloudDesc": "Best for **most users** who want powerful GPUs and popular custom nodes, ready anywhere.",
-    "cloudFreeRunsPill": "5 FREE RUNS",
+    "cloudFreeRunsPill": "TRY FREE",
     "cloudRecommendedForHardware": "Recommended for your hardware",
     "cloudRecommendedForHardwareTooltip": "This device doesn't have a GPU powerful enough for most workflows. Cloud runs them on hosted GPUs instead.",
     "localLabel": "Local",

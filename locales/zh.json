@@ -624,7 +624,7 @@
     "pickLead": "选择适合你工作方式的设置。之后仍可切换。",
     "cloudTagline": "完整性能。即时设置。",
     "cloudDesc": "最适合希望使用强大 GPU 和热门自定义节点、随时随地开始工作的**大多数用户**。",
-    "cloudFreeRunsPill": "5次免费运行",
+    "cloudFreeRunsPill": "免费试用",
     "cloudRecommendedForHardware": "推荐用于你的硬件",
     "cloudRecommendedForHardwareTooltip": "此设备的显卡性能不足以运行大多数工作流。Cloud 会改为在托管 GPU 上运行。",
     "localLabel": "本地",
