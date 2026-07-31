@@ -3,17 +3,27 @@ import { describe, expect, it } from 'vitest'
 import {
   buildCopyLinkBannerScript,
   buildRemoveCopyLinkBannerScript,
+  buildUpdateCopyLinkBannerScript,
+  CANCEL_SIGN_IN_SENTINEL,
   COPY_LINK_BANNER_ID,
   OPEN_LINK_SENTINEL,
+  START_OVER_SENTINEL,
   type CopyLinkBannerLabels
 } from './copyLinkBanner'
 
 const labels: CopyLinkBannerLabels = {
-  message: 'We opened your browser to sign in. Didn’t open?',
+  title: 'Finish signing in in your browser',
+  opening: 'Opening your browser…',
+  waiting: 'Waiting for you to finish signing in.',
+  openFailed: 'We couldn’t open your browser. Try again or copy the link.',
+  expired: 'This sign-in link expired. Start over to try again.',
+  failed: 'Sign-in didn’t complete. Start over to try again.',
+  remaining: '{time} remaining',
   copy: 'Copy link',
   copied: 'Copied',
-  openAgain: 'Open again',
-  dismiss: 'Dismiss'
+  openAgain: 'Open browser again',
+  cancel: 'Cancel',
+  startOver: 'Start over'
 }
 
 const url = 'http://localhost:9876/?provider=google.com&n=abc123'
@@ -30,11 +40,25 @@ describe('buildCopyLinkBannerScript', () => {
     expect(script).toContain(JSON.stringify(COPY_LINK_BANNER_ID))
   })
 
-  it('emits only the Open-again sentinel (copy never reaches main)', () => {
-    const script = buildCopyLinkBannerScript(url, labels)
+  it('emits explicit open, cancel, and start-over commands (copy stays in-page)', () => {
+    const script = buildCopyLinkBannerScript(url, labels, {
+      expiresAtMs: Date.now() + 300_000
+    })
     expect(script).toContain(JSON.stringify(OPEN_LINK_SENTINEL))
+    expect(script).toContain(JSON.stringify(CANCEL_SIGN_IN_SENTINEL))
+    expect(script).toContain(JSON.stringify(START_OVER_SENTINEL))
     // Copy is in-page only — no console sentinel a remote page could abuse.
     expect(script).not.toContain('__comfyCopyLoginLink')
+  })
+
+  it('renders a countdown from an absolute expiry without embedding the code in status', () => {
+    const expiresAtMs = 1_234_567
+    const script = buildCopyLinkBannerScript(url, labels, { expiresAtMs })
+
+    expect(script).toContain(String(expiresAtMs))
+    expect(script).toContain('formatRemaining(remaining)')
+    expect(script).toContain('setInterval(render,1000)')
+    expect(script).toContain(JSON.stringify(labels.remaining))
   })
 
   it('copies in-page with a clipboard primary and execCommand fallback', () => {
@@ -61,7 +85,7 @@ describe('buildCopyLinkBannerScript', () => {
     const tricky = 'http://x/?q="; alert(1); //</script>'
     const hostileLabels: CopyLinkBannerLabels = {
       ...labels,
-      message: '"; document.title="x"; //'
+      title: '"; document.title="x"; //'
     }
     const script = buildCopyLinkBannerScript(tricky, hostileLabels)
     expect(() => new Function(script)).not.toThrow()
@@ -70,10 +94,22 @@ describe('buildCopyLinkBannerScript', () => {
 })
 
 describe('buildRemoveCopyLinkBannerScript', () => {
-  it('is parseable and tears down the node + observer', () => {
+  it('is parseable and tears down the node, countdown, and observer', () => {
     const script = buildRemoveCopyLinkBannerScript()
     expect(() => new Function(script)).not.toThrow()
     expect(script).toContain(JSON.stringify(COPY_LINK_BANNER_ID))
+    expect(script).toContain('clearInterval')
     expect(script).toContain('disconnect()')
+  })
+})
+
+describe('buildUpdateCopyLinkBannerScript', () => {
+  it('updates an existing panel without rebuilding it', () => {
+    const script = buildUpdateCopyLinkBannerScript('open_failed')
+
+    expect(() => new Function(script)).not.toThrow()
+    expect(script).toContain(JSON.stringify(COPY_LINK_BANNER_ID))
+    expect(script).toContain(JSON.stringify('open_failed'))
+    expect(script).toContain('__cclRender')
   })
 })

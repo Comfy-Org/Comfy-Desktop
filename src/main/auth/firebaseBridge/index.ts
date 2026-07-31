@@ -7,7 +7,8 @@ import {
   openExternalSafely,
   releaseActiveBridgeFlow,
   runBannerCleanup,
-  showCopyLinkBanner
+  showCopyLinkBanner,
+  updateSignInPanelStatus
 } from './flowState'
 import { abortable, abortableSleep } from './flowControl'
 import {
@@ -30,6 +31,20 @@ import { signInViaDesktopLoginCode } from '../desktopLoginCode'
 import * as mainTelemetry from '../../lib/telemetry'
 
 const LEGACY_AUTH_FLOW = 'loopback_bridge'
+
+function captureBrowserHandoff(
+  provider: string,
+  flow: typeof LEGACY_AUTH_FLOW,
+  accepted: boolean,
+  trigger: 'automatic' | 'retry'
+): void {
+  mainTelemetry.capture('comfy.desktop.auth.browser_handoff', {
+    provider,
+    flow,
+    result: accepted ? 'accepted' : 'rejected',
+    trigger
+  })
+}
 
 export { extractProviderId, isFirebaseAuthHandlerUrl } from './intercept'
 export { bindSignedInUser, POST_SIGNIN_HOLD_MS } from './flowShared'
@@ -65,7 +80,12 @@ export async function handleFirebasePopup(
   // user with no login-code flow, no legacy fallback, no sign_in_failed, and an
   // unhandled rejection — a Sign in button that silently does nothing. Degrade
   // to the legacy bridge instead.
-  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts).catch(() => {
+  const startOver = (): void => {
+    void handleFirebasePopup(url, comfyContents, opts)
+  }
+  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts, {
+    onStartOver: startOver
+  }).catch(() => {
     console.error('Desktop login-code flow failed unexpectedly; using legacy fallback')
     return 'fallback' as const
   })
@@ -104,6 +124,7 @@ export async function handleFirebasePopup(
   // before injecting rather than assuming the view stayed put.
   const startOrigin = originOf(comfyContents.getURL())
   let handle: BridgeHandle | null = null
+  let keepPanelForRecovery = false
   try {
     const startingBridge = startBridgeServer({ env, providerId })
     void startingBridge.then(
@@ -127,10 +148,17 @@ export async function handleFirebasePopup(
     // Capture the full nonce'd URL once so the auto-opened tab, the
     // "Copy link" button, and "Open again" all hand out the same link.
     const loginUrl = `${handle.url}?n=${Date.now().toString(36)}`
-    openExternalSafely(loginUrl)
-    // Surface a Notion/Claude-style "didn't open? copy the link" card in
-    // the Cloud view so users can finish sign-in in a non-default browser.
-    showCopyLinkBanner(comfyContents, loginUrl)
+    await showCopyLinkBanner(comfyContents, loginUrl, {
+      onCancel: () => flow.controller.abort(),
+      onStartOver: startOver,
+      onBrowserOpenResult: (accepted, trigger) => {
+        captureBrowserHandoff(providerId, LEGACY_AUTH_FLOW, accepted, trigger)
+      }
+    })
+    const browserOpenAccepted = await openExternalSafely(loginUrl)
+    if (signal.aborted || !isActiveBridgeFlow(flow) || comfyContents.isDestroyed()) return
+    captureBrowserHandoff(providerId, LEGACY_AUTH_FLOW, browserOpenAccepted, 'automatic')
+    updateSignInPanelStatus(comfyContents, browserOpenAccepted ? 'waiting' : 'open_failed')
     const { user, apiKey } = await abortable(handle.signInPromise, signal)
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
     if (comfyContents.isDestroyed()) return
@@ -158,6 +186,9 @@ export async function handleFirebasePopup(
   } catch (err) {
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
     const error = err instanceof Error ? err : new Error(String(err))
+    keepPanelForRecovery =
+      !comfyContents.isDestroyed() && startOrigin !== null && isOnOrigin(comfyContents, startOrigin)
+    if (keepPanelForRecovery) updateSignInPanelStatus(comfyContents, 'failed')
     // Mirrored to Datadog (allow-list) so ops can alert if sign-in
     // breaks for a provider. error_bucket keeps the dashboard low-
     // cardinality; error_class adds a locale-independent type for grouping.
@@ -171,7 +202,7 @@ export async function handleFirebasePopup(
     if (releaseActiveBridgeFlow(flow)) {
       // Tear down the card only if this attempt still owns it; a superseded
       // flow must not remove the newer attempt's banner.
-      runBannerCleanup()
+      if (!keepPanelForRecovery) runBannerCleanup()
     }
   }
 }
