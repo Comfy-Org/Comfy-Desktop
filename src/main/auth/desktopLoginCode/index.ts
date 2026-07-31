@@ -93,7 +93,10 @@ function cancelActiveFlow(): void {
  * 'handled': restarting the legacy bridge would fight the login tab the
  * user may be halfway through.
  */
-export function signInViaDesktopLoginCode(
+// `async` is load-bearing despite the missing awaits: a synchronous throw
+// (e.g. getURL() on a just-destroyed view) must reject rather than escape
+// the caller's degrade-to-legacy `.catch`.
+export async function signInViaDesktopLoginCode(
   interceptedAuthUrl: string,
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
@@ -105,7 +108,14 @@ export function signInViaDesktopLoginCode(
     !existing.controller.signal.aborted &&
     !existing.comfyContents.isDestroyed()
   ) {
-    if (existing.loginUrl) openExternalSafely(existing.loginUrl)
+    if (existing.loginUrl) {
+      openExternalSafely(existing.loginUrl)
+      // Restore the card (the user may have dismissed it) so a repeat click
+      // leaves visible feedback even when the browser silently fails to
+      // open. Cleanup first: each card owns one console listener.
+      runBannerCleanup()
+      showCopyLinkBanner(existing.comfyContents, existing.loginUrl, opts.restartSignIn)
+    }
     // Only the original caller may start the legacy fallback if code creation
     // fails. Repeat callers merely re-open/join the one active attempt.
     return existing.outcome.then(
@@ -129,7 +139,7 @@ export function signInViaDesktopLoginCode(
   if (firebaseEnv === 'dev' && cloudOrigin === CLOUD_LOGIN_ORIGIN) {
     runBannerCleanup()
     closeActiveBridge()
-    return Promise.resolve('fallback')
+    return 'fallback'
   }
 
   const controller = new AbortController()
@@ -148,6 +158,12 @@ export function signInViaDesktopLoginCode(
     loginUrl: null,
     outcome
   }
+  // A crash before the runner's own cleanup paths (e.g. while building the
+  // create request) must not leave `activeFlow` dead-but-set: every later
+  // click would silently join it, and Sign in would no-op until app restart.
+  void outcome.catch(() => {
+    if (activeFlow?.controller === controller) activeFlow = null
+  })
   return outcome
 }
 
@@ -166,7 +182,6 @@ async function runDesktopLoginCodeFlow(
   // as the legacy bridge path).
   runBannerCleanup()
   closeActiveBridge()
-  const sessionInjection = beginFirebaseSessionInjection(comfyContents)
 
   // The Cloud page owns provider choice when Firebase omitted or supplied an
   // unsupported providerId, so keep that widened path visible in the funnel.
@@ -185,6 +200,10 @@ async function runDesktopLoginCodeFlow(
   if (settings.get('telemetryEnabled') === true) {
     request.installation_id = getDeviceId()
   }
+
+  // Claimed only after the fallible prep above: from here every exit path
+  // releases it (create-catch, the abort checks, the main finally).
+  const sessionInjection = beginFirebaseSessionInjection(comfyContents)
 
   let grant: DesktopLoginCodeGrant
   try {
@@ -225,7 +244,7 @@ async function runDesktopLoginCodeFlow(
     loginUrl.searchParams.set('desktop_login_code', grant.code)
     if (activeFlow?.controller === controller) activeFlow.loginUrl = loginUrl.href
     openExternalSafely(loginUrl.href)
-    showCopyLinkBanner(comfyContents, loginUrl.href)
+    showCopyLinkBanner(comfyContents, loginUrl.href, opts.restartSignIn)
 
     const deadlineMs = Date.now() + grant.expires_in * 1000
     const retryDeadlineMs = deadlineMs + POST_REDEEM_RETRY_GRACE_MS

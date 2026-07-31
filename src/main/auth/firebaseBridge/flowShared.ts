@@ -86,6 +86,12 @@ export interface HandleFirebasePopupOpts {
   onError?: (failure: SignInFailureContext) => void
   /** Explicitly replace an in-flight Desktop login-code attempt. */
   startOver?: boolean
+  /**
+   * Installed by `handleFirebasePopup`, not external callers: the banner's
+   * "Start over" re-enters the full popup orchestration with `startOver`, so
+   * a replacement attempt keeps the legacy-bridge fallback.
+   */
+  restartSignIn?: () => void
 }
 
 /** Keep in sync with the countdown rendered by the legacy bridge page. */

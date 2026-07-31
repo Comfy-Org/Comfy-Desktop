@@ -26,7 +26,8 @@ vi.mock('./copyLinkBanner', () => ({
   buildCopyLinkBannerScript: () => 'show-banner',
   buildRemoveCopyLinkBannerScript: () => 'remove-banner',
   COPY_LINK_BANNER_CSS: '',
-  OPEN_LINK_SENTINEL: 'open-again'
+  OPEN_LINK_SENTINEL: 'open-again',
+  START_OVER_SENTINEL: 'start-over'
 }))
 vi.mock('./inject', () => ({
   beginFirebaseSessionInjection: h.beginSessionInjection,
@@ -229,6 +230,49 @@ describe('handleFirebasePopup legacy flow', () => {
       error_bucket: 'other',
       flow: 'loopback_bridge'
     })
+  })
+
+  it('installs a restart hook that re-enters the flow with an explicit start-over', async () => {
+    h.signInViaDesktopLoginCode.mockResolvedValue('handled')
+
+    await handleFirebasePopup(AUTH_URL, fakeContents(), {})
+
+    const firstOpts = h.signInViaDesktopLoginCode.mock.calls[0]![2] as {
+      startOver?: boolean
+      restartSignIn: () => void
+    }
+    expect(firstOpts.startOver).toBeUndefined()
+
+    firstOpts.restartSignIn()
+
+    const secondOpts = h.signInViaDesktopLoginCode.mock.calls[1]![2] as {
+      startOver?: boolean
+      restartSignIn?: () => void
+    }
+    expect(secondOpts.startOver).toBe(true)
+    // The replacement attempt's own banner gets a fresh hook in turn.
+    expect(typeof secondOpts.restartSignIn).toBe('function')
+  })
+
+  it('start-over from the card fires once per card; open-again reopens the URL', () => {
+    const contents = fakeContents()
+    const onStartOver = vi.fn()
+
+    showCopyLinkBanner(contents, 'https://cloud.comfy.org/login?code=x', onStartOver)
+
+    const onCall = (contents.on as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(onCall[0]).toBe('console-message')
+    const listener = onCall[1] as (details: {
+      frame: { parent: null } | null
+      message: string
+    }) => void
+
+    listener({ frame: { parent: null }, message: 'start-over' })
+    listener({ frame: { parent: null }, message: 'start-over' })
+    expect(onStartOver).toHaveBeenCalledTimes(1)
+
+    listener({ frame: { parent: null }, message: 'open-again' })
+    expect(h.openExternal).toHaveBeenCalledWith('https://cloud.comfy.org/login?code=x')
   })
 
   it('continues through the banner when the initial browser open rejects', async () => {

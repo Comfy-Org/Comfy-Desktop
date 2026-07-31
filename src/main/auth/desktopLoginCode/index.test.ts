@@ -210,7 +210,8 @@ describe('signInViaDesktopLoginCode', () => {
     expect(openedUrl).toContain('desktop_login_code=dlc_test-code')
     expect(openedUrl).not.toContain('installation_id')
     expect(openedUrl).not.toContain('machine-hash-1234')
-    expect(h.showCopyLinkBanner).toHaveBeenCalledWith(contents, openedUrl)
+    // No restart hook in opts → the card renders without Start over.
+    expect(h.showCopyLinkBanner).toHaveBeenCalledWith(contents, openedUrl, undefined)
 
     expect(h.createDesktopLoginCode).toHaveBeenCalledWith(
       'https://cloud.comfy.org',
@@ -596,17 +597,23 @@ describe('signInViaDesktopLoginCode', () => {
     mockSignInChain({ uid: 'uid-1' })
     const mod = await loadOrchestrator()
     const contents = fakeContents()
+    const restartSignIn = vi.fn()
 
-    const first = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, contents, { restartSignIn })
     await vi.advanceTimersByTimeAsync(3500)
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
     const openedUrl = h.openExternal.mock.calls[0]![0]
 
-    const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, { restartSignIn })
 
     expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
     expect(h.openExternal).toHaveBeenCalledTimes(2)
     expect(h.openExternal.mock.calls[1]![0]).toBe(openedUrl)
+    // The re-click restores the card (it may have been dismissed) and hands
+    // its Start over the same restart hook as the original attempt.
+    expect(h.showCopyLinkBanner).toHaveBeenCalledTimes(2)
+    expect(h.showCopyLinkBanner.mock.calls[0]).toEqual([contents, openedUrl, restartSignIn])
+    expect(h.showCopyLinkBanner.mock.calls[1]).toEqual([contents, openedUrl, restartSignIn])
 
     await vi.runAllTimersAsync()
     expect(await first).toBe('handled')
@@ -635,6 +642,50 @@ describe('signInViaDesktopLoginCode', () => {
     expect(await first).toBe('fallback')
     expect(await second).toBe('handled')
     expect(h.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('recovers after an attempt crashes before its own cleanup paths', async () => {
+    h.settingsGet.mockReturnValue(true)
+    h.getDeviceId.mockImplementation(() => {
+      throw new Error('device id unavailable')
+    })
+    const mod = await loadOrchestrator()
+    const contents = fakeContents()
+
+    await expect(mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})).rejects.toThrow(
+      'device id unavailable'
+    )
+
+    // The crashed attempt must not stay joinable — that would turn every
+    // later click into a silent no-op. The next click starts fresh instead.
+    h.getDeviceId.mockReturnValue('machine-hash-1234')
+    h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
+    const second = await mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    expect(second).toBe('fallback')
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces the active attempt when its originating view is gone', async () => {
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
+    const mod = await loadOrchestrator()
+    let destroyed = false
+    const contents = fakeContents()
+    contents.isDestroyed = vi.fn(() => destroyed)
+
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    await vi.advanceTimersByTimeAsync(3500)
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+
+    // A click from a recreated view must not join a flow that can never
+    // inject its session; it cancels the orphan and starts over. The fresh
+    // attempt's create fails fast so the test leaves no flow in flight.
+    destroyed = true
+    h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
+    const second = await mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    expect(second).toBe('fallback')
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(2)
+    expect(await first).toBe('handled')
   })
 
   it('cancels a prior code flow only when start-over is explicit', async () => {
