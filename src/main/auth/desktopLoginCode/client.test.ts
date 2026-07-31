@@ -274,9 +274,9 @@ describe('grant timing validation', () => {
     )
   })
 
-  it('leaves a sane grant untouched', async () => {
-    const grant = await grantFrom(300, 3)
-    expect(grant).toEqual({ code: 'dlc_abc', expires_in: 300, poll_interval: 3 })
+  it('accepts the one-second minimum poll interval issued by Cloud', async () => {
+    const grant = await grantFrom(300, 1)
+    expect(grant).toEqual({ code: 'dlc_abc', expires_in: 300, poll_interval: 1 })
   })
 })
 

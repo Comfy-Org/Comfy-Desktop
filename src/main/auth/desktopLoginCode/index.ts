@@ -27,8 +27,7 @@ import {
   emitSignInFailure,
   type HandleFirebasePopupOpts,
   isOnOrigin,
-  originOf,
-  POST_SIGNIN_HOLD_MS
+  originOf
 } from '../firebaseBridge/flowShared'
 import {
   beginFirebaseSessionInjection,
@@ -46,6 +45,12 @@ const CREATE_CODE_TIMEOUT_MS = 8000
 
 /** Random 0-500ms added to each poll so a fleet of desktops doesn't sync-poll. */
 const POLL_JITTER_MS = 500
+
+/**
+ * Brief visual beat after the system browser confirms redemption. The browser
+ * already shows a success toast; the legacy bridge keeps its 3s countdown.
+ */
+const LOGIN_CODE_POST_SIGNIN_HOLD_MS = 500
 
 /** Cloud currently keeps a redeemed grant exchangeable for this long. */
 const POST_REDEEM_RETRY_GRACE_MS = 120_000
@@ -231,10 +236,10 @@ export async function signInViaDesktopLoginCode(
     if (controller.signal.aborted) return 'handled'
     const user = buildPersistedUserFromCustomToken(firebaseConfig, signIn, account)
     if (comfyContents.isDestroyed()) return 'handled'
-    // Same hold as the legacy bridge: let the user see the browser's
-    // signed-in state before Desktop pulls focus back. Abort-aware — a
-    // re-click during the hold rejects into the catch below as 'handled'.
-    await abortableSleep(POST_SIGNIN_HOLD_MS, controller.signal)
+    // The system browser already shows its own success toast, so keep only a
+    // brief visual beat before Desktop pulls focus back. The legacy loopback
+    // bridge retains its full three-second countdown.
+    await abortableSleep(LOGIN_CODE_POST_SIGNIN_HOLD_MS, controller.signal)
     if (controller.signal.aborted || comfyContents.isDestroyed()) return 'handled'
     // The backend/login origin and the embedded session target are distinct:
     // local and preview views authenticate through production Cloud, but the

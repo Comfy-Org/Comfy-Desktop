@@ -255,6 +255,42 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.closeActiveBridge).toHaveBeenCalledTimes(1)
   })
 
+  it('returns focus after the brief login-code hold instead of the legacy countdown', async () => {
+    h.createDesktopLoginCode.mockResolvedValue({
+      ...GRANT,
+      poll_interval: 1
+    })
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+    const parentWindow = {
+      isDestroyed: vi.fn(() => false),
+      isMinimized: vi.fn(() => false),
+      restore: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn()
+    }
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {
+      parentWindow: parentWindow as unknown as BrowserWindow
+    })
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
+    expect(parentWindow.focus).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(499)
+    expect(parentWindow.focus).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await promise).toBe('handled')
+    expect(parentWindow.show).toHaveBeenCalledTimes(1)
+    expect(parentWindow.focus).toHaveBeenCalledTimes(1)
+  })
+
   it('continues through the banner when the initial browser open rejects', async () => {
     h.openExternal.mockRejectedValueOnce(new Error('no default browser'))
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
