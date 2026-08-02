@@ -100,5 +100,6 @@ describe('comfyPreload model access bridge', () => {
     )
     expect(mocks.invoke).toHaveBeenCalledTimes(3)
     expect(mocks.invoke).toHaveBeenCalledWith('desktop2-open-terminal')
+    expect(mocks.invoke).toHaveBeenCalledWith('desktop2-open-terminal-popout')
   })
 })

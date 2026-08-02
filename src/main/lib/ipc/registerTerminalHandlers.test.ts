@@ -4,6 +4,7 @@ type IpcHandler = (event: { sender: object }, ...args: unknown[]) => unknown
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, IpcHandler>(),
+  findEntryByComfySender: vi.fn(),
   isTitlePopupSender: vi.fn(),
   findTerminalPopoutInstallationIdBySender: vi.fn(),
   openTerminalPopout: vi.fn(),
@@ -25,6 +26,10 @@ vi.mock('electron', () => ({
 
 vi.mock('../../popups/titlePopup', () => ({
   isTitlePopupSender: mocks.isTitlePopupSender
+}))
+
+vi.mock('../../host/registry', () => ({
+  findEntryByComfySender: mocks.findEntryByComfySender
 }))
 
 vi.mock('../terminalPopoutWindow', () => ({
@@ -53,6 +58,7 @@ describe('registerTerminalHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.handlers.clear()
+    mocks.findEntryByComfySender.mockReturnValue(null)
     mocks.isTitlePopupSender.mockReturnValue(false)
     mocks.findTerminalPopoutInstallationIdBySender.mockReturnValue(null)
     registerTerminalHandlers()
@@ -68,6 +74,7 @@ describe('registerTerminalHandlers', () => {
     const restartRestore = await getHandler('terminal-restart')(event, 'inst-a')
     const restore = await getHandler('terminal-restore')(event, 'inst-a')
     await getHandler('terminal-popout-open')(event, 'inst-a')
+    await getHandler('desktop2-open-terminal-popout')(event, 'inst-a')
 
     expect(mocks.writeTerminal).not.toHaveBeenCalled()
     expect(mocks.unsubscribeTerminal).not.toHaveBeenCalled()
@@ -84,6 +91,18 @@ describe('registerTerminalHandlers', () => {
     expect(subscribeRestore).toEqual(emptyRestore)
     expect(restartRestore).toEqual(emptyRestore)
     expect(restore).toEqual(emptyRestore)
+  })
+
+  it('opens a popout bound to the local installation resolved by main', async () => {
+    const event = { sender: {} }
+    mocks.findEntryByComfySender.mockReturnValue({
+      installationId: 'inst-a',
+      sourceCategory: 'local'
+    })
+
+    await getHandler('desktop2-open-terminal-popout')(event, 'inst-b')
+
+    expect(mocks.openTerminalPopout).toHaveBeenCalledWith('inst-a')
   })
 
   it('allows the trusted title popup to operate on its selected installation', async () => {

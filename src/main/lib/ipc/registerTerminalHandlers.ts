@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
+import { findEntryByComfySender } from '../../host/registry'
 import { isTitlePopupSender } from '../../popups/titlePopup'
 import {
   subscribeTerminal,
@@ -40,6 +41,12 @@ function resolveInstallationId(
 }
 
 export function registerTerminalHandlers(): void {
+  ipcMain.handle('desktop2-open-terminal-popout', async (event): Promise<void> => {
+    const entry = findEntryByComfySender(event.sender)
+    if (!entry?.installationId || entry.sourceCategory !== 'local') return
+    await openTerminalPopout(entry.installationId)
+  })
+
   ipcMain.handle(
     'terminal-subscribe',
     async (event, installationId?: string | null): Promise<TerminalRestore> => {

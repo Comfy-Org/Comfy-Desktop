@@ -34,6 +34,10 @@ function openTerminal(): Promise<boolean> {
   return ipcRenderer.invoke('desktop2-open-terminal')
 }
 
+function openTerminalPopout(): Promise<void> {
+  return ipcRenderer.invoke('desktop2-open-terminal-popout')
+}
+
 async function openTerminalWithEmptyRestore(): Promise<TerminalRestore> {
   await openTerminal()
   return EMPTY_TERMINAL_RESTORE
@@ -45,9 +49,7 @@ const Terminal: LegacyTerminalBridge = {
   write: async (): Promise<void> => {},
   resize: async (): Promise<void> => {},
   restart: async (): Promise<TerminalRestore> => EMPTY_TERMINAL_RESTORE,
-  openPopout: async (): Promise<void> => {
-    await openTerminal()
-  },
+  openPopout: openTerminalPopout,
   onOutput: (): (() => void) => () => {},
   onExited: (): (() => void) => () => {},
   restore: openTerminalWithEmptyRestore
