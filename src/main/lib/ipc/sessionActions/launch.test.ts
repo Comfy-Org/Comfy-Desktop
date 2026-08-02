@@ -38,7 +38,7 @@ describe('desktopFeatureFlags', () => {
   it('always injects the unconditional desktop flags', () => {
     const flags = desktopFeatureFlags(installOf('standalone'), false)
     expect(flags.show_signin_button).toBe('true')
-    expect(flags.supports_terminal).toBe('true')
+    expect(flags.supports_terminal).toBe('false')
   })
 
   it('injects enable_telemetry only for standalone installs that opted in', () => {

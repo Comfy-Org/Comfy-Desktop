@@ -10,24 +10,12 @@ describe('getComfyTerminalContentScript', () => {
     expect(() => new Function(script)).not.toThrow()
   })
 
-  it('bails when the desktop terminal bridge is absent', () => {
-    expect(script).toContain('!window.__comfyDesktop2.Terminal')
+  it('bails when the desktop terminal opener is absent', () => {
+    expect(script).toContain(`typeof window.__comfyDesktop2.openTerminal !== 'function'`)
   })
 
   it('guards against double injection', () => {
     expect(script).toContain('window.__comfyDesktopTerminalStopgap')
-  })
-
-  it('inlines the xterm UMD build and its fit addon', () => {
-    expect(script).toContain('__xt.exports')
-    expect(script).toContain('__fit.exports')
-    expect(script).toContain('var XTerm =')
-    expect(script).toContain('var FitAddon =')
-  })
-
-  it('injects the xterm stylesheet exactly once via a stable id', () => {
-    expect(script).toContain('__comfyDesktopXtermCss')
-    expect(script).toContain('.xterm')
   })
 
   it('registers a custom bottom-panel tab through the extension API', () => {
@@ -51,9 +39,10 @@ describe('getComfyTerminalContentScript', () => {
     expect(script).toContain(`bottomPanelHasTab(app, 'command-terminal')`)
   })
 
-  it('uses the shared desktop terminal transport', () => {
-    for (const member of ['subscribe', 'write', 'resize', 'restart', 'onOutput', 'onExited']) {
-      expect(script).toContain(member)
+  it('opens the trusted Desktop terminal without exposing PTY operations', () => {
+    expect(script).toContain('window.__comfyDesktop2.openTerminal()')
+    for (const member of ['terminal-write', 'terminal-resize', 'terminal-restart']) {
+      expect(script).not.toContain(member)
     }
   })
 

@@ -40,6 +40,7 @@ import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
+  findEntryByComfySender,
   findEntryByTitleBarSender,
   getEntryByInstallationId,
   hostInstallEvents,
@@ -483,6 +484,10 @@ interface TitlePopupEntry {
  *  `event.sender`. */
 const titlePopupsByParent = new Map<number, TitlePopupEntry>()
 const titlePopupsByWebContents = new Map<number, TitlePopupEntry>()
+
+export function isTitlePopupSender(sender: Electron.WebContents): boolean {
+  return titlePopupsByWebContents.has(sender.id)
+}
 
 /** Timestamp of the most recent downloads-popup dismiss per parent
  *  window. The downloads tray relies on blur-dismiss (no backdrop),
@@ -2175,6 +2180,21 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // Stash for `prewarmTitlePopup` (host-construction site doesn't have
   // bindings). Last writer wins; only called once at `whenReady`.
   activeBindings = bindings
+
+  ipcMain.handle('desktop2-open-terminal', (event): boolean => {
+    const parentEntry = findEntryByComfySender(event.sender)
+    if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
+    openInstancePickerForHost(
+      parentEntry,
+      parentEntry.windowKey,
+      bindings,
+      parentEntry.titleBarView.webContents,
+      { x: 0, y: TITLEBAR_HEIGHT },
+      parentEntry.installationId,
+      'console'
+    )
+    return true
+  })
 
   ipcMain.on('comfy-titlepopup:ready', (event) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)

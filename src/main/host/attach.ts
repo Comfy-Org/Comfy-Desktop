@@ -410,11 +410,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
-    // Inject the Terminal bottom-panel tab on local managed installs that
-    // back it with a per-install shell (standalone, portable, git). They all
-    // ship the same served frontend and expose the same
-    // `window.__comfyDesktop2.Terminal` bridge + per-install PTY, so the
-    // injection works identically everywhere.
+    // Inject the Terminal bottom-panel entry on local managed installs.
     //
     // Originally gated on `!supports_terminal` to avoid duplicating the
     // flag-gated frontend tab. Day-3 launch feedback put terminal

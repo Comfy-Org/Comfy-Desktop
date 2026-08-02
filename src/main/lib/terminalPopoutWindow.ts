@@ -1,20 +1,15 @@
 /**
  * Pop-out terminal window. A small standalone Electron BrowserWindow that
- * runs the same xterm renderer as the inline injection but is decoupled
- * from the ComfyUI frontend's bottom panel. Uses the same per-install
- * shared shell as the inline view (`terminal-*` IPC handlers in
- * `registerTerminalHandlers.ts`), so output stays in lockstep between the
- * pop-out and any other surface still subscribed to the same install.
+ * runs xterm in a bundled Desktop renderer that is isolated from the served
+ * ComfyUI frontend. Uses the same per-install shared shell as the trusted
+ * console view (`terminal-*` IPC handlers in `registerTerminalHandlers.ts`).
  *
- * Why a dedicated module instead of reusing `comfyTerminalContentScript`:
- * the inline script registers itself as a ComfyUI extension and renders
- * into a bottom-panel tab container. A pop-out has no extension system —
- * the xterm has to mount directly onto `document.body`. The render logic
- * is essentially identical; only the host + dedupe and the explicit
- * installationId passing differ.
+ * The dedicated preload is the security boundary: this renderer gets PTY
+ * access while the served ComfyUI renderer gets only an open/focus request.
  */
 
 import { BrowserWindow } from 'electron'
+import type { WebContents } from 'electron'
 import path from 'path'
 import { readFileSync } from 'fs'
 import { createRequire } from 'module'
@@ -36,9 +31,8 @@ function stripSourceMapComment(source: string): string {
 /**
  * Build the standalone xterm bootstrap script for the pop-out window.
  * Memoised — the UMD payloads are large and never change at runtime.
- * The injected `INSTALLATION_ID` literal is substituted per window.
  */
-function buildPopoutScript(installationId: string): string {
+function buildPopoutScript(): string {
   if (!cachedScript) {
     const xtermJs = stripSourceMapComment(readPackageFile('@xterm/xterm/lib/xterm.js'))
     const fitJs = stripSourceMapComment(readPackageFile('@xterm/addon-fit/lib/addon-fit.js'))
@@ -47,7 +41,7 @@ function buildPopoutScript(installationId: string): string {
     cachedScript =
       `(function () {\n` +
       `'use strict';\n` +
-      `if (typeof window === 'undefined' || !window.__comfyDesktop2 || !window.__comfyDesktop2.Terminal) return;\n` +
+      `if (typeof window === 'undefined' || !window.__comfyDesktopTerminal) return;\n` +
       `if (window.__comfyDesktopTerminalPopoutMounted) return;\n` +
       `window.__comfyDesktopTerminalPopoutMounted = true;\n` +
       `var __xt = { exports: {} };\n` +
@@ -64,13 +58,7 @@ function buildPopoutScript(installationId: string): string {
       POPOUT_MAIN_JS +
       `})();\n`
   }
-  // installationId interpolation goes after the cached payload — keeps
-  // the UMD bundle re-used across windows but lets each window target its
-  // own installation. The bootstrap reads it from a top-level constant.
-  return (
-    `window.__comfyDesktopPopoutInstallationId = ${JSON.stringify(installationId)};\n` +
-    cachedScript
-  )
+  return cachedScript
 }
 
 /**
@@ -80,9 +68,8 @@ function buildPopoutScript(installationId: string): string {
  * bottom-panel tab plumbing.
  */
 const POPOUT_MAIN_JS = `
-var INSTALL_ID = window.__comfyDesktopPopoutInstallationId;
-var bridge = window.__comfyDesktop2.Terminal;
-if (!INSTALL_ID || !bridge) return;
+var bridge = window.__comfyDesktopTerminal;
+if (!bridge) return;
 
 var root = document.body;
 root.style.background = '#171717';
@@ -126,7 +113,7 @@ function doFit(forceReclaim) {
   var changed = dims.cols !== term.cols || dims.rows !== term.rows;
   if (changed) term.resize(dims.cols, dims.rows);
   if (changed || forceReclaim) {
-    try { bridge.resize(term.cols, term.rows, INSTALL_ID); } catch (e) {}
+    try { bridge.resize(term.cols, term.rows); } catch (e) {}
   }
 }
 
@@ -145,11 +132,11 @@ function doRestart() {
   if (state.disposed) return;
   term.reset();
   state.exited = false; updateBanner();
-  bridge.restart(INSTALL_ID).then(applyRestore).catch(function () {});
+  bridge.restart().then(applyRestore).catch(function () {});
 }
 restartBtn.addEventListener('click', doRestart);
 
-term.onData(function (d) { try { bridge.write(d, INSTALL_ID); } catch (e) {} });
+term.onData(function (d) { try { bridge.write(d); } catch (e) {} });
 var offOutput = bridge.onOutput(function (msg) {
   if (state.disposed) return;
   if (state.exited) { state.exited = false; updateBanner(); }
@@ -171,11 +158,11 @@ window.addEventListener('beforeunload', function () {
   try { offOutput && offOutput(); } catch (e) {}
   try { offExited && offExited(); } catch (e) {}
   try { ro.disconnect(); } catch (e) {}
-  try { bridge.unsubscribe(INSTALL_ID); } catch (e) {}
+  try { bridge.unsubscribe(); } catch (e) {}
   try { term.dispose(); } catch (e) {}
 });
 
-bridge.subscribe(INSTALL_ID).then(function (restore) {
+bridge.subscribe().then(function (restore) {
   if (state.disposed) return;
   if (restore && restore.exited) doRestart();
   else applyRestore(restore);
@@ -186,6 +173,13 @@ bridge.subscribe(INSTALL_ID).then(function (restore) {
 // Track open pop-outs per installation so a second click on the inline
 // button focuses the existing window instead of spawning a duplicate.
 const popoutsByInstallation = new Map<string, BrowserWindow>()
+
+export function findTerminalPopoutInstallationIdBySender(sender: WebContents): string | null {
+  for (const [installationId, window] of popoutsByInstallation) {
+    if (!window.isDestroyed() && window.webContents === sender) return installationId
+  }
+  return null
+}
 
 export async function openTerminalPopout(installationId: string): Promise<void> {
   const existing = popoutsByInstallation.get(installationId)
@@ -212,9 +206,10 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
     backgroundColor: COMFY_BG,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/comfyPreload.js'),
+      preload: path.join(__dirname, '../preload/terminalPreload.js'),
       contextIsolation: true,
-      sandbox: false
+      nodeIntegration: false,
+      sandbox: true
     }
   })
 
@@ -225,13 +220,14 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
   })
 
   const html =
-    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${label}</title>` +
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comfy Terminal</title>` +
     `<style>html,body{margin:0;padding:0;height:100%;background:${COMFY_BG};}</style>` +
     `</head><body></body></html>`
   void win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 
   win.webContents.once('did-finish-load', () => {
-    void win.webContents.executeJavaScript(buildPopoutScript(installationId)).catch(() => {})
+    win.setTitle(label)
+    void win.webContents.executeJavaScript(buildPopoutScript()).catch(() => {})
   })
 }
 

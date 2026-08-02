@@ -101,10 +101,9 @@ export function desktopFeatureFlags(
 ): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
-    // Advertises that an interactive terminal host is available, so the frontend
-    // may surface its bottom-panel terminal. The actual transport is the
-    // __comfyDesktop2.Terminal bridge; the flag only gates visibility.
-    supports_terminal: 'true'
+    // Do not advertise inline PTY support. Desktop injects a navigation-only
+    // terminal entry instead.
+    supports_terminal: 'false'
   }
   // Telemetry is opt-in (default off) and only signaled for managed standalone
   // installs — never for portable or user-managed git clones.

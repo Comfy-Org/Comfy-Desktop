@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { findInstallationIdByComfySender } from '../../host/registry'
+import { isTitlePopupSender } from '../../popups/titlePopup'
 import {
   subscribeTerminal,
   unsubscribeTerminal,
@@ -10,19 +10,16 @@ import {
   getTerminalRestore,
   type TerminalRestore
 } from '../terminal'
-import { openTerminalPopout } from '../terminalPopoutWindow'
+import {
+  findTerminalPopoutInstallationIdBySender,
+  openTerminalPopout
+} from '../terminalPopoutWindow'
 
 /**
  * IPC for the interactive per-installation console.
  *
- * Two kinds of caller share these channels:
- *   - The desktop renderer (Settings "Console" tab), which knows the
- *     installationId and passes it explicitly.
- *   - The served ComfyUI frontend inside a comfyView, which does NOT know its
- *     installationId — we resolve it from the sender via the host registry.
- *
- * Output/exit are pushed straight to the subscribing webContents, so the
- * frontend never needs to know its own installationId.
+ * Only bundled Desktop terminal renderers may use these channels. The served
+ * ComfyUI renderer has a separate navigation-only bridge.
  */
 
 const EMPTY_RESTORE: TerminalRestore = {
@@ -35,8 +32,11 @@ function resolveInstallationId(
   event: IpcMainInvokeEvent,
   explicit: string | null | undefined
 ): string | null {
-  if (explicit) return explicit
-  return findInstallationIdByComfySender(event.sender)
+  const requestedId = typeof explicit === 'string' && explicit.length > 0 ? explicit : null
+  if (isTitlePopupSender(event.sender)) return requestedId
+  const popoutId = findTerminalPopoutInstallationIdBySender(event.sender)
+  if (!popoutId || (requestedId && requestedId !== popoutId)) return null
+  return popoutId
 }
 
 export function registerTerminalHandlers(): void {
@@ -82,10 +82,6 @@ export function registerTerminalHandlers(): void {
     return getTerminalRestore(id) ?? EMPTY_RESTORE
   })
 
-  // Pop the inline terminal out into a standalone Electron window.
-  // Caller (the inline injection in the comfyView) doesn't pass an
-  // installationId — we resolve it from the sender's registered
-  // comfyView so the popout always targets the right shell.
   ipcMain.handle(
     'terminal-popout-open',
     async (event, installationId?: string | null): Promise<void> => {
