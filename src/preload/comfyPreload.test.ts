@@ -58,7 +58,7 @@ function hostedBridge(): HostedFrontendBridge {
 
 describe('comfyPreload model access bridge', () => {
   beforeEach(() => {
-    mocks.invoke.mockClear()
+    mocks.invoke.mockReset()
   })
 
   it('forwards the repository URL through the desktop2 IPC contract', async () => {
@@ -94,9 +94,9 @@ describe('comfyPreload model access bridge', () => {
     expect(bridge.Terminal.onOutput(() => {})).toEqual(expect.any(Function))
     expect(bridge.Terminal.onExited(() => {})).toEqual(expect.any(Function))
 
-    expect(mocks.invoke).not.toHaveBeenCalledWith(
-      expect.stringMatching(/^terminal-/),
-      expect.anything()
+    const invokedChannels = mocks.invoke.mock.calls.map(([channel]) => channel)
+    expect(invokedChannels).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^terminal-/)])
     )
     expect(mocks.invoke).toHaveBeenCalledTimes(3)
     expect(mocks.invoke).toHaveBeenCalledWith('desktop2-open-terminal')

@@ -9,6 +9,10 @@ describe('getComfyTerminalContentScript', () => {
   })
 
   afterEach(() => {
+    const state = Reflect.get(window, '__comfyDesktopTerminalStopgap') as
+      | { tabBarObserver?: MutationObserver }
+      | undefined
+    state?.tabBarObserver?.disconnect()
     vi.clearAllTimers()
     vi.useRealTimers()
     document.body.innerHTML = ''

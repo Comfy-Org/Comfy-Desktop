@@ -185,6 +185,14 @@ function startTabPopoutInjector() {
     injectButton(header, 'Logs', 'logs');
   }
 
+  function scheduleInjectButtons() {
+    if (STATE.tabBarInjectTimer != null) return;
+    STATE.tabBarInjectTimer = setTimeout(function () {
+      STATE.tabBarInjectTimer = null;
+      injectButtons();
+    }, 0);
+  }
+
   injectButtons();
   var settleTries = 0;
   var settleInterval = setInterval(function () {
@@ -192,8 +200,9 @@ function startTabPopoutInjector() {
     injectButtons();
     if (settleTries > 50) clearInterval(settleInterval);
   }, 200);
-  var observer = new MutationObserver(injectButtons);
-  observer.observe(document.body, { childList: true, subtree: true });
+  // Vue recreates the tab strip on tab switches, so keep restoring the buttons.
+  STATE.tabBarObserver = new MutationObserver(scheduleInjectButtons);
+  STATE.tabBarObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 function waitForRegister(timeoutMs) {
