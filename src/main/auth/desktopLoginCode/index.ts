@@ -18,7 +18,8 @@ import {
   closeActiveBridge,
   openExternalSafely,
   runBannerCleanup,
-  showCopyLinkBanner
+  showCopyLinkBanner,
+  updateSignInPanelStatus
 } from '../firebaseBridge/flowState'
 import { detectFirebaseEnv, getFirebaseConfig } from '../firebaseBridge/config'
 import { abortableSleep } from '../firebaseBridge/flowControl'
@@ -57,6 +58,10 @@ const POST_REDEEM_RETRY_GRACE_MS = 120_000
 
 const DESKTOP_LOGIN_CODE_FLOW = 'desktop_login_code'
 
+export interface DesktopLoginCodeFlowControls {
+  onStartOver?: () => void
+}
+
 /**
  * In-flight flow, aborted on re-entry (mirror of firebaseBridge's
  * `activeBridgeFlow`): if the user clicks Sign in again while a previous
@@ -89,7 +94,8 @@ function cancelActiveFlow(): void {
 export async function signInViaDesktopLoginCode(
   interceptedAuthUrl: string,
   comfyContents: WebContents,
-  opts: HandleFirebasePopupOpts = {}
+  opts: HandleFirebasePopupOpts = {},
+  controls: DesktopLoginCodeFlowControls = {}
 ): Promise<'handled' | 'fallback'> {
   const sessionTargetOrigin = originOf(comfyContents.getURL())
   const firebaseEnv = detectFirebaseEnv(interceptedAuthUrl)
@@ -170,15 +176,41 @@ export async function signInViaDesktopLoginCode(
   })
 
   let retriedPollErrors = 0
+  let keepPanelForRecovery = false
+  let deadlineMs = 0
   try {
     // Only the opaque one-time code transits the browser — never
     // installation_id or any auth material.
     const loginUrl = new URL('/cloud/login', cloudOrigin)
     loginUrl.searchParams.set('desktop_login_code', grant.code)
-    openExternalSafely(loginUrl.href)
-    showCopyLinkBanner(comfyContents, loginUrl.href)
+    deadlineMs = Date.now() + grant.expires_in * 1000
+    await showCopyLinkBanner(comfyContents, loginUrl.href, {
+      expiresAtMs: deadlineMs,
+      onCancel: () => {
+        if (activeFlow === controller) controller.abort()
+      },
+      onStartOver: controls.onStartOver,
+      onBrowserOpenResult: (accepted, trigger) => {
+        mainTelemetry.capture('comfy.desktop.auth.browser_handoff', {
+          provider,
+          flow: DESKTOP_LOGIN_CODE_FLOW,
+          result: accepted ? 'accepted' : 'rejected',
+          trigger
+        })
+      }
+    })
+    const browserOpenAccepted = await openExternalSafely(loginUrl.href)
+    if (controller.signal.aborted || activeFlow !== controller || comfyContents.isDestroyed()) {
+      return 'handled'
+    }
+    mainTelemetry.capture('comfy.desktop.auth.browser_handoff', {
+      provider,
+      flow: DESKTOP_LOGIN_CODE_FLOW,
+      result: browserOpenAccepted ? 'accepted' : 'rejected',
+      trigger: 'automatic'
+    })
+    updateSignInPanelStatus(comfyContents, browserOpenAccepted ? 'waiting' : 'open_failed')
 
-    const deadlineMs = Date.now() + grant.expires_in * 1000
     const retryDeadlineMs = deadlineMs + POST_REDEEM_RETRY_GRACE_MS
     let customToken: string | null = null
     while (customToken === null) {
@@ -270,6 +302,15 @@ export async function signInViaDesktopLoginCode(
     // A superseded attempt isn't a failure — the newer one owns the UX.
     if (controller.signal.aborted) return 'handled'
     const error = err instanceof Error ? err : new Error(String(err))
+    keepPanelForRecovery =
+      !comfyContents.isDestroyed() &&
+      sessionTargetOrigin !== null &&
+      isOnOrigin(comfyContents, sessionTargetOrigin)
+    if (keepPanelForRecovery) {
+      const expired =
+        Date.now() >= deadlineMs || (error instanceof DesktopLoginCodeError && error.status === 404)
+      updateSignInPanelStatus(comfyContents, expired ? 'expired' : 'failed')
+    }
     const failure = emitSignInFailure(provider, DESKTOP_LOGIN_CODE_FLOW, error, {
       retried_poll_errors: retriedPollErrors
     })
@@ -281,7 +322,7 @@ export async function signInViaDesktopLoginCode(
     const ownsUx = activeFlow === controller
     if (ownsUx) {
       activeFlow = null
-      runBannerCleanup()
+      if (!keepPanelForRecovery) runBannerCleanup()
     }
     releaseFirebaseSessionInjection(sessionInjection)
   }

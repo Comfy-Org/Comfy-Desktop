@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   bucketError: vi.fn(() => 'bucketed'),
   bindSignedInUser: vi.fn(),
   showCopyLinkBanner: vi.fn(),
+  updateSignInPanelStatus: vi.fn(),
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
   settingsGet: vi.fn(),
@@ -49,10 +50,16 @@ vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
 vi.mock('../firebaseBridge/flowState', () => ({
   showCopyLinkBanner: h.showCopyLinkBanner,
+  updateSignInPanelStatus: h.updateSignInPanelStatus,
   runBannerCleanup: h.runBannerCleanup,
   closeActiveBridge: h.closeActiveBridge,
-  openExternalSafely: (url: string) => {
-    void h.openExternal(url).catch(() => {})
+  openExternalSafely: async (url: string) => {
+    try {
+      await h.openExternal(url)
+      return true
+    } catch {
+      return false
+    }
   }
 }))
 
@@ -211,7 +218,23 @@ describe('signInViaDesktopLoginCode', () => {
     expect(openedUrl).toContain('desktop_login_code=dlc_test-code')
     expect(openedUrl).not.toContain('installation_id')
     expect(openedUrl).not.toContain('machine-hash-1234')
-    expect(h.showCopyLinkBanner).toHaveBeenCalledWith(contents, openedUrl)
+    expect(h.showCopyLinkBanner).toHaveBeenCalledWith(
+      contents,
+      openedUrl,
+      expect.objectContaining({
+        expiresAtMs: expect.any(Number),
+        onCancel: expect.any(Function),
+        onStartOver: undefined,
+        onBrowserOpenResult: expect.any(Function)
+      })
+    )
+    expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.browser_handoff', {
+      provider: 'google.com',
+      flow: 'desktop_login_code',
+      result: 'accepted',
+      trigger: 'automatic'
+    })
+    expect(h.updateSignInPanelStatus).toHaveBeenCalledWith(contents, 'waiting')
 
     expect(h.createDesktopLoginCode).toHaveBeenCalledWith(
       'https://cloud.comfy.org',
@@ -307,6 +330,13 @@ describe('signInViaDesktopLoginCode', () => {
 
     expect(await promise).toBe('handled')
     expect(h.showCopyLinkBanner).toHaveBeenCalledOnce()
+    expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.browser_handoff', {
+      provider: 'google.com',
+      flow: 'desktop_login_code',
+      result: 'rejected',
+      trigger: 'automatic'
+    })
+    expect(h.updateSignInPanelStatus).toHaveBeenCalledWith(expect.anything(), 'open_failed')
     expect(h.emit).not.toHaveBeenCalled()
   })
 
@@ -514,8 +544,9 @@ describe('signInViaDesktopLoginCode', () => {
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
     const onError = vi.fn()
     const mod = await loadOrchestrator()
+    const contents = fakeContents()
 
-    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), { onError })
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, contents, { onError })
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
@@ -533,6 +564,10 @@ describe('signInViaDesktopLoginCode', () => {
         flow: 'desktop_login_code'
       })
     )
+    expect(h.updateSignInPanelStatus).toHaveBeenCalledWith(contents, 'expired')
+    // The only cleanup is the stale-panel cleanup at flow start. The expired
+    // panel remains available for explicit cancellation or start-over.
+    expect(h.runBannerCleanup).toHaveBeenCalledOnce()
   })
 
   it('honors a redeem that landed in the last poll interval via a final exchange at the deadline', async () => {
@@ -586,6 +621,24 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'late-token', {
       signal: expect.any(AbortSignal)
     })
+  })
+
+  it('settles without failure when the persistent panel explicitly cancels', async () => {
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.advanceTimersByTimeAsync(0)
+    const handlers = h.showCopyLinkBanner.mock.lastCall?.[2] as
+      | { onCancel?: () => void }
+      | undefined
+    handlers?.onCancel?.()
+
+    await expect(promise).resolves.toBe('handled')
+    expect(h.emit).not.toHaveBeenCalled()
+    expect(h.exchangeDesktopLoginCode).not.toHaveBeenCalled()
+    expect(h.runBannerCleanup).toHaveBeenCalledTimes(2)
   })
 
   it('aborts the prior poll loop on re-entry without reporting a failure', async () => {

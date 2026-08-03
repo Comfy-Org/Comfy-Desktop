@@ -25,8 +25,11 @@ vi.mock('electron', () => ({ shell: { openExternal: h.openExternal } }))
 vi.mock('./copyLinkBanner', () => ({
   buildCopyLinkBannerScript: () => 'show-banner',
   buildRemoveCopyLinkBannerScript: () => 'remove-banner',
+  buildUpdateCopyLinkBannerScript: () => 'update-banner',
+  CANCEL_SIGN_IN_SENTINEL: 'cancel',
   COPY_LINK_BANNER_CSS: '',
-  OPEN_LINK_SENTINEL: 'open-again'
+  OPEN_LINK_SENTINEL: 'open-again',
+  START_OVER_SENTINEL: 'start-over'
 }))
 vi.mock('./inject', () => ({
   beginFirebaseSessionInjection: h.beginSessionInjection,
@@ -52,6 +55,7 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   executeJavaScript: ReturnType<typeof vi.fn>
   off: ReturnType<typeof vi.fn>
   getURL: ReturnType<typeof vi.fn>
+  on: ReturnType<typeof vi.fn>
 } {
   return {
     executeJavaScript: vi.fn(() => Promise.resolve()),
@@ -64,7 +68,16 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
     executeJavaScript: ReturnType<typeof vi.fn>
     off: ReturnType<typeof vi.fn>
     getURL: ReturnType<typeof vi.fn>
+    on: ReturnType<typeof vi.fn>
   }
+}
+
+function consoleListenerFor(
+  contents: ReturnType<typeof fakeContents>
+): (details: { frame?: { parent: unknown }; message: string }) => void {
+  const call = contents.on.mock.calls.find(([event]) => event === 'console-message')
+  if (!call) throw new Error('console-message listener was not installed')
+  return call[1] as (details: { frame?: { parent: unknown }; message: string }) => void
 }
 
 beforeEach(() => {
@@ -77,6 +90,43 @@ afterEach(() => {
   closeActiveBridge()
   runBannerCleanup()
   vi.useRealTimers()
+})
+
+describe('persistent sign-in panel', () => {
+  it('routes explicit start-over and cancel controls to the owning flow', async () => {
+    const contents = fakeContents()
+    const onStartOver = vi.fn()
+    const onCancel = vi.fn()
+    await showCopyLinkBanner(contents, 'https://cloud.comfy.org/login', {
+      onStartOver,
+      onCancel
+    })
+    const listener = consoleListenerFor(contents)
+
+    listener({ frame: { parent: null }, message: 'start-over' })
+    expect(onStartOver).toHaveBeenCalledOnce()
+
+    listener({ frame: { parent: null }, message: 'cancel' })
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(contents.off).toHaveBeenCalledOnce()
+    expect(contents.executeJavaScript).toHaveBeenCalledWith('remove-banner', true)
+  })
+
+  it('reports a rejected manual browser retry and keeps recovery in the panel', async () => {
+    h.openExternal.mockRejectedValueOnce(new Error('no default browser'))
+    const contents = fakeContents()
+    const onBrowserOpenResult = vi.fn()
+    await showCopyLinkBanner(contents, 'https://cloud.comfy.org/login', {
+      onBrowserOpenResult
+    })
+
+    consoleListenerFor(contents)({ frame: { parent: null }, message: 'open-again' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onBrowserOpenResult).toHaveBeenCalledWith(false, 'retry')
+    expect(contents.executeJavaScript).toHaveBeenCalledWith('update-banner', true)
+    expect(contents.off).not.toHaveBeenCalled()
+  })
 })
 
 describe('handleFirebasePopup legacy flow', () => {
@@ -153,7 +203,7 @@ describe('handleFirebasePopup legacy flow', () => {
 
     closeActiveBridge()
     runBannerCleanup()
-    showCopyLinkBanner(contents, 'https://cloud.comfy.org/new-login')
+    await showCopyLinkBanner(contents, 'https://cloud.comfy.org/new-login')
     await vi.advanceTimersByTimeAsync(3000)
     await staleFlow
 
@@ -243,6 +293,12 @@ describe('handleFirebasePopup legacy flow', () => {
     await vi.runAllTimersAsync()
 
     await expect(flow).resolves.toBeUndefined()
+    expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.browser_handoff', {
+      provider: 'google.com',
+      flow: 'loopback_bridge',
+      result: 'rejected',
+      trigger: 'automatic'
+    })
     expect(h.emit).not.toHaveBeenCalled()
   })
 })

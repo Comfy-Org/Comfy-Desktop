@@ -786,11 +786,18 @@
     "label": "Cloud",
     "desc": "Run workflows on managed GPUs.",
     "signInBanner": {
-      "message": "We opened your browser to sign in. Didn’t open?",
+      "title": "Finish signing in in your browser",
+      "opening": "Opening your browser…",
+      "waiting": "Waiting for you to finish signing in.",
+      "openFailed": "We couldn’t open your browser. Try again or copy the link.",
+      "expired": "This sign-in link expired. Start over to try again.",
+      "failed": "Sign-in didn’t complete. Start over to try again.",
+      "remaining": "{time} remaining",
       "copy": "Copy link",
       "copied": "Copied",
-      "openAgain": "Open again",
-      "dismiss": "Dismiss"
+      "openAgain": "Open browser again",
+      "cancel": "Cancel",
+      "startOver": "Start over"
     },
     "capacityDegraded": "Heavy usage",
     "capacityDegradedHint": "ComfyUI Cloud is under heavy load right now — you may see slower response times. Please try again later for the best experience.",
