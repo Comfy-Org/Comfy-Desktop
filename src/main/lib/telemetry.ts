@@ -342,9 +342,8 @@ function isAllowedToFire(event: string): boolean {
  *
  * Layer 1: per-event-name sliding window.
  *   Drop further emits of the same event name once 60 fire in 60s.
- *   60/min is well above any legitimate product event rate (the
- *   loudest healthy event was `execution.completed` at ~36/user/day)
- *   and well below any loop signature (the incident was ~2/sec).
+ *   60/min is well above any legitimate product event rate and well below
+ *   any loop signature (the incident was ~2/sec).
  *   One `comfy.desktop.telemetry.rate_limited` warning fires per (event ×
  *   process) so dashboards surface that it happened.
  *

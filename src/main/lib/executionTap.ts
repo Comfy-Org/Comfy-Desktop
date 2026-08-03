@@ -8,7 +8,7 @@
  *
  * Patterns we detect (current ComfyUI main branch):
  *   - "got prompt"                        → execution started
- *   - "Prompt executed in X.X seconds"    → execution completed (with duration)
+ *   - "Prompt executed in X.X seconds"    → execution completed
  *   - "Failed to validate prompt"         → validation error
  *   - Python tracebacks                   → execution error
  *
@@ -176,11 +176,9 @@ export function createExecutionTap(opts: {
       }
     }
     state.errorCount++
-    // Wall-clock between the matching `Got prompt` and the error end —
-    // mirror what `execution.completed` already emits so error-vs-success
-    // duration can be compared directly on the dashboard. Null when the
-    // error fired without a paired start (already-pending traceback at
-    // boot, etc.).
+    // Wall-clock between the matching `Got prompt` and the error end. Null
+    // when the error fired without a paired start (already-pending traceback
+    // at boot, etc.).
     const wallMs = consumePromptStart()
     // Standard error schema derived from the final exception line (class /
     // message / bucket / signature).
@@ -265,24 +263,14 @@ export function createExecutionTap(opts: {
     if (PROMPT_GOT.test(trimmed)) {
       state.startedCount++
       pushPromptStart()
-      telemetry.emit('comfy.desktop.execution.started', {
-        ...baseContext,
-        started_count: state.startedCount
-      })
       return
     }
 
-    const doneMatch = trimmed.match(PROMPT_DONE)
-    if (doneMatch?.groups) {
-      const seconds = Number(doneMatch.groups['seconds'])
-      const wallMs = consumePromptStart()
+    if (PROMPT_DONE.test(trimmed)) {
+      // Keep the timing queue paired so a later failed prompt receives the
+      // correct start time in its error event.
+      consumePromptStart()
       state.completedCount++
-      telemetry.emit('comfy.desktop.execution.completed', {
-        ...baseContext,
-        duration_seconds: Number.isFinite(seconds) ? seconds : null,
-        wall_clock_ms: wallMs,
-        completed_count: state.completedCount
-      })
       emitFirstCompletedIfNeeded()
       return
     }
@@ -386,8 +374,8 @@ export function createExecutionTap(opts: {
       ) {
         emitTracebackError()
       }
-      // Per-session summary so analytics always has a row, even if a session
-      // produced no individual prompt events.
+      // Per-session summary so analytics always has a row, even if the session
+      // produced no prompts.
       telemetry.emit('comfy.desktop.execution.session_summary', {
         ...baseContext,
         started_count: state.startedCount,

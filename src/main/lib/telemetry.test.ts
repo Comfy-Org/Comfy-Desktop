@@ -403,7 +403,7 @@ describe('telemetry default event properties', () => {
 
     // A main-process event and a renderer-routed event both go through
     // capture(), so both must carry installation_id from the defaults.
-    telemetry.capture('comfy.desktop.execution.completed', { foo: 'bar' })
+    telemetry.capture('comfy.desktop.execution.session_summary', { foo: 'bar' })
     telemetry.capture('comfy.desktop.template.fork', { template_id: 't1' })
 
     expect(captured).toHaveLength(2)
@@ -667,13 +667,11 @@ describe('telemetry SDK-level privacy safety nets', () => {
 
   it('leaves non-string property types untouched', () => {
     captured.length = 0
-    telemetry.capture('comfy.desktop.execution.completed', {
-      duration_seconds: 12.5,
+    telemetry.capture('comfy.desktop.execution.session_summary', {
       completed_count: 7,
       crashed: false
     })
     const props = captured[0]!.properties
-    expect(props?.duration_seconds).toBe(12.5)
     expect(props?.completed_count).toBe(7)
     expect(props?.crashed).toBe(false)
   })
@@ -690,7 +688,7 @@ describe('telemetry consent state (3-state)', () => {
     bindTestAnonymous('test-distinct-id')
     captured.length = 0
 
-    telemetry.capture('comfy.desktop.execution.started', { foo: 'bar' })
+    telemetry.capture('comfy.desktop.session.started', { foo: 'bar' })
     telemetry.capture('comfy.desktop.first_use.consent_decision', { accepted: false })
 
     const events = captured.map((c) => c.event)
@@ -708,7 +706,7 @@ describe('telemetry consent state (3-state)', () => {
     bindTestAnonymous('test-distinct-id')
     captured.length = 0
 
-    telemetry.capture('comfy.desktop.execution.started', {})
+    telemetry.capture('comfy.desktop.session.started', {})
     telemetry.capture('comfy.desktop.first_use.consent_decision', {
       decision: 'decline',
       telemetry_enabled: false
