@@ -1116,7 +1116,7 @@ async function runLaunch(
 
   async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
     // Reset per-boot accelerator state so each (re)spawn re-emits
-    // accelerator_detected; model-usage counts persist across the launch.
+    // accelerator_detected.
     hwTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
@@ -1331,7 +1331,7 @@ async function runLaunch(
     _clearLaunchingFailed(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
     // covers a process that exits, but a waitForPort timeout can return here
-    // with the proc still alive, leaving the model-usage flush interval armed.
+    // with the proc still alive, leaving a pending accelerator event unemitted.
     // flushSummary is idempotent, so a later exit re-flush is harmless.
     hwTap.flushSummary()
     if (launchResult.cancelled) {
@@ -1460,8 +1460,8 @@ async function runLaunch(
         logStream.end()
         await killProcessTree(proc)
         // This relaunch path returns before the normal exit handler is
-        // attached; flush so pending model-usage deltas aren't dropped and the
-        // hardware-tap interval doesn't stay armed. flushSummary is idempotent.
+        // attached; flush so a pending accelerator event isn't dropped.
+        // flushSummary is idempotent.
         execTap.flushSummary()
         hwTap.flushSummary()
         _removeSession(installationId)
