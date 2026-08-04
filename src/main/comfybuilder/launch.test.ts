@@ -27,6 +27,15 @@ describe('launch', () => {
     expect(venvPython(dir)).toBe(isWin ? path.join(dir, 'venv', 'python.exe') : path.join(dir, 'venv', 'bin', 'python3'))
   })
 
+  it.runIf(isWin)('venvPython prefers the staged windows interpreter at venv/base', () => {
+    const staged = path.join(dir, 'venv', 'base', 'python.exe')
+    fs.mkdirSync(path.dirname(staged), { recursive: true })
+    fs.writeFileSync(staged, '')
+    // Current archives stage it below the venv root; that placement is what keeps the
+    // venv's entry points relocatable (Comfy-Org/cloud#6138).
+    expect(venvPython(dir)).toBe(staged)
+  })
+
   it('builds a spec that drives the venv python against ComfyUI/main.py', () => {
     const p = path.join(dir, 'install')
     layout(p)
