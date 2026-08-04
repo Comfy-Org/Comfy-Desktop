@@ -14,11 +14,22 @@ import type { LaunchSpec } from './types'
 
 const DEFAULT_LAUNCH_ARGS = '--enable-manager'
 
-/** The archive's bundled interpreter. */
+/**
+ * The archive's bundled interpreter.
+ *
+ * Windows archives stage the interpreter one level below the venv root, at
+ * `venv/base/python.exe`. That placement is what keeps the venv relocatable: CPython
+ * resolves a venv's `sys.prefix` as `dirname(dirname(executable))`, so an interpreter
+ * sitting AT the venv root resolves to the venv's parent and every entry point uv writes
+ * bakes an absolute build path (Comfy-Org/cloud#6138). POSIX already had this shape via
+ * `venv/bin/`.
+ *
+ * Falls back to the old root path so archives cut before that change still launch.
+ */
 export function venvPython(installPath: string): string {
-  return process.platform === 'win32'
-    ? path.join(installPath, 'venv', 'python.exe')
-    : path.join(installPath, 'venv', 'bin', 'python3')
+  if (process.platform !== 'win32') return path.join(installPath, 'venv', 'bin', 'python3')
+  const staged = path.join(installPath, 'venv', 'base', 'python.exe')
+  return fs.existsSync(staged) ? staged : path.join(installPath, 'venv', 'python.exe')
 }
 
 export interface LaunchOptions {
