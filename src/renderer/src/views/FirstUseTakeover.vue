@@ -615,13 +615,6 @@ function pickChoice(choice: 'cloud' | 'local'): void {
   pickedChoice.value = choice
 }
 
-/** Which card holds the radiogroup's tab stop while nothing is selected.
- *  Without one the group leaves the tab order entirely and — with
- *  Continue gated on an explicit pick — keyboard users are stuck. Cloud
- *  is the entry point (first in DOM order, and the recommended card in
- *  this state). */
-const keyboardEntryChoice = 'cloud' as const
-
 /** Radiogroup arrow-key handler for the Cloud / Local cards.
  *  WAI-ARIA APG §3.15: arrow keys cycle the checked radio and move DOM
  *  focus along with it. When `pickedChoice` is `null` (the no-default
@@ -872,6 +865,10 @@ defineExpose({ open, resetContinue })
           :aria-label="$t('firstUse.pickTitle')"
           @keydown="onStartCardsKeydown"
         >
+          <!-- Cloud holds the radiogroup's tab stop while nothing is
+               selected — without one the group leaves the tab order
+               entirely and, with Continue gated on an explicit pick,
+               keyboard users are stuck. -->
           <ChoiceCard
             class="start-card-cloud"
             :class="{
@@ -879,7 +876,7 @@ defineExpose({ open, resetContinue })
             }"
             selectable
             :selected="pickedChoice === 'cloud'"
-            :tab-stop="pickedChoice === null && keyboardEntryChoice === 'cloud'"
+            :tab-stop="pickedChoice === null"
             :aria-describedby="hardwareRecommendsCloud ? CLOUD_RECO_REASON_ID : undefined"
             glow
             :label="$t('cloud.label')"
@@ -930,7 +927,6 @@ defineExpose({ open, resetContinue })
           <ChoiceCard
             selectable
             :selected="pickedChoice === 'local'"
-            :tab-stop="pickedChoice === null && keyboardEntryChoice === 'local'"
             :label="$t('firstUse.localLabel')"
             :tagline="$t('firstUse.localTagline')"
             :description="$t('firstUse.localDesc')"
