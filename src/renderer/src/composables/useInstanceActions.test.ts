@@ -34,7 +34,6 @@ function makeDeps(
   return {
     bridge,
     confirmLocalKill: vi.fn().mockResolvedValue(true),
-    confirmCloudCapacity: vi.fn().mockResolvedValue(true),
     confirmSwitch: vi.fn().mockResolvedValue('switch'),
     ...over
   }
@@ -121,16 +120,6 @@ describe('useInstanceActions.dispatch', () => {
     expect(bridge.pickInstall).not.toHaveBeenCalled()
     expect(bridge.restartInstall).not.toHaveBeenCalled()
     expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
-  })
-
-  it('aborts a cloud action when capacity is blocked', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge, { confirmCloudCapacity: vi.fn().mockResolvedValue(false) })
-    await useInstanceActions(deps).dispatch(
-      decision({ verb: 'switch' }),
-      installation({ sourceCategory: 'cloud' })
-    )
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
   })
 
   it('no-ops when the bridge is undefined', async () => {

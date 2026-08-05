@@ -70,6 +70,8 @@ interface MockApi {
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
   focusComfyWindow: ReturnType<typeof vi.fn>
+  getCloudFreeRunsEnabled: ReturnType<typeof vi.fn>
+  getCloudUserTier: ReturnType<typeof vi.fn>
 }
 
 function installMockApi(initial: Installation[]): MockApi {
@@ -80,7 +82,9 @@ function installMockApi(initial: Installation[]): MockApi {
     getSetting: vi.fn().mockResolvedValue(undefined),
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
-    focusComfyWindow: vi.fn().mockResolvedValue(true)
+    focusComfyWindow: vi.fn().mockResolvedValue(true),
+    getCloudFreeRunsEnabled: vi.fn().mockResolvedValue(false),
+    getCloudUserTier: vi.fn().mockResolvedValue('unknown')
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -479,9 +483,7 @@ describe('ChooserView', () => {
   it('shows the free-runs pill on cloud install tiles when the flag is on', async () => {
     const cloudInst = makeInstall({ id: 'cloud-1', name: 'Comfy Cloud', sourceCategory: 'cloud' })
     const api = installMockApi([cloudInst])
-    ;(api as unknown as { getCloudFreeRunsEnabled: unknown }).getCloudFreeRunsEnabled = vi
-      .fn()
-      .mockResolvedValue(true)
+    api.getCloudFreeRunsEnabled.mockResolvedValue(true)
     const wrapper = mountChooser()
     await flushPromises()
     expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(true)

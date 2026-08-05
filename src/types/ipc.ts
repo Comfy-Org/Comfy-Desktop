@@ -12,15 +12,8 @@ export type Unsubscribe = () => void
 export type Theme = 'system' | 'dark' | 'light'
 export type ResolvedTheme = Exclude<Theme, 'system'>
 
-/** Capacity-protection status for Cloud entry points (see
- *  `getCloudCapacity` and `useCloudCapacity`). `normal` = no UI changes;
- *  `degraded` = show heavy-usage warning; `disabled` = block entry. */
-export type CloudCapacityStatus = 'normal' | 'degraded' | 'disabled'
-
-/** Signed-in user's Comfy Cloud subscription tier, normalized to the
- *  two values the capacity gate cares about. `'unknown'` = signed out
- *  or no fetch has succeeded yet this lifetime; treated as `'free'`
- *  downstream (fail-closed). See `userTier.ts`. */
+/** Signed-in user's Comfy Cloud subscription tier. `'unknown'` means signed
+ *  out or no fetch has succeeded yet this lifetime. See `userTier.ts`. */
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
 // --- Installation types ---
@@ -1312,11 +1305,6 @@ export interface ElectronApi {
    *  remote is unreachable. Used by the install-wizard version dropdown and
    *  the per-install ChannelPicker. */
   getStableTags(): Promise<string[]>
-  /** Capacity-protection switch for Cloud entry points. Resolved at boot
-   *  from the `desktop-cloud-capacity` PostHog flag (variants `normal` |
-   *  `degraded` | `disabled`); defaults to `'normal'` when the flag is
-   *  unavailable. Renderers consume this via `useCloudCapacity`. */
-  getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
   /** Whether the free tier is live, for the "5 free runs" trial pill.
    *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill

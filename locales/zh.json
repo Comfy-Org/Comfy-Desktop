@@ -791,12 +791,7 @@
       "copied": "已复制",
       "openAgain": "再次打开",
       "dismiss": "忽略"
-    },
-    "capacityDegraded": "高负载",
-    "capacityDegradedHint": "ComfyUI Cloud 当前负载较高——响应可能较慢。请稍后再试以获得最佳体验。",
-    "capacityDisabled": "暂时不可用",
-    "capacityDisabledHint": "由于需求过高，ComfyUI Cloud 暂时不可用。请稍后再试。",
-    "capacityProceed": "仍然继续"
+    }
   },
   "desktop": {
     "label": "旧版桌面端",

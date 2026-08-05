@@ -430,9 +430,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (!isLocal) {
       comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
       // Refresh the cached subscription tier off the cloud view's
-      // Firebase auth record + /customers/me. Used by the capacity
-      // kill-switch to let paying users through `disabled`. Fire-and-
-      // forget — failures leave the tier cache as-is.
+      // Firebase auth record + /customers/me. Used by billing telemetry
+      // and free-tier offer UI. Fire-and-forget — failures leave the tier
+      // cache as-is.
       void refreshCloudUserTier(comfyContents)
       // Mark cloud entry for the acquisition funnel. Deduped per session
       // and carries `first_time` for the first-ever cloud entry.

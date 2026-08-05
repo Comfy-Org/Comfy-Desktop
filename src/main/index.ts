@@ -99,7 +99,6 @@ import {
 import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
-import { initCloudCapacity } from './lib/cloudCapacity'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initUserTier } from './lib/userTier'
 
@@ -1459,24 +1458,14 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     })
 
-    // Boot the cloud capacity-protection switch. Separate from
-    // `initExperiments` because this is an OPS kill-switch, not an A/B
-    // experiment — it deliberately bypasses the telemetry consent gate
-    // (a user who declined analytics still benefits from cloud being
-    // throttled when GPUs are saturated). See `cloudCapacity.ts`.
-    void initCloudCapacity({ distinctId: installationId })
-
-    // Same ops-flag path, same consent-bypass reasoning: the first-use
+    // This ops-flag path is separate from consent-gated experiments: the first-use
     // picker renders while consent is still `'undecided'`, so the
     // experiments cache would never have a value to give it. See
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    // Hydrate the persisted cloud user-tier cache so the very first
-    // dashboard render knows whether the signed-in user is on a paid
-    // plan — without it, dashboard / IPP would treat returning paid
-    // users as `free` until they open a cloud install once this
-    // session. `userTier.ts` refreshes the cache on every cloud
+    // Hydrate the persisted cloud user-tier cache for billing telemetry and
+    // free-tier offer UI. `userTier.ts` refreshes it on every cloud
     // webContents `dom-ready` (see `attach.ts`).
     void initUserTier()
 

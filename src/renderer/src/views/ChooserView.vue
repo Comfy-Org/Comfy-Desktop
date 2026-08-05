@@ -5,7 +5,6 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
-import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useModal } from '../composables/useModal'
 import { Plus, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
@@ -14,7 +13,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserInstallTile from './chooser/ChooserInstallTile.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
-import type { Installation, ShowProgressOpts } from '../types/ipc'
+import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
  * Chooser view — recents grid.
@@ -177,10 +176,6 @@ async function pickInstall(inst: Installation): Promise<void> {
     // launch normally in that case.
     if (focused) return
   }
-  // Cloud capacity gate — catches the case where a cloud install
-  // already exists and the user clicks its per-install tile (the
-  // generic "Try Cloud" tile gates separately in `handleCloudClick`).
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry('picker'))) return
   emit('pick', inst)
 }
 
@@ -219,20 +214,22 @@ function viewDanger(inst: Installation): void {
   void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
-// Capacity-protection switch (PostHog flag `desktop-cloud-capacity`).
-// When `disabled`, the tile is greyed out and the click is a no-op so
-// users can't enter cloud during an outage. When `degraded`, the tile
-// surfaces a "Heavy usage" meta pill but the click still proceeds.
-const cloudCapacity = useCloudCapacity()
-
 const cloudFreeRunsEnabled = ref(false)
+const cloudUserTier = ref<CloudUserTier>('unknown')
 const showCloudFreeRunsPill = computed(
-  () => cloudFreeRunsEnabled.value && !cloudCapacity.isDisabled() && !cloudCapacity.isPaid()
+  () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
 )
 onMounted(async () => {
-  try {
-    cloudFreeRunsEnabled.value = await window.api.getCloudFreeRunsEnabled()
-  } catch {}
+  const [freeRunsResult, userTierResult] = await Promise.allSettled([
+    window.api.getCloudFreeRunsEnabled(),
+    window.api.getCloudUserTier()
+  ])
+  if (freeRunsResult.status === 'fulfilled') {
+    cloudFreeRunsEnabled.value = freeRunsResult.value
+  }
+  if (userTierResult.status === 'fulfilled') {
+    cloudUserTier.value = userTierResult.value
+  }
 })
 function handleNewInstallClick(): void {
   emit('show-new-install')

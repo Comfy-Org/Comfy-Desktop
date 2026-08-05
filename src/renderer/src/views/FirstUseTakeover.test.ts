@@ -110,6 +110,7 @@ beforeEach(() => {
     // explicitly per-case.
     getSystemInfo: vi.fn().mockResolvedValue(systemInfo('high')),
     getCloudFreeRunsEnabled: vi.fn().mockResolvedValue(true),
+    getCloudUserTier: vi.fn().mockResolvedValue('unknown'),
     setFirstUseMode: vi.fn(),
     closeHostWindow: vi.fn().mockResolvedValue(undefined),
     // Default to undefined so the existing tests exercise the control
@@ -810,6 +811,13 @@ describe('FirstUseTakeover GPU-aware Cloud recommendation', () => {
   // Neither may drag the other down with it.
   it('hides the pill when free tier is off, leaving the recommendation alone', async () => {
     ;(window.api.getCloudFreeRunsEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
+    const wrapper = await mountWithTier('cpu_only', null)
+    expect(pill(wrapper).exists()).toBe(false)
+    expect(badge(wrapper).exists()).toBe(true)
+  })
+
+  it('keeps the recommendation but hides the trial pill for a returning cloud user', async () => {
+    ;(window.api.getCloudUserTier as ReturnType<typeof vi.fn>).mockResolvedValue('paid')
     const wrapper = await mountWithTier('cpu_only', null)
     expect(pill(wrapper).exists()).toBe(false)
     expect(badge(wrapper).exists()).toBe(true)

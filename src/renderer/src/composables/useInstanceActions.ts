@@ -3,8 +3,8 @@ import type { Installation } from '../types/ipc'
 
 /**
  * Single funnel that routes a `NavDecision`'s verb onto the host bridge,
- * applying the renderer-side gates (cloud capacity, local kill-confirm) that
- * main would otherwise re-prompt for.
+ * applying the renderer-side local kill-confirm that main would otherwise
+ * re-prompt for.
  */
 /** Outcome of the in-drawer switch prompt. */
 export type SwitchChoice = 'switch' | 'new-window' | 'cancel'
@@ -29,8 +29,6 @@ export interface InstanceActionsDeps {
   /** Confirm a local process kill (restart). Returns true to proceed; non-local
    *  installs have no process to kill and should resolve true. */
   confirmLocalKill: (inst: Installation) => Promise<boolean>
-  /** Cloud capacity gate; returns false to abort a cloud action. */
-  confirmCloudCapacity: (inst: Installation) => Promise<boolean>
   /** In-drawer 3-way prompt when the current host is a local install: stop &
    *  switch / open in new window / cancel. Resolves `'switch'` for non-local. */
   confirmSwitch: (inst: Installation) => Promise<SwitchChoice>
@@ -52,9 +50,6 @@ export function useInstanceActions(deps: InstanceActionsDeps): InstanceActions {
     if (!bridge) return
 
     try {
-      // Cloud capacity gate first, matching the ChooserView path.
-      if (target.sourceCategory === 'cloud' && !(await deps.confirmCloudCapacity(target))) return
-
       switch (decision.verb) {
         case 'restart': {
           // `confirmed: true` tells main to skip its own modal (non-local resolves true).

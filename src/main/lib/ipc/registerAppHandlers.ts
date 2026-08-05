@@ -32,7 +32,6 @@ import type { FieldOption } from './shared'
 import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
-import { getCloudCapacityStatusAsync } from '../cloudCapacity'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
@@ -47,16 +46,10 @@ export function registerAppHandlers(): void {
   // Returns `[]` (never throws) when the remote is unreachable.
   ipcMain.handle('get-stable-tags', () => getStableTags())
 
-  // Capacity-protection switch for Cloud entry points. Resolved from the
-  // `desktop-cloud-capacity` PostHog flag via the experiments cache; safe
-  // default is `'normal'` (no UI change). See `cloudCapacity.ts` for the
-  // boot-time / consent caveats.
-  ipcMain.handle('get-cloud-capacity', () => getCloudCapacityStatusAsync())
-
   // Signed-in user's Comfy Cloud subscription tier ('free' | 'paid' |
-  // 'unknown'). Used by the capacity gate to let paying users through
-  // `disabled`. Hydrated from a persisted file at boot and refreshed on
-  // every cloud webContents `dom-ready`. See `userTier.ts`.
+  // 'unknown'). Hydrated from a persisted file at boot and refreshed on
+  // every cloud webContents `dom-ready`; consumed by billing telemetry and
+  // free-tier offer UI. See `userTier.ts`.
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
 
   // Whether the free tier is live, for the first-use trial pill. Bypasses

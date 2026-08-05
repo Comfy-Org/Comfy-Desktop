@@ -527,11 +527,11 @@ export function initTelemetry(opts: InitOptions): void {
   // gated.
   //
   // FLAG READS are NOT suppressed: a dev working on a feature gated by
-  // a PostHog flag (e.g. `desktop-cloud-capacity`) needs to actually
+  // a PostHog flag (e.g. `free_tier_workflow_submission_enabled`) needs to actually
   // see the flag's resolved value at boot. Previously the entire
   // PostHog client was skipped in dev, which made `getOpsFlag` /
   // `loadFeatureFlagsImmediate` return defaults and stranded any
-  // capacity-protection or experiment testing. Now the client is
+  // operational-flag or experiment testing. Now the client is
   // always created so reads work; only the emission paths
   // (`capture`, `identify`, `captureException`,
   // `registerPersonProperties`) bail when `suppressEmit` is set.
@@ -1188,8 +1188,7 @@ export async function loadFeatureFlagsImmediate(
  * Fetch a single OPERATIONAL feature flag value with a hard timeout.
  *
  * Bypasses the telemetry consent gate by design: this entry point is
- * reserved for kill-switches and capacity-protection flags (e.g.
- * `desktop-cloud-capacity`), not A/B experiments or analytics. Those
+ * reserved for operational flags, not A/B experiments or analytics. Those
  * are server-config pushed *to* the client to protect service
  * availability for everyone - distinct from analytics data collected
  * *from* the user, which `loadFeatureFlagsImmediate` correctly gates on
@@ -1200,8 +1199,8 @@ export async function loadFeatureFlagsImmediate(
  *   - the PostHog client is not yet initialised
  *   - the network call times out or errors
  *   - the flag is missing on the server
- * Callers must default-fail-safe (e.g. `cloudCapacity.ts` defaults to
- * `'normal'`) so a fetch miss never accidentally degrades the product.
+ * Callers must choose a safe fallback so a fetch miss never accidentally
+ * degrades the product.
  */
 export async function getOpsFlag(
   key: string,

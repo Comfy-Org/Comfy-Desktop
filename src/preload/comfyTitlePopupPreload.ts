@@ -218,11 +218,6 @@ export interface ComfyTitlePopupBridge {
   /** Downscaled `data:` URL preview of a completed image download (the popup
    *  has no `window.api`); null for non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
-  /** Cloud capacity status; the popup has no `window.api`, so this gives
-   *  `useCloudCapacity` an equivalent read path. */
-  getCloudCapacity(): Promise<'normal' | 'degraded' | 'disabled'>
-  /** Cloud subscription tier; 'paid' relaxes a `disabled` gate to `degraded`. */
-  getCloudUserTier(): Promise<'free' | 'paid' | 'unknown'>
   /** Tell main the right pane switched to this install; main re-resolves its
    *  Settings + Snapshots and pushes a fresh snapshot. Idempotent. */
   setPickerSelectedInstall(installationId: string | null): void
@@ -554,22 +549,6 @@ const bridge: ComfyTitlePopupBridge = {
   },
   getDownloadThumbnail: (savePath: string) =>
     ipcRenderer.invoke('download-thumbnail', { savePath }),
-  getCloudCapacity: async () => {
-    // Reuses the panel's `get-cloud-capacity` handler, which awaits the boot
-    // fetch so the first call doesn't race the network.
-    const result = await ipcRenderer.invoke('get-cloud-capacity')
-    if (result === 'normal' || result === 'degraded' || result === 'disabled') {
-      return result
-    }
-    return 'normal'
-  },
-  getCloudUserTier: async () => {
-    const result = await ipcRenderer.invoke('get-cloud-user-tier')
-    if (result === 'free' || result === 'paid' || result === 'unknown') {
-      return result
-    }
-    return 'unknown'
-  },
   setPickerSelectedInstall: (installationId) => {
     ipcRenderer.send('comfy-titlepopup:set-picker-selected-install', { installationId })
   },

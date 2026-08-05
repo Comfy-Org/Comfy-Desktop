@@ -32,7 +32,6 @@ import {
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
-import { useCloudCapacity } from '../../composables/useCloudCapacity'
 import { decideNavigation, type NavDecision } from '../../../../shared/navigation/navDecision'
 import type { Category, ViewKind } from '../../../../shared/viewKind'
 import { findActionById } from '../../lib/findAction'
@@ -549,15 +548,6 @@ const hasPendingRestart = computed(
   () => isRunningInThisWindow.value && pendingRestartFieldIds.value.size > 0
 )
 
-// Cloud capacity-protection switch. When cloud capacity is `disabled`,
-// disable the CTA so the click visibly goes nowhere (parent already
-// no-ops it).
-const cloudCapacity = useCloudCapacity()
-const isCloudCapacityBlocked = computed(
-  () =>
-    installation.value?.sourceCategory === 'cloud' && cloudCapacity.effectiveStatus() === 'disabled'
-)
-
 // The footer CTA verb/label and the caret items both come from one
 // `decideNavigation` call (via the shared `navState` above), so they can't drift.
 const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
@@ -572,9 +562,6 @@ function resolveNavLabel(key: string): string {
 }
 
 const primaryActionLabel = computed(() => {
-  if (isCloudCapacityBlocked.value) {
-    return t('cloud.capacityDisabled', 'Temporarily unavailable')
-  }
   if (hasPendingRestart.value) {
     return t('instancePicker.restartToApply', 'Restart to apply changes')
   }
@@ -933,15 +920,6 @@ defineExpose({
           :data-testid="TID.pickerSettingsSections"
           :data-install-id="installation?.id"
         >
-          <!-- Always-visible explanation of why the Start button is
-               greyed (the tooltip is hover-only). -->
-          <div v-if="isCloudCapacityBlocked" class="cloud-capacity-banner" role="status">
-            <Info :size="16" class="cloud-capacity-banner-icon" aria-hidden="true" />
-            <div class="cloud-capacity-banner-body">
-              <p class="cloud-capacity-banner-title">{{ $t('cloud.capacityDisabled') }}</p>
-              <p class="cloud-capacity-banner-hint">{{ $t('cloud.capacityDisabledHint') }}</p>
-            </div>
-          </div>
           <Transition :name="tabTransition" mode="out-in">
             <div
               v-if="activeTab === 'snapshots' && installation"
@@ -1108,17 +1086,14 @@ defineExpose({
           class="primary settings-v2-relaunch"
           :class="{
             'is-pending-restart': hasPendingRestart,
-            'is-capacity-disabled': isCloudCapacityBlocked,
             'is-split': caretActions.length > 0
           }"
-          :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
-          :title="isCloudCapacityBlocked ? $t('cloud.capacityDisabledHint') : undefined"
+          :disabled="!installation || opBlocksFooter"
           :data-testid="TID.pickerPrimaryCta"
           @click="handlePrimaryAction"
         >
           <component
             :is="primaryActionIcon"
-            v-if="!isCloudCapacityBlocked"
             :size="15"
             class="settings-v2-relaunch-icon"
             aria-hidden="true"
@@ -1134,7 +1109,7 @@ defineExpose({
             aria-haspopup="menu"
             :aria-expanded="caretMenuOpen"
             :aria-label="t('instancePicker.moreWindowOptions', 'Window options')"
-            :disabled="!installation || opBlocksFooter || isCloudCapacityBlocked"
+            :disabled="!installation || opBlocksFooter"
             :data-testid="TID.pickerNewWindow"
             @click="toggleCaretMenu"
           >
@@ -1659,42 +1634,5 @@ defineExpose({
 .settings-v2-more.is-active {
   background: var(--brand-surface-border-hover);
   color: var(--text);
-}
-
-/* Always-visible explainer for the disabled state (the title tooltip
- * is hover-only). */
-.cloud-capacity-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  margin: 0 0 12px;
-  background: var(--accent-danger-soft, rgba(217, 45, 32, 0.08));
-  border: 1px solid var(--accent-danger, #d92d20);
-  border-radius: 8px;
-  color: var(--text);
-}
-.cloud-capacity-banner-icon {
-  color: var(--accent-danger, #d92d20);
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-.cloud-capacity-banner-body {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.cloud-capacity-banner-title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent-danger, #d92d20);
-}
-.cloud-capacity-banner-hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted);
 }
 </style>

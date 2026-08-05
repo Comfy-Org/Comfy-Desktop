@@ -1,11 +1,10 @@
 /**
- * Cloud user-tier cache. Holds the signed-in customer's subscription tier so the cloud
- * capacity kill-switch sheds new free traffic without denying paying users.
+ * Cloud user-tier cache. Holds the signed-in customer's subscription tier for billing
+ * telemetry and free-tier offer UI.
  *
  * Sourced from comfy-api `GET /customers/me` (via the cloud webContents' Firebase token) and
  * persisted to `userData/cloud-user-tier.json` so the next launch's first render sees it.
- * Anomalies leave the cache alone rather than clobber a known-paid tier. Capacity gating treats
- * `unknown === free` (fails closed) — acceptable for launch week.
+ * Anomalies leave the cache alone rather than clobber a known-paid tier.
  */
 import { app, type WebContents } from 'electron'
 import * as fs from 'fs/promises'

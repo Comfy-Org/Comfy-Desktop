@@ -104,7 +104,7 @@ function backfillSessionCache(flags: Record<string, FeatureFlagValue>): void {
  *
  * The returned promise is cached so `getFlagAsync()` can await it — a
  * renderer query landing before the fetch settles then sees the resolved
- * value instead of falling back to control (mirrors `cloudCapacity`).
+ * value instead of falling back to control.
  *
  * Idempotent within a process.
  */
@@ -154,7 +154,7 @@ export function getFlag(key: string): FeatureFlagValue | undefined {
  * Awaitable flag accessor. Awaits the in-flight boot fetch (if any) before
  * reading, so a query landing before the fetch settles sees the resolved
  * value rather than falling back to control. Prefer this from IPC handlers;
- * `getFlag()` stays for hot sync reads. Mirrors `getCloudCapacityStatusAsync`.
+ * `getFlag()` stays for hot sync reads.
  */
 export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
   if (initPromise) {

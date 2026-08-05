@@ -426,11 +426,11 @@ describe('telemetry anonymous flag reads', () => {
     telemetry.bindAnonymousId('anonymous-flag-id', 'installation-id')
     featureFlagCalls.length = 0
 
-    await telemetry.getOpsFlag('desktop-cloud-capacity', 'anonymous-flag-id', 100)
+    await telemetry.getOpsFlag('free_tier_workflow_submission_enabled', 'anonymous-flag-id', 100)
 
     expect(featureFlagCalls).toEqual([
       {
-        key: 'desktop-cloud-capacity',
+        key: 'free_tier_workflow_submission_enabled',
         distinctId: 'anonymous-flag-id',
         options: { sendFeatureFlagEvents: false }
       }

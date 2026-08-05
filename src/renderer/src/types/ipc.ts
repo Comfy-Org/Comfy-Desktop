@@ -61,7 +61,6 @@ export type {
   ErrorDetailData,
   AppUpdateState,
   AppUpdateDownloadProgress,
-  CloudCapacityStatus,
   CloudUserTier,
   ElectronApi
 } from '../../../types/ipc'

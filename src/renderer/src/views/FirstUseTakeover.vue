@@ -57,9 +57,8 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
 import InlineRichText from '../components/InlineRichText.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { useCloudCapacity } from '../composables/useCloudCapacity'
 import type { GpuTier } from '../../../shared/gpuTier'
-import type { SystemInfo } from '../../../types/ipc'
+import type { CloudUserTier, SystemInfo } from '../../../types/ipc'
 
 type Step = 'start' | 'mirrors' | 'localBranch'
 
@@ -131,15 +130,6 @@ const pickedChoice = ref<'cloud' | 'local' | null>('local')
  *  the seeded value. Reset per `open()`. */
 const userHasPicked = ref(false)
 
-// Capacity-protection switch for Cloud (PostHog flag
-// `desktop-cloud-capacity`). At first-use, we follow the flag
-// verbatim — `disabled` greys the cloud card and pre-selects local,
-// `degraded` shows a heads-up modal on Continue. The only relaxation
-// anywhere in the gate is "known paid user", and that requires a
-// signed-in session — which we don't have here. So first-use cannot
-// soften, by design.
-const cloudCapacity = useCloudCapacity()
-const capacityReady = ref(false)
 /** What the picker rendered as default before the user could interact —
  *  used to split `fork_chosen` conversion by signal-vs-defaulting: a
  *  user keeping the default pick is different from a user actively
@@ -149,8 +139,8 @@ const initialDefaultChoice = ref<'cloud' | 'local' | null>('local')
 
 /** Read the experiment variant (boot-time cache, sync once main is
  *  ready) and decide which card should be the pre-selected default.
- *  Capacity-disabled and Legacy-Desktop branches still force Local
- *  ahead of the experiment — see `applyForkExperimentDefault` below. */
+ *  The Legacy-Desktop branch still forces Local ahead of the experiment —
+ *  see `applyForkExperimentDefault` below. */
 function mapFlagToVariant(flagValue: string | boolean | null | undefined): ForkVariant {
   if (flagValue === 'cloud') return 'cloud-default'
   if (flagValue === 'none') return 'no-default'
@@ -207,9 +197,17 @@ async function loadCloudFreeRunsEnabled(): Promise<boolean> {
   }
 }
 
+async function loadCloudUserTier(): Promise<CloudUserTier> {
+  try {
+    return await window.api.getCloudUserTier()
+  } catch {
+    return 'unknown'
+  }
+}
+
 /** Apply the resolved variant to the picker state, respecting the
- *  hard precedence rules (legacy-desktop > capacity-disabled >
- *  experiment). Idempotent — safe to call from `onMounted` and from
+ *  hard precedence rule (legacy-desktop > experiment). Idempotent —
+ *  safe to call from `onMounted` and from
  *  `open()` on takeover replay. Always lands on a terminal state for
  *  both refs so the caller doesn't need to seed defaults first. */
 function applyForkExperimentDefault(variant: ForkVariant): void {
@@ -218,13 +216,6 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
   // whole point of the legacy-detection branch. The experiment never
   // overrides it.
   if (hasLegacyDesktop.value) {
-    pickedChoice.value = 'local'
-    initialDefaultChoice.value = 'local'
-    return
-  }
-  // Capacity kill-switch also forces Local: cloud can't be booked, so
-  // there's no point pre-selecting it.
-  if (cloudCapacity.isDisabled()) {
     pickedChoice.value = 'local'
     initialDefaultChoice.value = 'local'
     return
@@ -256,28 +247,15 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 onMounted(async () => {
   // All best-effort and independently fail-safe, so the picker still
   // works if any of them errors.
-  const [variant, , freeRunsEnabled] = await Promise.all([
+  const [variant, freeRunsEnabled, userTier] = await Promise.all([
     loadForkExperimentVariant(),
-    cloudCapacity.whenReady(),
-    loadCloudFreeRunsEnabled()
+    loadCloudFreeRunsEnabled(),
+    loadCloudUserTier()
   ])
   forkExperimentVariant.value = variant
   cloudFreeRunsEnabled.value = freeRunsEnabled
+  cloudUserTier.value = userTier
   applyForkExperimentDefault(variant)
-  capacityReady.value = true
-})
-// Defensive: if the user manually flipped to Cloud and the kill-switch
-// then transitions to `disabled` mid-flow, snap them back to Local so
-// they can't proceed into a disabled cloud path.
-watch(cloudCapacity.status, (status) => {
-  if (status === 'disabled' && pickedChoice.value === 'cloud') {
-    pickedChoice.value = 'local'
-  }
-})
-const cloudDescriptionKey = computed(() => {
-  if (cloudCapacity.isDisabled()) return 'cloud.capacityDisabledHint'
-  if (cloudCapacity.isDegraded()) return 'cloud.capacityDegradedHint'
-  return 'firstUse.cloudDesc'
 })
 /** Express-install opt-in modifier on the start screen. Defaults OFF
  *  so users land on Configure (install path, GPU, options) before any
@@ -349,6 +327,7 @@ const CLOUD_RECO_REASON_ID = 'first-use-cloud-reco-reason'
 /** Starts `false` to match its fail-closed direction, so the pill never
  *  flashes in and back out while the boot fetch is in flight. */
 const cloudFreeRunsEnabled = ref(false)
+const cloudUserTier = ref<CloudUserTier>('unknown')
 /** `deriveGpuTier` folds two different situations into `cpu_only`: no GPU at
  *  all (`vendor` empty), and a discrete card whose VRAM came back unreadable
  *  (`vendor` set, `vramGb` null → `vram <= 0`). Only the first deserves the
@@ -360,16 +339,13 @@ const cloudFreeRunsEnabled = ref(false)
 const vramUnverified = computed(
   () => (gpuVendor.value === 'nvidia' || gpuVendor.value === 'amd') && gpuVramGb.value === null
 )
-/** Whether this machine's hardware nudges toward Cloud. Suppressed when
- *  Cloud is capacity-disabled: that card is unclickable, so recommending
- *  it would be a dead end. */
+/** Whether this machine's hardware nudges toward Cloud. */
 const hardwareRecommendsCloud = computed(
   () =>
     hardwareChecked.value &&
     gpuTier.value !== null &&
     RECO_GPU_TIERS.has(gpuTier.value) &&
-    !vramUnverified.value &&
-    !cloudCapacity.isDisabled()
+    !vramUnverified.value
 )
 // On recommended hardware, pre-select neither card — force an explicit
 // pick instead of defaulting to Local. A watcher rather than part of
@@ -523,18 +499,10 @@ async function onContinue(): Promise<void> {
     choice: pickedChoice.value,
     has_legacy_desktop: hasLegacyDesktop.value,
     express_install: expressInstall.value,
-    // Capacity-protection context. `capacity_status` is the resolved
-    // boot-time `desktop-cloud-capacity` flag value at the moment of
-    // commit; `was_default` is true when the user kept whatever card
-    // was pre-selected for them, false when they actively flipped.
-    // `user_tier` is whatever was hydrated from the persisted cache
-    // at boot — `unknown` for users who've never opened cloud on this
-    // device, `free` / `paid` for returning users. Lets the funnel
-    // split conversion by (a) signal-vs-defaulting and (b) the gate
-    // tier the user would have hit on dashboard / IPP.
-    capacity_status: cloudCapacity.status.value,
+    // `was_default` is true when the user kept whatever card was
+    // pre-selected for them, false when they actively flipped.
     was_default: pickedChoice.value === initialDefaultChoice.value,
-    user_tier: cloudCapacity.tier.value,
+    user_tier: cloudUserTier.value,
     // A/B attribution: identify which experiment arm this pick belongs
     // to so PostHog can compute cloud-pick rate, subscription rate, and
     // bounce-after-cloud rate per variant. The key is captured too so
@@ -570,31 +538,6 @@ async function routePostStart(): Promise<void> {
     return
   }
   if (pickedChoice.value === 'cloud') {
-    // Cloud capacity gate. `normal` resolves instantly; `degraded`
-    // shows a confirm modal (user can back out); `disabled` resolves
-    // false. There's an inherent race: the user can hit Continue with
-    // `cloud` still picked before the boot-fetch reactive auto-flip
-    // runs (PostHog network ~ a few hundred ms). When that happens,
-    // un-stick `isContinuing` so the spinner clears, and flip the
-    // pick to Local so a second Continue click just proceeds (the
-    // Cloud card is already visually greyed). User sees: spinner
-    // disappears, Local is now selected, hit Continue → moves on.
-    if (!(await cloudCapacity.confirmEntry('first_use'))) {
-      // Separate event from `fork_chosen` because the user picked cloud
-      // but never actually entered it — counting them as a cloud
-      // converter would inflate the dashboard. `disabled` means the
-      // kill-switch was hard-off (composable returned false directly);
-      // `degraded_declined` means the user saw the heavy-load modal
-      // and backed out.
-      emitTelemetryAction('comfy.desktop.first_use.cloud_blocked', {
-        reason: cloudCapacity.isDisabled() ? 'disabled' : 'degraded_declined',
-        capacity_status: cloudCapacity.status.value,
-        user_tier: cloudCapacity.tier.value
-      })
-      isContinuing.value = false
-      if (cloudCapacity.isDisabled()) pickedChoice.value = 'local'
-      return
-    }
     emitCompleted('cloud')
     emit('complete-cloud')
   } else if (hasLegacyDesktop.value && migrateExisting.value) {
@@ -668,7 +611,6 @@ function chooseMigrate(): void {
  *  picker seeded for them). Flipping `userHasPicked` stops late boot
  *  defaults and hardware results from replacing a deliberate choice. */
 function pickChoice(choice: 'cloud' | 'local'): void {
-  if (choice === 'cloud' && cloudCapacity.isDisabled()) return
   userHasPicked.value = true
   pickedChoice.value = choice
 }
@@ -677,19 +619,15 @@ function pickChoice(choice: 'cloud' | 'local'): void {
  *  Without one the group leaves the tab order entirely and — with
  *  Continue gated on an explicit pick — keyboard users are stuck. Cloud
  *  is the entry point (first in DOM order, and the recommended card in
- *  this state); Local takes over when Cloud is unselectable. */
-const keyboardEntryChoice = computed<'cloud' | 'local'>(() =>
-  cloudCapacity.isDisabled() ? 'local' : 'cloud'
-)
+ *  this state). */
+const keyboardEntryChoice = 'cloud' as const
 
 /** Radiogroup arrow-key handler for the Cloud / Local cards.
  *  WAI-ARIA APG §3.15: arrow keys cycle the checked radio and move DOM
  *  focus along with it. When `pickedChoice` is `null` (the no-default
  *  experiment arm, or recommended hardware, before the user has touched
  *  the picker), arrow-down enters at Cloud and arrow-up enters at Local
- *  so keyboard users can make a pick without reaching for the mouse.
- *  Capacity-disabled Cloud is skipped rather than selected — the pointer
- *  path can't select it either. */
+ *  so keyboard users can make a pick without reaching for the mouse. */
 function onStartCardsKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null
   if (!target?.closest('[role="radio"]')) return
@@ -698,21 +636,14 @@ function onStartCardsKeydown(e: KeyboardEvent): void {
   const forward = e.key === 'ArrowRight' || e.key === 'ArrowDown'
   const backward = e.key === 'ArrowLeft' || e.key === 'ArrowUp'
   if (!forward && !backward) return
-  // Walk at most `order.length` steps so an all-disabled group (not
-  // reachable today, but the loop shouldn't depend on that) terminates.
-  let next = currentIndex
-  for (let stepIndex = 0; stepIndex < order.length; stepIndex++) {
-    next =
-      next < 0
-        ? forward
-          ? 0
-          : order.length - 1
-        : (next + (forward ? 1 : -1) + order.length) % order.length
-    const candidate = order[next]
-    if (candidate && !(candidate === 'cloud' && cloudCapacity.isDisabled())) break
-  }
+  const next =
+    currentIndex < 0
+      ? forward
+        ? 0
+        : order.length - 1
+      : (currentIndex + (forward ? 1 : -1) + order.length) % order.length
   const nextChoice = order[next]
-  if (!nextChoice || (nextChoice === 'cloud' && cloudCapacity.isDisabled())) return
+  if (!nextChoice) return
   e.preventDefault()
   pickChoice(nextChoice)
   // Captured synchronously: `currentTarget` is only set while the event is
@@ -757,8 +688,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   acceptedTos.value = false
   // Safe baseline: Local pre-selected. The variant-aware apply call below
   // overrides to Cloud (`'cloud-default'` arm), null (`'no-default'` arm,
-  // or the hardware-recommends-cloud override), when neither hard gate
-  // (legacy-desktop, capacity-disabled) applies. Reset unconditionally
+  // or the hardware-recommends-cloud override), when the legacy-desktop
+  // branch does not apply. Reset unconditionally
   // first so the takeover-replay path lands on a clean slate even if the
   // variant hasn't resolved yet on first mount.
   pickedChoice.value = 'local'
@@ -944,24 +875,16 @@ defineExpose({ open, resetContinue })
           <ChoiceCard
             class="start-card-cloud"
             :class="{
-              'start-card-cloud--capacity-disabled': cloudCapacity.isDisabled(),
               'start-card-cloud--reco-dimmed': hardwareRecommendsCloud && pickedChoice === 'local'
             }"
             selectable
             :selected="pickedChoice === 'cloud'"
             :tab-stop="pickedChoice === null && keyboardEntryChoice === 'cloud'"
             :aria-describedby="hardwareRecommendsCloud ? CLOUD_RECO_REASON_ID : undefined"
-            :aria-disabled="cloudCapacity.isDisabled() ? true : undefined"
             glow
             :label="$t('cloud.label')"
-            :tagline="
-              cloudCapacity.isDisabled()
-                ? $t('cloud.capacityDisabled')
-                : cloudCapacity.isDegraded()
-                  ? $t('cloud.capacityDegraded')
-                  : $t('firstUse.cloudTagline')
-            "
-            :description="$t(cloudDescriptionKey)"
+            :tagline="$t('firstUse.cloudTagline')"
+            :description="$t('firstUse.cloudDesc')"
             data-testid="first-use-pick-cloud"
             @click="pickChoice('cloud')"
           >
@@ -978,21 +901,15 @@ defineExpose({ open, resetContinue })
                 </button>
               </Tooltip>
               <!-- 'unknown' tier means this device has never authenticated
-                   with Cloud (useCloudCapacity docs the tri-state) — the
+                   with Cloud — the
                    trial pill is for people who haven't tried it yet, not a
                    permanent fixture on the card. Gated on cloud's own
                    free-tier flag, not the recommendation's switch: the
                    free tier is an independent offer, so the pill follows
                    the free tier rather than the GPU upsell. Hidden today
-                   because free tier isn't live yet. Also suppressed when
-                   Cloud is capacity-disabled and the card is
-                   unclickable. -->
+                   because free tier isn't live yet. -->
               <span
-                v-if="
-                  cloudFreeRunsEnabled &&
-                  !cloudCapacity.isDisabled() &&
-                  cloudCapacity.tier.value === 'unknown'
-                "
+                v-if="cloudFreeRunsEnabled && cloudUserTier === 'unknown'"
                 class="start-cloud-runs-pill"
                 data-testid="first-use-cloud-runs-pill"
                 >{{ $t('firstUse.cloudFreeRunsPill') }}</span
@@ -1331,15 +1248,6 @@ defineExpose({ open, resetContinue })
  * Cloud card the same way the original pick step did. */
 .start-card-cloud {
   anchor-name: --brand-beam-target;
-}
-/* Capacity-protection visual when cloud is currently disabled by the
- * `desktop-cloud-capacity` flag: grey the card and block pointer
- * interaction. The proceed handler also refuses to advance with cloud
- * picked, so this is defense-in-depth + a clear signal to the user. */
-.start-card-cloud--capacity-disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  pointer-events: none;
 }
 /* The card border's only job is showing which card is selected (Choice
  * Card's `--selected` state) — it never carries the hardware-recommendation

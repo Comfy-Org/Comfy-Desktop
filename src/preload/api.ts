@@ -188,7 +188,6 @@ export function buildElectronApi(): ElectronApi {
     // App
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
-    getCloudCapacity: () => ipcRenderer.invoke('get-cloud-capacity'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
     getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
