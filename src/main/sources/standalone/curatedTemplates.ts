@@ -40,8 +40,8 @@ export type CuratedTemplate = CuratedTemplateBase &
 
 /** Tab order in the picker — one tab per modality that has ≥1 curated template. */
 export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
-  'image',
   'video',
+  'image',
   '3d',
   'audio'
 ]
@@ -165,13 +165,14 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
 
   // --- Video ---
   {
-    id: 'text_to_video_wan',
+    id: 'video_minimax_h3_t2v',
     modality: 'video',
     recommended: true,
     snapshot: {
-      title: 'Wan 2.1 Text to Video',
-      description: 'Generate videos from text prompts using Wan 2.1.',
-      sizeBytes: 9824737690,
+      title: 'MiniMax H3: Text to Video',
+      description:
+        'Generate video with native stereo audio directly from a text prompt using MiniMax H3, an omni-modal model that synthesizes voice, sound effects, and music in a single pass. Output is up to 2K resolution, 24fps, and roughly 15 seconds long, with no file inputs required — just a prompt to one video output. Ideal for rapid concept visualization, social media content creation, and audio-synced storytelling.',
+      sizeBytes: 56908316672,
       mediaSubtype: 'webp'
     }
   },

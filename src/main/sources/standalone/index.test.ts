@@ -251,8 +251,13 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
     const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
     const skip = options.find((o) => o.value === NO_TEMPLATE_VALUE)!
     expect(skip.recommended).toBeFalsy()
+    // Options come back in tab order, which the manifest does not follow.
     const recommendedIds = options.filter((o) => o.recommended).map((o) => o.value)
-    expect(recommendedIds).toEqual(CURATED_TEMPLATES.filter((t) => t.recommended).map((t) => t.id))
+    expect(recommendedIds.sort()).toEqual(
+      CURATED_TEMPLATES.filter((t) => t.recommended)
+        .map((t) => t.id)
+        .sort()
+    )
   })
 
   it('falls back to snapshot metadata when the index fetch fails (offline)', async () => {

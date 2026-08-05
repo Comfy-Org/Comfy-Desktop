@@ -57,9 +57,9 @@ function mountPicker(
 describe('TemplatePickerStep', () => {
   it('renders one tab per populated modality, excluding the none sentinel', () => {
     const tabs = mountPicker().findAll('[role="tab"]')
-    expect(tabs).toHaveLength(2) // Image + Video
-    expect(tabs[0]!.text()).toContain('Image')
-    expect(tabs[1]!.text()).toContain('Video')
+    expect(tabs).toHaveLength(2) // Video + Image
+    expect(tabs[0]!.text()).toContain('Video')
+    expect(tabs[1]!.text()).toContain('Image')
   })
 
   it("shows only the active tab's templates and never the none sentinel", () => {
@@ -72,7 +72,7 @@ describe('TemplatePickerStep', () => {
 
   it('switches visible templates when another tab is clicked', async () => {
     const wrapper = mountPicker()
-    await wrapper.findAll('[role="tab"]')[1]!.trigger('click') // Video
+    await wrapper.findAll('[role="tab"]')[0]!.trigger('click') // Video
     const rows = wrapper.findAll('button[role="radio"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Wan Video')

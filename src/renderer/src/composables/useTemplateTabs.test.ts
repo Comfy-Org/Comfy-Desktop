@@ -25,9 +25,9 @@ function setup(options: FieldOption[], selectedValue: string | null = null) {
 }
 
 describe('useTemplateTabs', () => {
-  it('builds one tab per populated modality, in Image → Video → 3D → Audio order', () => {
+  it('builds one tab per populated modality, in Video → Image → 3D → Audio order', () => {
     const { tabs } = setup([NONE, AUD, THREED, VID, IMG_A])
-    expect(tabs.value.map((tab) => tab.modality)).toEqual(['image', 'video', '3d', 'audio'])
+    expect(tabs.value.map((tab) => tab.modality)).toEqual(['video', 'image', '3d', 'audio'])
   })
 
   it('counts templates per modality', () => {

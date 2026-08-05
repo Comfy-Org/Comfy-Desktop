@@ -5,7 +5,7 @@ import type { FieldOption } from '../types/ipc'
 /** Modality tab order + its glyph. Mirrors the main-process curated manifest's
  *  `TEMPLATE_MODALITY_ORDER`; kept here so the renderer owns its own UI ordering
  *  without reaching across the process boundary. */
-const MODALITY_ORDER = ['image', 'video', '3d', 'audio'] as const
+const MODALITY_ORDER = ['video', 'image', '3d', 'audio'] as const
 type Modality = (typeof MODALITY_ORDER)[number]
 
 const MODALITY_GLYPH: Record<Modality, Component> = {
