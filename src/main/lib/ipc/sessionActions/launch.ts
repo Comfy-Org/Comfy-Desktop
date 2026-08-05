@@ -925,7 +925,16 @@ async function runLaunch(
     const mode = (inst.launchMode as string | undefined) || 'window'
     _addSession(
       installationId,
-      { proc, port: 0, mode, installationName: inst.name },
+      {
+        proc,
+        port: 0,
+        mode,
+        installationName: inst.name,
+        flushTelemetry: () => {
+          execTap.flushSummary()
+          hwTap.flushSummary()
+        }
+      },
       Date.now() - launchStartedAt
     )
 
@@ -1384,7 +1393,16 @@ async function runLaunch(
   const bootTimeMs = Date.now() - launchStartedAt
   _addSession(
     installationId,
-    { proc, port: launchCmd.port!, mode, installationName: inst.name },
+    {
+      proc,
+      port: launchCmd.port!,
+      mode,
+      installationName: inst.name,
+      flushTelemetry: () => {
+        execTap.flushSummary()
+        hwTap.flushSummary()
+      }
+    },
     bootTimeMs,
     { portRetries, rebootRetries }
   )

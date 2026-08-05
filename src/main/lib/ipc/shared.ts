@@ -272,6 +272,8 @@ export interface SessionInfo {
   mode: string
   installationName: string
   startedAt: number
+  /** Synchronously queue final telemetry before app-level shutdown drains the SDK. */
+  flushTelemetry?: () => void
 }
 
 export interface LaunchCallbackInfo {
@@ -1034,7 +1036,7 @@ export {
 
 export function _addSession(
   installationId: string,
-  { proc, port, url, mode, installationName }: Omit<SessionInfo, 'startedAt'>,
+  { proc, port, url, mode, installationName, flushTelemetry }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
    *  renderer's `instance_started` telemetry can carry them without a
@@ -1048,6 +1050,7 @@ export function _addSession(
     url,
     mode,
     installationName,
+    flushTelemetry,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1614,13 +1617,18 @@ export async function getActiveDetails(): Promise<QuitActiveItem[]> {
 /** Test-only: register a synthetic running session without spawning ComfyUI. Mirrors
  *  `_addSession`'s side effects so the REQUIRES_STOPPED guard fires; `stopRunning` handles
  *  the null `proc`. Called only via `__e2e.seedRunningSession`. */
-export function _test_addRunningSession(installationId: string, installationName: string): void {
+export function _test_addRunningSession(
+  installationId: string,
+  installationName: string,
+  flushTelemetry?: () => void
+): void {
   _runningSessions.set(installationId, {
     proc: null,
     port: 0,
     url: undefined,
     mode: 'window',
     installationName,
+    flushTelemetry,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {
@@ -1646,5 +1654,15 @@ export function cancelAll(): void {
     abort.abort()
   }
   _operationAborts.clear()
-  stopRunning()
+  // `before-quit` starts draining PostHog before asynchronous process kills
+  // settle. Queue each session's final summary synchronously so shutdown cannot
+  // clear the client before the process-exit handlers get a chance to flush.
+  for (const session of _runningSessions.values()) {
+    try {
+      session.flushTelemetry?.()
+    } catch {
+      // Telemetry must never block application teardown.
+    }
+  }
+  void stopRunning()
 }
