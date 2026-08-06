@@ -194,6 +194,20 @@ export function installOutputDir(installPath: string): string {
   return path.join(resolveComfyDir(installPath), 'output')
 }
 
+/** Re-home a copied install's promoted download target. A `modelDirsPrimary`
+ *  that points at the *source* install's own models dir is an absolute path
+ *  inside the source, so the copy must point at its own models dir instead;
+ *  shared / per-install external targets apply to the copy as-is. */
+export function rehomeOwnModelsPrimary(
+  primary: string,
+  sourceInstallPath: string,
+  destInstallPath: string
+): string {
+  return isSamePath(primary, installModelsDir(sourceInstallPath))
+    ? installModelsDir(destInstallPath)
+    : primary
+}
+
 /**
  * @param primaryDir Resolved path that should carry `is_default: true`, or null
  *   for no default (lets ComfyUI keep its built-in `<comfyDir>/models` default).
@@ -527,8 +541,17 @@ export function resolveLauncherModelDirs(
   sharedModelsDirs: string[]
 ): LauncherModelDirs {
   const useShared = (inst.useSharedModels as boolean | undefined) !== false
-  const shared = useShared ? sharedModelsDirs.map((d) => path.resolve(d)) : []
-  const instance = ((inst.modelDirs as string[] | undefined) ?? []).map((d) => path.resolve(d))
+  // The install's own models dir is ComfyUI's built-in root, not a launcher
+  // dir: exclude it so it can't end up in the generated YAML (double-included)
+  // even when a stale record or a shared-dir entry names it.
+  const ownDir = inst.installPath ? path.resolve(installModelsDir(inst.installPath)) : null
+  const notOwn = (d: string): boolean => ownDir === null || !samePath(ownDir, d)
+  const shared = useShared
+    ? sharedModelsDirs.map((d) => path.resolve(d)).filter(notOwn)
+    : []
+  const instance = ((inst.modelDirs as string[] | undefined) ?? [])
+    .map((d) => path.resolve(d))
+    .filter(notOwn)
   const dirs: string[] = []
   for (const dir of [...shared, ...instance]) {
     if (!dirs.some((d) => samePath(d, dir))) dirs.push(dir)

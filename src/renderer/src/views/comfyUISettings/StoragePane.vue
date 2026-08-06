@@ -74,15 +74,57 @@ const modal = useModal()
 
 const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
 
-/** Platform-aware path equality. Renderer paths are already absolute (browse
- *  results, backend-computed defaults, stored dirs), so no resolve is needed. */
-function samePath(a: string, b: string): boolean {
-  if (!a || !b) return false
-  return bridge?.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+/** Canonicalize a path for comparison, matching the backend's `isSamePath`
+ *  (`path.resolve` + case-insensitive on Windows) as closely as the renderer
+ *  can without fs/cwd access: unify separators, collapse repeats, resolve
+ *  `.`/`..` segments lexically, drop trailing separators, and ignore case on
+ *  Windows. Renderer paths are already absolute (browse results,
+ *  backend-computed defaults, stored dirs); a drive-relative form like
+ *  `C:foo` needs the main process's per-drive cwd, so it is left as-is. */
+function canonPath(p: string): string {
+  const win = bridge?.platform === 'win32'
+  const sep = win ? '\\' : '/'
+  let rest = win ? p.replace(/\//g, '\\') : p
+  // Drive-relative forms ("C:", "C:foo") resolve against the drive's cwd,
+  // which only the main process knows: normalize case but leave segments.
+  if (win && /^[a-zA-Z]:/.test(rest) && rest[2] !== '\\') {
+    return rest.toLowerCase()
+  }
+  let root = ''
+  let clampDepth = 0
+  if (win) {
+    if (rest.startsWith('\\\\')) {
+      root = '\\\\'
+      rest = rest.slice(2)
+      clampDepth = 2 // \\server\share is the UNC root; ".." can't climb past it
+    } else if (/^[a-zA-Z]:\\/.test(rest)) {
+      root = rest.slice(0, 2) + '\\'
+      rest = rest.slice(2)
+    }
+  } else if (rest.startsWith('/')) {
+    root = '/'
+  }
+  const parts: string[] = []
+  for (const seg of rest.split(sep)) {
+    if (!seg || seg === '.') continue
+    if (seg === '..') {
+      if (parts.length > clampDepth && parts[parts.length - 1] !== '..') parts.pop()
+      else if (!root) parts.push('..')
+      continue
+    }
+    parts.push(seg)
+  }
+  const out = root + parts.join(sep)
+  return win ? out.toLowerCase() : out
 }
 
-/** Edits to these per-install fields trigger the restart prompt. Shared dirs
- *  are no longer editable from this pane, so no global-touch tracking. */
+/** Platform-aware path equality on canonicalized forms. */
+function samePath(a: string, b: string): boolean {
+  if (!a || !b) return false
+  return canonPath(a) === canonPath(b)
+}
+
+/** Edits to these per-install fields trigger the restart prompt. */
 const PER_INSTALL_STORAGE_FIELD_IDS = [
   'useSharedModels',
   'useSharedInput',
@@ -209,18 +251,29 @@ const installOwnModelsDir = computed<string>(() => {
   return typeof v === 'string' ? v : ''
 })
 
+/** Whether a path is the install's own models dir, which always renders as
+ *  the dedicated locked row (mirroring the backend, which excludes it from
+ *  launcher-managed dirs), never as a shared/extra row. */
+function isOwnModelsDir(p: string): boolean {
+  return installOwnModelsDir.value !== '' && samePath(p, installOwnModelsDir.value)
+}
+
 /** Global shared dir paths this instance includes; empty when the toggle is off. */
 const includedSharedPaths = computed<string[]>(() =>
-  useSharedModelsEnabled.value ? props.snapshot.modelsDirs.map((d) => d.path) : []
+  useSharedModelsEnabled.value
+    ? props.snapshot.modelsDirs.map((d) => d.path).filter((p) => !isOwnModelsDir(p))
+    : []
 )
 
-/** Per-instance extras, hiding duplicates of an included shared dir (the
- *  backend dedupes the effective set the same way - shared dirs first) and
- *  collapsing repeated stored paths into one row (remove/replace already
- *  update every matching stored entry via `samePath`). */
+/** Per-instance extras, hiding the install-own dir (it has its own locked row)
+ *  and duplicates of an included shared dir (the backend dedupes the effective
+ *  set the same way - shared dirs first), and collapsing repeated stored paths
+ *  into one row (remove/replace already update every matching stored entry via
+ *  `samePath`). */
 const visibleExtras = computed<string[]>(() => {
   const out: string[] = []
   for (const p of currentExtras()) {
+    if (isOwnModelsDir(p)) continue
     if (includedSharedPaths.value.some((s) => samePath(s, p))) continue
     if (out.some((s) => samePath(s, p))) continue
     out.push(p)

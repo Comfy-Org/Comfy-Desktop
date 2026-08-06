@@ -16,7 +16,7 @@ interface BridgeState {
   browseFolderReturn: string | null
 }
 
-function installMockBridge(): BridgeState {
+function installMockBridge(opts: { platform?: string } = {}): BridgeState {
   const state: BridgeState = {
     updateFieldCalls: [],
     setModelsDirsCalls: [],
@@ -26,6 +26,7 @@ function installMockBridge(): BridgeState {
     browseFolderReturn: null
   }
   const bridge = {
+    platform: opts.platform,
     globalSettingsUpdateField: async (id: string, value: unknown) => {
       state.updateFieldCalls.push({ id, value })
       return { ok: true }
@@ -281,8 +282,8 @@ describe('StoragePane', () => {
     expect(wrapper.find('.storage-manage-link').exists()).toBe(false)
   })
 
-  // The old always-on scope note is gone: sharing scope is conveyed inline
-  // (shared badges, header toggles, manage actions).
+  // Sharing scope is conveyed inline (shared badges, header toggles, manage
+  // actions); the note area is reserved for the restart warning.
   it('renders no storage note when nothing is pending', async () => {
     installMockBridge()
     const wrapper = mountPane()
@@ -340,6 +341,140 @@ describe('StoragePane', () => {
       const [field, value] = emitted![0] as [{ id: string }, unknown]
       expect(field.id).toBe('modelDirsPrimary')
       expect(value).toBe('/a/models')
+    })
+
+    it('matches a promoted primary despite trailing or duplicated separators', async () => {
+      installMockBridge()
+      // Stored primary differs from the dir entry only in separator noise; the
+      // backend's path.resolve treats them as equal, so the renderer must too.
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['/a/models', '/b/models'], { primary: '/a//models/' })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('/a/models')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+    })
+
+    it('recognizes an install-own primary stored with a trailing separator', async () => {
+      installMockBridge()
+      // sharedOn makes this discriminating: without canonicalization the raw
+      // '/own/models/' matches nothing and the first shared dir becomes
+      // primary instead of the own row.
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['/a/models'], { sharedOn: true, primary: '/own/models/' })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      // Canonicalization maps '/own/models/' onto the install-own row: it stays
+      // the primary on top instead of falling back to a shared/external dir.
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+    })
+
+    it('matches a promoted primary containing . and .. segments', async () => {
+      installMockBridge()
+      // The backend's path.resolve collapses dot segments; the renderer's
+      // lexical canonicalization must agree so the same dir shows as primary.
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['/a/models', '/b/models'], { primary: '/a/x/.././/models' })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('/a/models')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+    })
+
+    it('matches Windows path forms differing in case, separators, and dot segments', async () => {
+      installMockBridge({ platform: 'win32' })
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['C:\\Data\\Models'], {
+          primary: 'c:/data/x/..//MODELS/',
+          own: 'C:\\Own\\Models'
+        })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('C:\\Data\\Models')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+    })
+
+    it('matches UNC path forms differing in separator noise', async () => {
+      installMockBridge({ platform: 'win32' })
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['\\\\server\\share\\models'], {
+          primary: '\\\\server\\share\\Models\\',
+          own: 'C:\\Own\\Models'
+        })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('\\\\server\\share\\models')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+    })
+
+    it('clamps .. at the UNC share root, matching path.win32.resolve', async () => {
+      installMockBridge({ platform: 'win32' })
+      // resolve('\\\\server\\share\\models\\..') clamps to the share root, so
+      // it must match a row for '\\\\server\\share' - and never climb above it.
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['\\\\server\\share'], {
+          primary: '\\\\server\\share\\models\\..',
+          own: 'C:\\Own\\Models'
+        })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('\\\\server\\share')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+    })
+
+    it('does not equate a drive-relative path with a drive-absolute one', async () => {
+      installMockBridge({ platform: 'win32' })
+      // 'c:data\\models' resolves against the C: drive's cwd (unknown to the
+      // renderer), so it must NOT be treated as 'C:\\Data\\Models'.
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['C:\\Data\\Models'], {
+          primary: 'c:data\\models',
+          own: 'C:\\Own\\Models'
+        })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      const dataRow = rows.find((r) => r.find('.models-dir-name').text() === 'C:\\Data\\Models')!
+      expect(dataRow.find('.tag-primary').exists()).toBe(false)
+    })
+
+    it('renders the install-own dir once when it also appears in modelDirs', async () => {
+      installMockBridge()
+      // A stale record can persist the own dir as an extra; it must collapse
+      // into the single locked own row (the backend excludes it the same way).
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['/own/models', '/a/models'])
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows).toHaveLength(2)
+      const names = rows.map((r) => r.find('.models-dir-name').text())
+      expect(names.filter((n) => n === '/own/models')).toHaveLength(1)
+      // Still the locked row, not a removable extra.
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
+      expect(rows[0]!.find('.tag-local').exists()).toBe(true)
+    })
+
+    it('renders the install-own dir once when a shared dir points at it', async () => {
+      installMockBridge()
+      // Default snapshot shares '/home/u/ComfyUI/models'; make that the
+      // install's own dir with sharing on: it must render only as the locked
+      // own row, not additionally as a read-only shared row.
+      const wrapper = mountPaneWithSections(
+        makeStorageSections([], { sharedOn: true, own: '/home/u/ComfyUI/models' })
+      )
+      await nextTick()
+      const rows = wrapper.findAll('.models-dir-row')
+      const names = rows.map((r) => r.find('.models-dir-name').text())
+      expect(names.filter((n) => n === '/home/u/ComfyUI/models')).toHaveLength(1)
+      expect(names).toContain('/mnt/extra/models')
     })
 
     it('puts the promoted external dir (primary) on top and sinks install-own to the bottom', async () => {
@@ -426,7 +561,7 @@ describe('StoragePane', () => {
       // The effective primary stays on the first shared dir.
       expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
       // The per-instance extra keeps its editable affordances even while
-      // shared dirs are included (additive, no more either/or).
+      // shared dirs are included (the two sources are additive).
       const extraRow = rows[2]!
       expect(extraRow.find('.models-dir-name').text()).toBe('/a/models')
       expect(extraRow.find('.models-dir-action[aria-label^="Browse"]').exists()).toBe(true)

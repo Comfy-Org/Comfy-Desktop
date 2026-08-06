@@ -24,6 +24,7 @@ const {
   resolveExtraModelPaths,
   resolveInstallModelSearchPaths,
   resolveLauncherModelDirs,
+  rehomeOwnModelsPrimary,
   mapLegacyFolderType
 } = await import('./models')
 
@@ -385,6 +386,40 @@ describe('resolveLauncherModelDirs', () => {
       [path.join(tmp, 'shared')]
     )
     expect(res.primaryDir).toBeNull()
+  })
+
+  it('excludes the install-own models dir from launcher dirs wherever it appears', () => {
+    const own = path.join(tmp, 'install', 'ComfyUI', 'models')
+    const ext = path.join(tmp, 'ext')
+    // Own dir listed both as a shared dir and a per-install dir: neither copy
+    // may leak into the YAML dirs (ComfyUI already searches it built-in).
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirs: [own, ext] }), [own])
+    expect(res.dirs).toEqual([path.resolve(ext)])
+  })
+})
+
+describe('rehomeOwnModelsPrimary', () => {
+  let tmp: string
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rehome-primary-'))
+  })
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('remaps a source-own models target to the destination-own models dir', () => {
+    const src = path.join(tmp, 'src')
+    const dest = path.join(tmp, 'dest')
+    const sourceOwn = path.join(src, 'ComfyUI', 'models')
+    const result = rehomeOwnModelsPrimary(sourceOwn, src, dest)
+    expect(path.resolve(result)).toBe(path.resolve(path.join(dest, 'ComfyUI', 'models')))
+  })
+
+  it('preserves a shared or per-install external target unchanged', () => {
+    const src = path.join(tmp, 'src')
+    const dest = path.join(tmp, 'dest')
+    const external = path.join(tmp, 'shared-models')
+    expect(rehomeOwnModelsPrimary(external, src, dest)).toBe(external)
   })
 })
 

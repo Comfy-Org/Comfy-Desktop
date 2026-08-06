@@ -75,7 +75,8 @@ import {
   discoverExtraModelFolders,
   instanceModelPathsYaml,
   resolveLauncherModelDirs,
-  isSamePath
+  isSamePath,
+  rehomeOwnModelsPrimary
 } from '../models'
 import { copyDirWithProgress } from '../copy'
 import { fetchJSON } from '../fetch'
@@ -913,6 +914,16 @@ export async function performCopy(
       copiedFromName: inst.name,
       copiedAt: new Date().toISOString(),
       copyReason
+    }
+
+    // A promoted download target that names the source's own models dir is an
+    // absolute path inside the source install; point the copy at its own.
+    if (typeof recordData.modelDirsPrimary === 'string') {
+      recordData.modelDirsPrimary = rehomeOwnModelsPrimary(
+        recordData.modelDirsPrimary,
+        inst.installPath,
+        destPath
+      )
     }
 
     if (adopted) {

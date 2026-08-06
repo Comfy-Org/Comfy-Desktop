@@ -341,4 +341,34 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
       fs.readFileSync(path.join(srcRoot, 'ComfyUI', 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
     ).toBe(NODE_FILE_BODY)
   })
+
+  it("re-homes a source-own modelDirsPrimary to the copy's own models dir", async () => {
+    // Explicitly promoted install-own download target: the persisted path
+    // points inside the *source* tree, so the copy must point inside its own.
+    src.modelDirsPrimary = path.join(srcRoot, 'ComfyUI', 'models')
+    installationsStore.set(src.id, src)
+
+    const result = await invoke({ name: 'src-torch', stackId: STACK_ID })
+    expect(result.ok, `copy-pytorch failed: ${result.message ?? ''}`).toBe(true)
+
+    const newInst = installationsStore.get(result.newInstallationId!)
+    expect(newInst).toBeTruthy()
+    expect(path.resolve(newInst!.modelDirsPrimary as string)).toBe(
+      path.resolve(path.join(newInst!.installPath, 'ComfyUI', 'models'))
+    )
+  })
+
+  it('preserves a shared/external modelDirsPrimary unchanged on copy', async () => {
+    const external = path.join(tmpRoot, 'shared-models')
+    fs.mkdirSync(external, { recursive: true })
+    src.modelDirsPrimary = external
+    installationsStore.set(src.id, src)
+
+    const result = await invoke({ name: 'src-torch', stackId: STACK_ID })
+    expect(result.ok, `copy-pytorch failed: ${result.message ?? ''}`).toBe(true)
+
+    const newInst = installationsStore.get(result.newInstallationId!)
+    expect(newInst).toBeTruthy()
+    expect(newInst!.modelDirsPrimary).toBe(external)
+  })
 })
