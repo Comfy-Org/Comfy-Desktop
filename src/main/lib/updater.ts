@@ -3,6 +3,12 @@ import semver from 'semver'
 import todesktop from '@todesktop/runtime'
 import { autoUpdater as electronAutoUpdater } from 'electron-updater'
 import * as settings from '../settings'
+import { getSafeFileDiagnostics } from './safe-file'
+import {
+  clearStartupAttemptMarker,
+  readStartupAttemptMarker,
+  recordStartupAttempt
+} from './startup-attempt-marker'
 import { clearQuitReason, isSessionEnding, setQuitReason } from './quit-state'
 import { _broadcastToRenderer } from './ipc/shared'
 import { emit as emitTelemetry } from './telemetry'
@@ -760,6 +766,12 @@ type StartupInstallDecision =
         | 'session_ending'
         | 'no_pending'
         | 'loop_breaker'
+        | 'marker_unavailable'
+      /** Which marker home tripped a `loop_breaker` skip. `sidecar` means the
+       *  settings copy of the marker was GONE and only the sidecar remembered
+       *  the attempt - in the wild, that is direct evidence of the
+       *  settings.json rollback suspected in issue #1367. */
+      loopBreakerSource?: 'settings' | 'sidecar'
     }
 
 /**
@@ -788,8 +800,30 @@ function evaluateStartupInstall(): StartupInstallDecision {
   if (!pending || !isStrictlyNewerVersion(pending, app.getVersion())) {
     return { attempt: false, reason: 'no_pending' }
   }
+  // Loop-breaker: we already auto-attempted this exact version and are still
+  // on the old one. Checked in BOTH homes (settings + sidecar file): on
+  // machines where AV/indexer interference reverts settings.json to a stale
+  // snapshot (issue #1367), the settings copy alone kept getting erased,
+  // failing the loop-breaker open and reinstalling the same version on every
+  // boot.
   const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
-  if (lastAttempt === pending) return { attempt: false, reason: 'loop_breaker' }
+  if (lastAttempt === pending) {
+    return { attempt: false, reason: 'loop_breaker', loopBreakerSource: 'settings' }
+  }
+  const sidecar = readStartupAttemptMarker()
+  if (sidecar.state === 'present' && sidecar.marker.version === pending) {
+    // Only the sidecar remembers the attempt - the settings marker was lost
+    // between launches. Telemetry on this source is what confirms (or rules
+    // out) the settings.json rollback mechanism in the field.
+    return { attempt: false, reason: 'loop_breaker', loopBreakerSource: 'sidecar' }
+  }
+  if (sidecar.state === 'unavailable') {
+    // The sidecar EXISTS but can't be read (e.g. an AV lock outlasting the
+    // retry budget). It may record an attempt of exactly this version, so
+    // installing now could reopen the reinstall loop - fail closed. The
+    // explicit "update ready" pill install remains available.
+    return { attempt: false, reason: 'marker_unavailable' }
+  }
   return { attempt: true, version: pending }
 }
 
@@ -859,15 +893,28 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
     settings.set('pendingDownloadedUpdateVersion', undefined)
   }
+  const sidecar = readStartupAttemptMarker()
+  if (sidecar.state === 'present' && !isStrictlyNewerVersion(sidecar.marker.version, running)) {
+    clearStartupAttemptMarker()
+  }
 
   const decision = evaluateStartupInstall()
   if (!decision.attempt) {
     // Only the skips that mean "a staged update exists but we declined it"
     // carry canary signal; normal boots (no pending / feature off) stay silent.
-    if (decision.reason === 'loop_breaker' || decision.reason === 'session_ending') {
+    if (
+      decision.reason === 'loop_breaker' ||
+      decision.reason === 'session_ending' ||
+      decision.reason === 'marker_unavailable'
+    ) {
       emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
         reason: decision.reason,
-        version: settings.get('pendingDownloadedUpdateVersion') ?? null
+        version: settings.get('pendingDownloadedUpdateVersion') ?? null,
+        // Which marker home tripped a loop_breaker skip. `sidecar` means the
+        // settings copy was erased between launches - direct field evidence
+        // of the settings rollback suspected in issue #1367.
+        source: decision.loopBreakerSource ?? null,
+        bakFallbacks: getSafeFileDiagnostics().bakFallbacks
       })
     }
     return false
@@ -911,9 +958,34 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   }
 
   // Record the attempt BEFORE installing so a failed install (app relaunches on
-  // the old version) trips the loop-breaker next boot instead of looping.
-  settings.set('lastStartupUpdateAttemptVersion', state.version)
-  emitTelemetry('comfy.desktop.app_update.startup_install', { version: state.version })
+  // the old version) trips the loop-breaker next boot instead of looping. The
+  // verified sidecar file is the authoritative marker (issue #1367 - settings
+  // can be rolled back by `.bak` restoration on interference-prone machines):
+  // it must be durable on disk before anything else happens. If it can't be,
+  // fail closed WITHOUT writing any marker - installing unguarded risks an
+  // unbounded reinstall loop, and a lone settings marker would block every
+  // future auto-install of this version instead of retrying next launch.
+  if (!recordStartupAttempt(state.version)) {
+    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+      reason: 'marker_not_durable',
+      version: state.version,
+      bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+    })
+    return false
+  }
+  try {
+    settings.set('lastStartupUpdateAttemptVersion', state.version)
+  } catch {
+    // The sidecar is already durable, so the loop-breaker holds without the
+    // settings copy.
+  }
+  emitTelemetry('comfy.desktop.app_update.startup_install', {
+    version: state.version,
+    // Non-zero means reads were served from `.bak` this session (primary
+    // missing, empty, or locked past retries - issue #1367's environment);
+    // lets telemetry correlate install loops with filesystem interference.
+    bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+  })
   installUpdate(false)
   return true
 }
