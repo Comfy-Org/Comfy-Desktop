@@ -122,9 +122,10 @@ const LOCAL_INST = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // clearAllMocks does not clear implementations: without this reset, a test
-  // that sets mockRejectedValue would leak into later tests that do not stub.
+  // clearAllMocks does not clear implementations: without these resets, a test
+  // that sets mockRejectedValue/mockImplementation would leak into later tests.
   classifyPaths.mockReset()
+  writeAppLog.mockReset()
   getInstallation.mockResolvedValue(LOCAL_INST)
   resolveInstallModelSearchPaths.mockReturnValue({
     downloadBaseDir: SHARED_MODELS,
@@ -255,6 +256,14 @@ describe('emitStorageTelemetry', () => {
     await expect(emitStorageTelemetry('inst-1')).resolves.toBeUndefined()
     expect(capture).not.toHaveBeenCalled()
     expect(writeAppLog).toHaveBeenCalledWith('DEBUG', expect.stringContaining('boom'))
+  })
+
+  it('never throws even when the failure log itself throws', async () => {
+    classifyPaths.mockRejectedValue(new Error('boom'))
+    writeAppLog.mockImplementation(() => {
+      throw new Error('disk full')
+    })
+    await expect(emitStorageTelemetry('inst-1')).resolves.toBeUndefined()
   })
 
   it('nulls negative aggregates when an included model dir is unresolved', async () => {

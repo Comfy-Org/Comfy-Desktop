@@ -217,6 +217,10 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
     }
   } catch (error) {
     // Telemetry must never break a launch, but do record why it failed.
-    writeAppLog('DEBUG', `storage telemetry failed: ${String(error)}`)
+    try {
+      writeAppLog('DEBUG', `storage telemetry failed: ${String(error)}`)
+    } catch {
+      // Even the failure log must not break a launch.
+    }
   }
 }
