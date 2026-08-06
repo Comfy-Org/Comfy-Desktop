@@ -19,6 +19,10 @@ interface ModelsDir {
   /** Locked rows (e.g. the install's own models dir) can't be removed or
    *  browsed/replaced; they show a lock icon. */
   locked?: boolean
+  /** Read-only rows (e.g. global shared dirs shown in a per-instance list)
+   *  can't be removed or browsed/replaced here, but keep the normal folder
+   *  icon (no lock) and stay promotable unless `promotable` is false. */
+  readonly?: boolean
   /** Set false to also forbid promoting the row to primary (e.g. the
    *  install's own models dir while shared models is on — the primary is a
    *  global shared dir there). Defaults to true. */
@@ -66,7 +70,7 @@ function canPromote(dir: ModelsDir): boolean {
 }
 
 function canRemove(dir: ModelsDir): boolean {
-  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked
+  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked && !dir.readonly
 }
 
 function hasMenuActions(dir: ModelsDir): boolean {
@@ -213,7 +217,7 @@ const rows = computed(() =>
           <ChevronRight :size="14" aria-hidden="true" />
         </button>
         <button
-          v-if="!row.locked && !row.isExtra"
+          v-if="!row.locked && !row.isExtra && !row.readonly"
           type="button"
           class="models-dir-action"
           :aria-label="t('common.browse', 'Browse')"

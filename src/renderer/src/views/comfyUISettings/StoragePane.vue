@@ -22,9 +22,12 @@ interface ModelsDir {
   isPrimary: boolean
   locked?: boolean
   promotable?: boolean
+  /** Read-only rows (the included global shared dirs) can't be removed or
+   *  browsed/replaced from the instance pane, but stay promotable. */
+  readonly?: boolean
   /** Read-only row for the install's `extra_model_paths.yaml` file (opens a modal). */
   kind?: 'extra'
-  /** Globally-shared dir → shows the shared badge on its icon. */
+  /** Globally-shared dir -> shows the shared badge on its icon. */
   shared?: boolean
 }
 
@@ -43,6 +46,9 @@ interface GlobalSettingsBridge {
   globalSettingsOpenPath(path: string): void
   globalSettingsRevealPath(path: string): void
   globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
+  /** Close this popup and reopen Global Desktop Settings (where the shared
+   *  directories themselves are managed). Optional for older bridges. */
+  openSettingsTab?(tab: 'comfy' | 'directories' | 'downloads' | 'global'): void
   platform?: string
 }
 
@@ -90,7 +96,8 @@ watch(
 /** Edits to these per-install fields also trigger the restart prompt. */
 const PER_INSTALL_STORAGE_FIELD_IDS = [
   'useSharedModels',
-  'useSharedInputOutput',
+  'useSharedInput',
+  'useSharedOutput',
   'modelDirs',
   'modelDirsPrimary',
   'inputDir',
@@ -160,11 +167,8 @@ function openExtraDetails(row: ModelsDir | undefined): void {
   if (row?.kind === 'extra') extraModalOpen.value = true
 }
 
-function handleSharedModelDetails(index: number): void {
-  openExtraDetails(sharedModelDirs.value[index])
-}
-function handleInstanceModelDetails(index: number): void {
-  openExtraDetails(instanceModelDirs.value[index])
+function handleModelDetails(index: number): void {
+  openExtraDetails(modelDirRows.value[index])
 }
 function closeExtraModal(): void {
   extraModalOpen.value = false
@@ -178,19 +182,25 @@ function persistField(id: string, value: unknown): void {
   if (field) emit('update-field', field, value)
 }
 
-/** `useSharedModels` toggle (defaults on). When off, the global Shared
- *  Models list is hidden and replaced with the per-instance list + warning. */
+/** `useSharedModels` toggle (defaults on). When on, the global shared dirs are
+ *  included in the unified list below as read-only rows; the per-instance dirs
+ *  are always shown and editable either way. */
 const useSharedModelsField = computed(() => findField('useSharedModels'))
 const useSharedModelsEnabled = computed<boolean>(() => {
   const f = useSharedModelsField.value
   return f ? f.value !== false : true
 })
 
-/** `useSharedInputOutput` toggle (defaults on). When off, the global Shared
- *  Directories list is replaced with the per-install readonly path rows. */
-const useSharedInputOutputField = computed(() => findField('useSharedInputOutput'))
-const useSharedInputOutputEnabled = computed<boolean>(() => {
-  const f = useSharedInputOutputField.value
+/** Independent `useSharedInput` / `useSharedOutput` toggles (default on). Each
+ *  swaps its row between the global shared folder and the per-install one. */
+const useSharedInputField = computed(() => findField('useSharedInput'))
+const useSharedInputEnabled = computed<boolean>(() => {
+  const f = useSharedInputField.value
+  return f ? f.value !== false : true
+})
+const useSharedOutputField = computed(() => findField('useSharedOutput'))
+const useSharedOutputEnabled = computed<boolean>(() => {
+  const f = useSharedOutputField.value
   return f ? f.value !== false : true
 })
 
@@ -198,7 +208,10 @@ function handleToggleField(field: DetailField | undefined, value: boolean): void
   if (field) emit('update-field', field, value)
 }
 
-// --- Per-instance model directories (shared models off) -------------------
+// --- Unified per-instance model directory list -----------------------------
+// One list for everything this instance reads: the included global shared
+// dirs (read-only here, shared badge), the per-instance extras (editable),
+// the install's own models dir (locked), and the extra_model_paths.yaml row.
 
 function currentExtras(): string[] {
   const v = findField('modelDirs')?.value
@@ -211,47 +224,86 @@ const installOwnModelsDir = computed<string>(() => {
   return typeof v === 'string' ? v : ''
 })
 
-/** Validated external primary: a `modelDirs` entry, else null (= install-own). */
-const instancePrimary = computed<string | null>(() => {
+/** Global shared dir paths this instance includes; empty when the toggle is off. */
+const includedSharedPaths = computed<string[]>(() =>
+  useSharedModelsEnabled.value ? props.snapshot.modelsDirs.map((d) => d.path) : []
+)
+
+/** Per-instance extras, hiding duplicates of an included shared dir (the
+ *  backend dedupes the effective set the same way - shared dirs first). */
+const visibleExtras = computed<string[]>(() =>
+  currentExtras().filter((p) => !includedSharedPaths.value.some((s) => samePath(s, p)))
+)
+
+/** Effective primary, mirroring the backend's `resolveLauncherModelDirs`: a
+ *  persisted `modelDirsPrimary` present in the effective dirs wins, else the
+ *  first included shared dir, else null (= the install's own models dir). */
+const effectivePrimary = computed<string | null>(() => {
   const raw = findField('modelDirsPrimary')?.value
-  if (typeof raw !== 'string') return null
-  return currentExtras().some((d) => samePath(d, raw)) ? raw : null
+  if (typeof raw === 'string') {
+    const known =
+      includedSharedPaths.value.some((d) => samePath(d, raw)) ||
+      currentExtras().some((d) => samePath(d, raw))
+    if (known) return raw
+  }
+  return includedSharedPaths.value[0] ?? null
 })
 
-/** Combined list with the primary on top: the install-own dir leads only when
- *  it's the primary (the default), otherwise it sinks to the bottom as a
- *  locked, undeletable row below the external extras. */
-const instanceModelDirs = computed<ModelsDir[]>(() => {
+/** Combined list with the primary on top: shared rows, then instance extras,
+ *  then the locked install-own row (which leads only while it's the primary),
+ *  then the read-only extra_model_paths.yaml row. */
+const modelDirRows = computed<ModelsDir[]>(() => {
+  const primary = effectivePrimary.value
   const own = installOwnModelsDir.value
-  const primary = instancePrimary.value
+  // While shared dirs are included, `modelDirsPrimary: null` resolves to the
+  // first shared dir, so the install-own row can't be promoted to primary.
   const ownRow: ModelsDir | null = own
-    ? { path: own, isPrimary: primary === null, locked: true }
+    ? {
+        path: own,
+        isPrimary: primary === null,
+        locked: true,
+        promotable: includedSharedPaths.value.length === 0
+      }
     : null
-  const extraRows: ModelsDir[] = currentExtras().map((p) => ({
-    path: p,
-    isPrimary: primary !== null && samePath(p, primary),
-    locked: false
-  }))
-  const base = ownRow?.isPrimary
-    ? [ownRow, ...extraRows]
-    : ownRow
-      ? [...extraRows, ownRow]
-      : extraRows
+  const rest: ModelsDir[] = [
+    ...includedSharedPaths.value.map((p) => ({
+      path: p,
+      isPrimary: primary !== null && samePath(p, primary),
+      shared: true,
+      readonly: true
+    })),
+    ...visibleExtras.value.map((p) => ({
+      path: p,
+      isPrimary: primary !== null && samePath(p, primary)
+    }))
+  ]
+  const primaryIdx = rest.findIndex((r) => r.isPrimary)
+  if (primaryIdx > 0) rest.unshift(...rest.splice(primaryIdx, 1))
+  const base = ownRow?.isPrimary ? [ownRow, ...rest] : ownRow ? [...rest, ownRow] : rest
   return [...base, ...extraModelRows.value]
 })
 
-async function handleAddInstanceModelDir(): Promise<void> {
-  const picked = await bridge?.globalSettingsBrowseFolder()
-  if (!picked) return
-  if (samePath(picked, installOwnModelsDir.value)) return
-  const extras = currentExtras()
-  if (extras.some((d) => samePath(d, picked))) return
-  persistField('modelDirs', [...extras, picked])
+/** Whether a picked path already appears somewhere in the effective set. */
+function isKnownModelDir(path: string): boolean {
+  return (
+    samePath(path, installOwnModelsDir.value) ||
+    includedSharedPaths.value.some((d) => samePath(d, path)) ||
+    currentExtras().some((d) => samePath(d, path))
+  )
 }
 
-async function handleRemoveInstanceModelDir(index: number): Promise<void> {
-  const row = instanceModelDirs.value[index]
-  if (!row || row.locked) return // the install-own row can't be removed
+/** Add always targets the per-instance `modelDirs`, never the global list. */
+async function handleAddModelDir(): Promise<void> {
+  const picked = await bridge?.globalSettingsBrowseFolder()
+  if (!picked || isKnownModelDir(picked)) return
+  persistField('modelDirs', [...currentExtras(), picked])
+}
+
+async function handleRemoveModelDir(index: number): Promise<void> {
+  const row = modelDirRows.value[index]
+  // Only per-instance extras are removable here; shared dirs are managed in
+  // Global Desktop Settings.
+  if (!row || row.locked || row.readonly || row.kind === 'extra') return
   const extras = currentExtras()
   if (!extras.some((d) => samePath(d, row.path))) return
   const ok = await modal.confirm({
@@ -264,7 +316,8 @@ async function handleRemoveInstanceModelDir(index: number): Promise<void> {
     confirmStyle: 'danger'
   })
   if (!ok) return
-  if (instancePrimary.value !== null && samePath(row.path, instancePrimary.value)) {
+  const persistedPrimary = findField('modelDirsPrimary')?.value
+  if (typeof persistedPrimary === 'string' && samePath(row.path, persistedPrimary)) {
     persistField('modelDirsPrimary', null)
   }
   persistField(
@@ -273,16 +326,39 @@ async function handleRemoveInstanceModelDir(index: number): Promise<void> {
   )
 }
 
-function handleMakeInstancePrimary(index: number): void {
-  const row = instanceModelDirs.value[index]
+/** Browse-replace a per-instance extra in place. */
+async function handleChangeModelDir(index: number): Promise<void> {
+  const row = modelDirRows.value[index]
+  if (!row || row.locked || row.readonly || row.kind === 'extra') return
+  const picked = await bridge?.globalSettingsBrowseFolder(row.path)
+  if (!picked || samePath(picked, row.path) || isKnownModelDir(picked)) return
+  const persistedPrimary = findField('modelDirsPrimary')?.value
+  if (typeof persistedPrimary === 'string' && samePath(row.path, persistedPrimary)) {
+    persistField('modelDirsPrimary', picked)
+  }
+  persistField(
+    'modelDirs',
+    currentExtras().map((d) => (samePath(d, row.path) ? picked : d))
+  )
+}
+
+function handleMakeModelPrimary(index: number): void {
+  const row = modelDirRows.value[index]
   if (!row || row.kind === 'extra') return
-  // The locked install-own row becoming primary means "no external primary".
+  // The locked install-own row becoming primary means "no explicit primary".
   persistField('modelDirsPrimary', row.locked ? null : row.path)
 }
 
-function handleOpenInstanceModelDir(index: number): void {
-  const dir = instanceModelDirs.value[index]
+function handleOpenModelDir(index: number): void {
+  const dir = modelDirRows.value[index]
   if (dir) bridge?.globalSettingsOpenPath(dir.path)
+}
+
+/** The shared dirs themselves are edited in Global Desktop Settings; this
+ *  closes the picker popup and opens that surface. */
+const canManageSharedDirs = computed(() => typeof bridge?.openSettingsTab === 'function')
+function handleManageSharedDirs(): void {
+  bridge?.openSettingsTab?.('global')
 }
 
 // --- Per-instance input / output dirs (shared I/O off) --------------------
@@ -336,89 +412,7 @@ function handleRevealPath(path: string): void {
   if (path) bridge?.globalSettingsRevealPath(path)
 }
 
-// --- Global shared models (shared models on) ------------------------------
-
-/** Displayed list when shared models is on: the global shared dirs (primary on
- *  top), then the install's own models dir as a locked, non-promotable row at
- *  the bottom. ComfyUI always reads from it, but the default download target is
- *  a global shared dir, so it's never the primary here. */
-const sharedModelDirs = computed<ModelsDir[]>(() => {
-  const rows: ModelsDir[] = props.snapshot.modelsDirs.map((d) => ({
-    path: d.path,
-    isPrimary: d.isPrimary,
-    locked: false,
-    shared: true
-  }))
-  const own = installOwnModelsDir.value
-  if (own) rows.push({ path: own, isPrimary: false, locked: true, promotable: false })
-  return [...rows, ...extraModelRows.value]
-})
-
-/** Index of a displayed row's path within the editable global shared dirs. */
-function snapshotIndexOf(dirPath: string): number {
-  return props.snapshot.modelsDirs.findIndex((d) => samePath(d.path, dirPath))
-}
-
-async function handleAddModelsDir(): Promise<void> {
-  const picked = await bridge?.globalSettingsBrowseFolder()
-  if (!picked) return
-  globalTouched.value = true
-  const dirs = props.snapshot.modelsDirs.map((d) => d.path)
-  dirs.push(picked)
-  await bridge?.globalSettingsSetModelsDirs(dirs)
-}
-
-async function handleRemoveModelsDir(index: number): Promise<void> {
-  const row = sharedModelDirs.value[index]
-  if (!row || row.locked) return
-  const i = snapshotIndexOf(row.path)
-  if (i < 0) return
-  const ok = await modal.confirm({
-    title: t('models.removeDirTitle', 'Remove shared models directory?'),
-    message: t(
-      'models.removeDirConfirm',
-      "This won't delete any files. You can re-add the directory later from this list."
-    ),
-    confirmLabel: t('models.removeDir', 'Remove'),
-    confirmStyle: 'danger'
-  })
-  if (!ok) return
-  globalTouched.value = true
-  const dirs = props.snapshot.modelsDirs.map((d) => d.path)
-  dirs.splice(i, 1)
-  await bridge?.globalSettingsSetModelsDirs(dirs)
-}
-
-async function handleMakePrimary(index: number): Promise<void> {
-  const row = sharedModelDirs.value[index]
-  if (!row || row.locked) return
-  const i = snapshotIndexOf(row.path)
-  if (i < 0) return
-  globalTouched.value = true
-  const dirs = props.snapshot.modelsDirs.map((d) => d.path)
-  const moved = dirs.splice(i, 1)[0]
-  if (typeof moved !== 'string') return
-  dirs.unshift(moved)
-  await bridge?.globalSettingsSetModelsDirs(dirs)
-}
-
-async function handleChangeModelsDir(index: number): Promise<void> {
-  const row = sharedModelDirs.value[index]
-  if (!row || row.locked) return
-  const i = snapshotIndexOf(row.path)
-  const current = props.snapshot.modelsDirs[i]?.path
-  const picked = await bridge?.globalSettingsBrowseFolder(current)
-  if (!picked || picked === current) return
-  globalTouched.value = true
-  const dirs = props.snapshot.modelsDirs.map((d) => d.path)
-  dirs[i] = picked
-  await bridge?.globalSettingsSetModelsDirs(dirs)
-}
-
-function handleOpenModelsDir(index: number): void {
-  const dir = sharedModelDirs.value[index]
-  if (dir) bridge?.globalSettingsOpenPath(dir.path)
-}
+// --- Shared input/output dirs (edited globally) ----------------------------
 
 async function browseSharedDir(field: DetailField | undefined): Promise<void> {
   if (!field) return
@@ -460,15 +454,16 @@ function handleBrowseSharedOutput(): void {
       </p>
     </div>
 
-    <!-- Models group: the Use-Shared-Models toggle lives here, above the list
-         it controls. -->
+    <!-- Models group: one unified list. The toggle only controls whether the
+         global shared dirs are included (read-only rows); the per-instance
+         dirs below it are always shown and editable. -->
     <GlobalSettingsMicroSection
       :title="t('settings.modelStorage', 'Models')"
-      :tooltip="t('tooltips.sharedModels')"
+      :tooltip="t('tooltips.instanceModels')"
     >
       <div v-if="useSharedModelsField" class="storage-toggle-row">
         <label class="storage-toggle-label">
-          <span>{{ t('common.useSharedModels', 'Use Shared Models') }}</span>
+          <span>{{ t('common.useSharedModels', 'Include Shared Model Directories') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
         </label>
         <BooleanToggle
@@ -477,47 +472,42 @@ function handleBrowseSharedOutput(): void {
         />
       </div>
 
-      <!-- Shared on: locked install-own dir (always used) + global shared list. -->
       <ModelsDirList
-        v-if="useSharedModelsEnabled"
-        :dirs="sharedModelDirs"
-        @change="handleChangeModelsDir"
-        @remove="handleRemoveModelsDir"
-        @make-primary="handleMakePrimary"
-        @open="handleOpenModelsDir"
-        @details="handleSharedModelDetails"
-        @add="handleAddModelsDir"
+        :dirs="modelDirRows"
+        @change="handleChangeModelDir"
+        @remove="handleRemoveModelDir"
+        @make-primary="handleMakeModelPrimary"
+        @open="handleOpenModelDir"
+        @details="handleModelDetails"
+        @add="handleAddModelDir"
       />
 
-      <!-- Shared off: per-instance list (locked install-own row). -->
-      <template v-else>
-        <ModelsDirList
-          :dirs="instanceModelDirs"
-          @open="handleOpenInstanceModelDir"
-          @remove="handleRemoveInstanceModelDir"
-          @make-primary="handleMakeInstancePrimary"
-          @details="handleInstanceModelDetails"
-          @add="handleAddInstanceModelDir"
-        />
-      </template>
+      <!-- Shared dirs are read-only here; they're managed globally. -->
+      <button
+        v-if="useSharedModelsEnabled && canManageSharedDirs"
+        type="button"
+        class="storage-manage-link"
+        @click="handleManageSharedDirs"
+      >
+        {{ t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings') }}
+      </button>
     </GlobalSettingsMicroSection>
 
-    <!-- Input/Output group: the Use-Shared-I/O toggle lives here. -->
+    <!-- Input/Output group: independent per-folder shared toggles. Each row
+         shows the effective folder for its source - the global shared folder
+         (edited globally) or the per-install one. -->
     <GlobalSettingsMicroSection :title="t('settings.inputOutputStorage', 'Input & Output')">
-      <div v-if="useSharedInputOutputField" class="storage-toggle-row">
+      <div v-if="useSharedInputField" class="storage-toggle-row">
         <label class="storage-toggle-label">
-          <span>{{ t('common.useSharedInputOutput', 'Use Shared Input/Output Folders') }}</span>
-          <InfoTooltip :text="t('tooltips.useSharedInputOutput')" />
+          <span>{{ t('common.useSharedInput', 'Use Shared Input Folder') }}</span>
+          <InfoTooltip :text="t('tooltips.useSharedInput')" />
         </label>
         <BooleanToggle
-          :field="useSharedInputOutputField"
-          @update="(v) => handleToggleField(useSharedInputOutputField, v)"
+          :field="useSharedInputField"
+          @update="(v) => handleToggleField(useSharedInputField, v)"
         />
       </div>
-
-      <!-- Shared on: global shared input/output dirs, same readonly path-row
-           style as shared-off. -->
-      <template v-if="useSharedInputOutputEnabled">
+      <template v-if="useSharedInputEnabled">
         <StorageDirRow
           v-if="sharedInputField"
           :label="sharedInputField.label || t('common.perInstallInputDir', 'Input Directory')"
@@ -526,6 +516,29 @@ function handleBrowseSharedOutput(): void {
           @open="handleOpenPath(sharedFieldPath(sharedInputField))"
           @browse="handleBrowseSharedInput"
         />
+      </template>
+      <StorageDirRow
+        v-else
+        :label="t('common.perInstallInputDir', 'Input Directory')"
+        :path="effectiveInputDir"
+        :tag="!inputOverridden ? t('models.default', 'default') : ''"
+        :resettable="inputOverridden"
+        @open="handleOpenPath(effectiveInputDir)"
+        @browse="handleBrowseInputDir"
+        @reset="handleResetInputDir"
+      />
+
+      <div v-if="useSharedOutputField" class="storage-toggle-row">
+        <label class="storage-toggle-label">
+          <span>{{ t('common.useSharedOutput', 'Use Shared Output Folder') }}</span>
+          <InfoTooltip :text="t('tooltips.useSharedOutput')" />
+        </label>
+        <BooleanToggle
+          :field="useSharedOutputField"
+          @update="(v) => handleToggleField(useSharedOutputField, v)"
+        />
+      </div>
+      <template v-if="useSharedOutputEnabled">
         <StorageDirRow
           v-if="sharedOutputField"
           :label="sharedOutputField.label || t('common.perInstallOutputDir', 'Output Directory')"
@@ -535,28 +548,16 @@ function handleBrowseSharedOutput(): void {
           @browse="handleBrowseSharedOutput"
         />
       </template>
-
-      <!-- Shared off: readonly effective path rows with browse + reset. -->
-      <template v-else>
-        <StorageDirRow
-          :label="t('common.perInstallInputDir', 'Input Directory')"
-          :path="effectiveInputDir"
-          :tag="!inputOverridden ? t('models.default', 'default') : ''"
-          :resettable="inputOverridden"
-          @open="handleOpenPath(effectiveInputDir)"
-          @browse="handleBrowseInputDir"
-          @reset="handleResetInputDir"
-        />
-        <StorageDirRow
-          :label="t('common.perInstallOutputDir', 'Output Directory')"
-          :path="effectiveOutputDir"
-          :tag="!outputOverridden ? t('models.default', 'default') : ''"
-          :resettable="outputOverridden"
-          @open="handleOpenPath(effectiveOutputDir)"
-          @browse="handleBrowseOutputDir"
-          @reset="handleResetOutputDir"
-        />
-      </template>
+      <StorageDirRow
+        v-else
+        :label="t('common.perInstallOutputDir', 'Output Directory')"
+        :path="effectiveOutputDir"
+        :tag="!outputOverridden ? t('models.default', 'default') : ''"
+        :resettable="outputOverridden"
+        @open="handleOpenPath(effectiveOutputDir)"
+        @browse="handleBrowseOutputDir"
+        @reset="handleResetOutputDir"
+      />
     </GlobalSettingsMicroSection>
 
     <!-- Read-only details for the install's extra_model_paths.yaml file,
@@ -642,5 +643,23 @@ function handleBrowseSharedOutput(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Link-style affordance to the global Desktop Settings storage surface. */
+.storage-manage-link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.storage-manage-link:hover,
+.storage-manage-link:focus-visible {
+  color: var(--accent);
+  outline: none;
 }
 </style>
