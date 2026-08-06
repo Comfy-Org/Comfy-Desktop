@@ -365,6 +365,29 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
     expect(on).not.toHaveProperty('useSharedInputOutput')
   })
 
+  it('keeps newer per-folder flags when a mixed-schema record also has the legacy flag', async () => {
+    // A downgrade/upgrade cycle can leave both the legacy flag and the new
+    // per-folder flags on one record; the per-folder values are newer and win.
+    writeRawInstallations([
+      {
+        id: 'mixed',
+        name: 'Mixed',
+        installPath: path.join(tmpRoot, 'mixed'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: false,
+        useSharedInput: true,
+        useSharedOutput: false
+      }
+    ])
+    const installations = await loadInstallations()
+    const rec = (await installations.list()).find((r) => r.id === 'mixed')!
+    expect(rec.useSharedInput).toBe(true)
+    expect(rec.useSharedOutput).toBe(false)
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
+  })
+
   it('leaves records without useSharedPaths untouched (no implicit migration)', async () => {
     // Records already on the new schema must round-trip without the
     // migration adding fields that weren't there before.

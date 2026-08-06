@@ -19,6 +19,14 @@ function getSharedModelsDirs(): string[] {
   return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
 }
 
+/** Installation-aware download context for callers that already hold the
+ *  record (e.g. the template-model task). Sync: no store lookup needed. */
+export function resolveDownloadContext(
+  inst: installations.InstallationRecord
+): InstallModelSearch {
+  return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+}
+
 export async function resolveDownloadContextById(
   installationId: string | null
 ): Promise<InstallModelSearch | null> {
@@ -26,7 +34,7 @@ export async function resolveDownloadContextById(
   try {
     const inst = await installations.get(installationId)
     if (!inst || !inst.installPath) return null
-    return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+    return resolveDownloadContext(inst)
   } catch {
     return null
   }

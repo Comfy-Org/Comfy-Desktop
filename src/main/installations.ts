@@ -103,10 +103,12 @@ function migrateRecord(record: InstallationRecord): InstallationRecord {
     const legacy = rec.useSharedInputOutput as boolean | undefined
     const value = typeof legacy === 'boolean' ? legacy : true
     const { useSharedInputOutput: _drop, ...rest } = rec
+    // A mixed-schema record (downgrade/upgrade cycle) may already carry the
+    // per-folder flags; those are newer, so they win over the legacy value.
     rec = {
       ...rest,
-      useSharedInput: value,
-      useSharedOutput: value
+      useSharedInput: typeof rest.useSharedInput === 'boolean' ? rest.useSharedInput : value,
+      useSharedOutput: typeof rest.useSharedOutput === 'boolean' ? rest.useSharedOutput : value
     } as InstallationRecord
   }
   return rec
