@@ -5,14 +5,11 @@ import path from 'path'
 import { readFileSafe, readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './safe-file'
 
 /**
- * Issue #1367 - the `.bak` fallback in readFileSafe used to RESTORE the backup
- * over the primary after ANY read error, including transient antivirus/indexer
- * locks. The primary is typically newer than `.bak`, so that restore silently
- * rolled back the most recent writes - erasing the startup-update loop-breaker
- * marker and locking machines into reinstalling the same update every boot.
- * These tests pin the corrected semantics: retry transient locks, serve `.bak`
- * without restoring it, and only restore when the primary is genuinely
- * missing or empty.
+ * Pins the `.bak` semantics that keep the startup-update loop-breaker marker
+ * alive (issue #1367): transient locks are retried, a locked primary is served
+ * from `.bak` WITHOUT restoring it (the primary is typically newer, so a
+ * restore would roll back the most recent writes), and `.bak` is only restored
+ * when the primary is genuinely missing or empty.
  */
 
 function errnoError(code: string): NodeJS.ErrnoException {

@@ -1,27 +1,18 @@
 /**
  * Durable sidecar for the startup-install loop-breaker (issue #1367).
  *
- * The loop-breaker used to live only in settings.json
- * (`lastStartupUpdateAttemptVersion`). That write happens milliseconds before
- * the app quits into the installer, so settings.json.bak is always frozen at
- * the pre-marker state - and on machines where antivirus/indexer interference
- * transiently locks settings.json at boot, the read fallback restored `.bak`
- * and silently erased the marker. The "install once per version" guarantee
- * failed open and those machines reinstalled the same Desktop update on every
- * boot, indefinitely (telemetry: single devices with 200+ startup_install
- * events for one version).
+ * The settings copy of the marker (`lastStartupUpdateAttemptVersion`) is the
+ * last write before the app quits into the installer, so settings.json.bak
+ * never contains it - a `.bak` restore under AV/indexer interference erases
+ * it and the same version reinstalls on every boot. This sidecar keeps the
+ * marker in a tiny file of its own: no `.bak` machinery to roll it back, no
+ * other writers, and read-back verification so the caller can fail closed
+ * when the marker is not durable (see `applyPendingUpdateOnStartup`).
  *
- * This sidecar mirrors the marker in a tiny file of its own: no `.bak`
- * machinery to roll it back, no other writers to race, and a read-back
- * verification so the caller can refuse to install when the marker could not
- * be made durable (fail closed instead of looping - see
- * `applyPendingUpdateOnStartup`).
- *
- * Reads are deliberately tri-state: a marker file that EXISTS but cannot be
- * read (AV lock outlasting the retry budget) must not be reported as absent -
- * "absent" is what authorizes an install, and the unreadable file may well
- * record an attempt of exactly the version about to be installed. Collapsing
- * the two would reopen the fail-open loop this module exists to close.
+ * Reads are tri-state: a marker file that EXISTS but cannot be read (lock
+ * outlasting the retry budget) may record an attempt of exactly the pending
+ * version, so it must surface as `unavailable`, never as `absent` - absent is
+ * what authorizes an install.
  */
 
 import fs from 'fs'

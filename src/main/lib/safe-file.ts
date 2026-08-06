@@ -121,24 +121,22 @@ export function writeFileSafe(filePath: string, data: string, backup: boolean = 
  *  unreadable.
  *
  *  `.bak` is only restored OVER the primary when the primary is genuinely
- *  absent (ENOENT) or empty - the corruption cases the backup exists for. A
- *  transient lock (antivirus, indexer) means the primary still exists and is
- *  typically NEWER than `.bak`; restoring in that case silently rolls back the
- *  most recent writes. That rollback is what kept erasing the startup-update
- *  loop-breaker marker (its write is the last one before the app quits into
- *  the installer, so `.bak` is always one write behind it) and locked machines
- *  into reinstalling the same Desktop update on every boot (issue #1367).
- *  Locked reads are retried, then served from `.bak` WITHOUT restoring. */
+ *  absent (ENOENT) or empty. A transiently locked primary (antivirus, indexer)
+ *  still exists and is typically NEWER than `.bak`, so restoring would roll
+ *  back the most recent writes (issue #1367: that rollback erases the
+ *  startup-update loop-breaker marker). Locked reads are retried, then served
+ *  from `.bak` WITHOUT restoring. */
 export function readFileSafe(filePath: string): string | null {
+  const bakPath = filePath + '.bak'
   const primary = readFileWithRetrySync(filePath)
   if (primary.kind === 'data') return primary.data
 
-  const bak = readFileWithRetrySync(filePath + '.bak')
+  const bak = readFileWithRetrySync(bakPath)
   if (bak.kind === 'data') {
     _bakFallbacks++
     if (primary.kind === 'absent') {
       try {
-        fs.copyFileSync(filePath + '.bak', filePath)
+        fs.copyFileSync(bakPath, filePath)
       } catch {}
     }
     return bak.data
@@ -183,15 +181,16 @@ export async function writeFileSafeAsync(
 /** Async twin of `readFileSafe` - same `.bak` semantics: retry transient locks,
  *  restore `.bak` over the primary only when the primary is genuinely absent. */
 export async function readFileSafeAsync(filePath: string): Promise<string | null> {
+  const bakPath = filePath + '.bak'
   const primary = await readFileWithRetryAsync(filePath)
   if (primary.kind === 'data') return primary.data
 
-  const bak = await readFileWithRetryAsync(filePath + '.bak')
+  const bak = await readFileWithRetryAsync(bakPath)
   if (bak.kind === 'data') {
     _bakFallbacks++
     if (primary.kind === 'absent') {
       try {
-        await fs.promises.copyFile(filePath + '.bak', filePath)
+        await fs.promises.copyFile(bakPath, filePath)
       } catch {}
     }
     return bak.data

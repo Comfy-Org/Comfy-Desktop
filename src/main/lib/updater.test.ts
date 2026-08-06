@@ -782,11 +782,10 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
   })
 
-  // Issue #1367 - on machines where filesystem interference rolls settings.json
-  // back to a stale .bak snapshot, the settings copy of the loop-breaker marker
-  // kept getting erased while the pending-update marker survived, so the same
-  // version reinstalled on every boot. The durable sidecar marker must break
-  // the loop on its own, and installs must fail closed when it can't persist.
+  // Issue #1367 - a stale .bak restore of settings.json can erase the settings
+  // copy of the loop-breaker marker while the pending-update marker survives.
+  // The durable sidecar marker must break the loop on its own, and installs
+  // must fail closed when it can't persist.
   it('loop-breaker trips on the sidecar marker alone when the settings marker was erased (issue #1367)', async () => {
     settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
     // No settings marker - it was rolled back - but the sidecar remembers.
