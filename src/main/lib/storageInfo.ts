@@ -24,7 +24,10 @@
  * indices and never ship it. Serial numbers, volume UUIDs and labels are
  * never read out of the snapshot at all. Drive model/vendor strings are
  * shared product identifiers (same privacy class as the GPU model we already
- * collect) and are exposed for emission.
+ * collect); because they are free-form OS strings they are validated by
+ * `sanitizeHardwareLabel` (fail-closed: path/device/UUID/serial-ish shapes
+ * become null) before they land in `DriveInfo`. `fsType` is reduced to a
+ * closed allowlist so a malformed OS value can never smuggle arbitrary text.
  */
 import path from 'path'
 import si from 'systeminformation'
@@ -57,7 +60,7 @@ export interface DriveInfo {
   /** USB/Thunderbolt-attached or removable. `null` when undeterminable. */
   external: boolean | null
   removable: boolean | null
-  /** Volume filesystem (ntfs / apfs / ext4 / ...). */
+  /** Volume filesystem, reduced to a known allowlist (`other` otherwise). */
   fsType: string | null
   /** Marketing name of the physical disk (e.g. "Samsung SSD 990 PRO 2TB"). */
   driveModel: string | null
@@ -82,10 +85,12 @@ interface StorageSnapshot {
 }
 
 /**
- * Hard cap on how long we wait for the platform storage probes. On machines
- * with wedged SMB mounts or slow WMI these can stall; storage telemetry is
- * never worth delaying anything for, so past the budget every path resolves
- * `unknown` and the next process run retries.
+ * Hard cap on how long a caller waits for the platform storage probes. On
+ * machines with wedged SMB mounts or slow WMI these can stall; storage
+ * telemetry is never worth delaying anything for, so past the budget every
+ * path resolves `unknown` for THIS caller. The underlying probes cannot be
+ * cancelled, so they keep running and their (late) result is cached for the
+ * next boot instead of spawning a fresh probe set on top of a stuck one.
  */
 const SNAPSHOT_TIMEOUT_MS = 15_000
 
@@ -101,45 +106,120 @@ const NETWORK_FS_TYPES = new Set([
   'smbfs',
   'afpfs',
   'webdav',
+  'davfs',
   'sshfs',
   'fuse.sshfs',
+  'fuse.rclone',
+  'rclone',
+  'fuse.cephfs',
+  'ceph',
+  'glusterfs',
+  'fuse.glusterfs',
   '9p',
   'ncpfs'
 ])
 
-let snapshotPromise: Promise<StorageSnapshot | null> | null = null
+/** One raw probe at a time; a timed-out caller must not stack another. */
+let inflightProbe: Promise<StorageSnapshot | null> | null = null
+/** Last successful probe result; reused for the rest of the process. */
+let cachedSnapshot: StorageSnapshot | null = null
 
 async function fetchSnapshot(): Promise<StorageSnapshot | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const probes = Promise.all([si.fsSize(), si.blockDevices(), si.diskLayout()])
-    const timeout = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), SNAPSHOT_TIMEOUT_MS)
-    })
-    const result = await Promise.race([probes, timeout])
-    if (!result) return null
-    const [fsSize, blockDevices, diskLayout] = result
+    const [fsSize, blockDevices, diskLayout] = await Promise.all([
+      si.fsSize(),
+      si.blockDevices(),
+      si.diskLayout()
+    ])
     return { fsSize, blockDevices, diskLayout }
   } catch {
     return null
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
   }
 }
 
 /**
- * Snapshot the storage topology once per process. A failed probe is not
- * cached so a later boot in the same run can retry.
+ * Snapshot the storage topology once per process. A successful probe is
+ * cached forever (even when it lands after a caller's timeout); a failed
+ * probe is not, so a later boot in the same run retries. Each caller's wait
+ * is bounded by `SNAPSHOT_TIMEOUT_MS` without cancelling the shared probe.
  */
 function getSnapshot(): Promise<StorageSnapshot | null> {
-  if (!snapshotPromise) {
-    const attempt = fetchSnapshot().then((snap) => {
-      if (!snap && snapshotPromise === attempt) snapshotPromise = null
+  if (cachedSnapshot) return Promise.resolve(cachedSnapshot)
+  if (!inflightProbe) {
+    inflightProbe = fetchSnapshot().then((snap) => {
+      inflightProbe = null
+      if (snap) cachedSnapshot = snap
       return snap
     })
-    snapshotPromise = attempt
   }
-  return snapshotPromise
+  const probe = inflightProbe
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), SNAPSHOT_TIMEOUT_MS)
+    void probe.then((snap) => {
+      clearTimeout(timer)
+      resolve(snap)
+    })
+  })
+}
+
+/**
+ * Fail-closed validator for free-form hardware identity strings (disk
+ * model/vendor). These are the only OS-originated free text we ship, so a
+ * malformed or hostile value must never smuggle a path, device node, UUID,
+ * or other prohibited identifier into telemetry. Anything that does not look
+ * like a plain product label becomes `null`.
+ */
+function sanitizeHardwareLabel(raw: string | null | undefined): string | null {
+  const v = (raw ?? '').trim()
+  if (v === '' || v.length > 64) return null
+  // Plain label characters only: letters/digits/underscore, space and a few
+  // common product-name separators. This rejects path separators (`/`, `\`),
+  // device shapes (`\\.\PHYSICALDRIVE0`, `/dev/nvme0n1`), braces/GUID wrappers
+  // (`Volume{...}`), colons, and all control characters.
+  if (!/^[\w .\-+(),[\]]+$/.test(v)) return null
+  // Reject UUID/GUID-shaped values even without braces.
+  if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(v)) return null
+  // Must contain at least one letter (a bare digit string is meaningless as
+  // a model and could be a serial).
+  if (!/[a-z]/i.test(v)) return null
+  return v
+}
+
+/**
+ * Volume filesystems we report by name; anything else becomes `other` so a
+ * malformed OS value can never carry arbitrary text into telemetry.
+ */
+const KNOWN_FS_TYPES = new Set([
+  'ntfs',
+  'refs',
+  'exfat',
+  'fat32',
+  'fat',
+  'vfat',
+  'apfs',
+  'hfs',
+  'hfs+',
+  'hfsplus',
+  'ext2',
+  'ext3',
+  'ext4',
+  'btrfs',
+  'xfs',
+  'zfs',
+  'f2fs',
+  'bcachefs',
+  'fuseblk',
+  'nfs',
+  'nfs4',
+  'cifs',
+  'smb',
+  'smbfs'
+])
+
+function normalizeFsType(raw: string | null | undefined): string | null {
+  const v = (raw ?? '').trim().toLowerCase()
+  if (v === '') return null
+  return KNOWN_FS_TYPES.has(v) ? v : 'other'
 }
 
 function normalizeBus(raw: string | null | undefined): DriveBus {
@@ -148,14 +228,7 @@ function normalizeBus(raw: string | null | undefined): DriveBus {
   if (v.includes('nvme')) return 'nvme'
   if (v.includes('thunderbolt')) return 'thunderbolt'
   if (v.includes('usb')) return 'usb'
-  if (
-    v.includes('raid') ||
-    v.includes('virtual') ||
-    v.includes('storage space') ||
-    v.includes('file backed')
-  ) {
-    return 'virtual'
-  }
+  if (isVirtualHint(v)) return 'virtual'
   if (v.includes('pcie') || v.includes('pci-express') || v.startsWith('pci')) return 'pcie'
   // "sata", "ata", "ahci", "serial ata" - but not "atapi" (optical).
   if (v.includes('sata') || v === 'ata' || v.includes('ahci') || v.includes('serial ata')) {
@@ -164,6 +237,27 @@ function normalizeBus(raw: string | null | undefined): DriveBus {
   if (v.includes('sas') || v.includes('scsi')) return 'sas_scsi'
   if (v === 'sd' || v.includes('mmc') || v.includes('secure digital')) return 'sd'
   return 'unknown'
+}
+
+/**
+ * Virtual-topology hints across all the fields the OSes surface them in:
+ * Windows `Get-PhysicalDisk` bus `"Spaces"` / friendly `"Storage Space"`,
+ * lsblk device types `lvm` / `raid0..raid10` / `dm` / `md`, macOS APFS
+ * `"virtual"` rows, and hypervisor "Virtual Disk" models.
+ */
+function isVirtualHint(raw: string | null | undefined): boolean {
+  const v = (raw ?? '').trim().toLowerCase()
+  if (v === '') return false
+  return (
+    v.includes('virtual') ||
+    v.includes('raid') ||
+    v === 'lvm' ||
+    v === 'dm' ||
+    v === 'md' ||
+    v === 'spaces' ||
+    v.includes('storage space') ||
+    v.includes('file backed')
+  )
 }
 
 /** Media type from `diskLayout().type`, normalized across platforms. */
@@ -188,17 +282,27 @@ function classify(
   const bus = normalizeBus(dl?.interfaceType || bd?.protocol)
   let media = normalizeMedia(dl?.type)
 
+  // Virtual topology can surface in fields other than the media/bus we
+  // normalized: lsblk block-device type (lvm / raid1 / ...), Windows
+  // Get-PhysicalDisk bus "Spaces", macOS APFS "virtual" rows.
+  const virtual =
+    bus === 'virtual' ||
+    media === 'virtual' ||
+    isVirtualHint(bd?.type) ||
+    isVirtualHint(dl?.type) ||
+    isVirtualHint(dl?.interfaceType)
+
   // Volume-level media fallback: on Linux/macOS `blockDevices().physical`
   // is the media kind (SSD/HDD). On Windows it is the logical DriveType
   // (Local/Network/...) and must not be used for media.
-  if (media === 'unknown' && process.platform !== 'win32') {
+  if (media === 'unknown' && !virtual && process.platform !== 'win32') {
     const phys = (bd?.physical ?? '').trim().toLowerCase()
     if (phys === 'ssd') media = 'ssd'
     else if (phys === 'hdd') media = 'hdd'
   }
 
   let storageClass: StorageClass
-  if (bus === 'virtual' || media === 'virtual') {
+  if (virtual) {
     storageClass = 'virtual'
   } else if (media === 'nvme' || (media === 'ssd' && (bus === 'nvme' || bus === 'pcie'))) {
     storageClass = 'nvme_ssd'
@@ -224,9 +328,9 @@ function classify(
     bus,
     external,
     removable,
-    fsType: volume?.type || bd?.fsType || null,
-    driveModel: dl?.name?.trim() || null,
-    driveVendor: dl?.vendor?.trim() || null,
+    fsType: normalizeFsType(volume?.type || bd?.fsType),
+    driveModel: sanitizeHardwareLabel(dl?.name),
+    driveVendor: sanitizeHardwareLabel(dl?.vendor),
     driveSizeGb: driveSize,
     volumeSizeGb: volume && volume.size > 0 ? Math.round(volume.size / BYTES_PER_GB) : null,
     volumeFreeGb:
@@ -241,7 +345,7 @@ function networkInfo(volume: Systeminformation.FsSizeData | null, key: string): 
     bus: 'network',
     external: null,
     removable: null,
-    fsType: volume?.type || null,
+    fsType: normalizeFsType(volume?.type),
     driveModel: null,
     driveVendor: null,
     driveSizeGb: null,
@@ -267,7 +371,11 @@ const UNRESOLVED: DriveInfo = {
 }
 
 function resolveWindows(p: string, snap: StorageSnapshot): DriveInfo {
-  const resolved = path.win32.resolve(p)
+  let resolved = path.win32.resolve(p)
+  // Strip the extended-length prefix so \\?\C:\... resolves as a local path
+  // and \\?\UNC\server\share\... as a normal UNC path.
+  if (resolved.startsWith('\\\\?\\UNC\\')) resolved = `\\\\${resolved.slice(8)}`
+  else if (resolved.startsWith('\\\\?\\')) resolved = resolved.slice(4)
   // UNC share - network, keyed per share root so same-share paths group.
   if (resolved.startsWith('\\\\')) {
     const parts = resolved.slice(2).split('\\')
@@ -303,11 +411,18 @@ function findPosixVolume(
   volumes: Systeminformation.FsSizeData[]
 ): Systeminformation.FsSizeData | null {
   let best: Systeminformation.FsSizeData | null = null
+  let bestLen = -1
   for (const v of volumes) {
-    const mount = (v.mount ?? '').trim()
+    // Normalize away trailing slashes (but keep root "/") so a mount
+    // reported as "/mnt/models/" still matches "/mnt/models/checkpoints".
+    let mount = (v.mount ?? '').trim()
+    if (mount.length > 1) mount = mount.replace(/\/+$/, '')
     if (mount === '') continue
     const contains = mount === '/' ? true : resolved === mount || resolved.startsWith(`${mount}/`)
-    if (contains && (!best || mount.length > (best.mount ?? '').length)) best = v
+    if (contains && mount.length > bestLen) {
+      best = v
+      bestLen = mount.length
+    }
   }
   return best
 }
@@ -323,7 +438,11 @@ function resolvePosix(p: string, snap: StorageSnapshot): DriveInfo {
 
   const fsType = (volume.type ?? '').trim().toLowerCase()
   const fsDev = (volume.fs ?? '').trim()
-  if (NETWORK_FS_TYPES.has(fsType) || /^[^/]+:\//.test(fsDev) || fsDev.startsWith('//')) {
+  // Network sources: known remote fs types, "host:/export" (NFS),
+  // "remote:" / "remote:path" (rclone-style), and "//server/share" (CIFS).
+  // A colon in a non-path source is always a remote of some kind - local
+  // devices are /dev/... nodes or bare names (tmpfs, overlay).
+  if (NETWORK_FS_TYPES.has(fsType) || /^[^/\\]+:/.test(fsDev) || fsDev.startsWith('//')) {
     return networkInfo(volume, `net:${volume.mount}`)
   }
 
@@ -370,5 +489,6 @@ export async function classifyPaths(paths: string[]): Promise<Map<string, DriveI
 
 /** @internal - exposed for tests. */
 export function _resetForTest(): void {
-  snapshotPromise = null
+  inflightProbe = null
+  cachedSnapshot = null
 }

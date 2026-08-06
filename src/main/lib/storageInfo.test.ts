@@ -112,7 +112,7 @@ describe('classifyPaths - Windows', () => {
     expect(info.driveVendor).toBe('Samsung')
     expect(info.driveSizeGb).toBe(2000)
     expect(info.volumeFreeGb).toBe(500)
-    expect(info.fsType).toBe('NTFS')
+    expect(info.fsType).toBe('ntfs')
     expect(info.external).toBe(false)
     expect(info.driveKey).not.toBeNull()
   })
@@ -174,6 +174,69 @@ describe('classifyPaths - Windows', () => {
     ]
     const map = await classifyPaths(['C:\\pool'])
     expect(map.get('C:\\pool')!.storageClass).toBe('virtual')
+  })
+
+  it('classifies the real Get-PhysicalDisk bus value "Spaces" as virtual', async () => {
+    mockDiskLayout = [
+      {
+        device: '\\\\.\\PHYSICALDRIVE0',
+        type: 'SSD',
+        name: 'Storage Space',
+        vendor: 'Microsoft',
+        size: 8000 * GB,
+        interfaceType: 'Spaces'
+      }
+    ]
+    const map = await classifyPaths(['C:\\pool'])
+    expect(map.get('C:\\pool')!.storageClass).toBe('virtual')
+    expect(map.get('C:\\pool')!.bus).toBe('virtual')
+  })
+
+  it('normalizes extended-length \\\\?\\ paths to their local drive', async () => {
+    const map = await classifyPaths(['\\\\?\\C:\\Users\\u\\ComfyUI', '\\\\?\\UNC\\nas\\models\\x'])
+    expect(map.get('\\\\?\\C:\\Users\\u\\ComfyUI')!.storageClass).toBe('nvme_ssd')
+    const unc = map.get('\\\\?\\UNC\\nas\\models\\x')!
+    expect(unc.storageClass).toBe('network')
+    expect(unc.driveKey).toBe('net:\\\\nas\\models')
+  })
+
+  it('nulls malformed model/vendor strings that look like paths, devices or UUIDs', async () => {
+    mockDiskLayout = [
+      {
+        device: '\\\\.\\PHYSICALDRIVE0',
+        type: 'SSD',
+        name: '\\\\.\\PHYSICALDRIVE0',
+        vendor: 'Volume{2f5e3c6a-90d2-4a3f-8f10-84f5c2a7b9e1}',
+        size: 2000 * GB,
+        interfaceType: 'NVMe'
+      },
+      {
+        device: '\\\\.\\PHYSICALDRIVE1',
+        type: 'HD',
+        name: '2f5e3c6a-90d2-4a3f-8f10-84f5c2a7b9e1',
+        vendor: '1234567890',
+        size: 4000 * GB,
+        interfaceType: 'SATA'
+      }
+    ]
+    const map = await classifyPaths(['C:\\a', 'D:\\b'])
+    const a = map.get('C:\\a')!
+    expect(a.driveModel).toBeNull()
+    expect(a.driveVendor).toBeNull()
+    expect(a.storageClass).toBe('nvme_ssd') // classification is unaffected
+    const b = map.get('D:\\b')!
+    expect(b.driveModel).toBeNull() // bare UUID
+    expect(b.driveVendor).toBeNull() // digits only (serial-ish)
+  })
+
+  it('reduces unrecognized filesystem types to "other"', async () => {
+    mockFsSize = [
+      { fs: 'C:', type: 'WeirdFS-v2 C:\\secret', size: 100 * GB, available: 10 * GB, mount: 'C:' }
+    ]
+    mockBlockDevices = []
+    mockDiskLayout = []
+    const map = await classifyPaths(['C:\\x'])
+    expect(map.get('C:\\x')!.fsType).toBe('other')
   })
 
   it('resolves to the volume with unknown media when the physical join fails', async () => {
@@ -287,6 +350,55 @@ describe('classifyPaths - Linux', () => {
     const info = map.get('/mnt/nas/models')!
     expect(info.storageClass).toBe('network')
     expect(info.driveKey).toBe('net:/mnt/nas')
+  })
+
+  it('classifies rclone-style FUSE mounts as network', async () => {
+    mockFsSize.push({
+      fs: 'gdrive:models',
+      type: 'fuse.rclone',
+      size: 0,
+      available: 0,
+      mount: '/mnt/rclone'
+    })
+    const map = await classifyPaths(['/mnt/rclone/checkpoints'])
+    expect(map.get('/mnt/rclone/checkpoints')!.storageClass).toBe('network')
+  })
+
+  it('classifies LVM and RAID block devices as virtual', async () => {
+    mockFsSize.push({
+      fs: '/dev/mapper/vg0-models',
+      type: 'ext4',
+      size: 8000 * GB,
+      available: 4000 * GB,
+      mount: '/mnt/lvm'
+    })
+    mockBlockDevices.push({
+      name: 'vg0-models',
+      mount: '/mnt/lvm',
+      type: 'lvm',
+      fsType: 'ext4',
+      physical: 'SSD',
+      removable: false,
+      protocol: '',
+      device: ''
+    })
+    const map = await classifyPaths(['/mnt/lvm/checkpoints'])
+    const info = map.get('/mnt/lvm/checkpoints')!
+    expect(info.storageClass).toBe('virtual')
+  })
+
+  it('matches mounts reported with a trailing slash', async () => {
+    mockFsSize.push({
+      fs: '/dev/sdb1',
+      type: 'ext4',
+      size: 2000 * GB,
+      available: 1000 * GB,
+      mount: '/mnt/extra/'
+    })
+    const map = await classifyPaths(['/mnt/extra/models'])
+    const info = map.get('/mnt/extra/models')!
+    // Matched the /mnt/extra/ volume (2000 GB), not the / root volume.
+    expect(info.volumeSizeGb).toBe(2000)
   })
 })
 

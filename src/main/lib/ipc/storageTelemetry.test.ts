@@ -142,7 +142,10 @@ describe('emitStorageTelemetry', () => {
     const [event, props] = capture.mock.calls[0]!
     expect(event).toBe('comfy.desktop.session.storage_detected')
 
-    expect(props.installation_id).toBe('inst-1')
+    // `install_id`, NOT `installation_id` - the latter is a machine-scoped
+    // default property owned by telemetry.ts that must not be overridden.
+    expect(props.install_id).toBe('inst-1')
+    expect(props.installation_id).toBeUndefined()
     expect(props.install_storage_class).toBe('nvme_ssd')
     expect(props.install_bus).toBe('nvme')
     expect(props.install_drive_model).toBe('Samsung SSD 990 PRO 2TB')
@@ -243,5 +246,55 @@ describe('emitStorageTelemetry', () => {
     classifyPaths.mockRejectedValue(new Error('boom'))
     await expect(emitStorageTelemetry('inst-1')).resolves.toBeUndefined()
     expect(capture).not.toHaveBeenCalled()
+  })
+
+  it('caps model dirs at 16 and nulls negative aggregates when truncated', async () => {
+    // 20 model roots, all on the NVMe drive; the 4 dropped dirs could be on
+    // anything, so "all same drive" / "none on HDD" must not be claimed.
+    const manyRoots = Array.from({ length: 20 }, (_, i) => `E:\\models\\root${i}`)
+    resolveInstallModelSearchPaths.mockReturnValue({
+      downloadBaseDir: manyRoots[0],
+      modelRoots: manyRoots,
+      extraPaths: []
+    })
+    stubClassification(
+      Object.fromEntries([
+        [INSTALL_PATH, NVME] as [string, DriveInfo],
+        ...manyRoots.map((r): [string, DriveInfo] => [r, NVME])
+      ])
+    )
+
+    await emitStorageTelemetry('inst-1')
+
+    const props = capture.mock.calls[0]![1]
+    expect(props.models_dirs_count).toBe(20)
+    expect(props.models_dirs_truncated).toBe(true)
+    expect(props.models_storage_classes).toHaveLength(16)
+    expect(props.models_all_same_drive_as_install).toBeNull()
+    expect(props.any_models_on_hdd).toBeNull()
+    expect(props.any_models_external).toBeNull()
+  })
+
+  it('keeps positive aggregate observations even when truncated', async () => {
+    const manyRoots = Array.from({ length: 20 }, (_, i) => `E:\\models\\root${i}`)
+    resolveInstallModelSearchPaths.mockReturnValue({
+      downloadBaseDir: manyRoots[0],
+      modelRoots: manyRoots,
+      extraPaths: []
+    })
+    stubClassification(
+      Object.fromEntries([
+        [INSTALL_PATH, NVME] as [string, DriveInfo],
+        [manyRoots[0]!, HDD] as [string, DriveInfo], // an HDD inside the visible window
+        ...manyRoots.slice(1).map((r): [string, DriveInfo] => [r, NVME])
+      ])
+    )
+
+    await emitStorageTelemetry('inst-1')
+
+    const props = capture.mock.calls[0]![1]
+    expect(props.any_models_on_hdd).toBe(true) // observed, holds regardless
+    expect(props.models_all_same_drive_as_install).toBe(false) // ditto
+    expect(props.any_models_external).toBeNull() // negative claim -> null
   })
 })

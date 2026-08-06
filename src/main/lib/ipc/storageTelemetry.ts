@@ -102,9 +102,10 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
 
     const cachePath = (settings.get('cacheDir') as string | undefined) || settings.defaults.cacheDir
     const useSharedIO = (inst.useSharedInputOutput as boolean | undefined) !== false
+    // `||` (not `??`): launch treats an empty per-install outputDir as unset.
     const outputPath = useSharedIO
       ? (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
-      : ((inst.outputDir as string | undefined) ?? installOutputDir(inst.installPath))
+      : (inst.outputDir as string | undefined) || installOutputDir(inst.installPath)
     const appDataPath = dataDir()
 
     const allPaths = [
@@ -135,9 +136,23 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
 
     const modelSameAsInstall = models.map((m) => sameDrive(m, install))
     const knownSame = modelSameAsInstall.filter((v): v is boolean => v !== null)
+    const truncated = modelDirs.length > cappedModelDirs.length
+
+    // Aggregates over model dirs: a positive observation ("something IS on an
+    // HDD / external / a different drive") holds even when the list was
+    // truncated, but a negative claim about ALL model dirs does not - report
+    // null instead of a false definitive answer.
+    const allSameAsInstall =
+      knownSame.length === modelSameAsInstall.length && knownSame.length > 0
+        ? knownSame.every(Boolean)
+        : null
+    const anyOnHdd = models.some((m) => m?.storageClass === 'hdd')
+    const anyExternal = models.some((m) => m?.external === true)
 
     telemetry.capture('comfy.desktop.session.storage_detected', {
-      installation_id: inst.id,
+      // NOT `installation_id`: that name is a machine-scoped default property
+      // owned by telemetry.ts and per-event overrides of it are legacy debt.
+      install_id: inst.id,
 
       install_storage_class: install?.storageClass ?? 'unknown',
       install_bus: install?.bus ?? 'unknown',
@@ -151,7 +166,7 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       install_drive_key: installKey,
 
       models_dirs_count: modelDirs.length,
-      models_dirs_truncated: modelDirs.length > cappedModelDirs.length,
+      models_dirs_truncated: truncated,
       models_storage_classes: models.map((m) => m?.storageClass ?? 'unknown'),
       models_buses: models.map((m) => m?.bus ?? 'unknown'),
       models_external: models.map((m) => m?.external ?? null),
@@ -175,11 +190,9 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       distinct_drive_count: indexer.count,
       models_primary_same_drive_as_install: sameDrive(primary, install),
       models_all_same_drive_as_install:
-        knownSame.length === modelSameAsInstall.length && knownSame.length > 0
-          ? knownSame.every(Boolean)
-          : null,
-      any_models_on_hdd: models.some((m) => m?.storageClass === 'hdd'),
-      any_models_external: models.some((m) => m?.external === true)
+        allSameAsInstall === true && truncated ? null : allSameAsInstall,
+      any_models_on_hdd: anyOnHdd ? true : truncated ? null : false,
+      any_models_external: anyExternal ? true : truncated ? null : false
     })
 
     // Durable person-level cohort axes (mirrors the `comfyui_gpu_*` pattern).
