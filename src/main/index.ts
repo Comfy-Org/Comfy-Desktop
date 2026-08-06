@@ -59,6 +59,7 @@ import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/t
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
 import { emitInstanceStartedTelemetry } from './lib/ipc/sessionStartTelemetry'
+import { emitStorageTelemetry } from './lib/ipc/storageTelemetry'
 import {
   get as getInstallation,
   installationEvents,
@@ -2139,6 +2140,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       onComfyExited,
       onInstanceStarted: (info) => {
         void emitInstanceStartedTelemetry(info)
+        void emitStorageTelemetry(info.installationId)
       },
       onComfyRestarted,
       onModelFolderRelaunch,
