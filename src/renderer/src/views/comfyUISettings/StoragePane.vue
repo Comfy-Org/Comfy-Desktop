@@ -230,10 +230,18 @@ const includedSharedPaths = computed<string[]>(() =>
 )
 
 /** Per-instance extras, hiding duplicates of an included shared dir (the
- *  backend dedupes the effective set the same way - shared dirs first). */
-const visibleExtras = computed<string[]>(() =>
-  currentExtras().filter((p) => !includedSharedPaths.value.some((s) => samePath(s, p)))
-)
+ *  backend dedupes the effective set the same way - shared dirs first) and
+ *  collapsing repeated stored paths into one row (remove/replace already
+ *  update every matching stored entry via `samePath`). */
+const visibleExtras = computed<string[]>(() => {
+  const out: string[] = []
+  for (const p of currentExtras()) {
+    if (includedSharedPaths.value.some((s) => samePath(s, p))) continue
+    if (out.some((s) => samePath(s, p))) continue
+    out.push(p)
+  }
+  return out
+})
 
 /** Effective primary, mirroring the backend's `resolveLauncherModelDirs`: a
  *  persisted `modelDirsPrimary` naming the install's own models dir means the
@@ -449,8 +457,8 @@ function handleBrowseSharedOutput(): void {
         <template v-else>
           {{
             t(
-              'comfyUISettings.storageGlobalNote',
-              'Changes here apply to all of your ComfyUI instances.'
+              'comfyUISettings.storageScopeNote',
+              'Shared directories are used by all of your ComfyUI instances; the other folders here only affect this instance.'
             )
           }}
         </template>

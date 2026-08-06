@@ -485,6 +485,33 @@ describe('StoragePane', () => {
       expect(value).toEqual(['/b/models'])
     })
 
+    it('collapses repeated stored paths into one row and removes all matches at once', async () => {
+      installMockBridge()
+      const wrapper = mountPaneWithSections(
+        makeStorageSections(['/a/models', '/a/models', '/b/models'])
+      )
+      await nextTick()
+      // The duplicate stored '/a/models' renders a single row: own (primary),
+      // /a/models, /b/models.
+      const names = wrapper.findAll('.models-dir-name').map((n) => n.text())
+      expect(names).toEqual(['/own/models', '/a/models', '/b/models'])
+      // Removing the deduped row drops every matching stored entry.
+      await wrapper.findAll('.models-dir-menu-wrap > button')[0]!.trigger('click')
+      await nextTick()
+      await flushPromises()
+      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      await items.find((i) => i.text().includes('Remove'))!.trigger('click')
+      await flushPromises()
+      const modal = useModal()
+      expect(modal.state.visible).toBe(true)
+      modal.close(true)
+      await flushPromises()
+      const emitted = wrapper.emitted('update-field')!
+      const [field, value] = emitted[emitted.length - 1] as [{ id: string }, unknown]
+      expect(field.id).toBe('modelDirs')
+      expect(value).toEqual(['/b/models'])
+    })
+
     it('keeps the dirs when the remove confirmation is declined', async () => {
       installMockBridge()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
