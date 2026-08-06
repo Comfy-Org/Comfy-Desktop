@@ -13,6 +13,11 @@ vi.mock('../../installations', () => ({
   get: (...args: unknown[]) => getInstallation(...args)
 }))
 
+const writeAppLog = vi.fn()
+vi.mock('../appLog', () => ({
+  writeAppLog: (...args: unknown[]) => writeAppLog(...args)
+}))
+
 const INSTALL_PATH = 'C:\\Users\\u\\ComfyUI-Installs\\main'
 const SHARED_MODELS = 'D:\\ai\\models'
 const CACHE_DIR = 'C:\\Users\\u\\cache'
@@ -117,6 +122,9 @@ const LOCAL_INST = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // clearAllMocks does not clear implementations: without this reset, a test
+  // that sets mockRejectedValue would leak into later tests that do not stub.
+  classifyPaths.mockReset()
   getInstallation.mockResolvedValue(LOCAL_INST)
   resolveInstallModelSearchPaths.mockReturnValue({
     downloadBaseDir: SHARED_MODELS,
@@ -242,10 +250,26 @@ describe('emitStorageTelemetry', () => {
     expect(registerPersonProperties).not.toHaveBeenCalled()
   })
 
-  it('never throws when classification rejects', async () => {
+  it('never throws when classification rejects, and debug-logs the cause', async () => {
     classifyPaths.mockRejectedValue(new Error('boom'))
     await expect(emitStorageTelemetry('inst-1')).resolves.toBeUndefined()
     expect(capture).not.toHaveBeenCalled()
+    expect(writeAppLog).toHaveBeenCalledWith('DEBUG', expect.stringContaining('boom'))
+  })
+
+  it('nulls negative aggregates when an included model dir is unresolved', async () => {
+    stubClassification({
+      [INSTALL_PATH]: NVME,
+      [BUILTIN_MODELS]: NVME,
+      [SHARED_MODELS]: drive({}) // unresolved: class unknown, external null
+    })
+
+    await emitStorageTelemetry('inst-1')
+
+    const props = capture.mock.calls[0]![1]
+    // The unresolved dir could be on an HDD or external drive - no false "no".
+    expect(props.any_models_on_hdd).toBeNull()
+    expect(props.any_models_external).toBeNull()
   })
 
   it('caps model dirs at 16 and nulls negative aggregates when truncated', async () => {

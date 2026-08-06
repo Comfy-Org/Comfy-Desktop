@@ -17,6 +17,7 @@
 import * as telemetry from '../telemetry'
 import * as settings from '../../settings'
 import * as installations from '../../installations'
+import { writeAppLog } from '../appLog'
 import { dataDir } from '../paths'
 import { installOutputDir, resolveInstallModelSearchPaths } from '../models'
 import { classifyPaths, type DriveInfo } from '../storageInfo'
@@ -148,6 +149,10 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
         : null
     const anyOnHdd = models.some((m) => m?.storageClass === 'hdd')
     const anyExternal = models.some((m) => m?.external === true)
+    // A negative aggregate is only proven when every INCLUDED dir resolved:
+    // an unknown/unresolved dir could be on an HDD or external drive.
+    const allStorageKnown = models.every((m) => m !== undefined && m.storageClass !== 'unknown')
+    const allExternalKnown = models.every((m) => m !== undefined && m.external !== null)
 
     telemetry.capture('comfy.desktop.session.storage_detected', {
       // NOT `installation_id`: that name is a machine-scoped default property
@@ -191,8 +196,8 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       models_primary_same_drive_as_install: sameDrive(primary, install),
       models_all_same_drive_as_install:
         allSameAsInstall === true && truncated ? null : allSameAsInstall,
-      any_models_on_hdd: anyOnHdd ? true : truncated ? null : false,
-      any_models_external: anyExternal ? true : truncated ? null : false
+      any_models_on_hdd: anyOnHdd ? true : truncated || !allStorageKnown ? null : false,
+      any_models_external: anyExternal ? true : truncated || !allExternalKnown ? null : false
     })
 
     // Durable person-level cohort axes (mirrors the `comfyui_gpu_*` pattern).
@@ -210,7 +215,8 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
           : {})
       })
     }
-  } catch {
-    // Telemetry must never break a launch.
+  } catch (error) {
+    // Telemetry must never break a launch, but do record why it failed.
+    writeAppLog('DEBUG', `storage telemetry failed: ${String(error)}`)
   }
 }

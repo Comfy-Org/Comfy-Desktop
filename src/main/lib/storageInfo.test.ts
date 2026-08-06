@@ -271,6 +271,14 @@ describe('classifyPaths - Windows', () => {
     expect(map.get('C:\\a')!.storageClass).toBe('unknown')
     expect(map.get('D:\\b')!.driveKey).toBeNull()
   })
+
+  it('retries the snapshot after a failed probe (failure is not cached)', async () => {
+    mockShouldThrow = true
+    await classifyPaths(['C:\\a'])
+    mockShouldThrow = false
+    const map = await classifyPaths(['C:\\a'])
+    expect(map.get('C:\\a')!.storageClass).toBe('nvme_ssd')
+  })
 })
 
 // --- Linux fixtures ---------------------------------------------------------
