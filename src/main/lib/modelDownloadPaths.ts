@@ -21,9 +21,7 @@ function getSharedModelsDirs(): string[] {
 
 /** Installation-aware download context for callers that already hold the
  *  record (e.g. the template-model task). Sync: no store lookup needed. */
-export function resolveDownloadContext(
-  inst: installations.InstallationRecord
-): InstallModelSearch {
+export function resolveDownloadContext(inst: installations.InstallationRecord): InstallModelSearch {
   return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
 }
 

@@ -340,19 +340,15 @@ describe('resolveLauncherModelDirs', () => {
 
   it('honors a promoted per-install primary even with shared dirs present', () => {
     const ext = path.join(tmp, 'ext')
-    const res = resolveLauncherModelDirs(
-      makeInstall({ modelDirs: [ext], modelDirsPrimary: ext }),
-      [path.join(tmp, 'shared')]
-    )
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirs: [ext], modelDirsPrimary: ext }), [
+      path.join(tmp, 'shared')
+    ])
     expect(res.primaryDir).toBe(path.resolve(ext))
   })
 
   it('honors a promoted primary that points at a shared dir', () => {
     const shared = [path.join(tmp, 'shared-a'), path.join(tmp, 'shared-b')]
-    const res = resolveLauncherModelDirs(
-      makeInstall({ modelDirsPrimary: shared[1] }),
-      shared
-    )
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirsPrimary: shared[1] }), shared)
     expect(res.primaryDir).toBe(path.resolve(shared[1]!))
   })
 
