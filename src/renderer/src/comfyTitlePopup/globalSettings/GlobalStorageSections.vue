@@ -156,7 +156,10 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     />
   </GlobalSettingsMicroSection>
 
-  <GlobalSettingsMicroSection :title="t('settings.sharedDirectories', 'Shared Directories')">
+  <GlobalSettingsMicroSection
+    :title="t('settings.sharedDirectories', 'Shared Directories')"
+    :tooltip="t('tooltips.sharedDirectories')"
+  >
     <StorageDirRow
       v-if="sharedInputField"
       :label="sharedInputField.label || t('media.inputDir', 'Input Directory')"

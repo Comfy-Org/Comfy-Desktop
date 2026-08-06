@@ -256,6 +256,32 @@ describe('GlobalSettingsView', () => {
     expect(dirRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
   })
 
+  // The global Storage tab explains its scope: shared model dirs are included
+  // by every instance (which can add its own dirs in its Storage tab), and
+  // each instance opts into the shared input/output folders independently.
+  it('Storage tab section tooltips state the global-vs-instance scope', async () => {
+    installMockBridge()
+    const snapshot = makeSnapshot({
+      sharedDirectoriesFields: [
+        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
+        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
+      ]
+    })
+    const wrapper = mountView(snapshot)
+    await wrapper
+      .findAll('.gs-tab')
+      .find((t) => t.text() === 'Storage')!
+      .trigger('click')
+    await nextTick()
+    const tooltips = wrapper
+      .findAll('.gs-micro-title .info-tooltip-trigger')
+      .map((el) => el.attributes('aria-label') ?? '')
+    expect(
+      tooltips.some((text) => text.includes('an instance can add directories just for itself'))
+    ).toBe(true)
+    expect(tooltips.some((text) => text.includes('Each instance independently chooses'))).toBe(true)
+  })
+
   it('Storage tab opens a Shared Directory in the OS file manager when clicked', async () => {
     const bridge = installMockBridge()
     const snapshot = makeSnapshot({
