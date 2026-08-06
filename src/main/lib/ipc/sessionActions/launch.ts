@@ -40,7 +40,7 @@ import {
   syncCustomModelFolders,
   discoverExtraModelFolders,
   instanceModelPathsYaml,
-  isSamePath,
+  resolveLauncherModelDirs,
   createSessionPath,
   buildLaunchEnv,
   checkRebootMarker,
@@ -609,33 +609,22 @@ async function runLaunch(
 
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
-  const useSharedModels = argsAvailable && (inst.useSharedModels as boolean | undefined) !== false
-  const useSharedInputOutput =
-    argsAvailable && (inst.useSharedInputOutput as boolean | undefined) !== false
   let preLaunchExtras: string[] = []
   // Model dirs whose extra-folder changes drive auto-relaunch, plus the sync
-  // options (target YAML + which dir is `is_default`). Sourced from the global
-  // settings when this install uses shared models, or from its per-install list
-  // when it opts out.
+  // options (target YAML + which dir is `is_default`). Shared and per-install
+  // dirs are additive: the global settings dirs (unless the install excludes
+  // them via `useSharedModels: false`) plus the install's own `modelDirs`.
   let modelDirsForLaunch: string[] | undefined
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
-  if (useSharedModels) {
-    manageModelFolders = true
-    modelDirsForLaunch = settings.get('modelsDirs') as string[] | undefined
-    // Global shared: first dir is default (the omitted-primaryDir default).
-  } else if (argsAvailable) {
-    const instanceDirs = inst.modelDirs as string[] | undefined
-    if (instanceDirs && instanceDirs.length > 0) {
+  if (argsAvailable) {
+    const sharedDirs = (settings.get('modelsDirs') as string[] | undefined) ?? []
+    const { dirs, primaryDir } = resolveLauncherModelDirs(inst, sharedDirs)
+    if (dirs.length > 0) {
       manageModelFolders = true
-      modelDirsForLaunch = instanceDirs
-      // The install's own models dir is the default unless the user promoted a
-      // valid external dir; `null` leaves ComfyUI's built-in default in place.
-      const primaryRaw = inst.modelDirsPrimary as string | undefined
-      const primaryDir =
-        typeof primaryRaw === 'string' && instanceDirs.some((d) => isSamePath(d, primaryRaw))
-          ? primaryRaw
-          : null
+      modelDirsForLaunch = dirs
+      // Always the per-install YAML: the effective dir set is install-specific
+      // now that shared and per-install dirs combine.
       modelSyncOptions = { yamlPath: instanceModelPathsYaml(installationId), primaryDir }
     }
   }
@@ -653,26 +642,36 @@ async function runLaunch(
     const baselineSet = new Set([...(config?.extraFolders ?? []), ...installExtras])
     preLaunchExtras = [...baselineSet].sort()
   }
-  if (useSharedInputOutput) {
-    const inputDir = (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
-    const outputDir =
-      (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
-    fs.mkdirSync(inputDir, { recursive: true })
-    fs.mkdirSync(outputDir, { recursive: true })
-    launchCmd.args!.push('--input-directory', inputDir)
-    launchCmd.args!.push('--output-directory', outputDir)
-  } else if (argsAvailable) {
-    // Per-install paths (e.g. adopted-from-legacy); omitted when unset so
-    // ComfyUI falls back to its own <installPath>/{input,output} defaults.
-    const perInstallInput = inst.inputDir as string | undefined
-    const perInstallOutput = inst.outputDir as string | undefined
-    if (perInstallInput) {
-      fs.mkdirSync(perInstallInput, { recursive: true })
-      launchCmd.args!.push('--input-directory', perInstallInput)
+  if (argsAvailable) {
+    // Input and output are independent per-folder choices: shared (global
+    // settings) or the per-install path. A per-install path is omitted when
+    // unset so ComfyUI falls back to its own <installPath>/{input,output}
+    // defaults (e.g. adopted-from-legacy records pin these fields).
+    const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
+    const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
+    if (useSharedInput) {
+      const inputDir =
+        (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
+      fs.mkdirSync(inputDir, { recursive: true })
+      launchCmd.args!.push('--input-directory', inputDir)
+    } else {
+      const perInstallInput = inst.inputDir as string | undefined
+      if (perInstallInput) {
+        fs.mkdirSync(perInstallInput, { recursive: true })
+        launchCmd.args!.push('--input-directory', perInstallInput)
+      }
     }
-    if (perInstallOutput) {
-      fs.mkdirSync(perInstallOutput, { recursive: true })
-      launchCmd.args!.push('--output-directory', perInstallOutput)
+    if (useSharedOutput) {
+      const outputDir =
+        (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+      fs.mkdirSync(outputDir, { recursive: true })
+      launchCmd.args!.push('--output-directory', outputDir)
+    } else {
+      const perInstallOutput = inst.outputDir as string | undefined
+      if (perInstallOutput) {
+        fs.mkdirSync(perInstallOutput, { recursive: true })
+        launchCmd.args!.push('--output-directory', perInstallOutput)
+      }
     }
   }
 

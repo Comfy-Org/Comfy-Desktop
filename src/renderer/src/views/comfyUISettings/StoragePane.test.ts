@@ -401,7 +401,7 @@ describe('StoragePane', () => {
       expect(ownRow.find('.tag-primary').exists()).toBe(false)
       expect(ownRow.find('.models-dir-action').exists()).toBe(false)
       expect(ownRow.find('.models-dir-menu-wrap').exists()).toBe(false)
-      expect(wrapper.text()).toContain('Shared Models')
+      expect(wrapper.text()).toContain('Include Shared Model Directories')
       // Shared dirs carry the shared badge; the per-instance install-own row doesn't.
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
       expect(ownRow.find('.storage-item-icon.is-shared').exists()).toBe(false)

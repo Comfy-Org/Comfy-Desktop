@@ -23,6 +23,7 @@ const {
   syncCustomModelFolders,
   resolveExtraModelPaths,
   resolveInstallModelSearchPaths,
+  resolveLauncherModelDirs,
   mapLegacyFolderType
 } = await import('./models')
 
@@ -289,6 +290,91 @@ describe('resolveExtraModelPaths — mirrors ComfyUI extra_config.py', () => {
   })
 })
 
+describe('resolveLauncherModelDirs', () => {
+  let tmp: string
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-dirs-'))
+  })
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  function makeInstall(over: Partial<InstallationRecord>): InstallationRecord {
+    return {
+      id: 'inst-1',
+      name: 'Test',
+      createdAt: '',
+      installPath: path.join(tmp, 'install'),
+      sourceId: 's',
+      ...over
+    } as InstallationRecord
+  }
+
+  it('combines shared and per-install dirs, shared first', () => {
+    const shared = [path.join(tmp, 'shared-a')]
+    const ext = path.join(tmp, 'ext')
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirs: [ext] }), shared)
+    expect(res.dirs).toEqual([path.resolve(shared[0]!), path.resolve(ext)])
+  })
+
+  it('dedupes a per-install dir that is already shared', () => {
+    const dir = path.join(tmp, 'both')
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirs: [dir] }), [dir])
+    expect(res.dirs).toEqual([path.resolve(dir)])
+  })
+
+  it('excludes shared dirs when useSharedModels is false', () => {
+    const ext = path.join(tmp, 'ext')
+    const res = resolveLauncherModelDirs(
+      makeInstall({ useSharedModels: false, modelDirs: [ext] }),
+      [path.join(tmp, 'shared')]
+    )
+    expect(res.dirs).toEqual([path.resolve(ext)])
+  })
+
+  it('defaults the primary to the first shared dir', () => {
+    const shared = [path.join(tmp, 'shared-a'), path.join(tmp, 'shared-b')]
+    const res = resolveLauncherModelDirs(makeInstall({}), shared)
+    expect(res.primaryDir).toBe(path.resolve(shared[0]!))
+  })
+
+  it('honors a promoted per-install primary even with shared dirs present', () => {
+    const ext = path.join(tmp, 'ext')
+    const res = resolveLauncherModelDirs(
+      makeInstall({ modelDirs: [ext], modelDirsPrimary: ext }),
+      [path.join(tmp, 'shared')]
+    )
+    expect(res.primaryDir).toBe(path.resolve(ext))
+  })
+
+  it('honors a promoted primary that points at a shared dir', () => {
+    const shared = [path.join(tmp, 'shared-a'), path.join(tmp, 'shared-b')]
+    const res = resolveLauncherModelDirs(
+      makeInstall({ modelDirsPrimary: shared[1] }),
+      shared
+    )
+    expect(res.primaryDir).toBe(path.resolve(shared[1]!))
+  })
+
+  it('ignores a stale promoted primary that matches no effective dir', () => {
+    const shared = [path.join(tmp, 'shared-a')]
+    const res = resolveLauncherModelDirs(
+      makeInstall({ modelDirsPrimary: path.join(tmp, 'gone') }),
+      shared
+    )
+    expect(res.primaryDir).toBe(path.resolve(shared[0]!))
+  })
+
+  it('returns a null primary when shared is off and nothing is promoted', () => {
+    const ext = path.join(tmp, 'ext')
+    const res = resolveLauncherModelDirs(
+      makeInstall({ useSharedModels: false, modelDirs: [ext] }),
+      [path.join(tmp, 'shared')]
+    )
+    expect(res.primaryDir).toBeNull()
+  })
+})
+
 describe('resolveInstallModelSearchPaths', () => {
   let tmp: string
   beforeEach(() => {
@@ -310,6 +396,19 @@ describe('resolveInstallModelSearchPaths', () => {
       ...over
     } as InstallationRecord
   }
+
+  it('includes per-install dirs alongside shared dirs when shared models are on', () => {
+    const shared = [path.join(tmp, 'shared-a')]
+    const ext = path.join(tmp, 'ext')
+    const res = resolveInstallModelSearchPaths(
+      makeInstall({ useSharedModels: true, modelDirs: [ext] }),
+      shared
+    )
+    expect(res.modelRoots).toContain(path.resolve(shared[0]!))
+    expect(res.modelRoots).toContain(path.resolve(ext))
+    // Shared dirs stay the download target unless a primary is promoted.
+    expect(res.downloadBaseDir).toBe(path.resolve(shared[0]!))
+  })
 
   it('uses the first shared dir as primary when shared models are on', () => {
     const shared = [path.join(tmp, 'shared-a'), path.join(tmp, 'shared-b')]

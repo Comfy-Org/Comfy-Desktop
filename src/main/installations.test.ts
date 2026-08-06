@@ -277,7 +277,7 @@ describe('installations.resolveAutoLaunchInstall', () => {
   })
 })
 
-describe('installations.load (useSharedPaths → useSharedModels/useSharedInputOutput migration)', () => {
+describe('installations.load (legacy shared-storage flag migrations)', () => {
   function writeRawInstallations(records: Record<string, unknown>[]): string {
     // On win32 `dataDir()` is the Electron userData path directly (no `data/`).
     fs.mkdirSync(userDataPath, { recursive: true })
@@ -286,7 +286,7 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     return file
   }
 
-  it('translates legacy useSharedPaths: true → both new flags true', async () => {
+  it('translates legacy useSharedPaths: true -> all new flags true', async () => {
     writeRawInstallations([
       {
         id: 'legacy-on',
@@ -302,11 +302,13 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'legacy-on')!
     expect(rec.useSharedModels).toBe(true)
-    expect(rec.useSharedInputOutput).toBe(true)
+    expect(rec.useSharedInput).toBe(true)
+    expect(rec.useSharedOutput).toBe(true)
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
-  it('translates legacy useSharedPaths: false → useSharedModels: true, useSharedInputOutput: false', async () => {
+  it('translates legacy useSharedPaths: false -> useSharedModels: true, per-folder flags false', async () => {
     // The migration forces `useSharedModels: true` regardless of the legacy
     // value (isolating paths meant input/output, not the model library).
     writeRawInstallations([
@@ -324,8 +326,43 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'legacy-off')!
     expect(rec.useSharedModels).toBe(true)
-    expect(rec.useSharedInputOutput).toBe(false)
+    expect(rec.useSharedInput).toBe(false)
+    expect(rec.useSharedOutput).toBe(false)
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
+  })
+
+  it('splits legacy useSharedInputOutput into useSharedInput + useSharedOutput', async () => {
+    writeRawInstallations([
+      {
+        id: 'split-off',
+        name: 'Split Off',
+        installPath: path.join(tmpRoot, 'split-off'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: false
+      },
+      {
+        id: 'split-on',
+        name: 'Split On',
+        installPath: path.join(tmpRoot, 'split-on'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: true
+      }
+    ])
+    const installations = await loadInstallations()
+    const list = await installations.list()
+    const off = list.find((r) => r.id === 'split-off')!
+    expect(off.useSharedInput).toBe(false)
+    expect(off.useSharedOutput).toBe(false)
+    expect(off).not.toHaveProperty('useSharedInputOutput')
+    const on = list.find((r) => r.id === 'split-on')!
+    expect(on.useSharedInput).toBe(true)
+    expect(on.useSharedOutput).toBe(true)
+    expect(on).not.toHaveProperty('useSharedInputOutput')
   })
 
   it('leaves records without useSharedPaths untouched (no implicit migration)', async () => {
@@ -346,8 +383,10 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'modern')!
     expect(rec.useSharedModels).toBe(false)
-    expect(rec.useSharedInputOutput).toBeUndefined()
+    expect(rec.useSharedInput).toBeUndefined()
+    expect(rec.useSharedOutput).toBeUndefined()
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
   it('strips legacy useSharedPaths from disk on next write', async () => {
@@ -368,8 +407,10 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as Record<string, unknown>[]
     const persisted = raw.find((r) => r['id'] === 'legacy-strip')!
     expect(persisted).not.toHaveProperty('useSharedPaths')
+    expect(persisted).not.toHaveProperty('useSharedInputOutput')
     expect(persisted['useSharedModels']).toBe(true)
-    expect(persisted['useSharedInputOutput']).toBe(true)
+    expect(persisted['useSharedInput']).toBe(true)
+    expect(persisted['useSharedOutput']).toBe(true)
   })
 })
 

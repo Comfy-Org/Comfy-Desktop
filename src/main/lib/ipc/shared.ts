@@ -74,6 +74,7 @@ import {
   syncCustomModelFolders,
   discoverExtraModelFolders,
   instanceModelPathsYaml,
+  resolveLauncherModelDirs,
   isSamePath
 } from '../models'
 import { copyDirWithProgress } from '../copy'
@@ -193,6 +194,7 @@ export {
   syncCustomModelFolders,
   discoverExtraModelFolders,
   instanceModelPathsYaml,
+  resolveLauncherModelDirs,
   isSamePath,
   copyDirWithProgress,
   fetchJSON,
@@ -941,7 +943,8 @@ export async function performCopy(
         // legacy workspace. inputDir/outputDir are left unset so launch falls
         // back to this copy's own `<comfyDir>/{input,output}` — keeping the
         // record clone-safe (no absolute path pointing at a specific install).
-        useSharedInputOutput: false
+        useSharedInput: false,
+        useSharedOutput: false
       }
     }
 

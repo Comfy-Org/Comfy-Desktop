@@ -99,9 +99,9 @@ describe('resolveTemplateInputAssets', () => {
 })
 
 describe('resolveInputDir', () => {
-  it('uses the per-install dir when input/output is not shared', () => {
+  it('uses the per-install dir when input is not shared', () => {
     const rec = {
-      useSharedInputOutput: false,
+      useSharedInput: false,
       inputDir: '/custom/in'
     } as unknown as InstallationRecord
     expect(resolveInputDir(rec)).toBe('/custom/in')
@@ -109,7 +109,7 @@ describe('resolveInputDir', () => {
 
   it('falls back to <installPath>/ComfyUI/input when isolated with no override', () => {
     const rec = {
-      useSharedInputOutput: false,
+      useSharedInput: false,
       installPath: '/apps/c'
     } as unknown as InstallationRecord
     expect(resolveInputDir(rec)).toMatch(/[/\\]apps[/\\]c[/\\]ComfyUI[/\\]input$/)

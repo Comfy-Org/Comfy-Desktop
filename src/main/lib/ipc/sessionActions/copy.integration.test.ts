@@ -225,7 +225,7 @@ describe('handleReleaseUpdate (release-update success path)', () => {
     ).toBe(NODE_FILE_BODY)
 
     // Models route through useSharedModels and input/output route
-    // through useSharedInputOutput to the settings-provided dirs.
+    // through useSharedInput/useSharedOutput to the settings-provided dirs.
     expect(fs.readFileSync(path.join(sharedModelsDir, 'checkpoints', MODEL_FILE), 'utf-8')).toBe(
       MODEL_BODY
     )

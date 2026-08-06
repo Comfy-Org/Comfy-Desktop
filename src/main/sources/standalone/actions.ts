@@ -11,6 +11,7 @@ import { installFilteredRequirementsDetailed } from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
 import { copyDirWithProgress } from '../../lib/copy'
 import { listCustomNodes, findComfyUIDir, backupDir, mergeDirFlat } from '../../lib/migrate'
+import { resolveLauncherModelDirs } from '../../lib/models'
 import { t } from '../../lib/i18n'
 import { MSG_CANCELLED } from '../../../shared/operationStatus'
 import * as installations from '../../installations'
@@ -1259,21 +1260,25 @@ async function handleMigrateFrom(
     return { ok: false, message: t('migrate.noComfyUIDir') }
   }
 
-  const useSharedModels = (installation.useSharedModels as boolean | undefined) !== false
-  const useSharedInputOutput = (installation.useSharedInputOutput as boolean | undefined) !== false
+  const useSharedInput = (installation.useSharedInput as boolean | undefined) !== false
+  const useSharedOutput = (installation.useSharedOutput as boolean | undefined) !== false
   const perInstallInput = installation.inputDir as string | undefined
   const perInstallOutput = installation.outputDir as string | undefined
 
   const srcModels = path.join(srcComfyUI, 'models')
-  const dstModels = useSharedModels
-    ? ((settings.get('modelsDirs') as string[] | undefined) || settings.defaults.modelsDirs)[0]!
-    : path.join(dstComfyUI, 'models')
+  // Migrated models land in the install's effective download target: its
+  // promoted primary (shared or per-install), else the first shared dir, else
+  // its own models dir.
+  const sharedDirs =
+    (settings.get('modelsDirs') as string[] | undefined) || settings.defaults.modelsDirs
+  const { primaryDir } = resolveLauncherModelDirs(installation, sharedDirs)
+  const dstModels = primaryDir ?? path.join(dstComfyUI, 'models')
   const srcInput = path.join(srcComfyUI, 'input')
-  const dstInput = useSharedInputOutput
+  const dstInput = useSharedInput
     ? (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
     : perInstallInput || path.join(dstComfyUI, 'input')
   const srcOutput = path.join(srcComfyUI, 'output')
-  const dstOutput = useSharedInputOutput
+  const dstOutput = useSharedOutput
     ? (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
     : perInstallOutput || path.join(dstComfyUI, 'output')
 

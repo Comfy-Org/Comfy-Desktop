@@ -119,7 +119,7 @@ export async function resolveTemplateInputAssets(
  * → per-install override → `<installPath>/ComfyUI/input`.
  */
 export function resolveInputDir(installation: InstallationRecord): string {
-  if (installation.useSharedInputOutput !== false) {
+  if (installation.useSharedInput !== false) {
     return settings.get('inputDir') || settings.defaults.inputDir
   }
   return installation.inputDir || path.join(installation.installPath, 'ComfyUI', 'input')
