@@ -516,8 +516,10 @@ export interface LauncherModelDirs {
  * per-install dirs are additive: the global shared dirs are included unless
  * `useSharedModels === false`, and the install's own `modelDirs` always apply.
  * The promoted `modelDirsPrimary` may point at any effective dir (shared or
- * per-install); when absent/stale the first shared dir is primary, and with no
- * shared dirs the install's own models dir stays the default (`null`).
+ * per-install), or at the install's own models dir to explicitly keep the
+ * built-in folder as the download target even while shared dirs are included.
+ * When absent/stale the first shared dir is primary, and with no shared dirs
+ * the install's own models dir stays the default (`null`).
  * `sharedModelsDirs` is passed in to avoid a settings import cycle.
  */
 export function resolveLauncherModelDirs(
@@ -533,7 +535,15 @@ export function resolveLauncherModelDirs(
   }
   const primaryRaw = inst.modelDirsPrimary as string | undefined | null
   let primaryDir: string | null = null
-  if (typeof primaryRaw === 'string' && dirs.some((d) => isSamePath(d, primaryRaw))) {
+  if (
+    typeof primaryRaw === 'string' &&
+    inst.installPath &&
+    isSamePath(installModelsDir(inst.installPath), primaryRaw)
+  ) {
+    // Explicitly promoted install-own models dir: `null` (= built-in default)
+    // without falling through to the first shared dir.
+    primaryDir = null
+  } else if (typeof primaryRaw === 'string' && dirs.some((d) => isSamePath(d, primaryRaw))) {
     primaryDir = path.resolve(primaryRaw)
   } else if (shared.length > 0) {
     primaryDir = shared[0]!

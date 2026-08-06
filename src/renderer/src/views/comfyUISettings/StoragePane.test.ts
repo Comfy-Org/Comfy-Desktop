@@ -232,10 +232,10 @@ describe('StoragePane', () => {
     const bridge = installMockBridge()
     const wrapper = mountPaneWithSections(makeStorageSections([], { sharedOn: true }))
     await nextTick()
-    // Menus: only the non-primary shared dir (the locked install-own row can't
-    // be promoted while shared dirs are included).
+    // Menus: the non-primary shared dir and the install-own row (promotable
+    // even while shared dirs are included).
     const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
-    expect(toggles).toHaveLength(1)
+    expect(toggles).toHaveLength(2)
     await toggles[0]!.trigger('click')
     await nextTick()
     await flushPromises()
@@ -350,7 +350,7 @@ describe('StoragePane', () => {
       expect(rows[2]!.find('.tag-primary').exists()).toBe(false)
     })
 
-    it('demotes back to install-own by clearing modelDirsPrimary', async () => {
+    it('demotes back to install-own by persisting the install-own path', async () => {
       installMockBridge()
       const wrapper = mountPaneWithSections(
         makeStorageSections(['/a/models'], { primary: '/a/models' })
@@ -365,7 +365,7 @@ describe('StoragePane', () => {
       const emitted = wrapper.emitted('update-field')!
       const [field, value] = emitted[0] as [{ id: string }, unknown]
       expect(field.id).toBe('modelDirsPrimary')
-      expect(value).toBe(null)
+      expect(value).toBe('/own/models')
     })
 
     it('locked install-own row offers no Remove action even when not primary', async () => {
@@ -424,12 +424,13 @@ describe('StoragePane', () => {
       const extraRow = rows[2]!
       expect(extraRow.find('.models-dir-name').text()).toBe('/a/models')
       expect(extraRow.find('.models-dir-action[aria-label^="Browse"]').exists()).toBe(true)
-      // The install-own row is last, locked: no primary tag, no browse, no menu.
+      // The install-own row is last, locked: no primary tag, no browse; it
+      // still has a menu so it can be promoted to the download target.
       const ownRow = rows[3]!
       expect(ownRow.find('.models-dir-name').text()).toBe('/own/models')
       expect(ownRow.find('.tag-primary').exists()).toBe(false)
-      expect(ownRow.find('.models-dir-action').exists()).toBe(false)
-      expect(ownRow.find('.models-dir-menu-wrap').exists()).toBe(false)
+      expect(ownRow.find('.models-dir-action[aria-label^="Browse"]').exists()).toBe(false)
+      expect(ownRow.find('.models-dir-menu-wrap').exists()).toBe(true)
       expect(wrapper.text()).toContain('Include Shared Model Directories')
       // Shared dirs carry the shared badge; the per-instance rows don't.
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
@@ -513,9 +514,9 @@ describe('StoragePane', () => {
       const bridge = installMockBridge()
       const wrapper = mountPaneWithSections(makeStorageSections(['/x'], { sharedOn: true }))
       await nextTick()
-      // Rows: shared primary, shared /mnt/extra/models, extra /x, own (no menu).
+      // Rows: shared primary (no menu), shared /mnt/extra/models, extra /x, own.
       const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
-      expect(toggles).toHaveLength(2)
+      expect(toggles).toHaveLength(3)
       await toggles[1]!.trigger('click')
       await nextTick()
       await flushPromises()
@@ -528,6 +529,39 @@ describe('StoragePane', () => {
       expect(value).toBe('/x')
       // The global list is never rewritten from the instance pane.
       expect(bridge.setModelsDirsCalls).toEqual([])
+    })
+
+    it('promotes the locked install-own row to download target while shared models is on', async () => {
+      const bridge = installMockBridge()
+      const wrapper = mountPaneWithSections(makeStorageSections([], { sharedOn: true }))
+      await nextTick()
+      // Rows: shared primary (no menu), shared /mnt/extra/models, own (last).
+      const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
+      expect(toggles).toHaveLength(2)
+      await toggles[1]!.trigger('click')
+      await nextTick()
+      await flushPromises()
+      const items = wrapper.findAll('.models-dir-menu button[role="menuitem"]')
+      await items.find((i) => i.text().includes('Use for Model Downloads'))!.trigger('click')
+      await flushPromises()
+      const emitted = wrapper.emitted('update-field')!
+      const [field, value] = emitted[0] as [{ id: string }, unknown]
+      expect(field.id).toBe('modelDirsPrimary')
+      expect(value).toBe('/own/models')
+      expect(bridge.setModelsDirsCalls).toEqual([])
+    })
+
+    it('shows the Downloads tag on the install-own row when its path is the persisted primary', async () => {
+      installMockBridge()
+      const wrapper = mountPaneWithSections(
+        makeStorageSections([], { sharedOn: true, primary: '/own/models' })
+      )
+      await nextTick()
+      // Own row leads while it is the explicit target; shared rows lose the tag.
+      const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[0]!.find('.models-dir-name').text()).toBe('/own/models')
+      expect(rows[0]!.find('.tag-primary').exists()).toBe(true)
+      expect(rows.slice(1).every((r) => !r.find('.tag-primary').exists())).toBe(true)
     })
   })
 

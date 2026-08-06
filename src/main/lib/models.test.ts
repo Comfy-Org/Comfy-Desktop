@@ -352,6 +352,23 @@ describe('resolveLauncherModelDirs', () => {
     expect(res.primaryDir).toBe(path.resolve(shared[1]!))
   })
 
+  it('treats a promoted install-own models dir as the built-in default even with shared dirs', () => {
+    const shared = [path.join(tmp, 'shared')]
+    const own = path.join(tmp, 'install', 'ComfyUI', 'models')
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirsPrimary: own }), shared)
+    // Explicit own-dir promotion beats the first-shared-dir fallback: null
+    // keeps ComfyUI's built-in models dir the download target.
+    expect(res.primaryDir).toBeNull()
+    expect(res.dirs).toEqual([path.resolve(shared[0]!)])
+  })
+
+  it('an own-dir primary from a different install path is stale and falls back to shared', () => {
+    const shared = [path.join(tmp, 'shared')]
+    const foreignOwn = path.join(tmp, 'other-install', 'ComfyUI', 'models')
+    const res = resolveLauncherModelDirs(makeInstall({ modelDirsPrimary: foreignOwn }), shared)
+    expect(res.primaryDir).toBe(path.resolve(shared[0]!))
+  })
+
   it('ignores a stale promoted primary that matches no effective dir', () => {
     const shared = [path.join(tmp, 'shared-a')]
     const res = resolveLauncherModelDirs(

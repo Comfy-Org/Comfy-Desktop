@@ -236,11 +236,14 @@ const visibleExtras = computed<string[]>(() =>
 )
 
 /** Effective primary, mirroring the backend's `resolveLauncherModelDirs`: a
- *  persisted `modelDirsPrimary` present in the effective dirs wins, else the
- *  first included shared dir, else null (= the install's own models dir). */
+ *  persisted `modelDirsPrimary` naming the install's own models dir means the
+ *  built-in folder is the explicit target (null); a persisted path present in
+ *  the effective dirs wins; else the first included shared dir, else null
+ *  (= the install's own models dir). */
 const effectivePrimary = computed<string | null>(() => {
   const raw = findField('modelDirsPrimary')?.value
   if (typeof raw === 'string') {
+    if (installOwnModelsDir.value && samePath(raw, installOwnModelsDir.value)) return null
     const known =
       includedSharedPaths.value.some((d) => samePath(d, raw)) ||
       currentExtras().some((d) => samePath(d, raw))
@@ -255,14 +258,13 @@ const effectivePrimary = computed<string | null>(() => {
 const modelDirRows = computed<ModelsDir[]>(() => {
   const primary = effectivePrimary.value
   const own = installOwnModelsDir.value
-  // While shared dirs are included, `modelDirsPrimary: null` resolves to the
-  // first shared dir, so the install-own row can't be promoted to primary.
+  // The install-own row is always promotable: promoting it persists its own
+  // path, which the backend reads as "built-in folder is the explicit target".
   const ownRow: ModelsDir | null = own
     ? {
         path: own,
         isPrimary: primary === null,
-        locked: true,
-        promotable: includedSharedPaths.value.length === 0
+        locked: true
       }
     : null
   const rest: ModelsDir[] = [
@@ -345,8 +347,9 @@ async function handleChangeModelDir(index: number): Promise<void> {
 function handleMakeModelPrimary(index: number): void {
   const row = modelDirRows.value[index]
   if (!row || row.kind === 'extra') return
-  // The locked install-own row becoming primary means "no explicit primary".
-  persistField('modelDirsPrimary', row.locked ? null : row.path)
+  // Persisting the row's path also covers the locked install-own row: the
+  // backend treats its own models dir as "built-in folder is the target".
+  persistField('modelDirsPrimary', row.path)
 }
 
 function handleOpenModelDir(index: number): void {
