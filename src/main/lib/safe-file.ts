@@ -5,7 +5,9 @@
  * then rename .tmp over the target — a crash can never leave the file truncated.
  *
  * readFileSafe / readFileSafeAsync: read the primary file, falling back to .bak
- * (and restoring it) if the primary is missing or corrupt.
+ * (and restoring it) if the primary is missing or corrupt. Reads are tri-state
+ * (data / absent / unreadable) so callers can tell "no file" apart from "file
+ * exists but is locked" and fail closed before overwriting it.
  */
 
 import fs from 'fs'
@@ -28,6 +30,21 @@ function isTransientFsError(err: unknown): boolean {
 /** Blocking sleep for the sync paths (no event loop to yield to). */
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Best-effort fsync of a directory so a completed rename itself survives
+ *  power loss. Windows cannot fsync a directory handle (the open or fsync
+ *  fails with EPERM/EISDIR), so this silently degrades there - NTFS journals
+ *  metadata, which covers the rename. */
+function fsyncDirBestEffort(dirPath: string): void {
+  try {
+    const fd = fs.openSync(dirPath, 'r')
+    try {
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {}
 }
 
 /** Times a read fell back to `.bak` content (primary missing, empty, or locked
@@ -87,15 +104,47 @@ async function readFileWithRetryAsync(filePath: string): Promise<SafeReadOutcome
   }
 }
 
-/** Atomically write `data` to `filePath`. With `backup`, copy the current file to
- *  `filePath.bak` before replacing. Transient rename locks are retried (see
- *  TRANSIENT_FS_CODES); a still-failing write throws with the tmp cleaned up. */
-export function writeFileSafe(filePath: string, data: string, backup: boolean = false): void {
+export interface SafeWriteOptions {
+  /** Copy the current file to `filePath.bak` before replacing it. */
+  backup?: boolean
+  /** fsync the temp file before the rename (plus a best-effort fsync of the
+   *  parent directory after it) so the finished write survives power loss.
+   *  Reserved for small files whose loss reopens a failure loop (the startup
+   *  attempt marker, issue #1367); ordinary settings-style writes skip the
+   *  cost. */
+  durable?: boolean
+}
+
+/** Write the temp file, with `durable` fsyncing it so the bytes are on stable
+ *  storage before the rename publishes them. */
+function writeTmpSync(tmpPath: string, data: string, durable: boolean): void {
+  if (!durable) {
+    fs.writeFileSync(tmpPath, data, 'utf-8')
+    return
+  }
+  const fd = fs.openSync(tmpPath, 'w')
+  try {
+    fs.writeFileSync(fd, data, 'utf-8')
+    fs.fsyncSync(fd)
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/** Atomically write `data` to `filePath` (see `SafeWriteOptions` for the
+ *  `.bak` backup and durability knobs). Transient rename locks are retried
+ *  (see TRANSIENT_FS_CODES); a still-failing write throws with the tmp
+ *  cleaned up. */
+export function writeFileSafe(
+  filePath: string,
+  data: string,
+  options: SafeWriteOptions = {}
+): void {
   const tmpPath = filePath + '.tmp'
   const bakPath = filePath + '.bak'
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(tmpPath, data, 'utf-8')
-  if (backup) {
+  writeTmpSync(tmpPath, data, options.durable === true)
+  if (options.backup) {
     try {
       fs.copyFileSync(filePath, bakPath)
     } catch {}
@@ -103,6 +152,7 @@ export function writeFileSafe(filePath: string, data: string, backup: boolean = 
   for (let attempt = 0; ; attempt++) {
     try {
       fs.renameSync(tmpPath, filePath)
+      if (options.durable) fsyncDirBestEffort(path.dirname(filePath))
       return
     } catch (err) {
       if (isTransientFsError(err) && attempt < RENAME_RETRIES) {
@@ -118,7 +168,10 @@ export function writeFileSafe(filePath: string, data: string, backup: boolean = 
 }
 
 /** Read `filePath`, falling back to `filePath.bak` if the primary is missing or
- *  unreadable.
+ *  unreadable. Returns `unreadable` when a file EXISTS but could not be read
+ *  and no readable fallback stood in - the real content is unknown, so callers
+ *  must fail closed instead of treating it as absent (a later save would
+ *  overwrite the intact file with reconstructed defaults).
  *
  *  `.bak` is only restored OVER the primary when the primary is genuinely
  *  absent (ENOENT) or empty. A transiently locked primary (antivirus, indexer)
@@ -126,10 +179,10 @@ export function writeFileSafe(filePath: string, data: string, backup: boolean = 
  *  back the most recent writes (issue #1367: that rollback erases the
  *  startup-update loop-breaker marker). Locked reads are retried, then served
  *  from `.bak` WITHOUT restoring. */
-export function readFileSafe(filePath: string): string | null {
+export function readFileSafe(filePath: string): SafeReadOutcome {
   const bakPath = filePath + '.bak'
   const primary = readFileWithRetrySync(filePath)
-  if (primary.kind === 'data') return primary.data
+  if (primary.kind === 'data') return primary
 
   const bak = readFileWithRetrySync(bakPath)
   if (bak.kind === 'data') {
@@ -139,22 +192,39 @@ export function readFileSafe(filePath: string): string | null {
         fs.copyFileSync(bakPath, filePath)
       } catch {}
     }
-    return bak.data
+    return bak
   }
 
-  return null
+  return primary.kind === 'unreadable' || bak.kind === 'unreadable'
+    ? { kind: 'unreadable' }
+    : { kind: 'absent' }
+}
+
+/** Async twin of `writeTmpSync`. */
+async function writeTmpAsync(tmpPath: string, data: string, durable: boolean): Promise<void> {
+  if (!durable) {
+    await fs.promises.writeFile(tmpPath, data, 'utf-8')
+    return
+  }
+  const handle = await fs.promises.open(tmpPath, 'w')
+  try {
+    await handle.writeFile(data, 'utf-8')
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
 }
 
 export async function writeFileSafeAsync(
   filePath: string,
   data: string,
-  backup: boolean = false
+  options: SafeWriteOptions = {}
 ): Promise<void> {
   const tmpPath = filePath + '.tmp'
   const bakPath = filePath + '.bak'
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.promises.writeFile(tmpPath, data, 'utf-8')
-  if (backup) {
+  await writeTmpAsync(tmpPath, data, options.durable === true)
+  if (options.backup) {
     try {
       await fs.promises.copyFile(filePath, bakPath)
     } catch {}
@@ -164,6 +234,7 @@ export async function writeFileSafeAsync(
   for (let attempt = 0; ; attempt++) {
     try {
       await fs.promises.rename(tmpPath, filePath)
+      if (options.durable) fsyncDirBestEffort(path.dirname(filePath))
       return
     } catch (err) {
       if (isTransientFsError(err) && attempt < RENAME_RETRIES) {
@@ -178,12 +249,14 @@ export async function writeFileSafeAsync(
   }
 }
 
-/** Async twin of `readFileSafe` - same `.bak` semantics: retry transient locks,
- *  restore `.bak` over the primary only when the primary is genuinely absent. */
-export async function readFileSafeAsync(filePath: string): Promise<string | null> {
+/** Async twin of `readFileSafe` - same `.bak` and tri-state semantics: retry
+ *  transient locks, restore `.bak` over the primary only when the primary is
+ *  genuinely absent, and report `unreadable` rather than absent when a file
+ *  exists but cannot be read. */
+export async function readFileSafeAsync(filePath: string): Promise<SafeReadOutcome> {
   const bakPath = filePath + '.bak'
   const primary = await readFileWithRetryAsync(filePath)
-  if (primary.kind === 'data') return primary.data
+  if (primary.kind === 'data') return primary
 
   const bak = await readFileWithRetryAsync(bakPath)
   if (bak.kind === 'data') {
@@ -193,8 +266,10 @@ export async function readFileSafeAsync(filePath: string): Promise<string | null
         await fs.promises.copyFile(bakPath, filePath)
       } catch {}
     }
-    return bak.data
+    return bak
   }
 
-  return null
+  return primary.kind === 'unreadable' || bak.kind === 'unreadable'
+    ? { kind: 'unreadable' }
+    : { kind: 'absent' }
 }

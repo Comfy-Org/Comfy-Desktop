@@ -99,6 +99,29 @@ describe('startup attempt marker', () => {
     expect(recordStartupAttempt('1.0.35')).toBe(false)
   })
 
+  it('returns false when the marker writes but cannot be read back (fail closed)', () => {
+    // Let the write land, then make every read of the marker fail with a
+    // non-transient error (skips the retry budget). A marker that cannot be
+    // VERIFIED on disk must not authorize an install.
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === markerFile()) {
+        const err = new Error('fake EIO') as NodeJS.ErrnoException
+        err.code = 'EIO'
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+
+    expect(recordStartupAttempt('1.0.35')).toBe(false)
+    vi.restoreAllMocks()
+    // The write itself landed; only the read-back verification failed.
+    expect(fs.existsSync(markerFile())).toBe(true)
+  })
+
   it('clearStartupAttemptMarker tolerates a missing file', () => {
     expect(() => clearStartupAttemptMarker()).not.toThrow()
   })

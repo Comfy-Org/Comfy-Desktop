@@ -62,14 +62,17 @@ export function readStartupAttemptMarker(): StartupAttemptMarkerRead {
 
 /**
  * Record that a startup install of `version` is about to run, and verify the
- * marker actually landed on disk. Returns false when it could not be persisted
- * or the read-back does not match - the caller must then NOT install, because
- * a marker that only lives in memory cannot break the reinstall loop.
+ * marker actually landed on disk. The write is durable (fsynced before the
+ * rename publishes it) so the machine rebooting into the installer - or losing
+ * power mid-update - cannot roll it back out of the OS write cache. Returns
+ * false when it could not be persisted or the read-back does not match - the
+ * caller must then NOT install, because a marker that only lives in memory
+ * cannot break the reinstall loop.
  */
 export function recordStartupAttempt(version: string): boolean {
   const marker: StartupAttemptMarker = { version, attemptedAt: new Date().toISOString() }
   try {
-    writeFileSafe(markerPath(), JSON.stringify(marker, null, 2))
+    writeFileSafe(markerPath(), JSON.stringify(marker, null, 2), { durable: true })
   } catch {
     return false
   }

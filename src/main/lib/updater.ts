@@ -7,7 +7,8 @@ import { getSafeFileDiagnostics } from './safe-file'
 import {
   clearStartupAttemptMarker,
   readStartupAttemptMarker,
-  recordStartupAttempt
+  recordStartupAttempt,
+  type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
 import { clearQuitReason, isSessionEnding, setQuitReason } from './quit-state'
 import { _broadcastToRenderer } from './ipc/shared'
@@ -786,7 +787,7 @@ type StartupInstallDecision =
  * that's already the running version), and the loop-breaker case (we already
  * auto-attempted this exact version and are still on the old one).
  */
-function evaluateStartupInstall(): StartupInstallDecision {
+function evaluateStartupInstall(sidecar: StartupAttemptMarkerRead): StartupInstallDecision {
   if (!isStartupInstallEnabled()) return { attempt: false, reason: 'disabled' }
   // Issue #1104 — with auto-install off, a staged update must wait for an
   // explicit pill click; never apply it automatically at startup.
@@ -808,7 +809,6 @@ function evaluateStartupInstall(): StartupInstallDecision {
   if (lastAttempt === pending) {
     return { attempt: false, reason: 'loop_breaker', loopBreakerSource: 'settings' }
   }
-  const sidecar = readStartupAttemptMarker()
   if (sidecar.state === 'present' && sidecar.marker.version === pending) {
     // Only the sidecar remembers the attempt: the settings marker was lost
     // between launches. Telemetry on this source confirms (or rules out) the
@@ -831,7 +831,7 @@ function evaluateStartupInstall(): StartupInstallDecision {
  * bounded `applyPendingUpdateOnStartup` check runs.
  */
 export function hasPendingStartupUpdate(): boolean {
-  return evaluateStartupInstall().attempt
+  return evaluateStartupInstall(readStartupAttemptMarker()).attempt
 }
 
 /**
@@ -891,12 +891,16 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
     settings.set('pendingDownloadedUpdateVersion', undefined)
   }
-  const sidecar = readStartupAttemptMarker()
+  // Read the sidecar once and pass it down: each read is synchronous and can
+  // block up to the transient-lock retry budget when the file is locked, and
+  // this codepath runs before the first window appears.
+  let sidecar = readStartupAttemptMarker()
   if (sidecar.state === 'present' && !isStrictlyNewerVersion(sidecar.marker.version, running)) {
     clearStartupAttemptMarker()
+    sidecar = { state: 'absent' }
   }
 
-  const decision = evaluateStartupInstall()
+  const decision = evaluateStartupInstall(sidecar)
   if (!decision.attempt) {
     // Only the skips that mean "a staged update exists but we declined it"
     // carry canary signal; normal boots (no pending / feature off) stay silent.

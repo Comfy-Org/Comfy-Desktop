@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { readFileSafe, readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './safe-file'
+import {
+  getSafeFileDiagnostics,
+  readFileSafe,
+  readFileSafeAsync,
+  writeFileSafe,
+  writeFileSafeAsync
+} from './safe-file'
 
 /**
  * Pins the `.bak` semantics that keep the startup-update loop-breaker marker
@@ -35,10 +41,17 @@ afterEach(() => {
 
 describe('writeFileSafe', () => {
   it('writes atomically and keeps the previous content in .bak', () => {
-    writeFileSafe(filePath, 'first', true)
-    writeFileSafe(filePath, 'second', true)
+    writeFileSafe(filePath, 'first', { backup: true })
+    writeFileSafe(filePath, 'second', { backup: true })
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('second')
     expect(fs.readFileSync(bakPath, 'utf-8')).toBe('first')
+  })
+
+  it('durable: fsyncs the temp file before the rename publishes it', () => {
+    const fsyncSpy = vi.spyOn(fs, 'fsyncSync')
+    writeFileSafe(filePath, 'data', { durable: true })
+    expect(fs.readFileSync(filePath, 'utf-8')).toBe('data')
+    expect(fsyncSpy).toHaveBeenCalled()
   })
 
   it('retries the rename through transient Windows locks (EPERM/EACCES/EBUSY)', () => {
@@ -72,7 +85,7 @@ describe('readFileSafe', () => {
   it('returns the primary content when readable', () => {
     fs.writeFileSync(filePath, 'primary')
     fs.writeFileSync(bakPath, 'stale backup')
-    expect(readFileSafe(filePath)).toBe('primary')
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'primary' })
   })
 
   it('retries a transiently locked primary and returns its (newer) content', () => {
@@ -92,7 +105,7 @@ describe('readFileSafe', () => {
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
 
-    expect(readFileSafe(filePath)).toBe('newer primary')
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'newer primary' })
   })
 
   it('serves .bak WITHOUT restoring it when the primary stays locked (issue #1367)', () => {
@@ -109,7 +122,7 @@ describe('readFileSafe', () => {
     }) as typeof fs.readFileSync)
     const copySpy = vi.spyOn(fs, 'copyFileSync')
 
-    expect(readFileSafe(filePath)).toBe('stale backup')
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'stale backup' })
     // The primary still exists and is newer - restoring .bak over it would
     // roll back the most recent writes (the bug behind the update loop).
     expect(copySpy).not.toHaveBeenCalled()
@@ -133,24 +146,44 @@ describe('readFileSafe', () => {
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
 
-    expect(readFileSafe(filePath)).toBe('backup')
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
   })
 
-  it('restores .bak over a genuinely missing primary', () => {
+  it('restores .bak over a genuinely missing primary and counts the fallback', () => {
     fs.writeFileSync(bakPath, 'backup')
-    expect(readFileSafe(filePath)).toBe('backup')
+    // The counter is process-wide and monotonic, so assert the delta - it is
+    // the field signal (telemetry `bakFallbacks`) for issue #1367 machines.
+    const before = getSafeFileDiagnostics().bakFallbacks
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
+    expect(getSafeFileDiagnostics().bakFallbacks).toBe(before + 1)
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('backup')
   })
 
   it('restores .bak over an empty primary', () => {
     fs.writeFileSync(filePath, '')
     fs.writeFileSync(bakPath, 'backup')
-    expect(readFileSafe(filePath)).toBe('backup')
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('backup')
   })
 
-  it('returns null when both the primary and .bak are missing', () => {
-    expect(readFileSafe(filePath)).toBeNull()
+  it('reports absent when both the primary and .bak are missing', () => {
+    expect(readFileSafe(filePath)).toEqual({ kind: 'absent' })
+  })
+
+  it('reports unreadable - NOT absent - when the primary stays locked and no .bak exists', () => {
+    // The file's real content is unknown; treating it as absent would let a
+    // later save overwrite the intact file with reconstructed defaults.
+    fs.writeFileSync(filePath, 'locked content')
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === filePath) throw errnoError('EPERM') // lock never clears
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+
+    expect(readFileSafe(filePath)).toEqual({ kind: 'unreadable' })
   })
 })
 
@@ -186,15 +219,31 @@ describe('readFileSafeAsync', () => {
     }) as typeof fs.promises.readFile)
     const copySpy = vi.spyOn(fs.promises, 'copyFile')
 
-    expect(await readFileSafeAsync(filePath)).toBe('stale backup')
+    expect(await readFileSafeAsync(filePath)).toEqual({ kind: 'data', data: 'stale backup' })
     expect(copySpy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('newer primary')
   })
 
-  it('restores .bak over a genuinely missing primary', async () => {
+  it('restores .bak over a genuinely missing primary and counts the fallback', async () => {
     fs.writeFileSync(bakPath, 'backup')
-    expect(await readFileSafeAsync(filePath)).toBe('backup')
+    const before = getSafeFileDiagnostics().bakFallbacks
+    expect(await readFileSafeAsync(filePath)).toEqual({ kind: 'data', data: 'backup' })
+    expect(getSafeFileDiagnostics().bakFallbacks).toBe(before + 1)
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('backup')
+  })
+
+  it('reports unreadable when the primary stays locked and no .bak exists', async () => {
+    fs.writeFileSync(filePath, 'locked content')
+    const realRead = fs.promises.readFile.bind(fs.promises) as typeof fs.promises.readFile
+    vi.spyOn(fs.promises, 'readFile').mockImplementation(((
+      p: Parameters<typeof fs.promises.readFile>[0],
+      opts?: unknown
+    ) => {
+      if (p === filePath) return Promise.reject(errnoError('EPERM'))
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.promises.readFile)
+
+    expect(await readFileSafeAsync(filePath)).toEqual({ kind: 'unreadable' })
   })
 })

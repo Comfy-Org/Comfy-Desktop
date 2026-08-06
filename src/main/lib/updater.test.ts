@@ -678,6 +678,13 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(installing).toBe(true)
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBe('1.0.1')
+    // The install event carries the .bak-fallback diagnostic (issue #1367).
+    const installs = findEmitCalls('comfy.desktop.app_update.startup_install')
+    expect(installs).toHaveLength(1)
+    expect(installs[0]?.[1]).toMatchObject({
+      version: '1.0.1',
+      bakFallbacks: expect.any(Number)
+    })
   })
 
   it('applyPendingUpdateOnStartup() holds the install until the splash minimum elapses', async () => {
@@ -749,7 +756,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(skipped[0]?.[1]).toMatchObject({
       reason: 'loop_breaker',
       version: '1.0.1',
-      source: 'settings'
+      source: 'settings',
+      bakFallbacks: expect.any(Number)
     })
   })
 
@@ -801,7 +809,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(skipped[0]?.[1]).toMatchObject({
       reason: 'loop_breaker',
       version: '1.0.1',
-      source: 'sidecar'
+      source: 'sidecar',
+      bakFallbacks: expect.any(Number)
     })
   })
 
@@ -817,7 +826,11 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
     const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
     expect(skipped).toHaveLength(1)
-    expect(skipped[0]?.[1]).toMatchObject({ reason: 'marker_not_durable', version: '1.0.1' })
+    expect(skipped[0]?.[1]).toMatchObject({
+      reason: 'marker_not_durable',
+      version: '1.0.1',
+      bakFallbacks: expect.any(Number)
+    })
   })
 
   it('fails closed - no install - when the sidecar marker exists but is unreadable (issue #1367)', async () => {

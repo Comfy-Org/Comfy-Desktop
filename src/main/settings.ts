@@ -389,19 +389,32 @@ function maybeSeedFromEnv(): void {
   try {
     JSON.parse(seed) // validate before writing
     fs.mkdirSync(path.dirname(dataPath), { recursive: true })
-    writeFileSafe(dataPath, seed, true)
+    writeFileSafe(dataPath, seed, { backup: true })
   } catch (err) {
     console.warn('Settings: failed to apply E2E_SETTINGS_SEED:', (err as Error).message)
   }
 }
 
 function load(): Settings {
+  return loadOutcome().settings
+}
+
+/** Load settings plus whether the file was UNREADABLE: it exists but could not
+ *  be read (e.g. an AV lock outlasting the retry budget) and no readable .bak
+ *  stood in. An unreadable file is served as bare defaults for this call, and
+ *  `set()` refuses to persist while that holds - the file's real content is
+ *  unknown, so saving anything derived from defaults would overwrite the
+ *  user's intact settings (the failure environment of issue #1367). */
+function loadOutcome(): { settings: Settings; unreadable: boolean } {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
-  const raw = readFileSafe(dataPath)
-  if (raw) {
+  const read = readFileSafe(dataPath)
+  if (read.kind === 'unreadable') {
+    return { settings: { ...defaults }, unreadable: true }
+  }
+  if (read.kind === 'data') {
     try {
-      const obj: unknown = JSON.parse(raw)
+      const obj: unknown = JSON.parse(read.data)
       if (obj && typeof obj === 'object' && !Array.isArray(obj))
         parsed = obj as Record<string, unknown>
     } catch (err) {
@@ -559,11 +572,11 @@ function load(): Settings {
     }
   }
   if (changed) save(result)
-  return result
+  return { settings: result, unreadable: false }
 }
 
 function save(settings: Settings): void {
-  writeFileSafe(dataPath, JSON.stringify(settings, null, 2), true)
+  writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
 }
 
 /** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
@@ -596,7 +609,15 @@ export function set<K extends string>(
   key: K,
   value: K extends KnownSettingKey ? KnownSettings[K] | undefined : unknown
 ): void {
-  const settings = load()
+  const { settings, unreadable } = loadOutcome()
+  if (unreadable) {
+    // Fail closed (issue #1367): settings.json exists but can't be read right
+    // now, so `settings` holds bare defaults. Persisting would replace the
+    // user's intact file with defaults-plus-one-key; dropping this write is
+    // the lesser harm.
+    console.warn(`Settings: not persisting '${key}' - settings.json is currently unreadable`)
+    return
+  }
   // `undefined` = unset/default; for non-nullable known keys treat `null` the
   // same, and for EMPTY_STRING_MEANS_UNSET keys treat '' / whitespace as unset.
   if (
@@ -676,13 +697,13 @@ export function getTrackedSettingsTelemetryProperties(
  * (accepted). Sentinel values `set()` treats as unset (`autoLaunchOnStartup:
  * 'none'`, whitespace-only `pypiMirror`) are also treated as absent, so a
  * stale/hand-edited file can't masquerade as a user choice. Returns `false` on
- * parse errors or a missing file.
+ * parse errors or a missing/unreadable file.
  */
 export function has(key: string): boolean {
-  const raw = readFileSafe(dataPath)
-  if (!raw) return false
+  const read = readFileSafe(dataPath)
+  if (read.kind !== 'data') return false
   try {
-    const parsed: unknown = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(read.data)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
     const value = (parsed as Record<string, unknown>)[key]
     if (value === undefined || value === null) return false
