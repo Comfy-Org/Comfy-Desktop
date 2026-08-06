@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, Info } from 'lucide-vue-next'
+import { AlertTriangle } from 'lucide-vue-next'
 import { useModal } from '../../composables/useModal'
 import GlobalSettingsMicroSection from '../../comfyTitlePopup/globalSettings/GlobalSettingsMicroSection.vue'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
@@ -9,7 +9,7 @@ import StorageDirRow from './StorageDirRow.vue'
 import BooleanToggle from './BooleanToggle.vue'
 import ExtraModelPathsModal, { type ExtraModelPathSection } from './ExtraModelPathsModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
-import type { DetailField, DetailSection, Installation } from '../../types/ipc'
+import type { DetailField, DetailSection } from '../../types/ipc'
 
 /** Storage tab pane for the instance-picker settings. Composes the global
  *  shared-models UI (via the popup's `__comfyTitlePopup.globalSettings*`
@@ -53,7 +53,6 @@ interface GlobalSettingsBridge {
 }
 
 interface Props {
-  installation: Installation | null
   /** Global snapshot fields, passed as a prop so the picker doesn't subscribe twice. */
   snapshot: StorageSnapshot
   /** Per-install storage sections; git installs omit them entirely. */
@@ -82,18 +81,8 @@ function samePath(a: string, b: string): boolean {
   return bridge?.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
-/** Whether any global field was touched this session. Writes persist
- *  immediately; this is just the signal driving the top-of-tab warning swap. */
-const globalTouched = ref(false)
-
-watch(
-  () => props.installation?.id ?? null,
-  () => {
-    globalTouched.value = false
-  }
-)
-
-/** Edits to these per-install fields also trigger the restart prompt. */
+/** Edits to these per-install fields trigger the restart prompt. Shared dirs
+ *  are no longer editable from this pane, so no global-touch tracking. */
 const PER_INSTALL_STORAGE_FIELD_IDS = [
   'useSharedModels',
   'useSharedInput',
@@ -104,13 +93,9 @@ const PER_INSTALL_STORAGE_FIELD_IDS = [
   'outputDir'
 ]
 
-const showRestartWarning = computed(() => {
-  if (globalTouched.value) return true
-  return PER_INSTALL_STORAGE_FIELD_IDS.some((id) => props.pendingRestartFieldIds.has(id))
-})
-
-// Computed (not inlined `:is`) so `<script setup>` counts the icon imports as used.
-const noteIcon = computed(() => (showRestartWarning.value ? AlertTriangle : Info))
+const showRestartWarning = computed(() =>
+  PER_INSTALL_STORAGE_FIELD_IDS.some((id) => props.pendingRestartFieldIds.has(id))
+)
 
 /** Global shared input/output fields from the snapshot, keyed by id so the
  *  shared-on rows render with the same readonly path-row style as shared-off. */
@@ -423,65 +408,43 @@ function handleRevealPath(path: string): void {
   if (path) bridge?.globalSettingsRevealPath(path)
 }
 
-// --- Shared input/output dirs (edited globally) ----------------------------
-
-async function browseSharedDir(field: DetailField | undefined): Promise<void> {
-  if (!field) return
-  const picked = await bridge?.globalSettingsBrowseFolder(sharedFieldPath(field) || undefined)
-  if (!picked || picked === field.value) return
-  globalTouched.value = true
-  await bridge?.globalSettingsUpdateField(field.id, picked)
-}
-
-function handleBrowseSharedInput(): void {
-  void browseSharedDir(sharedInputField.value)
-}
-function handleBrowseSharedOutput(): void {
-  void browseSharedDir(sharedOutputField.value)
-}
+// Shared input/output dirs are read-only here; the manage action on their
+// rows routes to Global Desktop Settings (same as the models link).
 </script>
 
 <template>
   <div class="storage-pane">
-    <div class="storage-note" :class="{ 'is-warning': showRestartWarning }" role="status">
-      <component :is="noteIcon" :size="14" class="storage-note-icon" aria-hidden="true" />
+    <!-- Only shown when a change is pending; sharing scope is conveyed inline
+         (shared badges, header toggles, manage actions), not by a banner. -->
+    <div v-if="showRestartWarning" class="storage-note is-warning" role="status">
+      <AlertTriangle :size="14" class="storage-note-icon" aria-hidden="true" />
       <p class="storage-note-text">
-        <template v-if="showRestartWarning">
-          {{
-            t(
-              'comfyUISettings.storageRestartNote',
-              'Restart the application (or close and reopen) for these changes to take effect.'
-            )
-          }}
-        </template>
-        <template v-else>
-          {{
-            t(
-              'comfyUISettings.storageScopeNote',
-              'Shared directories are used by all of your ComfyUI instances; the other folders here only affect this instance.'
-            )
-          }}
-        </template>
+        {{
+          t(
+            'comfyUISettings.storageRestartNote',
+            'Restart the application (or close and reopen) for these changes to take effect.'
+          )
+        }}
       </p>
     </div>
 
-    <!-- Models group: one unified list. The toggle only controls whether the
-         global shared dirs are included (read-only rows); the per-instance
-         dirs below it are always shown and editable. -->
+    <!-- Models group: one unified list. The header toggle only controls
+         whether the global shared dirs are included (read-only rows); the
+         per-instance dirs below it are always shown and editable. -->
     <GlobalSettingsMicroSection
       :title="t('settings.modelStorage', 'Models')"
       :tooltip="t('tooltips.instanceModels')"
     >
-      <div v-if="useSharedModelsField" class="storage-toggle-row">
-        <label class="storage-toggle-label">
-          <span>{{ t('common.useSharedModels', 'Include Shared Model Directories') }}</span>
+      <template v-if="useSharedModelsField" #actions>
+        <label class="storage-header-toggle">
+          <span>{{ t('comfyUISettings.includeSharedDirs', 'Include Shared Directories') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
+          <BooleanToggle
+            :field="useSharedModelsField"
+            @update="(v) => handleToggleField(useSharedModelsField, v)"
+          />
         </label>
-        <BooleanToggle
-          :field="useSharedModelsField"
-          @update="(v) => handleToggleField(useSharedModelsField, v)"
-        />
-      </div>
+      </template>
 
       <ModelsDirList
         :dirs="modelDirRows"
@@ -504,33 +467,33 @@ function handleBrowseSharedOutput(): void {
       </button>
     </GlobalSettingsMicroSection>
 
-    <!-- Input/Output group: independent per-folder shared toggles. Each row
-         shows the effective folder for its source - the global shared folder
-         (edited globally) or the per-install one. -->
-    <GlobalSettingsMicroSection :title="t('settings.inputOutputStorage', 'Input & Output')">
-      <div v-if="useSharedInputField" class="storage-toggle-row">
-        <label class="storage-toggle-label">
-          <span>{{ t('common.useSharedInput', 'Use Shared Input Folder') }}</span>
+    <!-- Input / Output: one compact section each, with the shared toggle
+         inlined in the header. Shared rows are read-only (their manage action
+         opens Global Desktop Settings); per-instance rows stay browsable. -->
+    <GlobalSettingsMicroSection :title="t('settings.inputStorage', 'Input')">
+      <template v-if="useSharedInputField" #actions>
+        <label class="storage-header-toggle">
+          <span>{{ t('common.useSharedFolder', 'Use Shared Folder') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
+          <BooleanToggle
+            :field="useSharedInputField"
+            @update="(v) => handleToggleField(useSharedInputField, v)"
+          />
         </label>
-        <BooleanToggle
-          :field="useSharedInputField"
-          @update="(v) => handleToggleField(useSharedInputField, v)"
-        />
-      </div>
+      </template>
       <template v-if="useSharedInputEnabled">
         <StorageDirRow
           v-if="sharedInputField"
-          :label="sharedInputField.label || t('common.perInstallInputDir', 'Input Directory')"
           :path="sharedFieldPath(sharedInputField)"
           shared
+          :browsable="false"
+          :manageable="canManageSharedDirs"
           @open="handleOpenPath(sharedFieldPath(sharedInputField))"
-          @browse="handleBrowseSharedInput"
+          @manage="handleManageSharedDirs"
         />
       </template>
       <StorageDirRow
         v-else
-        :label="t('common.perInstallInputDir', 'Input Directory')"
         :path="effectiveInputDir"
         :tag="!inputOverridden ? t('models.default', 'default') : ''"
         :resettable="inputOverridden"
@@ -538,30 +501,32 @@ function handleBrowseSharedOutput(): void {
         @browse="handleBrowseInputDir"
         @reset="handleResetInputDir"
       />
+    </GlobalSettingsMicroSection>
 
-      <div v-if="useSharedOutputField" class="storage-toggle-row">
-        <label class="storage-toggle-label">
-          <span>{{ t('common.useSharedOutput', 'Use Shared Output Folder') }}</span>
+    <GlobalSettingsMicroSection :title="t('settings.outputStorage', 'Output')">
+      <template v-if="useSharedOutputField" #actions>
+        <label class="storage-header-toggle">
+          <span>{{ t('common.useSharedFolder', 'Use Shared Folder') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
+          <BooleanToggle
+            :field="useSharedOutputField"
+            @update="(v) => handleToggleField(useSharedOutputField, v)"
+          />
         </label>
-        <BooleanToggle
-          :field="useSharedOutputField"
-          @update="(v) => handleToggleField(useSharedOutputField, v)"
-        />
-      </div>
+      </template>
       <template v-if="useSharedOutputEnabled">
         <StorageDirRow
           v-if="sharedOutputField"
-          :label="sharedOutputField.label || t('common.perInstallOutputDir', 'Output Directory')"
           :path="sharedFieldPath(sharedOutputField)"
           shared
+          :browsable="false"
+          :manageable="canManageSharedDirs"
           @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
-          @browse="handleBrowseSharedOutput"
+          @manage="handleManageSharedDirs"
         />
       </template>
       <StorageDirRow
         v-else
-        :label="t('common.perInstallOutputDir', 'Output Directory')"
         :path="effectiveOutputDir"
         :tag="!outputOverridden ? t('models.default', 'default') : ''"
         :resettable="outputOverridden"
@@ -632,25 +597,18 @@ function handleBrowseSharedOutput(): void {
   opacity: 1;
 }
 
-/* Use-Shared-* toggle row sitting at the top of each storage group. */
-.storage-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 36px;
-}
-
-.storage-toggle-label {
+/* Use-Shared-* toggle inlined in a section header (right-aligned there). */
+.storage-header-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
-  font-size: 13px;
-  color: var(--neutral-100);
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
-.storage-toggle-label > span {
+.storage-header-toggle > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -67,7 +67,6 @@ function makeSnapshot(): StorageSnapshot {
 function mountPane(snapshot: StorageSnapshot = makeSnapshot()) {
   return mount(StoragePane, {
     props: {
-      installation: null,
       snapshot,
       sections: [],
       pendingRestartFieldIds: new Set<string>()
@@ -187,7 +186,6 @@ function mountPaneWithSections(
 ) {
   return mount(StoragePane, {
     props: {
-      installation: { id: 'inst-1' } as never,
       snapshot,
       sections: sections as never,
       pendingRestartFieldIds: new Set<string>()
@@ -283,13 +281,21 @@ describe('StoragePane', () => {
     expect(wrapper.find('.storage-manage-link').exists()).toBe(false)
   })
 
+  // The old always-on scope note is gone: sharing scope is conveyed inline
+  // (shared badges, header toggles, manage actions).
+  it('renders no storage note when nothing is pending', async () => {
+    installMockBridge()
+    const wrapper = mountPane()
+    await nextTick()
+    expect(wrapper.find('.storage-note').exists()).toBe(false)
+  })
+
   // Per-install storage edits show the restart warning via the parent-supplied
   // pending set (the parent records them on update-field).
   it('flips the storage note to the warning state for pending per-install storage fields', async () => {
     installMockBridge()
     const wrapper = mount(StoragePane, {
       props: {
-        installation: null,
         snapshot: makeSnapshot(),
         sections: [],
         pendingRestartFieldIds: new Set<string>(['useSharedInput'])
@@ -431,7 +437,7 @@ describe('StoragePane', () => {
       expect(ownRow.find('.tag-primary').exists()).toBe(false)
       expect(ownRow.find('.models-dir-action[aria-label^="Browse"]').exists()).toBe(false)
       expect(ownRow.find('.models-dir-menu-wrap').exists()).toBe(true)
-      expect(wrapper.text()).toContain('Include Shared Model Directories')
+      expect(wrapper.text()).toContain('Include Shared Directories')
       // Shared dirs carry the shared badge; the per-instance rows don't.
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
       expect(extraRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
@@ -716,7 +722,7 @@ describe('StoragePane', () => {
         makeSharedIoSnapshot()
       )
       await nextTick()
-      const switches = wrapper.findAll('.storage-toggle-row .bt-switch')
+      const switches = wrapper.findAll('.storage-header-toggle .bt-switch')
       expect(switches).toHaveLength(2)
       await switches[0]!.trigger('click')
       await switches[1]!.trigger('click')
@@ -739,7 +745,7 @@ describe('StoragePane', () => {
       expect(bridge.openPathCalls).toEqual(['/shared/in'])
     })
 
-    it('updates the shared dir via the global bridge when browsed and flips the warning', async () => {
+    it('shared rows are read-only: no Browse, manage routes to Desktop Settings', async () => {
       const bridge = installMockBridge()
       bridge.browseFolderReturn = '/picked/in'
       const wrapper = mountPaneWithSections(
@@ -747,13 +753,14 @@ describe('StoragePane', () => {
         makeSharedIoSnapshot()
       )
       await nextTick()
-      expect(wrapper.find('.storage-note.is-warning').exists()).toBe(false)
-      await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-action').trigger('click')
+      const row = wrapper.findAll('.storage-dir-row')[0]!
+      expect(row.find('.storage-dir-action[aria-label^="Browse"]').exists()).toBe(false)
+      // The only action opens Global Desktop Settings; nothing is written from here.
+      await row.find('.storage-dir-action').trigger('click')
       await flushPromises()
-      // The edit has global scope (bridge write), never a per-install field.
-      expect(bridge.updateFieldCalls).toEqual([{ id: 'inputDir', value: '/picked/in' }])
+      expect(bridge.openSettingsTabCalls).toEqual(['global'])
+      expect(bridge.updateFieldCalls).toEqual([])
       expect(wrapper.emitted('update-field')).toBeUndefined()
-      expect(wrapper.find('.storage-note.is-warning').exists()).toBe(true)
     })
 
     it('browsing a per-instance output updates only the install outputDir field', async () => {
