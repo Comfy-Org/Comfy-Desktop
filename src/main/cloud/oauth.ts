@@ -3,7 +3,7 @@
  * system browser at the authorize URL, wait for the callback code, exchange it
  * for tokens. `signIn` optionally pre-selects a workspace (the switch path).
  */
-import { shell } from 'electron'
+import { net, shell } from 'electron'
 
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
@@ -58,11 +58,15 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
   // can't hang the flow after the response headers arrive.
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
   try {
-    const resp = await fetch(tokenUrl, {
+    // net.fetch (Chromium's stack), not Node's undici: it resolves the OS
+    // proxy, which is how enterprise users behind a corporate proxy reach the
+    // issuer at all. credentials 'omit' keeps the request cookie-free.
+    const resp = await net.fetch(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
       signal: controller.signal,
+      credentials: 'omit',
     })
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '')

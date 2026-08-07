@@ -7,6 +7,8 @@
  * never leaves this process and is never returned to callers. Failures surface
  * as a typed {@link ComfyBuilderApiError} whose `kind` a caller can branch on.
  */
+import { net } from 'electron'
+
 import type {
   Artifact,
   Distribution,
@@ -109,9 +111,14 @@ export class ComfyBuilderClient {
 
     let res: Response
     try {
-      res = await fetch(`${this.baseUrl}${path}`, {
+      // net.fetch (Chromium's stack), not Node's undici: it resolves the OS
+      // proxy, which is how enterprise users behind a corporate proxy reach the
+      // gateway at all. credentials 'omit' keeps the bearer the only credential
+      // sent.
+      res = await net.fetch(`${this.baseUrl}${path}`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(this.timeoutMs),
+        credentials: 'omit',
       })
     } catch (err) {
       throw new ComfyBuilderApiError('network', `Request to ${path} failed: ${(err as Error).message}`)

@@ -1,7 +1,16 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
+// The token request goes through Chromium's net.fetch; delegate to the current
+// global fetch so the vi.stubGlobal('fetch', ...) stubs below keep driving it.
+// The spy is what proves the request took the proxy-aware route.
+const netFetch = vi.hoisted(() =>
+  vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)),
+)
+vi.mock('electron', () => ({
+  shell: { openExternal: vi.fn(async () => {}) },
+  net: { fetch: netFetch },
+}))
 
 import { refresh } from './oauth'
 
@@ -10,7 +19,19 @@ function stub(status: number, body: unknown): void {
 }
 
 describe('oauth.refresh', () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    netFetch.mockClear()
+  })
+
+  // Bare fetch ignores the system proxy, which is exactly what an enterprise
+  // user behind one has.
+  it('requests the token through the proxy-aware net.fetch, cookie-free', async () => {
+    stub(200, { access_token: 'a', expires_in: 3600 })
+    await refresh('r', { tokenUrl: 'https://c/oauth/token' })
+    expect(netFetch).toHaveBeenCalledTimes(1)
+    expect(netFetch.mock.calls[0]![1]).toMatchObject({ credentials: 'omit' })
+  })
 
   it('keeps the prior refresh token when the server omits one', async () => {
     stub(200, { access_token: 'a2', expires_in: 3600 }) // no refresh_token

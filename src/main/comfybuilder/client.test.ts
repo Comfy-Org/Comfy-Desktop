@@ -1,5 +1,13 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
+// The client goes through Chromium's net.fetch; delegate to the current global
+// fetch so the vi.stubGlobal('fetch', ...) stubs below keep driving it. The spy
+// is what proves the request took the proxy-aware route.
+const netFetch = vi.hoisted(() =>
+  vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)),
+)
+vi.mock('electron', () => ({ net: { fetch: netFetch } }))
+
 import { ComfyBuilderApiError, ComfyBuilderClient } from './client'
 import type { TokenProvider } from './types'
 
@@ -13,7 +21,19 @@ function mockFetch(status: number, body: unknown): typeof fetch {
 }
 
 describe('ComfyBuilderClient', () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    netFetch.mockClear()
+  })
+
+  // Bare fetch ignores the system proxy, which is exactly what an enterprise
+  // user behind one has.
+  it('requests through the proxy-aware net.fetch, cookie-free', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, { distributions: [] }))
+    await new ComfyBuilderClient({ auth: auth('t') }).listDistributions()
+    expect(netFetch).toHaveBeenCalledTimes(1)
+    expect(netFetch.mock.calls[0]![1]).toMatchObject({ credentials: 'omit' })
+  })
 
   it('lists distributions with a Bearer token at the right path', async () => {
     const f = mockFetch(200, { distributions: [{ id: 'd1', name: 'Dist One' }] })

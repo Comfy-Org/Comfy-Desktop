@@ -6,6 +6,8 @@
  * PKCE cloud token is scoped at consent time and cannot be silently re-scoped);
  * `CloudSession.switchWorkspace` drives that. This module is read-only listing.
  */
+import { net } from 'electron'
+
 import { CLOUD_CONFIG } from './config'
 import type { Workspace } from './types'
 
@@ -34,9 +36,13 @@ export interface ListWorkspacesOptions {
  */
 export async function listWorkspaces(accessToken: string, options: ListWorkspacesOptions = {}): Promise<Workspace[]> {
   const base = (options.apiBase ?? CLOUD_CONFIG.apiBase).replace(/\/+$/, '')
-  const res = await fetch(`${base}/workspaces`, {
+  // net.fetch (Chromium's stack), not Node's undici: it resolves the OS proxy,
+  // which is how enterprise users behind a corporate proxy reach the cloud API
+  // at all. credentials 'omit' keeps the bearer the only credential sent.
+  const res = await net.fetch(`${base}/workspaces`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    credentials: 'omit',
   })
   if (res.status === 404) return []
   if (res.status === 401 || res.status === 403) throw new Error('Not authorized to list workspaces')
