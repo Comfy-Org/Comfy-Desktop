@@ -19,9 +19,9 @@ function mountComponent(props: Record<string, unknown> = {}) {
       diskSpaceLoading: false,
       diskSpace: null,
       estimatedSize: 0,
-      ...props,
+      ...props
     },
-    global: { plugins: [makeI18n()] },
+    global: { plugins: [makeI18n()] }
   })
 }
 

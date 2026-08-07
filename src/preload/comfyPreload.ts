@@ -3,51 +3,56 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   ComfyDesktop2Bridge,
   ComfyDesktop2LogsBridge,
-  ComfyDesktop2TelemetryBridge,
   ComfyDesktop2TerminalBridge,
   ComfyDownloadProgress,
   LogsOutputMsg,
   LogsRestore,
   TerminalRestore
 } from '@comfyorg/comfyui-desktop-bridge-types'
+import type { ComfyDesktop2TelemetryBridge } from '../types/comfyDesktopBridge'
+import { startLocalFirebaseAuthMonitor } from './localFirebaseAuthMonitor'
 
-/**
- * Interactive terminal bridge for the served ComfyUI frontend.
- *
- * Main resolves the installationId from the sending webContents when no
- * explicit one is passed. The inline injection (running inside the
- * comfyView) omits it; the pop-out window passes its installationId
- * explicitly because its webContents isn't registered as a comfyView.
- * Per-install shared shell — multiple subscribers see the same output.
- */
-const Terminal: ComfyDesktop2TerminalBridge = {
-  /** Spawn the shell if needed, register this view as a subscriber, and
-   *  return the current scrollback/size/exited state. */
-  subscribe: (installationId?: string): Promise<TerminalRestore> =>
-    ipcRenderer.invoke('terminal-subscribe', installationId ?? null),
-  unsubscribe: (installationId?: string): Promise<void> =>
-    ipcRenderer.invoke('terminal-unsubscribe', installationId ?? null),
-  write: (data: string, installationId?: string): Promise<void> =>
-    ipcRenderer.invoke('terminal-write', installationId ?? null, data),
-  resize: (cols: number, rows: number, installationId?: string): Promise<void> =>
-    ipcRenderer.invoke('terminal-resize', installationId ?? null, cols, rows),
-  /** Kill the current shell (if any) and start a fresh one. */
-  restart: (installationId?: string): Promise<TerminalRestore> =>
-    ipcRenderer.invoke('terminal-restart', installationId ?? null),
-  /** Open a separate Electron window subscribed to the same shell. Main
-   *  resolves the installationId from the caller's comfyView sender so
-   *  the inline injection doesn't need to know its own ID. */
-  openPopout: (): Promise<void> => ipcRenderer.invoke('terminal-popout-open', null),
-  onOutput: (callback: (data: string) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, payload: { data: string }) => callback(payload.data)
-    ipcRenderer.on('terminal-output', handler)
-    return () => ipcRenderer.removeListener('terminal-output', handler)
-  },
-  onExited: (callback: () => void): (() => void) => {
-    const handler = () => callback()
-    ipcRenderer.on('terminal-exited', handler)
-    return () => ipcRenderer.removeListener('terminal-exited', handler)
+type LegacyTerminalBridge = ComfyDesktop2TerminalBridge & {
+  restore(): Promise<TerminalRestore>
+}
+
+const EMPTY_TERMINAL_RESTORE: TerminalRestore = {
+  buffer: [],
+  size: { cols: 80, rows: 30 },
+  exited: true
+}
+
+function sendTelemetry(channel: string, payload: unknown): void {
+  try {
+    ipcRenderer.send(channel, payload)
+  } catch {
+    // Telemetry must never break hosted frontend code.
   }
+}
+
+function openTerminal(): Promise<boolean> {
+  return ipcRenderer.invoke('desktop2-open-terminal')
+}
+
+function openTerminalPopout(): Promise<void> {
+  return ipcRenderer.invoke('desktop2-open-terminal-popout')
+}
+
+async function openTerminalWithEmptyRestore(): Promise<TerminalRestore> {
+  await openTerminal()
+  return EMPTY_TERMINAL_RESTORE
+}
+
+const Terminal: LegacyTerminalBridge = {
+  subscribe: openTerminalWithEmptyRestore,
+  unsubscribe: async (): Promise<void> => {},
+  write: async (): Promise<void> => {},
+  resize: async (): Promise<void> => {},
+  restart: async (): Promise<TerminalRestore> => EMPTY_TERMINAL_RESTORE,
+  openPopout: openTerminalPopout,
+  onOutput: (): (() => void) => () => {},
+  onExited: (): (() => void) => () => {},
+  restore: openTerminalWithEmptyRestore
 }
 
 /**
@@ -75,19 +80,21 @@ const Logs: ComfyDesktop2LogsBridge = {
   }
 }
 
+const reportFirebaseAuthState: NonNullable<
+  ComfyDesktop2TelemetryBridge['reportFirebaseAuthState']
+> = (state): void => sendTelemetry('telemetry:firebaseAuthState', state)
+
 const Telemetry: ComfyDesktop2TelemetryBridge = {
-  capture: (event, properties): void => {
-    // Telemetry payload errors must never break hosted frontend code.
-    try {
-      ipcRenderer.send('telemetry:capture', { event, properties })
-    } catch {
-      // ignore: telemetry must never break the renderer
-    }
-  }
+  capture: (event, properties): void => sendTelemetry('telemetry:capture', { event, properties }),
+  reportFirebaseAuthState
 }
 
-type ComfyDesktop2BridgeWithModelAccess = ComfyDesktop2Bridge & {
+startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
+
+type ComfyDesktop2RuntimeBridge = ComfyDesktop2Bridge & {
+  Telemetry: ComfyDesktop2TelemetryBridge
   openModelAccessPage: (url: string) => Promise<boolean>
+  openTerminal: () => Promise<boolean>
 }
 
 const bridge = {
@@ -123,9 +130,10 @@ const bridge = {
   reportTheme: (bg: string, text: string): void => {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
+  openTerminal,
   Terminal,
   Logs,
   Telemetry
-} satisfies ComfyDesktop2BridgeWithModelAccess
+} satisfies ComfyDesktop2RuntimeBridge
 
 contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

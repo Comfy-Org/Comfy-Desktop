@@ -45,8 +45,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const modal = useModal()
 
-const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge })
-  .__comfyTitlePopup
+const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
 
 /** Shared input/output fields from the snapshot, keyed by id so they render as
  *  the same readonly path rows used in the per-instance Storage tab. */
@@ -113,7 +112,7 @@ async function handleRemoveModelsDir(index: number): Promise<void> {
       "This won't delete any files. You can re-add the directory later from this list."
     ),
     confirmLabel: t('models.removeDir', 'Remove'),
-    confirmStyle: 'danger',
+    confirmStyle: 'danger'
   })
   if (!ok) return
   emit('touched')
@@ -140,7 +139,6 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   dirs[index] = picked
   await bridge?.globalSettingsSetModelsDirs(dirs)
 }
-
 </script>
 
 <template>

@@ -81,9 +81,7 @@ function createTestI18n() {
 }
 
 let exitCallbacks: Array<(data: { installationId: string }) => void> = []
-let outputCallbacks: Array<
-  (data: { installationId: string; data: string }) => void
-> = []
+let outputCallbacks: Array<(data: { installationId: string; data: string }) => void> = []
 
 function makeRestore(overrides: Partial<TerminalRestore> = {}): TerminalRestore {
   return { buffer: [], size: { cols: 80, rows: 30 }, exited: false, ...overrides }
@@ -97,12 +95,10 @@ function setupApi(subscribeRestore: TerminalRestore = makeRestore()): void {
     terminalWrite: vi.fn().mockResolvedValue(undefined),
     terminalResize: vi.fn().mockResolvedValue(undefined),
     terminalRestart: vi.fn().mockResolvedValue(makeRestore()),
-    onTerminalOutput: vi.fn(
-      (cb: (data: { installationId: string; data: string }) => void) => {
-        outputCallbacks.push(cb)
-        return () => {}
-      }
-    ),
+    onTerminalOutput: vi.fn((cb: (data: { installationId: string; data: string }) => void) => {
+      outputCallbacks.push(cb)
+      return () => {}
+    }),
     onTerminalExited: vi.fn((cb: (data: { installationId: string }) => void) => {
       exitCallbacks.push(cb)
       return () => {}
@@ -172,9 +168,7 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
     await flushPromises()
     expect(w.find(`[data-testid="${TID.consoleSessionEnded}"]`).exists()).toBe(true)
 
-    outputCallbacks.forEach((cb) =>
-      cb({ installationId: 'install-A', data: 'fresh prompt' })
-    )
+    outputCallbacks.forEach((cb) => cb({ installationId: 'install-A', data: 'fresh prompt' }))
     await flushPromises()
     expect(w.find(`[data-testid="${TID.consoleSessionEnded}"]`).exists()).toBe(false)
   })
@@ -183,8 +177,7 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
     const w = mountPane()
     await flushPromises()
 
-    const host = w.find(`[data-testid="${TID.consoleTerminal}"]`)
-      .element as HTMLElement
+    const host = w.find(`[data-testid="${TID.consoleTerminal}"]`).element as HTMLElement
     Object.defineProperty(host, 'offsetParent', {
       value: document.body,
       configurable: true
@@ -293,9 +286,7 @@ describe('comfyUISettings/ConsoleTerminalPane', () => {
       await flushPromises()
 
       await w.find(`[data-testid="${TID.consoleTerminal}"]`).trigger('contextmenu')
-      const copyItem = document.body.querySelector(
-        `[data-testid="${TID.contextMenuItem('copy')}"]`
-      )
+      const copyItem = document.body.querySelector(`[data-testid="${TID.contextMenuItem('copy')}"]`)
       expect(copyItem?.classList.contains('disabled')).toBe(true)
     })
   })

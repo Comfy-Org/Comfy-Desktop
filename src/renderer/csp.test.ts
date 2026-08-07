@@ -24,7 +24,7 @@ const TELEMETRY_RENDERER_HTMLS = ['panel.html', 'comfyTitleBar.html'] as const
 const NON_TELEMETRY_RENDERER_HTMLS = [
   'comfyTitlePopup.html',
   'comfyTitleTooltip.html',
-  'comfySystemModal.html',
+  'comfySystemModal.html'
 ] as const
 
 describe('Content-Security-Policy: panel.html', () => {
@@ -80,7 +80,7 @@ describe.each(TELEMETRY_RENDERER_HTMLS)(
     it('restricts script-src to self', () => {
       expect(csp['script-src']).toBe("'self'")
     })
-  },
+  }
 )
 
 describe.each(NON_TELEMETRY_RENDERER_HTMLS)(
@@ -97,5 +97,5 @@ describe.each(NON_TELEMETRY_RENDERER_HTMLS)(
     it('does NOT include PostHog endpoints', () => {
       expect(csp['connect-src']).not.toContain('posthog.com')
     })
-  },
+  }
 )

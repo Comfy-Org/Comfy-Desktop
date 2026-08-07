@@ -42,7 +42,6 @@ const props = defineProps<{ state: DownloadsState }>()
 
 const filter = ref<StatusFilter>('all')
 
-
 const pointerTick = ref(0)
 function onPointerMove(): void {
   pointerTick.value = (pointerTick.value + 1) & 0xff

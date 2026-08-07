@@ -58,7 +58,7 @@ watch(
   () => {
     if (document.activeElement !== nameEl.value) syncName()
   },
-  { immediate: true, flush: 'post' },
+  { immediate: true, flush: 'post' }
 )
 
 // Clicking the pencil should behave like clicking into the field: focus the editable name and place the caret at the end.
@@ -141,7 +141,7 @@ const showUrlRestart = computed(() => {
 // A `ref` on an element inside `v-for` resolves to an array; the URL row renders at most once, so unwrap to the single node.
 const urlElRaw = useTemplateRef<HTMLElement | HTMLElement[]>('urlEl')
 const urlEl = computed<HTMLElement | null>(() =>
-  Array.isArray(urlElRaw.value) ? (urlElRaw.value[0] ?? null) : (urlElRaw.value ?? null),
+  Array.isArray(urlElRaw.value) ? (urlElRaw.value[0] ?? null) : (urlElRaw.value ?? null)
 )
 // Source the canonical URL from the `remoteUrl` detail field (always present in
 // the sections) rather than `installation.remoteUrl`, which the picker snapshot
@@ -171,7 +171,7 @@ watch(
   () => {
     if (document.activeElement !== urlEl.value) syncUrl()
   },
-  { immediate: true, flush: 'post' },
+  { immediate: true, flush: 'post' }
 )
 
 function handleUrlEscape(): void {
@@ -270,7 +270,7 @@ function toRow(field: DetailField): FactRow {
     id: field.id ?? extra.key ?? field.label,
     label: field.label,
     value,
-    copyable: isPathLike(value),
+    copyable: isPathLike(value)
   }
 }
 
@@ -308,16 +308,14 @@ const locationRows = computed<FactRow[]>(() => {
     rows.push({
       id: '__disk-usage',
       label: props.diskUsage.label,
-      value: props.diskUsage.value,
+      value: props.diskUsage.value
     })
   }
   return rows
 })
 
 const lineageRows = computed<FactRow[]>(() => {
-  return allFields.value
-    .filter((field) => matchLabel(field, ['lineage']))
-    .map(toRow)
+  return allFields.value.filter((field) => matchLabel(field, ['lineage'])).map(toRow)
 })
 
 // The running port arrives as an `active-port` field from main (it's the only
@@ -327,9 +325,7 @@ const lineageRows = computed<FactRow[]>(() => {
 const runningDetailRows = computed<FactRow[]>(() => {
   const id = props.installation?.id
   if (!id || !sessionStore.isRunning(id)) return []
-  return allFields.value
-    .filter((field) => matchLabel(field, ['active-port']))
-    .map(toRow)
+  return allFields.value.filter((field) => matchLabel(field, ['active-port'])).map(toRow)
 })
 
 const groups = computed<FactGroup[]>(() => {
@@ -339,7 +335,7 @@ const groups = computed<FactGroup[]>(() => {
     out.push({
       id: 'install-details',
       title: t('statusFactPanel.installDetails', 'Instance details'),
-      rows: details,
+      rows: details
     })
   }
   const running = runningDetailRows.value
@@ -347,7 +343,7 @@ const groups = computed<FactGroup[]>(() => {
     out.push({
       id: 'running-details',
       title: t('statusFactPanel.runningDetails', 'Running details'),
-      rows: running,
+      rows: running
     })
   }
   // Location & storage only makes sense for a local on-disk install. Cloud and
@@ -360,7 +356,7 @@ const groups = computed<FactGroup[]>(() => {
     out.push({
       id: 'location-storage',
       title: t('statusFactPanel.locationStorage', 'Location & storage'),
-      rows: location,
+      rows: location
     })
   }
   const lineage = lineageRows.value
@@ -368,7 +364,7 @@ const groups = computed<FactGroup[]>(() => {
     out.push({
       id: 'lineage',
       title: t('statusFactPanel.lineage', 'Lineage'),
-      rows: lineage,
+      rows: lineage
     })
   }
   return out
@@ -561,14 +557,12 @@ const groups = computed<FactGroup[]>(() => {
   outline-offset: 1px;
 }
 
-
 .status-fact-hero-name-wrap:hover .status-fact-hero-edit-btn,
 .status-fact-hero-edit-btn:focus-visible,
 .status-fact-hero-name:focus-visible ~ .status-fact-hero-edit-btn {
   width: 17px;
   margin-left: 0;
 }
-
 
 .status-fact-hero-edit-hint {
   flex-shrink: 0;

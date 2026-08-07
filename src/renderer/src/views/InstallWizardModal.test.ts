@@ -13,8 +13,8 @@ function mountModal() {
   return mount(InstallWizardModal, {
     global: {
       plugins: [makeI18n()],
-      stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } },
-    },
+      stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } }
+    }
   })
 }
 
@@ -30,7 +30,7 @@ beforeEach(() => {
     getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
-    validateInstallPath: vi.fn().mockResolvedValue([]),
+    validateInstallPath: vi.fn().mockResolvedValue([])
   } as unknown as typeof window.api
 })
 
@@ -93,5 +93,63 @@ describe('InstallWizardModal onboarding→install handoff telemetry (#1224)', ()
       entrypoint: 'first_use',
       express: false
     })
+  })
+})
+
+describe('InstallWizardModal hardware warning', () => {
+  const KFD_WARNING =
+    'Your user cannot access the AMD GPU compute interface (/dev/kfd), so ComfyUI will not be able to use the GPU.'
+  const standaloneSource = { id: 'standalone', label: 'Standalone', fields: [] }
+  const remoteSource = { id: 'remote', label: 'Remote Connection', skipInstall: true, fields: [] }
+
+  it('renders the validateHardware warning under the detected GPU field', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: true,
+      warning: KFD_WARNING
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const warning = wrapper.find('[data-testid="wizard-hardware-warning"]')
+    expect(warning.exists()).toBe(true)
+    expect(warning.text()).toBe(KFD_WARNING)
+  })
+
+  it('renders no warning element when validateHardware reports none', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
+  })
+
+  it('suppresses the warning for a skipInstall (remote) source', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      standaloneSource,
+      remoteSource
+    ])
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: true,
+      warning: KFD_WARNING
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    // Standalone is auto-selected; the warning shows.
+    expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(true)
+
+    const remotePill = wrapper
+      .findAll('button[role="radio"]')
+      .find((b) => b.text().includes('Remote Connection'))
+    expect(remotePill).toBeTruthy()
+    await remotePill!.trigger('click')
+    await flushPromises()
+
+    // Remote installs run on other hardware; local GPU access is irrelevant.
+    expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
   })
 })

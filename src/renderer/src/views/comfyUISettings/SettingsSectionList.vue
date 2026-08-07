@@ -125,14 +125,32 @@ function isNestedField(field: DetailField): boolean {
   return field.nested === true
 }
 
+/** Chunk a section's fields into rows: consecutive fields sharing a
+ *  `rowGroup` render side-by-side; everything else gets its own row.
+ *  Only adjacency groups, so unrelated fields never merge. */
+function fieldRows(section: DetailSection): DetailField[][] {
+  const rows: DetailField[][] = []
+  for (const field of section.fields ?? []) {
+    const prev = rows[rows.length - 1]
+    if (field.rowGroup && prev && prev[0]?.rowGroup === field.rowGroup) {
+      prev.push(field)
+    } else {
+      rows.push([field])
+    }
+  }
+  return rows
+}
+
+function rowKey(row: DetailField[]): string {
+  return row.map((f) => f.id).join('|')
+}
+
 /** Field types that render the section's actions themselves, so the generic
  *  full-width footer must stand down or the buttons appear twice. */
 const ACTION_OWNING_EDIT_TYPES = new Set(['channel-cards', 'version-stats'])
 
 function fieldOwnsSectionActions(section: DetailSection): boolean {
-  return (section.fields ?? []).some(
-    (f) => f.editType && ACTION_OWNING_EDIT_TYPES.has(f.editType),
-  )
+  return (section.fields ?? []).some((f) => f.editType && ACTION_OWNING_EDIT_TYPES.has(f.editType))
 }
 
 function isPathLikeValue(value: unknown): boolean {
@@ -233,159 +251,166 @@ function fieldOwnsLabel(field: DetailField): boolean {
       </div>
 
       <div
-        v-for="field in section.fields"
-        :key="field.id"
-        class="settings-v2-field"
-        :class="{
-          'is-boolean-row': field.editType === 'boolean',
-          'is-nested': isNestedField(field),
-          'is-env-vars': field.editType === 'env-vars',
-          'is-channel-picker': field.editType === 'channel-cards'
-        }"
+        v-for="row in fieldRows(section)"
+        :key="rowKey(row)"
+        class="settings-v2-field-row"
+        :class="{ 'is-paired': row.length > 1 }"
       >
-        <template v-if="field.editType === 'env-vars'">
-          <div class="settings-v2-env-header">
+        <div
+          v-for="field in row"
+          :key="field.id"
+          class="settings-v2-field"
+          :class="{
+            'is-boolean-row': field.editType === 'boolean',
+            'is-nested': isNestedField(field),
+            'is-env-vars': field.editType === 'env-vars',
+            'is-channel-picker': field.editType === 'channel-cards'
+          }"
+        >
+          <template v-if="field.editType === 'env-vars'">
+            <div class="settings-v2-env-header">
+              <label class="settings-v2-field-label">
+                <span class="settings-v2-field-label-text">{{ field.label }}</span>
+                <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
+                <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
+                  {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+                </span>
+                <span
+                  v-if="fieldErrorMessage(field)"
+                  class="settings-v2-field-error-tag"
+                  role="alert"
+                  :title="fieldErrorMessage(field) ?? ''"
+                >
+                  {{ fieldErrorMessage(field) }}
+                </span>
+              </label>
+              <div class="settings-v2-env-notice" role="note">
+                <ShieldAlert :size="14" class="settings-v2-env-notice-icon" aria-hidden="true" />
+                <span class="settings-v2-env-notice-text">
+                  {{
+                    t('envVars.securityWarningShort', 'Environment variables may contain secrets')
+                  }}
+                </span>
+              </div>
+            </div>
+            <EnvVarsField :field="field" @update="(f, v) => emit('update-field', f, v)" />
+          </template>
+
+          <div v-else-if="field.editType === 'boolean'" class="settings-v2-boolean-row">
             <label class="settings-v2-field-label">
               <span class="settings-v2-field-label-text">{{ field.label }}</span>
               <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
               <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
                 {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
               </span>
-              <span
-                v-if="fieldErrorMessage(field)"
-                class="settings-v2-field-error-tag"
-                role="alert"
-                :title="fieldErrorMessage(field) ?? ''"
-              >
-                {{ fieldErrorMessage(field) }}
+            </label>
+            <BooleanToggle :field="field" @update="(v) => emit('update-field', field, v)" />
+          </div>
+
+          <template v-else>
+            <label v-if="!fieldOwnsLabel(field) && field.label" class="settings-v2-field-label">
+              <span class="settings-v2-field-label-text">{{ field.label }}</span>
+              <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
+              <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
+                {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
               </span>
             </label>
-            <div class="settings-v2-env-notice" role="note">
-              <ShieldAlert :size="14" class="settings-v2-env-notice-icon" aria-hidden="true" />
-              <span class="settings-v2-env-notice-text">
-                {{ t('envVars.securityWarningShort', 'Environment variables may contain secrets') }}
-              </span>
+
+            <PathField
+              v-if="field.editType === 'path' && !readonly"
+              :field="field"
+              @update="(f, v) => emit('update-field', f, v)"
+            />
+
+            <div
+              v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
+              class="settings-v2-readonly-path"
+            >
+              <button
+                v-if="canOpenFilesystemPath(field)"
+                type="button"
+                class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open"
+                :title="t('models.openDir', 'Open folder')"
+                :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
+                @click="emit('open-path', readonlyDisplayValue(field))"
+              >
+                {{ readonlyDisplayValue(field) }}
+              </button>
+              <span v-else class="settings-v2-field-readonly settings-v2-field-readonly-path">{{
+                readonlyDisplayValue(field)
+              }}</span>
+              <BaseCopyButton :value="readonlyDisplayValue(field)" />
             </div>
-          </div>
-          <EnvVarsField :field="field" @update="(f, v) => emit('update-field', f, v)" />
-        </template>
 
-        <div v-else-if="field.editType === 'boolean'" class="settings-v2-boolean-row">
-          <label class="settings-v2-field-label">
-            <span class="settings-v2-field-label-text">{{ field.label }}</span>
-            <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-            <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
-              {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
-            </span>
-          </label>
-          <BooleanToggle :field="field" @update="(v) => emit('update-field', field, v)" />
+            <BaseSelect
+              v-else-if="field.editType === 'select'"
+              :model-value="asString(field.value)"
+              :options="
+                (field.options ?? []).map(
+                  (opt): BaseSelectOption => ({
+                    value: opt.value,
+                    label: opt.label,
+                    description: opt.description
+                  })
+                )
+              "
+              :aria-label="field.label"
+              @update:model-value="(v: string) => emit('update-field', field, v)"
+            />
+
+            <ArgsBuilderField
+              v-else-if="field.editType === 'args-builder'"
+              :field="field"
+              :installation-id="props.installationId"
+              @open="emit('open-args-page', field)"
+              @update="(f, v) => emit('update-field', f, v)"
+            />
+
+            <ChannelPicker
+              v-else-if="field.editType === 'channel-cards'"
+              :field="field"
+              :section-actions="section.actions ?? []"
+              :running-action-ids="runningIdsSet"
+              @action="(a) => emit('run-action', a)"
+            />
+
+            <!-- The same version table ChannelPicker shows, for a source that has
+                 versions but no release channel. The backend supplies the rows,
+                 and the section's actions dock inside the table's footer. -->
+            <VersionStatPanel
+              v-else-if="field.editType === 'version-stats'"
+              v-bind="versionStats(field)"
+              :actions="section.actions ?? []"
+              :running-action-ids="runningIdsSet"
+              @action="(a) => emit('run-action', a)"
+            />
+
+            <BaseInput
+              v-else-if="field.editType === 'text'"
+              :model-value="asString(field.value)"
+              :aria-label="field.label"
+              :placeholder="field.placeholder"
+              @change="(v: string) => emit('update-field', field, v)"
+            />
+
+            <BaseInput
+              v-else-if="field.editType === 'number'"
+              :model-value="asString(field.value)"
+              :aria-label="field.label"
+              type="number"
+              :min="field.min"
+              :max="field.max"
+              @change="(v: string) => emit('update-field', field, v === '' ? null : Number(v))"
+            />
+
+            <span v-else class="settings-v2-field-readonly">{{ asString(field.value) }}</span>
+          </template>
+
+          <p v-if="field.description" class="settings-v2-field-description" role="note">
+            <ShieldAlert :size="14" class="settings-v2-field-description-icon" aria-hidden="true" />
+            <span>{{ field.description }}</span>
+          </p>
         </div>
-
-        <template v-else>
-          <label v-if="!fieldOwnsLabel(field) && field.label" class="settings-v2-field-label">
-            <span class="settings-v2-field-label-text">{{ field.label }}</span>
-            <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-            <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
-              {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
-            </span>
-          </label>
-
-          <PathField
-            v-if="field.editType === 'path' && !readonly"
-            :field="field"
-            @update="(f, v) => emit('update-field', f, v)"
-          />
-
-          <div
-            v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
-            class="settings-v2-readonly-path"
-          >
-            <button
-              v-if="canOpenFilesystemPath(field)"
-              type="button"
-              class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open"
-              :title="t('models.openDir', 'Open folder')"
-              :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
-              @click="emit('open-path', readonlyDisplayValue(field))"
-            >
-              {{ readonlyDisplayValue(field) }}
-            </button>
-            <span
-              v-else
-              class="settings-v2-field-readonly settings-v2-field-readonly-path"
-              >{{ readonlyDisplayValue(field) }}</span
-            >
-            <BaseCopyButton :value="readonlyDisplayValue(field)" />
-          </div>
-
-          <BaseSelect
-            v-else-if="field.editType === 'select'"
-            :model-value="asString(field.value)"
-            :options="
-              (field.options ?? []).map(
-                (opt): BaseSelectOption => ({
-                  value: opt.value,
-                  label: opt.label,
-                  description: opt.description
-                })
-              )
-            "
-            :aria-label="field.label"
-            @update:model-value="(v: string) => emit('update-field', field, v)"
-          />
-
-          <ArgsBuilderField
-            v-else-if="field.editType === 'args-builder'"
-            :field="field"
-            :installation-id="props.installationId"
-            @open="emit('open-args-page', field)"
-            @update="(f, v) => emit('update-field', f, v)"
-          />
-
-          <ChannelPicker
-            v-else-if="field.editType === 'channel-cards'"
-            :field="field"
-            :section-actions="section.actions ?? []"
-            :running-action-ids="runningIdsSet"
-            @action="(a) => emit('run-action', a)"
-          />
-
-          <!-- The same version table ChannelPicker shows, for a source that has
-               versions but no release channel. The backend supplies the rows,
-               and the section's actions dock inside the table's footer. -->
-          <VersionStatPanel
-            v-else-if="field.editType === 'version-stats'"
-            v-bind="versionStats(field)"
-            :actions="section.actions ?? []"
-            :running-action-ids="runningIdsSet"
-            @action="(a) => emit('run-action', a)"
-          />
-
-          <BaseInput
-            v-else-if="field.editType === 'text'"
-            :model-value="asString(field.value)"
-            :aria-label="field.label"
-            :placeholder="field.placeholder"
-            @change="(v: string) => emit('update-field', field, v)"
-          />
-
-          <BaseInput
-            v-else-if="field.editType === 'number'"
-            :model-value="asString(field.value)"
-            :aria-label="field.label"
-            type="number"
-            :min="field.min"
-            :max="field.max"
-            @change="(v: string) => emit('update-field', field, v === '' ? null : Number(v))"
-          />
-
-          <span v-else class="settings-v2-field-readonly">{{ asString(field.value) }}</span>
-        </template>
-
-        <p v-if="field.description" class="settings-v2-field-description" role="note">
-          <ShieldAlert :size="14" class="settings-v2-field-description-icon" aria-hidden="true" />
-          <span>{{ field.description }}</span>
-        </p>
       </div>
 
       <div
@@ -414,8 +439,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
               }
             ]"
             :disabled="
-              (action.enabled === false && !action.disabledMessage) ||
-              isActionRunning(action.id)
+              (action.enabled === false && !action.disabledMessage) || isActionRunning(action.id)
             "
             @click="emit('run-action', action)"
           >
@@ -532,6 +556,25 @@ function fieldOwnsLabel(field: DetailField): boolean {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Row wrapper around every field. Single-field rows are layout-transparent
+ * (display: contents) so the section's flex gap and nested-field margins keep
+ * working exactly as before; paired rows place their fields side-by-side with
+ * equal widths, wrapping back to stacked on narrow layouts. */
+.settings-v2-field-row {
+  display: contents;
+}
+
+.settings-v2-field-row.is-paired {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.settings-v2-field-row.is-paired > .settings-v2-field {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
 .settings-v2-field {
@@ -742,7 +785,9 @@ function fieldOwnsLabel(field: DetailField): boolean {
 }
 
 @keyframes settings-v2-action-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .settings-v2-action-tooltip {
@@ -782,7 +827,9 @@ function fieldOwnsLabel(field: DetailField): boolean {
   border-bottom: 1px solid var(--chooser-surface-border);
 }
 
-.settings-v2-section.is-readonly-list .settings-v2-field:last-child {
+/* Each field sits alone inside a display:contents row wrapper, so "last row
+ * in the section" is the wrapper's :last-child, not the field's. */
+.settings-v2-section.is-readonly-list .settings-v2-field-row:last-child .settings-v2-field {
   border-bottom: none;
 }
 

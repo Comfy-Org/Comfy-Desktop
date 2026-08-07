@@ -1,22 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import type { RumErrorEvent } from '@datadog/browser-rum'
-import { normalizeDatadogBundlePaths, normalizeRumErrorEvent, scrubPII } from './datadogPathNormalization'
+import {
+  normalizeDatadogBundlePaths,
+  normalizeRumErrorEvent,
+  scrubPII
+} from './datadogPathNormalization'
 
 describe('normalizeDatadogBundlePaths', () => {
   it('rewrites renderer file URLs to the synthetic Datadog bundle prefix', () => {
-    const stack = 'Error: boom\n    at file:///Users/alice/ComfyUI/out/renderer/assets/index-abc123.js:1:23'
+    const stack =
+      'Error: boom\n    at file:///Users/alice/ComfyUI/out/renderer/assets/index-abc123.js:1:23'
 
     expect(normalizeDatadogBundlePaths(stack)).toContain(
-      'app://app/renderer/assets/index-abc123.js:1:23',
+      'app://app/renderer/assets/index-abc123.js:1:23'
     )
   })
 
   it('rewrites Windows main-process paths to the synthetic Datadog bundle prefix', () => {
     const stack = 'Error: boom\n    at C:\\Users\\alice\\ComfyUI\\out\\main\\index.js:45:9'
 
-    expect(normalizeDatadogBundlePaths(stack)).toContain(
-      'app://app/main/index.js:45:9',
-    )
+    expect(normalizeDatadogBundlePaths(stack)).toContain('app://app/main/index.js:45:9')
   })
 
   it('leaves non-bundle URLs unchanged', () => {
@@ -29,7 +32,7 @@ describe('normalizeDatadogBundlePaths', () => {
 describe('scrubPII', () => {
   it('redacts Windows user paths', () => {
     expect(scrubPII('C:\\Users\\JohnDoe\\AppData\\Local\\foo')).toBe(
-      'C:\\Users\\[REDACTED]\\AppData\\Local\\foo',
+      'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'
     )
   })
 
@@ -56,7 +59,7 @@ describe('scrubPII', () => {
 
   it('handles usernames with spaces', () => {
     expect(scrubPII('C:\\Users\\John Doe\\AppData\\Local\\foo')).toBe(
-      'C:\\Users\\[REDACTED]\\AppData\\Local\\foo',
+      'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'
     )
   })
 })
@@ -72,15 +75,15 @@ describe('normalizeRumErrorEvent', () => {
           {
             message: 'cause',
             source: 'custom',
-            stack: 'Error: cause\n    at C:\\ComfyUI\\out\\main\\index.js:8:3',
-          },
+            stack: 'Error: cause\n    at C:\\ComfyUI\\out\\main\\index.js:8:3'
+          }
         ],
         resource: {
           method: 'GET',
           status_code: 500,
-          url: 'file:///Users/alice/ComfyUI/out/renderer/assets/index-abc123.js',
-        },
-      },
+          url: 'file:///Users/alice/ComfyUI/out/renderer/assets/index-abc123.js'
+        }
+      }
     } as unknown as RumErrorEvent
 
     normalizeRumErrorEvent(event)

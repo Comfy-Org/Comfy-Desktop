@@ -16,6 +16,9 @@ export type { VersionStatRow }
 const props = withDefaults(
   defineProps<{
     headline: string
+    /** Product prefix ("ComfyUI", "PyTorch") so several panels on one tab each
+     *  say what they describe. */
+    headlineProduct?: string
     /** Accent the headline (an update is waiting). */
     headlineHighlight?: boolean
     badge?: string | null
@@ -27,6 +30,7 @@ const props = withDefaults(
     runningActionIds?: Set<string>
   }>(),
   {
+    headlineProduct: '',
     headlineHighlight: false,
     badge: null,
     badgeTone: 'current',
@@ -46,8 +50,16 @@ function isRunning(id: string): boolean {
 <template>
   <div class="version-stat-panel">
     <div class="version-stat-headline-row">
-      <p class="version-stat-headline" :class="{ 'is-update-available': headlineHighlight }">
-        {{ headline }}
+      <p class="version-stat-headline">
+        <span v-if="headlineProduct" class="version-stat-headline-product">
+          {{ headlineProduct }}
+        </span>
+        <span
+          class="version-stat-headline-version"
+          :class="{ 'is-update-available': headlineHighlight }"
+        >
+          {{ headline }}
+        </span>
       </p>
       <span v-if="badge" class="version-stat-badge" :class="badgeTone">{{ badge }}</span>
     </div>
@@ -98,14 +110,19 @@ function isRunning(id: string): boolean {
 
 .version-stat-headline {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   font-size: 18px;
   font-weight: 600;
   line-height: 24px;
   color: var(--text);
 }
 
-.version-stat-headline.is-update-available {
-  color: var(--accent);
+.version-stat-headline-version.is-update-available {
+  color: var(--success, #4ade80);
+  font-weight: 700;
 }
 
 .version-stat-badge {

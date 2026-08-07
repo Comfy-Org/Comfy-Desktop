@@ -50,7 +50,7 @@ describe('auditVcRuntime', () => {
     setPlatform('win32')
     mockAccessMissing('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
     expect(new Set(await auditVcRuntime())).toEqual(
-      new Set(['vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll']),
+      new Set(['vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll'])
     )
   })
 

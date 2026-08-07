@@ -23,7 +23,10 @@ export function navClass(category: Category): NavClass {
  *   - local install     → `'instance'`
  *   - cloud|remote (or unknown category on an install-backed host) → `'cloud'`
  */
-export function viewKindFor(activeInstallationId: string | null, category: Category | null): ViewKind {
+export function viewKindFor(
+  activeInstallationId: string | null,
+  category: Category | null
+): ViewKind {
   if (activeInstallationId === null) return 'dashboard'
   return category === 'local' ? 'instance' : 'cloud'
 }

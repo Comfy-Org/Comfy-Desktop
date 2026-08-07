@@ -67,8 +67,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const modal = useModal()
 
-const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge })
-  .__comfyTitlePopup
+const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
 
 /** Platform-aware path equality. Renderer paths are already absolute (browse
  *  results, backend-computed defaults, stored dirs), so no resolve is needed. */
@@ -95,7 +94,7 @@ const PER_INSTALL_STORAGE_FIELD_IDS = [
   'modelDirs',
   'modelDirsPrimary',
   'inputDir',
-  'outputDir',
+  'outputDir'
 ]
 
 const showRestartWarning = computed(() => {
@@ -231,7 +230,7 @@ const instanceModelDirs = computed<ModelsDir[]>(() => {
   const extraRows: ModelsDir[] = currentExtras().map((p) => ({
     path: p,
     isPrimary: primary !== null && samePath(p, primary),
-    locked: false,
+    locked: false
   }))
   const base = ownRow?.isPrimary
     ? [ownRow, ...extraRows]
@@ -262,7 +261,7 @@ async function handleRemoveInstanceModelDir(index: number): Promise<void> {
       "This won't delete any files. You can re-add the directory later from this list."
     ),
     confirmLabel: t('models.removeDir', 'Remove'),
-    confirmStyle: 'danger',
+    confirmStyle: 'danger'
   })
   if (!ok) return
   if (instancePrimary.value !== null && samePath(row.path, instancePrimary.value)) {
@@ -348,7 +347,7 @@ const sharedModelDirs = computed<ModelsDir[]>(() => {
     path: d.path,
     isPrimary: d.isPrimary,
     locked: false,
-    shared: true,
+    shared: true
   }))
   const own = installOwnModelsDir.value
   if (own) rows.push({ path: own, isPrimary: false, locked: true, promotable: false })
@@ -381,7 +380,7 @@ async function handleRemoveModelsDir(index: number): Promise<void> {
       "This won't delete any files. You can re-add the directory later from this list."
     ),
     confirmLabel: t('models.removeDir', 'Remove'),
-    confirmStyle: 'danger',
+    confirmStyle: 'danger'
   })
   if (!ok) return
   globalTouched.value = true
@@ -440,12 +439,7 @@ function handleBrowseSharedOutput(): void {
 <template>
   <div class="storage-pane">
     <div class="storage-note" :class="{ 'is-warning': showRestartWarning }" role="status">
-      <component
-        :is="noteIcon"
-        :size="14"
-        class="storage-note-icon"
-        aria-hidden="true"
-      />
+      <component :is="noteIcon" :size="14" class="storage-note-icon" aria-hidden="true" />
       <p class="storage-note-text">
         <template v-if="showRestartWarning">
           {{
@@ -649,5 +643,4 @@ function handleBrowseSharedOutput(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 </style>

@@ -12,7 +12,5 @@
     "strict": true,
     "target": "ESNext"
   },
-  "include": [
-    "src/types/comfyDesktopBridge.ts"
-  ]
+  "include": ["src/types/comfyDesktopBridge.ts"]
 }

@@ -18,13 +18,13 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: (_name: string) => os.tmpdir(),
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 vi.mock('../../i18n', () => ({
@@ -33,7 +33,7 @@ vi.mock('../../i18n', () => ({
   init: vi.fn(async () => {}),
   getMessages: () => ({}),
   getLocale: () => 'en',
-  getAvailableLocales: () => [],
+  getAvailableLocales: () => []
 }))
 
 vi.mock('../../../settings', () => {
@@ -46,8 +46,8 @@ vi.mock('../../../settings', () => {
     defaults: {
       modelsDirs: ['/unused-default-models'],
       inputDir: '/unused-default-input',
-      outputDir: '/unused-default-output',
-    },
+      outputDir: '/unused-default-output'
+    }
   }
 })
 
@@ -68,22 +68,24 @@ vi.mock('../../../installations', () => ({
     installationsStore.set(id, next)
     return next
   }),
-  remove: vi.fn(async (id: string) => { installationsStore.delete(id) }),
-  uniqueName: (baseName: string, _existing: InstallationRecord[]) => baseName,
+  remove: vi.fn(async (id: string) => {
+    installationsStore.delete(id)
+  }),
+  uniqueName: (baseName: string, _existing: InstallationRecord[]) => baseName
 }))
 
 // Heavy subsystems pulled in transitively; unexercised here.
 vi.mock('../../snapshots', () => ({
   saveSnapshot: vi.fn(async () => 'noop.json'),
   getSnapshotCount: vi.fn(async () => 0),
-  deduplicatePreUpdateSnapshot: vi.fn(async () => false),
+  deduplicatePreUpdateSnapshot: vi.fn(async () => false)
 }))
 vi.mock('../../../lib/pip', () => ({
   installFilteredRequirements: vi.fn(async () => 0),
-  installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' })),
+  installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
-import { handleReleaseUpdate } from './copy'
+import { handleReleaseUpdate, handleCopyChangePytorch } from './copy'
 import { standalone } from '../../../sources/standalone'
 import * as settingsMock from '../../../settings'
 
@@ -91,7 +93,7 @@ import * as settingsMock from '../../../settings'
 function makeSender(): Electron.WebContents {
   return {
     isDestroyed: () => false,
-    send: vi.fn(),
+    send: vi.fn()
   } as unknown as Electron.WebContents
 }
 
@@ -154,7 +156,7 @@ describe('handleReleaseUpdate (release-update success path)', () => {
       sourceId: 'standalone',
       installPath: srcRoot,
       status: 'installed',
-      createdAt: new Date(0).toISOString(),
+      createdAt: new Date(0).toISOString()
     }
     installationsStore.set(src.id, src)
 
@@ -198,11 +200,11 @@ describe('handleReleaseUpdate (release-update success path)', () => {
               file: 'x.zip',
               size: 1,
               python_version: '3.12.4',
-              torch_version: '2.0.0',
-            },
-          },
-        },
-      },
+              torch_version: '2.0.0'
+            }
+          }
+        }
+      }
     })
 
     expect(result.ok, `release-update failed: ${result.message ?? ''}`).toBe(true)
@@ -218,14 +220,125 @@ describe('handleReleaseUpdate (release-update success path)', () => {
 
     // Custom nodes land under the new install's own ComfyUI tree.
     const dstComfyUI = path.join(newInst!.installPath, 'ComfyUI')
-    expect(fs.readFileSync(path.join(dstComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8'))
-      .toBe(NODE_FILE_BODY)
+    expect(
+      fs.readFileSync(path.join(dstComfyUI, 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
+    ).toBe(NODE_FILE_BODY)
 
     // Models route through useSharedModels and input/output route
     // through useSharedInputOutput to the settings-provided dirs.
-    expect(fs.readFileSync(path.join(sharedModelsDir, 'checkpoints', MODEL_FILE), 'utf-8'))
-      .toBe(MODEL_BODY)
+    expect(fs.readFileSync(path.join(sharedModelsDir, 'checkpoints', MODEL_FILE), 'utf-8')).toBe(
+      MODEL_BODY
+    )
     expect(fs.readFileSync(path.join(sharedInputDir, INPUT_FILE), 'utf-8')).toBe(INPUT_BODY)
     expect(fs.readFileSync(path.join(sharedOutputDir, OUTPUT_FILE), 'utf-8')).toBe(OUTPUT_BODY)
+  })
+})
+
+describe('handleCopyChangePytorch (copy-pytorch)', () => {
+  const STACK_ID = 'pytorch-index:cu130:2.13.0'
+  let tmpRoot: string
+  let srcRoot: string
+  let src: InstallationRecord
+  const originalFixupCopy = standalone.fixupCopy
+  const originalHandleAction = standalone.handleAction
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'copy-pytorch-'))
+    srcRoot = path.join(tmpRoot, 'src')
+    fs.mkdirSync(srcRoot, { recursive: true })
+    seedSource(srcRoot)
+
+    src = {
+      id: 'src-1',
+      name: 'src',
+      sourceId: 'standalone',
+      installPath: srcRoot,
+      status: 'installed',
+      createdAt: new Date(0).toISOString()
+    }
+    installationsStore.set(src.id, src)
+
+    // A real venv fixup / pip transaction is infeasible here; the handler's
+    // contract (copy first, delegate to change-pytorch, keep the copy on
+    // failure) is what's under test.
+    standalone.fixupCopy = (async () => {}) as typeof standalone.fixupCopy
+    standalone.handleAction = vi.fn(async () => ({
+      ok: true
+    })) as unknown as typeof standalone.handleAction
+  })
+
+  afterEach(() => {
+    standalone.fixupCopy = originalFixupCopy
+    standalone.handleAction = originalHandleAction
+    installationsStore.clear()
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  function invoke(actionData: Record<string, unknown>): ReturnType<typeof handleCopyChangePytorch> {
+    const event = { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent
+    return handleCopyChangePytorch({ event, installationId: src.id, inst: src, actionData })
+  }
+
+  it('rejects a missing name or stackId without copying anything', async () => {
+    expect((await invoke({ stackId: STACK_ID })).ok).toBe(false)
+    expect((await invoke({ name: 'copy' })).ok).toBe(false)
+    expect(vi.mocked(standalone.handleAction)).not.toHaveBeenCalled()
+    expect(installationsStore.size).toBe(1)
+  })
+
+  it('copies the whole install first, then runs change-pytorch on the copy', async () => {
+    const result = await invoke({ name: 'src-torch', stackId: STACK_ID })
+
+    expect(result.ok, `copy-pytorch failed: ${result.message ?? ''}`).toBe(true)
+    expect(result.navigate).toBe('list')
+    expect(typeof result.newInstallationId).toBe('string')
+
+    const newInst = installationsStore.get(result.newInstallationId!)
+    expect(newInst).toBeTruthy()
+    expect(newInst!.copyReason).toBe('copy-pytorch')
+    expect(newInst!.copiedFrom).toBe(src.id)
+    expect(newInst!.copiedFromName).toBe(src.name)
+    expect(newInst!.installPath).not.toBe(srcRoot)
+    // The copy is a full clone of the source tree.
+    expect(
+      fs.readFileSync(
+        path.join(newInst!.installPath, 'ComfyUI', 'custom_nodes', NODE_NAME, NODE_FILE),
+        'utf-8'
+      )
+    ).toBe(NODE_FILE_BODY)
+
+    // change-pytorch ran against the copied record, never the source.
+    const calls = vi.mocked(standalone.handleAction).mock.calls
+    expect(calls).toHaveLength(1)
+    const [actionId, target, data] = calls[0] as unknown as [
+      string,
+      InstallationRecord,
+      Record<string, unknown>
+    ]
+    expect(actionId).toBe('change-pytorch')
+    expect(target.id).toBe(result.newInstallationId)
+    expect(data).toEqual({ stackId: STACK_ID })
+  })
+
+  it('keeps the finished copy when the PyTorch change fails and leaves the source untouched', async () => {
+    standalone.handleAction = vi.fn(async () => {
+      throw new Error('pip transaction failed')
+    }) as unknown as typeof standalone.handleAction
+
+    const result = await invoke({ name: 'src-torch', stackId: STACK_ID })
+
+    // Same principle as Copy & Update: the copy survives so the user can retry.
+    expect(result.ok).toBe(true)
+    expect(typeof result.newInstallationId).toBe('string')
+    const newInst = installationsStore.get(result.newInstallationId!)
+    expect(newInst).toBeTruthy()
+    expect(fs.existsSync(newInst!.installPath)).toBe(true)
+    expect(newInst!.copyReason).toBe('copy-pytorch')
+
+    // Source registration and tree are intact.
+    expect(installationsStore.get(src.id)).toBeTruthy()
+    expect(
+      fs.readFileSync(path.join(srcRoot, 'ComfyUI', 'custom_nodes', NODE_NAME, NODE_FILE), 'utf-8')
+    ).toBe(NODE_FILE_BODY)
   })
 })

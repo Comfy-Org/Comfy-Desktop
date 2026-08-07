@@ -294,6 +294,14 @@ export function getModelDownloadContentScript(): string {
   // authenticated redirects server-side, avoiding renderer memory issues.
   if (isRemote && window.__comfyDesktop2 && window.__comfyDesktop2.downloadAsset) {
 
+    // Cloud/remote sessions can deliver the same 'executed' output more than
+    // once: a message replayed across reconnects, or one event observed by
+    // two sockets. Remember which outputs were already dispatched so each
+    // output of each prompt downloads exactly once per page session. Keys
+    // include the prompt id, so re-running a workflow (new prompt id)
+    // downloads its outputs again.
+    var _handledOutputs = Object.create(null);
+
     function _buildViewUrl(baseUrl, item) {
       var params = 'filename=' + encodeURIComponent(item.filename);
       if (item.subfolder) params += '&subfolder=' + encodeURIComponent(item.subfolder);
@@ -308,10 +316,13 @@ export function getModelDownloadContentScript(): string {
       return subfolder + '/' + name;
     }
 
-    function _downloadItem(baseUrl, authToken, item) {
+    function _downloadItem(baseUrl, authToken, eventKey, item) {
       if (!item || !item.filename) return;
       // Skip temporary preview outputs (PreviewImage, etc.)
       if (item.type === 'temp') return;
+      var dedupeKey = eventKey + '|' + (item.subfolder || '') + '|' + item.filename + '|' + (item.type || '');
+      if (_handledOutputs[dedupeKey]) return;
+      _handledOutputs[dedupeKey] = true;
       var preferredName = item.display_name || null;
       var saveName = _withSubfolder(item.subfolder, preferredName || item.filename);
       var viewUrl = _buildViewUrl(baseUrl, item);
@@ -336,13 +347,14 @@ export function getModelDownloadContentScript(): string {
           var msg = JSON.parse(event.data);
           if (msg.type !== 'executed' || !msg.data || !msg.data.output) return;
           var output = msg.data.output;
+          var eventKey = (msg.data.prompt_id || '') + '|' + (msg.data.node || '');
           // Process all known output arrays: images, gifs, audio, video, 3d (SaveGLB)
           var keys = ['images', 'gifs', 'audio', 'video', '3d'];
           for (var k = 0; k < keys.length; k++) {
             var items = output[keys[k]];
             if (!items || !items.length) continue;
             for (var i = 0; i < items.length; i++) {
-              _downloadItem(httpBase, _authToken, items[i]);
+              _downloadItem(httpBase, _authToken, eventKey, items[i]);
             }
           }
         } catch(e) {}

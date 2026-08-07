@@ -13,14 +13,14 @@ function makeI18n() {
 function mountList(fields: DetailField[]) {
   return mount(SettingsSectionList, {
     props: { sections: [{ fields }] },
-    global: { plugins: [makeI18n()] },
+    global: { plugins: [makeI18n()] }
   })
 }
 
 function mountReadonly(fields: DetailField[]) {
   return mount(SettingsSectionList, {
     props: { sections: [{ fields }], readonly: true },
-    global: { plugins: [makeI18n()] },
+    global: { plugins: [makeI18n()] }
   })
 }
 
@@ -35,9 +35,8 @@ describe('SettingsSectionList', () => {
           value: true,
           editable: true,
           editType: 'boolean',
-          description:
-            'Git repositories clone from gitcode.com instead of github.com.',
-        },
+          description: 'Git repositories clone from gitcode.com instead of github.com.'
+        }
       ])
       const desc = wrapper.find('.settings-v2-field-description')
       expect(desc.exists()).toBe(true)
@@ -51,8 +50,8 @@ describe('SettingsSectionList', () => {
           label: 'Use Chinese Mirrors (Git & PyPI)',
           value: false,
           editable: true,
-          editType: 'boolean',
-        },
+          editType: 'boolean'
+        }
       ])
       expect(wrapper.find('.settings-v2-field-description').exists()).toBe(false)
     })
@@ -66,8 +65,8 @@ describe('SettingsSectionList', () => {
           editable: true,
           editType: 'text',
           placeholder: 'e.g. https://mirrors.aliyun.com/pypi/simple/',
-          description: 'Overrides the default index when set.',
-        },
+          description: 'Overrides the default index when set.'
+        }
       ])
       const desc = wrapper.find('.settings-v2-field-description')
       expect(desc.exists()).toBe(true)
@@ -82,13 +81,54 @@ describe('SettingsSectionList', () => {
           value: false,
           editable: true,
           editType: 'boolean',
-          tooltip:
-            'Git repositories clone from gitcode.com instead of github.com.',
-        },
+          tooltip: 'Git repositories clone from gitcode.com instead of github.com.'
+        }
       ])
       const trigger = wrapper.find('.info-tooltip-trigger')
       expect(trigger.exists()).toBe(true)
       expect(trigger.attributes('aria-label')).toContain('gitcode.com')
+    })
+  })
+
+  // Fields sharing a rowGroup render side-by-side inside one paired row;
+  // everything else keeps its own full-width (layout-transparent) row.
+  describe('rowGroup pairing', () => {
+    const select = (id: string, rowGroup?: string): DetailField => ({
+      id,
+      label: id,
+      value: 'a',
+      editable: true,
+      editType: 'select',
+      options: [{ value: 'a', label: 'A' }],
+      ...(rowGroup ? { rowGroup } : {})
+    })
+
+    it('wraps consecutive same-rowGroup fields in one paired row', () => {
+      const wrapper = mountList([
+        select('managerSecurityLevel', 'manager'),
+        select('managerNetworkMode', 'manager'),
+        select('launchMode')
+      ])
+      const rows = wrapper.findAll('.settings-v2-field-row')
+      expect(rows.length).toBe(2)
+      const paired = rows[0]!
+      expect(paired.classes()).toContain('is-paired')
+      expect(paired.findAll('.settings-v2-field').length).toBe(2)
+      expect(rows[1]!.classes()).not.toContain('is-paired')
+      expect(rows[1]!.findAll('.settings-v2-field').length).toBe(1)
+    })
+
+    it('does not pair non-adjacent fields even when they share a rowGroup', () => {
+      const wrapper = mountList([select('first', 'g'), select('between'), select('second', 'g')])
+      expect(wrapper.findAll('.settings-v2-field-row.is-paired').length).toBe(0)
+      expect(wrapper.findAll('.settings-v2-field-row').length).toBe(3)
+    })
+
+    it('renders every field in its own row when no rowGroup is set', () => {
+      const wrapper = mountList([select('one'), select('two')])
+      const rows = wrapper.findAll('.settings-v2-field-row')
+      expect(rows.length).toBe(2)
+      for (const row of rows) expect(row.classes()).not.toContain('is-paired')
     })
   })
 
@@ -97,7 +137,7 @@ describe('SettingsSectionList', () => {
   describe('readonly path rows', () => {
     it('renders a clickable button that emits open-path for a path value', async () => {
       const wrapper = mountReadonly([
-        { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' },
+        { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' }
       ])
       const btn = wrapper.find('button.settings-v2-field-readonly-open')
       expect(btn.exists()).toBe(true)
@@ -108,7 +148,7 @@ describe('SettingsSectionList', () => {
 
     it('keeps the copy button alongside the path', () => {
       const wrapper = mountReadonly([
-        { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' },
+        { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' }
       ])
       expect(wrapper.find('.settings-v2-readonly-path').exists()).toBe(true)
       // BaseCopyButton renders a button; together with the open button there are two.
@@ -117,15 +157,13 @@ describe('SettingsSectionList', () => {
 
     it('does not make a URL value clickable', () => {
       const wrapper = mountReadonly([
-        { id: 'repo', label: 'Repository', value: 'https://github.com/comfyanonymous/ComfyUI' },
+        { id: 'repo', label: 'Repository', value: 'https://github.com/comfyanonymous/ComfyUI' }
       ])
       expect(wrapper.find('button.settings-v2-field-readonly-open').exists()).toBe(false)
     })
 
     it('does not make a date value clickable', () => {
-      const wrapper = mountReadonly([
-        { id: 'updated', label: 'Last updated', value: '2024/01/02' },
-      ])
+      const wrapper = mountReadonly([{ id: 'updated', label: 'Last updated', value: '2024/01/02' }])
       expect(wrapper.find('button.settings-v2-field-readonly-open').exists()).toBe(false)
     })
   })

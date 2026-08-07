@@ -70,9 +70,7 @@ export function useCentralPillCoachmark(
 
   function gatePasses(): boolean {
     return (
-      !opts.isInstallLess.value &&
-      !opts.isFirstUseLockdown.value &&
-      !opts.isLoadingLockdown?.value
+      !opts.isInstallLess.value && !opts.isFirstUseLockdown.value && !opts.isLoadingLockdown?.value
     )
   }
 

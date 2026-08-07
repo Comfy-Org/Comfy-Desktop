@@ -5,7 +5,7 @@ import {
   PRIVACY_POLICY,
   THIRD_PARTY_NOTICES,
   TOS,
-  type LegalDocId,
+  type LegalDocId
 } from './legalDocs'
 
 describe('LEGAL_DOCS', () => {

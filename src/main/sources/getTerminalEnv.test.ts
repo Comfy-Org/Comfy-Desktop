@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: vi.fn() },
   dialog: {},
   shell: { openPath: vi.fn().mockResolvedValue('') },
-  net: { request: vi.fn() },
+  net: { request: vi.fn() }
 }))
 
 import { gitSource } from './git'
@@ -54,7 +54,7 @@ describe('gitSource.getTerminalEnv', () => {
   it('returns a bare env when the tracked venv no longer exists on disk', () => {
     existsSyncSpy.mockReturnValue(false)
     const env = gitSource.getTerminalEnv!(
-      asInstall({ installPath: '/repos/comfy', venvPath: '/repos/comfy/.venv' }),
+      asInstall({ installPath: '/repos/comfy', venvPath: '/repos/comfy/.venv' })
     )
     expect(env).toEqual({})
   })
@@ -110,7 +110,7 @@ describe('portable.getTerminalEnv', () => {
       cwd: path.join(root, 'ComfyUI'),
       pathPrepends: [embedded, path.join(embedded, 'Scripts')],
       promptName: 'python_embeded',
-      pip: { exe: path.join(embedded, 'python.exe'), args: ['-s', '-m', 'pip'] },
+      pip: { exe: path.join(embedded, 'python.exe'), args: ['-s', '-m', 'pip'] }
     })
     // A portable build has no venv to activate.
     expect(env?.venvDir).toBeUndefined()

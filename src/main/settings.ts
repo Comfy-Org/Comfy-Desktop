@@ -1,7 +1,14 @@
 import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
-import { configDir, homeDir, defaultDataRoot, defaultDownloadCacheDir, builtinDefaultInstallDir, setInstallDirResolver } from './lib/paths'
+import {
+  configDir,
+  homeDir,
+  defaultDataRoot,
+  defaultDownloadCacheDir,
+  builtinDefaultInstallDir,
+  setInstallDirResolver
+} from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
 
@@ -94,9 +101,9 @@ type DefaultedSettingKey =
   | 'installDir'
 type SettingsDefaults = Pick<KnownSettings, DefaultedSettingKey>
 
-const dataPath = path.join(configDir(), "settings.json")
+const dataPath = path.join(configDir(), 'settings.json')
 
-const SHARED_ROOT = path.join(defaultDataRoot(), "ComfyUI-Shared")
+const SHARED_ROOT = path.join(defaultDataRoot(), 'ComfyUI-Shared')
 
 /** Scalar shapes allowed as a telemetry property value. Arrays/objects are
  *  never emitted (they'd leak paths/PII and blow up cardinality). */
@@ -160,14 +167,14 @@ const SETTINGS_SCHEMA = {
   // free-form string; fall back to null ("not a real value") otherwise.
   maxCachedDownloads: {
     nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => (typeof raw === 'number' ? raw : null) },
+    telemetry: { policy: 'value', toTelemetry: (raw) => (typeof raw === 'number' ? raw : null) }
   },
   onAppClose: {
     nullable: false,
     telemetry: {
       policy: 'value',
-      toTelemetry: (raw) => (raw === 'quit' || raw === 'tray' ? raw : null),
-    },
+      toTelemetry: (raw) => (raw === 'quit' || raw === 'tray' ? raw : null)
+    }
   },
   modelsDirs: { nullable: false, telemetry: { policy: 'presence' } },
   inputDir: { nullable: false, telemetry: { policy: 'presence' } },
@@ -181,8 +188,8 @@ const SETTINGS_SCHEMA = {
     telemetry: {
       policy: 'value',
       prop: 'setting_language_selected',
-      toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null),
-    },
+      toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null)
+    }
   },
   // App is dark-only; the theme setting is inert (see resolveTheme), so tracking
   // it carries no signal.
@@ -200,22 +207,22 @@ const SETTINGS_SCHEMA = {
       policy: 'multi',
       emitters: [
         { kind: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
-        { kind: 'presence', prop: 'auto_install_updates_explicit' },
-      ],
-    },
+        { kind: 'presence', prop: 'auto_install_updates_explicit' }
+      ]
+    }
   },
   // Emit "auto-launch configured?" as a boolean; the raw value can be an
   // installation id (potentially identifying).
   autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
   confirmBeforeClosingWindow: {
     nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
   // Mirror URL can be a private/identifying endpoint — presence only.
   pypiMirror: { nullable: false, telemetry: { policy: 'presence' } },
   useChineseMirrors: {
     nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
   chineseMirrorsPrompted: { nullable: false, telemetry: { policy: 'omit' } },
   // Consent gate, not a durable trackable setting: once disabled we can't emit a
@@ -224,14 +231,14 @@ const SETTINGS_SCHEMA = {
   firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
   oemManagedModelDirs: { nullable: false, telemetry: { policy: 'presence' } },
   oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
   lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
   skipTemplatePickerStep: {
     nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true },
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
@@ -243,17 +250,17 @@ const SETTINGS_SCHEMA = {
     telemetry: {
       policy: 'value',
       prop: 'install_updates_on_startup',
-      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null),
-    },
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null)
+    }
   },
   showInstallerUI: {
     // Windows-only, default-on — same `null`-off-Windows convention.
     nullable: false,
     telemetry: {
       policy: 'value',
-      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null),
-    },
-  },
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null)
+    }
+  }
 } as const satisfies { [K in keyof KnownSettings]: SettingSchemaEntry<K> }
 
 export type KnownSettingKey = keyof typeof SETTINGS_SCHEMA
@@ -275,11 +282,11 @@ export const defaults: SettingsDefaults = {
   cacheDir: defaultDownloadCacheDir(),
   maxCachedDownloads: 1,
   // Docking-to-tray is disabled (createTray() is currently a no-op).
-  onAppClose: "quit",
-  modelsDirs: [path.join(SHARED_ROOT, "models")],
-  inputDir: path.join(SHARED_ROOT, "input"),
-  outputDir: path.join(SHARED_ROOT, "output"),
-  installDir: builtinDefaultInstallDir(),
+  onAppClose: 'quit',
+  modelsDirs: [path.join(SHARED_ROOT, 'models')],
+  inputDir: path.join(SHARED_ROOT, 'input'),
+  outputDir: path.join(SHARED_ROOT, 'output'),
+  installDir: builtinDefaultInstallDir()
 }
 
 const systemDefault = defaults.modelsDirs[0]!
@@ -395,7 +402,8 @@ function load(): Settings {
   if (raw) {
     try {
       const obj: unknown = JSON.parse(raw)
-      if (obj && typeof obj === 'object' && !Array.isArray(obj)) parsed = obj as Record<string, unknown>
+      if (obj && typeof obj === 'object' && !Array.isArray(obj))
+        parsed = obj as Record<string, unknown>
     } catch (err) {
       console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
     }
@@ -419,7 +427,7 @@ function load(): Settings {
     'primaryInstallId',
     'pinnedInstallIds',
     'maxCachedFiles',
-    'closeDirectlyOnLastWindow',
+    'closeDirectlyOnLastWindow'
   ]) {
     if (Object.prototype.hasOwnProperty.call(result, key)) {
       delete result[key]
@@ -444,9 +452,9 @@ function load(): Settings {
 
     const nextModelsDirs = sanitizeModelsDirs(result.modelsDirs, systemDefault)
     if (
-      !Array.isArray(result.modelsDirs)
-      || nextModelsDirs.length !== result.modelsDirs.length
-      || nextModelsDirs.some((dir, index) => dir !== result.modelsDirs[index])
+      !Array.isArray(result.modelsDirs) ||
+      nextModelsDirs.length !== result.modelsDirs.length ||
+      nextModelsDirs.some((dir, index) => dir !== result.modelsDirs[index])
     ) {
       result.modelsDirs = nextModelsDirs
       changed = true
@@ -474,7 +482,9 @@ function load(): Settings {
   // Keep modelsDirs a valid array of non-empty strings; inject system default as fallback.
   if (Array.isArray(result.modelsDirs)) {
     const before = result.modelsDirs.length
-    result.modelsDirs = result.modelsDirs.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+    result.modelsDirs = result.modelsDirs.filter(
+      (d): d is string => typeof d === 'string' && d.trim() !== ''
+    )
     if (result.modelsDirs.length !== before) changed = true
   }
   if (!Array.isArray(result.modelsDirs) || result.modelsDirs.length === 0) {
@@ -493,8 +503,8 @@ function load(): Settings {
     const others = result.modelsDirs.filter((d) => path.resolve(d) !== path.resolve(systemDefault))
     const restored = [systemDefault, ...others]
     if (
-      restored.length !== result.modelsDirs.length
-      || restored.some((d, i) => d !== result.modelsDirs[i])
+      restored.length !== result.modelsDirs.length ||
+      restored.some((d, i) => d !== result.modelsDirs[i])
     ) {
       result.modelsDirs = restored
       changed = true
@@ -514,19 +524,19 @@ function load(): Settings {
       for (const folder of MODEL_FOLDER_TYPES) {
         fs.mkdirSync(path.join(systemDefault, folder), { recursive: true })
       }
-    } catch { }
+    } catch {}
   }
 
   // inputDir/outputDir must always point at a folder that exists. If the
   // designated folder is gone, fall back to the safe shared default
   // (which is always OK to recreate) and surface that in the setting —
   // we don't resurrect a vanished custom path.
-  for (const key of ["inputDir", "outputDir"] as const) {
+  for (const key of ['inputDir', 'outputDir'] as const) {
     const designated = result[key] as string | undefined
     const exists =
-      typeof designated === 'string'
-      && designated.trim() !== ''
-      && fs.existsSync(path.resolve(designated))
+      typeof designated === 'string' &&
+      designated.trim() !== '' &&
+      fs.existsSync(path.resolve(designated))
     if (exists) continue
     if (result[key] !== defaults[key]) {
       result[key] = defaults[key]
@@ -534,14 +544,14 @@ function load(): Settings {
     }
     try {
       fs.mkdirSync(defaults[key], { recursive: true })
-    } catch { }
+    } catch {}
   }
 
   // installDir/cacheDir are created on demand, so (unlike input/output) a custom
   // location may legitimately not exist yet — only fall back when the whole
   // volume is gone (e.g. reinstall on a different drive, a removed disk) so the
   // app never strands installs/cache on a dead path.
-  for (const key of ["installDir", "cacheDir"] as const) {
+  for (const key of ['installDir', 'cacheDir'] as const) {
     if (isOnAccessibleVolume(result[key])) continue
     if (result[key] !== defaults[key]) {
       result[key] = defaults[key]
@@ -579,7 +589,7 @@ const EMPTY_STRING_MEANS_UNSET: ReadonlySet<string> = new Set<KnownSettingKey>([
 /** Keys whose default value should be persisted as absence — `set(k, default)`
  *  drops the key so the file doesn't accumulate no-op writes. */
 const DEFAULT_VALUE_MEANS_UNSET: ReadonlyMap<string, unknown> = new Map<KnownSettingKey, unknown>([
-  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE],
+  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE]
 ])
 
 export function set<K extends string>(
@@ -590,10 +600,10 @@ export function set<K extends string>(
   // `undefined` = unset/default; for non-nullable known keys treat `null` the
   // same, and for EMPTY_STRING_MEANS_UNSET keys treat '' / whitespace as unset.
   if (
-    value === undefined
-    || (value === null && isKnownSettingKey(key) && !isNullableKnownSettingKey(key))
-    || (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key))
-    || (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
+    value === undefined ||
+    (value === null && isKnownSettingKey(key) && !isNullableKnownSettingKey(key)) ||
+    (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) ||
+    (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
   ) {
     delete settings[key]
     save(settings)
@@ -634,8 +644,10 @@ export function getTrackedSettingsTelemetryProperties(
 ): Record<string, SettingTelemetryValue> {
   const ctx: SettingTelemetryCtx = { platform: process.platform }
   const out: Record<string, SettingTelemetryValue> = {}
-  const emitValue = (raw: unknown, transform?: SettingTelemetryTransform<KnownSettingKey>): SettingTelemetryValue =>
-    transform ? transform(raw as never, ctx) : toScalarOrNull(raw)
+  const emitValue = (
+    raw: unknown,
+    transform?: SettingTelemetryTransform<KnownSettingKey>
+  ): SettingTelemetryValue => (transform ? transform(raw as never, ctx) : toScalarOrNull(raw))
   for (const key of keys) {
     if (!isKnownSettingKey(key)) continue
     const tel = (SETTINGS_SCHEMA[key] as SettingSchemaEntry<KnownSettingKey>).telemetry
@@ -688,10 +700,14 @@ export function has(key: string): boolean {
       if (typeof def === 'string' && typeof value === 'string') {
         if (path.resolve(def) === path.resolve(value)) return false
       } else if (Array.isArray(def) && Array.isArray(value)) {
-        if (def.length === value.length
-          && def.every((d, i) => typeof d === 'string' && typeof value[i] === 'string'
-            ? path.resolve(d as string) === path.resolve(value[i] as string)
-            : d === value[i])) {
+        if (
+          def.length === value.length &&
+          def.every((d, i) =>
+            typeof d === 'string' && typeof value[i] === 'string'
+              ? path.resolve(d as string) === path.resolve(value[i] as string)
+              : d === value[i]
+          )
+        ) {
           return false
         }
       } else if (def === value) {

@@ -1,7 +1,7 @@
 // IPC for renderer-originated telemetry: the renderer routes through main so
 // identity, consent, and dedup live in one place. Capture messages are
 // fire-and-forget (ipcMain.on).
-import { ipcMain, type WebContents } from 'electron'
+import { ipcMain, type IpcMainEvent, type WebContents, type WebFrameMain } from 'electron'
 import { findEntryByComfySender } from '../../host/registry'
 import * as mainTelemetry from '../telemetry'
 import {
@@ -9,6 +9,10 @@ import {
   recordExposure,
   type ExperimentExposureSource
 } from '../experiments'
+import { normalizeExceptionContext } from '../../../shared/piiScrub'
+import { reportFirebaseAuthState } from '../firebaseAuthIdentity'
+import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
+import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from '../opaqueIdentifier'
 
 interface CapturePayload {
   event?: unknown
@@ -23,6 +27,26 @@ interface CaptureExceptionPayload {
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function firebaseAuthReporterFrame(event: IpcMainEvent): WebFrameMain | null {
+  const frame = event.senderFrame
+  const mainFrame = event.sender.mainFrame
+  if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId)
+    return null
+  return frame
+}
+
+function asFirebaseAuthState(value: unknown): ComfyDesktop2FirebaseAuthState | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  if (source.status === 'pending' || source.status === 'signed_out') {
+    return { status: source.status }
+  }
+  if (source.status !== 'signed_in') return null
+  const userId = normalizeOpaqueIdentifier(source.userId, 256)
+  if (!userId || isIllegalPostHogDistinctId(userId)) return null
+  return { status: 'signed_in', userId }
 }
 
 function isTelemetryValue(v: unknown): v is mainTelemetry.TelemetryValue {
@@ -116,6 +140,13 @@ function asProps(value: unknown): mainTelemetry.TelemetryContext {
   return asTelemetryObject(value, true, true)
 }
 
+function asExceptionProps(value: unknown): mainTelemetry.TelemetryContext {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return normalizeExceptionContext(
+    value as Record<string, unknown>
+  ) as mainTelemetry.TelemetryContext
+}
+
 function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryValue> {
   return asTelemetryObject(value, false, false)
 }
@@ -164,18 +195,17 @@ export function registerTelemetryHandlers(): void {
   ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
-    mainTelemetry.capture(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
+    mainTelemetry.emit(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
   })
 
   ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
     const message = asString(payload?.message) ?? 'Unknown renderer error'
-    const stackStr = asString(payload?.stack) ?? undefined
+    const stackStr = asString(payload?.stack)
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
-    mainTelemetry.captureException(
-      err,
-      withPlatformAxes(asProps(payload?.properties), event?.sender)
-    )
+    const properties = withPlatformAxes(asExceptionProps(payload?.properties), event?.sender)
+    const accepted = mainTelemetry.captureException(err, properties)
+    if (accepted) mainTelemetry.forwardExceptionToRenderer(properties)
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {
@@ -184,20 +214,18 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.registerPersonProperties(props)
   })
 
-  // On login: alias the anonymous installation_id into the user_id. Renderer
-  // still owns datadogRum.setUser (Datadog is browser-only).
-  ipcMain.on('telemetry:bindUserId', (_event, payload: unknown) => {
-    if (!payload || typeof payload !== 'object') return
-    const userId = asString((payload as Record<string, unknown>).userId)
-    if (!userId) return
-    const properties = asPersonProps((payload as Record<string, unknown>).properties)
-    mainTelemetry.bindUserId(userId, properties)
-  })
-
-  // Logout: switch distinct_id back to the anonymous installation_id (NOT
-  // posthog.reset(), which would clobber installation_id + download_token).
-  ipcMain.on('telemetry:unbindUserId', () => {
-    mainTelemetry.unbindUserId()
+  // Auth consensus validates trusted Cloud and scoped, main-verified loopback
+  // reporters after this handler proves the message came from the main frame.
+  ipcMain.on('telemetry:firebaseAuthState', (event, payload: unknown) => {
+    const frame = firebaseAuthReporterFrame(event)
+    if (!frame) return
+    const state = asFirebaseAuthState(payload)
+    if (!state) return
+    reportFirebaseAuthState(
+      event.sender,
+      { processId: frame.processId, routingId: frame.routingId },
+      state
+    )
   })
 
   // Flag lookup for renderer A/B branches; awaits the boot fetch so a query

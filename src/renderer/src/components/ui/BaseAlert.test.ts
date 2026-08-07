@@ -197,7 +197,9 @@ describe('BaseAlert', () => {
 
   it('renders messageDetails groups in recessed sub-blocks', () => {
     const wrapper = mountAlert({
-      messageDetails: [{ label: 'Changes when restoring', items: ['+1 custom node', '-2 pip pkgs'] }]
+      messageDetails: [
+        { label: 'Changes when restoring', items: ['+1 custom node', '-2 pip pkgs'] }
+      ]
     })
     expect(wrapper.find('.base-alert-detail-label').text()).toBe('Changes when restoring')
     const items = wrapper.findAll('.base-alert-detail-item')

@@ -4,15 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key,
-  }),
+    t: (key: string) => key
+  })
 }))
 
 const mockConfirm = vi.fn()
 vi.mock('./useModal', () => ({
   useModal: () => ({
-    confirm: mockConfirm,
-  }),
+    confirm: mockConfirm
+  })
 }))
 
 import { useReturnToDashboardConfirm } from './useReturnToDashboardConfirm'
@@ -24,7 +24,7 @@ function makeInstallation(overrides: Partial<Installation> = {}): Installation {
     name: 'Test Install',
     sourceLabel: 'standalone',
     sourceCategory: 'local',
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -44,7 +44,7 @@ describe('useReturnToDashboardConfirm', () => {
       title: 'dashboard.confirmStopLocal.title',
       message: 'dashboard.confirmStopLocal.message',
       confirmLabel: 'dashboard.confirmStopLocal.confirmLabel',
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
     expect(result).toBe(true)
   })
@@ -63,7 +63,7 @@ describe('useReturnToDashboardConfirm', () => {
 
     const result = await confirmReturnToDashboard(
       makeInstallation({ sourceCategory: 'cloud' }),
-      'running',
+      'running'
     )
 
     expect(mockConfirm).not.toHaveBeenCalled()
@@ -75,7 +75,7 @@ describe('useReturnToDashboardConfirm', () => {
 
     const result = await confirmReturnToDashboard(
       makeInstallation({ sourceCategory: 'remote' }),
-      'crashed',
+      'crashed'
     )
 
     expect(mockConfirm).not.toHaveBeenCalled()

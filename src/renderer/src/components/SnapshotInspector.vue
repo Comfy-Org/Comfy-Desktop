@@ -32,12 +32,15 @@ const nodesExpanded = ref(true)
 const pipSearch = ref('')
 const pipExpanded = ref(false)
 
-watch(() => props.detail, () => {
-  nodeSearch.value = ''
-  nodesExpanded.value = true
-  pipSearch.value = ''
-  pipExpanded.value = false
-})
+watch(
+  () => props.detail,
+  () => {
+    nodeSearch.value = ''
+    nodesExpanded.value = true
+    pipSearch.value = ''
+    pipExpanded.value = false
+  }
+)
 
 const filteredCustomNodes = computed(() => {
   if (!props.detail) return []
@@ -82,7 +85,9 @@ const filteredPipPackages = computed(() => {
         </div>
         <SnapshotDiffView v-else :diff="diffData.diff" />
       </div>
-      <div v-else-if="diffMode && diffLoading" class="snapshot-loading with-spinner">{{ t('common.loading') }}</div>
+      <div v-else-if="diffMode && diffLoading" class="snapshot-loading with-spinner">
+        {{ t('common.loading') }}
+      </div>
 
       <div class="inspector-section">
         <div class="inspector-section-title">{{ t('snapshots.environment') }}</div>
@@ -97,15 +102,21 @@ const filteredPipPackages = computed(() => {
           </div>
           <div class="inspector-field">
             <span class="inspector-field-label">{{ t('snapshots.variant') }}</span>
-            <span class="inspector-field-value">{{ context?.variantLabel || detail.comfyui.variant || '—' }}</span>
+            <span class="inspector-field-value">{{
+              context?.variantLabel || detail.comfyui.variant || '—'
+            }}</span>
           </div>
           <div class="inspector-field">
             <span class="inspector-field-label">{{ t('snapshots.updateChannel') }}</span>
-            <span class="inspector-field-value">{{ detail.updateChannel || context?.updateChannel || '—' }}</span>
+            <span class="inspector-field-value">{{
+              detail.updateChannel || context?.updateChannel || '—'
+            }}</span>
           </div>
           <div class="inspector-field">
             <span class="inspector-field-label">{{ t('snapshots.pythonVersion') }}</span>
-            <span class="inspector-field-value">{{ detail.pythonVersion || context?.pythonVersion || '—' }}</span>
+            <span class="inspector-field-value">{{
+              detail.pythonVersion || context?.pythonVersion || '—'
+            }}</span>
           </div>
           <div class="inspector-field">
             <span class="inspector-field-label">{{ t('snapshots.capturedAt') }}</span>
@@ -115,11 +126,12 @@ const filteredPipPackages = computed(() => {
       </div>
 
       <div class="inspector-section">
-        <div
-          class="inspector-section-title collapsible"
-          @click="nodesExpanded = !nodesExpanded"
-        >
-          <span>{{ t('snapshots.customNodes') }} ({{ detail.customNodes.length }})<InfoTooltip :text="t('tooltips.customNodes')" side="bottom" /></span>
+        <div class="inspector-section-title collapsible" @click="nodesExpanded = !nodesExpanded">
+          <span
+            >{{ t('snapshots.customNodes') }} ({{ detail.customNodes.length }})<InfoTooltip
+              :text="t('tooltips.customNodes')"
+              side="bottom"
+          /></span>
           <span class="collapse-indicator">{{ nodesExpanded ? '▾' : '▸' }}</span>
         </div>
         <template v-if="nodesExpanded">
@@ -131,14 +143,21 @@ const filteredPipPackages = computed(() => {
               class="recessed-search"
               type="text"
               :placeholder="t('snapshots.searchNodes')"
-            >
-            <div v-if="filteredCustomNodes.length === 0 && nodeSearch" class="inspector-empty">{{ t('snapshots.searchNoResults') }}</div>
+            />
+            <div v-if="filteredCustomNodes.length === 0 && nodeSearch" class="inspector-empty">
+              {{ t('snapshots.searchNoResults') }}
+            </div>
             <template v-else>
               <div v-for="node in filteredCustomNodes" :key="node.id" class="ls-node-row">
-                <span class="ls-node-status" :class="node.enabled ? 'ls-node-enabled' : 'ls-node-disabled'" />
+                <span
+                  class="ls-node-status"
+                  :class="node.enabled ? 'ls-node-enabled' : 'ls-node-disabled'"
+                />
                 <span class="ls-node-name">{{ node.id }}</span>
                 <span class="ls-node-type">{{ node.type }}</span>
-                <span class="ls-node-version" :title="formatNodeVersion(node)">{{ formatNodeVersion(node) }}</span>
+                <span class="ls-node-version" :title="formatNodeVersion(node)">{{
+                  formatNodeVersion(node)
+                }}</span>
               </div>
             </template>
           </div>
@@ -146,11 +165,12 @@ const filteredPipPackages = computed(() => {
       </div>
 
       <div class="inspector-section">
-        <div
-          class="inspector-section-title collapsible"
-          @click="pipExpanded = !pipExpanded"
-        >
-          <span>{{ t('snapshots.pipPackages') }} ({{ detail.pipPackageCount }})<InfoTooltip :text="t('tooltips.pipPackages')" side="bottom" /></span>
+        <div class="inspector-section-title collapsible" @click="pipExpanded = !pipExpanded">
+          <span
+            >{{ t('snapshots.pipPackages') }} ({{ detail.pipPackageCount }})<InfoTooltip
+              :text="t('tooltips.pipPackages')"
+              side="bottom"
+          /></span>
           <span class="collapse-indicator">{{ pipExpanded ? '▾' : '▸' }}</span>
         </div>
         <template v-if="pipExpanded">
@@ -160,8 +180,10 @@ const filteredPipPackages = computed(() => {
               class="recessed-search"
               type="text"
               :placeholder="t('snapshots.searchPackages')"
-            >
-            <div v-if="filteredPipPackages.length === 0 && pipSearch" class="inspector-empty">{{ t('snapshots.searchNoResults') }}</div>
+            />
+            <div v-if="filteredPipPackages.length === 0 && pipSearch" class="inspector-empty">
+              {{ t('snapshots.searchNoResults') }}
+            </div>
             <template v-else>
               <div v-for="[name, version] in filteredPipPackages" :key="name" class="ls-pip-row">
                 <span class="ls-pip-name">{{ name }}</span>

@@ -85,7 +85,7 @@ function getAvailableLocales(): LocaleInfo[] {
     return files.map((f) => {
       const loc = f.replace(/\.json$/, '')
       const data = loadLocaleFile(loc)
-      return { value: loc, label: (data && data._label as string) || loc }
+      return { value: loc, label: (data && (data._label as string)) || loc }
     })
   } catch {
     return []

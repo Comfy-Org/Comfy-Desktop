@@ -44,7 +44,7 @@ const bridge = (window as unknown as { __comfySystemModal?: Bridge }).__comfySys
 const spec = ref<SystemModalSpec | null>(null)
 
 const tone = computed<'primary' | 'danger'>(() =>
-  spec.value?.confirmStyle === 'danger' ? 'danger' : 'primary',
+  spec.value?.confirmStyle === 'danger' ? 'danger' : 'primary'
 )
 
 function ack(action: SystemModalAction): void {

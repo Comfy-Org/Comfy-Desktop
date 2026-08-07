@@ -115,11 +115,7 @@ watch(
       ></div>
 
       <div v-if="messageDetails.length" class="base-prompt-details">
-        <div
-          v-for="(group, gi) in messageDetails"
-          :key="gi"
-          class="base-prompt-detail-group"
-        >
+        <div v-for="(group, gi) in messageDetails" :key="gi" class="base-prompt-detail-group">
           <span class="base-prompt-detail-label">{{ group.label }}</span>
           <div class="base-prompt-detail-recessed" @click="handleModalLinkClick">
             <div
@@ -150,11 +146,7 @@ watch(
     </div>
 
     <template #footer>
-      <button
-        type="button"
-        :data-testid="testIdCancel ?? TID.basePromptCancel"
-        @click="cancel"
-      >
+      <button type="button" :data-testid="testIdCancel ?? TID.basePromptCancel" @click="cancel">
         {{ cancelLabel ?? $t('common.cancel') }}
       </button>
       <button

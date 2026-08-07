@@ -4,15 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 vi.mock('../../lib/fetch', () => ({
-  fetchJSON: vi.fn(),
+  fetchJSON: vi.fn()
 }))
 
 vi.mock('../../lib/comfyui-releases', () => ({
-  getLatestStableTag: vi.fn(),
+  getLatestStableTag: vi.fn()
 }))
 
 import { standalone, buildPinnedVariant } from './index'
@@ -32,7 +32,17 @@ const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia`
 
 // --- Helpers ---
 
-type R2Release = { tag: string; comfyui_version: string; comfyui_commit: string; build: number; date: string; file: string; size: number; python_version: string; torch_version: string }
+type R2Release = {
+  tag: string
+  comfyui_version: string
+  comfyui_commit: string
+  build: number
+  date: string
+  file: string
+  size: number
+  python_version: string
+  torch_version: string
+}
 
 function makeR2Releases(tags: string[], options?: { vendorId?: string; comfyuiVersion?: string }) {
   const vendorId = options?.vendorId ?? VENDOR_ID
@@ -46,7 +56,7 @@ function makeR2Releases(tags: string[], options?: { vendorId?: string; comfyuiVe
     file: `${vendorId}-${tag}.tar.gz`,
     size: 1048576,
     python_version: '3.13.12',
-    torch_version: '2.7.0',
+    torch_version: '2.7.0'
   }))
   // latest.json: vendor_id → newest release
   const latest: Record<string, R2Release> = { [vendorId]: releases[0]! }
@@ -61,7 +71,7 @@ describe('standalone.buildInstallation', () => {
   const makeRelease = (value: string, tag?: string): FieldOption => ({
     value,
     label: value,
-    data: { tag: tag || value, vendorReleases: {} } as unknown as Record<string, unknown>,
+    data: { tag: tag || value, vendorReleases: {} } as unknown as Record<string, unknown>
   })
 
   const makeVariant = (variantId: string): FieldOption => ({
@@ -71,15 +81,27 @@ describe('standalone.buildInstallation', () => {
       variantId,
       manifest: { id: variantId, comfyui_ref: '0.18.3', python_version: '3.13.12' },
       downloadUrl: 'https://example.com/download.tar.gz',
-      downloadFiles: [{ url: 'https://example.com/download.tar.gz', filename: 'download.tar.gz', size: 1000 }],
-      r2Release: { tag: 'v0.18.2-env1', comfyui_version: '0.18.2', comfyui_commit: 'abc123', build: 1, date: '2026-03-15T00:00:00Z', file: 'download.tar.gz', size: 1000, python_version: '3.13.12', torch_version: '2.7.0' },
-    } as unknown as Record<string, unknown>,
+      downloadFiles: [
+        { url: 'https://example.com/download.tar.gz', filename: 'download.tar.gz', size: 1000 }
+      ],
+      r2Release: {
+        tag: 'v0.18.2-env1',
+        comfyui_version: '0.18.2',
+        comfyui_commit: 'abc123',
+        build: 1,
+        date: '2026-03-15T00:00:00Z',
+        file: 'download.tar.gz',
+        size: 1000,
+        python_version: '3.13.12',
+        torch_version: '2.7.0'
+      }
+    } as unknown as Record<string, unknown>
   })
 
   it('Stable: sets autoUpdateComfyUI + updateChannel="stable" so post-install checks out the latest stable tag', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     expect(result.autoUpdateComfyUI).toBe(true)
     expect(result.updateChannel).toBe('stable')
@@ -88,7 +110,7 @@ describe('standalone.buildInstallation', () => {
   it('Latest on GitHub: sets autoUpdateComfyUI + updateChannel="latest" so post-install fast-forwards to master HEAD', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('latest', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     // Both channels run the post-install update step — the bundle's
     // checked-in commit is necessarily behind both stable AND master,
@@ -101,11 +123,11 @@ describe('standalone.buildInstallation', () => {
   it('uses r2Release tag as releaseTag for both channels', () => {
     const stable = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     const latest = standalone.buildInstallation({
       release: makeRelease('latest', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     expect(stable.releaseTag).toBe('v0.18.2-env1')
     expect(latest.releaseTag).toBe('v0.18.2-env1')
@@ -114,7 +136,7 @@ describe('standalone.buildInstallation', () => {
   it('freezes originalBuild and originalTorchVersion from r2Release on the installation', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     expect(result.originalBuild).toBe(1)
     expect(result.originalTorchVersion).toBe('2.7.0')
@@ -124,16 +146,31 @@ describe('standalone.buildInstallation', () => {
   describe('starter template', () => {
     const base = {
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     }
     const template = (value: string, sizeBytes?: number): FieldOption => ({
       value,
       label: value,
-      ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {}),
+      ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {})
+    })
+
+    it('records an API-node pick for auto-open even though it downloads nothing', () => {
+      const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(apiTemplate.id, 0)
+      })
+      expect(result.bundledTemplateId).toBe(apiTemplate.id)
+      expect(result.pendingTemplateOpen).toBe(apiTemplate.id)
+      // Zero bytes is what keeps the launch stepper from showing a model phase.
+      expect(result.bundledTemplateSizeBytes).toBe(0)
     })
 
     it('"Skip & Install" (template = none) builds NO model download', () => {
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(NO_TEMPLATE_VALUE) })
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(NO_TEMPLATE_VALUE)
+      })
       expect(result.bundledTemplateId).toBeUndefined()
       expect(result.pendingTemplateOpen).toBeUndefined()
       expect(result.downloadTemplateModels).toBeUndefined()
@@ -156,7 +193,10 @@ describe('standalone.buildInstallation', () => {
 
     it('freezes the hydrated size on the record so the download estimate matches consent', () => {
       const realId = CURATED_TEMPLATES[0]!.id
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId, 1234) })
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(realId, 1234)
+      })
       expect(result.bundledTemplateSizeBytes).toBe(1234)
     })
 
@@ -173,7 +213,7 @@ describe('standalone.buildInstallation', () => {
       expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
       const result = standalone.buildInstallation({
         ...base,
-        bundledTemplate: template(substituteId, 5),
+        bundledTemplate: template(substituteId, 5)
       })
       expect(result.bundledTemplateId).toBe(substituteId)
       expect(result.pendingTemplateOpen).toBe(substituteId)
@@ -183,7 +223,7 @@ describe('standalone.buildInstallation', () => {
     it('rejects a forged id that could escape a path/URL', () => {
       const result = standalone.buildInstallation({
         ...base,
-        bundledTemplate: template('../../etc/passwd'),
+        bundledTemplate: template('../../etc/passwd')
       })
       expect(result.bundledTemplateId).toBeUndefined()
       expect(result.downloadTemplateModels).toBeUndefined()
@@ -211,9 +251,12 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
     const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
     const skip = options.find((o) => o.value === NO_TEMPLATE_VALUE)!
     expect(skip.recommended).toBeFalsy()
+    // Options come back in tab order, which the manifest does not follow.
     const recommendedIds = options.filter((o) => o.recommended).map((o) => o.value)
-    expect(recommendedIds).toEqual(
-      CURATED_TEMPLATES.filter((t) => t.recommended).map((t) => t.id)
+    expect(recommendedIds.sort()).toEqual(
+      CURATED_TEMPLATES.filter((t) => t.recommended)
+        .map((t) => t.id)
+        .sort()
     )
   })
 
@@ -234,9 +277,15 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
           {
             title: 'Image',
             templates: [
-              { name: first.id, title: 'Live Title', description: 'Live desc', size: 999, mediaSubtype: 'webp' },
-            ],
-          },
+              {
+                name: first.id,
+                title: 'Live Title',
+                description: 'Live desc',
+                size: 999,
+                mediaSubtype: 'webp'
+              }
+            ]
+          }
         ])
       }
       return Promise.resolve(undefined)
@@ -248,6 +297,16 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
     expect(card.data!.sizeBytes).toBe(999)
     expect(card.data!.category).toBe('Image')
   })
+
+  it('carries the API-node flag to the card, and never on the skip option', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    expect(options.find((o) => o.value === NO_TEMPLATE_VALUE)!.data?.apiNode).toBeUndefined()
+    for (const curated of CURATED_TEMPLATES) {
+      const card = options.find((o) => o.value === curated.id)!
+      expect(card.data!.apiNode, curated.id).toBe(curated.apiNode === true)
+    }
+  })
 })
 
 // --- buildPinnedVariant ---
@@ -256,18 +315,45 @@ describe('buildPinnedVariant', () => {
   // Two bundles for one vendor: a newer one (releases[0]) and the older one a
   // snapshot might have been captured on (releases[1]).
   const releases: R2Release[] = [
-    { tag: 'v0.20.0-env1', comfyui_version: '0.20.0', comfyui_commit: 'cNew', build: 2, date: '2026-05-01T00:00:00Z', file: 'new.tar.gz', size: 2000, python_version: '3.13.0', torch_version: '2.8.0' },
-    { tag: 'v0.18.2-env1', comfyui_version: '0.18.2', comfyui_commit: 'cOld', build: 1, date: '2026-03-15T00:00:00Z', file: 'old.tar.gz', size: 1000, python_version: '3.12.0', torch_version: '2.7.0' },
+    {
+      tag: 'v0.20.0-env1',
+      comfyui_version: '0.20.0',
+      comfyui_commit: 'cNew',
+      build: 2,
+      date: '2026-05-01T00:00:00Z',
+      file: 'new.tar.gz',
+      size: 2000,
+      python_version: '3.13.0',
+      torch_version: '2.8.0'
+    },
+    {
+      tag: 'v0.18.2-env1',
+      comfyui_version: '0.18.2',
+      comfyui_commit: 'cOld',
+      build: 1,
+      date: '2026-03-15T00:00:00Z',
+      file: 'old.tar.gz',
+      size: 1000,
+      python_version: '3.12.0',
+      torch_version: '2.7.0'
+    }
   ]
 
   const makeReleaseOption = (vendorId: string, history: R2Release[]): FieldOption => ({
     value: 'stable',
     label: 'stable',
-    data: { tag: history[0]?.tag, vendorReleases: { [vendorId]: history } } as unknown as Record<string, unknown>,
+    data: { tag: history[0]?.tag, vendorReleases: { [vendorId]: history } } as unknown as Record<
+      string,
+      unknown
+    >
   })
 
   it('pins to the exact historical bundle tag when it still exists in R2', () => {
-    const option = buildPinnedVariant(makeReleaseOption(VENDOR_ID, releases), VENDOR_ID, 'v0.18.2-env1')
+    const option = buildPinnedVariant(
+      makeReleaseOption(VENDOR_ID, releases),
+      VENDOR_ID,
+      'v0.18.2-env1'
+    )
     expect(option).not.toBeNull()
     const data = option!.data as { variantId: string; r2Release: R2Release; downloadUrl: string }
     expect(data.variantId).toBe(VENDOR_ID)
@@ -288,12 +374,20 @@ describe('buildPinnedVariant', () => {
   })
 
   it('returns null when the tag has been pruned, so the caller can fall back to newest', () => {
-    const option = buildPinnedVariant(makeReleaseOption(VENDOR_ID, releases), VENDOR_ID, 'v0.99.99-env1')
+    const option = buildPinnedVariant(
+      makeReleaseOption(VENDOR_ID, releases),
+      VENDOR_ID,
+      'v0.99.99-env1'
+    )
     expect(option).toBeNull()
   })
 
   it('returns null when the vendor has no history for the variant', () => {
-    const option = buildPinnedVariant(makeReleaseOption(VENDOR_ID, releases), 'win-unknown-vendor', 'v0.18.2-env1')
+    const option = buildPinnedVariant(
+      makeReleaseOption(VENDOR_ID, releases),
+      'win-unknown-vendor',
+      'v0.18.2-env1'
+    )
     expect(option).toBeNull()
   })
 })
@@ -389,7 +483,7 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       inputDir: path.join(adoptedBaseDir, 'input'),
       outputDir: path.join(adoptedBaseDir, 'output'),
       launchArgs: '--listen 127.0.0.1 --port 8188',
-      ...overrides,
+      ...overrides
     } as InstallationRecord
   }
 
@@ -428,9 +522,7 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
     const args = cmd.args!
     const idx = args.indexOf('--database-url')
     expect(idx).toBeGreaterThanOrEqual(0)
-    expect(args[idx + 1]).toBe(
-      `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`
-    )
+    expect(args[idx + 1]).toBe(`sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`)
   })
 
   it('does not override a user-supplied --database-url', () => {
@@ -459,13 +551,15 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
   })
 
   it('places adopt CLI args before user launchArgs so user values win on conflict', () => {
-    const cmd = standalone.getLaunchCommand!(makeAdoptedRecord({
-      launchArgs: '--listen 0.0.0.0 --port 9000 --base-directory /custom/override',
-    }))!
+    const cmd = standalone.getLaunchCommand!(
+      makeAdoptedRecord({
+        launchArgs: '--listen 0.0.0.0 --port 9000 --base-directory /custom/override'
+      })
+    )!
     const args = cmd.args!
     // Two --base-directory occurrences; user override comes after the adopt-injected one
     const positions = args
-      .map((value, index) => value === '--base-directory' ? index : -1)
+      .map((value, index) => (value === '--base-directory' ? index : -1))
       .filter((index) => index >= 0)
     expect(positions.length).toBe(2)
     expect(positions[0]!).toBeLessThan(positions[1]!)
@@ -499,10 +593,9 @@ describe('standalone.getFieldOptions variant version display', () => {
   // The newest R2 standalone bundle ships an OLDER ComfyUI (0.20.1) than the
   // upstream stable tag the wizard auto-updates to (v0.22.3). Set up that gap.
   function setupVersionGap() {
-    const { latest, vendorReleases, vendorId } = makeR2Releases(
-      ['v0.20.1-env1'],
-      { comfyuiVersion: '0.20.1' },
-    )
+    const { latest, vendorReleases, vendorId } = makeR2Releases(['v0.20.1-env1'], {
+      comfyuiVersion: '0.20.1'
+    })
     mockedFetchJSON.mockImplementation((url: string) => {
       if (url.includes('latest.json')) return Promise.resolve(latest)
       return Promise.resolve(vendorReleases[vendorId]!)
@@ -514,7 +607,7 @@ describe('standalone.getFieldOptions variant version display', () => {
     const releaseOptions = await standalone.getFieldOptions!(
       'release',
       {},
-      { includeLatestStable: true },
+      { includeLatestStable: true }
     )
     return releaseOptions.find((o) => o.value === value)!
   }

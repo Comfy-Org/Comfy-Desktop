@@ -33,14 +33,15 @@ function triggerLabel(trigger: string): string {
   <div class="ls-section">
     <div class="ls-section-title">{{ t('list.snapshotTimeline') }}</div>
     <div class="ls-timeline">
-      <div
-        v-for="(snap, i) in preview.snapshots"
-        :key="snap.filename"
-        class="ls-timeline-item"
-      >
-        <span class="ls-trigger" :class="'ls-trigger-' + snap.trigger">{{ triggerLabel(snap.trigger) }}</span>
+      <div v-for="(snap, i) in preview.snapshots" :key="snap.filename" class="ls-timeline-item">
+        <span class="ls-trigger" :class="'ls-trigger-' + snap.trigger">{{
+          triggerLabel(snap.trigger)
+        }}</span>
         <span v-if="i === 0" class="ls-current-tag">{{ t('snapshots.current') }}</span>
-        <span class="ls-meta">{{ snap.comfyuiVersion }} · {{ t('snapshots.nodesCount', { count: snap.nodeCount }) }} · {{ t('snapshots.packagesCount', { count: snap.pipPackageCount }) }}</span>
+        <span class="ls-meta"
+          >{{ snap.comfyuiVersion }} · {{ t('snapshots.nodesCount', { count: snap.nodeCount }) }} ·
+          {{ t('snapshots.packagesCount', { count: snap.pipPackageCount }) }}</span
+        >
         <span class="ls-time">{{ formatDate(snap.createdAt) }}</span>
       </div>
     </div>
@@ -70,16 +71,27 @@ function triggerLabel(trigger: string): string {
 
     <div class="ls-subsection">
       <div class="ls-subsection-title" @click="nodesExpanded = !nodesExpanded">
-        <span>{{ t('snapshots.customNodes') }} ({{ preview.newestSnapshot.customNodes.length }})</span>
+        <span
+          >{{ t('snapshots.customNodes') }} ({{ preview.newestSnapshot.customNodes.length }})</span
+        >
         <span class="ls-collapse">{{ nodesExpanded ? '▾' : '▸' }}</span>
       </div>
       <template v-if="nodesExpanded">
         <div v-if="preview.newestSnapshot.customNodes.length > 0" class="recessed-list">
-          <div v-for="node in preview.newestSnapshot.customNodes" :key="node.id" class="ls-node-row">
-            <span class="ls-node-status" :class="node.enabled ? 'ls-node-enabled' : 'ls-node-disabled'" />
+          <div
+            v-for="node in preview.newestSnapshot.customNodes"
+            :key="node.id"
+            class="ls-node-row"
+          >
+            <span
+              class="ls-node-status"
+              :class="node.enabled ? 'ls-node-enabled' : 'ls-node-disabled'"
+            />
             <span class="ls-node-name">{{ node.id }}</span>
             <span class="ls-node-type">{{ node.type }}</span>
-            <span class="ls-node-version" :title="formatNodeVersion(node)">{{ formatNodeVersion(node) }}</span>
+            <span class="ls-node-version" :title="formatNodeVersion(node)">{{
+              formatNodeVersion(node)
+            }}</span>
           </div>
         </div>
         <div v-else class="ls-empty">—</div>
@@ -93,7 +105,11 @@ function triggerLabel(trigger: string): string {
       </div>
       <template v-if="pipExpanded">
         <div v-if="preview.newestSnapshot.pipPackageCount > 0" class="recessed-list">
-          <div v-for="(version, name) in preview.newestSnapshot.pipPackages" :key="name" class="ls-pip-row">
+          <div
+            v-for="(version, name) in preview.newestSnapshot.pipPackages"
+            :key="name"
+            class="ls-pip-row"
+          >
             <span class="ls-pip-name">{{ name }}</span>
             <span class="ls-pip-version" :title="version">{{ version }}</span>
           </div>

@@ -62,7 +62,7 @@ const bridge: ComfyTitleTooltipBridge = {
   },
   dismissCoachmark: () => {
     ipcRenderer.send('comfy-titlecoachmark:dismiss')
-  },
+  }
 }
 
 if (process.contextIsolated) {

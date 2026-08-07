@@ -34,13 +34,20 @@ export async function shareLatestSnapshot(
 /** Localised trigger label (requires the `t` function from `useI18n`). */
 export function triggerLabel(trigger: string, t: (key: string) => string): string {
   switch (trigger) {
-    case 'boot': return t('snapshots.triggerBoot')
-    case 'restart': return t('snapshots.triggerRestart')
-    case 'manual': return t('snapshots.triggerManual')
-    case 'pre-update': return t('snapshots.triggerPreUpdate')
-    case 'post-update': return t('snapshots.triggerPostUpdate')
-    case 'post-restore': return t('snapshots.triggerPostRestore')
-    default: return trigger
+    case 'boot':
+      return t('snapshots.triggerBoot')
+    case 'restart':
+      return t('snapshots.triggerRestart')
+    case 'manual':
+      return t('snapshots.triggerManual')
+    case 'pre-update':
+      return t('snapshots.triggerPreUpdate')
+    case 'post-update':
+      return t('snapshots.triggerPostUpdate')
+    case 'post-restore':
+      return t('snapshots.triggerPostRestore')
+    default:
+      return trigger
   }
 }
 
@@ -59,13 +66,20 @@ export function formatNodeVersion(node: { version?: string; commit?: string }): 
 /** CSS class suffix for a snapshot trigger badge / dot. */
 export function triggerClass(trigger: string): string {
   switch (trigger) {
-    case 'boot': return 'trigger-boot'
-    case 'restart': return 'trigger-restart'
-    case 'manual': return 'trigger-manual'
-    case 'pre-update': return 'trigger-preupdate'
-    case 'post-update': return 'trigger-postupdate'
-    case 'post-restore': return 'trigger-postrestore'
-    default: return ''
+    case 'boot':
+      return 'trigger-boot'
+    case 'restart':
+      return 'trigger-restart'
+    case 'manual':
+      return 'trigger-manual'
+    case 'pre-update':
+      return 'trigger-preupdate'
+    case 'post-update':
+      return 'trigger-postupdate'
+    case 'post-restore':
+      return 'trigger-postrestore'
+    default:
+      return ''
   }
 }
 
@@ -85,9 +99,14 @@ export function formatRelative(iso: string, t: Translator): string {
 /** Localised label for a copy-event reason. */
 export function copyReasonLabel(reason: string, t: Translator): string {
   switch (reason) {
-    case 'copy-update': return t('snapshots.copyUpdatedAs')
-    case 'release-update': return t('snapshots.releaseUpdatedAs')
-    default: return t('snapshots.copiedAs')
+    case 'copy-update':
+      return t('snapshots.copyUpdatedAs')
+    case 'copy-pytorch':
+      return t('snapshots.copyPytorchAs')
+    case 'release-update':
+      return t('snapshots.releaseUpdatedAs')
+    default:
+      return t('snapshots.copiedAs')
   }
 }
 

@@ -154,7 +154,7 @@ function discoverExtraFoldersFromSharedDirs(modelsDirs: string[]): string[] {
  * `t2i_adapter` is NOT a legacy alias — see `SECONDARY_TYPE_DIRS`. */
 const LEGACY_FOLDER_ALIASES: ReadonlyArray<{ key: string; dir: string }> = [
   { key: 'clip', dir: 'clip' },
-  { key: 'unet', dir: 'unet' },
+  { key: 'unet', dir: 'unet' }
 ]
 
 /** Dirs ComfyUI's defaults search under a canonical type without a `map_legacy`
@@ -332,7 +332,7 @@ export function syncCustomModelFolders(
  *  Normalising both sides matches a download hint against a YAML override. */
 const LEGACY_FOLDER_TYPE_MAP: Readonly<Record<string, string>> = {
   unet: 'diffusion_models',
-  clip: 'text_encoders',
+  clip: 'text_encoders'
 }
 
 export function mapLegacyFolderType(type: string): string {
@@ -346,7 +346,7 @@ const NON_MODEL_SECTION_KEYS: ReadonlySet<string> = new Set([
   'base_path',
   'is_default',
   'custom_nodes',
-  'download_model_base',
+  'download_model_base'
 ])
 
 /** One config group from an `extra_model_paths.yaml`. */
@@ -492,7 +492,7 @@ export function resolveExtraModelPaths(yamlPath: string): ResolvedExtraPath[] {
         type: mapLegacyFolderType(type),
         rawType: type,
         dir: normpath(full),
-        isDefault: !!section.isDefault,
+        isDefault: !!section.isDefault
       })
     }
   }
@@ -533,7 +533,9 @@ export function resolveInstallModelSearchPaths(
     launcherRoots = sharedModelsDirs.map((d) => path.resolve(d))
     primary = launcherRoots[0] ?? builtinRoot
   } else {
-    const instanceDirs = ((inst.modelDirs as string[] | undefined) ?? []).map((d) => path.resolve(d))
+    const instanceDirs = ((inst.modelDirs as string[] | undefined) ?? []).map((d) =>
+      path.resolve(d)
+    )
     launcherRoots = instanceDirs
     const primaryRaw = inst.modelDirsPrimary as string | undefined
     primary =

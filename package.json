@@ -1,6 +1,6 @@
 {
   "name": "comfyui-desktop-2",
-  "version": "1.0.30-comfy-builder.2",
+  "version": "1.0.36-comfy-builder.1",
   "description": "Comfy Desktop",
   "author": {
     "name": "Comfy Org",
@@ -8,7 +8,7 @@
     "url": "https://www.comfy.org"
   },
   "repository": "github:Comfy-Org/Comfy-Desktop",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/Comfy-Org/Comfy-Desktop",
   "engines": {
     "node": ">=22",
@@ -54,6 +54,17 @@
     "test:e2e:macos": "playwright test --project=macos",
     "test:e2e:windows": "playwright test --project=windows",
     "test:e2e:linux": "playwright test --project=linux",
+    "test:e2e:lifecycle": "playwright test --project=lifecycle",
+    "test:e2e:lifecycle:install": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta\"",
+    "test:e2e:lifecycle:update": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-update\"",
+    "test:e2e:lifecycle:crosschannel": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-crosschannel\"",
+    "test:e2e:lifecycle:snapshot": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-snapshot\"",
+    "test:e2e:lifecycle:manager": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-manager\"",
+    "test:e2e:lifecycle:picker": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-picker\"",
+    "test:e2e:lifecycle:bootwindow": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-bootwindow\"",
+    "test:e2e:lifecycle:copy": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-copy\"",
+    "test:e2e:lifecycle:remote": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-remote\"",
+    "test:e2e:lifecycle:delete": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta|@sec-delete\"",
     "test:watch": "vitest",
     "prepare": "node ./scripts/prepare.mjs"
   },

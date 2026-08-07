@@ -23,7 +23,28 @@ export type ErrorBucket =
   | 'unknown'
 
 export function bucketError(input: unknown): ErrorBucket {
-  const raw = input instanceof Error ? input.message : typeof input === 'string' ? input : ''
+  const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : null
+  const cause =
+    record?.cause && typeof record.cause === 'object'
+      ? (record.cause as Record<string, unknown>)
+      : null
+  const code =
+    typeof record?.code === 'string'
+      ? record.code
+      : typeof cause?.code === 'string'
+        ? cause.code
+        : ''
+  const name =
+    input instanceof Error ? input.name : typeof record?.name === 'string' ? record.name : ''
+  const detail =
+    input instanceof Error
+      ? input.message
+      : typeof input === 'string'
+        ? input
+        : typeof record?.message === 'string'
+          ? record.message
+          : ''
+  const raw = [code, name, detail].filter(Boolean).join(' ')
   if (!raw) return 'unknown'
   const message = raw.toLowerCase()
   // Cancellation wins even if the message also mentions cancel-triggered failures.
@@ -92,13 +113,23 @@ export function bucketError(input: unknown): ErrorBucket {
   ) {
     return 'source_missing'
   }
-  if (message.includes('network') || message.includes('fetch')) return 'network'
+  if (
+    /\b(?:econnrefused|econnreset|enotfound|eai_again|enetunreach|etimedout)\b/.test(message) ||
+    /net::err_[a-z0-9_]+/.test(message) ||
+    message.includes('network') ||
+    message.includes('fetch')
+  )
+    return 'network'
   if (message.includes('disk') || message.includes('space') || message.includes('enospc'))
     return 'disk'
-  if (message.includes('permission') || message.includes('access') || message.includes('eacces'))
+  if (
+    message.includes('permission') ||
+    message.includes('access') ||
+    /\b(?:eacces|eperm|erofs)\b/.test(message)
+  )
     return 'permissions'
-  if (message.includes('path') || message.includes('enoent')) return 'path'
+  if (message.includes('path') || /\b(?:enoent|enotdir|eisdir)\b/.test(message)) return 'path'
   // Python exception class shape ("FooError"/"FooException"). Matched case-sensitively on `raw` (uppercase first letter) so lowercase noise like "module.error" doesn't false-positive.
-  if (/\b[A-Z][A-Za-z0-9_.]*(?:Error|Exception)\b/.test(raw)) return 'python'
+  if (/\b[A-Z][A-Za-z0-9_.]*(?:Error|Exception)\b/.test(detail)) return 'python'
   return 'other'
 }

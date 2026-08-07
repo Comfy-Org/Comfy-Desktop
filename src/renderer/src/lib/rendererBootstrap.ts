@@ -26,7 +26,6 @@
 import { datadogRum, type RumBeforeSend } from '@datadog/browser-rum'
 import { normalizeRumErrorEvent } from './datadogPathNormalization'
 import {
-  deriveGpuTier,
   TELEMETRY_ACTION_EVENT_NAME,
   type TelemetryActionEventDetail,
   type TelemetryContext
@@ -40,8 +39,12 @@ import {
 // one place. Datadog RUM stays renderer-only (the SDK is browser-only)
 // and is gated to the failure-event allow-list in
 // `src/shared/datadogMirroredEvents.ts`.
-import { scrubAll } from '../../../shared/piiScrub'
-import { isDatadogMirroredEvent, stripDatadogDroppedKeys } from '../../../shared/datadogMirroredEvents'
+import { normalizeExceptionContext, scrubAll } from '../../../shared/piiScrub'
+import { ERROR_MESSAGE_MAX, ERROR_STACK_MAX } from '../../../shared/errorEvent'
+import {
+  isDatadogMirroredEvent,
+  stripDatadogDroppedKeys
+} from '../../../shared/datadogMirroredEvents'
 
 function serializeUnknownError(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
@@ -160,6 +163,19 @@ let resolvedTelemetryEnabled: boolean | undefined = undefined
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'comfy.desktop.first_use.consent_decision'
 ])
+const RENDERER_TELEMETRY_EVENT_CAP = 5_000
+let rendererTelemetryEventsEmitted = 0
+
+function claimRendererTelemetryBudget(event: string): boolean {
+  if (
+    event === 'comfy.desktop.telemetry.rate_limited' ||
+    event === 'comfy.desktop.telemetry.session_cap_hit'
+  )
+    return true
+  if (rendererTelemetryEventsEmitted >= RENDERER_TELEMETRY_EVENT_CAP) return false
+  rendererTelemetryEventsEmitted++
+  return true
+}
 
 function isTelemetryEmitAllowed(actionName: string): boolean {
   // Three-state: only `true` grants. `false` (explicit deny) AND
@@ -185,11 +201,17 @@ function scrubTelemetryContext(context: TelemetryContext): TelemetryContext {
   let mutated: TelemetryContext | null = null
   for (const key of Object.keys(context)) {
     const value = context[key]
-    if (typeof value !== 'string') continue
-    const cleaned = scrubAll(value)
-    if (cleaned === value) continue
-    if (!mutated) mutated = { ...context }
-    mutated[key] = cleaned
+    if (typeof value === 'string') {
+      const cleaned = scrubAll(value)
+      if (cleaned === value) continue
+      if (!mutated) mutated = { ...context }
+      mutated[key] = cleaned
+    } else if (Array.isArray(value)) {
+      const cleaned = value.map((entry) => (typeof entry === 'string' ? scrubAll(entry) : entry))
+      if (cleaned.every((entry, index) => entry === value[index])) continue
+      if (!mutated) mutated = { ...context }
+      mutated[key] = cleaned
+    }
   }
   return mutated ?? context
 }
@@ -215,6 +237,15 @@ function trackTelemetryAction(
 ): void {
   if (!isTelemetryEmitAllowed(actionName)) return
   const scrubbed = scrubTelemetryContext(context)
+  if (!options.skipPostHog) {
+    try {
+      window.api.captureTelemetry(actionName, scrubbed)
+    } catch {
+      // ignore - telemetry must never break the renderer
+    }
+    return
+  }
+  if (!claimRendererTelemetryBudget(actionName)) return
   // Provider split: Datadog only mirrors the failure-event
   // allow-list. Product / funnel events are PostHog-only — Datadog is for
   // alerting, not analysis.
@@ -224,17 +255,6 @@ function trackTelemetryAction(
       // drop the large free-text diagnostics (they stay in PostHog for triage).
       datadogRum.addAction(actionName, stripDatadogDroppedKeys(scrubbed))
     } catch {}
-  }
-  // Renderer routes capture through main's posthog-node via IPC. The
-  // skipPostHog gate stays for events that originated in main (via
-  // `telemetry-action-from-main`): main already captured those and a
-  // round-trip IPC re-capture would double-count.
-  if (!options.skipPostHog) {
-    try {
-      window.api.captureTelemetry(actionName, scrubbed)
-    } catch {
-      // ignore — telemetry must never break the renderer
-    }
   }
 }
 
@@ -367,15 +387,14 @@ async function initializeProviders(): Promise<void> {
     } catch {}
   }
 
-  // PostHog Browser SDK init removed Main process owns
-  // PostHog capture via `posthog-node`; renderer forwards every event
+  // Main owns PostHog capture via `posthog-node`; renderer forwards every event
   // through `window.api.captureTelemetry` / `captureExceptionTelemetry` /
   // `registerTelemetryProperties` IPC bridges. The `comfy.desktop.session.started`
-  // event is still owned by main's `identify()` and fires on consent grant.
+  // event is owned by main and fires when consent permits it.
 
-  // Cohort context + device-id binding fire regardless of Datadog state —
-  // main's posthog-node handles the IPC capture even if Datadog is
-  // configured off.
+  // registerCohortContext always runs, but its Datadog context writes — like
+  // the setUser below — only take effect once Datadog is initialized. PostHog
+  // person properties route through main.
   void registerCohortContext({ appVersion, telemetryEnabled: consent })
   window.api
     .getDeviceId()
@@ -385,8 +404,6 @@ async function initializeProviders(): Promise<void> {
           datadogRum.setUser({ id })
         } catch {}
       }
-      // PostHog identify happens in main's boot block — no renderer call
-      // needed. Person-property upserts ride through registerTelemetryProperties.
     })
     .catch(() => {})
 
@@ -438,19 +455,13 @@ async function initializeProviders(): Promise<void> {
       // - nvidia_driver_version / nvidia_driver_supported
       // - cpu_manufacturer / cpu_physical_cores / cpu_speed_ghz
       // - os_arch
-      // Forward the full payload and derive `gpu_tier` / `gpu_vram_gb`
-      // / `gpu_count` / `gpu_driver_version` for cohort filtering. Main has
+      // Forward the full payload and derive `gpu_count` / `gpu_driver_version`
+      // for cohort filtering. Main has
       // already selected the real compute GPU (`gpu_model` / `gpu_vram_mb` /
       // per-vendor driver), so we use those instead of re-picking `gpus[0]`,
       // which can be a virtual display adapter.
-      const gpuVramMb = info.gpu_vram_mb
-      const gpuVramGb = gpuVramMb != null ? Math.round(gpuVramMb / 1024) : null
       const gpuDriverVersion =
-        info.nvidia_driver_version ??
-        info.amd_driver_version ??
-        info.intel_driver_version ??
-        null
-      const gpuTier = deriveGpuTier({ vendor: info.gpu_vendor, vramGb: gpuVramGb })
+        info.nvidia_driver_version ?? info.amd_driver_version ?? info.intel_driver_version ?? null
       // `gpus` / `installations` are arrays of objects. The telemetry IPC
       // bridge only accepts scalars and arrays of scalars, so a native array
       // of objects is silently dropped before it reaches PostHog. Serialize
@@ -461,11 +472,8 @@ async function initializeProviders(): Promise<void> {
       const installationsJson = serializeForTelemetry(installations)
       const enriched: Record<string, string | number | boolean | null | undefined> = {
         ...(infoRest as unknown as Record<string, string | number | boolean | null | undefined>),
-        gpu_vram_mb: gpuVramMb,
-        gpu_vram_gb: gpuVramGb,
         gpu_count: gpus.length,
         gpu_driver_version: gpuDriverVersion,
-        gpu_tier: gpuTier,
         gpus_json: gpusJson.json,
         gpus_json_truncated: gpusJson.truncated,
         installations_json: installationsJson.json,
@@ -486,10 +494,10 @@ async function initializeProviders(): Promise<void> {
           os_arch: info.os_arch,
           gpu_vendor: info.gpu_vendor,
           gpu_model: info.gpu_model,
-          gpu_vram_gb: gpuVramGb,
+          gpu_vram_gb: info.gpu_vram_gb,
           gpu_count: info.gpus.length,
           gpu_driver_version: gpuDriverVersion,
-          gpu_tier: gpuTier,
+          gpu_tier: info.gpu_tier,
           nvidia_driver_supported: info.nvidia_driver_supported,
           total_memory_gb: info.total_memory_gb,
           cpu_model: info.cpu_model,
@@ -520,36 +528,45 @@ function reportRendererError(payload: {
    */
   skipPostHog?: boolean
 }): void {
-  const error = new Error(payload.message || 'Unknown error')
+  if (!isTelemetryEmitAllowed('comfy.desktop.exception.error')) return
+  const error = new Error(scrubAll(payload.message || 'Unknown error').slice(0, ERROR_MESSAGE_MAX))
   if (payload.stack) {
-    error.stack = payload.stack
+    error.stack = scrubAll(payload.stack).slice(0, ERROR_STACK_MAX)
   }
-  if (isDatadogInitialized) {
-    try {
-      datadogRum.addError(error, {
-        source: 'custom',
-        context: {
-          origin: 'renderer',
-          forwarded_source: payload.source,
-          ...(payload.context || {})
-        }
-      })
-    } catch {}
-  }
+  const context = normalizeExceptionContext({
+    origin: 'renderer',
+    forwarded_source: payload.source,
+    ...(payload.context || {})
+  }) as TelemetryContext
   if (!payload.skipPostHog) {
     try {
       window.api.captureExceptionTelemetry({
         message: error.message,
         stack: error.stack,
-        properties: {
-          origin: 'renderer',
-          forwarded_source: payload.source,
-          ...(payload.context || {})
-        }
+        properties: context
       })
     } catch {
-      // ignore — telemetry must never break the renderer
+      // ignore - telemetry must never break the renderer
     }
+    return
+  }
+  if (!claimRendererTelemetryBudget('comfy.desktop.exception.error')) return
+  if (isDatadogInitialized) {
+    try {
+      const datadogError = new Error('Desktop application exception')
+      datadogError.name = 'DesktopTelemetryError'
+      datadogError.stack = undefined
+      datadogRum.addError(datadogError, {
+        origin: context['origin'],
+        source: context['source'],
+        forwarded_source: context['forwarded_source'],
+        level: context['level'],
+        reason: context['reason'],
+        exitCode: context['exitCode'],
+        exit_code: context['exit_code'],
+        type: context['type']
+      })
+    } catch {}
   }
 }
 

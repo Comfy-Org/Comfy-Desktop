@@ -13,7 +13,9 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
       const result = await findLockingProcesses(tmpFile)
       expect(Array.isArray(result)).toBe(true)
     } finally {
-      try { fs.unlinkSync(tmpFile) } catch {}
+      try {
+        fs.unlinkSync(tmpFile)
+      } catch {}
     }
   })
 
@@ -32,7 +34,9 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
         expect(typeof entry.name).toBe('string')
       }
     } finally {
-      try { fs.unlinkSync(tmpFile) } catch {}
+      try {
+        fs.unlinkSync(tmpFile)
+      } catch {}
     }
   })
 
@@ -48,14 +52,16 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
       '-e',
       [
         `const fs = require('fs');` +
-        `const fd = fs.openSync(${JSON.stringify(tmpFile)}, 'r+');` +
-        `process.send('ready');` +
-        `process.on('message', () => { fs.closeSync(fd); process.exit(); });`,
+          `const fd = fs.openSync(${JSON.stringify(tmpFile)}, 'r+');` +
+          `process.send('ready');` +
+          `process.on('message', () => { fs.closeSync(fd); process.exit(); });`
       ],
       { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] }
     )
 
-    await new Promise<void>((resolve) => { child.on('message', () => resolve()) })
+    await new Promise<void>((resolve) => {
+      child.on('message', () => resolve())
+    })
     await new Promise((r) => setTimeout(r, 500))
 
     try {
@@ -69,8 +75,12 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
       }
     } finally {
       child.send('close')
-      await new Promise<void>((resolve) => { child.on('exit', () => resolve()) })
-      try { fs.unlinkSync(tmpFile) } catch {}
+      await new Promise<void>((resolve) => {
+        child.on('exit', () => resolve())
+      })
+      try {
+        fs.unlinkSync(tmpFile)
+      } catch {}
     }
   })
 })

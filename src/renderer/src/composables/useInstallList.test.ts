@@ -9,9 +9,9 @@ const messages = {
   en: {
     dashboard: {
       launchedAgo: 'Launched {time}',
-      neverLaunched: 'Not launched yet',
-    },
-  },
+      neverLaunched: 'Not launched yet'
+    }
+  }
 }
 
 function makeInstall(overrides: Partial<Installation>): Installation {
@@ -20,7 +20,7 @@ function makeInstall(overrides: Partial<Installation>): Installation {
     name: 'X',
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
-    ...overrides,
+    ...overrides
   } as unknown as Installation
 }
 
@@ -41,16 +41,11 @@ describe('useInstallList', () => {
         makeInstall({ id: 'old', name: 'Old', lastLaunchedAt: 100 }),
         makeInstall({ id: 'new', name: 'New', lastLaunchedAt: 500 }),
         makeInstall({ id: 'never', name: 'Never' }),
-        makeInstall({ id: 'mid', name: 'Mid', lastLaunchedAt: 300 }),
+        makeInstall({ id: 'mid', name: 'Mid', lastLaunchedAt: 300 })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
-      expect(list.visibleInstalls.value.map((i) => i.id)).toEqual([
-        'new',
-        'mid',
-        'old',
-        'never',
-      ])
+      expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['new', 'mid', 'old', 'never'])
     })
 
     // Regression: cloud must not jump above an older local install — recency
@@ -63,21 +58,18 @@ describe('useInstallList', () => {
           id: 'recent-local',
           name: 'RecentLocal',
           sourceCategory: 'local',
-          lastLaunchedAt: 1_000,
+          lastLaunchedAt: 1_000
         }),
         makeInstall({
           id: 'old-cloud',
           name: 'OldCloud',
           sourceCategory: 'cloud',
-          lastLaunchedAt: 100,
-        }),
+          lastLaunchedAt: 100
+        })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
-      expect(list.visibleInstalls.value.map((i) => i.id)).toEqual([
-        'recent-local',
-        'old-cloud',
-      ])
+      expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['recent-local', 'old-cloud'])
     })
 
     // Tie-break sanity: with equal recency, cloud is no longer pinned ahead
@@ -90,14 +82,14 @@ describe('useInstallList', () => {
           id: 'local-tie',
           name: 'LocalTie',
           sourceCategory: 'local',
-          lastLaunchedAt: 500,
+          lastLaunchedAt: 500
         }),
         makeInstall({
           id: 'cloud-tie',
           name: 'CloudTie',
           sourceCategory: 'cloud',
-          lastLaunchedAt: 500,
-        }),
+          lastLaunchedAt: 500
+        })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -113,8 +105,12 @@ describe('useInstallList', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
         // Legacy Desktop reports category `local`; sourceId is the marker.
-        makeInstall({ id: 'd', sourceCategory: 'local', sourceId: 'desktop' } as Partial<Installation>),
-        makeInstall({ id: 'r', sourceCategory: 'remote' }),
+        makeInstall({
+          id: 'd',
+          sourceCategory: 'local',
+          sourceId: 'desktop'
+        } as Partial<Installation>),
+        makeInstall({ id: 'r', sourceCategory: 'remote' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -125,7 +121,7 @@ describe('useInstallList', () => {
     it('remote filter keeps only remote', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
-        makeInstall({ id: 'r', sourceCategory: 'remote' }),
+        makeInstall({ id: 'r', sourceCategory: 'remote' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -136,7 +132,7 @@ describe('useInstallList', () => {
     it('cloud filter keeps only cloud installs', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
-        makeInstall({ id: 'c', sourceCategory: 'cloud' }),
+        makeInstall({ id: 'c', sourceCategory: 'cloud' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -150,17 +146,12 @@ describe('useInstallList', () => {
         makeInstall({ id: 'r', sourceCategory: 'remote' }),
         // Legacy Desktop reports category `local`; sourceId is the marker.
         makeInstall({ id: 'd', sourceCategory: 'local', sourceId: 'desktop' }),
-        makeInstall({ id: 'c', sourceCategory: 'cloud' }),
+        makeInstall({ id: 'c', sourceCategory: 'cloud' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
       // 'all' is the default; cloud is no longer split out of the list.
-      expect(list.visibleInstalls.value.map((i) => i.id).sort()).toEqual([
-        'c',
-        'd',
-        'l',
-        'r',
-      ])
+      expect(list.visibleInstalls.value.map((i) => i.id).sort()).toEqual(['c', 'd', 'l', 'r'])
     })
   })
 
@@ -168,7 +159,7 @@ describe('useInstallList', () => {
     it('returns all entries when query is empty', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'a', name: 'Alpha' }),
-        makeInstall({ id: 'b', name: 'Beta' }),
+        makeInstall({ id: 'b', name: 'Beta' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -178,7 +169,7 @@ describe('useInstallList', () => {
     it('filters visibleInstalls by fuzzy name match', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'a', name: 'Alpha' }),
-        makeInstall({ id: 'b', name: 'Bravo' }),
+        makeInstall({ id: 'b', name: 'Bravo' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -189,7 +180,7 @@ describe('useInstallList', () => {
     it('search reaches cloud installs too (cloud is in the same list)', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'c', name: 'Comfy Cloud', sourceCategory: 'cloud' }),
-        makeInstall({ id: 'l', name: 'Local Box', sourceCategory: 'local' }),
+        makeInstall({ id: 'l', name: 'Local Box', sourceCategory: 'local' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -207,9 +198,7 @@ describe('useInstallList', () => {
     })
 
     it('treats whitespace-only queries as empty', () => {
-      const installations = ref<Installation[]>([
-        makeInstall({ id: 'a', name: 'Alpha' }),
-      ])
+      const installations = ref<Installation[]>([makeInstall({ id: 'a', name: 'Alpha' })])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
       list.searchQuery.value = '   '
@@ -227,9 +216,7 @@ describe('useInstallList', () => {
     })
 
     it('shows when query is non-empty AND no installs match', () => {
-      const installations = ref<Installation[]>([
-        makeInstall({ id: 'a', name: 'Alpha' }),
-      ])
+      const installations = ref<Installation[]>([makeInstall({ id: 'a', name: 'Alpha' })])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
       list.searchQuery.value = 'zzzz'
@@ -238,7 +225,7 @@ describe('useInstallList', () => {
 
     it('hides when a cloud install matches the query (it counts as a result now)', () => {
       const installations = ref<Installation[]>([
-        makeInstall({ id: 'c', name: 'Comfy Cloud', sourceCategory: 'cloud' }),
+        makeInstall({ id: 'c', name: 'Comfy Cloud', sourceCategory: 'cloud' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
@@ -269,15 +256,13 @@ describe('useInstallList', () => {
 
   describe('reactivity', () => {
     it('updates visibleInstalls when the input installations ref changes', () => {
-      const installations = ref<Installation[]>([
-        makeInstall({ id: 'a', sourceCategory: 'local' }),
-      ])
+      const installations = ref<Installation[]>([makeInstall({ id: 'a', sourceCategory: 'local' })])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
       expect(list.visibleInstalls.value.length).toBe(1)
       installations.value = [
         makeInstall({ id: 'a', sourceCategory: 'local' }),
-        makeInstall({ id: 'b', sourceCategory: 'local' }),
+        makeInstall({ id: 'b', sourceCategory: 'local' })
       ]
       expect(list.visibleInstalls.value.length).toBe(2)
     })
@@ -295,16 +280,13 @@ describe('useInstallList', () => {
 
 /** Runs `fn` inside a stub Vue app with i18n installed, so `useI18n()`
  *  resolves; captures and returns the composable's value. */
-function withI18nScope<T>(
-  i18n: ReturnType<typeof createI18n>,
-  fn: () => T,
-): T {
+function withI18nScope<T>(i18n: ReturnType<typeof createI18n>, fn: () => T): T {
   let captured!: T
   const App = defineComponent({
     setup() {
       captured = fn()
       return () => h('div')
-    },
+    }
   })
   const app = createApp(App)
   app.use(i18n)

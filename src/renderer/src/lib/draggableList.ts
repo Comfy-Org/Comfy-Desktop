@@ -29,11 +29,7 @@ export class DraggableList {
   private boundDrag: ((e: MouseEvent) => void) | null = null
   private boundScroll: (() => void) | null = null
 
-  constructor(
-    container: HTMLElement,
-    itemSelector: string,
-    options: DraggableListOptions = {}
-  ) {
+  constructor(container: HTMLElement, itemSelector: string, options: DraggableListOptions = {}) {
     this.container = container
     this.itemSelector = itemSelector
     this.onReorder = options.onReorder ?? null
@@ -97,7 +93,10 @@ export class DraggableList {
     const idleItems = this.getIdleItems()
     if (idleItems.length > 0) {
       this.listMinY = Math.min(dragRect.top, idleItems[0]!.getBoundingClientRect().top)
-      this.listMaxY = Math.max(dragRect.bottom, idleItems[idleItems.length - 1]!.getBoundingClientRect().bottom)
+      this.listMaxY = Math.max(
+        dragRect.bottom,
+        idleItems[idleItems.length - 1]!.getBoundingClientRect().bottom
+      )
     } else {
       this.listMinY = dragRect.top
       this.listMaxY = dragRect.bottom
@@ -121,7 +120,11 @@ export class DraggableList {
     // Auto-scroll when pointer is outside the scroll parent.
     if (this.scrollParent) {
       const scrollRect = this.scrollParent.getBoundingClientRect()
-      if (e.clientY > scrollRect.bottom && this.scrollParent.scrollTop < this.scrollParent.scrollHeight - this.scrollParent.clientHeight) {
+      if (
+        e.clientY > scrollRect.bottom &&
+        this.scrollParent.scrollTop <
+          this.scrollParent.scrollHeight - this.scrollParent.clientHeight
+      ) {
         this.scrollParent.scrollBy(0, 10)
       } else if (e.clientY < scrollRect.top && this.scrollParent.scrollTop > 0) {
         this.scrollParent.scrollBy(0, -10)

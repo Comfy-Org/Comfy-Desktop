@@ -1,11 +1,4 @@
-import {
-  computed,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  type ComputedRef,
-  type Ref,
-} from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 import { scoreName } from '../utils/fuzzyMatch'
 import type { Installation } from '../types/ipc'
 
@@ -23,7 +16,7 @@ export const FILTER_CHIPS: readonly FilterChip[] = [
   { key: 'all', labelKey: 'chooser.filterAll' },
   { key: 'local', labelKey: 'chooser.filterLocal' },
   { key: 'cloud', labelKey: 'chooser.filterCloud' },
-  { key: 'remote', labelKey: 'chooser.filterRemote' },
+  { key: 'remote', labelKey: 'chooser.filterRemote' }
 ]
 
 export interface UseInstallListOpts {
@@ -74,7 +67,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   const effectiveInstalls = computed<Installation[]>(() =>
     hideCloudFromPicker.value
       ? installations.value.filter((i) => i.sourceCategory !== 'cloud')
-      : installations.value,
+      : installations.value
   )
 
   const visibleInstalls = computed<Installation[]>(() => {
@@ -97,9 +90,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   })
 
   const showEmptyHint = computed<boolean>(
-    () =>
-      !!searchQuery.value.trim() &&
-      visibleInstalls.value.length === 0,
+    () => !!searchQuery.value.trim() && visibleInstalls.value.length === 0
   )
 
   // 60-second tick so "Nm ago" / "Nh ago" labels stay fresh.
@@ -155,9 +146,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   }
 
   function lastLaunchedShortLabel(inst: Installation): string {
-    return typeof inst.lastLaunchedAt === 'number'
-      ? timeAgo(inst.lastLaunchedAt)
-      : ''
+    return typeof inst.lastLaunchedAt === 'number' ? timeAgo(inst.lastLaunchedAt) : ''
   }
 
   return {
@@ -166,6 +155,6 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
     visibleInstalls,
     showEmptyHint,
     matchesQuery,
-    lastLaunchedShortLabel,
+    lastLaunchedShortLabel
   }
 }

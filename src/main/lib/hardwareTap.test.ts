@@ -11,15 +11,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] }
 }))
 
-const {
-  createHardwareTap,
-  parseDeviceLine,
-  parseVramLine,
-  parseRequestedModelLoad,
-  parseDynamicVramPrepare,
-  parseModelDeepclone,
-  parseModelLoad
-} = await import('./hardwareTap')
+const { createHardwareTap, parseDeviceLine, parseVramLine } = await import('./hardwareTap')
 const telemetry = await import('./telemetry')
 
 describe('parseDeviceLine', () => {
@@ -74,73 +66,13 @@ describe('parseDeviceLine', () => {
   })
 })
 
-describe('parseVramLine / parseRequestedModelLoad', () => {
+describe('parseVramLine', () => {
   it('parses VRAM/RAM amounts', () => {
     expect(parseVramLine('Total VRAM 24576 MB, total RAM 65461 MB')).toEqual({
       vramMb: 24576,
       ramMb: 65461
     })
     expect(parseVramLine('nope')).toBeNull()
-  })
-
-  it('parses the loaded model class name', () => {
-    expect(parseRequestedModelLoad('Requested to load Lumina2')).toBe('Lumina2')
-    expect(parseRequestedModelLoad('Requested to load ZImageTEModel_')).toBe('ZImageTEModel_')
-    expect(parseRequestedModelLoad('Requested to load AutoencodingEngine')).toBe(
-      'AutoencodingEngine'
-    )
-    expect(parseRequestedModelLoad('something else')).toBeNull()
-  })
-
-  it('rejects non-identifier load tokens (paths, filenames, trailing words)', () => {
-    expect(parseRequestedModelLoad('Requested to load C:\\Users\\me\\secret.safetensors')).toBeNull()
-    expect(parseRequestedModelLoad('Requested to load my-private-model.safetensors')).toBeNull()
-    expect(parseRequestedModelLoad('Requested to load Lumina2 and free memory')).toBeNull()
-  })
-
-  it('parses the dynamic-VRAM prepare class name', () => {
-    expect(
-      parseDynamicVramPrepare(
-        'Model Lumina2 prepared for dynamic VRAM loading. 11738MB Staged. 0 patches attached.'
-      )
-    ).toBe('Lumina2')
-    expect(
-      parseDynamicVramPrepare('Model ZImageTEModel_ prepared for dynamic VRAM loading. 7671MB Staged.')
-    ).toBe('ZImageTEModel_')
-    expect(parseDynamicVramPrepare('Requested to load Lumina2')).toBeNull()
-    expect(parseDynamicVramPrepare('Model prepared for something else')).toBeNull()
-  })
-
-  it('parses a multi-GPU deepclone line into class + target device', () => {
-    expect(parseModelDeepclone('Creating deepclone of Lumina2 for cuda:1.')).toEqual({
-      modelClass: 'Lumina2',
-      targetDevice: 'cuda:1'
-    })
-    expect(
-      parseModelDeepclone('Reusing loaded multigpu deepclone of Lumina2 for cuda:1')
-    ).toEqual({ modelClass: 'Lumina2', targetDevice: 'cuda:1' })
-    expect(parseModelDeepclone('Creating deepclone of ZImageTEModel_ for xpu:2')).toEqual({
-      modelClass: 'ZImageTEModel_',
-      targetDevice: 'xpu:2'
-    })
-    expect(parseModelDeepclone('Requested to load Lumina2')).toBeNull()
-    expect(parseModelDeepclone('Creating deepclone of some file.safetensors for cuda:1')).toBeNull()
-  })
-
-  it('classifies a model-load line by trigger', () => {
-    expect(parseModelLoad('Requested to load Lumina2')).toEqual({
-      modelClass: 'Lumina2',
-      trigger: 'requested'
-    })
-    expect(
-      parseModelLoad('Model AutoencodingEngine prepared for dynamic VRAM loading. 159MB Staged.')
-    ).toEqual({ modelClass: 'AutoencodingEngine', trigger: 'dynamic_prepare' })
-    expect(parseModelLoad('Creating deepclone of Lumina2 for cuda:1.')).toEqual({
-      modelClass: 'Lumina2',
-      trigger: 'deepclone',
-      targetDevice: 'cuda:1'
-    })
-    expect(parseModelLoad('unrelated noise')).toBeNull()
   })
 })
 
@@ -204,7 +136,7 @@ describe('createHardwareTap', () => {
   it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
     // ComfyUI's ColoredFormatter emits `\x1b[32m[INFO]\x1b[0m <message>`, not
     // the bare `%(message)s` the parsers are anchored against. The tap must
-    // strip ANSI then the level tag for accelerator + model-usage to fire.
+    // strip ANSI then the level tag for the accelerator event to fire.
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('\u001b[32m[INFO]\u001b[0m Total VRAM 32607 MB, total RAM 97430 MB\n', 'stdout')
     tap.ingest('\u001b[32m[INFO]\u001b[0m pytorch version: 2.10.0+cu130\n', 'stdout')
@@ -212,7 +144,7 @@ describe('createHardwareTap', () => {
       '\u001b[32m[INFO]\u001b[0m Device: cuda:0 NVIDIA GeForce RTX 5090 : cudaMallocAsync\n',
       'stdout'
     )
-    tap.ingest('\u001b[32m[INFO]\u001b[0m Requested to load Lumina2\n', 'stdout')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m Using xformers attention\n', 'stdout')
 
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
@@ -223,14 +155,6 @@ describe('createHardwareTap', () => {
       backend: 'cudaMallocAsync',
       vram_mb: 32607,
       pytorch_version: '2.10.0+cu130'
-    })
-
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({
-      model_class: 'Lumina2',
-      count: 1
     })
   })
 
@@ -317,106 +241,6 @@ describe('createHardwareTap', () => {
     })
   })
 
-  it('aggregates model loads into per-class deltas flushed on session end', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.ingest('Requested to load AutoencodingEngine\n', 'stdout')
-    // Nothing emitted until flush.
-    expect(captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')).toHaveLength(0)
-
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(2)
-    expect(usage.find((u) => u.ctx['model_class'] === 'Lumina2')!.ctx).toMatchObject({
-      count: 2
-    })
-    expect(usage.find((u) => u.ctx['model_class'] === 'AutoencodingEngine')!.ctx).toMatchObject({
-      count: 1
-    })
-  })
-
-  it('flushes deltas: a second flush only reports loads since the first', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.flushSummary()
-    tap.ingest('Requested to load Lumina2\nRequested to load Lumina2\n', 'stdout')
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage.map((u) => u.ctx['count'])).toEqual([1, 2])
-  })
-
-  it('tags each model_usage event with its load_trigger', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({
-      model_class: 'Lumina2',
-      load_trigger: 'requested',
-      count: 1,
-      target_device: null
-    })
-  })
-
-  it('emits multi-GPU deepclones with their target device, counted per device', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    // Desktop's bundled build prefixes lines with a level tag.
-    tap.ingest('[INFO] Creating deepclone of Lumina2 for cuda:1.\n', 'stdout')
-    tap.ingest('[INFO] Reusing loaded multigpu deepclone of Lumina2 for cuda:1\n', 'stdout')
-    tap.ingest('[INFO] Creating deepclone of Lumina2 for cuda:2.\n', 'stdout')
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(2)
-    expect(
-      usage.find((u) => u.ctx['target_device'] === 'cuda:1')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', load_trigger: 'deepclone', count: 2 })
-    expect(
-      usage.find((u) => u.ctx['target_device'] === 'cuda:2')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', load_trigger: 'deepclone', count: 1 })
-  })
-
-  it('counts dynamic-VRAM prepares separately from cold loads of the same class', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.ingest(
-      'Model Lumina2 prepared for dynamic VRAM loading. 11738MB Staged. 0 patches attached.\n',
-      'stdout'
-    )
-    tap.ingest(
-      'Model Lumina2 prepared for dynamic VRAM loading. 11738MB Staged. 0 patches attached.\n',
-      'stdout'
-    )
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(2)
-    expect(
-      usage.find((u) => u.ctx['load_trigger'] === 'requested')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', count: 1 })
-    expect(
-      usage.find((u) => u.ctx['load_trigger'] === 'dynamic_prepare')!.ctx
-    ).toMatchObject({ model_class: 'Lumina2', count: 2 })
-  })
-
-  it('caps distinct model classes across the tap lifetime, not per flush', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    // MAX_TRACKED_ARCHITECTURES (60) distinct classes across two flush windows,
-    // then one more. The cap must persist across the clear() that flushSummary
-    // performs, so the 61st distinct class is rejected.
-    for (let i = 0; i < 30; i++) tap.ingest(`Requested to load Model${i}\n`, 'stdout')
-    tap.flushSummary()
-    for (let i = 30; i < 60; i++) tap.ingest(`Requested to load Model${i}\n`, 'stdout')
-    tap.ingest('Requested to load OverflowModel\n', 'stdout')
-    tap.flushSummary()
-
-    const classes = captured
-      .filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-      .map((c) => c.ctx['model_class'])
-    expect(classes).toHaveLength(60)
-    expect(classes).not.toContain('OverflowModel')
-  })
-
   it('re-emits accelerator_detected after beginBoot (ComfyUI restart in one launch)', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
@@ -442,26 +266,6 @@ describe('createHardwareTap', () => {
     expect(accel[1]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4080', vram_mb: 16384 })
   })
 
-  it('preserves model-usage counts across beginBoot (aggregate per launch)', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.beginBoot()
-    tap.ingest('Requested to load Lumina2\n', 'stdout')
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({ model_class: 'Lumina2', count: 2 })
-  })
-
-  it('flushes a trailing unterminated load line on session end', () => {
-    const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2', 'stdout') // no newline
-    tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({ model_class: 'Lumina2', count: 1 })
-  })
-
   it('handles lines split across chunk boundaries', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Device: cuda:0 NVIDIA GeForce ', 'stdout')
@@ -476,27 +280,22 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     // Interleaved partial lines from two streams must not be concatenated into
     // a bogus combined line; each stream's buffer completes independently.
-    tap.ingest('Requested to load ', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA GeForce ', 'stdout')
     tap.ingest('some unrelated stderr noise\n', 'stderr')
-    tap.ingest('Lumina2\n', 'stdout')
+    tap.ingest('RTX 4090 : native\n', 'stdout')
     tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(1)
-    expect(usage[0]!.ctx).toMatchObject({ model_class: 'Lumina2', count: 1 })
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090' })
   })
 
-  it('flushes trailing unterminated lines from both stdout and stderr', () => {
+  it('flushes a trailing unterminated Device line on session end', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    tap.ingest('Requested to load Lumina2', 'stdout') // no newline
-    tap.ingest('Requested to load Flux', 'stderr') // no newline
+    tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native', 'stdout') // no newline
     tap.flushSummary()
-    const usage = captured.filter((c) => c.event === 'comfy.desktop.comfyui.model_usage')
-    expect(usage).toHaveLength(2)
-    expect(usage).toContainEqual(
-      expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Lumina2', count: 1 }) })
-    )
-    expect(usage).toContainEqual(
-      expect.objectContaining({ ctx: expect.objectContaining({ model_class: 'Flux', count: 1 }) })
-    )
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090', vram_mb: 24576 })
   })
 })

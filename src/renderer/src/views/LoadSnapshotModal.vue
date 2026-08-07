@@ -134,7 +134,12 @@ async function loadReleaseOptions(): Promise<void> {
     // an empty array and the Create Installation button stays disabled with no
     // visible reason. Mirrors the InstallWizardModal / QuickInstallModal calls
     // — the snapshot-import path was the only place that forgot to pass it.
-    const options = await window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })
+    const options = await window.api.getFieldOptions(
+      'standalone',
+      'release',
+      {},
+      { includeLatestStable: true }
+    )
     if (gen !== optionsGeneration) return
     releaseOptions.value = options
 

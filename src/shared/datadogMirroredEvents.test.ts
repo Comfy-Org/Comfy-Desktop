@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isDatadogMirroredEvent,
   stripDatadogDroppedKeys,
-  DATADOG_DROPPED_CONTEXT_KEYS,
+  DATADOG_DROPPED_CONTEXT_KEYS
 } from './datadogMirroredEvents'
 
 describe('isDatadogMirroredEvent', () => {
@@ -44,7 +44,9 @@ describe('stripDatadogDroppedKeys', () => {
       error_message: 'boom',
       error_signature: 'RuntimeError|boom',
       error_tail: 'line1\nline2',
-      last_stderr: 'noise',
+      error_traceback: 'traceback',
+      error_stack: 'stack',
+      last_stderr: 'noise'
     }
     const out = stripDatadogDroppedKeys(context)
     expect(out).toEqual({
@@ -52,7 +54,7 @@ describe('stripDatadogDroppedKeys', () => {
       error_class: 'RuntimeError',
       error_bucket: 'unknown',
       exit_code: 1,
-      signal: null,
+      signal: null
     })
     // Does not mutate the input (PostHog copy must keep the full schema).
     expect(context.error_message).toBe('boom')
@@ -67,8 +69,10 @@ describe('stripDatadogDroppedKeys', () => {
     expect([...DATADOG_DROPPED_CONTEXT_KEYS].sort()).toEqual([
       'error_message',
       'error_signature',
+      'error_stack',
       'error_tail',
-      'last_stderr',
+      'error_traceback',
+      'last_stderr'
     ])
   })
 })

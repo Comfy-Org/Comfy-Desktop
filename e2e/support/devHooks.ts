@@ -56,6 +56,18 @@ export async function seedDownloads(
   }, snapshot))
 }
 
+/** Live downloads tray snapshot from main (`active` in-flight + `recent`
+ *  terminal entries) - the read counterpart to `seedDownloads`. */
+export async function getLiveDownloadsTrayState(
+  app: ElectronApplication,
+): Promise<DownloadsTrayStateLike> {
+  return evalWithRetry(() => app.evaluate((_electron) => {
+    const helpers = (globalThis as unknown as { __e2e?: { getDownloadsTrayState: () => unknown } }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.getDownloadsTrayState() as { active: unknown[]; recent: unknown[] }
+  })) as Promise<DownloadsTrayStateLike>
+}
+
 export async function setInstallUpdate(
   app: ElectronApplication,
   opts: { installationId?: string; available: boolean; version?: string },
@@ -215,6 +227,89 @@ export async function getRunningSessionSnapshot(
     if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
     return helpers.getRunningSessionSnapshot(id) as RunningSessionSnapshotLike | null
   }, installationId))
+}
+
+/** Whether main still holds the per-install background-operation slot
+ *  (`_operationAborts`) for `installationId`. Poll to `false` before
+ *  triggering a new picker op, since main rejects overlapping ops. */
+export async function hasActiveOperation(
+  app: ElectronApplication,
+  installationId: string,
+): Promise<boolean> {
+  return await evalWithRetry(() => app.evaluate((_electron, id) => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { hasActiveOperation: (id: string) => boolean }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.hasActiveOperation(id)
+  }, installationId))
+}
+
+/** Whether main currently holds the launching marker for `installationId`,
+ *  i.e. the install is inside the boot window (spawned, not yet port-ready). */
+export async function isInstallLaunching(
+  app: ElectronApplication,
+  installationId: string,
+): Promise<boolean> {
+  return await evalWithRetry(() => app.evaluate((_electron, id) => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { isLaunching: (id: string) => boolean }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.isLaunching(id)
+  }, installationId))
+}
+
+/** Whether main has a launch handler in flight for `installationId` -
+ *  covers the WHOLE handler, including the pre-marker prep window that
+ *  `isInstallLaunching` (spawn -> port-ready) cannot see. */
+export async function hasActiveLaunch(
+  app: ElectronApplication,
+  installationId: string,
+): Promise<boolean> {
+  return await evalWithRetry(() => app.evaluate((_electron, id) => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { hasActiveLaunch: (id: string) => boolean }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.hasActiveLaunch(id)
+  }, installationId))
+}
+
+/** Arm the one-shot launch-spawn hold: the NEXT launch parks right before
+ *  spawning ComfyUI (launching marker set, port reserved, no process yet)
+ *  until released or aborted. Pair with `releaseLaunchSpawnHold` in a
+ *  finally so a failed test can't leave a launch parked forever. */
+export async function armLaunchSpawnHold(app: ElectronApplication): Promise<void> {
+  await evalWithRetry(() => app.evaluate(() => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { armLaunchSpawnHold: () => void }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    helpers.armLaunchSpawnHold()
+  }))
+}
+
+/** Release a held launch (and disarm a not-yet-consumed hold). Idempotent. */
+export async function releaseLaunchSpawnHold(app: ElectronApplication): Promise<void> {
+  await evalWithRetry(() => app.evaluate(() => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { releaseLaunchSpawnHold: () => void }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    helpers.releaseLaunchSpawnHold()
+  }))
+}
+
+/** Whether a launch is currently parked at the spawn hold. */
+export async function isLaunchSpawnHeld(app: ElectronApplication): Promise<boolean> {
+  return await evalWithRetry(() => app.evaluate(() => {
+    const helpers = (globalThis as unknown as {
+      __e2e?: { isLaunchSpawnHeld: () => boolean }
+    }).__e2e
+    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+    return helpers.isLaunchSpawnHeld()
+  }))
 }
 
 /** Read the `checkedAt` ms timestamp of the shared release-cache entry

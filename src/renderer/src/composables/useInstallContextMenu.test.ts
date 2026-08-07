@@ -11,10 +11,10 @@ const modalMock = {
   alert: vi.fn(),
   prompt: vi.fn(),
   select: vi.fn(),
-  confirmWithOptions: vi.fn(),
+  confirmWithOptions: vi.fn()
 }
 vi.mock('./useModal', () => ({
-  useModal: () => modalMock,
+  useModal: () => modalMock
 }))
 
 import { useInstallContextMenu } from './useInstallContextMenu'
@@ -32,11 +32,11 @@ const apiMock = {
   onErrorDetail: vi.fn(() => () => {}),
   getSnapshots: vi.fn().mockResolvedValue({ snapshots: [] }),
   exportSnapshot: vi.fn().mockResolvedValue({ ok: true }),
-  stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  stopComfyUI: vi.fn().mockResolvedValue(undefined)
 }
 vi.stubGlobal('window', {
   ...window,
-  api: apiMock,
+  api: apiMock
 })
 
 const messages = {
@@ -47,7 +47,7 @@ const messages = {
       menuMigrate: 'Migrate to Standalone',
       menuRestoreSnapshot: 'Restore Snapshot',
       menuRevealInFolder: 'Open Folder',
-      menuDelete: 'Uninstall',
+      menuDelete: 'Uninstall'
     },
     actions: {
       copyInstallation: 'Duplicate Instance',
@@ -63,15 +63,15 @@ const messages = {
       stop: 'Stop',
       stopConfirmTitle: 'Stop ComfyUI',
       stopConfirmMessage:
-        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.',
+        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.'
     },
     snapshots: {
       noSnapshotsToShare: 'There are no snapshots to share yet.',
-      shareFailed: 'Could not share the snapshot.',
+      shareFailed: 'Could not share the snapshot.'
     },
     progress: { working: 'Working…' },
-    running: { dismiss: 'Dismiss' },
-  },
+    running: { dismiss: 'Dismiss' }
+  }
 }
 
 function makeInstall(overrides: Partial<Installation> = {}): Installation {
@@ -83,7 +83,7 @@ function makeInstall(overrides: Partial<Installation> = {}): Installation {
     status: 'installed',
     installPath: '/tmp/inst-1',
     statusTag: { style: 'update', label: 'Update available' },
-    ...overrides,
+    ...overrides
   } as unknown as Installation
 }
 
@@ -100,7 +100,7 @@ const HarnessComponent = defineComponent({
   setup() {
     _harnessSetup?.()
     return () => h('div')
-  },
+  }
 })
 
 function mountHarness(inst: Installation, mutate?: (h: HarnessHandles) => void) {
@@ -114,10 +114,7 @@ function mountHarness(inst: Installation, mutate?: (h: HarnessHandles) => void) 
     const progress = useProgressStore()
     handles = { menu, session, progress }
     mutate?.(handles)
-    menu.openCardMenu(
-      new MouseEvent('contextmenu', { clientX: 0, clientY: 0 }),
-      inst,
-    )
+    menu.openCardMenu(new MouseEvent('contextmenu', { clientX: 0, clientY: 0 }), inst)
   }
   const wrapper = mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
   _harnessSetup = null
@@ -165,7 +162,7 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
     const { menu } = mountHarness(inst, ({ session }) => {
       session.runningInstances.set(inst.id, {
         installationId: inst.id,
-        installationName: inst.name,
+        installationName: inst.name
       } as never)
     })
     const items = menu.ctxMenuItems.value
@@ -208,7 +205,7 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
         result: null,
         unsubProgress: null,
         unsubOutput: null,
-        apiCall: null,
+        apiCall: null
       } as never)
     })
     expect(menu.isStoppedActionGated(inst)).toBe(true)
@@ -218,7 +215,7 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
 
 function mountHarnessWithProgress(
   _inst: Installation,
-  onShowProgress: (opts: ShowProgressOpts) => void,
+  onShowProgress: (opts: ShowProgressOpts) => void
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -227,7 +224,7 @@ function mountHarnessWithProgress(
   _harnessSetup = () => {
     menu = useInstallContextMenu({
       onManage: () => {},
-      onShowProgress,
+      onShowProgress
     })
   }
   mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
@@ -295,7 +292,10 @@ describe('useInstallContextMenu — delete fast path (regression for #582)', () 
 })
 
 function mountHarnessWithManage(
-  onManage: (inst: Installation, options?: { initialTab?: string; autoAction?: string | null }) => void,
+  onManage: (
+    inst: Installation,
+    options?: { initialTab?: string; autoAction?: string | null }
+  ) => void
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -328,14 +328,20 @@ describe('useInstallContextMenu — copy-install routing', () => {
   })
 
   it('update opens the Update tab AND auto-fires the update (matches the title-bar pill)', async () => {
-    const onManage = vi.fn<(inst: Installation, options?: { initialTab?: string; autoAction?: string | null }) => void>()
+    const onManage =
+      vi.fn<
+        (inst: Installation, options?: { initialTab?: string; autoAction?: string | null }) => void
+      >()
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(onManage)
 
     await menu.triggerAction('update', inst)
 
     expect(onManage).toHaveBeenCalledTimes(1)
-    expect(onManage.mock.calls[0][1]).toEqual({ initialTab: 'update', autoAction: 'update-comfyui' })
+    expect(onManage.mock.calls[0][1]).toEqual({
+      initialTab: 'update',
+      autoAction: 'update-comfyui'
+    })
   })
 })
 
@@ -410,12 +416,12 @@ describe('useInstallContextMenu — migrate item keys off the migrate status tag
   it.each([
     ['portable', 'standalone'],
     ['git', 'standalone'],
-    ['desktop', 'desktop'],
+    ['desktop', 'desktop']
   ])('shows the Migrate item for a %s install carrying a migrate tag', (_label, sourceId) => {
     const inst = makeInstall({
       sourceId,
       sourceCategory: 'local',
-      statusTag: { style: 'migrate', label: 'Migrate to Standalone' },
+      statusTag: { style: 'migrate', label: 'Migrate to Standalone' }
     } as Partial<Installation>)
     const { menu } = mountHarness(inst)
     expect(findItem(menu.ctxMenuItems.value, 'migrate')).toBeTruthy()
@@ -447,7 +453,7 @@ describe('useInstallContextMenu — share (export latest snapshot)', () => {
 
   it('exports the newest snapshot and shows no alert on success', async () => {
     apiMock.getSnapshots.mockResolvedValue({
-      snapshots: [{ filename: 'snap-newest.json' }, { filename: 'snap-older.json' }],
+      snapshots: [{ filename: 'snap-newest.json' }, { filename: 'snap-older.json' }]
     })
     apiMock.exportSnapshot.mockResolvedValue({ ok: true })
     const inst = makeInstall()
@@ -504,7 +510,7 @@ describe('useInstallContextMenu — stop (shut down backend, keep window)', () =
     const { menu: running } = mountHarness(inst, ({ session }) => {
       session.runningInstances.set(inst.id, {
         installationId: inst.id,
-        installationName: inst.name,
+        installationName: inst.name
       } as never)
     })
     expect(findItem(running.ctxMenuItems.value, 'stop')).toBeTruthy()
@@ -515,7 +521,7 @@ describe('useInstallContextMenu — stop (shut down backend, keep window)', () =
     const { menu } = mountHarness(inst, ({ session }) => {
       session.runningInstances.set(inst.id, {
         installationId: inst.id,
-        installationName: inst.name,
+        installationName: inst.name
       } as never)
     })
     expect(findItem(menu.ctxMenuItems.value, 'stop')).toBeUndefined()

@@ -565,10 +565,7 @@ describe('deriveLaunchArgs', () => {
   })
 
   it('does not override an explicit disabled CPU setting', () => {
-    const { launchArgs } = deriveLaunchArgs(
-      { 'Comfy.Server.LaunchArgs': { cpu: false } },
-      'cpu'
-    )
+    const { launchArgs } = deriveLaunchArgs({ 'Comfy.Server.LaunchArgs': { cpu: false } }, 'cpu')
     expect(launchArgs.split(' ')).not.toContain('--cpu')
   })
 })
@@ -620,8 +617,7 @@ describe('computeModelsDirsToCarry', () => {
     // External drive: an absolute checkpoints override outside base_path.
     const externalDrive = path.join(tmpRoot, 'external-drive', 'ai')
     fs.mkdirSync(path.join(externalDrive, 'checkpoints'), { recursive: true })
-    const yaml =
-      `s:\n  base_path: ${sectionBase}\n  checkpoints: ${path.join(externalDrive, 'checkpoints')}\n`
+    const yaml = `s:\n  base_path: ${sectionBase}\n  checkpoints: ${path.join(externalDrive, 'checkpoints')}\n`
     const result = computeModelsDirsToCarry(basePath, yaml, [])
     // type-named leaf → carry its parent so buildYaml discovers `checkpoints/`.
     expect(result).toContain(path.resolve(externalDrive))
@@ -714,12 +710,10 @@ describe('adoptDesktopInstall', () => {
         deps: { detectDesktopInstall: () => null }
       })
     ).rejects.toThrow('no-legacy-install')
-    expect(telemetry.capture).toHaveBeenCalledWith(
-      'comfy.desktop.adopt.failed',
-      expect.objectContaining({
-        stage: 'detect',
-        error_bucket: 'no-legacy-install'
-      })
+    expect(telemetry.trackedStep).toHaveBeenCalledWith(
+      'comfy.desktop.adopt.detect',
+      {},
+      expect.any(Function)
     )
   })
 
@@ -1438,7 +1432,8 @@ describe('adoptDesktopInstall', () => {
         ([phase]) => phase === 'steps'
       )
       expect(stepsCalls).toHaveLength(1)
-      const stepList = (stepsCalls[0]![1] as { steps: Array<{ phase: string; label: string }> }).steps
+      const stepList = (stepsCalls[0]![1] as { steps: Array<{ phase: string; label: string }> })
+        .steps
       const phases = stepList.map((s) => s.phase)
       // All adoption phases that emit sendProgress(...) below must be
       // represented so the renderer never falls back to displaying the

@@ -20,29 +20,33 @@ export interface TemplateSnapshot {
   mediaSubtype: string
 }
 
-export interface CuratedTemplate {
+interface CuratedTemplateBase {
   /** Real `comfyui_workflow_templates` id; matches the frontend deeplink
    *  validator `^[a-zA-Z0-9_.-]+$`. */
   id: string
   /** Output modality this template showcases. */
   modality: TemplateModality
-  /** The single recommended pick for its modality (auto-selected in the wizard).
-   *  At most one per modality. */
-  recommended?: boolean
   /** Offline display metadata; superseded by the live index when available. */
   snapshot: TemplateSnapshot
 }
 
+/**
+ * `recommended` is the auto-selected pick for its modality (at most one each);
+ * `apiNode` runs on API nodes, downloading nothing but spending credits per run.
+ * Mutually exclusive by type — the auto-selected pick must never cost money.
+ */
+export type CuratedTemplate = CuratedTemplateBase &
+  ({ recommended?: true; apiNode?: never } | { apiNode: true; recommended?: never })
+
 /** Tab order in the picker — one tab per modality that has ≥1 curated template. */
 export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
-  'image',
   'video',
+  'image',
   '3d',
-  'audio',
+  'audio'
 ]
 
-const RAW_TEMPLATES_REPO =
-  'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
+const RAW_TEMPLATES_REPO = 'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
 export const RAW_TEMPLATES_BASE = `${RAW_TEMPLATES_REPO}/templates`
 export const TEMPLATE_INPUT_BASE = `${RAW_TEMPLATES_REPO}/input`
 
@@ -104,10 +108,12 @@ export function isPersistableTemplateId(value: unknown): value is string {
 }
 
 /**
- * 4 per modality, lightest-first; slot 1 (`recommended`) is the auto-selected
- * "wow", slot 4 the heavier flagship. To change an offering, edit the id and
- * paste that template's index `title`/`description`/`size`/`mediaSubtype` into
- * its `snapshot`.
+ * 4 templates per modality:
+ * - Slot 1 (`recommended`): default open-source pick
+ * - Slot 2: API-node demo
+ * - Slots 3-4: remaining open-source picks, lightest first
+ * To update, change the id and sync the template's
+ * title/description/size/mediaSubtype into `snapshot`.
  */
 export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
   // --- Image ---
@@ -120,8 +126,20 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.',
       sizeBytes: 20830591386,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
+  },
+  {
+    id: 'api_bytedance_seedream_5_0_pro_image_edit',
+    modality: 'image',
+    apiNode: true,
+    snapshot: {
+      title: 'Seedream 5.0 Pro: Image Edit',
+      description:
+        'Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 2 output images through an optional Painter node and preview. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.',
+      sizeBytes: 0,
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'sdxlturbo_example',
@@ -130,8 +148,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'SDXL Turbo',
       description: 'Generate images in a single step using SDXL Turbo.',
       sizeBytes: 6936372183,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'image_pixeldit_t2i',
@@ -141,32 +159,34 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         "Input a text prompt and optional negative prompt. Generate a 1024px image using PixelDiT's VAE-free pixel diffusion transformer.",
       sizeBytes: 7838315315,
-      mediaSubtype: 'webp',
-    },
-  },
-  {
-    id: 'image_flux2_klein_image_edit_4b_distilled',
-    modality: 'image',
-    snapshot: {
-      title: 'Flux.2 [Klein] 4B Distilled: Image Edit',
-      description:
-        'The fastest variant in the Klein family. Built for interactive applications and real-time image editing.',
-      sizeBytes: 12455405158,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
 
   // --- Video ---
   {
-    id: 'text_to_video_wan',
+    id: 'video_minimax_h3_t2v',
     modality: 'video',
     recommended: true,
     snapshot: {
-      title: 'Wan 2.1 Text to Video',
-      description: 'Generate videos from text prompts using Wan 2.1.',
-      sizeBytes: 9824737690,
-      mediaSubtype: 'webp',
-    },
+      title: 'MiniMax H3: Text to Video',
+      description:
+        'Generate video with native stereo audio directly from a text prompt using MiniMax H3, an omni-modal model that synthesizes voice, sound effects, and music in a single pass. Output is up to 2K resolution, 24fps, and roughly 15 seconds long, with no file inputs required — just a prompt to one video output. Ideal for rapid concept visualization, social media content creation, and audio-synced storytelling.',
+      sizeBytes: 56908316672,
+      mediaSubtype: 'webp'
+    }
+  },
+  {
+    id: 'api_seedance2_0_r2v',
+    modality: 'video',
+    apiNode: true,
+    snapshot: {
+      title: 'Seedance 2.0: Reference to Video',
+      description:
+        'Generate cinematic videos from reference images and text prompts. Preserve subject identity and composition while adding expressive motion with synchronized audio. Control camera movement and lighting through detailed prompts.',
+      sizeBytes: 0,
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'wan2.1_fun_inp',
@@ -175,8 +195,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'Wan 2.1 Inpainting',
       description: 'Generate videos from start and end frames using Wan 2.1 inpainting.',
       sizeBytes: 11381663334,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'video_wan2.1_fun_camera_v1.1_1.3B',
@@ -186,19 +206,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Generate dynamic videos with cinematic camera movements using Wan 2.1 Fun Camera 1.3B model.',
       sizeBytes: 11489037517,
-      mediaSubtype: 'webp',
-    },
-  },
-  {
-    id: 'video_kandinsky5_i2v',
-    modality: 'video',
-    snapshot: {
-      title: 'Kandinsky 5.0 Video Lite Image to Video',
-      description:
-        'A lightweight 2B model that generates videos from English and Russian prompts with high visual quality.',
-      sizeBytes: 14710262989,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
 
   // --- 3D ---
@@ -211,8 +220,20 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.',
       sizeBytes: 3972844749,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
+  },
+  {
+    id: 'api_tripo3_1_image_to_model',
+    modality: '3d',
+    apiNode: true,
+    snapshot: {
+      title: 'Tripo H3.1: Image to Model',
+      description:
+        'Upload a reference image of your object. Generate a high-detail 3D model with dense geometry and PBR-ready materials.',
+      sizeBytes: 0,
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: '3d_moge_perspective_to_mesh',
@@ -222,8 +243,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Upload an image to estimate its perspective geometry. Generate a 3D depth map and surface normals from the input.',
       sizeBytes: 644245094,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: '3d_hunyuan3d_multiview_to_model_turbo',
@@ -232,18 +253,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'HY 3D 2.0 MV Turbo',
       description: 'Generate 3D models from multiple views using Hunyuan3D 2.0 MV Turbo.',
       sizeBytes: 4928474972,
-      mediaSubtype: 'webp',
-    },
-  },
-  {
-    id: '3d_hunyuan3d-v2.1',
-    modality: '3d',
-    snapshot: {
-      title: 'HY 3D 2.1',
-      description: 'Generate 3D models from single images using Hunyuan3D 2.1.',
-      sizeBytes: 4928474972,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
 
   // --- Audio ---
@@ -256,8 +267,20 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.',
       sizeBytes: 15676630630,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
+  },
+  {
+    id: 'api_bytedance_seed_audio1_0_t2a',
+    modality: 'audio',
+    apiNode: true,
+    snapshot: {
+      title: 'Seed Audio 1.0: Text to Audio',
+      description:
+        'Input a text prompt to generate speech, dialogue, background music, and sound effects in one audio file. Describe voices, emotion, and scene details to create multi-speaker audio up to 2 minutes.',
+      sizeBytes: 0,
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'audio_stable_audio_example',
@@ -266,8 +289,8 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       title: 'Stable Audio 1.0: Text to Audio',
       description: 'Generate audio from text prompts using Stable Audio.',
       sizeBytes: 5690831667,
-      mediaSubtype: 'webp',
-    },
+      mediaSubtype: 'webp'
+    }
   },
   {
     id: 'audio_ace_step_1_5_checkpoint',
@@ -277,18 +300,7 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
       description:
         'Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.',
       sizeBytes: 10737418240,
-      mediaSubtype: 'mp3',
-    },
-  },
-  {
-    id: 'audio_ace_step1_5_xl_turbo',
-    modality: 'audio',
-    snapshot: {
-      title: 'ACE-Step 1.5XL Turbo: Text to Music',
-      description:
-        'Generate high-quality music from text prompts using the distilled 4B ACE-Step model. Produces commercial-ready audio in just 8 inference steps without CFG.',
-      sizeBytes: 19864223744,
-      mediaSubtype: 'webp',
-    },
-  },
+      mediaSubtype: 'mp3'
+    }
+  }
 ] as const

@@ -6,7 +6,6 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
-import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useModal } from '../composables/useModal'
 import { Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
@@ -20,7 +19,7 @@ import { isDistributionInstall } from '../devplatform/distributionState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
-import type { Installation, ShowProgressOpts } from '../types/ipc'
+import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
  * Chooser view — recents grid.
@@ -373,10 +372,6 @@ async function pickInstall(inst: Installation): Promise<void> {
     // launch normally in that case.
     if (focused) return
   }
-  // Cloud capacity gate — catches the case where a cloud install
-  // already exists and the user clicks its per-install tile (the
-  // generic "Try Cloud" tile gates separately in `handleCloudClick`).
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry('picker'))) return
   emit('pick', inst)
 }
 
@@ -415,11 +410,30 @@ function viewDanger(inst: Installation): void {
   void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
-// Capacity-protection switch (PostHog flag `desktop-cloud-capacity`).
-// When `disabled`, the tile is greyed out and the click is a no-op so
-// users can't enter cloud during an outage. When `degraded`, the tile
-// surfaces a "Heavy usage" meta pill but the click still proceeds.
-const cloudCapacity = useCloudCapacity()
+const cloudFreeRunsEnabled = ref(false)
+const cloudUserTier = ref<CloudUserTier>('unknown')
+const showCloudFreeRunsPill = computed(
+  () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
+)
+onMounted(async () => {
+  const [freeRunsResult, userTierResult] = await Promise.allSettled([
+    window.api.getCloudFreeRunsEnabled(),
+    window.api.getCloudUserTier()
+  ])
+  if (freeRunsResult.status === 'fulfilled') {
+    cloudFreeRunsEnabled.value = freeRunsResult.value
+  }
+  if (userTierResult.status === 'fulfilled') {
+    cloudUserTier.value = userTierResult.value
+  }
+})
+
+/** Passed to every grid rather than only the one that holds cloud installs
+ *  today, so re-shelving can't silently drop the pill. */
+function showFreeRunsPill(inst: Installation): boolean {
+  return showCloudFreeRunsPill.value && inst.sourceCategory === 'cloud'
+}
+
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
@@ -481,6 +495,7 @@ const gridHandlers = {
             :centered="!showWorkspaceShelf"
             :entries="ownEntries"
             :is-stopped-action-gated="isStoppedActionGated"
+            :show-free-runs-pill="showFreeRunsPill"
             v-on="gridHandlers"
           />
         </section>
@@ -504,12 +519,14 @@ const gridHandlers = {
             v-if="workspaceInstalledEntries.length"
             :entries="workspaceInstalledEntries"
             :is-stopped-action-gated="isStoppedActionGated"
+            :show-free-runs-pill="showFreeRunsPill"
             v-on="gridHandlers"
           />
           <ChooserFamilyGrid
             v-if="workspaceAvailableEntries.length"
             :entries="workspaceAvailableEntries"
             :is-stopped-action-gated="isStoppedActionGated"
+            :show-free-runs-pill="showFreeRunsPill"
             v-on="gridHandlers"
           />
         </section>

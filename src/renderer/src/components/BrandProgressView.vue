@@ -24,7 +24,7 @@ const activeIndex = computed(() => {
 })
 
 const trackStyle = computed(() => ({
-  transform: `translateY(${(Math.floor(VISIBLE_ROWS / 2) - activeIndex.value) * ROW_H}px)`,
+  transform: `translateY(${(Math.floor(VISIBLE_ROWS / 2) - activeIndex.value) * ROW_H}px)`
 }))
 
 const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS * ROW_H}px` }))
@@ -47,8 +47,8 @@ function rowOpacity(index: number): number {
         :class="[
           `is-${step.status}`,
           {
-            'is-focused': i === activeIndex,
-          },
+            'is-focused': i === activeIndex
+          }
         ]"
         :style="{ opacity: rowOpacity(i) }"
         :aria-current="i === activeIndex ? 'step' : undefined"

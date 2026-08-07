@@ -71,9 +71,9 @@ export function buildSettingsSections(
           options: [
             { value: AUTO_LAUNCH_NONE, label: i18n.t('settings.autoLaunchOnStartupNone') },
             { value: AUTO_LAUNCH_LAST, label: i18n.t('settings.autoLaunchOnStartupLast') },
-            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name })),
+            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name }))
           ],
-          tooltip: i18n.t('settings.autoLaunchOnStartupDescription'),
+          tooltip: i18n.t('settings.autoLaunchOnStartupDescription')
         },
 
         // Close confirmation, off by default. When on, closing a local-install

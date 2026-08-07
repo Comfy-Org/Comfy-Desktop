@@ -44,42 +44,42 @@ export const DEFAULT_LAUNCH_PHASES: readonly LaunchPhaseDef[] = [
     phase: 'launchStart',
     match: NEVER,
     weight: 0.05,
-    streaming: true,
+    streaming: true
   },
   {
     phase: 'securityScan',
     match: /Adding extra search path|ComfyUI startup time/i,
     weight: 0.05,
-    streaming: false,
+    streaming: false
   },
   {
     phase: 'mountLibraries',
     match: /\[DONE\] Security scan/i,
     weight: 0.05,
-    streaming: true,
+    streaming: true
   },
   {
     // Entry captures VRAM (group 1). The long torch/mps init lives inside
     // this phase, so it owns the largest slot and streams live activity.
     phase: 'gpu',
     match: /Total VRAM\s+(\d+)\s*MB/i,
-    weight: 0.50,
-    streaming: true,
+    weight: 0.5,
+    streaming: true
   },
   {
     phase: 'customNodes',
     match: /ComfyUI version:|Import times for custom nodes:/i,
     weight: 0.15,
-    streaming: false,
+    streaming: false
   },
   {
     // The tail. Indeterminate + streaming so the bar shows live log lines
     // (not a frozen 99%) until the existing transition into ComfyUI fires.
     phase: 'startingServer',
     match: /Starting server|To see the GUI go to:|Uvicorn running on/i,
-    weight: 0.20,
-    streaming: true,
-  },
+    weight: 0.2,
+    streaming: true
+  }
 ]
 
 /**
@@ -96,7 +96,7 @@ export type PreLaunchPhase = 'repair' | 'torchRepair'
 
 const PRE_LAUNCH_PHASES: Record<PreLaunchPhase, LaunchPhaseDef> = {
   repair: { phase: 'repair', match: NEVER, weight: 0.1, streaming: true },
-  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true },
+  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true }
 }
 
 /** Starter-template model download, shown as the LAST launch step. Synthetic +
@@ -120,7 +120,7 @@ const TEMPLATE_MODELS_PHASE: LaunchPhaseDef = {
   phase: 'template-models',
   match: NEVER,
   weight: 0.05,
-  streaming: true,
+  streaming: true
 }
 
 export interface BuildLaunchPhasesOpts {
@@ -142,7 +142,10 @@ export interface BuildLaunchPhasesOpts {
  * Adding a step is one entry in `PRE_LAUNCH_PHASES` + a push here. `inst` is
  * untyped so this module stays decoupled from the main/renderer record split.
  */
-export function buildLaunchPhases(_inst: unknown, opts: BuildLaunchPhasesOpts = {}): LaunchPhaseDef[] {
+export function buildLaunchPhases(
+  _inst: unknown,
+  opts: BuildLaunchPhasesOpts = {}
+): LaunchPhaseDef[] {
   const pre = (opts.preLaunchPhases ?? []).map((id) => ({ ...PRE_LAUNCH_PHASES[id] }))
   const phases = [...pre, ...DEFAULT_LAUNCH_PHASES.map((p) => ({ ...p }))]
   if (opts.templateModels) {

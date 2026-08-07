@@ -19,8 +19,8 @@ beforeEach(() => {
         if (name === 'home') return HOME
         if (name === 'exe') return exePath
         return HOME // userData fallback (unused by these helpers on win)
-      },
-    },
+      }
+    }
   }))
 })
 
@@ -110,8 +110,8 @@ describe('windows system-drive defaults', () => {
           if (name === 'home') return homeDir
           if (name === 'exe') return exePath
           return userDataDir // userData → marker location
-        },
-      },
+        }
+      }
     }))
   })
 
@@ -125,7 +125,11 @@ describe('windows system-drive defaults', () => {
   })
 
   function writeMarker(mode: string): void {
-    fs.writeFileSync(path.join(userDataDir, 'data-location.json'), JSON.stringify({ mode }), 'utf-8')
+    fs.writeFileSync(
+      path.join(userDataDir, 'data-location.json'),
+      JSON.stringify({ mode }),
+      'utf-8'
+    )
   }
 
   it('new install (no footprint) groups under %LOCALAPPDATA%\\Comfy-Desktop', async () => {

@@ -8,7 +8,7 @@ function makeBridge() {
     pickInstall: vi.fn(),
     restartInstall: vi.fn(),
     openInstallNewWindow: vi.fn(),
-    openNewInstall: vi.fn(),
+    openNewInstall: vi.fn()
   } satisfies InstanceActionsBridge
 }
 
@@ -18,22 +18,24 @@ function installation(over: Partial<Installation> = {}): Installation {
 
 function decision(over: Partial<NavDecision>): NavDecision {
   return {
-    window: 'same', verb: 'switch',
-    primaryLabel: 'instancePicker.switch', secondary: [], telemetry: null,
-    ...over,
+    window: 'same',
+    verb: 'switch',
+    primaryLabel: 'instancePicker.switch',
+    secondary: [],
+    telemetry: null,
+    ...over
   }
 }
 
 function makeDeps(
   bridge: InstanceActionsBridge,
-  over: Partial<Parameters<typeof useInstanceActions>[0]> = {},
+  over: Partial<Parameters<typeof useInstanceActions>[0]> = {}
 ) {
   return {
     bridge,
     confirmLocalKill: vi.fn().mockResolvedValue(true),
-    confirmCloudCapacity: vi.fn().mockResolvedValue(true),
     confirmSwitch: vi.fn().mockResolvedValue('switch'),
-    ...over,
+    ...over
   }
 }
 
@@ -79,7 +81,10 @@ describe('useInstanceActions.dispatch', () => {
 
   it('routes open-new → openInstallNewWindow', async () => {
     const bridge = makeBridge()
-    await useInstanceActions(makeDeps(bridge)).dispatch(decision({ verb: 'open-new', window: 'new' }), installation())
+    await useInstanceActions(makeDeps(bridge)).dispatch(
+      decision({ verb: 'open-new', window: 'new' }),
+      installation()
+    )
     expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a', expect.objectContaining({}))
   })
 
@@ -89,7 +94,7 @@ describe('useInstanceActions.dispatch', () => {
     const bridge = makeBridge()
     await useInstanceActions(makeDeps(bridge)).dispatch(
       decision({ verb: 'open-new', window: 'new', allowDuplicate: true }),
-      installation({ sourceCategory: 'cloud' }),
+      installation({ sourceCategory: 'cloud' })
     )
     expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a', { allowDuplicate: true })
   })
@@ -102,7 +107,10 @@ describe('useInstanceActions.dispatch', () => {
 
   it('routes install-wizard → openNewInstall', async () => {
     const bridge = makeBridge()
-    await useInstanceActions(makeDeps(bridge)).dispatch(decision({ verb: 'install-wizard' }), installation())
+    await useInstanceActions(makeDeps(bridge)).dispatch(
+      decision({ verb: 'install-wizard' }),
+      installation()
+    )
     expect(bridge.openNewInstall).toHaveBeenCalled()
   })
 
@@ -114,27 +122,20 @@ describe('useInstanceActions.dispatch', () => {
     expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
   })
 
-  it('aborts a cloud action when capacity is blocked', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge, { confirmCloudCapacity: vi.fn().mockResolvedValue(false) })
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation({ sourceCategory: 'cloud' }))
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
-  })
-
   it('no-ops when the bridge is undefined', async () => {
     const deps = { ...makeDeps(makeBridge()), bridge: undefined }
     await expect(
-      useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation()),
+      useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
     ).resolves.toBeUndefined()
   })
 
   it('aborts (does not throw to the caller) when a confirm dialog rejects', async () => {
     const bridge = makeBridge()
     const deps = makeDeps(bridge, {
-      confirmLocalKill: vi.fn().mockRejectedValue(new Error('dialog torn down')),
+      confirmLocalKill: vi.fn().mockRejectedValue(new Error('dialog torn down'))
     })
     await expect(
-      useInstanceActions(deps).dispatch(decision({ verb: 'restart' }), installation()),
+      useInstanceActions(deps).dispatch(decision({ verb: 'restart' }), installation())
     ).resolves.toBeUndefined()
     expect(bridge.restartInstall).not.toHaveBeenCalled()
   })

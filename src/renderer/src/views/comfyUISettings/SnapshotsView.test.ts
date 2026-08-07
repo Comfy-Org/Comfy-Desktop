@@ -8,6 +8,25 @@ import { TID } from '../../../../shared/testIds'
 import SnapshotsView from './SnapshotsView.vue'
 import type { SnapshotSummary, SnapshotListData, CopyEvent } from '../../types/ipc'
 
+// The import flow drives promise-based dialogs and the busy guard; stub both
+// so tests can script the user's choices without a DialogHost/session store.
+const { mockConfirm, mockAlert, mockCheckBeforeAction } = vi.hoisted(() => ({
+  mockConfirm: vi.fn(),
+  mockAlert: vi.fn(),
+  mockCheckBeforeAction: vi.fn()
+}))
+vi.mock('../../composables/useDialogs', () => ({
+  useDialogs: () => ({
+    confirm: mockConfirm,
+    alert: mockAlert,
+    prompt: vi.fn(),
+    actionSheet: vi.fn()
+  })
+}))
+vi.mock('../../composables/useActionGuard', () => ({
+  useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction })
+}))
+
 // Tests the snapshots tab + inline restore op-card state machine: in-flight, success (auto-dismiss 1.8s), error (Retry/Dismiss), cancelled.
 
 const messages = {
@@ -15,7 +34,7 @@ const messages = {
     common: {
       cancel: 'Cancel',
       dismiss: 'Dismiss',
-      loading: 'Loading…',
+      loading: 'Loading…'
     },
     snapshots: {
       createLabel: 'Create Snapshot',
@@ -25,6 +44,8 @@ const messages = {
       restoringFrom: 'from {label}',
       restored: 'Snapshot restored',
       restoredFrom: 'Rolled back to {label}',
+      restoredImported: 'Applied imported snapshot',
+      importTorchNoticeTitle: 'Snapshot uses a different PyTorch',
       restoreFailed: 'Restore failed',
       tryAgain: 'Try again',
       restore: 'Restore',
@@ -54,15 +75,15 @@ const messages = {
       copyEventLabel: 'Copied as {destination}',
       copyEventLabelIncoming: 'Copied from {source}',
       nodesCount: '{count} nodes',
-      packagesCount: '{count} pkgs',
+      packagesCount: '{count} pkgs'
     },
     standalone: {
       snapshotRestore: 'Restore',
       snapshotCreateTitle: 'Create Snapshot',
       snapshotCreateMessage: '',
-      snapshotLabelPlaceholder: '',
-    },
-  },
+      snapshotLabelPlaceholder: ''
+    }
+  }
 } as const
 
 function createTestI18n() {
@@ -72,20 +93,20 @@ function createTestI18n() {
 function makeSnapshot(overrides: Partial<SnapshotSummary> = {}): SnapshotSummary {
   return {
     filename: 'snap-2026-04-01.json',
-    createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),  // ~1h ago
+    createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // ~1h ago
     trigger: 'boot',
     label: null,
     comfyuiVersion: 'v0.3.20',
     nodeCount: 10,
     pipPackageCount: 20,
-    ...overrides,
+    ...overrides
   }
 }
 
 const FIXTURE_SNAPSHOTS: SnapshotSummary[] = [
   makeSnapshot({ filename: 'snap-newest.json', trigger: 'post-update' }),
   makeSnapshot({ filename: 'snap-middle.json', trigger: 'boot' }),
-  makeSnapshot({ filename: 'snap-oldest.json', trigger: 'manual', label: 'My save point' }),
+  makeSnapshot({ filename: 'snap-oldest.json', trigger: 'manual', label: 'My save point' })
 ]
 
 function makeListData(snapshots: SnapshotSummary[] = FIXTURE_SNAPSHOTS): SnapshotListData {
@@ -93,7 +114,7 @@ function makeListData(snapshots: SnapshotSummary[] = FIXTURE_SNAPSHOTS): Snapsho
     snapshots,
     copyEvents: [],
     totalCount: snapshots.length,
-    context: { updateChannel: 'stable', pythonVersion: '3.12', variant: 'cpu', variantLabel: 'CPU' },
+    context: { updateChannel: 'stable', pythonVersion: '3.12', variant: 'cpu', variantLabel: 'CPU' }
   }
 }
 
@@ -108,16 +129,18 @@ interface ActiveOperation {
   cancellable?: boolean
 }
 
-async function mountView(opts: {
-  activeOperation?: ActiveOperation | null
-  snapshots?: SnapshotSummary[]
-} = {}): Promise<VueWrapper> {
+async function mountView(
+  opts: {
+    activeOperation?: ActiveOperation | null
+    snapshots?: SnapshotSummary[]
+  } = {}
+): Promise<VueWrapper> {
   const wrapper = mount(SnapshotsView, {
     props: {
       installationId: 'install-A',
-      activeOperation: opts.activeOperation ?? null,
+      activeOperation: opts.activeOperation ?? null
     },
-    global: { plugins: [createTestI18n(), createPinia()] },
+    global: { plugins: [createTestI18n(), createPinia()] }
   })
   await flushPromises()
   return wrapper as VueWrapper
@@ -131,7 +154,7 @@ describe('comfyUISettings/SnapshotsView', () => {
       getSnapshotDiff: vi.fn().mockResolvedValue(null),
       runAction: vi.fn(),
       exportSnapshot: vi.fn(),
-      exportAllSnapshots: vi.fn(),
+      exportAllSnapshots: vi.fn()
     }
   })
 
@@ -157,8 +180,8 @@ describe('comfyUISettings/SnapshotsView', () => {
         percent: 42,
         status: 'Loading snapshot…',
         actionData: { file: 'snap-middle.json' },
-        cancellable: true,
-      },
+        cancellable: true
+      }
     })
 
     // Save CTA gone, op-card present.
@@ -190,11 +213,13 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
+        done: false,
+        ok: null,
+        error: null,
         percent: -1,
         status: 'Stopping…',
-        actionData: { file: 'snap-middle.json' },
-      },
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     expect(w.find('.snapshots-op-bar-pct').exists()).toBe(false)
     expect(w.find('.snapshots-op-bar-fill.is-indeterminate').exists()).toBe(true)
@@ -206,10 +231,13 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
-        percent: 90, status: 'Complete',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 90,
+        status: 'Complete',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
 
     // Reset call count from initial load() so the post-success reload is the new call.
@@ -222,18 +250,22 @@ describe('comfyUISettings/SnapshotsView', () => {
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: true, ok: true, error: null,
-        percent: 100, status: 'Complete',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: true,
+        ok: true,
+        error: null,
+        percent: 100,
+        status: 'Complete',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await flushPromises()
 
     // Green success card present.
     expect(w.find('.snapshots-rail-save-box.is-op-success').exists()).toBe(true)
     expect(w.find('.snapshots-rail-label').text()).toContain('Snapshot restored')
-    expect(w.find('.snapshots-op-card.is-success .snapshots-op-card-target').text())
-      .toMatch(/Rolled back to/)
+    expect(w.find('.snapshots-op-card.is-success .snapshots-op-card-target').text()).toMatch(
+      /Rolled back to/
+    )
 
     // Before timer fires: no op-dismiss yet.
     expect(w.emitted('op-dismiss')).toBeUndefined()
@@ -248,22 +280,60 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(apiGetSnapshots).toHaveBeenCalledWith('install-A')
   })
 
-  it('error: shows red card with message + Retry / Dismiss; clicks emit op-retry / op-dismiss', async () => {
+  it('success for an imported snapshot says "Applied imported snapshot", never "Rolled back" (an import is an apply, not a rollback)', async () => {
+    vi.useFakeTimers()
+    const actionData = { restoreToken: '0123456789abcdef0123456789abcdef' }
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
-        percent: 30, status: 'Loading snapshot…',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 90,
+        status: 'Complete',
+        actionData
+      }
     })
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: true, ok: false, error: 'Permission denied',
-        percent: 30, status: '',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: true,
+        ok: true,
+        error: null,
+        percent: 100,
+        status: 'Complete',
+        actionData
+      }
+    })
+    await flushPromises()
+
+    const target = w.find('.snapshots-op-card.is-success .snapshots-op-card-target')
+    expect(target.text()).toBe('Applied imported snapshot')
+    expect(target.text()).not.toMatch(/Rolled back/)
+  })
+
+  it('error: shows red card with message + Retry / Dismiss; clicks emit op-retry / op-dismiss', async () => {
+    const w = await mountView({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: false,
+        ok: null,
+        error: null,
+        percent: 30,
+        status: 'Loading snapshot…',
+        actionData: { file: 'snap-middle.json' }
+      }
+    })
+    await w.setProps({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: true,
+        ok: false,
+        error: 'Permission denied',
+        percent: 30,
+        status: '',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await flushPromises()
 
@@ -283,18 +353,24 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
-        percent: 30, status: 'Loading snapshot…',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 30,
+        status: 'Loading snapshot…',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: true, ok: false, error: 'Disk full',
-        percent: 30, status: '',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: true,
+        ok: false,
+        error: 'Disk full',
+        percent: 30,
+        status: '',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await flushPromises()
 
@@ -306,18 +382,24 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
-        percent: 30, status: 'Loading snapshot…',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 30,
+        status: 'Loading snapshot…',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: true, ok: false, error: 'Cancelled.',
-        percent: 30, status: '',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: true,
+        ok: false,
+        error: 'Cancelled.',
+        percent: 30,
+        status: '',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await flushPromises()
 
@@ -332,18 +414,24 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
-        percent: 30, status: 'Loading snapshot…',
-        actionData,
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 30,
+        status: 'Loading snapshot…',
+        actionData
+      }
     })
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: true, ok: false, error: 'Cancelled.',
-        percent: 30, status: '',
-        actionData,
-      },
+        done: true,
+        ok: false,
+        error: 'Cancelled.',
+        percent: 30,
+        status: '',
+        actionData
+      }
     })
     await flushPromises()
 
@@ -360,10 +448,13 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: true, ok: false, error: 'Package install failed',
-        percent: 30, status: '',
-        actionData: { restoreToken: '0123456789abcdef0123456789abcdef' },
-      },
+        done: true,
+        ok: false,
+        error: 'Package install failed',
+        percent: 30,
+        status: '',
+        actionData: { restoreToken: '0123456789abcdef0123456789abcdef' }
+      }
     })
 
     expect(w.find('.snapshots-rail-save-box.is-op-error').exists()).toBe(true)
@@ -374,32 +465,122 @@ describe('comfyUISettings/SnapshotsView', () => {
     const w = await mountView({
       activeOperation: {
         actionId: 'update-comfyui',
-        done: false, ok: null, error: null,
-        percent: 50, status: 'Updating…',
-        actionData: { isDowngrade: false },
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 50,
+        status: 'Updating…',
+        actionData: { isDowngrade: false }
+      }
     })
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
     expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
   })
 
   it('scrolls the top card into view when restore starts', async () => {
-    const scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView')
-      .mockImplementation(() => {})
+    const scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {})
 
     const w = await mountView()
     await w.setProps({
       activeOperation: {
         actionId: 'snapshot-restore',
-        done: false, ok: null, error: null,
-        percent: 0, status: 'Loading snapshot…',
-        actionData: { file: 'snap-middle.json' },
-      },
+        done: false,
+        ok: null,
+        error: null,
+        percent: 0,
+        status: 'Loading snapshot…',
+        actionData: { file: 'snap-middle.json' }
+      }
     })
     await flushPromises()
     await nextTick()
 
     expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+  })
+
+  // A cross-vendor envelope's PyTorch stack can't be applied here; the
+  // compatible restore keeps the local stack. That substitution must be
+  // disclosed BEFORE the restore runs, and the user must be able to back out.
+  describe('import flow: kept-local PyTorch disclosure', () => {
+    const NOTICE =
+      "The snapshot's PyTorch build (2.11.0+xpu) is not available for this machine; the current PyTorch will be kept."
+
+    function installImportApi(confirmResult: Record<string, unknown>): {
+      importSnapshotsConfirm: ReturnType<typeof vi.fn>
+    } {
+      const api = {
+        getSnapshots: vi.fn().mockResolvedValue(makeListData()),
+        getSnapshotDiff: vi.fn().mockResolvedValue(null),
+        runAction: vi.fn(),
+        exportSnapshot: vi.fn(),
+        exportAllSnapshots: vi.fn(),
+        importSnapshotsPreview: vi.fn().mockResolvedValue({
+          ok: true,
+          preview: {
+            snapshots: [
+              { label: 'Marker', filename: 'snap.json', createdAt: new Date().toISOString() }
+            ]
+          }
+        }),
+        importSnapshotsDiff: vi.fn().mockResolvedValue({
+          ok: true,
+          diff: { mode: 'current', baseLabel: 'Current state', diff: {}, empty: false }
+        }),
+        importSnapshotsConfirm: vi.fn().mockResolvedValue(confirmResult)
+      }
+      ;(window as unknown as { api: Record<string, unknown> }).api = api
+      return api
+    }
+
+    beforeEach(() => {
+      mockConfirm.mockReset()
+      mockCheckBeforeAction.mockReset().mockResolvedValue(true)
+    })
+
+    it('shows the notice as a second confirm before the restore, then runs it on Restore', async () => {
+      installImportApi({ ok: true, imported: 1, restoreToken: 'tok-1', torchStackNotice: NOTICE })
+      mockConfirm.mockResolvedValue('primary')
+
+      const w = await mountView()
+      await w.find(`[data-testid="${TID.snapshotsImport}"]`).trigger('click')
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(2)
+      expect(mockConfirm.mock.calls[1]![0]).toMatchObject({
+        title: 'Snapshot uses a different PyTorch',
+        message: NOTICE
+      })
+      const runs = w.emitted('run-action')
+      expect(runs).toHaveLength(1)
+      expect(runs![0]![0]).toMatchObject({
+        id: 'snapshot-restore',
+        data: { restoreToken: 'tok-1' }
+      })
+    })
+
+    it('cancelling the notice backs out without running the restore', async () => {
+      installImportApi({ ok: true, imported: 1, restoreToken: 'tok-1', torchStackNotice: NOTICE })
+      mockConfirm.mockResolvedValueOnce('primary').mockResolvedValueOnce(false)
+
+      const w = await mountView()
+      await w.find(`[data-testid="${TID.snapshotsImport}"]`).trigger('click')
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(2)
+      expect(w.emitted('run-action')).toBeUndefined()
+    })
+
+    it('an applicable (or same-stack) snapshot shows no extra dialog and restores directly', async () => {
+      installImportApi({ ok: true, imported: 1, restoreToken: 'tok-1', torchStackNotice: null })
+      mockConfirm.mockResolvedValue('primary')
+
+      const w = await mountView()
+      await w.find(`[data-testid="${TID.snapshotsImport}"]`).trigger('click')
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(1)
+      expect(w.emitted('run-action')).toHaveLength(1)
+    })
   })
 
   // Regression for #1007: a "Copied from/as X" event that sorts above the
@@ -414,7 +595,7 @@ describe('comfyUISettings/SnapshotsView', () => {
         copyReason: 'copy',
         exists: true,
         direction: 'in',
-        ...overrides,
+        ...overrides
       }
     }
 
@@ -424,7 +605,7 @@ describe('comfyUISettings/SnapshotsView', () => {
         getSnapshotDiff: vi.fn().mockResolvedValue(null),
         runAction: vi.fn(),
         exportSnapshot: vi.fn(),
-        exportAllSnapshots: vi.fn(),
+        exportAllSnapshots: vi.fn()
       }
       return mountView()
     }
@@ -443,8 +624,9 @@ describe('comfyUISettings/SnapshotsView', () => {
 
       // The newest snapshot is auto-expanded; restoring it is a no-op, so it
       // must not offer a Restore action even though a copy event sorts above it.
-      expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists())
-        .toBe(false)
+      expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists()).toBe(
+        false
+      )
     })
 
     it('keeps the Latest badge on the newest snapshot for an outgoing copy event', async () => {
@@ -452,8 +634,9 @@ describe('comfyUISettings/SnapshotsView', () => {
 
       expect(w.text()).toContain('Copied as Copy of A')
       expect(w.findAll('.snapshot-row-latest')).toHaveLength(1)
-      expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists())
-        .toBe(false)
+      expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists()).toBe(
+        false
+      )
     })
 
     it('header "Latest:" stat reflects the newest snapshot, not the copy event time', async () => {

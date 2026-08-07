@@ -10,14 +10,14 @@ import type { Installation } from '../types/ipc'
 vi.stubGlobal('window', {
   ...window,
   api: {
-    runAction: vi.fn().mockResolvedValue({}),
-  },
+    runAction: vi.fn().mockResolvedValue({})
+  }
 })
 
 vi.mock('../composables/useMigrateAction', () => ({
   useMigrateAction: () => ({
-    confirmMigration: vi.fn().mockResolvedValue(null),
-  }),
+    confirmMigration: vi.fn().mockResolvedValue(null)
+  })
 }))
 
 import MigrationBanner from './MigrationBanner.vue'
@@ -30,10 +30,10 @@ const messages = {
       migrateBannerAction: 'Migrate Now',
       migrateBannerSkip: 'New Install Without Migrating',
       telemetryNotice: 'Anonymous telemetry is collected.',
-      telemetrySettings: 'Manage in Settings',
+      telemetrySettings: 'Manage in Settings'
     },
-    desktop: { migrating: 'Migrating' },
-  },
+    desktop: { migrating: 'Migrating' }
+  }
 }
 
 function createTestI18n() {
@@ -42,7 +42,7 @@ function createTestI18n() {
     locale: 'en',
     messages,
     missingWarn: false,
-    fallbackWarn: false,
+    fallbackWarn: false
   })
 }
 
@@ -51,13 +51,13 @@ const stubInstallation: Installation = {
   name: 'Legacy Desktop',
   sourceLabel: 'Desktop',
   sourceCategory: 'local',
-  sourceId: 'desktop',
+  sourceId: 'desktop'
 }
 
 function mountBanner(pinia = createTestingPinia()) {
   return mount(MigrationBanner, {
     global: { plugins: [createTestI18n(), pinia] },
-    props: { installation: stubInstallation },
+    props: { installation: stubInstallation }
   })
 }
 
@@ -116,5 +116,4 @@ describe('MigrationBanner', () => {
       expect(wrapper.emitted('show-settings')).toHaveLength(1)
     })
   })
-
 })

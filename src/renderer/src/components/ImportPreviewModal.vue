@@ -36,12 +36,7 @@ const { t } = useI18n()
     <template #footer>
       <div class="view-bottom">
         <button @click="emit('cancel')">{{ t('common.cancel') }}</button>
-        <button
-          v-if="preview"
-          class="primary"
-          :disabled="loading"
-          @click="emit('confirm')"
-        >
+        <button v-if="preview" class="primary" :disabled="loading" @click="emit('confirm')">
           {{ t('snapshots.importConfirm') }}
         </button>
       </div>

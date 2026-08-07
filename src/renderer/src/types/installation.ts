@@ -21,5 +21,5 @@ export type {
   ProgressData,
   ProgressStep,
   ComfyOutputData,
-  ComfyExitedData,
+  ComfyExitedData
 } from './ipc'

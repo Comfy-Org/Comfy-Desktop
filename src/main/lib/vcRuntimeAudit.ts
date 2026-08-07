@@ -43,7 +43,7 @@ export async function auditVcRuntime(): Promise<string[]> {
         // runtime when we simply couldn't look.
         return (err as NodeJS.ErrnoException).code === 'ENOENT' ? dll : null
       }
-    }),
+    })
   )
   return results.filter((dll): dll is string => dll !== null)
 }

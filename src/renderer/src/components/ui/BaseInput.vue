@@ -28,7 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
   type: 'text',
   min: undefined,
   max: undefined,
-  step: undefined,
+  step: undefined
 })
 
 const emit = defineEmits<{

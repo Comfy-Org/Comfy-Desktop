@@ -22,9 +22,12 @@ export async function removeQuarantine(dir: string, log?: (text: string) => void
  */
 export async function repairMacBinaries(
   installPath: string,
-  sendProgress: (step: string, data: { percent: number; status: string; [key: string]: unknown }) => void,
+  sendProgress: (
+    step: string,
+    data: { percent: number; status: string; [key: string]: unknown }
+  ) => void,
   sendOutput?: (text: string) => void,
-  installation?: InstallationRecord,
+  installation?: InstallationRecord
 ): Promise<void> {
   if (process.platform !== 'darwin') return
   const standaloneEnvDir = path.join(installPath, 'standalone-env')
@@ -34,7 +37,9 @@ export async function repairMacBinaries(
     sendProgress('repair', { percent: -1, status: 'Codesigning binaries…' })
     await codesignBinaries(standaloneEnvDir, sendOutput)
   }
-  const venvDir = installation ? getActiveVenvDir(installation) : path.join(installPath, 'ComfyUI', '.venv')
+  const venvDir = installation
+    ? getActiveVenvDir(installation)
+    : path.join(installPath, 'ComfyUI', '.venv')
   if (fs.existsSync(venvDir)) {
     sendProgress('repair', { percent: -1, status: 'Codesigning environment binaries…' })
     await removeQuarantine(venvDir, sendOutput)
@@ -43,14 +48,52 @@ export async function repairMacBinaries(
 }
 
 const NON_BINARY_EXTENSIONS = new Set([
-  '.py', '.pyc', '.pyo', '.pyi', '.pyd',
-  '.txt', '.md', '.rst', '.json', '.yaml', '.yml', '.toml', '.cfg', '.ini', '.csv',
-  '.html', '.htm', '.css', '.js', '.ts', '.xml', '.svg',
-  '.h', '.c', '.cpp', '.hpp', '.pxd', '.pyx',
-  '.sh', '.bat', '.ps1',
-  '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot',
-  '.egg-info', '.dist-info', '.data',
-  '.typed', '.LICENSE', '.license',
+  '.py',
+  '.pyc',
+  '.pyo',
+  '.pyi',
+  '.pyd',
+  '.txt',
+  '.md',
+  '.rst',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.cfg',
+  '.ini',
+  '.csv',
+  '.html',
+  '.htm',
+  '.css',
+  '.js',
+  '.ts',
+  '.xml',
+  '.svg',
+  '.h',
+  '.c',
+  '.cpp',
+  '.hpp',
+  '.pxd',
+  '.pyx',
+  '.sh',
+  '.bat',
+  '.ps1',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.ico',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.eot',
+  '.egg-info',
+  '.dist-info',
+  '.data',
+  '.typed',
+  '.LICENSE',
+  '.license'
 ])
 
 function hasNonBinaryExtension(name: string): boolean {
@@ -68,9 +111,12 @@ async function isMachO(filePath: string): Promise<boolean> {
     // Mach-O magic numbers: MH_MAGIC, MH_CIGAM, MH_MAGIC_64, MH_CIGAM_64, FAT_MAGIC, FAT_CIGAM
     const magic = buf.readUInt32BE(0)
     return (
-      magic === 0xfeedface || magic === 0xcefaedfe ||
-      magic === 0xfeedfacf || magic === 0xcffaedfe ||
-      magic === 0xcafebabe || magic === 0xbebafeca
+      magic === 0xfeedface ||
+      magic === 0xcefaedfe ||
+      magic === 0xfeedfacf ||
+      magic === 0xcffaedfe ||
+      magic === 0xcafebabe ||
+      magic === 0xbebafeca
     )
   } catch {
     return false
@@ -86,7 +132,11 @@ export async function codesignBinaries(dir: string, log?: (text: string) => void
   while (stack.length > 0) {
     const current = stack.pop()!
     let items: fs.Dirent[]
-    try { items = await fs.promises.readdir(current, { withFileTypes: true }) } catch { continue }
+    try {
+      items = await fs.promises.readdir(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
     const candidates: string[] = []
     for (const item of items) {
       const full = path.join(current, item.name)
@@ -106,7 +156,7 @@ export async function codesignBinaries(dir: string, log?: (text: string) => void
 
 async function checkAndSign(filePath: string, log?: (text: string) => void): Promise<void> {
   const name = path.basename(filePath)
-  if (!name.endsWith('.dylib') && !name.endsWith('.so') && !await isMachO(filePath)) return
+  if (!name.endsWith('.dylib') && !name.endsWith('.so') && !(await isMachO(filePath))) return
   return new Promise<void>((resolve) => {
     execFile('codesign', ['--force', '--sign', '-', filePath], (err) => {
       if (err && log) log(`⚠ codesign failed: ${filePath}: ${err.message}\n`)

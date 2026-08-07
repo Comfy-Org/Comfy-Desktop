@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
-import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useDialogs } from '../composables/useDialogs'
 import { useInstanceActions } from '../composables/useInstanceActions'
 import type { NavDecision } from '../../../shared/navigation/navDecision'
@@ -169,13 +168,8 @@ const installations = computed<Installation[]>(
   () => props.snapshot.installs as unknown as Installation[]
 )
 const installationsRef = toRef(() => installations.value)
-const {
-  searchQuery,
-  activeFilter,
-  visibleInstalls,
-  showEmptyHint,
-  lastLaunchedShortLabel
-} = useInstallList({ installations: installationsRef })
+const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } =
+  useInstallList({ installations: installationsRef })
 
 const visibleChips = computed(() => {
   return FILTER_CHIPS.filter((chip) => {
@@ -359,7 +353,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
   // opts.actionData may be a Vue reactive proxy, which can't cross the
   // contextBridge structured-clone boundary; deep-clone to a plain object.
   const rawActionData = opts.actionData
-    ? JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>
+    ? (JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>)
     : undefined
   const { routing, successChoice } = resolveProgressRouting(
     opts,
@@ -378,7 +372,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       cancellable: opts.cancellable ?? false,
       title: opts.title,
       actionId: opts.actionId,
-      actionData: rawActionData,
+      actionData: rawActionData
     })
     selectedId.value = opts.installationId
     bridge?.pickerStartBackgroundOp({
@@ -387,7 +381,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       actionData: rawActionData,
       title: opts.title,
       cancellable: opts.cancellable,
-      opKind: opts.opKind,
+      opKind: opts.opKind
     })
     return
   }
@@ -420,7 +414,7 @@ function handleInlineProgressRetry(): void {
     actionId: op.actionId,
     actionData: op.actionData,
     title: op.title,
-    cancellable: op.cancellable,
+    cancellable: op.cancellable
   })
 }
 
@@ -434,20 +428,14 @@ function handleSettingsNavigateList(): void {
   selectedId.value = null
 }
 
-// Capacity-protection switch (PostHog flag `desktop-cloud-capacity`):
-// when disabled, the primary action no-ops for a cloud install.
-const cloudCapacity = useCloudCapacity()
 const dialogs = useDialogs()
 const { t } = useI18n()
-const ippCapacityStatus = computed(() => cloudCapacity.effectiveStatus())
 
 // Single funnel for navigation decisions (primary CTA + caret). The decision is
 // computed in `ComfyUISettingsContent` via `decideNavigation`; this routes its
 // verb onto the bridge, applying the renderer-side gates.
 const instanceActions = useInstanceActions({
   bridge,
-  // Cloud capacity gate; matches the ChooserView path so the two can't diverge.
-  confirmCloudCapacity: () => cloudCapacity.confirmEntry('picker'),
   // Local restarts/switches confirm in-drawer (cloud/remote have no local
   // process to kill); keeps the drawer open instead of a system-modal over the
   // host. Non-local installs short-circuit to confirmed.
@@ -461,12 +449,9 @@ const instanceActions = useInstanceActions({
       messageDetails: [
         {
           label: t('instancePicker.confirmHeadsUp'),
-          items: [
-            t('instancePicker.restartConfirmItem1'),
-            t('instancePicker.restartConfirmItem2'),
-          ],
-        },
-      ],
+          items: [t('instancePicker.restartConfirmItem1'), t('instancePicker.restartConfirmItem2')]
+        }
+      ]
     })
     return result === 'primary'
   },
@@ -487,15 +472,12 @@ const instanceActions = useInstanceActions({
       messageDetails: [
         {
           label: t('instancePicker.confirmHeadsUp'),
-          items: [
-            t('instancePicker.switchConfirmItem1'),
-            t('instancePicker.switchConfirmItem2'),
-          ],
-        },
-      ],
+          items: [t('instancePicker.switchConfirmItem1'), t('instancePicker.switchConfirmItem2')]
+        }
+      ]
     })
     return result === 'primary' ? 'switch' : result === 'secondary' ? 'new-window' : 'cancel'
-  },
+  }
 })
 
 async function handleExpandedNav(decision: NavDecision): Promise<void> {
@@ -565,7 +547,10 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     <div class="picker-body">
       <div class="picker-left">
         <div class="picker-list-section">
-          <div class="picker-list-section-title">{{ $t('instancePicker.instances') }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" /></div>
+          <div class="picker-list-section-title">
+            {{ $t('instancePicker.instances')
+            }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
+          </div>
 
           <TransitionGroup
             tag="div"
@@ -584,7 +569,6 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               :update-available="isRowUpdateAvailable(inst)"
               :operating="effectiveOperatingSet.has(inst.id)"
               :last-launched-short-label="lastLaunchedShortLabel(inst)"
-              :capacity-status="ippCapacityStatus"
               @select="handleSelect"
             />
 

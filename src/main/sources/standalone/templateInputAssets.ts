@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../../settings'
 import { download } from '../../lib/download'
-import { stripQueryParams } from '../../lib/comfyDownloadManager'
+import { stripQueryParams } from '../../lib/downloadFilename'
 import { loadTemplateJson } from './templateModels'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
@@ -25,14 +25,31 @@ export interface TemplateInputAsset {
 
 /** Node types whose first widget value is an `input/` filename. Mirrors the
  *  loader nodes the workflow templates use for sample media. */
-const LOAD_NODE_TYPES = new Set(['LoadImage', 'LoadImageMask', 'LoadAudio', 'LoadVideo', 'VHS_LoadVideo'])
+const LOAD_NODE_TYPES = new Set([
+  'LoadImage',
+  'LoadImageMask',
+  'LoadAudio',
+  'LoadVideo',
+  'VHS_LoadVideo'
+])
 
 /** Media extensions we'll place in `input/`. Excludes model/script types so a
  *  crafted widget value can't pull an arbitrary payload through this path. */
 const ALLOWED_INPUT_EXTENSIONS = [
-  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp',
-  '.mp4', '.webm', '.mov',
-  '.mp3', '.wav', '.flac', '.ogg', '.m4a',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.bmp',
+  '.mp4',
+  '.webm',
+  '.mov',
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.ogg',
+  '.m4a'
 ]
 
 /** A template-declared input filename must be a bare name (no separator, no
@@ -50,7 +67,11 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
   for (const node of nodes) {
     if (!node || typeof node !== 'object') continue
     const n = node as { type?: unknown; widgets_values?: unknown; nodes?: unknown }
-    if (typeof n.type === 'string' && LOAD_NODE_TYPES.has(n.type) && Array.isArray(n.widgets_values)) {
+    if (
+      typeof n.type === 'string' &&
+      LOAD_NODE_TYPES.has(n.type) &&
+      Array.isArray(n.widgets_values)
+    ) {
       const first = n.widgets_values[0]
       if (typeof first === 'string') out.push(first)
     }
@@ -66,7 +87,7 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
  */
 export async function resolveTemplateInputAssets(
   installation: InstallationRecord,
-  templateId: string,
+  templateId: string
 ): Promise<TemplateInputAsset[]> {
   const json = await loadTemplateJson(installation, templateId)
   if (!json || typeof json !== 'object') return []
@@ -121,7 +142,7 @@ export async function downloadTemplateInputAssets(
   installation: InstallationRecord,
   templateId: string,
   log: (text: string) => void,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<PlacedInputAsset[]> {
   const assets = await resolveTemplateInputAssets(installation, templateId)
   if (assets.length === 0) return []
@@ -131,7 +152,9 @@ export async function downloadTemplateInputAssets(
     destDir = resolveInputDir(installation)
     await fs.promises.mkdir(destDir, { recursive: true })
   } catch (err) {
-    log(`[templates] Could not prepare the input dir; skipping input assets: ${(err as Error).message}\n`)
+    log(
+      `[templates] Could not prepare the input dir; skipping input assets: ${(err as Error).message}\n`
+    )
     return []
   }
 

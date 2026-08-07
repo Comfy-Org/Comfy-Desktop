@@ -12,12 +12,20 @@ import { noteCloudEntered } from '../lib/cloudEntry'
 import { noteCanvasRendered } from '../lib/canvasEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
+import {
+  activateFirebaseAuthReporter,
+  deactivateFirebaseAuthReporter
+} from '../lib/firebaseAuthIdentity'
 import { convertLevelToZoomPercent } from '../lib/zoom'
-import { clearPendingTemplateOpen, installationEvents, type InstallationRecord } from '../installations'
+import {
+  clearPendingTemplateOpen,
+  installationEvents,
+  type InstallationRecord
+} from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import {
   abortTemplateDownload,
-  stopTemplateTrayMirror,
+  stopTemplateTrayMirror
 } from '../sources/standalone/templateDownloadTask'
 import {
   dropInstallationIndex,
@@ -139,6 +147,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const comfyContents = entry.comfyView.webContents
   const comfyWindow = entry.window
   const titleBarView = entry.titleBarView
+  activateFirebaseAuthReporter(comfyContents)
 
   // Seed entry install state. The secondary index is the source of
   // truth for `getEntryByInstallationId(id)` — keep it in lockstep
@@ -401,11 +410,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
-    // Inject the Terminal bottom-panel tab on local managed installs that
-    // back it with a per-install shell (standalone, portable, git). They all
-    // ship the same served frontend and expose the same
-    // `window.__comfyDesktop2.Terminal` bridge + per-install PTY, so the
-    // injection works identically everywhere.
+    // Inject the Terminal bottom-panel entry on local managed installs.
     //
     // Originally gated on `!supports_terminal` to avoid duplicating the
     // flag-gated frontend tab. Day-3 launch feedback put terminal
@@ -425,9 +430,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (!isLocal) {
       comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
       // Refresh the cached subscription tier off the cloud view's
-      // Firebase auth record + /customers/me. Used by the capacity
-      // kill-switch to let paying users through `disabled`. Fire-and-
-      // forget — failures leave the tier cache as-is.
+      // Firebase auth record + /customers/me. Used by billing telemetry
+      // and free-tier offer UI. Fire-and-forget — failures leave the tier
+      // cache as-is.
       void refreshCloudUserTier(comfyContents)
       // Mark cloud entry for the acquisition funnel. Deduped per session
       // and carries `first_time` for the first-ever cloud entry.
@@ -607,9 +612,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // installs don't load the local frontend that reads the param, so they're skipped.
   let urlToLoad = comfyUrl
   const pendingTemplate =
-    typeof installation.pendingTemplateOpen === 'string'
-      ? installation.pendingTemplateOpen
-      : null
+    typeof installation.pendingTemplateOpen === 'string' ? installation.pendingTemplateOpen : null
   if (isLocal && pendingTemplate) {
     urlToLoad = buildTemplateDeeplink(comfyUrl, pendingTemplate)
     void clearPendingTemplateOpen(installationId).catch((err) => {
@@ -626,6 +629,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
+    deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
     if (!comfyContents.isDestroyed()) {

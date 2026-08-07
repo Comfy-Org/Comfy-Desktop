@@ -40,6 +40,7 @@ import { reconcileAdoptedSettings } from '../desktopAdopt'
 export {
   getAppVersion,
   stopRunning,
+  cancelLaunching,
   hasRunningSessions,
   getSessionProcess,
   hasActiveOperations,
@@ -122,7 +123,10 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
       // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
       const states = await Promise.all(
-        sweepable.map(async (inst) => ({ inst, state: await installDirStateAsync(inst.installPath) }))
+        sweepable.map(async (inst) => ({
+          inst,
+          state: await installDirStateAsync(inst.installPath)
+        }))
       )
       let swept = false
       for (const { inst, state } of states) {

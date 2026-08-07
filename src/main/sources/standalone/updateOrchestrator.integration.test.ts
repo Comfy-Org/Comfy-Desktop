@@ -18,21 +18,21 @@ const SENTINEL_ACTIVE_PY = '__TEST_ACTIVE_PY__'
 const spawnState = vi.hoisted(() => ({
   pythonHandler: undefined as undefined | ((args: string[]) => ChildProcess),
   uvHandler: undefined as undefined | ((args: string[]) => ChildProcess),
-  uvCalls: [] as string[][],
+  uvCalls: [] as string[][]
 }))
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 // Mock snapshots to avoid pulling in scanCustomNodes / pipFreeze / fs assumptions.
 vi.mock('../../lib/snapshots', () => ({
-  saveSnapshot: vi.fn(async (_installPath: string, _installation: unknown, trigger: string) =>
-    `${trigger}-snap.json`
+  saveSnapshot: vi.fn(
+    async (_installPath: string, _installation: unknown, trigger: string) => `${trigger}-snap.json`
   ),
   getSnapshotCount: vi.fn(async () => 1),
-  deduplicatePreUpdateSnapshot: vi.fn(async () => false),
+  deduplicatePreUpdateSnapshot: vi.fn(async () => false)
 }))
 
 // Mock envPaths to return sentinel command strings the spawn mock intercepts.
@@ -43,7 +43,7 @@ vi.mock('./envPaths', () => ({
   getActiveUvPath: (inst: { installPath: string }) => path.join(inst.installPath, SENTINEL_UV_NAME),
   getActivePythonPath: () => SENTINEL_ACTIVE_PY,
   getVenvDir: (p: string) => path.join(p, 'ComfyUI', '.venv'),
-  getVenvPythonPath: (p: string) => path.join(p, 'ComfyUI', '.venv', 'Scripts', 'python.exe'),
+  getVenvPythonPath: (p: string) => path.join(p, 'ComfyUI', '.venv', 'Scripts', 'python.exe')
 }))
 
 // Mock settings to avoid reading real settings.json from disk.
@@ -53,22 +53,22 @@ vi.mock('../../settings', () => ({
     if (key === 'useChineseMirrors') return false
     return undefined
   }),
-  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
+  getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false }))
 }))
 
 vi.mock('../../lib/bundledScript', () => ({
-  getBundledScriptPath: (name: string) => `__BUNDLED__/${name}`,
+  getBundledScriptPath: (name: string) => `__BUNDLED__/${name}`
 }))
 
 vi.mock('./macRepair', () => ({
-  repairMacBinaries: vi.fn(async () => {}),
+  repairMacBinaries: vi.fn(async () => {})
 }))
 
 vi.mock('../../lib/i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) => {
     if (params) return `${key}:${JSON.stringify(params)}`
     return key
-  },
+  }
 }))
 
 // Intercept only Python/uv sentinel commands; delegate everything else (git, etc.) to real spawn.
@@ -80,12 +80,16 @@ vi.mock('child_process', async (importOriginal) => {
       if (command === SENTINEL_PYTHON && spawnState.pythonHandler) {
         return spawnState.pythonHandler([...(args ?? [])])
       }
-      if (typeof command === 'string' && command.endsWith(SENTINEL_UV_NAME) && spawnState.uvHandler) {
+      if (
+        typeof command === 'string' &&
+        command.endsWith(SENTINEL_UV_NAME) &&
+        spawnState.uvHandler
+      ) {
         spawnState.uvCalls.push([...(args ?? [])])
         return spawnState.uvHandler([...(args ?? [])])
       }
       return actual.spawn(command, args as string[], options as Parameters<typeof actual.spawn>[2])
-    }),
+    })
   }
 })
 
@@ -198,14 +202,14 @@ function createTestRepo(installPath: string, commitsAheadOfTag: number = 0): Tes
 /** Build a fake Python update script handler that "moves" the repo to v0.2.0. */
 function makeSuccessfulUpdateHandler(
   comfyuiDir: string,
-  v2Sha: string,
+  v2Sha: string
 ): (args: string[]) => ChildProcess {
   return (_args: string[]) => {
     // Simulate what update_comfyui.py does: checkout the new version
     execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
       cwd: comfyuiDir,
       windowsHide: true,
-      stdio: 'pipe',
+      stdio: 'pipe'
     })
 
     return fakeProc({
@@ -213,16 +217,16 @@ function makeSuccessfulUpdateHandler(
         `[PRE_UPDATE_HEAD] ${execFileSync('git', ['rev-parse', 'v0.1.0'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()}\n`,
         `[POST_UPDATE_HEAD] ${v2Sha}\n`,
         `[CHECKED_OUT_TAG] v0.2.0\n`,
-        `[BACKUP_BRANCH] backup-pre-update\n`,
+        `[BACKUP_BRANCH] backup-pre-update\n`
       ],
-      exitCode: 0,
+      exitCode: 0
     })
   }
 }
 
 function makeBaseOpts(
   installPath: string,
-  overrides?: Partial<UpdateOrchestrationOptions>,
+  overrides?: Partial<UpdateOrchestrationOptions>
 ): UpdateOrchestrationOptions {
   const installation: InstallationRecord = {
     id: 'test-install',
@@ -230,7 +234,7 @@ function makeBaseOpts(
     createdAt: new Date().toISOString(),
     installPath,
     sourceId: 'standalone',
-    status: 'installed',
+    status: 'installed'
   }
   const updateCalls: Record<string, unknown>[] = []
   const progressCalls: { step: string; data: Record<string, unknown> }[] = []
@@ -240,10 +244,16 @@ function makeBaseOpts(
     installPath,
     installation,
     channel: 'stable',
-    update: vi.fn(async (data: Record<string, unknown>) => { updateCalls.push(data) }),
-    sendProgress: vi.fn((step: string, data: Record<string, unknown>) => { progressCalls.push({ step, data }) }),
-    sendOutput: vi.fn((text: string) => { outputChunks.push(text) }),
-    ...overrides,
+    update: vi.fn(async (data: Record<string, unknown>) => {
+      updateCalls.push(data)
+    }),
+    sendProgress: vi.fn((step: string, data: Record<string, unknown>) => {
+      progressCalls.push({ step, data })
+    }),
+    sendOutput: vi.fn((text: string) => {
+      outputChunks.push(text)
+    }),
+    ...overrides
   }
 }
 
@@ -277,7 +287,13 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
   })
 
   const headSha = (): string =>
-    execFileSync('git', ['rev-parse', 'HEAD'], { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' }).toString().trim()
+    execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: comfyuiDir,
+      windowsHide: true,
+      stdio: 'pipe'
+    })
+      .toString()
+      .trim()
   const markerExists = (): boolean =>
     fs.existsSync(path.join(installPath, '.comfyui-op-in-progress.json'))
 
@@ -293,7 +309,9 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           if (rIdx >= 0 && args[rIdx + 1]) {
             try {
               capturedFilteredContents.push(fs.readFileSync(args[rIdx + 1]!, 'utf-8'))
-            } catch { /* file may not exist for this call */ }
+            } catch {
+              /* file may not exist for this call */
+            }
           }
         }
         return fakeProc({ exitCode: 0 })
@@ -320,18 +338,20 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     it('parses markers correctly when split across stdout chunks', async () => {
       spawnState.pythonHandler = (_args: string[]) => {
         execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
-          cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: comfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
 
         // Split markers across chunks to test the line-buffering logic.
         return fakeProc({
           stdout: [
-            '[PRE_UPDATE_HE',           // partial marker line
-            `AD] ${repoShas.v1Sha}\n`,  // rest of first marker
+            '[PRE_UPDATE_HE', // partial marker line
+            `AD] ${repoShas.v1Sha}\n`, // rest of first marker
             `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n[CHECKED_OUT_TAG] v0.2.0\n`, // two markers in one chunk
-            '[BACKUP_BRANCH] backup\n',
+            '[BACKUP_BRANCH] backup\n'
           ],
-          exitCode: 0,
+          exitCode: 0
         })
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
@@ -379,10 +399,13 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
     it('includes the captured pip output in the failure message', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
-      spawnState.uvHandler = () => fakeProc({
-        stderr: ['error: could not find a version that satisfies the requirement nonexistent-pkg\n'],
-        exitCode: 1,
-      })
+      spawnState.uvHandler = () =>
+        fakeProc({
+          stderr: [
+            'error: could not find a version that satisfies the requirement nonexistent-pkg\n'
+          ],
+          exitCode: 1
+        })
 
       const result = await runComfyUIUpdate(makeBaseOpts(installPath))
 
@@ -425,15 +448,16 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       // exiting 1 without emitting POST_UPDATE_HEAD.
       spawnState.pythonHandler = (_args: string[]) => {
         execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
-          cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: comfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
         return fakeProc({
-          stdout: [
-            `[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`,
-            '[BACKUP_BRANCH] backup_branch_test\n',
+          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`, '[BACKUP_BRANCH] backup_branch_test\n'],
+          stderr: [
+            '_pygit2.GitError: could not create symlink CLAUDE.md: A required privilege is not held by the client.\n'
           ],
-          stderr: ['_pygit2.GitError: could not create symlink CLAUDE.md: A required privilege is not held by the client.\n'],
-          exitCode: 1,
+          exitCode: 1
         })
       }
 
@@ -449,7 +473,9 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       // Marker is left behind so a launch-time recovery re-runs if needed.
       expect(markerExists()).toBe(true)
       // The local backup branch is recorded for offline manual recovery.
-      const marker = JSON.parse(fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8'))
+      const marker = JSON.parse(
+        fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
+      )
       expect(marker.backupBranch).toBe('backup_branch_test')
     })
   })
@@ -474,15 +500,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       // that kills the process mid-checkout, leaving the source moved.
       spawnState.pythonHandler = (_args: string[]) => {
         execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
-          cwd: comfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: comfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
         controller.abort()
         return fakeProc({
-          stdout: [
-            `[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`,
-            '[BACKUP_BRANCH] backup_branch_test\n',
-          ],
-          exitCode: 1,
+          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`, '[BACKUP_BRANCH] backup_branch_test\n'],
+          exitCode: 1
         })
       }
 
@@ -525,12 +550,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       spawnState.pythonHandler = () => {
         execFileSync('git', ['checkout', targetSha, '--detach'], {
-          cwd: aheadComfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: aheadComfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
 
         return fakeProc({
           stdout: [`[POST_UPDATE_HEAD] ${targetSha}\n`],
-          exitCode: 0,
+          exitCode: 0
         })
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
@@ -550,12 +577,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       spawnState.pythonHandler = () => {
         execFileSync('git', ['checkout', targetSha, '--detach'], {
-          cwd: aheadComfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: aheadComfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
 
         return fakeProc({
           stdout: [`[POST_UPDATE_HEAD] ${targetSha}\n`],
-          exitCode: 0,
+          exitCode: 0
         })
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
@@ -575,12 +604,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       spawnState.pythonHandler = () => {
         execFileSync('git', ['checkout', targetSha, '--detach'], {
-          cwd: aheadComfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: aheadComfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
 
         return fakeProc({
           stdout: [`[POST_UPDATE_HEAD] ${targetSha}\n`],
-          exitCode: 0,
+          exitCode: 0
         })
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
@@ -601,12 +632,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       spawnState.pythonHandler = () => {
         execFileSync('git', ['checkout', targetSha, '--detach'], {
-          cwd: aheadComfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: aheadComfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
 
         return fakeProc({
           stdout: [`[POST_UPDATE_HEAD] ${targetSha}\n`],
-          exitCode: 0,
+          exitCode: 0
         })
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
@@ -619,7 +652,10 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       const channelCall = calls.find((c) => c.updateInfoByChannel !== undefined)
       expect(channelCall).toBeDefined()
 
-      const channelInfo = channelCall!.updateInfoByChannel as Record<string, Record<string, unknown>>
+      const channelInfo = channelCall!.updateInfoByChannel as Record<
+        string,
+        Record<string, unknown>
+      >
       expect(channelInfo.latest).toBeDefined()
       expect(channelInfo.latest!.installedTag).toBe('v0.2.0+3')
     })
@@ -627,15 +663,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     it('resolves exactly on tag with commitsAhead=0', async () => {
       spawnState.pythonHandler = () => {
         execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
-          cwd: aheadComfyuiDir, windowsHide: true, stdio: 'pipe',
+          cwd: aheadComfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
         })
 
         return fakeProc({
-          stdout: [
-            `[POST_UPDATE_HEAD] ${aheadShas.v2Sha}\n`,
-            `[CHECKED_OUT_TAG] v0.2.0\n`,
-          ],
-          exitCode: 0,
+          stdout: [`[POST_UPDATE_HEAD] ${aheadShas.v2Sha}\n`, `[CHECKED_OUT_TAG] v0.2.0\n`],
+          exitCode: 0
         })
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })

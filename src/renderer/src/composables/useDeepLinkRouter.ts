@@ -24,11 +24,14 @@ interface DeepLinkRouterOpts {
    *  missing action + reveal handshake). */
   pickInstallFromPicker?: (
     installation: Installation,
-    opts?: { startupRestore?: boolean },
+    opts?: { startupRestore?: boolean }
   ) => Promise<void> | void
   /** Picker "More" menu selected an install-level action; dispatches
    *  through the same `useInstallContextMenu` path the dashboard kebab uses. */
-  runInstallActionFromPicker?: (installation: Installation, actionId: string) => Promise<void> | void
+  runInstallActionFromPicker?: (
+    installation: Installation,
+    actionId: string
+  ) => Promise<void> | void
   /** Picker's settings UI fired `show-progress`, forwarded here to the
    *  panel's ProgressModal pipeline. */
   showProgressFromPicker?: (opts: ShowProgressOpts) => void
@@ -67,7 +70,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           window.api.openInstancePicker({
             installationId: inst.id,
             initialTab: 'update',
-            autoAction: 'update-comfyui',
+            autoAction: 'update-comfyui'
           })
           return
         }
@@ -86,7 +89,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           if (inst) {
             window.api.openInstancePicker({
               installationId: inst.id,
-              initialTab: 'config',
+              initialTab: 'config'
             })
           } else {
             window.api.openInstancePicker()
@@ -107,7 +110,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             return
           }
           await opts.pickInstallFromPicker?.(inst, {
-            startupRestore: payload.startupRestore === true,
+            startupRestore: payload.startupRestore === true
           })
           return
         }
@@ -145,28 +148,29 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           const isRunning = (): boolean => sessionStore.isRunning(id)
           const apiCall = isRestart
             ? async () => {
-              await stopAndWaitForExit(id, isRunning)
-              return window.api.runAction(id, 'launch')
-            }
+                await stopAndWaitForExit(id, isRunning)
+                return window.api.runAction(id, 'launch')
+              }
             : needsSelfStop
               ? async () => {
-                await stopAndWaitForExit(id, isRunning)
-                const result = await window.api.runAction(id, actionId, actionData)
-                if (wantsRelaunch && result?.ok !== false) {
-                  await window.api.runAction(id, 'launch')
+                  await stopAndWaitForExit(id, isRunning)
+                  const result = await window.api.runAction(id, actionId, actionData)
+                  if (wantsRelaunch && result?.ok !== false) {
+                    await window.api.runAction(id, 'launch')
+                  }
+                  return result
                 }
-                return result
-              }
               : () => window.api.runAction(id, actionId, actionData)
           // Built here because this side owns the i18n catalog the popup doesn't.
           const successTerminal = payload.successChoice
             ? successTerminalGoDashboardOrOpen({
-              title: payload.opKind === 'update'
-                ? t('progress.updatedSuccess', 'Updated successfully')
-                : undefined,
-              dashboardLabel: t('progress.successChoiceGoDashboard', 'Go to Dashboard'),
-              openLabel: t('progress.successChoiceOpen', 'Open Instance'),
-            })
+                title:
+                  payload.opKind === 'update'
+                    ? t('progress.updatedSuccess', 'Updated successfully')
+                    : undefined,
+                dashboardLabel: t('progress.successChoiceGoDashboard', 'Go to Dashboard'),
+                openLabel: t('progress.successChoiceOpen', 'Open Instance')
+              })
             : undefined
           opts.showProgressFromPicker?.({
             installationId: id,
@@ -178,7 +182,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             opKind: payload.opKind,
             actionId,
             actionData,
-            successTerminal,
+            successTerminal
           })
         }
       })()
