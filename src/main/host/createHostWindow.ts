@@ -255,7 +255,6 @@ function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
   childWindow.webContents.on('did-navigate-in-page', inject)
 }
 
-
 /** Max wait for the host reload to paint before closing the popup
  *  anyway, so a stalled reload can't trap the user on checkout. */
 const CHECKOUT_RELOAD_TIMEOUT_MS = 4000
