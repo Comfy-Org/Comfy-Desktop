@@ -185,7 +185,7 @@ async function onSignOut(): Promise<void> {
       >
         <!-- Seeded from the workspace, not the account: the avatar reads as
              "which workspace am I in", matching the rows in the menu. -->
-        <DevPlatformAvatar class="account-chip__avatar" :name="workspaceName || email || '?'" />
+        <DevPlatformAvatar :name="workspaceName || email || '?'" />
         <!-- Account over workspace. The workspace needs no label: the avatar
              beside it is the workspace's, so the second line reads as one. -->
         <span class="account-chip__identity">
@@ -235,7 +235,7 @@ async function onSignOut(): Promise<void> {
           :data-testid="`devplatform-workspace-${ws.id}`"
           @click="onSelectWorkspace(ws.id)"
         >
-          <DevPlatformAvatar class="account-chip__item-avatar" :name="workspaceLabel(ws)" />
+          <DevPlatformAvatar :name="workspaceLabel(ws)" />
           <span class="account-chip__item-identity">
             <span class="account-chip__item-name">{{ workspaceLabel(ws) }}</span>
             <span v-if="ws.subscriptionTier" class="account-chip__item-sub">{{ ws.subscriptionTier }}</span>
@@ -301,9 +301,7 @@ async function onSignOut(): Promise<void> {
 .account-chip__face {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   max-width: 320px;
-  padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
   background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
@@ -323,36 +321,56 @@ async function onSignOut(): Promise<void> {
   outline-offset: 2px;
 }
 
-/* The avatar is the square gradient one, seeded from the workspace name (the
+/* Avatar-plus-two-lines, shared by the chip face and every switcher row: a
+   switcher row IS the face restated, so both are sized off one spec.
+   The avatar is the square gradient one, seeded from the workspace name (the
    account email only as a fallback), so it reads as "which workspace am I in"
-   and matches the seeded colour of the active row in the switcher. */
-.account-chip__avatar {
-  --dp-avatar-size: 30px;
+   and matches the seeded colour of the active row in the switcher.
+   Its size is 2.5x the caption size, which is exactly the two 1.2-line-height
+   lines beside it: the text block and the avatar are the same height at every
+   step of the fluid scale, so neither ever overhangs the other. */
+.account-chip__face,
+.account-chip__workspace-item {
+  --dp-avatar-size: calc(var(--takeover-fs-caption) * 2.5);
+  gap: 10px;
+  padding: 6px 10px;
 }
 
-.account-chip__identity {
+.account-chip__identity,
+.account-chip__item-identity {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   align-items: flex-start;
-  gap: 1px;
   min-width: 0;
+  height: var(--dp-avatar-size);
   font-size: var(--takeover-fs-caption);
-  line-height: 1.3;
+  line-height: 1.2;
 }
-.account-chip__email {
-  max-width: 200px;
+
+.account-chip__email,
+.account-chip__workspace-name,
+.account-chip__item-name,
+.account-chip__item-sub {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.account-chip__email,
+.account-chip__item-name {
   font-weight: 600;
   color: var(--neutral-100);
 }
+.account-chip__workspace-name,
+.account-chip__item-sub {
+  color: var(--neutral-200);
+}
+/* The face is inline: it grows with its text up to this cap, where the rows
+   are full-width and truncate against the check instead. */
+.account-chip__email,
 .account-chip__workspace-name {
   max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--neutral-200);
 }
 
 .account-chip__caret {
@@ -384,7 +402,7 @@ async function onSignOut(): Promise<void> {
 }
 
 .account-chip__section-label {
-  margin: 4px 8px 6px;
+  margin: 4px 10px 6px;
   font-size: var(--takeover-fs-caption);
   font-weight: 600;
   color: var(--neutral-200);
@@ -393,28 +411,30 @@ async function onSignOut(): Promise<void> {
 }
 
 .account-chip__hint {
-  padding: 8px;
+  padding: 6px 10px;
   font-size: var(--takeover-fs-caption);
   color: var(--neutral-200);
   opacity: 0.8;
 }
 
 .account-chip__retry {
-  font-size: var(--takeover-fs-caption);
   color: var(--neutral-200);
 }
 
+/* Every row shares the face's 10px inset so avatars and icons start on one
+   left edge, and its caption size so no row outweighs a workspace name. */
 .account-chip__item {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 8px;
+  padding: 6px 10px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--neutral-100);
   font: inherit;
+  font-size: var(--takeover-fs-caption);
   text-align: left;
   cursor: pointer;
   transition: background 120ms ease;
@@ -430,28 +450,12 @@ async function onSignOut(): Promise<void> {
   cursor: default;
 }
 
-.account-chip__workspace-item {
-  gap: 10px;
-}
-.account-chip__item-avatar {
-  --dp-avatar-size: 26px;
-}
+/* Takes the rest of the row so a long workspace name truncates against the
+   check/spinner rather than pushing it out of the menu. */
 .account-chip__item-identity {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
   flex: 1 1 auto;
 }
-.account-chip__item-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--takeover-fs-body);
-}
 .account-chip__item-sub {
-  font-size: var(--takeover-fs-caption);
-  color: var(--neutral-200);
   text-transform: capitalize;
 }
 .account-chip__item-check {
