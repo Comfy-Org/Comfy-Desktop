@@ -104,13 +104,9 @@ watch(
 // flow through `visibleInstalls` like every other source — there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const {
-  searchQuery,
-  activeFilter,
-  visibleInstalls,
-  showEmptyHint,
-  matchesQuery
-} = useInstallList({ installations: installationsRef })
+const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, matchesQuery } = useInstallList({
+  installations: installationsRef
+})
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
 // drive the underlying filter state without the chip UI mounted.
@@ -163,7 +159,8 @@ const distributionLoadFailed = computed(
 /** The no-matches hint may only fire when NOTHING in the grid matches. A failed
  *  fetch shows its own retry line instead, so the two never co-render. */
 const showNoMatches = computed(
-  () => showEmptyHint.value && visibleDistributions.value.length === 0 && !distributionLoadFailed.value
+  () =>
+    showEmptyHint.value && visibleDistributions.value.length === 0 && !distributionLoadFailed.value
 )
 
 /** One quiet line under the grid when the signed-in workspace has nothing
@@ -229,10 +226,12 @@ async function handleDistributionActivate(dist: Distribution): Promise<void> {
   if (activatingDist.value) return
   activatingDist.value = dist.id
   try {
-    const result = await window.api.comfybuilder.installDistribution(dist.id).catch((err: unknown) => ({
-      ok: false as const,
-      message: (err as Error)?.message || String(err)
-    }))
+    const result = await window.api.comfybuilder
+      .installDistribution(dist.id)
+      .catch((err: unknown) => ({
+        ok: false as const,
+        message: (err as Error)?.message || String(err)
+      }))
     if (!result || !result.ok || !result.entry) {
       await modal.alert({
         title: t('errors.installFailed'),
@@ -775,5 +774,4 @@ const gridHandlers = {
   font-size: 11px;
   color: var(--text-faint);
 }
-
 </style>

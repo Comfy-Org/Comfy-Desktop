@@ -38,7 +38,7 @@ const model = (o: Partial<ModelDescriptor> = {}): ModelDescriptor => ({
   type: 'checkpoints',
   filename: 'm.safetensors',
   downloadUrl: 'https://models.test/m.safetensors',
-  ...o,
+  ...o
 })
 
 describe('stageModels', () => {
@@ -47,9 +47,11 @@ describe('stageModels', () => {
     const bytes = Buffer.from('weights-A')
     const dl = fakeDownload(bytes)
     await stageModels({
-      models: [model({ type: 'vae', filename: 'v.pt', sha256: sha(bytes), downloadUrl: 'https://x/v.pt' })],
+      models: [
+        model({ type: 'vae', filename: 'v.pt', sha256: sha(bytes), downloadUrl: 'https://x/v.pt' })
+      ],
       installPath: install,
-      download: dl,
+      download: dl
     })
     const dest = path.join(installModelsRoot(install), 'vae', 'v.pt')
     expect(fs.existsSync(dest)).toBe(true)
@@ -61,7 +63,11 @@ describe('stageModels', () => {
     const install = freshInstall()
     const dl = fakeDownload(Buffer.from('corrupt'))
     await expect(
-      stageModels({ models: [model({ sha256: sha(Buffer.from('expected')) })], installPath: install, download: dl }),
+      stageModels({
+        models: [model({ sha256: sha(Buffer.from('expected')) })],
+        installPath: install,
+        download: dl
+      })
     ).rejects.toMatchObject({ kind: 'model-checksum-mismatch' })
     const dest = path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors')
     expect(fs.existsSync(dest)).toBe(false)
@@ -79,12 +85,14 @@ describe('stageModels', () => {
     ['type', { type: '../evil' }],
     ['type sep', { type: 'a/b' }],
     ['filename', { filename: '../../etc/passwd' }],
-    ['filename sep', { filename: 'a/b.pt' }],
+    ['filename sep', { filename: 'a/b.pt' }]
   ])('rejects an unsafe %s before any download', async (_name, bad) => {
     const install = freshInstall()
     const dl = fakeDownload(Buffer.from('x'))
-    await expect(stageModels({ models: [model(bad)], installPath: install, download: dl })).rejects.toMatchObject({
-      kind: 'invalid-model',
+    await expect(
+      stageModels({ models: [model(bad)], installPath: install, download: dl })
+    ).rejects.toMatchObject({
+      kind: 'invalid-model'
     })
     expect(dl).not.toHaveBeenCalled()
   })
@@ -93,7 +101,11 @@ describe('stageModels', () => {
     const install = freshInstall()
     const dl = fakeDownload(Buffer.from('x'))
     await expect(
-      stageModels({ models: [model({ downloadUrl: 'http://insecure/m.safetensors' })], installPath: install, download: dl }),
+      stageModels({
+        models: [model({ downloadUrl: 'http://insecure/m.safetensors' })],
+        installPath: install,
+        download: dl
+      })
     ).rejects.toMatchObject({ kind: 'invalid-model' })
     expect(dl).not.toHaveBeenCalled()
   })
@@ -108,7 +120,11 @@ describe('stageModels', () => {
     fs.symlinkSync(outside, path.join(modelsRoot, 'evil'))
     const dl = fakeDownload(Buffer.from('payload'))
     await expect(
-      stageModels({ models: [model({ type: 'evil', filename: 'x.pth' })], installPath: install, download: dl }),
+      stageModels({
+        models: [model({ type: 'evil', filename: 'x.pth' })],
+        installPath: install,
+        download: dl
+      })
     ).rejects.toMatchObject({ kind: 'invalid-model' })
     // Nothing was written into the escape target.
     expect(fs.existsSync(path.join(outside, 'x.pth'))).toBe(false)
@@ -125,7 +141,7 @@ describe('stageModels', () => {
     await stageModels({
       models: [model({ type: 'loras', filename: 'l.safetensors', sha256: sha(bytes) })],
       installPath: install,
-      download: dl,
+      download: dl
     })
     expect(dl).not.toHaveBeenCalled()
     expect(fs.readFileSync(dest)).toEqual(bytes)
@@ -138,7 +154,11 @@ describe('stageModels', () => {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     fs.writeFileSync(dest, Buffer.from('stale-wrong'))
     const dl = fakeDownload(good)
-    await stageModels({ models: [model({ sha256: sha(good) })], installPath: install, download: dl })
+    await stageModels({
+      models: [model({ sha256: sha(good) })],
+      installPath: install,
+      download: dl
+    })
     expect(dl).toHaveBeenCalledTimes(1)
     expect(fs.readFileSync(dest)).toEqual(good)
   })
@@ -150,7 +170,7 @@ describe('stageModels', () => {
       models: [model({ filename: 'a.pt' }), model({ filename: 'b.pt' })],
       installPath: install,
       download: fakeDownload(Buffer.from('z')),
-      onProgress: (p) => seen.push({ index: p.index, total: p.total, percent: p.percent }),
+      onProgress: (p) => seen.push({ index: p.index, total: p.total, percent: p.percent })
     })
     expect(seen.some((s) => s.index === 1 && s.total === 2)).toBe(true)
     expect(seen.some((s) => s.index === 2 && s.total === 2 && s.percent === 100)).toBe(true)
@@ -160,7 +180,12 @@ describe('stageModels', () => {
     const install = freshInstall()
     const dl = fakeDownload(Buffer.from('x'))
     await expect(
-      stageModels({ models: [model()], installPath: install, download: dl, signal: AbortSignal.abort() }),
+      stageModels({
+        models: [model()],
+        installPath: install,
+        download: dl,
+        signal: AbortSignal.abort()
+      })
     ).rejects.toThrow(/cancel/i)
     expect(dl).not.toHaveBeenCalled()
   })

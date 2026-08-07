@@ -8,7 +8,12 @@ import { net, shell } from 'electron'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
-import { buildAuthorizeUrl, codeChallengeFromVerifier, generateCodeVerifier, generateState } from './pkce'
+import {
+  buildAuthorizeUrl,
+  codeChallengeFromVerifier,
+  generateCodeVerifier,
+  generateState
+} from './pkce'
 import type { AuthStatus, AuthTokens } from './types'
 
 const DEFAULT_SIGN_IN_TIMEOUT_MS = 120_000
@@ -38,7 +43,7 @@ function resolveConfig(o: OAuthOptions): Required<Omit<OAuthOptions, 'workspaceI
     clientId: o.clientId ?? CLOUD_CONFIG.clientId,
     scope: o.scope ?? CLOUD_CONFIG.scope,
     resource: o.resource ?? CLOUD_CONFIG.resource,
-    timeoutMs: o.timeoutMs ?? DEFAULT_SIGN_IN_TIMEOUT_MS,
+    timeoutMs: o.timeoutMs ?? DEFAULT_SIGN_IN_TIMEOUT_MS
   }
 }
 
@@ -48,7 +53,7 @@ function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
   return {
     accessToken: r.access_token,
     refreshToken: r.refresh_token ?? fallbackRefresh,
-    expiresAt: Date.now() + r.expires_in * 1000,
+    expiresAt: Date.now() + r.expires_in * 1000
   }
 }
 
@@ -66,7 +71,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
       signal: controller.signal,
-      credentials: 'omit',
+      credentials: 'omit'
     })
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '')
@@ -85,7 +90,9 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
   }
 }
 
-export async function signIn(options: OAuthOptions = {}): Promise<{ tokens: AuthTokens; status: AuthStatus }> {
+export async function signIn(
+  options: OAuthOptions = {}
+): Promise<{ tokens: AuthTokens; status: AuthStatus }> {
   const cfg = resolveConfig(options)
   const codeVerifier = generateCodeVerifier()
   const codeChallenge = codeChallengeFromVerifier(codeVerifier)
@@ -94,18 +101,30 @@ export async function signIn(options: OAuthOptions = {}): Promise<{ tokens: Auth
   const listener = await startLoopbackListener({ expectedState: state, timeoutMs: cfg.timeoutMs })
   try {
     const authorizeUrl = buildAuthorizeUrl({
-      authorizeUrl: cfg.authorizeUrl, clientId: cfg.clientId, redirectUri: listener.redirectUri,
-      scope: cfg.scope, resource: cfg.resource, state, codeChallenge,
-      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+      authorizeUrl: cfg.authorizeUrl,
+      clientId: cfg.clientId,
+      redirectUri: listener.redirectUri,
+      scope: cfg.scope,
+      resource: cfg.resource,
+      state,
+      codeChallenge,
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {})
     })
     // System browser only (RFC 8252): never an embedded window/webview.
     await shell.openExternal(authorizeUrl)
     const { code } = await listener.waitForCode()
 
-    const r = await requestToken(cfg.tokenUrl, new URLSearchParams({
-      grant_type: 'authorization_code', code, redirect_uri: listener.redirectUri,
-      client_id: cfg.clientId, code_verifier: codeVerifier, resource: cfg.resource,
-    }))
+    const r = await requestToken(
+      cfg.tokenUrl,
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: listener.redirectUri,
+        client_id: cfg.clientId,
+        code_verifier: codeVerifier,
+        resource: cfg.resource
+      })
+    )
     return { tokens: toTokens(r), status: statusFromAccessToken(r.access_token) }
   } finally {
     // Always tear the listener down, even if openExternal or waitForCode threw,
@@ -114,10 +133,19 @@ export async function signIn(options: OAuthOptions = {}): Promise<{ tokens: Auth
   }
 }
 
-export async function refresh(refreshToken: string, options: OAuthOptions = {}): Promise<AuthTokens> {
+export async function refresh(
+  refreshToken: string,
+  options: OAuthOptions = {}
+): Promise<AuthTokens> {
   const cfg = resolveConfig(options)
-  const r = await requestToken(cfg.tokenUrl, new URLSearchParams({
-    grant_type: 'refresh_token', refresh_token: refreshToken, client_id: cfg.clientId, resource: cfg.resource,
-  }))
+  const r = await requestToken(
+    cfg.tokenUrl,
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: cfg.clientId,
+      resource: cfg.resource
+    })
+  )
   return toTokens(r, refreshToken)
 }

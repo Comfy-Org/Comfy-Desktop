@@ -54,10 +54,13 @@ export class CloudSession {
   async getAccessToken(): Promise<string | null> {
     const tokens = loadTokens()
     if (!tokens) return null
-    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken) return tokens.accessToken
+    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken)
+      return tokens.accessToken
     // Single-flight: the first caller runs the refresh, the rest await it.
     if (!this.refreshing) {
-      this.refreshing = this.doRefresh(tokens.refreshToken).finally(() => { this.refreshing = null })
+      this.refreshing = this.doRefresh(tokens.refreshToken).finally(() => {
+        this.refreshing = null
+      })
     }
     return this.refreshing
   }
@@ -95,7 +98,7 @@ export class CloudSession {
   asTokenProvider(): TokenProvider {
     return {
       getAccessToken: () => this.getAccessToken(),
-      onUnauthorized: () => this.logout(),
+      onUnauthorized: () => this.logout()
     }
   }
 }

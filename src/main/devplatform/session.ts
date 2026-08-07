@@ -29,7 +29,7 @@ export function getBuilderClient(): ComfyBuilderClient {
   if (!client) {
     client = new ComfyBuilderClient({
       baseUrl: BUILDER_BASE_URL,
-      auth: getCloudSession().asTokenProvider(),
+      auth: getCloudSession().asTokenProvider()
     })
   }
   return client

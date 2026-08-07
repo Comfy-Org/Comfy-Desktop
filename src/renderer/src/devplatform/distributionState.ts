@@ -21,14 +21,14 @@ export function isDistributionInstall(inst: Installation): boolean {
 
 export const BLOCKED_DISTRIBUTION_STATES: readonly DistributionState[] = [
   'no-build',
-  'platform-mismatch',
+  'platform-mismatch'
 ]
 
 /** i18n suffix per blocked state: keys both the short tag label (`states.*`)
  *  and the fallback long reason (`blockedReason.*`). */
 export const BLOCKED_STATE_KEY: Record<string, string> = {
   'no-build': 'noBuild',
-  'platform-mismatch': 'platformMismatch',
+  'platform-mismatch': 'platformMismatch'
 }
 
 export function isBlockedDistribution(dist: Pick<Distribution, 'state'>): boolean {

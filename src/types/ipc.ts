@@ -212,14 +212,7 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value:
-    | string
-    | boolean
-    | number
-    | string[]
-    | Record<string, string>
-    | VersionStatsValue
-    | null
+  value: string | boolean | number | string[] | Record<string, string> | VersionStatsValue | null
   editable?: boolean
   editType?:
     | 'select'

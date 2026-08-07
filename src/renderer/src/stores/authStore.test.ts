@@ -97,7 +97,11 @@ describe('useAuthStore', () => {
     await store.signIn()
     store.distributions = [{ id: 'd1', name: 'Old', state: 'installable' }]
 
-    api.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+    api.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w2',
+      workspaceType: 'team'
+    })
     await store.switchWorkspace('w2')
     expect(store.status).toMatchObject({ workspaceId: 'w2' })
     expect(store.distributions).toEqual([])

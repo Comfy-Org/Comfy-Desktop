@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // fetch so the vi.stubGlobal('fetch', ...) stubs below keep driving it. The spy
 // is what proves the request took the proxy-aware route.
 const netFetch = vi.hoisted(() =>
-  vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)),
+  vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args))
 )
 vi.mock('electron', () => ({ net: { fetch: netFetch } }))
 
@@ -13,11 +13,17 @@ import type { TokenProvider } from './types'
 
 const auth = (token: string | null, onUnauthorized = vi.fn()): TokenProvider => ({
   getAccessToken: async () => token,
-  onUnauthorized,
+  onUnauthorized
 })
 
 function mockFetch(status: number, body: unknown): typeof fetch {
-  return vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch
+  return vi.fn(
+    async () =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' }
+      })
+  ) as unknown as typeof fetch
 }
 
 describe('ComfyBuilderClient', () => {
@@ -38,7 +44,10 @@ describe('ComfyBuilderClient', () => {
   it('lists distributions with a Bearer token at the right path', async () => {
     const f = mockFetch(200, { distributions: [{ id: 'd1', name: 'Dist One' }] })
     vi.stubGlobal('fetch', f)
-    const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('tok-123') })
+    const client = new ComfyBuilderClient({
+      baseUrl: 'https://api.test/builder',
+      auth: auth('tok-123')
+    })
     const dists = await client.listDistributions()
     expect(dists).toEqual([{ id: 'd1', name: 'Dist One' }])
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
@@ -53,7 +62,9 @@ describe('ComfyBuilderClient', () => {
   })
 
   it('fetchModelManifest hits the version manifest path and normalizes absent fields', async () => {
-    const f = mockFetch(200, { models: [{ type: 'checkpoints', filename: 'sd.safetensors', downloadUrl: 'https://x/sd' }] })
+    const f = mockFetch(200, {
+      models: [{ type: 'checkpoints', filename: 'sd.safetensors', downloadUrl: 'https://x/sd' }]
+    })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
     const m = await client.fetchModelManifest('ver-9')
@@ -65,13 +76,32 @@ describe('ComfyBuilderClient', () => {
   })
 
   it('getVersion surfaces the wire archiveSha256/archiveRef so the archive can be verified', async () => {
-    vi.stubGlobal('fetch', mockFetch(200, {
-      version: 3,
-      artifacts: [{ id: 'a1', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveRef: 'blob/a1', archiveSha256: 'deadbeef' }],
-    }))
-    const { version, artifacts } = await new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, {
+        version: 3,
+        artifacts: [
+          {
+            id: 'a1',
+            os: 'linux',
+            gpu: 'nvidia',
+            accelVariant: 'cu128',
+            status: 'ready',
+            archiveRef: 'blob/a1',
+            archiveSha256: 'deadbeef'
+          }
+        ]
+      })
+    )
+    const { version, artifacts } = await new ComfyBuilderClient({ auth: auth('t') }).getVersion(
+      'v1'
+    )
     expect(version).toBe(3)
-    expect(artifacts[0]).toMatchObject({ id: 'a1', archiveSha256: 'deadbeef', archiveRef: 'blob/a1' })
+    expect(artifacts[0]).toMatchObject({
+      id: 'a1',
+      archiveSha256: 'deadbeef',
+      archiveRef: 'blob/a1'
+    })
   })
 
   it('throws unauthorized (no network) when signed out', async () => {
@@ -92,26 +122,44 @@ describe('ComfyBuilderClient', () => {
 
   it('maps 404 to not-found and 500 to server', async () => {
     vi.stubGlobal('fetch', mockFetch(404, {}))
-    await expect(new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')).rejects.toMatchObject({ kind: 'not-found' })
+    await expect(
+      new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')
+    ).rejects.toMatchObject({ kind: 'not-found' })
     vi.stubGlobal('fetch', mockFetch(500, {}))
-    await expect(new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')).rejects.toMatchObject({ kind: 'server' })
+    await expect(
+      new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')
+    ).rejects.toMatchObject({ kind: 'server' })
   })
 
   it('maps 403 to forbidden WITHOUT signing the user out', async () => {
     const onUnauthorized = vi.fn()
     vi.stubGlobal('fetch', mockFetch(403, {}))
-    await expect(new ComfyBuilderClient({ auth: auth('t', onUnauthorized) }).listDistributions()).rejects.toMatchObject({ kind: 'forbidden' })
+    await expect(
+      new ComfyBuilderClient({ auth: auth('t', onUnauthorized) }).listDistributions()
+    ).rejects.toMatchObject({ kind: 'forbidden' })
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
   it('maps an empty/non-JSON 2xx body to a typed server error', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch)
-    await expect(new ComfyBuilderClient({ auth: auth('t') }).listDistributions()).rejects.toMatchObject({ kind: 'server' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch
+    )
+    await expect(
+      new ComfyBuilderClient({ auth: auth('t') }).listDistributions()
+    ).rejects.toMatchObject({ kind: 'server' })
   })
 
   it('a throwing onUnauthorized does not mask the unauthorized error', async () => {
     vi.stubGlobal('fetch', mockFetch(401, {}))
-    const client = new ComfyBuilderClient({ auth: auth('t', vi.fn(() => { throw new Error('boom') })) })
+    const client = new ComfyBuilderClient({
+      auth: auth(
+        't',
+        vi.fn(() => {
+          throw new Error('boom')
+        })
+      )
+    })
     await expect(client.listVersions('d1')).rejects.toMatchObject({ kind: 'unauthorized' })
   })
 })

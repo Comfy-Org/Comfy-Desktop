@@ -34,9 +34,7 @@ const isBlocked = computed(() => isBlockedDistribution(props.distribution))
 const comfyVersionLabel = computed(() => props.distribution.comfyuiVersion ?? '')
 
 const factsLine = computed(() =>
-  [comfyVersionLabel.value, t('devPlatform.distribution.notInstalled')]
-    .filter(Boolean)
-    .join(' · ')
+  [comfyVersionLabel.value, t('devPlatform.distribution.notInstalled')].filter(Boolean).join(' · ')
 )
 
 /** Install and Update are the same gesture (activate the card), so one pill
@@ -44,8 +42,7 @@ const factsLine = computed(() =>
 const actionPill = computed(() => {
   if (props.distribution.state === 'update-available')
     return t('devPlatform.distribution.states.updateAvailable')
-  if (props.distribution.state === 'installable')
-    return t('devPlatform.distribution.menuInstall')
+  if (props.distribution.state === 'installable') return t('devPlatform.distribution.menuInstall')
   return ''
 })
 
@@ -53,7 +50,7 @@ const actionPill = computed(() => {
 const OS_LABELS: Record<string, string> = {
   windows: 'Windows',
   mac: 'macOS',
-  linux: 'Linux',
+  linux: 'Linux'
 }
 
 /** Why the tile is blocked. A platform mismatch names the machines the build IS

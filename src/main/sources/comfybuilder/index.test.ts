@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: vi.fn() },
   dialog: {},
   shell: { openPath: vi.fn().mockResolvedValue('') },
-  net: { request: vi.fn() },
+  net: { request: vi.fn() }
 }))
 
 // Stub the library so install() wiring can be asserted without real downloads.
@@ -15,18 +15,25 @@ vi.mock('../../comfybuilder', () => ({
   installArtifact: vi.fn(async () => {}),
   buildLaunchSpec: vi.fn(() => null),
   stageModels: vi.fn(async () => {}),
-  resolveModelManifest: vi.fn(async () => ({ models: [], modelPolicy: null, partnerNodePolicy: null })),
+  resolveModelManifest: vi.fn(async () => ({
+    models: [],
+    modelPolicy: null,
+    partnerNodePolicy: null
+  }))
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
 vi.mock('../../devplatform/distributions', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
-  listCompleteVersions: vi.fn(async () => []),
+  listCompleteVersions: vi.fn(async () => [])
 }))
 
 import { promises as fsp } from 'fs'
 import { installArtifact, stageModels, resolveModelManifest } from '../../comfybuilder'
-import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/distributions'
+import {
+  listCompleteVersions,
+  resolveHostArtifactForVersion
+} from '../../devplatform/distributions'
 import { clearVersionCache, getCachedVersions } from '../../devplatform/versionCache'
 import { comfybuilder, withAccelArgs } from './index'
 import type { InstallationRecord } from '../../installations'
@@ -42,10 +49,12 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     distributionId: 'd1',
     distributionName: 'desktop-4target-stg-v0190',
     version: '1',
-    ...overrides,
+    ...overrides
   }) as unknown as InstallationRecord
 
-function fakeTools(signal?: AbortSignal): InstallTools & { sent: Array<{ phase: string; detail: unknown }> } {
+function fakeTools(
+  signal?: AbortSignal
+): InstallTools & { sent: Array<{ phase: string; detail: unknown }> } {
   const sent: Array<{ phase: string; detail: unknown }> = []
   return {
     sent,
@@ -53,7 +62,7 @@ function fakeTools(signal?: AbortSignal): InstallTools & { sent: Array<{ phase: 
     download: vi.fn(),
     cache: {} as never,
     extract: vi.fn(),
-    ...(signal ? { signal } : {}),
+    ...(signal ? { signal } : {})
   } as never
 }
 
@@ -69,10 +78,12 @@ describe('comfybuilder.install wiring', () => {
       // download and checksum pass, so the old env has to survive until then.
       expect(rename).toHaveBeenCalledWith(
         expect.stringContaining('venv'),
-        expect.stringContaining('venv.previous'),
+        expect.stringContaining('venv.previous')
       )
       const renameOrder = rename.mock.invocationCallOrder[0]!
-      const installOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+      const installOrder = (
+        installArtifact as unknown as { mock: { invocationCallOrder: number[] } }
+      ).mock.invocationCallOrder[0]!
       expect(renameOrder).toBeLessThan(installOrder)
     } finally {
       rename.mockRestore()
@@ -106,8 +117,10 @@ describe('comfybuilder.install wiring', () => {
     expect(resolveModelManifest).toHaveBeenCalledTimes(1)
     expect(stageModels).toHaveBeenCalledTimes(1)
     // The archive must be in place before models are staged into its tree.
-    const archiveOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
-    const stageOrder = (stageModels as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+    const archiveOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } })
+      .mock.invocationCallOrder[0]!
+    const stageOrder = (stageModels as unknown as { mock: { invocationCallOrder: number[] } }).mock
+      .invocationCallOrder[0]!
     expect(archiveOrder).toBeLessThan(stageOrder)
 
     // The manifest is keyed by the record's distribution + version number.
@@ -119,7 +132,11 @@ describe('comfybuilder.install wiring', () => {
   it('folds the library resolve phase into the download step', async () => {
     const tools = fakeTools()
     await comfybuilder.install!(record(), tools)
-    const onProgress = (installArtifact as unknown as { mock: { calls: Array<[{ onProgress: (p: unknown) => void }]> } }).mock.calls[0]![0].onProgress
+    const onProgress = (
+      installArtifact as unknown as {
+        mock: { calls: Array<[{ onProgress: (p: unknown) => void }]> }
+      }
+    ).mock.calls[0]![0].onProgress
     onProgress({ phase: 'resolve', percent: 0 })
     expect(tools.sent.some((s) => s.phase === 'download')).toBe(true)
     expect(tools.sent.some((s) => s.phase === 'resolve')).toBe(false)
@@ -128,8 +145,14 @@ describe('comfybuilder.install wiring', () => {
   it('threads the abort signal into both phases', async () => {
     const signal = new AbortController().signal
     await comfybuilder.install!(record(), fakeTools(signal))
-    expect((installArtifact as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock.calls[0]![0].signal).toBe(signal)
-    expect((stageModels as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock.calls[0]![0].signal).toBe(signal)
+    expect(
+      (installArtifact as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock
+        .calls[0]![0].signal
+    ).toBe(signal)
+    expect(
+      (stageModels as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock
+        .calls[0]![0].signal
+    ).toBe(signal)
   })
 })
 
@@ -139,7 +162,7 @@ describe('comfybuilder.getListActions', () => {
   it.each([
     ['installed', 'installed', true],
     ['installing', 'installing', false],
-    ['failed', 'failed', false],
+    ['failed', 'failed', false]
   ])('exposes a launch action for a %s install (enabled=%s)', (_name, status, enabled) => {
     const actions = comfybuilder.getListActions!(record({ status }))
     expect(actions).toHaveLength(1)
@@ -164,8 +187,9 @@ describe('comfybuilder.getListPreview', () => {
   })
 
   it('surfaces the distribution once a rename has made the two differ', () => {
-    expect(comfybuilder.getListPreview!(record({ name: 'My Renamed Install' })))
-      .toBe('desktop-4target-stg-v0190')
+    expect(comfybuilder.getListPreview!(record({ name: 'My Renamed Install' }))).toBe(
+      'desktop-4target-stg-v0190'
+    )
   })
 })
 
@@ -178,22 +202,36 @@ describe('comfybuilder.withAccelArgs', () => {
   // torch and are auto-detected, so they take no flag.
   it.each([
     ['cpu build', 'cpu', 'cpu', '--enable-manager --cpu'],
-    ['cpu build on an nvidia host (no nvidia build published)', 'cpu', 'cpu', '--enable-manager --cpu'],
+    [
+      'cpu build on an nvidia host (no nvidia build published)',
+      'cpu',
+      'cpu',
+      '--enable-manager --cpu'
+    ],
     ['nvidia build', 'nvidia', 'cu128', '--enable-manager'],
     ['amd build', 'amd', 'rocm6.2', '--enable-manager'],
-    ['mps build', 'mps', 'mps', '--enable-manager'],
+    ['mps build', 'mps', 'mps', '--enable-manager']
   ])('%s', (_name, artifactGpu, artifactAccelVariant, expected) => {
-    expect(withAccelArgs(record({ artifactGpu, artifactAccelVariant }), '--enable-manager')).toBe(expected)
+    expect(withAccelArgs(record({ artifactGpu, artifactAccelVariant }), '--enable-manager')).toBe(
+      expected
+    )
   })
 
   it('falls back to accelVariant when the gpu field is absent', () => {
-    expect(withAccelArgs(record({ artifactGpu: undefined, artifactAccelVariant: 'cpu' }), '--enable-manager'))
-      .toBe('--enable-manager --cpu')
+    expect(
+      withAccelArgs(
+        record({ artifactGpu: undefined, artifactAccelVariant: 'cpu' }),
+        '--enable-manager'
+      )
+    ).toBe('--enable-manager --cpu')
   })
 
-  it.each(['--cpu', '--enable-manager --cpu', '--cpu --listen'])('does not double up on %s', (args) => {
-    expect(withAccelArgs(record({ artifactGpu: 'cpu' }), args)).toBe(args)
-  })
+  it.each(['--cpu', '--enable-manager --cpu', '--cpu --listen'])(
+    'does not double up on %s',
+    (args) => {
+      expect(withAccelArgs(record({ artifactGpu: 'cpu' }), args)).toBe(args)
+    }
+  )
 
   it('does not mistake --cpu-vae for the cpu flag', () => {
     expect(withAccelArgs(record({ artifactGpu: 'cpu' }), '--cpu-vae')).toBe('--cpu-vae --cpu')
@@ -209,7 +247,7 @@ describe('comfybuilder update-distribution', () => {
     gpu: 'nvidia',
     accelVariant: 'cu128',
     status: 'ready',
-    archiveSha256: 'sha-9',
+    archiveSha256: 'sha-9'
   }
 
   function actionTools() {
@@ -220,7 +258,7 @@ describe('comfybuilder update-distribution', () => {
         updates.push(d)
       }),
       sendProgress: vi.fn(),
-      sendOutput: vi.fn(),
+      sendOutput: vi.fn()
     }
   }
 
@@ -232,13 +270,17 @@ describe('comfybuilder update-distribution', () => {
       'update-distribution',
       record(),
       { version: 9 },
-      tools as never,
+      tools as never
     )
 
     expect(result.ok).toBe(true)
     expect(installArtifact).toHaveBeenCalledTimes(1)
     // Installing first, installed last — never left mid-flight.
-    expect(tools.updates[0]).toMatchObject({ version: '9', artifactId: 'art-9', status: 'installing' })
+    expect(tools.updates[0]).toMatchObject({
+      version: '9',
+      artifactId: 'art-9',
+      status: 'installing'
+    })
     expect(tools.updates.at(-1)).toMatchObject({ status: 'installed' })
     // The environment is laid down for the NEW artifact, not the old one.
     const passed = vi.mocked(installArtifact).mock.calls[0]![0] as { artifact: { id: string } }
@@ -258,12 +300,16 @@ describe('comfybuilder update-distribution', () => {
         'update-distribution',
         record({ artifactId: 'art-1' }),
         { version: 9 },
-        tools as never,
+        tools as never
       )
 
       expect(result.ok).toBe(false)
       expect(result.message).toContain('disk full')
-      expect(tools.updates.at(-1)).toMatchObject({ version: '1', artifactId: 'art-1', status: 'installed' })
+      expect(tools.updates.at(-1)).toMatchObject({
+        version: '1',
+        artifactId: 'art-1',
+        status: 'installed'
+      })
     } finally {
       stat.mockRestore()
     }
@@ -282,7 +328,7 @@ describe('comfybuilder update-distribution', () => {
         'update-distribution',
         record({ artifactId: 'art-1' }),
         { version: 9 },
-        tools as never,
+        tools as never
       )
 
       expect(result.ok).toBe(false)
@@ -299,7 +345,7 @@ describe('comfybuilder update-distribution', () => {
       'update-distribution',
       record({ status: 'failed' }),
       { version: 9 },
-      tools as never,
+      tools as never
     )
 
     expect(result.ok).toBe(false)
@@ -315,7 +361,7 @@ describe('comfybuilder update-distribution', () => {
       'update-distribution',
       record(),
       { version: 4 },
-      tools as never,
+      tools as never
     )
 
     expect(result.ok).toBe(false)
@@ -325,7 +371,12 @@ describe('comfybuilder update-distribution', () => {
 
   it('rejects a missing target version', async () => {
     const tools = actionTools()
-    const result = await comfybuilder.handleAction('update-distribution', record(), {}, tools as never)
+    const result = await comfybuilder.handleAction(
+      'update-distribution',
+      record(),
+      {},
+      tools as never
+    )
     expect(result.ok).toBe(false)
     expect(tools.update).not.toHaveBeenCalled()
   })
@@ -339,14 +390,24 @@ describe('comfybuilder check-update', () => {
 
   it('warms the version cache from the catalog', async () => {
     vi.mocked(listCompleteVersions).mockResolvedValue([7, 3])
-    const result = await comfybuilder.handleAction('check-update', record(), undefined, fakeTools() as never)
+    const result = await comfybuilder.handleAction(
+      'check-update',
+      record(),
+      undefined,
+      fakeTools() as never
+    )
     expect(result.ok).toBe(true)
     expect(getCachedVersions('d1')?.versions).toEqual([7, 3])
   })
 
   it('reports failure and leaves the cache untouched when the catalog read throws', async () => {
     vi.mocked(listCompleteVersions).mockRejectedValueOnce(new Error('offline'))
-    const result = await comfybuilder.handleAction('check-update', record(), undefined, fakeTools() as never)
+    const result = await comfybuilder.handleAction(
+      'check-update',
+      record(),
+      undefined,
+      fakeTools() as never
+    )
     expect(result.ok).toBe(false)
     expect(result.message).toContain('offline')
     expect(getCachedVersions('d1')).toBeNull()

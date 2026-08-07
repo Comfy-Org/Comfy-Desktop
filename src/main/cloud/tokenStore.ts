@@ -24,13 +24,22 @@ function filePath(): string {
 
 function encryptionAvailable(): boolean {
   let ok: boolean
-  try { ok = safeStorage.isEncryptionAvailable() } catch { ok = false }
+  try {
+    ok = safeStorage.isEncryptionAvailable()
+  } catch {
+    ok = false
+  }
   secureStorageUnavailable = !ok
   return ok
 }
 
 function isTokens(v: unknown): v is AuthTokens {
-  return !!v && typeof v === 'object' && typeof (v as AuthTokens).accessToken === 'string' && typeof (v as AuthTokens).expiresAt === 'number'
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    typeof (v as AuthTokens).accessToken === 'string' &&
+    typeof (v as AuthTokens).expiresAt === 'number'
+  )
 }
 
 export function saveTokens(tokens: AuthTokens): void {
@@ -38,7 +47,11 @@ export function saveTokens(tokens: AuthTokens): void {
   if (!encryptionAvailable()) {
     // No secure backend: never write plaintext, and drop any prior encrypted
     // file so a later run can't read stale tokens back as current.
-    try { fs.rmSync(filePath(), { force: true }) } catch { /* nothing to remove */ }
+    try {
+      fs.rmSync(filePath(), { force: true })
+    } catch {
+      /* nothing to remove */
+    }
     return
   }
   try {
@@ -64,7 +77,11 @@ export function loadTokens(): AuthTokens | null {
 
 export function clearTokens(): void {
   cachedTokens = null
-  try { fs.rmSync(filePath(), { force: true }) } catch { /* nothing to remove */ }
+  try {
+    fs.rmSync(filePath(), { force: true })
+  } catch {
+    /* nothing to remove */
+  }
 }
 
 export function getAuthStatus(): AuthStatus {

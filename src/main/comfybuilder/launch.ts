@@ -53,6 +53,6 @@ export function buildLaunchSpec(installPath: string, opts: LaunchOptions = {}): 
     cmd: python,
     args: ['-s', path.join('ComfyUI', 'main.py'), ...parsed],
     cwd: installPath,
-    port: extractPort(parsed),
+    port: extractPort(parsed)
   }
 }

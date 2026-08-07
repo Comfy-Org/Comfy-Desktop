@@ -59,7 +59,7 @@ describe('installTypeMetaForInstall', () => {
     // all read this, so they can't drift apart.
     const bySource = installTypeMetaForInstall({
       sourceId: 'comfybuilder',
-      sourceCategory: 'local',
+      sourceCategory: 'local'
     })
     expect(bySource.key).toBe('distribution')
     expect(bySource.icon).toBe(Package)
@@ -68,7 +68,7 @@ describe('installTypeMetaForInstall', () => {
     const byLink = installTypeMetaForInstall({
       sourceId: 'standalone',
       sourceCategory: 'local',
-      distributionId: 'd1',
+      distributionId: 'd1'
     })
     expect(byLink.key).toBe('distribution')
   })
@@ -78,8 +78,8 @@ describe('installTypeMetaForInstall', () => {
       installTypeMetaForInstall({
         sourceId: 'standalone',
         sourceCategory: 'local',
-        distributionId: '',
-      }).key,
+        distributionId: ''
+      }).key
     ).toBe('standalone')
   })
 

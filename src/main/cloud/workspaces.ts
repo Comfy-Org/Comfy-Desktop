@@ -34,7 +34,10 @@ export interface ListWorkspacesOptions {
  * feature is off (the endpoint 404s), since the token's own workspace is then
  * the only one and is already active.
  */
-export async function listWorkspaces(accessToken: string, options: ListWorkspacesOptions = {}): Promise<Workspace[]> {
+export async function listWorkspaces(
+  accessToken: string,
+  options: ListWorkspacesOptions = {}
+): Promise<Workspace[]> {
   const base = (options.apiBase ?? CLOUD_CONFIG.apiBase).replace(/\/+$/, '')
   // net.fetch (Chromium's stack), not Node's undici: it resolves the OS proxy,
   // which is how enterprise users behind a corporate proxy reach the cloud API
@@ -42,13 +45,16 @@ export async function listWorkspaces(accessToken: string, options: ListWorkspace
   const res = await net.fetch(`${base}/workspaces`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    credentials: 'omit',
+    credentials: 'omit'
   })
   if (res.status === 404) return []
   if (res.status === 401 || res.status === 403) throw new Error('Not authorized to list workspaces')
   if (!res.ok) throw new Error(`List workspaces failed: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
-  const rows = body && typeof body === 'object' ? (body as { workspaces?: WorkspaceRow[] }).workspaces : undefined
+  const rows =
+    body && typeof body === 'object'
+      ? (body as { workspaces?: WorkspaceRow[] }).workspaces
+      : undefined
   return (rows ?? []).map((w) => ({
     id: w.id,
     name: w.name,
@@ -56,6 +62,6 @@ export async function listWorkspaces(accessToken: string, options: ListWorkspace
     role: w.role,
     ...(w.subscription_tier ? { subscriptionTier: w.subscription_tier } : {}),
     ...(w.created_at ? { createdAt: w.created_at } : {}),
-    ...(w.joined_at ? { joinedAt: w.joined_at } : {}),
+    ...(w.joined_at ? { joinedAt: w.joined_at } : {})
   }))
 }

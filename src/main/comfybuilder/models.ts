@@ -42,7 +42,7 @@ type DownloadFn = (
   url: string,
   destPath: string,
   onProgress: ((p: DownloadProgress) => void) | null,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal }
 ) => Promise<string>
 
 export interface StageModelsOptions {
@@ -115,10 +115,16 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     const index = i + 1
 
     if (!isSafeSegment(model.type) || !isSafeSegment(model.filename)) {
-      throw new StageModelsError('invalid-model', `Model ${model.type}/${model.filename} has an unsafe path.`)
+      throw new StageModelsError(
+        'invalid-model',
+        `Model ${model.type}/${model.filename} has an unsafe path.`
+      )
     }
     if (!isAllowedUrl(model.downloadUrl)) {
-      throw new StageModelsError('invalid-model', `Model ${model.type}/${model.filename} download URL must be https.`)
+      throw new StageModelsError(
+        'invalid-model',
+        `Model ${model.type}/${model.filename} download URL must be https.`
+      )
     }
 
     const destDir = path.join(modelsRoot, model.type)
@@ -127,7 +133,10 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     // pointing outside, and writing through it would escape the install.
     fs.mkdirSync(destDir, { recursive: true })
     if (!isContained(installPath, destDir)) {
-      throw new StageModelsError('invalid-model', `Model directory ${model.type} escapes the install.`)
+      throw new StageModelsError(
+        'invalid-model',
+        `Model directory ${model.type} escapes the install.`
+      )
     }
 
     const dest = path.join(destDir, model.filename)
@@ -156,8 +165,9 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     await doDownload(
       model.downloadUrl,
       partial,
-      (p: DownloadProgress) => onProgress?.({ index, total, filename: model.filename, percent: p.percent }),
-      signal ? { signal } : {},
+      (p: DownloadProgress) =>
+        onProgress?.({ index, total, filename: model.filename, percent: p.percent }),
+      signal ? { signal } : {}
     )
 
     if (expected) {
@@ -166,7 +176,7 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
         await fs.promises.rm(partial, { force: true }).catch(() => {})
         throw new StageModelsError(
           'model-checksum-mismatch',
-          `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`,
+          `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`
         )
       }
     }

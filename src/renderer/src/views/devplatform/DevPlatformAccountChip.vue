@@ -143,7 +143,7 @@ async function onSignOut(): Promise<void> {
     // receiving updates. This is the sentence that stops the support ticket.
     message: t('devPlatform.account.signOutConfirmBody'),
     confirmLabel: t('devPlatform.account.signOutConfirmCta'),
-    tone: 'primary',
+    tone: 'primary'
   })
   if (result !== 'primary') return
   try {
@@ -209,7 +209,10 @@ async function onSignOut(): Promise<void> {
       >
         <p class="account-chip__section-label">{{ $t('devPlatform.workspace.switchLabel') }}</p>
 
-        <div v-if="store.loadingWorkspaces && store.workspaces.length === 0" class="account-chip__hint">
+        <div
+          v-if="store.loadingWorkspaces && store.workspaces.length === 0"
+          class="account-chip__hint"
+        >
           {{ $t('common.loading') }}
         </div>
         <!-- Failed load (not just empty): offer a retry rather than a blank switcher. -->
@@ -238,7 +241,9 @@ async function onSignOut(): Promise<void> {
           <DevPlatformAvatar class="account-chip__item-avatar" :name="workspaceLabel(ws)" />
           <span class="account-chip__item-identity">
             <span class="account-chip__item-name">{{ workspaceLabel(ws) }}</span>
-            <span v-if="ws.subscriptionTier" class="account-chip__item-sub">{{ ws.subscriptionTier }}</span>
+            <span v-if="ws.subscriptionTier" class="account-chip__item-sub">{{
+              ws.subscriptionTier
+            }}</span>
           </span>
           <Loader2
             v-if="switchingTo === ws.id"

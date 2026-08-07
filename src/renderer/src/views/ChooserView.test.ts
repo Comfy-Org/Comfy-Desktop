@@ -141,7 +141,7 @@ function makeDist(overrides: Partial<DevPlatformDistribution>): DevPlatformDistr
     id: 'dist-x',
     name: 'Dist X',
     state: 'installable',
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -150,18 +150,18 @@ function makeDist(overrides: Partial<DevPlatformDistribution>): DevPlatformDistr
 function installMockApiSignedIn(
   installs: Installation[],
   dists: DevPlatformDistribution[],
-  workspace?: { id: string; name: string },
+  workspace?: { id: string; name: string }
 ): MockApi {
   const api = installMockApi(installs)
   api.comfybuilder.getAuthStatus.mockResolvedValue(
     workspace
       ? { signedIn: true, workspaceType: 'team', workspaceId: workspace.id }
-      : { signedIn: true },
+      : { signedIn: true }
   )
   api.comfybuilder.listDistributions.mockResolvedValue(dists)
   if (workspace) {
     api.comfybuilder.listWorkspaces.mockResolvedValue([
-      { id: workspace.id, name: workspace.name, type: 'team', role: 'admin' },
+      { id: workspace.id, name: workspace.name, type: 'team', role: 'admin' }
     ])
   }
   return api
@@ -541,7 +541,7 @@ describe('ChooserView', () => {
     const api = installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })])
     api.comfybuilder.installDistribution.mockResolvedValue({
       ok: true,
-      entry: { id: 'new-inst', name: 'Alpha Dist' },
+      entry: { id: 'new-inst', name: 'Alpha Dist' }
     })
     const wrapper = mountChooser()
     await flushPromises()
@@ -567,11 +567,13 @@ describe('ChooserView', () => {
   it('states the bundled ComfyUI version and that you do not have it yet', async () => {
     installMockApiSignedIn(
       [],
-      [makeDist({ id: 'd3', name: 'Versioned', version: '2', comfyuiVersion: 'v0.28.2' })],
+      [makeDist({ id: 'd3', name: 'Versioned', version: '2', comfyuiVersion: 'v0.28.2' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
-    const meta = wrapper.find('[data-testid="chooser-dist-tile-d3"]').find('.chooser-tile-meta-line')
+    const meta = wrapper
+      .find('[data-testid="chooser-dist-tile-d3"]')
+      .find('.chooser-tile-meta-line')
     expect(meta.text()).toContain('v0.28.2')
     expect(meta.text()).toContain('Not installed')
     // The distribution's own release belongs on the INSTALL tile, once you
@@ -587,10 +589,10 @@ describe('ChooserView', () => {
           name: 'BuiltThing',
           sourceId: 'comfybuilder',
           version: 'v0.28.2',
-          distributionVersion: '7',
-        }),
+          distributionVersion: '7'
+        })
       ],
-      [],
+      []
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -607,8 +609,8 @@ describe('ChooserView', () => {
       [],
       [
         makeDist({ id: 'a', name: 'Available', state: 'installable' }),
-        makeDist({ id: 'b', name: 'Updatable', state: 'update-available' }),
-      ],
+        makeDist({ id: 'b', name: 'Updatable', state: 'update-available' })
+      ]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -629,10 +631,10 @@ describe('ChooserView', () => {
           name: 'WrongPlatformThing',
           state: 'platform-mismatch',
           blockedReason: 'noArtifactForMachine',
-          targetOs: ['linux'],
-        }),
+          targetOs: ['linux']
+        })
       ],
-      { id: 'w1', name: 'Comfy Design Team' },
+      { id: 'w1', name: 'Comfy Design Team' }
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -656,7 +658,7 @@ describe('ChooserView', () => {
   it('falls back to the generic label when the build targets are unknown', async () => {
     installMockApiSignedIn(
       [],
-      [makeDist({ id: 'pm2', name: 'UnknownTargets', state: 'platform-mismatch' })],
+      [makeDist({ id: 'pm2', name: 'UnknownTargets', state: 'platform-mismatch' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -667,7 +669,7 @@ describe('ChooserView', () => {
   it('does not start an install when a blocked card is activated', async () => {
     const api = installMockApiSignedIn(
       [],
-      [makeDist({ id: 'nb', name: 'NoBuildThing', state: 'no-build' })],
+      [makeDist({ id: 'nb', name: 'NoBuildThing', state: 'no-build' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -678,8 +680,14 @@ describe('ChooserView', () => {
 
   it('de-dups an installed distribution out of the grid (distributionId link)', async () => {
     installMockApiSignedIn(
-      [makeInstall({ id: 'i1', sourceId: 'comfybuilder', distributionId: 'd1' } as unknown as Partial<Installation>)],
-      [makeDist({ id: 'd1', name: 'Image' }), makeDist({ id: 'd2', name: 'Video' })],
+      [
+        makeInstall({
+          id: 'i1',
+          sourceId: 'comfybuilder',
+          distributionId: 'd1'
+        } as unknown as Partial<Installation>)
+      ],
+      [makeDist({ id: 'd1', name: 'Image' }), makeDist({ id: 'd2', name: 'Video' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -690,8 +698,14 @@ describe('ChooserView', () => {
 
   it('de-dups via case-insensitive name when a comfybuilder install lacks distributionId', async () => {
     installMockApiSignedIn(
-      [makeInstall({ id: 'i1', name: 'Image', sourceId: 'comfybuilder' } as unknown as Partial<Installation>)],
-      [makeDist({ id: 'd1', name: 'image' })],
+      [
+        makeInstall({
+          id: 'i1',
+          name: 'Image',
+          sourceId: 'comfybuilder'
+        } as unknown as Partial<Installation>)
+      ],
+      [makeDist({ id: 'd1', name: 'image' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -700,8 +714,14 @@ describe('ChooserView', () => {
 
   it('does NOT de-dup a same-named non-comfybuilder install (the name fallback is comfybuilder-only)', async () => {
     installMockApiSignedIn(
-      [makeInstall({ id: 'i1', name: 'Image', sourceId: 'standalone' } as unknown as Partial<Installation>)],
-      [makeDist({ id: 'd1', name: 'Image' })],
+      [
+        makeInstall({
+          id: 'i1',
+          name: 'Image',
+          sourceId: 'standalone'
+        } as unknown as Partial<Installation>)
+      ],
+      [makeDist({ id: 'd1', name: 'Image' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -713,8 +733,14 @@ describe('ChooserView', () => {
     // hides it today (the update pill is wired in a follow-up). This guards that
     // the update-available render path is not yet reachable in the grid.
     installMockApiSignedIn(
-      [makeInstall({ id: 'i1', sourceId: 'comfybuilder', distributionId: 'd1' } as unknown as Partial<Installation>)],
-      [makeDist({ id: 'd1', name: 'Image', state: 'update-available', version: '2' })],
+      [
+        makeInstall({
+          id: 'i1',
+          sourceId: 'comfybuilder',
+          distributionId: 'd1'
+        } as unknown as Partial<Installation>)
+      ],
+      [makeDist({ id: 'd1', name: 'Image', state: 'update-available', version: '2' })]
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -732,8 +758,8 @@ describe('ChooserView', () => {
         name: 'Flux Studio',
         sourceId: 'comfybuilder',
         distributionId: 'd-flux',
-        status: 'installed',
-      } as unknown as Partial<Installation>),
+        status: 'installed'
+      } as unknown as Partial<Installation>)
     ])
     const wrapper = mountChooser()
     await flushPromises()
@@ -749,7 +775,9 @@ describe('ChooserView', () => {
     installMockApiSignedIn([], [makeDist({ id: 'd5', name: 'Fresh', state: 'installable' })])
     const wrapper = mountChooser()
     await flushPromises()
-    const pill = wrapper.find('[data-testid="chooser-dist-tile-d5"]').find('.chooser-tile-pill-action')
+    const pill = wrapper
+      .find('[data-testid="chooser-dist-tile-d5"]')
+      .find('.chooser-tile-pill-action')
     expect(pill.text()).toBe('Install')
   })
 
@@ -771,7 +799,7 @@ describe('ChooserView', () => {
     // "Personal", which collides with the unheaded your-installs group above it.
     installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })], {
       id: 'w1',
-      name: 'Comfy Design Team',
+      name: 'Comfy Design Team'
     })
     const wrapper = mountChooser()
     await flushPromises()
@@ -788,10 +816,10 @@ describe('ChooserView', () => {
     installMockApiSignedIn(
       [
         makeInstall({ id: 'local', name: 'LocalThing' }),
-        makeInstall({ id: 'built', name: 'BuiltThing', sourceId: 'comfybuilder' }),
+        makeInstall({ id: 'built', name: 'BuiltThing', sourceId: 'comfybuilder' })
       ],
       [makeDist({ id: 'd1', name: 'AvailableThing' })],
-      { id: 'w1', name: 'Comfy Design Team' },
+      { id: 'w1', name: 'Comfy Design Team' }
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -811,11 +839,11 @@ describe('ChooserView', () => {
         makeInstall({
           id: 'local',
           name: 'LocalThing',
-          distributionId: '',
-        } as unknown as Partial<Installation>),
+          distributionId: ''
+        } as unknown as Partial<Installation>)
       ],
       [makeDist({ id: 'd1', name: 'AvailableThing' })],
-      { id: 'w1', name: 'Comfy Design Team' },
+      { id: 'w1', name: 'Comfy Design Team' }
     )
     const wrapper = mountChooser()
     await flushPromises()
@@ -832,7 +860,7 @@ describe('ChooserView', () => {
     // a family must not re-center the page mid-keystroke.
     installMockApiSignedIn([], [makeDist({ id: 'd1', name: 'Alpha Dist' })], {
       id: 'w1',
-      name: 'Comfy Design Team',
+      name: 'Comfy Design Team'
     })
     const wrapper = mountChooser()
     await flushPromises()

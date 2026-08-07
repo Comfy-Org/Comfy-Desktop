@@ -40,5 +40,5 @@ export type {
   ModelManifest,
   ModelPolicy,
   StageProgress,
-  TokenProvider,
+  TokenProvider
 } from './types'

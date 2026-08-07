@@ -41,7 +41,7 @@ const TABLES: Record<string, Record<string, number>> = {
   'download|extract|models': {
     download: 0.65,
     extract: 0.15,
-    models: 0.20,
+    models: 0.2
   },
   // Legacy Desktop migrate
   migration: {

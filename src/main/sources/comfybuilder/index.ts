@@ -18,10 +18,25 @@
  */
 import { promises as fs } from 'fs'
 import path from 'path'
-import { installArtifact, buildLaunchSpec, stageModels, resolveModelManifest } from '../../comfybuilder'
-import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress, StageProgress } from '../../comfybuilder'
+import {
+  installArtifact,
+  buildLaunchSpec,
+  stageModels,
+  resolveModelManifest
+} from '../../comfybuilder'
+import type {
+  Artifact,
+  ArtifactGpu,
+  ArtifactOs,
+  InstallProgress,
+  StageProgress
+} from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
-import { listCompleteVersions, resolveHost, resolveHostArtifactForVersion } from '../../devplatform/distributions'
+import {
+  listCompleteVersions,
+  resolveHost,
+  resolveHostArtifactForVersion
+} from '../../devplatform/distributions'
 import { setCachedVersions } from '../../devplatform/versionCache'
 import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
@@ -32,7 +47,7 @@ import type {
   LaunchCommand,
   ActionResult,
   ActionTools,
-  InstallTools,
+  InstallTools
 } from '../../types/sources'
 
 import { DEFAULT_LAUNCH_ARGS } from './constants'
@@ -46,7 +61,7 @@ function artifactFromRecord(inst: InstallationRecord): Artifact {
     gpu: (inst.artifactGpu as ArtifactGpu) ?? 'cpu',
     accelVariant: (inst.artifactAccelVariant as string) ?? '',
     status: 'ready',
-    ...(inst.artifactSha256 ? { archiveSha256: inst.artifactSha256 as string } : {}),
+    ...(inst.artifactSha256 ? { archiveSha256: inst.artifactSha256 as string } : {})
   }
 }
 
@@ -80,7 +95,7 @@ async function installEnvironment(
   tools: {
     sendProgress: (step: string, data: { percent: number; status: string }) => void
     signal?: AbortSignal
-  },
+  }
 ): Promise<void> {
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
@@ -114,7 +129,7 @@ async function installEnvironment(
         const phase = p.phase === 'resolve' ? 'download' : p.phase
         tools.sendProgress(phase, { percent: p.percent, status: p.detail ?? '' })
       },
-      ...(tools.signal ? { signal: tools.signal } : {}),
+      ...(tools.signal ? { signal: tools.signal } : {})
     })
 
     // Phase 2: models. The archive carries no weights, so stage the
@@ -124,14 +139,17 @@ async function installEnvironment(
     const manifest = await resolveModelManifest(
       client,
       installation.distributionId as string,
-      installation.version as string,
+      installation.version as string
     )
     await stageModels({
       models: manifest.models,
       installPath: installation.installPath,
       onProgress: (p: StageProgress) =>
-        tools.sendProgress('models', { percent: p.percent, status: `${p.filename} (${p.index}/${p.total})` }),
-      ...(tools.signal ? { signal: tools.signal } : {}),
+        tools.sendProgress('models', {
+          percent: p.percent,
+          status: `${p.filename} (${p.index}/${p.total})`
+        }),
+      ...(tools.signal ? { signal: tools.signal } : {})
     })
     tools.sendProgress('models', { percent: 100, status: '' })
   } catch (err) {
@@ -161,7 +179,7 @@ export const comfybuilder: SourcePlugin = {
     return [
       { phase: 'download', label: t('common.download') },
       { phase: 'extract', label: t('common.extract') },
-      { phase: 'models', label: t('comfybuilder.stageModels') },
+      { phase: 'models', label: t('comfybuilder.stageModels') }
     ]
   },
 
@@ -186,7 +204,10 @@ export const comfybuilder: SourcePlugin = {
 
   getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {
     const spec = buildLaunchSpec(installation.installPath, {
-      launchArgs: withAccelArgs(installation, (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS),
+      launchArgs: withAccelArgs(
+        installation,
+        (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS
+      )
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
@@ -220,7 +241,7 @@ export const comfybuilder: SourcePlugin = {
     actionId: string,
     installation: InstallationRecord,
     actionData: Record<string, unknown> | undefined,
-    tools: ActionTools,
+    tools: ActionTools
   ): Promise<ActionResult> {
     const distributionId = installation.distributionId as string | undefined
     if (!distributionId) return { ok: false, message: t('comfybuilder.errorNoDistribution') }
@@ -229,7 +250,7 @@ export const comfybuilder: SourcePlugin = {
       try {
         setCachedVersions(
           distributionId,
-          await listCompleteVersions(getBuilderClient(), distributionId),
+          await listCompleteVersions(getBuilderClient(), distributionId)
         )
         return { ok: true }
       } catch (err) {
@@ -242,7 +263,7 @@ export const comfybuilder: SourcePlugin = {
     }
 
     return { ok: false, message: `Action "${actionId}" not yet implemented.` }
-  },
+  }
 }
 
 /**
@@ -262,7 +283,7 @@ async function updateDistributionVersion(
   installation: InstallationRecord,
   distributionId: string,
   actionData: Record<string, unknown> | undefined,
-  tools: ActionTools,
+  tools: ActionTools
 ): Promise<ActionResult> {
   const target = Number(actionData?.version)
   if (!Number.isFinite(target)) return { ok: false, message: t('comfybuilder.errorNoVersion') }
@@ -279,7 +300,7 @@ async function updateDistributionVersion(
     artifactOs: installation.artifactOs as string | undefined,
     artifactGpu: installation.artifactGpu as string | undefined,
     artifactAccelVariant: installation.artifactAccelVariant as string | undefined,
-    artifactSha256: installation.artifactSha256 as string | undefined,
+    artifactSha256: installation.artifactSha256 as string | undefined
   }
 
   try {
@@ -287,7 +308,7 @@ async function updateDistributionVersion(
       getBuilderClient(),
       await resolveHost(),
       distributionId,
-      target,
+      target
     )
     if (!resolved) {
       return { ok: false, message: t('comfybuilder.errorVersionUnavailable', { version: target }) }
@@ -300,7 +321,7 @@ async function updateDistributionVersion(
       artifactOs: artifact.os,
       artifactGpu: artifact.gpu,
       artifactAccelVariant: artifact.accelVariant,
-      ...(artifact.archiveSha256 ? { artifactSha256: artifact.archiveSha256 } : {}),
+      ...(artifact.archiveSha256 ? { artifactSha256: artifact.archiveSha256 } : {})
     }
     await tools.update({ ...next, status: 'installing' })
 
@@ -319,7 +340,9 @@ async function updateDistributionVersion(
       .stat(path.join(installation.installPath, 'venv'))
       .then(() => true)
       .catch(() => false)
-    await tools.update({ ...previous, status: runnable ? previousStatus : 'failed' }).catch(() => {})
+    await tools
+      .update({ ...previous, status: runnable ? previousStatus : 'failed' })
+      .catch(() => {})
     if (tools.signal?.aborted) return { ok: false, cancelled: true }
     return { ok: false, message: err instanceof Error ? err.message : String(err) }
   }

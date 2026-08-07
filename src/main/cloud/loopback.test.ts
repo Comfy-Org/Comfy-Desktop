@@ -5,7 +5,12 @@ import { startLoopbackListener, type LoopbackListener } from './loopback'
 
 function get(url: string): Promise<{ status: number }> {
   return new Promise((resolve, reject) => {
-    http.get(url, (res) => { res.resume(); resolve({ status: res.statusCode ?? 0 }) }).on('error', reject)
+    http
+      .get(url, (res) => {
+        res.resume()
+        resolve({ status: res.statusCode ?? 0 })
+      })
+      .on('error', reject)
   })
 }
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 30))
@@ -25,7 +30,14 @@ describe('loopback listener', () => {
     listener = await startLoopbackListener({ expectedState: 'st', timeoutMs: 5000 })
     const codeP = listener.waitForCode()
     let settled = false
-    void codeP.then(() => { settled = true }, () => { settled = true })
+    void codeP.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      }
+    )
 
     expect((await get(`${listener.redirectUri}?state=WRONG&code=x`)).status).toBe(400)
     await tick()

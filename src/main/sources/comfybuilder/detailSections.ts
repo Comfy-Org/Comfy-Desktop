@@ -22,7 +22,13 @@
  *     its own pane, not a subset of this one.
  */
 import { t } from '../../lib/i18n'
-import { deleteAction, launchAction, openFolderAction, renameAction, untrackAction } from '../../lib/actions'
+import {
+  deleteAction,
+  launchAction,
+  openFolderAction,
+  renameAction,
+  untrackAction
+} from '../../lib/actions'
 import { buildLaunchSettingsFields } from '../common/launchSettingsFields'
 import { getCachedVersions } from '../../devplatform/versionCache'
 import { formatComfyVersion } from '../../lib/version'
@@ -47,20 +53,23 @@ function buildStatusFields(installation: InstallationRecord): Record<string, unk
   const dist = distributionVersion(installation)
   const comfy = comfyVersionLabel(installation)
   return [
-    { label: t('common.installMethod'), value: (installation.sourceLabel as string) || 'ComfyBuilder' },
+    {
+      label: t('common.installMethod'),
+      value: (installation.sourceLabel as string) || 'ComfyBuilder'
+    },
     {
       label: t('comfybuilder.distribution'),
-      value: (installation.distributionName as string) || '—',
+      value: (installation.distributionName as string) || '—'
     },
     // Labelled as the DISTRIBUTION's version. A bare "7" next to a "v0.28.2"
     // reads as a ComfyUI version and isn't one.
     {
       key: 'distribution-version',
       label: t('comfybuilder.distributionVersion'),
-      value: dist ? `v${dist}` : '—',
+      value: dist ? `v${dist}` : '—'
     },
     { key: 'comfyui-version', label: t('comfybuilder.comfyuiVersion'), value: comfy || '—' },
-    { label: t('common.location'), value: (installation.installPath as string) || '—' },
+    { label: t('common.location'), value: (installation.installPath as string) || '—' }
   ]
 }
 
@@ -96,22 +105,22 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
     {
       id: 'installed',
       label: t('comfybuilder.installedVersion'),
-      value: current ? `v${current}` : '—',
-    },
+      value: current ? `v${current}` : '—'
+    }
   ]
   if (latest !== undefined) {
     rows.push({
       id: 'latest',
       label: t('comfybuilder.latestVersion'),
       value: `v${latest}`,
-      highlight: updateAvailable,
+      highlight: updateAvailable
     })
   }
   if (cached?.fetchedAt) {
     rows.push({
       id: 'last-checked',
       label: t('comfybuilder.lastChecked'),
-      value: new Date(cached.fetchedAt).toLocaleString(),
+      value: new Date(cached.fetchedAt).toLocaleString()
     })
   }
 
@@ -133,9 +142,9 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
               ? t('comfybuilder.upToDate')
               : null,
           badgeTone: updateAvailable ? 'update' : 'current',
-          rows,
-        },
-      },
+          rows
+        }
+      }
     ],
     actions: [
       { id: 'check-update', label: t('actions.checkForUpdate'), style: 'default', enabled: true },
@@ -156,13 +165,13 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
                 title: t('comfybuilder.updateConfirmTitle'),
                 message: t('comfybuilder.updateConfirmMessage', {
                   from: `**v${current}**`,
-                  to: `**v${latest}**`,
-                }),
-              },
-            },
+                  to: `**v${latest}**`
+                })
+              }
+            }
           ]
-        : []),
-    ],
+        : [])
+    ]
   }
 }
 
@@ -173,8 +182,8 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     {
       tab: 'status',
       title: t('common.installInfo'),
-      fields: buildStatusFields(installation),
-    },
+      fields: buildStatusFields(installation)
+    }
   ]
 
   const update = buildUpdateSection(installation)
@@ -187,7 +196,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       // Args stay open even where a distribution may ignore some of them —
       // the Jul 24 standup kept the field editable rather than second-guessing
       // which flags a given build honours.
-      fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS }),
+      fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS })
     },
     {
       // No title: only `.actions` is read off a pinBottom section (the footer
@@ -201,9 +210,9 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         renameAction(installation.name),
         openFolderAction(installation.installPath),
         untrackAction(),
-        deleteAction(installation),
-      ],
-    },
+        deleteAction(installation)
+      ]
+    }
   )
 
   return sections

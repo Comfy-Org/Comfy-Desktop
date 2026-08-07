@@ -7,14 +7,14 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: vi.fn() },
   dialog: {},
   shell: { openPath: vi.fn() },
-  net: { request: vi.fn() },
+  net: { request: vi.fn() }
 }))
 
 import { getDetailSections } from './detailSections'
 import {
   clearVersionCache,
   getCachedVersions,
-  setCachedVersions,
+  setCachedVersions
 } from '../../devplatform/versionCache'
 import type { InstallationRecord } from '../../installations'
 
@@ -29,7 +29,7 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     distributionId: 'd1',
     distributionName: 'Studio Render Pipeline',
     version: '7',
-    ...overrides,
+    ...overrides
   }) as unknown as InstallationRecord
 
 type Section = {
@@ -49,11 +49,16 @@ const fieldIds = (s: Section | undefined): string[] =>
   (s?.fields ?? []).map((f) => (f.id ?? f.key) as string).filter(Boolean)
 
 type StatRow = { id: string; label: string; value: string; highlight?: boolean }
-type StatsValue = { headline: string; headlineHighlight: boolean; badge: string | null; rows: StatRow[] }
+type StatsValue = {
+  headline: string
+  headlineHighlight: boolean
+  badge: string | null
+  rows: StatRow[]
+}
 
 const statsField = (inst: InstallationRecord): Record<string, unknown> | undefined =>
   (sectionsFor(inst).find((s) => s.tab === 'update')?.fields ?? []).find(
-    (f) => f.editType === 'version-stats',
+    (f) => f.editType === 'version-stats'
   )
 
 const statsValue = (inst: InstallationRecord): StatsValue =>
@@ -63,7 +68,6 @@ const rowIds = (inst: InstallationRecord): string[] => statsValue(inst).rows.map
 
 const updateActions = (inst: InstallationRecord): Record<string, unknown>[] =>
   (sectionsFor(inst).find((s) => s.tab === 'update')?.actions ?? []) as Record<string, unknown>[]
-
 
 beforeEach(() => clearVersionCache())
 
@@ -114,7 +118,7 @@ describe('comfybuilder.getDetailSections', () => {
     const pinned = sectionsFor(record()).find((s) => s.pinBottom === true)
     const ids = (pinned?.actions ?? []).map((a) => a.id)
     expect(ids).toEqual(
-      expect.arrayContaining(['launch', 'rename', 'open-folder', 'remove', 'delete']),
+      expect.arrayContaining(['launch', 'rename', 'open-folder', 'remove', 'delete'])
     )
   })
 
@@ -156,7 +160,7 @@ describe('comfybuilder.getDetailSections', () => {
 
     setCachedVersions('d1', [7, 3])
     expect(
-      updateActions(record({ version: '7' })).find((a) => a.id === 'update-distribution'),
+      updateActions(record({ version: '7' })).find((a) => a.id === 'update-distribution')
     ).toBeUndefined()
   })
 
@@ -172,7 +176,7 @@ describe('comfybuilder.getDetailSections', () => {
   it('disables the update action while the install is not ready', () => {
     setCachedVersions('d1', [9, 7])
     const update = updateActions(record({ version: '7', status: 'failed' })).find(
-      (a) => a.id === 'update-distribution',
+      (a) => a.id === 'update-distribution'
     )
     expect(update?.enabled).toBe(false)
   })

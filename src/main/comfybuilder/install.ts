@@ -30,7 +30,10 @@ import type { Artifact, InstallProgress } from './types'
 /** The directories every well-formed archive extracts to. */
 const ARTIFACT_DIRS = ['venv', 'ComfyUI'] as const
 
-export type ComfyBuilderInstallErrorKind = 'invalid-artifact' | 'invalid-layout' | 'checksum-mismatch'
+export type ComfyBuilderInstallErrorKind =
+  | 'invalid-artifact'
+  | 'invalid-layout'
+  | 'checksum-mismatch'
 
 export class ComfyBuilderInstallError extends Error {
   override name = 'ComfyBuilderInstallError'
@@ -84,25 +87,38 @@ export function sha256File(filePath: string): Promise<string> {
 /** Normalize a manifest hash for comparison: strip an optional `sha256:` prefix,
  *  trim, lowercase. Returns '' when there is no usable hash. */
 export function normalizeSha256(raw: string | undefined): string {
-  return raw?.replace(/^sha256:/i, '').trim().toLowerCase() ?? ''
+  return (
+    raw
+      ?.replace(/^sha256:/i, '')
+      .trim()
+      .toLowerCase() ?? ''
+  )
 }
 
 function assertLayout(installPath: string): void {
   for (const dir of ARTIFACT_DIRS) {
     if (!isRealDir(path.join(installPath, dir))) {
-      throw new ComfyBuilderInstallError('invalid-layout', `Extracted artifact is missing a real ${dir}/ directory.`)
+      throw new ComfyBuilderInstallError(
+        'invalid-layout',
+        `Extracted artifact is missing a real ${dir}/ directory.`
+      )
     }
   }
 }
 
 /** Remove only entries created this run, so a failed install never deletes a
  *  pre-existing environment or unrelated contents of a shared directory. */
-async function cleanupCreated(installPath: string, preexisting: ReadonlySet<string>): Promise<void> {
+async function cleanupCreated(
+  installPath: string,
+  preexisting: ReadonlySet<string>
+): Promise<void> {
   const entries = await fs.promises.readdir(installPath).catch(() => [] as string[])
   await Promise.all(
     entries
       .filter((e) => !preexisting.has(e))
-      .map((e) => fs.promises.rm(path.join(installPath, e), { recursive: true, force: true }).catch(() => {})),
+      .map((e) =>
+        fs.promises.rm(path.join(installPath, e), { recursive: true, force: true }).catch(() => {})
+      )
   )
 }
 
@@ -113,7 +129,8 @@ async function cleanupCreated(installPath: string, preexisting: ReadonlySet<stri
  */
 export async function installArtifact(opts: InstallArtifactOptions): Promise<void> {
   const { artifact, client, installPath, cacheDir, onProgress, signal } = opts
-  if (!artifact?.id) throw new ComfyBuilderInstallError('invalid-artifact', 'No artifact id was provided.')
+  if (!artifact?.id)
+    throw new ComfyBuilderInstallError('invalid-artifact', 'No artifact id was provided.')
 
   // A hash that IS present is always enforced (see the compare below).
   // TODO: fail closed on a missing hash too. The builder does not populate
@@ -121,7 +138,9 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
   // unverified rather than blocking every install.
   const expected = normalizeSha256(artifact.archiveSha256)
   if (!expected) {
-    console.warn('[comfybuilder] artifact has no archiveSha256; installing without integrity verification')
+    console.warn(
+      '[comfybuilder] artifact has no archiveSha256; installing without integrity verification'
+    )
   }
 
   onProgress?.({ phase: 'resolve', percent: 0 })
@@ -130,25 +149,48 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
   // Per-run temp: isolates concurrent installs of the same artifact and is
   // removed after extraction (cacheDir is scratch, not a persistent cache).
   fs.mkdirSync(cacheDir, { recursive: true })
-  const archivePath = path.join(cacheDir, `comfybuilder_${cacheSlug(artifact.id)}_${randomBytes(6).toString('hex')}.tar.gz`)
+  const archivePath = path.join(
+    cacheDir,
+    `comfybuilder_${cacheSlug(artifact.id)}_${randomBytes(6).toString('hex')}.tar.gz`
+  )
 
   try {
     onProgress?.({ phase: 'download', percent: 0 })
-    await download(url, archivePath, (p: DownloadProgress) => onProgress?.({ phase: 'download', percent: p.percent, detail: `${p.receivedMB} / ${p.totalMB} MB` }), signal ? { signal } : {})
+    await download(
+      url,
+      archivePath,
+      (p: DownloadProgress) =>
+        onProgress?.({
+          phase: 'download',
+          percent: p.percent,
+          detail: `${p.receivedMB} / ${p.totalMB} MB`
+        }),
+      signal ? { signal } : {}
+    )
 
     if (expected) {
       const actual = await sha256File(archivePath)
       if (actual !== expected) {
-        throw new ComfyBuilderInstallError('checksum-mismatch', `Artifact checksum mismatch: expected ${expected}, got ${actual}`)
+        throw new ComfyBuilderInstallError(
+          'checksum-mismatch',
+          `Artifact checksum mismatch: expected ${expected}, got ${actual}`
+        )
       }
     }
 
     if (signal?.aborted) throw new Error('Cancelled')
     fs.mkdirSync(installPath, { recursive: true })
-    const preexisting = new Set<string>(await fs.promises.readdir(installPath).catch(() => [] as string[]))
+    const preexisting = new Set<string>(
+      await fs.promises.readdir(installPath).catch(() => [] as string[])
+    )
     try {
       onProgress?.({ phase: 'extract', percent: 0 })
-      await extractNested(archivePath, installPath, (p: ExtractProgress) => onProgress?.({ phase: 'extract', percent: p.percent }), signal ? { signal } : {})
+      await extractNested(
+        archivePath,
+        installPath,
+        (p: ExtractProgress) => onProgress?.({ phase: 'extract', percent: p.percent }),
+        signal ? { signal } : {}
+      )
       assertLayout(installPath)
     } catch (err) {
       await cleanupCreated(installPath, preexisting)

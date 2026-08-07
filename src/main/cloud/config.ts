@@ -18,5 +18,5 @@ export const CLOUD_CONFIG = {
   clientId: process.env.COMFY_CLOUD_CLIENT_ID || DEFAULT_CLIENT_ID,
   scope: 'comfy-cloud:user:read',
   resource: `${CLOUD_ISSUER}/api`,
-  audience: 'comfy-cloud',
+  audience: 'comfy-cloud'
 } as const

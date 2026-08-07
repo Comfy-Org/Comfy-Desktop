@@ -24,7 +24,7 @@ function loadOverride(value: string): ModelManifest {
   return {
     models: parsed.models ?? [],
     modelPolicy: parsed.modelPolicy ?? null,
-    partnerNodePolicy: parsed.partnerNodePolicy ?? null,
+    partnerNodePolicy: parsed.partnerNodePolicy ?? null
   }
 }
 
@@ -35,7 +35,7 @@ function loadOverride(value: string): ModelManifest {
 async function resolveVersionId(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
   distributionId: string,
-  versionNumber: string,
+  versionNumber: string
 ): Promise<string | null> {
   const versions = await client.listVersions(distributionId)
   const match = versions.find((v) => String(v.version) === versionNumber && v.status === 'complete')
@@ -49,7 +49,7 @@ async function resolveVersionId(
 export async function resolveModelManifest(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'fetchModelManifest'>,
   distributionId: string,
-  version: string,
+  version: string
 ): Promise<ModelManifest> {
   // Test seam, E2E-gated so a shipped build can't be fed attacker-chosen models.
   const override = process.env.COMFY_BUILDER_MODELS_MANIFEST

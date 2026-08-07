@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  AlertCircle,
-  ArrowDownToLine,
-  ArrowRightLeft,
-  MoreVertical
-} from 'lucide-vue-next'
+import { AlertCircle, ArrowDownToLine, ArrowRightLeft, MoreVertical } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
@@ -164,10 +159,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
   >
     <!-- Type icon only; source/channel lives in the meta line below. A
          distribution install wears the distribution glyph instead. -->
-    <span
-      class="chooser-tile-icon"
-      :title="t(typeMeta.labelKey)"
-    >
+    <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
       <!-- `typeMeta` resolves the distribution glyph itself, so the tile, the
            picker row and the title bar can't drift apart. -->
       <component :is="typeMeta.icon" :size="22" />

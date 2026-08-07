@@ -92,7 +92,9 @@ describe('registerDevPlatformHandlers', () => {
     const status = handler('comfybuilder:signOut')({})
     expect(status).toEqual({ signedIn: false })
     expect(mocks.logout).toHaveBeenCalledOnce()
-    expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+    expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', {
+      signedIn: false
+    })
   })
 
   it('listDistributions is empty (no network) when signed out', async () => {
@@ -104,7 +106,9 @@ describe('registerDevPlatformHandlers', () => {
 
   it('listDistributions returns rows for the signed-in workspace', async () => {
     mocks.isSignedIn.mockReturnValue(true)
-    mocks.listDistributionRows.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
+    mocks.listDistributionRows.mockResolvedValue([
+      { id: 'd1', name: 'Image', state: 'installable' }
+    ])
     const rows = await handler('comfybuilder:listDistributions')({})
     expect(rows).toEqual([{ id: 'd1', name: 'Image', state: 'installable' }])
   })
@@ -112,7 +116,11 @@ describe('registerDevPlatformHandlers', () => {
   it('switchWorkspace re-scopes and broadcasts the new status', async () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
-    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+    mocks.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w2',
+      workspaceType: 'team'
+    })
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
     expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2')
@@ -124,7 +132,14 @@ describe('registerDevPlatformHandlers', () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 7,
-      artifact: { id: 'art-9', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveSha256: 'deadbeef' }
+      artifact: {
+        id: 'art-9',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
     })
     mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
@@ -148,7 +163,13 @@ describe('registerDevPlatformHandlers', () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 1,
-      artifact: { id: 'art-nohash', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready' }
+      artifact: {
+        id: 'art-nohash',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready'
+      }
     })
     mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'NoHash' }])
     mocks.add.mockResolvedValue({ id: 'inst-2', name: 'NoHash' })
@@ -190,7 +211,14 @@ describe('registerDevPlatformHandlers', () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 9,
-      artifact: { id: 'art-new', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveSha256: 'newhash' }
+      artifact: {
+        id: 'art-new',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'newhash'
+      }
     })
     mocks.list.mockResolvedValue([
       { id: 'inst-1', name: 'Image', sourceId: 'comfybuilder', distributionId: 'd1', version: '7' }
@@ -201,7 +229,12 @@ describe('registerDevPlatformHandlers', () => {
     expect(result).toEqual({ ok: true, entry: { id: 'inst-1', name: 'Image' } })
     expect(mocks.update).toHaveBeenCalledWith(
       'inst-1',
-      expect.objectContaining({ version: '9', artifactId: 'art-new', artifactSha256: 'newhash', status: 'installing' })
+      expect.objectContaining({
+        version: '9',
+        artifactId: 'art-new',
+        artifactSha256: 'newhash',
+        status: 'installing'
+      })
     )
     expect(mocks.add).not.toHaveBeenCalled() // updates in place, never a new record
   })

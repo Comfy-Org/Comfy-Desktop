@@ -4,19 +4,27 @@ import { hostOs, selectArtifactForHost } from './targets'
 import type { Artifact, Host } from './types'
 
 function art(o: Artifact['os'], g: Artifact['gpu'], overrides: Partial<Artifact> = {}): Artifact {
-  return { id: `${o}-${g}`, os: o, gpu: g, accelVariant: g === 'nvidia' ? 'cu128' : g, status: 'ready', ...overrides }
+  return {
+    id: `${o}-${g}`,
+    os: o,
+    gpu: g,
+    accelVariant: g === 'nvidia' ? 'cu128' : g,
+    status: 'ready',
+    ...overrides
+  }
 }
 
 const catalog: Artifact[] = [
   art('linux', 'cpu'),
   art('linux', 'nvidia'),
   art('windows', 'cpu'),
-  art('windows', 'nvidia'),
+  art('windows', 'nvidia')
 ]
 
 describe('hostOs', () => {
   it('maps process.platform to a build-target os', () => {
-    const expected = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
+    const expected =
+      process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
     expect(hostOs()).toBe(expected)
   })
 })
@@ -27,7 +35,7 @@ describe('selectArtifactForHost', () => {
     ['cpu fallback (windows host, cpu gpu)', { os: 'windows', gpu: 'cpu' }, 'windows-cpu'],
     ['nvidia host falls back to cpu when no nvidia', { os: 'mac', gpu: 'nvidia' }, null],
     ['no artifact for the host os (mac)', { os: 'mac', gpu: 'mps' }, null],
-    ['linux nvidia', { os: 'linux', gpu: 'nvidia' }, 'linux-nvidia'],
+    ['linux nvidia', { os: 'linux', gpu: 'nvidia' }, 'linux-nvidia']
   ])('%s', (_name, host, expectedId) => {
     expect(selectArtifactForHost(catalog, host)?.id ?? null).toBe(expectedId)
   })
@@ -48,8 +56,13 @@ describe('selectArtifactForHost', () => {
   })
 
   it('prefers the matching accelVariant among same-gpu builds', () => {
-    const cudas = [art('linux', 'nvidia', { id: 'cu118', accelVariant: 'cu118' }), art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })]
-    expect(selectArtifactForHost(cudas, { os: 'linux', gpu: 'nvidia', accelVariant: 'cu128' })?.id).toBe('cu128')
+    const cudas = [
+      art('linux', 'nvidia', { id: 'cu118', accelVariant: 'cu118' }),
+      art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })
+    ]
+    expect(
+      selectArtifactForHost(cudas, { os: 'linux', gpu: 'nvidia', accelVariant: 'cu128' })?.id
+    ).toBe('cu128')
   })
 
   it('is deterministic (not input-order dependent) when accel ties', () => {

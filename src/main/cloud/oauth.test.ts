@@ -5,17 +5,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // global fetch so the vi.stubGlobal('fetch', ...) stubs below keep driving it.
 // The spy is what proves the request took the proxy-aware route.
 const netFetch = vi.hoisted(() =>
-  vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)),
+  vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args))
 )
 vi.mock('electron', () => ({
   shell: { openExternal: vi.fn(async () => {}) },
-  net: { fetch: netFetch },
+  net: { fetch: netFetch }
 }))
 
 import { refresh } from './oauth'
 
 function stub(status: number, body: unknown): void {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' }
+        })
+    )
+  )
 }
 
 describe('oauth.refresh', () => {
@@ -48,7 +57,9 @@ describe('oauth.refresh', () => {
 
   it('rejects a response missing access_token', async () => {
     stub(200, { expires_in: 3600 })
-    await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toThrow(/access_token/)
+    await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toThrow(
+      /access_token/
+    )
   })
 
   it('rejects a response with a non-numeric expires_in', async () => {
