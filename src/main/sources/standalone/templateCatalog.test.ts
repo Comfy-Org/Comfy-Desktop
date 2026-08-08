@@ -200,7 +200,11 @@ describe('loadTemplateCatalog', () => {
     const recImage = catalog.find((c) => c.modality === 'image' && c.recommended)!
     expect(recImage.id).toBe('fresh_image_model')
     expect(recImage.name).toBe('Fresh Model')
-    expect(catalog.some((c) => c.id === first.id)).toBe(false)
+    expect(
+      catalog.find((c) => c.id === first.id)?.recommended ?? false,
+      'the vanished id loses its recommendation to the substitute'
+    ).toBe(false)
+    expect(catalog.filter((c) => c.modality === 'image')).toHaveLength(4)
   })
 
   it('skips api/size-less candidates when substituting (must be locally installable)', async () => {
@@ -231,14 +235,27 @@ describe('loadTemplateCatalog', () => {
     expect(new Set(ids).size).toBe(ids.length) // no dupes across slots
   })
 
-  it('falls back to the snapshot when online but no substitute exists', async () => {
+  it('prefers a compatible substitute over a card the index does not carry', async () => {
     const first = CURATED_TEMPLATES[0]!
-    // Online (non-empty index) but only an unusable api/size-less image entry.
     mockedFetchJSON.mockResolvedValue(
-      imageCategory([{ name: 'api_only', title: 'Cloud', size: 0 }])
+      imageCategory([{ name: 'live_local_image', title: 'Live', size: 5 }])
     )
     const catalog = await loadTemplateCatalog()
-    expect(catalog.find((c) => c.id === first.id)!.title).toBe(first.snapshot.title)
+    const image = catalog.filter((c) => c.modality === 'image').map((c) => c.id)
+    expect(image, 'the compatible substitute is preferred').toContain('live_local_image')
+    expect(image.indexOf('live_local_image')).toBeLessThan(
+      image.includes(first.id) ? image.indexOf(first.id) : image.length
+    )
+    expect(image).toHaveLength(4)
+  })
+
+  it('keeps an API-node card the index omits, since it runs server-side', async () => {
+    const apiCard = CURATED_TEMPLATES.find((t) => t.apiNode)!
+    mockedFetchJSON.mockResolvedValue(
+      imageCategory([{ name: 'unrelated_local', title: 'Local', size: 1_000 }])
+    )
+    const catalog = await loadTemplateCatalog()
+    expect(catalog.find((c) => c.id === apiCard.id)?.apiNode).toBe(true)
   })
 
   it('never substitutes a local download into a vanished API-node slot', async () => {
