@@ -23,6 +23,7 @@ import { Check, ChevronDown, Loader2, LogIn, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
 import { useDialogs } from '../../composables/useDialogs'
+import { COMFY_BUILDER_FLAG_KEY, isFlagEnabled } from '../../../../shared/experimentKeys'
 
 const emit = defineEmits<{
   /** Sign-out completed. Host decides whether anything else changes. */
@@ -39,6 +40,12 @@ const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
 const signingIn = ref(false)
+/** Comfy Builder rollout gate, read once on mount. Starts `false` so the
+ *  log-in CTA is ABSENT — not merely inert — for everyone the rollout has not
+ *  reached, and never flashes in before the flag resolves. The signed-in face
+ *  and its menu stay ungated: a user who is already signed in must always be
+ *  able to switch workspace and sign out. */
+const builderEnabled = ref(false)
 /** Workspace id currently being switched to, or null. Drives the row spinner
  *  and blocks a second concurrent switch. */
 const switchingTo = ref<string | null>(null)
@@ -101,8 +108,31 @@ function onPointerDown(e: MouseEvent): void {
   closeMenu()
 }
 
+/** Resolve the rollout gate and record the exposure for BOTH arms — the
+ *  control cohort has to be counted or the readout is biased. Main dedups per
+ *  session, so the file menu reading the same key costs no second event. */
+async function loadBuilderFlag(): Promise<void> {
+  let flag: string | boolean | null | undefined
+  try {
+    flag = await window.api.telemetryGetExperimentFlag(COMFY_BUILDER_FLAG_KEY)
+  } catch {
+    flag = undefined
+  }
+  builderEnabled.value = isFlagEnabled(flag)
+  try {
+    window.api.telemetryRecordExposure({
+      experimentKey: COMFY_BUILDER_FLAG_KEY,
+      variant: builderEnabled.value ? 'treatment' : 'control',
+      source: flag == null ? 'fallback' : 'cache'
+    })
+  } catch {
+    // best-effort
+  }
+}
+
 onMounted(() => {
   document.addEventListener('mousedown', onPointerDown)
+  void loadBuilderFlag()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onPointerDown)
@@ -158,9 +188,13 @@ async function onSignOut(): Promise<void> {
 
 <template>
   <div ref="rootRef" class="account-chip" @keydown="onKeydown">
-    <!-- Signed out: one quiet button. Deliberately not the yellow primary. -->
+    <!-- Signed out: one quiet button, behind the Comfy Builder rollout gate —
+         the same key the title bar's file-menu sign-in item reads, so the two
+         surfaces can never end up in opposite arms. With the gate off this
+         branch renders nothing and Comfy Builder is absent from the app
+         entirely. Deliberately not the yellow primary. -->
     <button
-      v-if="!store.isSignedIn"
+      v-if="!store.isSignedIn && builderEnabled"
       type="button"
       class="brand-tertiary account-chip__signin"
       data-testid="devplatform-account-signin"
@@ -173,7 +207,9 @@ async function onSignOut(): Promise<void> {
       <span>{{ $t('devPlatform.signIn.cta') }}</span>
     </button>
 
-    <template v-else>
+    <!-- `v-else-if`, not `v-else`: with the gate off and nobody signed in,
+         NEITHER branch renders. -->
+    <template v-else-if="store.isSignedIn">
       <button
         ref="faceRef"
         type="button"
