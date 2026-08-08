@@ -294,6 +294,24 @@ describe('buildTitlePopupMenuItems', () => {
     )
   })
 
+  // A signed-in user sees no item in either arm, so enrolling them would only
+  // dilute the readout.
+  it.each([true, undefined] as const)(
+    'records no exposure for a signed-in user, flag %p',
+    (value) => {
+      devPlatformMocks.getFlag.mockReturnValue(value)
+      devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
+      buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+      expect(devPlatformMocks.recordExposure).not.toHaveBeenCalled()
+    }
+  )
+
+  it('records no exposure during post-consent first-use, where the menu is one item', () => {
+    devPlatformMocks.getFlag.mockReturnValue(true)
+    buildTitlePopupMenuItems(makeEntry({ firstUseMode: 'post-consent' }))
+    expect(devPlatformMocks.recordExposure).not.toHaveBeenCalled()
+  })
+
   it('install host omits Return to Dashboard — picker Home is the canonical dashboard escape', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
     const ids = items.map((i) => i.id ?? null)

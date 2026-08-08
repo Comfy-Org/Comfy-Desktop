@@ -720,6 +720,10 @@ export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number
  *  this runs on menu open, which is the moment the user could have seen it;
  *  `recordExposure` dedups to one event per variant per session. */
 function showSignInMenuItem(): boolean {
+  // Signed-in users are outside the experiment's population: the item is
+  // hidden for them in BOTH arms, so counting them would dilute the readout
+  // rather than inform it. Bail before the exposure, not after.
+  if (isSignedInToCloud()) return false
   const flag = getFlag(COMFY_BUILDER_FLAG_KEY)
   const enabled = isFlagEnabled(flag)
   recordExposure(
@@ -727,7 +731,7 @@ function showSignInMenuItem(): boolean {
     enabled ? 'treatment' : 'control',
     flag === undefined ? 'fallback' : 'cache'
   )
-  return enabled && !isSignedInToCloud()
+  return enabled
 }
 
 /** Build the file-menu items for a host entry. The waffle/file menu

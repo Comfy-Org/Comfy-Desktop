@@ -189,4 +189,32 @@ describe('DevPlatformAccountChip — exposure', () => {
       source: 'fallback'
     })
   })
+
+  // Signed-in users see no CTA in either arm, so enrolling them would only
+  // dilute the readout.
+  it.each([true, null])('records nothing for a signed-in user, flag %p', async (flag) => {
+    await mountChip({ flag, status: SIGNED_IN })
+    expect(api.telemetryRecordExposure).not.toHaveBeenCalled()
+  })
+
+  // The status hydrates asynchronously and starts on `{ signedIn: false }`;
+  // reading it before it settles would enrol a signed-in user anyway.
+  it('waits for the auth status to settle before deciding eligibility', async () => {
+    installMockApi(true, SIGNED_IN)
+    let resolveStatus: (status: AuthStatus) => void = () => {}
+    api.comfybuilder.getAuthStatus.mockReturnValue(
+      new Promise<AuthStatus>((resolve) => {
+        resolveStatus = resolve
+      })
+    )
+    setActivePinia(createPinia())
+    const wrapper = mount(DevPlatformAccountChip)
+    await flushPromises()
+    expect(api.telemetryRecordExposure).not.toHaveBeenCalled()
+
+    resolveStatus(SIGNED_IN)
+    await flushPromises()
+    expect(api.telemetryRecordExposure).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
+  })
 })

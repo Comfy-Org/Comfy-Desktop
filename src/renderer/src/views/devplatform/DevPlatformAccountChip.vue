@@ -108,7 +108,7 @@ function onPointerDown(e: MouseEvent): void {
   closeMenu()
 }
 
-/** Resolve the rollout gate and record the exposure for BOTH arms — the
+/** Resolve the rollout gate, then record the exposure for BOTH arms — the
  *  control cohort has to be counted or the readout is biased. Main dedups per
  *  session, so the file menu reading the same key costs no second event. */
 async function loadBuilderFlag(): Promise<void> {
@@ -119,6 +119,21 @@ async function loadBuilderFlag(): Promise<void> {
     flag = undefined
   }
   builderEnabled.value = isFlagEnabled(flag)
+
+  // Settle the auth status before deciding eligibility: the store hydrates it
+  // asynchronously and starts on `{ signedIn: false }`, which is indistinguish-
+  // able from a resolved signed-out user. Reading it too early would enrol
+  // signed-in users into an experiment they are not part of. Revision-guarded
+  // in the store, and main answers it from memory.
+  try {
+    await store.fetchStatus()
+  } catch {
+    // Keep whatever the store already hydrated.
+  }
+  // Signed-in users are outside the population: the CTA is hidden for them in
+  // BOTH arms, so counting them would dilute the readout rather than inform it.
+  if (store.isSignedIn) return
+
   try {
     window.api.telemetryRecordExposure({
       experimentKey: COMFY_BUILDER_FLAG_KEY,
