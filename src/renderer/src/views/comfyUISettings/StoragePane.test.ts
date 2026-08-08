@@ -449,9 +449,7 @@ describe('StoragePane', () => {
       installMockBridge()
       // A stale record can persist the own dir as an extra; it must collapse
       // into the single locked own row (the backend excludes it the same way).
-      const wrapper = mountPaneWithSections(
-        makeStorageSections(['/own/models', '/a/models'])
-      )
+      const wrapper = mountPaneWithSections(makeStorageSections(['/own/models', '/a/models']))
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
       expect(rows).toHaveLength(2)

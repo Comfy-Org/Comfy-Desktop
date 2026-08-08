@@ -546,9 +546,7 @@ export function resolveLauncherModelDirs(
   // even when a stale record or a shared-dir entry names it.
   const ownDir = inst.installPath ? path.resolve(installModelsDir(inst.installPath)) : null
   const notOwn = (d: string): boolean => ownDir === null || !samePath(ownDir, d)
-  const shared = useShared
-    ? sharedModelsDirs.map((d) => path.resolve(d)).filter(notOwn)
-    : []
+  const shared = useShared ? sharedModelsDirs.map((d) => path.resolve(d)).filter(notOwn) : []
   const instance = ((inst.modelDirs as string[] | undefined) ?? [])
     .map((d) => path.resolve(d))
     .filter(notOwn)
