@@ -1,4 +1,4 @@
-import { BrowserWindow, WebContentsView, ipcMain, screen, shell } from 'electron'
+import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
 import path from 'path'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
@@ -253,58 +253,6 @@ function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
 
   childWindow.webContents.on('dom-ready', inject)
   childWindow.webContents.on('did-navigate-in-page', inject)
-}
-
-/** Credits-checkout popup sizing. A landscape rectangle scaled to the
- *  parent display's work area: most of the width, a shorter height, so
- *  the checkout reads as a wide app-sized surface rather than a tall
- *  dialog. Clamped to a min/max band and to a max aspect ratio so it
- *  stays horizontal on a large monitor and never shrinks below what the
- *  checkout content needs on a laptop. */
-const CHECKOUT_MIN_WIDTH = 720
-const CHECKOUT_MAX_WIDTH = 1280
-const CHECKOUT_MIN_HEIGHT = 560
-const CHECKOUT_MAX_HEIGHT = 860
-const CHECKOUT_WIDTH_FRACTION = 0.82
-const CHECKOUT_HEIGHT_FRACTION = 0.82
-/** Keep it a horizontal rectangle: width is at least this × height. */
-const CHECKOUT_MIN_ASPECT = 1.4
-
-/**
- * Compute centered, work-area-fitted bounds for the checkout popup on
- * whichever display the parent window currently sits on. Width is a
- * large fraction of the work area, height a smaller one, both clamped to
- * the min/max band; then width is widened (within the band) so the
- * window stays a landscape rectangle. Centered over the parent.
- * Cross-platform: `screen.workArea` already excludes the macOS menu bar
- * / Dock and the Windows taskbar.
- */
-function checkoutPopupBounds(parent: BrowserWindow): Electron.Rectangle {
-  const parentBounds = parent.getBounds()
-  const { workArea } = screen.getDisplayMatching(parentBounds)
-  const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
-
-  const height = clamp(
-    Math.round(workArea.height * CHECKOUT_HEIGHT_FRACTION),
-    CHECKOUT_MIN_HEIGHT,
-    Math.min(CHECKOUT_MAX_HEIGHT, workArea.height)
-  )
-  const maxWidth = Math.min(CHECKOUT_MAX_WIDTH, workArea.width)
-  const width = clamp(
-    Math.max(
-      Math.round(workArea.width * CHECKOUT_WIDTH_FRACTION),
-      Math.round(height * CHECKOUT_MIN_ASPECT)
-    ),
-    Math.min(CHECKOUT_MIN_WIDTH, maxWidth),
-    maxWidth
-  )
-
-  // Center over the parent, then nudge fully inside the work area.
-  const cx = parentBounds.x + Math.round((parentBounds.width - width) / 2)
-  const cy = parentBounds.y + Math.round((parentBounds.height - height) / 2)
-  const x = clamp(cx, workArea.x, workArea.x + workArea.width - width)
-  const y = clamp(cy, workArea.y, workArea.y + workArea.height - height)
-  return { x, y, width, height }
 }
 
 /** Max wait for the host reload to paint before closing the popup
@@ -1197,35 +1145,23 @@ export function buildComfyView(
       return { action: 'deny' }
     }
     if (isCheckoutUrl(childUrl)) {
-      // `checkout.comfy.org` forbids iframing, so checkout has to be a
-      // real popup — styled to read as in-app (parented, centered, sized
-      // to the work area) and wired up in `wireCheckoutPopup`. Frameless
-      // on Windows/Linux only: there the checkout page's own ✕/back is
-      // enough, but a frameless `window.open` child on macOS can't be
-      // dragged/closed reliably, so it keeps its frame. preload:
-      // undefined strips our title-bar bridge.
-      nextPopupIsCheckout = true
-      nextCheckoutOpenedAt = Date.now()
+      // Hosted Stripe Checkout runs in the user's real browser, not this
+      // embedded window. Alipay (and any redirect-based method) navigates to a
+      // third-party authorization page whose return leg hangs/blanks inside an
+      // embedded webview (a documented Stripe + webview failure), and the
+      // browser-vs-in-app choice can't be deferred until after the user picks a
+      // method inside Stripe -- so the whole checkout opens externally, up
+      // front. Card/WeChat keep working there too. Credits are granted
+      // server-side by the Stripe webhook and the renderer refetches balance on
+      // return, so nothing needs to redirect back into the app.
       mainTelemetry.capture('comfy.desktop.billing.checkout_opened', {
-        source: 'cloud_webview',
+        source: 'system_browser',
         user_tier: getUserTier()
       })
-      const bounds = checkoutPopupBounds(comfyWindow)
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          parent: comfyWindow,
-          ...bounds,
-          minWidth: CHECKOUT_MIN_WIDTH,
-          minHeight: CHECKOUT_MIN_HEIGHT,
-          frame: process.platform !== 'darwin' ? false : undefined,
-          backgroundColor: COMFY_BG,
-          title: 'Purchase Credits',
-          show: false,
-          webPreferences: { preload: undefined }
-        }
-      }
+      void shell.openExternal(childUrl)
+      return { action: 'deny' }
     }
+
     if (shouldOpenInPopup(childUrl)) {
       // preload: undefined strips our title-bar bridge so OAuth/cloud-login
       // popups can't reach the file menu IPCs.
