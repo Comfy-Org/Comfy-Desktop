@@ -36,8 +36,6 @@ import {
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
 import { isSignedInToCloud, signInToCloud } from '../lib/ipc/registerDevPlatformHandlers'
-import { getFlag, recordExposure } from '../lib/experiments'
-import { COMFY_BUILDER_FLAG_KEY, isFlagEnabled } from '../../shared/experimentKeys'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
 import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
@@ -710,30 +708,6 @@ export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number
   return content + POPUP_VPADDING + POPUP_VBORDER
 }
 
-/** Whether the file menu offers "Sign in to ComfyBuilder": behind the rollout
- *  flag, and only while signed out (a signed-in user manages the account from
- *  the chooser's chip). An absent flag reads as OFF — see `isFlagEnabled` — so
- *  a user the rollout has not reached never sees the item at all.
- *
- *  The exposure is recorded for BOTH arms, because a readout with no control
- *  cohort is not a readout. It fires here rather than at build time because
- *  this runs on menu open, which is the moment the user could have seen it;
- *  `recordExposure` dedups to one event per variant per session. */
-function showSignInMenuItem(): boolean {
-  // Signed-in users are outside the experiment's population: the item is
-  // hidden for them in BOTH arms, so counting them would dilute the readout
-  // rather than inform it. Bail before the exposure, not after.
-  if (isSignedInToCloud()) return false
-  const flag = getFlag(COMFY_BUILDER_FLAG_KEY)
-  const enabled = isFlagEnabled(flag)
-  recordExposure(
-    COMFY_BUILDER_FLAG_KEY,
-    enabled ? 'treatment' : 'control',
-    flag === undefined ? 'fallback' : 'cache'
-  )
-  return enabled
-}
-
 /** Build the file-menu items for a host entry. The waffle/file menu
  *  shape changes with `firstUseMode`, install-backed vs install-less
  *  (chooser) host, current panel, and zoom level — so the items are
@@ -789,9 +763,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   - "Return to Dashboard" is absent: the picker's Home icon is
   //     the canonical dashboard escape (opens a fresh chooser window
   //     instead of detaching, so the running ComfyUI stays alive).
-  //   - Sign in to ComfyBuilder sits at the head of the settings group,
-  //     behind the rollout flag and only while signed out. See
-  //     `showSignInMenuItem`.
+  //   - "Log in" sits at the head of the settings group while signed
+  //     out, and is the app's ONLY sign-in affordance. Deliberately
+  //     NOT behind the Comfy Builder rollout flag: that flag gates
+  //     what a signed-in account may do, and gating login itself
+  //     would put it behind a decision that cannot be made until the
+  //     user has logged in.
   const items: TitlePopupMenuItem[] = [
     { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
     { kind: 'separator' },
@@ -804,8 +781,8 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     { id: 'load-snapshot', label: 'Load Snapshot', labelKey: 'fileMenu.loadSnapshot' },
     { kind: 'separator' }
   ]
-  if (showSignInMenuItem()) {
-    items.push({ id: 'sign-in', label: 'Sign in to ComfyBuilder', labelKey: 'fileMenu.signIn' })
+  if (!isSignedInToCloud()) {
+    items.push({ id: 'sign-in', label: 'Log in', labelKey: 'fileMenu.signIn' })
   }
   items.push(
     {

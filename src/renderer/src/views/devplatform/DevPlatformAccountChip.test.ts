@@ -14,17 +14,13 @@ vi.mock('../../composables/useDialogs', () => ({
 }))
 
 interface MockApi {
-  telemetryGetExperimentFlag: ReturnType<typeof vi.fn>
-  telemetryRecordExposure: ReturnType<typeof vi.fn>
   comfybuilder: Record<string, ReturnType<typeof vi.fn>>
 }
 
 let api: MockApi
 
-function installMockApi(flag: string | boolean | null, status: AuthStatus): MockApi {
+function installMockApi(status: AuthStatus): MockApi {
   api = {
-    telemetryGetExperimentFlag: vi.fn().mockResolvedValue(flag),
-    telemetryRecordExposure: vi.fn(),
     // authStore grabs `window.api.comfybuilder` at construction time and
     // hydrates itself from `getAuthStatus`, so the status has to arrive there
     // — assigning `store.status` would be overwritten by that pull.
@@ -48,9 +44,9 @@ const SIGNED_IN: AuthStatus = {
   workspaceType: 'personal'
 }
 
-/** Mount with the rollout flag resolved and the auth status hydrated. */
-async function mountChip(opts: { flag?: string | boolean | null; status?: AuthStatus } = {}) {
-  installMockApi(opts.flag ?? null, opts.status ?? SIGNED_OUT)
+/** Mount with the auth status hydrated. */
+async function mountChip(status: AuthStatus = SIGNED_OUT) {
+  installMockApi(status)
   setActivePinia(createPinia())
   const store = useAuthStore()
   const wrapper = mount(DevPlatformAccountChip)
@@ -64,84 +60,39 @@ beforeEach(() => {
 })
 
 describe('DevPlatformAccountChip — signed out', () => {
-  it('renders the log-in CTA when the Comfy Builder flag is on', async () => {
-    const { wrapper } = await mountChip({ flag: true })
-    const cta = wrapper.find('[data-testid="devplatform-account-signin"]')
-    expect(cta.exists()).toBe(true)
-    expect(cta.text()).toContain('Log in')
-  })
-
-  // The whole point of the gate: absent, not merely inert.
-  it('renders nothing at all when the flag is absent', async () => {
-    const { wrapper } = await mountChip({ flag: null })
+  // Logging in lives in the title-bar file menu and nowhere else, so the
+  // dashboard shows no account affordance until there is an account.
+  it('renders nothing at all', async () => {
+    const { wrapper } = await mountChip(SIGNED_OUT)
     expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
+    expect(wrapper.text()).toBe('')
   })
 
-  it.each([false, 'true', 'treatment'])(
-    'stays hidden for the non-true flag value %p',
-    async (value) => {
-      const { wrapper } = await mountChip({ flag: value })
-      expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
-    }
-  )
+  it('appears as soon as an out-of-band sign-in lands', async () => {
+    const { wrapper, store } = await mountChip(SIGNED_OUT)
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
 
-  it('stays hidden when the flag lookup rejects', async () => {
-    installMockApi(null, SIGNED_OUT)
-    api.telemetryGetExperimentFlag.mockRejectedValue(new Error('ipc down'))
-    setActivePinia(createPinia())
-    const wrapper = mount(DevPlatformAccountChip)
-    await flushPromises()
-    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
-  })
-
-  it('runs the browser handoff and disables the button while it is out', async () => {
-    let resolveSignIn: (status: AuthStatus) => void = () => {}
-    const { wrapper, store } = await mountChip({ flag: true })
-    store.signIn = vi.fn(
-      () =>
-        new Promise<AuthStatus>((resolve) => {
-          resolveSignIn = resolve
-        })
-    )
-
-    const cta = wrapper.find('[data-testid="devplatform-account-signin"]')
-    await cta.trigger('click')
-    expect(store.signIn).toHaveBeenCalledOnce()
-    expect(cta.attributes('disabled')).toBeDefined()
-
-    resolveSignIn({ signedIn: true })
-    await flushPromises()
-    expect(
-      wrapper.find('[data-testid="devplatform-account-signin"]').attributes('disabled')
-    ).toBeUndefined()
-  })
-
-  it('re-arms the button after a cancelled handoff', async () => {
-    const { wrapper, store } = await mountChip({ flag: true })
-    store.signIn = vi.fn().mockRejectedValue(new Error('user closed the browser'))
-
-    await wrapper.find('[data-testid="devplatform-account-signin"]').trigger('click')
+    // What the file menu's Log in ultimately produces: main broadcasts the new
+    // status and every surface re-renders off it.
+    store.status = SIGNED_IN
     await flushPromises()
 
-    const cta = wrapper.find('[data-testid="devplatform-account-signin"]')
-    expect(cta.exists()).toBe(true)
-    expect(cta.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('someone@comfy.org')
   })
 })
 
 describe('DevPlatformAccountChip — signed in', () => {
-  // Ungated on purpose: whoever is already signed in must still be able to
-  // switch workspace and sign out, whatever the rollout says.
-  it('renders the chip face even with the flag off', async () => {
-    const { wrapper } = await mountChip({ flag: null, status: SIGNED_IN })
+  it('names the account and the workspace on the chip face', async () => {
+    const { wrapper } = await mountChip(SIGNED_IN)
     expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('someone@comfy.org')
+    expect(wrapper.text()).toContain('Personal')
   })
 
   it('opens the workspace switcher and pulls the list lazily', async () => {
-    const { wrapper } = await mountChip({ flag: true, status: SIGNED_IN })
+    const { wrapper } = await mountChip(SIGNED_IN)
     expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(false)
 
     await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
@@ -152,7 +103,7 @@ describe('DevPlatformAccountChip — signed in', () => {
   })
 
   it('signs out only after the confirm is accepted', async () => {
-    const { wrapper, store } = await mountChip({ flag: true, status: SIGNED_IN })
+    const { wrapper, store } = await mountChip(SIGNED_IN)
     store.signOut = vi.fn().mockResolvedValue({ signedIn: false })
     dialogs.confirm.mockResolvedValue(false)
 
@@ -168,53 +119,17 @@ describe('DevPlatformAccountChip — signed in', () => {
     expect(store.signOut).toHaveBeenCalledOnce()
     expect(wrapper.emitted('signed-out')).toHaveLength(1)
   })
-})
 
-describe('DevPlatformAccountChip — exposure', () => {
-  it('records the treatment arm when the flag is on', async () => {
-    await mountChip({ flag: true })
-    expect(api.telemetryRecordExposure).toHaveBeenCalledExactlyOnceWith({
-      experimentKey: 'desktop-comfy-builder',
-      variant: 'treatment',
-      source: 'cache'
-    })
-  })
+  // Sign-out IPC failure must leave the chip visibly signed in rather than lie.
+  it('stays signed in when sign-out fails', async () => {
+    const { wrapper, store } = await mountChip(SIGNED_IN)
+    store.signOut = vi.fn().mockRejectedValue(new Error('ipc down'))
 
-  // The control arm has to be counted too, or the readout is biased.
-  it('records the control arm as a fallback when the flag is absent', async () => {
-    await mountChip({ flag: null })
-    expect(api.telemetryRecordExposure).toHaveBeenCalledExactlyOnceWith({
-      experimentKey: 'desktop-comfy-builder',
-      variant: 'control',
-      source: 'fallback'
-    })
-  })
-
-  // Signed-in users see no CTA in either arm, so enrolling them would only
-  // dilute the readout.
-  it.each([true, null])('records nothing for a signed-in user, flag %p', async (flag) => {
-    await mountChip({ flag, status: SIGNED_IN })
-    expect(api.telemetryRecordExposure).not.toHaveBeenCalled()
-  })
-
-  // The status hydrates asynchronously and starts on `{ signedIn: false }`;
-  // reading it before it settles would enrol a signed-in user anyway.
-  it('waits for the auth status to settle before deciding eligibility', async () => {
-    installMockApi(true, SIGNED_IN)
-    let resolveStatus: (status: AuthStatus) => void = () => {}
-    api.comfybuilder.getAuthStatus.mockReturnValue(
-      new Promise<AuthStatus>((resolve) => {
-        resolveStatus = resolve
-      })
-    )
-    setActivePinia(createPinia())
-    const wrapper = mount(DevPlatformAccountChip)
+    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
+    await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
     await flushPromises()
-    expect(api.telemetryRecordExposure).not.toHaveBeenCalled()
 
-    resolveStatus(SIGNED_IN)
-    await flushPromises()
-    expect(api.telemetryRecordExposure).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
+    expect(wrapper.emitted('signed-out')).toBeUndefined()
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
   })
 })
