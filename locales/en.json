@@ -1377,6 +1377,7 @@
     "newInstall": "New Instance",
     "addExistingInstall": "Add Existing Instance",
     "loadSnapshot": "Load Snapshot",
+    "signIn": "Sign in to ComfyBuilder",
     "globalSettings": "Desktop Settings",
     "sendFeedback": "Send Feedback",
     "returnToDashboard": "Return to Dashboard",

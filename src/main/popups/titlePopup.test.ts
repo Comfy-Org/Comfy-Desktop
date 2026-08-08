@@ -1,4 +1,23 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const devPlatformMocks = vi.hoisted(() => ({
+  getFlag: vi.fn<(key: string) => string | boolean | undefined>(() => undefined),
+  recordExposure: vi.fn(),
+  isSignedInToCloud: vi.fn(() => false),
+  signInToCloud: vi.fn(async () => ({ signedIn: true }))
+}))
+
+// The file menu reads the Comfy Builder rollout flag and starts sign-ins from
+// main. Stub both so the menu tests drive the gate directly instead of writing
+// a flag cache to disk or opening a browser.
+vi.mock('../lib/experiments', () => ({
+  getFlag: devPlatformMocks.getFlag,
+  recordExposure: devPlatformMocks.recordExposure
+}))
+vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({
+  isSignedInToCloud: devPlatformMocks.isSignedInToCloud,
+  signInToCloud: devPlatformMocks.signInToCloud
+}))
 
 // shared.ts (via registry.ts) loads electron at import, so mock it first.
 vi.mock('electron', () => ({
@@ -33,6 +52,14 @@ import {
   type TitlePopupHostBindings
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  // Flag absent + signed out is the shipped default: every assertion that does
+  // not say otherwise describes the control arm.
+  devPlatformMocks.getFlag.mockReturnValue(undefined)
+  devPlatformMocks.isSignedInToCloud.mockReturnValue(false)
+})
 
 afterEach(() => {
   comfyWindows.clear()
@@ -147,7 +174,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(quit?.label).toBe('Quit Desktop')
   })
 
-  it('chooser host matches the canonical order including Close Window', () => {
+  it('chooser host matches the canonical order including Close Window, Comfy Builder off', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
@@ -179,6 +206,92 @@ describe('buildTitlePopupMenuItems', () => {
     expect(closeWindow?.label).toBe('Close Window')
     const quit = items.find((i) => i.id === 'close-all-windows')
     expect(quit?.label).toBe('Quit Desktop')
+  })
+
+  it('chooser host matches the canonical order with Comfy Builder on', () => {
+    devPlatformMocks.getFlag.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
+    expect(ids).toEqual([
+      'new-window',
+      'new-install',
+      'track',
+      'load-snapshot',
+      'sign-in',
+      'settings',
+      'feedback',
+      'exit-window',
+      'close-all-windows'
+    ])
+    const signIn = items.find((i) => i.id === 'sign-in')
+    expect(signIn?.label).toBe('Sign in to ComfyBuilder')
+    expect(signIn?.labelKey).toBe('fileMenu.signIn')
+  })
+
+  it('install host matches the canonical order with Comfy Builder on and Reset Zoom live', () => {
+    devPlatformMocks.getFlag.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
+    const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
+    expect(ids).toEqual([
+      'new-window',
+      'new-install',
+      'track',
+      'load-snapshot',
+      'sign-in',
+      'settings',
+      'feedback',
+      'reset-zoom',
+      'exit-window',
+      'close-all-windows'
+    ])
+  })
+
+  it('omits Sign in to ComfyBuilder when the flag is absent from the cache', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(items.find((i) => i.id === 'sign-in')).toBeUndefined()
+  })
+
+  // The gate is deliberately strict: PostHog hands back strings for
+  // multivariate flags, and this one is a boolean rollout.
+  it.each([false, 'true', 'treatment'] as const)(
+    'omits Sign in to ComfyBuilder for the non-true flag value %p',
+    (value) => {
+      devPlatformMocks.getFlag.mockReturnValue(value)
+      const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+      expect(items.find((i) => i.id === 'sign-in')).toBeUndefined()
+    }
+  )
+
+  it('omits Sign in to ComfyBuilder when the flag is on but the user is signed in', () => {
+    devPlatformMocks.getFlag.mockReturnValue(true)
+    devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(items.find((i) => i.id === 'sign-in')).toBeUndefined()
+  })
+
+  it('keeps the post-consent menu to Skip Onboarding even with Comfy Builder on', () => {
+    devPlatformMocks.getFlag.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ firstUseMode: 'post-consent' }))
+    expect(items.map((i) => i.id ?? null)).toEqual(['skip-onboarding'])
+  })
+
+  it('records a treatment exposure from the cache when the flag is on', () => {
+    devPlatformMocks.getFlag.mockReturnValue(true)
+    buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(devPlatformMocks.recordExposure).toHaveBeenCalledExactlyOnceWith(
+      'desktop-comfy-builder',
+      'treatment',
+      'cache'
+    )
+  })
+
+  it('records a control exposure as a fallback when the flag is absent', () => {
+    buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(devPlatformMocks.recordExposure).toHaveBeenCalledExactlyOnceWith(
+      'desktop-comfy-builder',
+      'control',
+      'fallback'
+    )
   })
 
   it('install host omits Return to Dashboard — picker Home is the canonical dashboard escape', () => {
@@ -266,6 +379,37 @@ describe('activateTitlePopupMenuItem', () => {
     activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
 
     expect(bindings.resetComfyZoom).not.toHaveBeenCalled()
+  })
+
+  // The shared primitive, not `session.login()` — it carries the sign-out race
+  // guard the `comfybuilder:signIn` IPC relies on.
+  it('routes Sign in to ComfyBuilder through the shared login primitive', () => {
+    const host = makeEntry({ installationId: null })
+    comfyWindows.set(host.windowKey, host)
+
+    activateTitlePopupMenuItem(
+      makePopupEntry(host.windowKey),
+      'sign-in',
+      {} as unknown as TitlePopupHostBindings
+    )
+
+    expect(devPlatformMocks.signInToCloud).toHaveBeenCalledOnce()
+  })
+
+  it('swallows a cancelled or failed sign-in handoff', async () => {
+    const host = makeEntry({ installationId: null })
+    comfyWindows.set(host.windowKey, host)
+    devPlatformMocks.signInToCloud.mockRejectedValueOnce(new Error('user closed the browser'))
+
+    expect(() =>
+      activateTitlePopupMenuItem(
+        makePopupEntry(host.windowKey),
+        'sign-in',
+        {} as unknown as TitlePopupHostBindings
+      )
+    ).not.toThrow()
+    // Let the rejected promise settle so an unhandled rejection would surface.
+    await Promise.resolve()
   })
 })
 
