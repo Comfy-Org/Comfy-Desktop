@@ -14,6 +14,7 @@
  */
 import { BrowserWindow, ipcMain } from 'electron'
 
+import { comfyWindows } from '../../host/registry'
 import { getBuilderClient, getCloudSession } from '../../devplatform/session'
 import {
   listDistributionRows,
@@ -59,14 +60,25 @@ export interface InstallDistributionResult {
 }
 
 /**
- * Push the renderer-safe {@link AuthStatus} to every window so all surfaces
- * update in lockstep. Only the status (never tokens) is sent. Exported so a
- * mid-request session expiry could announce itself later.
+ * Push the renderer-safe {@link AuthStatus} to every surface so they update in
+ * lockstep. Only the status (never tokens) is sent.
+ *
+ * A host window loads NO page of its own — the dashboard/chooser renderer lives
+ * in a child `panelView` WebContentsView — so `BrowserWindow.getAllWindows()`
+ * alone delivers to an empty webContents and the chip never repaints. That went
+ * unnoticed while the only sign-in trigger was the chip itself, which set the
+ * store from `signIn()`'s return value and never needed the push. Now that the
+ * file menu starts sign-ins from main, this broadcast is the only path back.
  */
 export function broadcastAuthChanged(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed())
       win.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
+  }
+  for (const entry of comfyWindows.values()) {
+    const panel = entry.panelView
+    if (panel && !panel.webContents.isDestroyed())
+      panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
 }
 
