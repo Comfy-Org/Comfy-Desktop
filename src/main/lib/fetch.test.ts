@@ -8,6 +8,7 @@ vi.mock('./safe-file', () => ({ writeFileSafe: vi.fn() }))
 interface FakeRequest extends EventEmitter {
   setHeader: ReturnType<typeof vi.fn>
   end: ReturnType<typeof vi.fn>
+  abort: ReturnType<typeof vi.fn>
   __url: string
   __headers: Record<string, string>
 }
@@ -23,6 +24,7 @@ vi.mock('electron', () => ({
           headers[k] = v
         }),
         end: vi.fn(),
+        abort: vi.fn(),
         __url: opts.url,
         __headers: headers
       }) as FakeRequest
@@ -32,7 +34,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { _resetCacheForTest, fetchJSON } from './fetch'
+import { _resetCacheForTest, fetchJSON, fetchText } from './fetch'
 
 function makeResponse(
   statusCode: number,
@@ -164,5 +166,93 @@ describe('fetchJSON — mirror is not allowed to poison the cache', () => {
     expect(requests[0]!.__headers['If-None-Match']).toBe('"primary-etag-1"')
     requests[0]!.emit('response', makeResponse(304, ''))
     await expect(p2).resolves.toEqual({ v: 1 })
+  })
+})
+
+describe('fetchText — shares fetchJSON’s cache and retry layer', () => {
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
+
+  it('returns the raw body without JSON parsing', async () => {
+    const p = fetchText(PRIMARY)
+    requests[0]!.emit('response', makeResponse(200, 'comfyui-workflow-templates==0.11.31\n'))
+    await expect(p).resolves.toContain('comfyui-workflow-templates==0.11.31')
+  })
+
+  it('serves the cached body on a 304, so an unchanged pin costs no re-download', async () => {
+    const first = fetchText(PRIMARY)
+    requests[0]!.emit('response', makeResponse(200, 'pinned==1.0.0', { etag: '"v1"' }))
+    await first
+
+    const second = fetchText(PRIMARY)
+    requests[1]!.emit('response', makeResponse(304, ''))
+    await expect(second, 'a warm cache carries an offline boot').resolves.toBe('pinned==1.0.0')
+  })
+
+  it('falls back to the last-cached body when the network fails', async () => {
+    const first = fetchText(PRIMARY)
+    requests[0]!.emit('response', makeResponse(200, 'pinned==1.0.0', { etag: '"v1"' }))
+    await first
+
+    const second = fetchText(PRIMARY)
+    requests[1]!.emit('error', new Error('offline'))
+    await new Promise((r) => setImmediate(r))
+    requests[2]!.emit('error', new Error('offline'))
+    await expect(second, 'a warm cache carries an offline boot').resolves.toBe('pinned==1.0.0')
+  })
+
+  it('rejects on a non-200 so a 404 is not mistaken for an empty body', async () => {
+    const p = fetchText(PRIMARY)
+    requests[0]!.emit('response', makeResponse(404, 'Not Found'))
+    await new Promise((r) => setImmediate(r))
+    requests[1]!.emit('error', new Error('mirror down'))
+    await expect(p).rejects.toThrow(/HTTP 404/)
+  })
+})
+
+describe('fetch — request timeout', () => {
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
+
+  it('rejects a stalled request instead of hanging its callers', async () => {
+    await expect(
+      fetchText(PRIMARY, { timeoutMs: 10 }),
+      'net.request has no deadline, so only this can settle a black-holed socket'
+    ).rejects.toThrow(/Timed out after 10ms/)
+  })
+
+  it('aborts the stalled request rather than leaking the socket', async () => {
+    await fetchText(PRIMARY, { timeoutMs: 10 }).catch(() => undefined)
+    expect(requests[0]!.abort, 'the socket is released, not just abandoned').toHaveBeenCalled()
+  })
+
+  it('does not let a late timeout reject an already-resolved request', async () => {
+    const p = fetchText(PRIMARY, { timeoutMs: 10 })
+    requests[0]!.emit('response', makeResponse(200, 'body'))
+    await expect(p).resolves.toBe('body')
+    await new Promise((r) => setTimeout(r, 30))
+  })
+})
+
+describe('fetch — cache is namespaced by parser', () => {
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
+
+  it('does not serve a JSON-cached body to a text caller', async () => {
+    const first = fetchJSON(PRIMARY)
+    requests[0]!.emit('response', makeResponse(200, '{"a":1}', { etag: '"v1"' }))
+    await first
+
+    const second = fetchText(PRIMARY)
+    requests[1]!.emit('response', makeResponse(200, 'plain text'))
+    await expect(second, 'a JSON-cached body is never served to a text caller').resolves.toBe(
+      'plain text'
+    )
   })
 })
