@@ -122,3 +122,34 @@ describe('resolveTemplateModels — URL + path guards', () => {
     expect(out).toEqual([])
   })
 })
+
+describe('remote workflow fallback follows the pinned version', () => {
+  beforeEach(() => {
+    fetchJSON.mockReset()
+  })
+
+  it('fetches the workflow from the asset base it is given', async () => {
+    fetchJSON.mockResolvedValue({ models: [] })
+    await resolveTemplateModels(
+      null,
+      'image_one',
+      'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/v0.11.12/templates'
+    )
+    expect(
+      fetchJSON,
+      'a network-fetched workflow must match the revision the card came from'
+    ).toHaveBeenCalledWith(
+      'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/v0.11.12/templates/image_one.json',
+      expect.anything()
+    )
+  })
+
+  it('defaults to main when no asset base is given', async () => {
+    fetchJSON.mockResolvedValue({ models: [] })
+    await resolveTemplateModels(null, 'image_one')
+    expect(fetchJSON).toHaveBeenCalledWith(
+      expect.stringContaining('/main/templates/image_one.json'),
+      expect.anything()
+    )
+  })
+})

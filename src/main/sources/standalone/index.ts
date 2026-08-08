@@ -20,6 +20,7 @@ import {
 import { install, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog } from './templateCatalog'
+import { resolveTemplatePackageVersion, templateAssetBaseFor } from './templatePin'
 import { resolveTemplateModels } from './templateModels'
 import * as installations from '../../installations'
 
@@ -555,18 +556,31 @@ export const standalone: SourcePlugin = {
       // "None" comes first as the skip option; the per-modality recommended
       // picks carry `recommended` on their own option so the wizard auto-selects
       // a real template (the lightest "wow"), not the skip.
-      const catalog = await loadTemplateCatalog()
+      const releaseData = selections.release?.data as
+        | { latestStableTag?: string | null }
+        | undefined
+      const pickedComfyTag =
+        typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+          ? selections.comfyVersion.value
+          : null
+      const targetComfyVersion =
+        pickedComfyTag ?? releaseData?.latestStableTag ?? (await getLatestStableTag())
+      const catalog = await loadTemplateCatalog({ comfyVersion: targetComfyVersion })
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
       const installation = installId ? await installations.get(installId) : null
       // `budgeted` stops the timed-out pass writing after we return, so a slow
       // `modelsPresent: false` reads as "unbadged", never "confirmed absent".
       let budgeted = false
+      const assetBase = templateAssetBaseFor(
+        await resolveTemplatePackageVersion(targetComfyVersion).catch(() => null)
+      )
       const presenceById = new Map<string, boolean>()
       const presencePass = Promise.all(
         catalog.map(async (tpl) => {
           try {
-            const models = await resolveTemplateModels(installation, tpl.id)
+            const models = await resolveTemplateModels(installation, tpl.id, assetBase)
             const present = await areModelsPresent(installId, models)
             if (!budgeted) presenceById.set(tpl.id, present)
           } catch {
