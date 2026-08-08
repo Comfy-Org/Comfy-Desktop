@@ -38,6 +38,38 @@ describe('isPersistableTemplateId', () => {
   })
 })
 
+describe('CURATED_TEMPLATES is the picker’s backfill floor', () => {
+  it('carries exactly 4 templates for every modality in the tab order', () => {
+    for (const modality of TEMPLATE_MODALITY_ORDER) {
+      const forModality = CURATED_TEMPLATES.filter((t) => t.modality === modality)
+      expect(forModality.length, `${modality}: the floor every fallback bottoms out on`).toBe(4)
+    }
+    expect(CURATED_TEMPLATES.length).toBe(TEMPLATE_MODALITY_ORDER.length * 4)
+  })
+
+  it('has exactly one recommended per modality, and never an API-node one', () => {
+    for (const modality of TEMPLATE_MODALITY_ORDER) {
+      const recommended = CURATED_TEMPLATES.filter(
+        (t) => t.modality === modality && t.recommended === true
+      )
+      expect(recommended.length, modality).toBe(1)
+      expect(recommended[0]!.apiNode, modality).toBeUndefined()
+    }
+  })
+
+  it('has no duplicate ids', () => {
+    const ids = CURATED_TEMPLATES.map((t) => t.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('gives every entry a snapshot, so an offline cold start still renders cards', () => {
+    for (const t of CURATED_TEMPLATES) {
+      expect(t.snapshot?.title, t.id).toBeTruthy()
+      expect(typeof t.snapshot?.sizeBytes, t.id).toBe('number')
+    }
+  })
+})
+
 describe('buildTemplateDeeplink', () => {
   it('appends ?template=<id>&source=default and round-trips the id', () => {
     const out = buildTemplateDeeplink('http://127.0.0.1:8188/', 'flux_schnell')
@@ -77,8 +109,6 @@ describe('thumbnailUrlFor', () => {
 })
 
 describe('CURATED_TEMPLATES manifest', () => {
-  // Must match the frontend deeplink validator so the auto-open can't be
-  // rejected for a malformed id.
   const ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
 
   it('offers exactly 4 templates per modality', () => {

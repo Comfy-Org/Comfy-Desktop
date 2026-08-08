@@ -26,8 +26,14 @@ interface CuratedTemplateBase {
   id: string
   /** Output modality this template showcases. */
   modality: TemplateModality
-  /** Offline display metadata; superseded by the live index when available. */
-  snapshot: TemplateSnapshot
+  /** Superseded by the live index; optional on a remote entry. */
+  snapshot?: TemplateSnapshot
+  /** ISO-8601 UTC; hidden before this, so content can stage a launch. */
+  availableFrom?: string
+  /** ISO-8601 UTC. After this instant the entry is hidden. */
+  availableUntil?: string
+  /** Forces `snapshot` copy over the live index, for launch-specific wording. */
+  snapshotOverrides?: true
 }
 
 /**
@@ -37,6 +43,9 @@ interface CuratedTemplateBase {
  */
 export type CuratedTemplate = CuratedTemplateBase &
   ({ recommended?: true; apiNode?: never } | { apiNode: true; recommended?: never })
+
+/** `snapshot` is required: this list is the offline floor. */
+export type BakedInTemplate = CuratedTemplate & { snapshot: TemplateSnapshot }
 
 /** Tab order in the picker — one tab per modality that has ≥1 curated template. */
 export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
@@ -65,10 +74,15 @@ const IMAGE_SUBTYPES = new Set(['webp', 'png', 'jpg', 'jpeg', 'gif', 'avif'])
  * subtype isn't an image (e.g. `mp3`), so the caller falls back to the glyph
  * without a doomed network request. Pure + exported for reuse and tests.
  */
-export function thumbnailUrlFor(id: string, mediaSubtype: string): string | null {
+export function thumbnailUrlFor(
+  id: string,
+  mediaSubtype: string,
+  /** Defaults to `main`; the picker passes the base its install ships. */
+  assetBase: string = RAW_TEMPLATES_BASE
+): string | null {
   const ext = (mediaSubtype || 'webp').toLowerCase()
   if (!IMAGE_SUBTYPES.has(ext)) return null
-  return `${RAW_TEMPLATES_BASE}/${id}-1.${ext}`
+  return `${assetBase}/${id}-1.${ext}`
 }
 
 /**
@@ -94,7 +108,7 @@ export const NO_TEMPLATE_VALUE = 'none'
 /** A template id is a single path-safe segment: the frontend deeplink validator
  *  pattern (`^[a-zA-Z0-9_.-]+$`). No `/` or `\`, so it can't escape the templates
  *  dir when joined into a filesystem path or interpolated into a fetch URL. */
-const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
+export const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
 
 /**
  * Whether `value` is a persistable starter-template id. Accepts any
@@ -115,7 +129,7 @@ export function isPersistableTemplateId(value: unknown): value is string {
  * To update, change the id and sync the template's
  * title/description/size/mediaSubtype into `snapshot`.
  */
-export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
+export const CURATED_TEMPLATES: readonly BakedInTemplate[] = [
   // --- Image ---
   {
     id: 'image_z_image_turbo',
