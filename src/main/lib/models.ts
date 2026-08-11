@@ -196,8 +196,13 @@ export function installOutputDir(installPath: string): string {
 
 /** Re-home a copied install's promoted download target. A `modelDirsPrimary`
  *  that points at the *source* install's own models dir is an absolute path
- *  inside the source, so the copy must point at its own models dir instead;
- *  shared / per-install external targets apply to the copy as-is. */
+ *  inside the source, so the copy must point at its own models dir instead.
+ *  Any other target is preserved as-is - deliberately including a per-install
+ *  extra dir that happens to live inside the source tree: such a dir stays
+ *  listed in the copy's inherited `modelDirs` (both installs share it), so
+ *  the primary must keep matching that entry. Re-rooting only the primary
+ *  would orphan it and trigger the stale-primary fallback to the first
+ *  shared dir. */
 export function rehomeOwnModelsPrimary(
   primary: string,
   sourceInstallPath: string,

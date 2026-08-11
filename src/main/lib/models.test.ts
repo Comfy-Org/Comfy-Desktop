@@ -421,6 +421,21 @@ describe('rehomeOwnModelsPrimary', () => {
     const external = path.join(tmp, 'shared-models')
     expect(rehomeOwnModelsPrimary(external, src, dest)).toBe(external)
   })
+
+  it('follows the discovered ComfyUI layout, not just the default fallback', () => {
+    // Desktop basePath layout: models/, user/, custom_nodes/ live directly in
+    // the install path, so the own models dir is <install>/models rather than
+    // the <install>/ComfyUI/models fallback.
+    const src = path.join(tmp, 'src')
+    const dest = path.join(tmp, 'dest')
+    for (const root of [src, dest]) {
+      for (const sub of ['models', 'user', 'custom_nodes']) {
+        fs.mkdirSync(path.join(root, sub), { recursive: true })
+      }
+    }
+    const result = rehomeOwnModelsPrimary(path.join(src, 'models'), src, dest)
+    expect(path.resolve(result)).toBe(path.resolve(path.join(dest, 'models')))
+  })
 })
 
 describe('resolveInstallModelSearchPaths', () => {

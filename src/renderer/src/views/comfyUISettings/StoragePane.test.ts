@@ -888,8 +888,10 @@ describe('StoragePane', () => {
       await nextTick()
       const row = wrapper.findAll('.storage-dir-row')[0]!
       expect(row.find('.storage-dir-action[aria-label^="Browse"]').exists()).toBe(false)
-      // The only action opens Global Desktop Settings; nothing is written from here.
-      await row.find('.storage-dir-action').trigger('click')
+      // The manage action opens Global Desktop Settings; nothing is written from here.
+      await row
+        .find('.storage-dir-action[aria-label^="Manage Shared Directories"]')
+        .trigger('click')
       await flushPromises()
       expect(bridge.openSettingsTabCalls).toEqual(['global'])
       expect(bridge.updateFieldCalls).toEqual([])
