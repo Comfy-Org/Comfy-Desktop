@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // shared.ts (via registry.ts) loads electron at import, so mock it first.
 vi.mock('electron', () => ({
@@ -20,7 +20,14 @@ vi.mock('electron', () => ({
 // stub it so the dispatch tests stay pure and don't bootstrap the SDK.
 vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
 
+vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
+  ...(await vi.importActual('../lib/ipc/registerSettingsHandlers')),
+  applySettingSet: vi.fn()
+}))
+
 import {
+  _test_deleteTitlePopupEntry,
+  _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
   buildInstancePickerSnapshot,
   resolvePickerSelectedInstallId,
@@ -28,12 +35,15 @@ import {
   computePopupHeight,
   decideFlowMenuItemTarget,
   isFlowMenuItemId,
+  registerTitlePopupIpc,
   requiresPerOpenConfigSync,
   type FlowMenuItemId,
   type InstancePickerInstall,
+  type TitlePopupEntry,
   type TitlePopupHostBindings
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
+import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
 
 afterEach(() => {
   comfyWindows.clear()
@@ -522,5 +532,110 @@ describe('buildInstancePickerSnapshot', () => {
       storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(7)
+  })
+})
+
+describe('global settings IPC handlers', () => {
+  type IpcHandler = (
+    event: Electron.IpcMainInvokeEvent,
+    payload?: Record<string, unknown>
+  ) => unknown
+
+  let updateField: IpcHandler
+  let setModelsDirs: IpcHandler
+
+  const eventFor = (id: number): Electron.IpcMainInvokeEvent =>
+    ({ sender: { id } }) as unknown as Electron.IpcMainInvokeEvent
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+    const handlerFor = (channel: string): IpcHandler => {
+      const call = vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === channel)
+      if (!call) throw new Error(`IPC handler not registered: ${channel}`)
+      return call[1] as IpcHandler
+    }
+    updateField = handlerFor('comfy-titlepopup:global-settings-update-field')
+    setModelsDirs = handlerFor('comfy-titlepopup:global-settings-set-models-dirs')
+    _test_setTitlePopupEntry(101, { kind: 'global-settings' } as TitlePopupEntry)
+    _test_setTitlePopupEntry(102, { kind: 'instance-picker' } as TitlePopupEntry)
+    _test_setTitlePopupEntry(103, { kind: 'downloads' } as TitlePopupEntry)
+  })
+
+  beforeEach(() => {
+    vi.mocked(applySettingSet).mockReset()
+  })
+
+  afterAll(() => {
+    _test_deleteTitlePopupEntry(101)
+    _test_deleteTitlePopupEntry(102)
+    _test_deleteTitlePopupEntry(103)
+  })
+
+  it('updates a field for a global-settings sender', () => {
+    expect(updateField(eventFor(101), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: true
+    })
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('inputDir', '/shared/in')
+  })
+
+  it('updates a field for an instance-picker sender', () => {
+    expect(updateField(eventFor(102), { fieldId: 'theme', value: 'dark' })).toEqual({ ok: true })
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('theme', 'dark')
+  })
+
+  it('rejects an unknown sender updating a field', () => {
+    expect(updateField(eventFor(999), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: false,
+      message: 'Global Settings popup not active.'
+    })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-settings popup updating a field', () => {
+    expect(updateField(eventFor(103), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: false,
+      message: 'Global Settings popup not active.'
+    })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, ''])('rejects invalid field id %j', (fieldId) => {
+    expect(updateField(eventFor(101), { fieldId })).toEqual({
+      ok: false,
+      message: 'Invalid field id.'
+    })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('returns an applySettingSet error when updating a field', () => {
+    vi.mocked(applySettingSet).mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    expect(updateField(eventFor(101), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: false,
+      message: 'boom'
+    })
+  })
+
+  it('sets models directories for a settings sender', () => {
+    const dirs = ['/a', '/b']
+    expect(setModelsDirs(eventFor(101), { dirs })).toEqual({ ok: true })
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('modelsDirs', dirs)
+  })
+
+  it.each(['/a', undefined])('rejects non-array models directories %j', (dirs) => {
+    expect(setModelsDirs(eventFor(101), { dirs })).toEqual({ ok: false })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects models directories containing a non-string', () => {
+    expect(setModelsDirs(eventFor(101), { dirs: ['/a', 5] })).toEqual({ ok: false })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown sender setting models directories', () => {
+    expect(setModelsDirs(eventFor(999), { dirs: ['/a'] })).toEqual({ ok: false })
+    expect(applySettingSet).not.toHaveBeenCalled()
   })
 })

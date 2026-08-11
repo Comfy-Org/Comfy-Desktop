@@ -415,7 +415,7 @@ type TitlePopupConfig =
  * `comfy-titlebar:menu-closed` for the reopen-suppression guard)
  * can route without their own per-open context.
  */
-interface TitlePopupEntry {
+export interface TitlePopupEntry {
   view: EmbeddedPopupView
   /** Numeric `windowKey` of the parent host entry, updated on every
    *  open. `0` is a sentinel for "no popup has been opened yet" since
@@ -3165,6 +3165,15 @@ export function notifyGlobalSettingsDownloadProgress(progress: Record<string, un
   lastAppUpdateProgress = progress
   if (!activeBindings) return
   void broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
+}
+
+/** Test seam: register/remove a popup entry for IPC sender gating. */
+export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopupEntry): void {
+  titlePopupsByWebContents.set(webContentsId, entry)
+}
+
+export function _test_deleteTitlePopupEntry(webContentsId: number): void {
+  titlePopupsByWebContents.delete(webContentsId)
 }
 
 /**
