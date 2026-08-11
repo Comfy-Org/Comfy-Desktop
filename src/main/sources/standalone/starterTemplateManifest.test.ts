@@ -424,16 +424,17 @@ describe('flag plumbing and fallback layers', () => {
 
 describe('a known id must agree with its baked-in modality', () => {
   it('drops a baked-in id filed under the wrong tab', () => {
+    const [misfiled, correct] = CURATED_TEMPLATES.filter((t) => t.modality === 'image')
     const parsed = parseStarterTemplateManifest(
       doc([
-        { id: 'image_z_image_turbo', modality: 'video' },
-        { id: 'sdxlturbo_example', modality: 'image' }
+        { id: misfiled!.id, modality: 'video' },
+        { id: correct!.id, modality: 'image' }
       ])
     )
     expect(
       parsed!.map((e) => e.id),
       'a known id under the wrong tab is dropped'
-    ).toEqual(['sdxlturbo_example'])
+    ).toEqual([correct!.id])
   })
 
   it('keeps every baked-in id under its own modality', () => {

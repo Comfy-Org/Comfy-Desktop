@@ -669,8 +669,9 @@ describe('4x4 when the index offers no substitute candidates', () => {
   }
 
   it('holds when the recommended card is missing and nothing can substitute', async () => {
+    const recommendedVideo = CURATED_TEMPLATES.find((t) => t.modality === 'video' && t.recommended)!
     resolveTemplatePackageVersion.mockResolvedValue('0.11.12')
-    mockedFetchJSON.mockResolvedValue(bareIndex(['video_minimax_h3_t2v']))
+    mockedFetchJSON.mockResolvedValue(bareIndex([recommendedVideo.id]))
     const catalog = await loadCards({ comfyVersion: 'v0.28.2' })
     expectFourByFour(catalog)
   })
@@ -698,14 +699,13 @@ describe('4x4 when the index offers no substitute candidates', () => {
   })
 
   it('never lets a substitute steal a baked-in card still owed a slot', async () => {
-    mockedFetchJSON.mockResolvedValue(bareIndex(['video_minimax_h3_t2v']))
+    const [removed, ...retained] = CURATED_TEMPLATES.filter((t) => t.modality === 'video').map(
+      (t) => t.id
+    )
+    mockedFetchJSON.mockResolvedValue(bareIndex([removed!]))
     const catalog = await loadCards({ comfyVersion: 'v0.28.2' })
     const video = catalog.filter((c) => c.modality === 'video').map((c) => c.id)
-    for (const id of [
-      'api_seedance2_0_r2v',
-      'wan2.1_fun_inp',
-      'video_wan2.1_fun_camera_v1.1_1.3B'
-    ]) {
+    for (const id of retained) {
       expect(video, `${id} kept its own slot`).toContain(id)
     }
   })
