@@ -16,9 +16,10 @@ export default defineConfig({
     // otherwise have happy-dom fetch the real URL. The request outlives the
     // test, so teardown aborts it and the rejection surfaces as an unhandled
     // error in an unrelated file. Tests assert on the `src` attribute, never
-    // on loaded frame content.
+    // on loaded frame content. (Supersedes `disableIframePageLoading`, which
+    // happy-dom deprecated and which logged a console error per blocked frame.)
     environmentOptions: {
-      happyDOM: { settings: { disableIframePageLoading: true } }
+      happyDOM: { settings: { navigation: { disableChildFrameNavigation: true } } }
     },
     include: ['src/**/*.test.ts'],
     exclude: ['src/**/*.integration.test.ts', 'node_modules'],
