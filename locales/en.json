@@ -190,8 +190,8 @@
   },
   "media": {
     "sharedDirs": "Media",
-    "inputDir": "Input Directory",
-    "outputDir": "Output Directory"
+    "inputDir": "Shared Input",
+    "outputDir": "Shared Output"
   },
   "directories": {
     "title": "Directories"
@@ -199,7 +199,7 @@
   "models": {
     "directories": "Models",
     "directoriesDesc": "Model directories shared across all instances. Models placed here are available to every ComfyUI instance, avoiding duplicate downloads. Newly downloaded models are saved to the Downloads directory.",
-    "addDir": "Add Directory",
+    "addDir": "Add Shared Directory",
     "removeDir": "Remove",
     "primary": "Downloads",
     "default": "default",

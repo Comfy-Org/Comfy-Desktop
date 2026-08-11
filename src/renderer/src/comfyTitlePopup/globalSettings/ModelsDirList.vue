@@ -273,7 +273,7 @@ const rows = computed(() =>
 
     <button type="button" class="models-dir-add" @click="emit('add')">
       <Plus :size="14" aria-hidden="true" />
-      <span>{{ t('models.addDir', 'Add directory') }}</span>
+      <span>{{ t('models.addDir', 'Add Shared Directory') }}</span>
     </button>
   </div>
 </template>

@@ -162,7 +162,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   >
     <StorageDirRow
       v-if="sharedInputField"
-      :label="sharedInputField.label || t('media.inputDir', 'Input Directory')"
+      :label="sharedInputField.label || t('media.inputDir', 'Shared Input')"
       :path="sharedFieldPath(sharedInputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
@@ -170,7 +170,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     />
     <StorageDirRow
       v-if="sharedOutputField"
-      :label="sharedOutputField.label || t('media.outputDir', 'Output Directory')"
+      :label="sharedOutputField.label || t('media.outputDir', 'Shared Output')"
       :path="sharedFieldPath(sharedOutputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"

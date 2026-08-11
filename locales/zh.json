@@ -190,8 +190,8 @@
   },
   "media": {
     "sharedDirs": "媒体",
-    "inputDir": "输入目录",
-    "outputDir": "输出目录"
+    "inputDir": "共享输入",
+    "outputDir": "共享输出"
   },
   "directories": {
     "title": "目录"
@@ -199,7 +199,7 @@
   "models": {
     "directories": "模型",
     "directoriesDesc": "所有实例共享的模型目录。放在这里的模型可供每个 ComfyUI 实例使用，避免重复下载。新下载的模型会保存到下载目录。",
-    "addDir": "添加目录",
+    "addDir": "添加共享目录",
     "removeDir": "移除",
     "primary": "下载",
     "default": "默认",
