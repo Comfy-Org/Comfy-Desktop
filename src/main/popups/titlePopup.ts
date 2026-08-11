@@ -195,12 +195,19 @@ export interface GlobalSettingsModelsDir {
   isPrimary: boolean
 }
 
+/** Tabs of the Global Settings popup a caller can deep-link into. */
+export type GlobalSettingsTab = 'general' | 'updates' | 'storage' | 'advanced'
+
 /** Snapshot pushed to the global-settings popup on open and on every
  *  settings-changed / app-update-state / app-update-progress /
  *  installations-changed broadcast. Field shapes use the loose
  *  `Record<string, unknown>` to keep the preload boundary type-safe
  *  without dragging renderer types into main. */
 export interface GlobalSettingsSnapshot {
+  /** Tab the popup should land on. Non-null only on the snapshot pushed
+   *  at open; live rebroadcasts carry null so a data refresh can never
+   *  retarget a tab the user has since navigated away from. */
+  initialTab: GlobalSettingsTab | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -1370,6 +1377,18 @@ type OpenTitlePopupOpts = {
   | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot }
 )
 
+/** Whether an open must re-send its config even when it matches the last
+ *  synced one, bypassing `openTitlePopup`'s identical-config fast path.
+ *  A non-null global-settings `initialTab` is a per-open command, not
+ *  state: the renderer may have navigated off that tab since the last
+ *  identical push, so the snapshot must be re-sent for the view's
+ *  tab-retarget watch to fire. */
+export function requiresPerOpenConfigSync(
+  opts: Pick<OpenTitlePopupOpts, 'kind'> & { snapshot?: { initialTab?: unknown } }
+): boolean {
+  return opts.kind === POPUP_KIND.globalSettings && opts.snapshot?.initialTab != null
+}
+
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // Dismiss any in-flight title-bar tooltip — the popup will obscure
   // the same area, and the renderer's pointer-leave on the trigger
@@ -1486,7 +1505,11 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // changes). Skip the set-config IPC + render-ack roundtrip and show
   // immediately — eliminates ~1 frame + 2 IPC hops of perceived
   // open latency on the common case.
-  if (entry.lastSyncedConfigJson === configJson && !entry.view.popup.webContents.isDestroyed()) {
+  if (
+    !requiresPerOpenConfigSync(opts) &&
+    entry.lastSyncedConfigJson === configJson &&
+    !entry.view.popup.webContents.isDestroyed()
+  ) {
     showTitlePopupNow(entry)
     return
   }
@@ -1690,7 +1713,8 @@ function openGlobalSettingsForHost(
   parentEntry: ComfyWindowEntry,
   parentEntryId: number,
   bindings: TitlePopupHostBindings,
-  titleBarSender: Electron.WebContents
+  titleBarSender: Electron.WebContents,
+  initialTab: GlobalSettingsTab | null = null
 ): void {
   if (parentEntry.window.isDestroyed()) return
   // Open instantly off the cached snapshot — like the instance picker — so the
@@ -1700,7 +1724,7 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(),
+    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
@@ -2077,7 +2101,8 @@ function findSettingsFields(
 }
 
 function buildGlobalSettingsSnapshot(
-  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[]
+  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[],
+  initialTab: GlobalSettingsTab | null = null
 ): GlobalSettingsSnapshot {
   const settingsSections = buildSettingsSections(installs)
   const mediaSections = buildMediaSections()
@@ -2103,6 +2128,7 @@ function buildGlobalSettingsSnapshot(
   const githubStars = getCachedGithubStarCount('comfy-org/ComfyUI')
   const githubStarsLoading = githubStars == null && !githubStarsFetchAttempted
   return {
+    initialTab,
     languageFields,
     generalFields,
     telemetryFields,
@@ -2341,7 +2367,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const popupEntry = titlePopupsByWebContents.get(event.sender.id)
     if (!popupEntry) return
     const tab = payload?.tab
-    if (tab !== 'comfy' && tab !== 'directories' && tab !== 'downloads' && tab !== 'global') return
+    if (
+      tab !== 'comfy' &&
+      tab !== 'directories' &&
+      tab !== 'downloads' &&
+      tab !== 'global' &&
+      tab !== 'global-storage'
+    ) {
+      return
+    }
     const parentEntry = comfyWindows.get(popupEntry.parentEntryId)
     if (!parentEntry) return
     hideTitlePopup(popupEntry, { releaseFocusToParent: false })
@@ -2894,7 +2928,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // Panel renderer → open the Global Settings popup for the sender's
   // host window. Used by the panel-side file-menu "Settings" item and
   // the `comfy://open-settings?tab=global` deep link.
-  ipcMain.on('comfy-titlepopup:open-global-settings', (event) => {
+  ipcMain.on('comfy-titlepopup:open-global-settings', (event, payload?: { tab?: unknown }) => {
     recordIpcInvocation('comfy-titlepopup:open-global-settings')
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
@@ -2908,11 +2942,17 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       }
     }
     if (parentEntryId === undefined || !parentEntry) return
+    const rawTab = payload?.tab
+    const initialTab: GlobalSettingsTab | null =
+      rawTab === 'general' || rawTab === 'updates' || rawTab === 'storage' || rawTab === 'advanced'
+        ? rawTab
+        : null
     openGlobalSettingsForHost(
       parentEntry,
       parentEntryId,
       bindings,
-      parentEntry.titleBarView.webContents
+      parentEntry.titleBarView.webContents,
+      initialTab
     )
   })
 

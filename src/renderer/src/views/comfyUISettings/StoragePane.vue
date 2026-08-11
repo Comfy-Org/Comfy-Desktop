@@ -48,7 +48,7 @@ interface GlobalSettingsBridge {
   globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
   /** Close this popup and reopen Global Desktop Settings (where the shared
    *  directories themselves are managed). Optional for older bridges. */
-  openSettingsTab?(tab: 'comfy' | 'directories' | 'downloads' | 'global'): void
+  openSettingsTab?(tab: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'): void
   platform?: string
 }
 
@@ -407,7 +407,7 @@ function handleOpenModelDir(index: number): void {
  *  closes the picker popup and opens that surface. */
 const canManageSharedDirs = computed(() => typeof bridge?.openSettingsTab === 'function')
 function handleManageSharedDirs(): void {
-  bridge?.openSettingsTab?.('global')
+  bridge?.openSettingsTab?.('global-storage')
 }
 
 // --- Per-instance input / output dirs (shared I/O off) --------------------

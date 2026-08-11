@@ -28,6 +28,7 @@ import {
   computePopupHeight,
   decideFlowMenuItemTarget,
   isFlowMenuItemId,
+  requiresPerOpenConfigSync,
   type FlowMenuItemId,
   type InstancePickerInstall,
   type TitlePopupHostBindings
@@ -293,6 +294,33 @@ describe('isFlowMenuItemId', () => {
     expect(isFlowMenuItemId('settings')).toBe(false)
     expect(isFlowMenuItemId('feedback')).toBe(false)
     expect(isFlowMenuItemId('')).toBe(false)
+  })
+})
+
+describe('requiresPerOpenConfigSync', () => {
+  // A deep-linked global-settings open (e.g. the instance pane's "Manage
+  // Shared Directories" -> Storage tab) must bypass the identical-config
+  // fast path: the cached popup may sit on another tab even though the
+  // config JSON is unchanged, so the snapshot must be re-pushed for the
+  // view's tab-retarget watch to fire.
+  it('forces a config re-send for a global-settings open with a requested tab', () => {
+    expect(
+      requiresPerOpenConfigSync({ kind: 'global-settings', snapshot: { initialTab: 'storage' } })
+    ).toBe(true)
+  })
+
+  it('keeps the fast path for a global-settings open without a requested tab', () => {
+    expect(
+      requiresPerOpenConfigSync({ kind: 'global-settings', snapshot: { initialTab: null } })
+    ).toBe(false)
+  })
+
+  it('keeps the fast path for non-global-settings kinds', () => {
+    expect(requiresPerOpenConfigSync({ kind: 'menu' })).toBe(false)
+    expect(requiresPerOpenConfigSync({ kind: 'downloads' })).toBe(false)
+    expect(
+      requiresPerOpenConfigSync({ kind: 'instance-picker', snapshot: { initialTab: 'storage' } })
+    ).toBe(false)
   })
 })
 

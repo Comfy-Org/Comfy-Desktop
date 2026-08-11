@@ -272,7 +272,7 @@ describe('StoragePane', () => {
     const link = wrapper.find('.storage-manage-link')
     expect(link.exists()).toBe(true)
     await link.trigger('click')
-    expect(bridge.openSettingsTabCalls).toEqual(['global'])
+    expect(bridge.openSettingsTabCalls).toEqual(['global-storage'])
   })
 
   it('hides the manage-shared link while shared models is off', async () => {
@@ -893,7 +893,7 @@ describe('StoragePane', () => {
         .find('.storage-dir-action[aria-label^="Manage Shared Directories"]')
         .trigger('click')
       await flushPromises()
-      expect(bridge.openSettingsTabCalls).toEqual(['global'])
+      expect(bridge.openSettingsTabCalls).toEqual(['global-storage'])
       expect(bridge.updateFieldCalls).toEqual([])
       expect(wrapper.emitted('update-field')).toBeUndefined()
     })

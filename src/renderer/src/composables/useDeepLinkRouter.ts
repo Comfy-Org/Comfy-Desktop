@@ -80,8 +80,8 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           const requested = payload.settingsTab
           // Default to the host's natural tab.
           const tab = requested ?? (inst ? 'comfy' : 'global')
-          if (tab === 'global') {
-            window.api.openGlobalSettings()
+          if (tab === 'global' || tab === 'global-storage') {
+            window.api.openGlobalSettings(tab === 'global-storage' ? 'storage' : undefined)
             return
           }
           // Per-install deep links open the Config tab; with no install
