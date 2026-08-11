@@ -71,10 +71,11 @@ describe('resolveTemplatePackageVersion', () => {
     fetchText.mockResolvedValue(requirements('comfyui-workflow-templates==0.11.31'))
     const prefixed = await resolveTemplatePackageVersion('v0.30.2')
     _resetForTest()
+    fetchText.mockClear()
     fetchText.mockResolvedValue(requirements('comfyui-workflow-templates==0.11.31'))
     const bare = await resolveTemplatePackageVersion('0.30.2')
     expect(bare).toBe(prefixed)
-    expect(fetchText).toHaveBeenCalledWith(
+    expect(fetchText, 'the bare tag is the one normalized to v0.30.2').toHaveBeenCalledWith(
       expect.stringContaining('v0.30.2/requirements.txt'),
       expect.objectContaining({ timeoutMs: expect.any(Number) })
     )

@@ -140,12 +140,26 @@ export function parseStarterTemplateManifest(raw: unknown): CuratedTemplate[] | 
 let diskLoaded = false
 let diskTemplates: CuratedTemplate[] | null = null
 
+/**
+ * Bounds how long a cached payload can outlive the flag that produced it.
+ * Deleting or disabling `desktop_starter_templates` is the first rollback an
+ * operator reaches for, and it surfaces as the same `null` a failed fetch does,
+ * so an unbounded cache would serve a withdrawn payload forever. Expiry decays
+ * the picker back to `CURATED_TEMPLATES` without needing that distinction.
+ */
+const CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000
+
 /** Re-validated on read: shared across app versions, so possibly stale. */
 function fromDisk(): CuratedTemplate[] | null {
   if (!diskLoaded) {
     diskLoaded = true
     try {
-      diskTemplates = parseStarterTemplateManifest(fs.readFileSync(CACHE_FILE(), 'utf-8'))
+      const raw: unknown = JSON.parse(fs.readFileSync(CACHE_FILE(), 'utf-8'))
+      // Stamped in the payload rather than read from mtime, which a backup
+      // restore or file copy would reset.
+      const writtenAt = (raw as { writtenAt?: unknown })?.writtenAt
+      const fresh = typeof writtenAt === 'number' && Date.now() - writtenAt < CACHE_MAX_AGE_MS
+      diskTemplates = fresh ? parseStarterTemplateManifest(raw) : null
     } catch {
       diskTemplates = null
     }
@@ -157,7 +171,7 @@ function persist(templates: CuratedTemplate[]): void {
   try {
     writeFileSafe(
       CACHE_FILE(),
-      JSON.stringify({ schemaVersion: SCHEMA_VERSION, templates }, null, 2)
+      JSON.stringify({ schemaVersion: SCHEMA_VERSION, writtenAt: Date.now(), templates }, null, 2)
     )
   } catch {}
 }

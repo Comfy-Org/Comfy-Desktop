@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as TemplatePinModule from './templatePin'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
@@ -14,6 +15,15 @@ vi.mock('../../lib/fetch', () => ({
 vi.mock('../../lib/comfyui-releases', () => ({
   getLatestStableTag: vi.fn()
 }))
+
+const resolveTemplatePackageVersion = vi.fn()
+vi.mock('./templatePin', async (importOriginal) => {
+  const actual = await importOriginal<typeof TemplatePinModule>()
+  return {
+    ...actual,
+    resolveTemplatePackageVersion: (...a: unknown[]) => resolveTemplatePackageVersion(...a)
+  }
+})
 
 import { standalone, buildPinnedVariant } from './index'
 import { resetTemplateCatalogCache } from './templateCatalog'
@@ -236,6 +246,8 @@ describe('standalone.buildInstallation', () => {
 describe('standalone.getFieldOptions bundledTemplate', () => {
   beforeEach(() => {
     mockedFetchJSON.mockReset()
+    resolveTemplatePackageVersion.mockReset()
+    resolveTemplatePackageVersion.mockResolvedValue(null)
     resetTemplateCatalogCache()
   })
 
@@ -306,6 +318,35 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
       const card = options.find((o) => o.value === curated.id)!
       expect(card.data!.apiNode, curated.id).toBe(curated.apiNode === true)
     }
+  })
+
+  it('pins the catalog to a stable-channel version pick', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await standalone.getFieldOptions!(
+      'bundledTemplate',
+      {
+        release: { value: 'stable', label: 'Stable', data: { latestStableTag: 'v0.30.2' } },
+        comfyVersion: { value: 'v0.28.2', label: 'v0.28.2' }
+      },
+      {}
+    )
+    expect(resolveTemplatePackageVersion).toHaveBeenCalledWith('v0.28.2')
+  })
+
+  it('ignores a comfyVersion left over from a switch to the latest channel', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await standalone.getFieldOptions!(
+      'bundledTemplate',
+      {
+        release: { value: 'latest', label: 'Latest', data: { latestStableTag: 'v0.30.2' } },
+        comfyVersion: { value: 'v0.28.2', label: 'v0.28.2' }
+      },
+      {}
+    )
+    expect(
+      resolveTemplatePackageVersion,
+      'the picker must target the version the install will actually run'
+    ).toHaveBeenCalledWith('v0.30.2')
   })
 })
 

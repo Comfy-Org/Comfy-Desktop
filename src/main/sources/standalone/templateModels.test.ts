@@ -142,6 +142,7 @@ describe('remote workflow fallback follows the pinned version', () => {
       'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/v0.11.12/templates/image_one.json',
       expect.anything()
     )
+    expect(fetchJSON, 'the pinned fetch must not also fall back to main').toHaveBeenCalledTimes(1)
   })
 
   it('defaults to main when no asset base is given', async () => {

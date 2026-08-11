@@ -260,14 +260,21 @@ function byModalityOrder(a: HydratedTemplate, b: HydratedTemplate): number {
   return TEMPLATE_MODALITY_ORDER.indexOf(a.modality) - TEMPLATE_MODALITY_ORDER.indexOf(b.modality)
 }
 
+/** Cards plus the asset base they were stamped with, so a caller fetching
+ *  workflow JSON reads the same revision the thumbnails came from. */
+export interface TemplateCatalog {
+  templates: HydratedTemplate[]
+  assetBase: string
+}
+
 /** Keyed by target version so switching channel mid-wizard re-filters. */
 const CATALOG_TTL_MS = 60_000
-const catalogInFlight = new Map<string, Promise<HydratedTemplate[]>>()
-const catalogCache = new Map<string, { at: number; value: HydratedTemplate[] }>()
+const catalogInFlight = new Map<string, Promise<TemplateCatalog>>()
+const catalogCache = new Map<string, { at: number; value: TemplateCatalog }>()
 
 export function loadTemplateCatalog(opts?: {
   comfyVersion?: string | null
-}): Promise<HydratedTemplate[]> {
+}): Promise<TemplateCatalog> {
   const key = opts?.comfyVersion ?? ''
   const cached = catalogCache.get(key)
   if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return Promise.resolve(cached.value)
@@ -316,15 +323,16 @@ async function indexForVersion(
   }
 }
 
-async function loadTemplateCatalogUncached(
-  comfyVersion: string | null
-): Promise<HydratedTemplate[]> {
+async function loadTemplateCatalogUncached(comfyVersion: string | null): Promise<TemplateCatalog> {
   const [templates, index] = await Promise.all([activeTemplates(), indexForVersion(comfyVersion)])
   const { byId, assetBase } = index
   const online = byId.size > 0
   const now = Date.now()
 
   const used = new Set<string>()
+  // Payload entries keyed by id, so backfill can honour a window the payload set
+  // on a baked-in card instead of reading only the static list.
+  const windows = new Map(templates.filter((t) => t?.id).map((t) => [t.id, t]))
   const perModality = new Map<TemplateModality, HydratedTemplate[]>(
     TEMPLATE_MODALITY_ORDER.map((modality) => [modality, []])
   )
@@ -373,19 +381,21 @@ async function loadTemplateCatalogUncached(
     )
   }
 
-  backfill(perModality, byId, used, online, assetBase)
+  backfill(perModality, byId, used, online, assetBase, now, windows)
 
   const catalog: HydratedTemplate[] = []
   for (const modality of TEMPLATE_MODALITY_ORDER) {
     catalog.push(...enforceOneRecommended(perModality.get(modality) ?? []))
   }
-  return catalog.sort(byModalityOrder)
+  return { templates: catalog.sort(byModalityOrder), assetBase }
 }
 
 /**
  * Strict pass, then `terminal`, which relaxes index membership and then
- * `isRunnableLocally` rather than ship a short tab. Identity is never relaxed:
- * two cards sharing an id collide on `FieldOption.value`, the picker's key.
+ * `isRunnableLocally` rather than ship a short tab. Identity and the
+ * availability window are never relaxed: two cards sharing an id collide on
+ * `FieldOption.value`, the picker's key, and a retired card must stay retired
+ * even when the alternative is a short tab.
  */
 function fillFromBakedIn(
   slots: HydratedTemplate[],
@@ -394,12 +404,17 @@ function fillFromBakedIn(
   used: Set<string>,
   online: boolean,
   assetBase: string,
+  now: number,
+  windows: Map<string, CuratedTemplate>,
   terminal: boolean
 ): void {
   const take = (allowUnrunnable: boolean): void => {
     for (const curated of CURATED_TEMPLATES) {
       if (slots.length >= SLOTS_PER_MODALITY) break
       if (curated.modality !== modality || used.has(curated.id)) continue
+      // A window the payload set on this id wins, so content can retire a
+      // baked-in card rather than watch backfill wave it straight back in.
+      if (!isWithinWindow(windows.get(curated.id) ?? curated, now)) continue
       const location = byId.get(curated.id)
       if (!allowUnrunnable && location && !isRunnableLocally(location.entry)) continue
       // Re-adding an index-absent card would undo the gate that dropped it.
@@ -428,13 +443,15 @@ function backfill(
   byId: Map<string, IndexLocation>,
   used: Set<string>,
   online: boolean,
-  assetBase: string
+  assetBase: string,
+  now: number,
+  windows: Map<string, CuratedTemplate>
 ): void {
   for (const modality of TEMPLATE_MODALITY_ORDER) {
     const slots = perModality.get(modality)!
     if (slots.length >= SLOTS_PER_MODALITY) continue
 
-    fillFromBakedIn(slots, modality, byId, used, online, assetBase, false)
+    fillFromBakedIn(slots, modality, byId, used, online, assetBase, now, windows, false)
 
     while (slots.length < SLOTS_PER_MODALITY && online) {
       const sub = firstUnusedOfModality(byId, modality, used)
@@ -452,7 +469,7 @@ function backfill(
       )
     }
 
-    fillFromBakedIn(slots, modality, byId, used, online, assetBase, true)
+    fillFromBakedIn(slots, modality, byId, used, online, assetBase, now, windows, true)
   }
 }
 

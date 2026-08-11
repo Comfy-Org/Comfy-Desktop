@@ -24,6 +24,10 @@ import { fetchJSON } from '../../lib/fetch'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
 
+/** Cards only; `assetBase` is asserted separately where it matters. */
+const loadCards = async (opts?: { comfyVersion?: string | null }): Promise<HydratedTemplate[]> =>
+  (await loadTemplateCatalog(opts)).templates
+
 function category(
   type: string,
   title: string,
@@ -118,7 +122,7 @@ describe('remote payload drives the card list', () => {
     mockedFetchJSON.mockResolvedValue(
       indexWithCurated([category('image', 'Image', { payload_img: { title: 'Payload Image' } })])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === 'payload_img')?.title).toBe('Payload Image')
     expectFourByFour(catalog)
   })
@@ -128,7 +132,7 @@ describe('remote payload drives the card list', () => {
       CURATED_TEMPLATES.filter((t) => t.modality === 'image')
     )
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    expectFourByFour(await loadTemplateCatalog())
+    expectFourByFour(await loadCards())
   })
 
   it('truncates a modality carrying more than four entries', async () => {
@@ -142,7 +146,7 @@ describe('remote payload drives the card list', () => {
         category('image', 'Image', Object.fromEntries(extras.map((e) => [e.id, {}])))
       ])
     )
-    expectFourByFour(await loadTemplateCatalog())
+    expectFourByFour(await loadCards())
   })
 
   it('never exceeds four even when substitutes are abundant', async () => {
@@ -164,7 +168,7 @@ describe('remote payload drives the card list', () => {
         )
       ])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.filter((c) => c.modality === 'image')).toHaveLength(4)
     expectFourByFour(catalog)
   })
@@ -177,7 +181,7 @@ describe('remote payload drives the card list', () => {
     mockedFetchJSON.mockResolvedValue(
       indexWithCurated([category('image', 'Image', { image_solo: {} })])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === 'image_solo')).toBeDefined()
     expectFourByFour(catalog)
   })
@@ -191,13 +195,13 @@ describe('remote payload drives the card list', () => {
       ...CURATED_TEMPLATES.filter((t) => t.modality !== 'image')
     ])
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    expectFourByFour(await loadTemplateCatalog())
+    expectFourByFour(await loadCards())
   })
 
   it('backfills wholly when the payload is empty', async () => {
     getStarterTemplatesAsync.mockResolvedValue([])
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    expectFourByFour(await loadTemplateCatalog())
+    expectFourByFour(await loadCards())
   })
 })
 
@@ -218,7 +222,7 @@ describe('version gate via the package pin', () => {
         })
         .concat(spares() as never[])
     )
-    const catalog = await loadTemplateCatalog({ comfyVersion: 'v0.28.2' })
+    const catalog = await loadCards({ comfyVersion: 'v0.28.2' })
     expect(catalog.find((c) => c.id === missing)).toBeUndefined()
     expectFourByFour(catalog)
   })
@@ -226,7 +230,7 @@ describe('version gate via the package pin', () => {
   it('fetches the index the target ComfyUI pins, not main', async () => {
     resolveTemplatePackageVersion.mockResolvedValue('0.11.12')
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    await loadTemplateCatalog({ comfyVersion: 'v0.28.2' })
+    await loadCards({ comfyVersion: 'v0.28.2' })
     expect(resolveTemplatePackageVersion).toHaveBeenCalledWith('v0.28.2')
     expect(
       mockedFetchJSON,
@@ -240,14 +244,14 @@ describe('version gate via the package pin', () => {
   it('fetches the live main index when no pin resolves', async () => {
     resolveTemplatePackageVersion.mockResolvedValue(null)
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    await loadTemplateCatalog({ comfyVersion: null })
+    await loadCards({ comfyVersion: null })
     expect(mockedFetchJSON).toHaveBeenCalledWith(INDEX_URL, expect.anything())
   })
 
   it('keeps that template when the pinned index carries it', async () => {
     resolveTemplatePackageVersion.mockResolvedValue('0.11.31')
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    const catalog = await loadTemplateCatalog({ comfyVersion: 'v0.30.2' })
+    const catalog = await loadCards({ comfyVersion: 'v0.30.2' })
     expect(catalog.find((c) => c.id === 'video_minimax_h3_t2v')).toBeDefined()
     expectFourByFour(catalog)
   })
@@ -255,21 +259,21 @@ describe('version gate via the package pin', () => {
   it('fails open when the version is unknown', async () => {
     resolveTemplatePackageVersion.mockResolvedValue(null)
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    const catalog = await loadTemplateCatalog({ comfyVersion: null })
+    const catalog = await loadCards({ comfyVersion: null })
     expectFourByFour(catalog)
   })
 
   it('fails open when the pin lookup rejects', async () => {
     resolveTemplatePackageVersion.mockRejectedValue(new Error('offline'))
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    expectFourByFour(await loadTemplateCatalog({ comfyVersion: 'v0.30.2' }))
+    expectFourByFour(await loadCards({ comfyVersion: 'v0.30.2' }))
   })
 
   it('varies the cache key with comfyVersion', async () => {
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
     resolveTemplatePackageVersion.mockResolvedValue('0.11.31')
-    await loadTemplateCatalog({ comfyVersion: 'v0.30.2' })
-    await loadTemplateCatalog({ comfyVersion: 'v0.28.2' })
+    await loadCards({ comfyVersion: 'v0.30.2' })
+    await loadCards({ comfyVersion: 'v0.28.2' })
     expect(
       mockedFetchJSON.mock.calls.length,
       'a different target version re-resolves rather than serving the previous filter'
@@ -279,9 +283,9 @@ describe('version gate via the package pin', () => {
   it('still caches repeat reads for the same comfyVersion', async () => {
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
     resolveTemplatePackageVersion.mockResolvedValue('0.11.31')
-    await loadTemplateCatalog({ comfyVersion: 'v0.30.2' })
+    await loadCards({ comfyVersion: 'v0.30.2' })
     const before = mockedFetchJSON.mock.calls.length
-    await loadTemplateCatalog({ comfyVersion: 'v0.30.2' })
+    await loadCards({ comfyVersion: 'v0.30.2' })
     expect(mockedFetchJSON.mock.calls.length).toBe(before)
   })
 })
@@ -302,7 +306,7 @@ describe('upstream compatibility signals', () => {
         })
         .concat(spares() as never[])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === target.id)).toBeUndefined()
     expectFourByFour(catalog)
   })
@@ -320,7 +324,7 @@ describe('upstream compatibility signals', () => {
         return cat
       })
     )
-    expect((await loadTemplateCatalog()).find((c) => c.id === target.id)).toBeDefined()
+    expect((await loadCards()).find((c) => c.id === target.id)).toBeDefined()
   })
 
   it('drops a cloud-only card', async () => {
@@ -338,7 +342,7 @@ describe('upstream compatibility signals', () => {
         })
         .concat(spares() as never[])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === target.id)).toBeUndefined()
     expectFourByFour(catalog)
   })
@@ -358,7 +362,7 @@ describe('upstream compatibility signals', () => {
           return cat
         })
       )
-      expect((await loadTemplateCatalog()).find((c) => c.id === target.id)).toBeDefined()
+      expect((await loadCards()).find((c) => c.id === target.id)).toBeDefined()
     }
   )
 })
@@ -372,7 +376,7 @@ describe('substitution quality', () => {
     mockedFetchJSON.mockResolvedValue(
       indexWithCurated([category('video', 'Video', { real_video: { title: 'Real Video' } })])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     for (const card of catalog.filter((c) => c.modality === 'video')) {
       expect(card.id.startsWith('image_'), card.id).toBe(false)
     }
@@ -395,7 +399,7 @@ describe('substitution quality', () => {
         category('image', 'Getting Started', { gs_trap: { title: 'Getting Started Trap' } })
       ])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     for (const trap of ['basics_trap', 'utility_trap', 'llm_trap', 'gs_trap']) {
       expect(
         catalog.find((c) => c.id === trap),
@@ -413,7 +417,11 @@ describe('substitution quality', () => {
     mockedFetchJSON.mockResolvedValue(
       indexWithCurated([category('image', 'Use Cases', { use_case_ok: { title: 'Use Case Sub' } })])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
+    expect(
+      catalog.find((c) => c.id === 'use_case_ok'),
+      'an allowlisted Use Cases entry is eligible as a substitute'
+    ).toBeDefined()
     expectFourByFour(catalog)
   })
 
@@ -425,7 +433,7 @@ describe('substitution quality', () => {
     mockedFetchJSON.mockResolvedValue(
       indexWithCurated([category('image', 'Utility', { utility_pick: { title: 'Chosen' } })])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === 'utility_pick')?.title).toBe('Chosen')
     expectFourByFour(catalog)
   })
@@ -441,7 +449,7 @@ describe('substitution quality', () => {
         return cat
       })
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     const card = catalog.find((c) => c.id === apiCard.id)
     expect(card?.apiNode).toBe(true)
     expectFourByFour(catalog)
@@ -461,7 +469,7 @@ describe('substitution quality', () => {
         })
       ])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === 'api_should_skip')).toBeUndefined()
     expect(catalog.find((c) => c.id === 'sizeless_should_skip')).toBeUndefined()
     expectFourByFour(catalog)
@@ -477,7 +485,7 @@ describe('substitution quality', () => {
       mockedFetchJSON.mockResolvedValue(
         indexWithCurated([category('image', 'Image', { sub_for_typo: {} })])
       )
-      await loadTemplateCatalog()
+      await loadCards()
       expect(warn.mock.calls.flat().join(' ')).toContain('image_typo_id')
     } finally {
       warn.mockRestore()
@@ -486,7 +494,7 @@ describe('substitution quality', () => {
 
   it('does not substitute when offline', async () => {
     mockedFetchJSON.mockRejectedValue(new Error('offline'))
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     for (const curated of CURATED_TEMPLATES) {
       expect(
         catalog.find((c) => c.id === curated.id),
@@ -515,7 +523,7 @@ describe('substitution quality', () => {
         })
       ])
     )
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     for (const card of catalog.filter((c) => c.modality === '3d')) {
       expect(card.id.startsWith('spare_'), card.id).toBe(false)
     }
@@ -529,7 +537,7 @@ describe('recommended invariants after resolution', () => {
       CURATED_TEMPLATES.map(({ recommended: _drop, ...rest }) => rest as never)
     )
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    expectFourByFour(await loadTemplateCatalog())
+    expectFourByFour(await loadCards())
   })
 
   it('keeps the recommendation off an api card in an all-api modality', async () => {
@@ -541,7 +549,7 @@ describe('recommended invariants after resolution', () => {
       ...CURATED_TEMPLATES.filter((t) => t.modality !== 'image')
     ])
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     const rec = catalog.filter((c) => c.modality === 'image' && c.recommended)
     expect(rec).toHaveLength(1)
     expect(rec[0]!.apiNode).toBe(false)
@@ -564,10 +572,52 @@ describe('availability window', () => {
           category('image', 'Image', { image_future: {}, image_expired: {}, image_open: {} })
         ])
       )
-      const catalog = await loadTemplateCatalog()
+      const catalog = await loadCards()
       expect(catalog.find((c) => c.id === 'image_future')).toBeUndefined()
       expect(catalog.find((c) => c.id === 'image_expired')).toBeUndefined()
       expect(catalog.find((c) => c.id === 'image_open')).toBeDefined()
+      expectFourByFour(catalog)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let backfill re-add a baked-in card whose window has closed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'))
+    try {
+      const retired = CURATED_TEMPLATES.find((t) => t.modality === 'image')!
+      getStarterTemplatesAsync.mockResolvedValue([
+        { ...retired, availableUntil: '2026-01-01T00:00:00Z' },
+        ...CURATED_TEMPLATES.filter((t) => t.modality !== 'image')
+      ])
+      mockedFetchJSON.mockResolvedValue(indexWithCurated(spares()))
+      const catalog = await loadCards()
+      expect(
+        catalog.find((c) => c.id === retired.id),
+        'a retired card must not walk back in through the backfill door'
+      ).toBeUndefined()
+      expectFourByFour(catalog)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let backfill stage a baked-in card ahead of its window', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'))
+    try {
+      const upcoming = CURATED_TEMPLATES.find((t) => t.modality === 'image')!
+      getStarterTemplatesAsync.mockResolvedValue([
+        { ...upcoming, availableFrom: '2026-12-01T00:00:00Z' },
+        ...CURATED_TEMPLATES.filter((t) => t.modality !== 'image')
+      ])
+      mockedFetchJSON.mockResolvedValue(indexWithCurated(spares()))
+      const catalog = await loadCards()
+      expect(
+        catalog.find((c) => c.id === upcoming.id),
+        'a staged card must wait for the window it was given'
+      ).toBeUndefined()
       expectFourByFour(catalog)
     } finally {
       vi.useRealTimers()
@@ -580,13 +630,13 @@ describe('every source failing at once', () => {
     getStarterTemplatesAsync.mockResolvedValue(CURATED_TEMPLATES)
     mockedFetchJSON.mockRejectedValue(new Error('offline'))
     resolveTemplatePackageVersion.mockRejectedValue(new Error('offline'))
-    expectFourByFour(await loadTemplateCatalog({ comfyVersion: null }))
+    expectFourByFour(await loadCards({ comfyVersion: null }))
   })
 
   it('holds 4x4 when the manifest read itself throws', async () => {
     getStarterTemplatesAsync.mockRejectedValue(new Error('flag exploded'))
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    expectFourByFour(await loadTemplateCatalog())
+    expectFourByFour(await loadCards())
   })
 
   it('holds 4x4 when the payload is every kind of broken at once', async () => {
@@ -597,7 +647,7 @@ describe('every source failing at once', () => {
       { id: 'gone_3', modality: '3d' }
     ])
     mockedFetchJSON.mockResolvedValue([])
-    expectFourByFour(await loadTemplateCatalog({ comfyVersion: 'v0.28.2' }))
+    expectFourByFour(await loadCards({ comfyVersion: 'v0.28.2' }))
   })
 })
 
@@ -621,7 +671,7 @@ describe('4x4 when the index offers no substitute candidates', () => {
   it('holds when the recommended card is missing and nothing can substitute', async () => {
     resolveTemplatePackageVersion.mockResolvedValue('0.11.12')
     mockedFetchJSON.mockResolvedValue(bareIndex(['video_minimax_h3_t2v']))
-    const catalog = await loadTemplateCatalog({ comfyVersion: 'v0.28.2' })
+    const catalog = await loadCards({ comfyVersion: 'v0.28.2' })
     expectFourByFour(catalog)
   })
 
@@ -629,14 +679,14 @@ describe('4x4 when the index offers no substitute candidates', () => {
     'holds for %s when %s is absent from the index',
     async (_modality, missingId) => {
       mockedFetchJSON.mockResolvedValue(bareIndex([missingId]))
-      expectFourByFour(await loadTemplateCatalog({ comfyVersion: 'v0.28.2' }))
+      expectFourByFour(await loadCards({ comfyVersion: 'v0.28.2' }))
     }
   )
 
   it('holds when every card in a modality is absent', async () => {
     const video = CURATED_TEMPLATES.filter((t) => t.modality === 'video').map((t) => t.id)
     mockedFetchJSON.mockResolvedValue(bareIndex(video))
-    expectFourByFour(await loadTemplateCatalog({ comfyVersion: 'v0.28.2' }))
+    expectFourByFour(await loadCards({ comfyVersion: 'v0.28.2' }))
   })
 
   it('holds when the index carries no allowlisted category at all', async () => {
@@ -644,12 +694,12 @@ describe('4x4 when the index offers no substitute candidates', () => {
       category('image', 'Node Basics', { nb_1: {}, nb_2: {} }),
       category('video', 'Utility', { ut_1: {} })
     ])
-    expectFourByFour(await loadTemplateCatalog({ comfyVersion: 'v0.28.2' }))
+    expectFourByFour(await loadCards({ comfyVersion: 'v0.28.2' }))
   })
 
   it('never lets a substitute steal a baked-in card still owed a slot', async () => {
     mockedFetchJSON.mockResolvedValue(bareIndex(['video_minimax_h3_t2v']))
-    const catalog = await loadTemplateCatalog({ comfyVersion: 'v0.28.2' })
+    const catalog = await loadCards({ comfyVersion: 'v0.28.2' })
     const video = catalog.filter((c) => c.modality === 'video').map((c) => c.id)
     for (const id of [
       'api_seedance2_0_r2v',
@@ -667,7 +717,7 @@ describe('thumbnails follow the pinned index', () => {
     // card hydrated from v0.11.12 requests an image that only exists on main.
     resolveTemplatePackageVersion.mockResolvedValue('0.11.12')
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    const catalog = await loadTemplateCatalog({ comfyVersion: 'v0.28.2' })
+    const catalog = await loadCards({ comfyVersion: 'v0.28.2' })
     const withThumb = catalog.filter((c) => c.thumbnailUrl)
     expect(withThumb.length).toBeGreaterThan(0)
     for (const card of withThumb) {
@@ -678,7 +728,7 @@ describe('thumbnails follow the pinned index', () => {
   it('falls back to the main asset base when no pin resolves', async () => {
     resolveTemplatePackageVersion.mockResolvedValue(null)
     mockedFetchJSON.mockResolvedValue(indexWithCurated())
-    const catalog = await loadTemplateCatalog({ comfyVersion: null })
+    const catalog = await loadCards({ comfyVersion: null })
     const card = catalog.find((c) => c.thumbnailUrl)!
     expect(card.thumbnailUrl).toContain('/main/templates/')
   })
@@ -711,7 +761,7 @@ describe('adversarial-but-valid payloads', () => {
         ...CURATED_TEMPLATES
       ])
       mockedFetchJSON.mockResolvedValue(bareIndexAll())
-      const catalog = await loadTemplateCatalog()
+      const catalog = await loadCards()
       expect(new Set(catalog.map((c) => c.id)).size, 'no duplicate ids').toBe(catalog.length)
     }
   )
@@ -721,7 +771,7 @@ describe('adversarial-but-valid payloads', () => {
       CURATED_TEMPLATES.map((t) => ({ id: t.id, modality: t.modality, apiNode: true as const }))
     )
     mockedFetchJSON.mockResolvedValue(bareIndexAll())
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     for (const modality of TEMPLATE_MODALITY_ORDER) {
       const cards = catalog.filter((c) => c.modality === modality)
       expect(cards, modality).toHaveLength(4)
@@ -740,7 +790,7 @@ describe('adversarial-but-valid payloads', () => {
           : {}
       )
     )
-    expectFourByFour(await loadTemplateCatalog({ comfyVersion: 'v0.28.2' }))
+    expectFourByFour(await loadCards({ comfyVersion: 'v0.28.2' }))
   })
 
   it('still drops an unrunnable card when a runnable one can take the slot', async () => {
@@ -749,7 +799,7 @@ describe('adversarial-but-valid payloads', () => {
       ...bareIndexAll((id) => (id === target.id ? { requiresCustomNodes: ['x'] } : {})),
       category('image', 'Image', { runnable_sub: { title: 'Runnable' } })
     ])
-    const catalog = await loadTemplateCatalog()
+    const catalog = await loadCards()
     expect(catalog.find((c) => c.id === target.id)).toBeUndefined()
     expectFourByFour(catalog)
   })

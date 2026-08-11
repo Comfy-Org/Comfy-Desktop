@@ -31,6 +31,11 @@ function doc(templates: unknown[]): Record<string, unknown> {
   return { schemaVersion: 1, templates }
 }
 
+/** Disk-cache contents, stamped fresh unless a write time is given. */
+function cached(templates: unknown[], writtenAt: number = Date.now()): string {
+  return JSON.stringify({ ...doc(templates), writtenAt })
+}
+
 const VALID_IMAGE = { id: 'image_one', modality: 'image' }
 
 function entriesOf(raw: unknown): { id: string; modality: string }[] {
@@ -231,6 +236,22 @@ describe('per-entry validation drops individually', () => {
     expect(parsed![0]!.snapshot).toEqual(snapshot)
   })
 
+  it('keeps snapshotOverrides when a snapshot backs it', () => {
+    const snapshot = { title: 'T', description: 'D', sizeBytes: 10, mediaSubtype: 'webp' }
+    const parsed = parseStarterTemplateManifest(
+      doc([{ ...VALID_IMAGE, snapshot, snapshotOverrides: true }])
+    )
+    expect(
+      parsed![0]!.snapshotOverrides,
+      'content pinned this card to its own copy, not the live index'
+    ).toBe(true)
+  })
+
+  it('drops snapshotOverrides when no snapshot backs it', () => {
+    const parsed = parseStarterTemplateManifest(doc([{ ...VALID_IMAGE, snapshotOverrides: true }]))
+    expect(parsed![0]!.snapshotOverrides, 'an override with nothing to override').toBeUndefined()
+  })
+
   it('preserves availability window fields when ISO-8601', () => {
     const parsed = parseStarterTemplateManifest(
       doc([{ ...VALID_IMAGE, availableFrom: '2026-01-01T00:00:00Z' }])
@@ -332,7 +353,7 @@ describe('flag plumbing and fallback layers', () => {
   })
 
   it('serves a warm disk cache when the fetch fails', async () => {
-    readFileSync.mockReturnValue(JSON.stringify(doc([{ id: 'cached_one', modality: 'image' }])))
+    readFileSync.mockReturnValue(cached([{ id: 'cached_one', modality: 'image' }]))
     getOpsFlagPayload.mockResolvedValue(undefined)
     await initStarterTemplates({ distinctId: 'anon' })
     expect((await getStarterTemplatesAsync()).map((e) => e.id)).toEqual(['cached_one'])
@@ -347,6 +368,33 @@ describe('flag plumbing and fallback layers', () => {
     getOpsFlagPayload.mockResolvedValue(undefined)
     await initStarterTemplates({ distinctId: 'anon' })
     expect(await getStarterTemplatesAsync()).toEqual(CURATED_TEMPLATES)
+  })
+
+  it('decays to the baked-in list once the cache outlives its maximum age', async () => {
+    const fifteenDays = 15 * 24 * 60 * 60 * 1000
+    readFileSync.mockReturnValue(
+      cached([{ id: 'cached_one', modality: 'image' }], Date.now() - fifteenDays)
+    )
+    getOpsFlagPayload.mockResolvedValue(undefined)
+    await initStarterTemplates({ distinctId: 'anon' })
+    expect(
+      await getStarterTemplatesAsync(),
+      'deleting the flag must eventually roll the picker back'
+    ).toEqual(CURATED_TEMPLATES)
+  })
+
+  it('discards a cache written before the age stamp existed', async () => {
+    readFileSync.mockReturnValue(JSON.stringify(doc([{ id: 'cached_one', modality: 'image' }])))
+    getOpsFlagPayload.mockResolvedValue(undefined)
+    await initStarterTemplates({ distinctId: 'anon' })
+    expect(await getStarterTemplatesAsync()).toEqual(CURATED_TEMPLATES)
+  })
+
+  it('stamps the cache it writes so a later read can age it out', async () => {
+    getOpsFlagPayload.mockResolvedValue(JSON.stringify(doc([VALID_IMAGE])))
+    await initStarterTemplates({ distinctId: 'anon' })
+    const [, written] = writeFileSafe.mock.calls[0] as [string, string]
+    expect(typeof JSON.parse(written).writtenAt).toBe('number')
   })
 
   it('writes the disk cache after a successful parse', async () => {

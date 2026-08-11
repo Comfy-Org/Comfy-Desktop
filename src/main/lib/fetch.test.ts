@@ -231,10 +231,15 @@ describe('fetch — request timeout', () => {
   })
 
   it('does not let a late timeout reject an already-resolved request', async () => {
-    const p = fetchText(PRIMARY, { timeoutMs: 10 })
-    requests[0]!.emit('response', makeResponse(200, 'body'))
-    await expect(p).resolves.toBe('body')
-    await new Promise((r) => setTimeout(r, 30))
+    vi.useFakeTimers()
+    try {
+      const p = fetchText(PRIMARY, { timeoutMs: 10 })
+      requests[0]!.emit('response', makeResponse(200, 'body'))
+      await vi.advanceTimersByTimeAsync(30)
+      await expect(p).resolves.toBe('body')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
