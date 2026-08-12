@@ -23,10 +23,7 @@ import {
   type InstallationRecord
 } from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
-import {
-  abortTemplateDownload,
-  stopTemplateTrayMirror
-} from '../sources/standalone/templateDownloadTask'
+import { abortTemplateDownload } from '../sources/standalone/templateDownloadTask'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -656,12 +653,15 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         inFlight.abort()
         _operationAborts.delete(id)
       }
-      // Tear down a still-running background template-model download — it's
+      // Tear down a still-running background template-model download - it's
       // keyed separately from _operationAborts, so it would otherwise outlive
-      // the window it was started for. Also stop mirroring it into the tray and
-      // clear those rows (the user may have skipped it there).
+      // the window it was started for. This releases the install's leases on
+      // the real managed model jobs. Releasing the last lease PARKS the
+      // transfer (network stops; staged bytes + sidecar kept, resumable from
+      // the Downloads UI) - never destroys it; only an explicit Downloads
+      // Cancel deletes staged bytes. During app quit the release defers
+      // entirely to the quit path, which parks every active transfer itself.
       abortTemplateDownload(id)
-      stopTemplateTrayMirror(id)
       // Detach the relaunch will-navigate blocker before clearing the
       // map slot — without `comfyContents.off(...)`, a re-attach would
       // inherit a still-active blocker that preventDefaults every

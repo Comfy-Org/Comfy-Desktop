@@ -2,24 +2,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The gate (`awaitTemplateDownloadSettled`) polls the process-global download
 // state that `startTemplateDownload` writes. We drive that state through the
-// real public API while mocking only the heavy I/O underneath the task, so the
-// poller's branching (terminal / skip / abort / absent) is exercised end-to-end.
+// real public API while mocking only the download manager underneath the task,
+// so the poller's branching (terminal / skip / abort / absent) is exercised
+// end-to-end against real managed-job orchestration (issue #1322).
 
 const resolveTemplateModels = vi.fn<() => Promise<Array<Record<string, unknown>>>>()
-const download = vi.fn()
+const startManagedModelJob = vi.fn()
 const getDiskSpace = vi.fn(async () => ({ free: 1e15, total: 1e15 }))
 
 vi.mock('./templateModels', () => ({ resolveTemplateModels: () => resolveTemplateModels() }))
 vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(async () => []) }))
-vi.mock('../../lib/download', () => ({ download: (...a: unknown[]) => download(...a) }))
 vi.mock('../../lib/disk', () => ({ getDiskSpace: () => getDiskSpace() }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
-  setTemplateTrayMirror: vi.fn(),
-  clearTemplateTrayMirror: vi.fn()
+  startManagedModelJob: (...a: unknown[]) => startManagedModelJob(...a)
 }))
-vi.mock('../../lib/modelDownloadPaths', () => ({ getModelsBaseDir: () => '/tmp/models' }))
-// Keep the task hermetic — never touch the real filesystem. `stat` rejects so
-// the loop treats every file as "not present" and proceeds to `download`.
+vi.mock('../../lib/modelDownloadPaths', () => ({
+  getModelsBaseDir: () => '/tmp/models',
+  resolveDownloadContextById: vi.fn(async () => null)
+}))
+// Keep the task hermetic - never touch the real filesystem. `stat` rejects so
+// the completed-size probe is simply skipped.
 vi.mock('fs', () => ({
   default: {
     promises: {
@@ -36,9 +38,7 @@ import {
   startTemplateDownload,
   getTemplateDownloadState
 } from './templateDownloadTask'
-import { setTemplateTrayMirror } from '../../lib/comfyDownloadManager'
 
-const mockSetTrayMirror = vi.mocked(setTemplateTrayMirror)
 const sendOutput = vi.fn()
 
 function makeInstall(id: string) {
@@ -47,6 +47,24 @@ function makeInstall(id: string) {
     bundledTemplateId: 't',
     bundledTemplateModelBytes: 1024
   } as unknown as Parameters<typeof startTemplateDownload>[0]
+}
+
+/** Per-handle caller-owned lease release spies, keyed by job id. */
+const jobReleases = new Map<string, ReturnType<typeof vi.fn>>()
+
+/** A managed-job handle whose completion never settles (in-flight download). */
+function hangingJob(url: string) {
+  const release = vi.fn()
+  jobReleases.set(`id-${url}`, release)
+  return {
+    id: `id-${url}`,
+    url,
+    savePath: `/tmp/models/checkpoints/${url}`,
+    completion: new Promise(() => {
+      /* hangs */
+    }),
+    release
+  }
 }
 
 /** Spin the microtask queue + fake-timer poll until the task settles the state. */
@@ -61,9 +79,9 @@ describe('awaitTemplateDownloadSettled', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     resolveTemplateModels.mockReset()
-    download.mockReset()
+    startManagedModelJob.mockReset()
+    jobReleases.clear()
     sendOutput.mockReset()
-    mockSetTrayMirror.mockReset()
     getDiskSpace.mockReset().mockResolvedValue({ free: 1e15, total: 1e15 })
   })
   afterEach(() => {
@@ -108,37 +126,30 @@ describe('awaitTemplateDownloadSettled', () => {
     await expect(awaitTemplateDownloadSettled('err-disk', ctrl.signal)).resolves.toBe('error')
   })
 
-  it("resolves 'cancelled' after abortTemplateDownload", async () => {
-    // A never-resolving download keeps the task in-flight so abort can land.
-    let release!: () => void
+  it("resolves 'cancelled' after abortTemplateDownload, cancelling the real jobs", async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
-    download.mockImplementation(
-      () =>
-        new Promise<void>((res) => {
-          release = res
-        })
-    )
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
     startTemplateDownload(makeInstall('cancel-1'), 0, { sendOutput })
     await flush()
 
     abortTemplateDownload('cancel-1')
+    // The abort must release this install's own lease handle on the actual
+    // managed transfer (never a URL- or id-addressed whole-job cancel -
+    // another caller may hold its own lease on the same job), not just flip
+    // state. The manager cancels the transfer once the last lease is
+    // released, so a destination shared with another caller survives.
+    expect(jobReleases.get('id-u')).toHaveBeenCalled()
     const ctrl = new AbortController()
     await expect(awaitTemplateDownloadSettled('cancel-1', ctrl.signal)).resolves.toBe('cancelled')
-    release()
   })
 
   it("resolves 'skipped' when the user requests skip mid-download", async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
-    download.mockImplementation(
-      () =>
-        new Promise<void>(() => {
-          /* hangs */
-        })
-    )
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
     startTemplateDownload(makeInstall('skip-1'), 0, { sendOutput })
     await flush()
     expect(getTemplateDownloadState('skip-1')?.status).not.toBe('done')
@@ -150,24 +161,24 @@ describe('awaitTemplateDownloadSettled', () => {
     await expect(settled).resolves.toBe('skipped')
   })
 
-  it('mirrors the download into the tray from the start, before any Skip (#1173)', async () => {
+  it('starts each template model as a real managed model job (issue #1322)', async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
-    download.mockImplementation(
-      () =>
-        new Promise<void>(() => {
-          /* hangs */
-        })
-    )
-    startTemplateDownload(makeInstall('mirror-1'), 0, { sendOutput })
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
+    startTemplateDownload(makeInstall('job-1'), 0, { sendOutput })
     await flush()
-    await vi.advanceTimersByTimeAsync(600) // let the 500 ms mirror poll tick
 
-    // Reflected into the downloads tray without anyone requesting a skip.
-    expect(mockSetTrayMirror).toHaveBeenCalledWith(
-      'mirror-1',
-      expect.arrayContaining([expect.objectContaining({ filename: 'm.safetensors' })])
+    // The SAME managed entry point in-Comfy downloads use, carrying the
+    // install identity so destination/session resolution matches.
+    expect(startManagedModelJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'u',
+        filename: 'm.safetensors',
+        directory: 'checkpoints',
+        installationId: 'job-1',
+        onProgress: expect.any(Function)
+      })
     )
   })
 
@@ -175,12 +186,7 @@ describe('awaitTemplateDownloadSettled', () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
-    download.mockImplementation(
-      () =>
-        new Promise<void>(() => {
-          /* hangs */
-        })
-    )
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
     startTemplateDownload(makeInstall('abort-1'), 0, { sendOutput })
     await flush()
 
@@ -194,12 +200,7 @@ describe('awaitTemplateDownloadSettled', () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
-    download.mockImplementation(
-      () =>
-        new Promise<void>(() => {
-          /* hangs */
-        })
-    )
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
     startTemplateDownload(makeInstall('skip-clear'), 0, { sendOutput })
     await flush()
 

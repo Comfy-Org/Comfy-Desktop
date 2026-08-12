@@ -71,6 +71,7 @@ import {
   awaitTemplateDownloadSettled
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
+import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
@@ -280,6 +281,26 @@ async function runLaunch(
   _operationAborts.set(installationId, abort)
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
   clearCrash(installationId)
+  // The startup model-download pass (migrate legacy final-path partials,
+  // hydrate staged `.part` downloads) must finish before ComfyUI can scan the
+  // model dirs, or a truncated file could masquerade as a loadable model
+  // (#1322). Memoized - normally already done long before the first launch.
+  // An UNSAFE pass means known-incomplete files are still visible under final
+  // model names (quarantine failed, e.g. the file is locked) - block the
+  // launch instead of letting ComfyUI scan truncated models; the pass is not
+  // memoized when unsafe, so the next launch attempt retries the migration.
+  const modelStartup = await initializeModelDownloads()
+  if (!modelStartup.safe) {
+    if (modelStartup.unsafePaths.length > 0) {
+      return {
+        ok: false,
+        message: i18n.t('errors.modelDownloadsUnsafe', {
+          files: modelStartup.unsafePaths.map((p) => path.basename(p)).join(', ')
+        })
+      }
+    }
+    return { ok: false, message: i18n.t('errors.modelDownloadsStartupFailed') }
+  }
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   if (!source.skipInstall) {

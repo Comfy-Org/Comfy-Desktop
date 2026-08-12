@@ -20,6 +20,9 @@ export interface TitleMenuAnchor {
  *  a status-icon + filename + progress percent — it doesn't need
  *  byte counters or speed/ETA, so this interface stays minimal. */
 export interface DownloadsTrayEntry {
+  /** Stable per-job identifier (present on managed jobs; absent on rows from
+   *  older mains). Prefer it over `url` when addressing an entry. */
+  id?: string
   url: string
   filename: string
   directory?: string

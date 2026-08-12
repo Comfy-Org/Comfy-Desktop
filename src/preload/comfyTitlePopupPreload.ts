@@ -139,6 +139,9 @@ export type TitlePopupConfig =
 
 /** Mirrors `DownloadProgress` in `src/main/lib/comfyDownloadManager.ts`. */
 export interface PopupDownloadEntry {
+  /** Stable per-job identifier. The download-action IPC accepts it in place
+   *  of the URL (the `url` action fields remain supported). */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -162,13 +165,16 @@ export interface PopupDownloadsState {
   recent: PopupDownloadEntry[]
 }
 
+/** Per-entry actions address a download by stable job id (`ref`), falling
+ *  back to the URL for entries that predate ids. `url` rides along for
+ *  compatibility with older mains that only understand URL keys. */
 export type PopupDownloadAction =
-  | { action: 'pause'; url: string }
-  | { action: 'resume'; url: string }
-  | { action: 'cancel'; url: string }
-  | { action: 'show-in-folder'; url: string; savePath: string }
-  | { action: 'dismiss'; url: string }
-  | { action: 'retry'; url: string }
+  | { action: 'pause'; ref?: string; url: string }
+  | { action: 'resume'; ref?: string; url: string }
+  | { action: 'cancel'; ref?: string; url: string }
+  | { action: 'show-in-folder'; ref?: string; url: string; savePath: string }
+  | { action: 'dismiss'; ref?: string; url: string }
+  | { action: 'retry'; ref?: string; url: string }
   | { action: 'clear-finished' }
 
 /** Settings tabs the popup can deep-link the host's panelView into. */

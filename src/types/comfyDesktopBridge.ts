@@ -1,4 +1,8 @@
 export interface ComfyDownloadProgress {
+  /** Stable per-job identifier assigned by the desktop app. The download
+   *  controls accept it in place of the URL. Optional: older desktop
+   *  versions do not send it. */
+  id?: string
   url: string
   filename: string
   directory?: string

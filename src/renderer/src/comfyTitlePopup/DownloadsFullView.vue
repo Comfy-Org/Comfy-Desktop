@@ -85,23 +85,32 @@ const filtered = computed<DownloadEntry[]>(() => {
   }
 })
 
-function pause(url: string): void {
-  bridge?.downloadsAction({ action: 'pause', url })
+// Actions address a row by stable job id (`ref`), with the URL riding along
+// as a compatibility fallback.
+function pause(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'pause', ref: d.id, url: d.url })
 }
-function resume(url: string): void {
-  bridge?.downloadsAction({ action: 'resume', url })
+function resume(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'resume', ref: d.id, url: d.url })
 }
-function cancel(url: string): void {
-  bridge?.downloadsAction({ action: 'cancel', url })
+function cancel(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'cancel', ref: d.id, url: d.url })
 }
-function retry(url: string): void {
-  bridge?.downloadsAction({ action: 'retry', url })
+function retry(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'retry', ref: d.id, url: d.url })
 }
-function showInFolder(url: string, savePath: string | undefined): void {
-  if (savePath) bridge?.downloadsAction({ action: 'show-in-folder', url, savePath })
+function showInFolder(d: DownloadEntry): void {
+  if (d.savePath) {
+    bridge?.downloadsAction({
+      action: 'show-in-folder',
+      ref: d.id,
+      url: d.url,
+      savePath: d.savePath
+    })
+  }
 }
-function dismissOne(url: string): void {
-  bridge?.downloadsAction({ action: 'dismiss', url })
+function dismissOne(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'dismiss', ref: d.id, url: d.url })
 }
 function clearFinished(): void {
   bridge?.downloadsAction({ action: 'clear-finished' })
@@ -247,7 +256,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 class="dlm-btn"
                 :title="t('downloadsPopup.pause')"
                 :aria-label="t('downloadsPopup.pause')"
-                @click="pause(d.url)"
+                @click="pause(d)"
               >
                 <PauseCircle :size="14" />
               </button>
@@ -257,7 +266,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 class="dlm-btn dlm-btn-primary"
                 :title="t('downloadsPopup.resume')"
                 :aria-label="t('downloadsPopup.resume')"
-                @click="resume(d.url)"
+                @click="resume(d)"
               >
                 <PlayCircle :size="14" />
                 {{ t('downloadsPopup.resume') }}
@@ -268,7 +277,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 class="dlm-btn"
                 :title="t('downloadsTab.retry')"
                 :aria-label="t('downloadsTab.retry')"
-                @click="retry(d.url)"
+                @click="retry(d)"
               >
                 <RotateCcw :size="14" />
                 {{ t('downloadsTab.retry') }}
@@ -277,7 +286,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 v-if="d.status === 'completed' && d.savePath"
                 type="button"
                 class="dlm-btn"
-                @click="showInFolder(d.url, d.savePath)"
+                @click="showInFolder(d)"
               >
                 <FolderOpen :size="14" />
                 {{ revealLabel }}
@@ -289,7 +298,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 class="dlm-x"
                 :title="t('downloadsPopup.cancel')"
                 :aria-label="t('downloadsPopup.cancel')"
-                @click="cancel(d.url)"
+                @click="cancel(d)"
               >
                 <XCircle :size="14" />
               </button>
@@ -299,7 +308,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 class="dlm-x"
                 :title="t('downloadsPopup.remove')"
                 :aria-label="t('downloadsPopup.remove')"
-                @click="dismissOne(d.url)"
+                @click="dismissOne(d)"
               >
                 <X :size="14" />
               </button>

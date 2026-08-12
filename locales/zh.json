@@ -349,7 +349,7 @@
   },
   "templateQuit": {
     "title": "模板模型仍在下载",
-    "message": "现在退出将停止下载，且无法续传。你可以等其完成后再退出。",
+    "message": "现在退出将暂停下载。下次启动时它会以已暂停状态出现在“下载”中，你可以继续或取消。",
     "quit": "仍然退出",
     "cancel": "继续下载"
   },
@@ -1208,6 +1208,8 @@
     "noEnvFound": "无法启动：未找到 Python 环境。请先创建一个。",
     "managerConfigWriteFailed": "无法启动：无法将此安装的管理器安全设置写入其配置文件。已停止启动，以避免 ComfyUI-Manager 使用过期的安全设置运行。请检查安装文件夹是否可写后重试。",
     "alreadyRunning": "ComfyUI 已在运行。请先停止再重新启动。",
+    "modelDownloadsUnsafe": "无法启动：旧版本遗留的未完成模型下载文件无法被隔离（{files}）。ComfyUI 会将这些截断的文件当作损坏的模型加载。请关闭占用这些文件的程序后重试。",
+    "modelDownloadsStartupFailed": "无法启动：模型下载启动检查失败，未完成的模型文件可能仍会被 ComfyUI 扫描到。请查看日志后重试。",
     "installDirEmpty": "实例文件夹为空。请删除此实例并重新安装。",
     "installDirNotFound": "未找到实例文件夹。请重新连接驱动器或恢复文件夹后再试。",
     "installDirNotFoundTag": "未找到文件夹",

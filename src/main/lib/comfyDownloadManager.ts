@@ -1,19 +1,32 @@
 import { randomUUID } from 'crypto'
-import { app, BrowserWindow, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, nativeImage, net, session as electronSession } from 'electron'
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
+import * as installations from '../installations'
 import { findInstallationIdByComfySender } from '../host/registry'
-import { isSamePath, TEMP_DIR_NAME } from './models'
+import { expectedPartitionFor } from '../host/partition'
+import { TEMP_DIR_NAME } from './models'
 import { _broadcastToRenderer } from './ipc/shared'
 import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
 import {
   buildExistenceCandidates,
+  collectModelScanRoots,
   getModelsBaseDir,
   regularFileExists,
   resolveDownloadContextById
 } from './modelDownloadPaths'
+import {
+  ensureStagedPlaceholder,
+  migrateLegacyModelDownloadArtifacts,
+  removeStagedArtifacts,
+  revalidateStagedPair,
+  scanForStagedDownloads,
+  type DiscoveredStagedDownload
+} from './modelDownloadStaging'
+import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
+import { isQuitInProgress } from './quit-state'
 
 /** Asset (output) downloads whose final file is itself an image we can preview. */
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -60,6 +73,9 @@ export function buildSaveDialogFilters(suggestedName: string): Electron.FileFilt
 }
 
 export interface DownloadProgress {
+  /** Stable per-job identifier. Renderer state/controls may address a job by
+   *  this instead of the URL (URL keying stays supported for compatibility). */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -80,6 +96,11 @@ export interface DownloadProgress {
 }
 
 interface PendingDownload {
+  /** Stable job id, mirrored onto every progress broadcast. */
+  id: string
+  /** `model` jobs ride the managed resumable transport; `asset`/`general`
+   *  downloads keep the Electron DownloadItem flow. */
+  kind: 'model' | 'asset' | 'general'
   url: string
   filename: string
   directory: string
@@ -90,18 +111,159 @@ interface PendingDownload {
   requestedSavePath?: string
   tempPath?: string
   outputDir?: string
-  window: BrowserWindow
+  /** Presentation window. Optional: managed model jobs can run headless
+   *  (starter-template downloads start before any ComfyUI window exists). */
+  window?: BrowserWindow
   /** The webContents that initiated the download (may differ from window.webContents for WebContentsView). */
   senderContents?: Electron.WebContents
   subscriberWindows: Set<BrowserWindow>
   item?: Electron.DownloadItem
-  lastProgress: DownloadProgress
+  // --- managed model-job state (kind === 'model') ---
+  /** Active transport; null while paused / awaiting session resolution. */
+  transport?: ModelTransferHandle | null
+  /** True while the job is deliberately parked (paused / restored from a
+   *  previous run). Set synchronously on pause; the outgoing transport may
+   *  still be flushing its teardown briefly afterwards. */
+  suspended?: boolean
+  /** Set when system sleep parked the job; wake auto-resumes it. User-paused
+   *  jobs never carry this flag. */
+  resumeOnWake?: boolean
+  /** Bumped per runModelTransport invocation so a superseded attempt (pause
+   *  -> quick resume) can't overwrite the live attempt's state. */
+  attemptGen?: number
+  /** True while admission preflight (directory creation + durable staging
+   *  placeholder) is still running. Controls landing during preflight only
+   *  toggle `suspended`/registry state; the preflight completion is the ONLY
+   *  path that may start the job's first transport. */
+  starting?: boolean
+  /** Cancel arrived while the live transport was already settling (pause
+   *  teardown or finalize verification held the terminal claim). The
+   *  transport outcome decides: 'paused' applies the cancel; a completed or
+   *  error outcome wins over it (the model may already be installed). */
+  cancelRequested?: boolean
+  /** True when the live transport's terminal claim is held by a PAUSE this
+   *  manager issued - the outcome can only be 'paused', so a cancel landing
+   *  during that teardown may commit destructively right away. False when
+   *  pause() lost the claim race (finalize verification may be mid-install),
+   *  in which case a cancel must defer to the outcome. */
+  pauseHoldsClaim?: boolean
+  /** Committed to an explicit destructive cancel. The job refuses every
+   *  further control and no new attempt may start; the terminal report/
+   *  settlement runs once any prior stream for the destination has closed
+   *  and the staged-cleanup outcome is known. */
+  cancelling?: boolean
+  /** Resolves when the admission preflight has finished (transport started,
+   *  parked, or failed). Quit/sleep parking awaits it so an admitted job is
+   *  durably staged on disk before the process exits. */
+  preflight?: Promise<void>
+  /** Lease ids of the callers attached to this job (starter + joins). Each
+   *  caller owns exactly one lease, released idempotently via its handle's
+   *  `release()`. The transfer is only cancelled when the last lease is gone,
+   *  so one template abandoning a shared destination can't kill another
+   *  caller's download. */
+  leases?: Set<string>
+  installationId?: string | null
+  expectedSize?: number
+  /** Explicit session for headless callers (template task). Falls back to
+   *  senderContents.session, then the install's partition, then default. */
+  explicitSession?: Electron.Session
+  /** Hot-path byte subscribers (template task counters). Called per chunk. */
+  progressSubscribers?: Set<(receivedBytes: number, totalBytes: number) => void>
+  /** Settles the job-level completion promise (completed/cancelled/error).
+   *  Pause does NOT settle it. */
+  settleJob?: (outcome: ModelJobOutcome) => void
+  completion?: Promise<ModelJobOutcome>
+  lastProgress: DownloadProgress & { id: string }
   lastSpeedBytes: number
   lastSpeedTime: number
 }
 
 const attachedSessions = new WeakSet<Electron.Session>()
+
+/** Active downloads keyed by stable job id. The id is the PRIMARY identity;
+ *  URLs are a compatibility lookup only (`activeIdsByUrl`), so two jobs with
+ *  the same source URL but different destinations coexist independently. */
 const pendingDownloads = new Map<string, PendingDownload>()
+
+/** Active job ids per source URL, for compatibility resolution (the in-Comfy
+ *  bridge addresses downloads by URL) and DownloadItem matching. */
+const activeIdsByUrl = new Map<string, Set<string>>()
+
+function registerPending(pending: PendingDownload): void {
+  pendingDownloads.set(pending.id, pending)
+  let ids = activeIdsByUrl.get(pending.url)
+  if (!ids) activeIdsByUrl.set(pending.url, (ids = new Set()))
+  ids.add(pending.id)
+}
+
+function unregisterPending(pending: PendingDownload): void {
+  pendingDownloads.delete(pending.id)
+  const ids = activeIdsByUrl.get(pending.url)
+  if (ids) {
+    ids.delete(pending.id)
+    if (ids.size === 0) activeIdsByUrl.delete(pending.url)
+  }
+}
+
+function activeJobsForUrl(url: string): PendingDownload[] {
+  const ids = activeIdsByUrl.get(url)
+  if (!ids) return []
+  const out: PendingDownload[] = []
+  for (const id of ids) {
+    const p = pendingDownloads.get(id)
+    if (p) out.push(p)
+  }
+  return out
+}
+
+/** Resolve a control ref (stable job id, or a source URL for compatibility
+ *  with the in-Comfy bridge / older renderers) to an ACTIVE job. URL
+ *  resolution succeeds only when it identifies exactly one job - an ambiguous
+ *  URL (same source downloading to two destinations) must not act on an
+ *  arbitrary one. */
+function findActiveByRef(ref: string): PendingDownload | undefined {
+  const byId = pendingDownloads.get(ref)
+  if (byId) return byId
+  const byUrl = activeJobsForUrl(ref)
+  return byUrl.length === 1 ? byUrl[0] : undefined
+}
+
+/** Terminal outcome of a managed model job. `paused` is deliberately absent:
+ *  a paused job's completion promise stays pending until it is resumed and
+ *  finishes, or is cancelled. */
+export type ModelJobOutcome =
+  | { status: 'completed'; savePath: string; alreadyPresent?: boolean }
+  | { status: 'cancelled' }
+  | { status: 'error'; error: string }
+
+/** Active model job ids indexed by canonical final destination, so concurrent
+ *  installs/templates requesting the same model join one transfer instead of
+ *  writing the same file twice. */
+const modelJobIdByDest = new Map<string, string>()
+
+/** Streams of superseded or cancelled transports that are still flushing to
+ *  a destination's staging file, keyed by canonical destination. A new
+ *  transport must not open that staging file until the previous stream there
+ *  has fully closed (two writers would corrupt it, and Windows blocks
+ *  unlink/rename on open handles), and quit must wait for these before the
+ *  process exits so a closing stream cannot be truncated. */
+const closingStreamsByDest = new Map<string, Promise<void>>()
+
+/** Record `done` (a settling transport's completion, possibly chained with
+ *  its cleanup) as the closing stream for `destKey`. Entries remove
+ *  themselves once resolved; multiple closings for one destination chain. */
+function trackClosingStream(destKey: string, done: Promise<unknown>): void {
+  const prior = closingStreamsByDest.get(destKey) ?? Promise.resolve()
+  const entry: Promise<void> = Promise.all([prior, done]).then(() => {
+    if (closingStreamsByDest.get(destKey) === entry) closingStreamsByDest.delete(destKey)
+  })
+  closingStreamsByDest.set(destKey, entry)
+}
+
+function canonicalDestKey(savePath: string): string {
+  const resolved = path.resolve(savePath)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
 
 /** Chunked synchronous byte comparison. Bounded memory so it is safe for
  *  large video outputs; sync because it runs inside the DownloadItem's
@@ -142,13 +304,15 @@ function filesHaveEqualContent(a: string, b: string): boolean {
 }
 let mainWindow: BrowserWindow | null = null
 
-/** Original dispatch params per URL, for `retryDownload`. Kept off the
+/** Original dispatch params per job id, for `retryDownload`. Kept off the
  *  broadcast `DownloadProgress` because asset downloads carry an `authToken`
  *  that must never reach the renderer. */
 interface RetryParams {
   kind: 'model' | 'asset'
+  url: string
   filename: string
-  window: BrowserWindow
+  /** Optional: model retries can run headless (hydrated/template jobs). */
+  window?: BrowserWindow
   senderContents?: Electron.WebContents
   directory?: string
   outputDir?: string
@@ -156,8 +320,12 @@ interface RetryParams {
   /** Install that initiated the download, so a retry resolves the same
    *  destination even after the originating comfy view is gone. */
   installationId?: string | null
+  /** Model jobs: the RESOLVED final destination of the original attempt.
+   *  Retry dedupe compares canonical destinations, never URL + directory -
+   *  two installs can share both while writing different files. */
+  savePath?: string
 }
-const retryParamsByUrl = new Map<string, RetryParams>()
+const retryParamsById = new Map<string, RetryParams>()
 
 /** Recent terminal downloads kept in main so a tray mounted after a download
  *  finished can still surface it. FIFO-capped at `RECENT_LIMIT`. */
@@ -180,80 +348,56 @@ function isTerminalStatus(status: DownloadProgress['status']): boolean {
   return status === 'completed' || status === 'error' || status === 'cancelled'
 }
 
-/**
- * Template-model downloads mirrored into the tray after the user skips ahead to
- * ComfyUI. The resume-capable background task stays the byte-owner; this is a
- * read-only reflection merged into the tray view-state, NOT a real download - so
- * it never touches `pendingDownloads`' DownloadItem lifecycle (cancel/retry/
- * temp-rename stay untouched). Scoped per install so concurrent installs can each
- * mirror their own rows without clobbering one another. */
-const templateTrayMirrorByInstall = new Map<string, Map<string, DownloadProgress>>()
-
-/**
- * Replace `installationId`'s mirrored template rows and notify the tray.
- * `entries` is that install's full current set (one per template file); passing
- * `[]` clears its rows. Stamps `createdAt` so rows hold a stable slot.
- */
-export function setTemplateTrayMirror(installationId: string, entries: DownloadProgress[]): void {
-  const prev = templateTrayMirrorByInstall.get(installationId)
-  // Empty set clears this install's rows. Don't keep (or create) an empty
-  // bucket: while a download is still resolving it has no files yet, and a
-  // lingering empty bucket would both leak and emit `tray-state-changed` on
-  // every poll with nothing to show.
-  if (entries.length === 0) {
-    if (!prev) return
-    for (const url of prev.keys()) createdAtByUrl.delete(url)
-    templateTrayMirrorByInstall.delete(installationId)
-    downloadEvents.emit('tray-state-changed')
-    return
+/** Drop a terminal row's per-id bookkeeping when the row leaves the recent
+ *  buffer (dismissed, cleared, replaced by a newer attempt, or evicted). */
+function dropRowBookkeeping(row: DownloadProgress): void {
+  if (row.id !== undefined) {
+    createdAtById.delete(row.id)
+    retryParamsById.delete(row.id)
   }
-  const nextUrls = new Set(entries.map((e) => e.url))
-  if (prev) {
-    for (const url of prev.keys()) {
-      if (!nextUrls.has(url)) createdAtByUrl.delete(url)
-    }
-  }
-  const bucket = new Map<string, DownloadProgress>()
-  for (const entry of entries) {
-    let createdAt = createdAtByUrl.get(entry.url)
-    if (createdAt === undefined) {
-      createdAt = Date.now()
-      createdAtByUrl.set(entry.url, createdAt)
-    }
-    bucket.set(entry.url, { ...entry, createdAt })
-  }
-  templateTrayMirrorByInstall.set(installationId, bucket)
-  // Fan out as `model-download-progress` so the renderer download store (the
-  // All-Downloads modal + Settings tab) tracks these like any real download.
-  // The tray popup reads the merged `getDownloadsTrayState()` snapshot instead.
-  for (const entry of bucket.values()) {
-    _broadcastToRenderer('model-download-progress', entry)
-  }
-  downloadEvents.emit('tray-state-changed')
 }
 
-/** Drop `installationId`'s mirrored template rows from the tray (e.g. window close). */
-export function clearTemplateTrayMirror(installationId: string): void {
-  const bucket = templateTrayMirrorByInstall.get(installationId)
-  if (!bucket) return
-  for (const url of bucket.keys()) createdAtByUrl.delete(url)
-  templateTrayMirrorByInstall.delete(installationId)
-  downloadEvents.emit('tray-state-changed')
+/** Resolve a control ref (job id or source URL) to a terminal row in the
+ *  recent buffer. URL matching succeeds only when exactly one row matches. */
+function findRecentByRef(ref: string): DownloadProgress | undefined {
+  const byId = recentDownloads.find((d) => d.id === ref)
+  if (byId) return byId
+  const byUrl = recentDownloads.filter((d) => d.url === ref)
+  return byUrl.length === 1 ? byUrl[0] : undefined
 }
 
 function pushRecent(progress: DownloadProgress): void {
-  // Replace any prior entry for the same URL so a re-attempted download
-  // appears once.
-  const idx = recentDownloads.findIndex((d) => d.url === progress.url)
-  if (idx >= 0) recentDownloads.splice(idx, 1)
+  // Replace any prior entry for the same job - or an older attempt at the
+  // same URL + directory - so a re-attempted download appears once. Renderer
+  // stores key rows by job id, so when the replaced row belonged to an older
+  // attempt (different id) tell them to drop it. Rows without a source URL
+  // (e.g. unsafe legacy-migration warnings) never match each other by URL -
+  // two such files in one directory must both stay visible.
+  const idx = recentDownloads.findIndex(
+    (d) =>
+      d.id === progress.id ||
+      (progress.url !== '' &&
+        d.url === progress.url &&
+        (d.directory ?? '') === (progress.directory ?? ''))
+  )
+  if (idx >= 0) {
+    const [replaced] = recentDownloads.splice(idx, 1)
+    if (replaced && replaced.id !== undefined && replaced.id !== progress.id) {
+      dropRowBookkeeping(replaced)
+      _broadcastToRenderer('model-download-removed', { url: replaced.url, id: replaced.id })
+    }
+  }
   recentDownloads.push({ ...progress })
   // FIFO eviction past the cap; also drop the createdAt/retry stamps so the
-  // maps don't grow unbounded and a re-download gets a fresh end slot.
+  // maps don't grow unbounded. Broadcast each eviction: renderer stores keep
+  // every row they were sent and a later dismissal of an already-evicted row
+  // finds nothing in `recentDownloads` (so emits nothing) - without this an
+  // evicted row would stay visible forever in open windows.
   while (recentDownloads.length > RECENT_LIMIT) {
     const evicted = recentDownloads.shift()
     if (evicted) {
-      createdAtByUrl.delete(evicted.url)
-      retryParamsByUrl.delete(evicted.url)
+      dropRowBookkeeping(evicted)
+      _broadcastToRenderer('model-download-removed', { url: evicted.url, id: evicted.id })
     }
   }
 }
@@ -265,15 +409,6 @@ export function getDownloadsTrayState(): DownloadsTrayState {
     const s = pending.lastProgress.status
     if (s === 'pending' || s === 'downloading' || s === 'paused') {
       active.push(pending.lastProgress)
-    }
-  }
-  // Merge every install's mirrored template-model rows: in-flight ones join
-  // `active`, finished ones join `recent`, so the tray reflects each
-  // skipped-but-still-running download exactly like a native one.
-  for (const bucket of templateTrayMirrorByInstall.values()) {
-    for (const entry of bucket.values()) {
-      if (isTerminalStatus(entry.status)) recent.push(entry)
-      else active.push(entry)
     }
   }
   return { active, recent }
@@ -445,11 +580,13 @@ function isImageAsset(pending: PendingDownload): boolean {
 
 function broadcastProgress(progress: DownloadProgress): void {
   // Send to the originating ComfyUI window and any subscribers
-  const pending = pendingDownloads.get(progress.url)
+  const pending = progress.id !== undefined ? pendingDownloads.get(progress.id) : undefined
   if (pending) {
-    pending.lastProgress = progress
-    const target = pending.senderContents || pending.window.webContents
-    if (!target.isDestroyed()) {
+    pending.lastProgress = { ...progress, id: pending.id }
+    const target =
+      pending.senderContents ||
+      (pending.window && !pending.window.isDestroyed() ? pending.window.webContents : undefined)
+    if (target && !target.isDestroyed()) {
       target.send('desktop2-download-progress', progress)
     }
     for (const sub of pending.subscriberWindows) {
@@ -484,21 +621,23 @@ function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress): voi
   }
 }
 
-/** First-seen timestamp per URL, preserved across status transitions and the
- *  pending->recent migration; cleared on full eviction from `recentDownloads`. */
-const createdAtByUrl = new Map<string, number>()
+/** First-seen timestamp per job id, preserved across status transitions and
+ *  the pending->recent migration; cleared when the row leaves the buffer. */
+const createdAtById = new Map<string, number>()
 
-function reportProgress(progress: DownloadProgress): void {
-  // Stamp once per URL so terminal entries keep their slot in the combined view.
-  let createdAt = createdAtByUrl.get(progress.url)
+/** Every progress report MUST carry the job's stable id - rows are keyed by
+ *  it across main and every renderer surface. */
+function reportProgress(progress: DownloadProgress & { id: string }): void {
+  // Stamp once per job so its entries keep their slot in the combined view.
+  let createdAt = createdAtById.get(progress.id)
   if (createdAt === undefined) {
     createdAt = Date.now()
-    createdAtByUrl.set(progress.url, createdAt)
+    createdAtById.set(progress.id, createdAt)
   }
   progress.createdAt = createdAt
   broadcastProgress(progress)
-  const pending = pendingDownloads.get(progress.url)
-  if (pending) setTaskbarProgress(pending.window, progress)
+  const pending = pendingDownloads.get(progress.id)
+  if (pending?.window) setTaskbarProgress(pending.window, progress)
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -546,45 +685,378 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
 function findPendingForItem(item: Electron.DownloadItem): PendingDownload | undefined {
   const candidates = [...item.getURLChain(), item.getURL()].filter(Boolean)
   for (const u of candidates) {
-    const pending = pendingDownloads.get(u)
     // Only match entries still awaiting their DownloadItem; ones that already
-    // have an item are active general downloads we mustn't hijack.
-    if (pending && !pending.item) return pending
+    // have an item are active general downloads we mustn't hijack. Managed
+    // model jobs never use a DownloadItem, so a same-URL browser download
+    // must not attach to them either.
+    const pending = activeJobsForUrl(u).find((p) => p.kind !== 'model' && !p.item)
+    if (pending) return pending
   }
   return undefined
 }
 
-export async function startModelDownload(
-  win: BrowserWindow,
-  url: string,
-  rawFilename: string,
-  directory: string,
-  senderContents?: Electron.WebContents,
+// ---- Managed model jobs (issue #1322) ---------------------------------------
+//
+// Every model transfer - in-Comfy missing-model downloads, starter-template
+// downloads, tray retries, and jobs restored after a restart - is one managed
+// job in `pendingDownloads`, moved by the resumable `modelDownloadTransport`
+// (staged `.part` + sidecar; never partial bytes under a model extension).
+// Asset/general downloads keep the Electron DownloadItem flow below.
+
+export interface ModelJobOptions {
+  url: string
+  /** Raw filename; query params are stripped internally. */
+  filename: string
+  /** Models subdirectory (e.g. `checkpoints`). */
+  directory: string
+  /** Install context for destination resolution + session fallback. When
+   *  omitted, attributed from `senderContents`. */
   installationId?: string | null
-): Promise<boolean> {
-  const filename = stripQueryParams(rawFilename)
+  /** Presentation window; optional (headless template jobs omit it). */
+  window?: BrowserWindow
+  senderContents?: Electron.WebContents
+  /** Explicit session (headless callers). */
+  session?: Electron.Session
+  /** Caller-known expected byte count, validated against the server. */
+  expectedSize?: number
+  /** Hot-path per-chunk byte counter (O(1) work only - no IPC/allocation). */
+  onProgress?: (receivedBytes: number, totalBytes: number) => void
+}
+
+export interface ModelJobHandle {
+  id: string
+  url: string
+  savePath: string
+  /** Resolves with the job's terminal outcome; never rejects. Pause keeps it
+   *  pending; resume/retry continue the same promise. */
+  completion: Promise<ModelJobOutcome>
+  /** Release THIS caller's lease on the job. Idempotent - calling it twice
+   *  releases one lease once, and it can never release another caller's
+   *  lease. The transfer is cancelled (staged bytes removed) only when the
+   *  last lease is released; during app quit the job is parked resumably by
+   *  the quit path instead of cancelled. */
+  release: () => void
+}
+
+function settledJobHandle(
+  id: string,
+  url: string,
+  savePath: string,
+  outcome: ModelJobOutcome
+): ModelJobHandle {
+  return { id, url, savePath, completion: Promise.resolve(outcome), release: () => {} }
+}
+
+/** Create a caller-owned, idempotent lease on `pending`. `cleanup` runs once
+ *  when THIS lease is released (e.g. detaching the caller's progress
+ *  subscriber). Releasing the last lease PARKS the job resumably (network
+ *  stops, staged bytes + sidecar stay, the row shows paused): a host window
+ *  closing over a template download must not destroy bytes the Downloads UI
+ *  can resume. Only an explicit Downloads Cancel (`cancelModelDownload`) is
+ *  destructive. During app quit, release defers entirely to the quit path,
+ *  which parks every active transfer itself. */
+function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): () => void {
+  const leaseId = randomUUID()
+  ;(pending.leases ??= new Set()).add(leaseId)
+  return () => {
+    const leases = pending.leases
+    if (!leases?.delete(leaseId)) return
+    cleanup?.()
+    if (leases.size > 0) return
+    if (quittingModelDownloads || isQuitInProgress()) return
+    // Only park the job this lease belongs to - never a newer job that
+    // happens to reuse the same id slot.
+    if (pendingDownloads.get(pending.id) === pending && !pending.suspended) {
+      pauseModelDownload(pending.id)
+    }
+  }
+}
+
+/** Attach a caller to an existing active job (same canonical destination). */
+function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJobHandle {
+  if (opts.window && opts.window !== existing.window && !opts.window.isDestroyed()) {
+    existing.subscriberWindows.add(opts.window)
+    opts.window.webContents.send('desktop2-download-progress', existing.lastProgress)
+  }
+  const onProgress = opts.onProgress
+  if (onProgress) {
+    ;(existing.progressSubscribers ??= new Set()).add(onProgress)
+  }
+  const release = acquireModelJobLease(
+    existing,
+    onProgress ? () => existing.progressSubscribers?.delete(onProgress) : undefined
+  )
+  // A parked job (user pause, or hydrated from a previous run) that a NEW
+  // caller joins must actually transfer - otherwise the joiner's completion
+  // (e.g. a template launch awaiting this model) would never settle.
+  if (existing.suspended) resumeModelDownload(existing.id)
+  return {
+    id: existing.id,
+    url: existing.url,
+    savePath: existing.savePath,
+    completion:
+      existing.completion ?? Promise.resolve({ status: 'error', error: 'Download not joinable' }),
+    release
+  }
+}
+
+/** Session for a model transfer: explicit > originating sender > the install's
+ *  partition > default. Keeps gated-repo cookies riding along even for
+ *  headless (template / hydrated) jobs. */
+async function resolveModelSession(
+  pending: PendingDownload
+): Promise<Electron.Session | undefined> {
+  if (pending.explicitSession) return pending.explicitSession
+  if (pending.senderContents && !pending.senderContents.isDestroyed()) {
+    return pending.senderContents.session
+  }
+  if (pending.installationId) {
+    try {
+      const inst = await installations.get(pending.installationId)
+      if (inst) return electronSession.fromPartition(expectedPartitionFor(inst))
+    } catch {}
+  }
+  try {
+    return electronSession.defaultSession
+  } catch {
+    return undefined
+  }
+}
+
+/** Remove a finished/cancelled model job from the active registries. */
+function unregisterModelJob(pending: PendingDownload): void {
+  unregisterPending(pending)
+  const destKey = canonicalDestKey(pending.savePath)
+  if (modelJobIdByDest.get(destKey) === pending.id) modelJobIdByDest.delete(destKey)
+}
+
+/** Terminal half of an explicit destructive cancel. Must run only once any
+ *  prior stream for the destination has closed (deleting staged files under
+ *  an open stream fails on Windows). Removes the staged artifacts - unless a
+ *  replacement job re-owned the destination while the stream closed, in
+ *  which case they are the replacement's, not this job's to delete - then
+ *  reports honestly: a failed removal means the pair would rehydrate next
+ *  launch, so a clean 'cancelled' would lie and the job settles as an error
+ *  instead. Reports while still registered so subscribers resolved through
+ *  the registry receive the terminal event. */
+function finishDestructiveCancel(pending: PendingDownload, destKey: string): void {
+  let reowned = false
+  for (const job of pendingDownloads.values()) {
+    if (job !== pending && job.kind === 'model' && canonicalDestKey(job.savePath) === destKey) {
+      reowned = true
+      break
+    }
+  }
+  const clean = reowned ? true : removeStagedArtifacts(pending.savePath)
+  const base = {
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory
+  }
+  if (clean) {
+    reportProgress({ ...base, progress: 0, status: 'cancelled' })
+    unregisterModelJob(pending)
+    pending.settleJob?.({ status: 'cancelled' })
+  } else {
+    const error = 'Cancel failed: staged download files could not be removed'
+    reportProgress({
+      ...base,
+      progress: pending.lastProgress.progress,
+      receivedBytes: pending.lastProgress.receivedBytes,
+      totalBytes: pending.lastProgress.totalBytes,
+      status: 'error',
+      error
+    })
+    unregisterModelJob(pending)
+    pending.settleJob?.({ status: 'error', error })
+  }
+}
+
+const MODEL_PROGRESS_REPORT_MS = 500
+
+/** Drive one transport attempt for `pending` and translate its outcome into
+ *  registry/broadcast state. Pause leaves the job parked for a later resume;
+ *  everything else is terminal and settles the completion promise. */
+async function runModelTransport(pending: PendingDownload): Promise<void> {
+  const gen = (pending.attemptGen = (pending.attemptGen ?? 0) + 1)
+  // A fresh attempt supersedes any cancel that was deferred against a prior
+  // attempt's settling transport (the prior outcome handler early-returns on
+  // gen mismatch, so it would never consume the flag; left set it would
+  // destroy this attempt the next time it parks). The pause-claim marker
+  // likewise belongs to the prior attempt's transport.
+  pending.cancelRequested = false
+  pending.pauseHoldsClaim = false
+  const destKey = canonicalDestKey(pending.savePath)
+  // Drain any stream still flushing to this destination - a prior attempt of
+  // this job (pause -> quick resume) or a cancelled predecessor job whose
+  // teardown is still closing - so two transports never write the same
+  // staging file.
+  const prior = pending.transport
+  if (prior) {
+    pending.transport = null
+    trackClosingStream(destKey, prior.done)
+  }
+  const closing = closingStreamsByDest.get(destKey)
+  if (closing) await closing
+  const sess = await resolveModelSession(pending)
+  // The job may have been paused, cancelled, superseded by a newer attempt,
+  // or overtaken by quit parking while the awaits above resolved.
+  if (gen !== pending.attemptGen || pending.suspended || !pendingDownloads.has(pending.id)) {
+    return
+  }
+  if (quittingModelDownloads || isQuitInProgress()) {
+    // Quit began while the awaits above resolved. Park instead of starting a
+    // transport: the staged pair from admission preflight is already durable,
+    // so the job hydrates paused on the next launch - and if this quit is
+    // later aborted (update flow), the row is an honest Paused with a working
+    // Resume instead of a silently stalled download.
+    pending.suspended = true
+    reportProgress({ ...pending.lastProgress, status: 'paused' })
+    return
+  }
+
+  const transport = startModelTransfer({
+    url: pending.url,
+    jobId: pending.id,
+    finalPath: pending.savePath,
+    directory: pending.directory,
+    filename: pending.filename,
+    installationId: pending.installationId,
+    session: sess,
+    expectedSize: pending.expectedSize,
+    onProgress: ({ receivedBytes, totalBytes }) => {
+      if (gen !== pending.attemptGen) return
+      if (pending.progressSubscribers) {
+        for (const sub of pending.progressSubscribers) sub(receivedBytes, totalBytes)
+      }
+      const now = Date.now()
+      const elapsed = (now - pending.lastSpeedTime) / 1000
+      if (elapsed * 1000 < MODEL_PROGRESS_REPORT_MS) return
+      const delta = receivedBytes - pending.lastSpeedBytes
+      const speed = delta > 0 ? delta / elapsed : 0
+      pending.lastSpeedBytes = receivedBytes
+      pending.lastSpeedTime = now
+      const eta = speed > 0 && totalBytes > 0 ? (totalBytes - receivedBytes) / speed : undefined
+      reportProgress({
+        id: pending.id,
+        url: pending.url,
+        filename: pending.filename,
+        directory: pending.directory,
+        progress: totalBytes > 0 ? Math.min(1, receivedBytes / totalBytes) : 0,
+        receivedBytes,
+        totalBytes: totalBytes > 0 ? totalBytes : undefined,
+        speedBytesPerSec: speed > 0 ? speed : undefined,
+        etaSeconds: eta,
+        status: 'downloading'
+      })
+    }
+  })
+  pending.transport = transport
+
+  const outcome = await transport.done
+  if (pending.transport === transport) pending.transport = null
+  // A newer attempt superseded this one while it was settling (pause ->
+  // quick resume). The newer attempt owns every state transition now; a
+  // stale attempt must not mutate progress, suspension, or registries.
+  if (gen !== pending.attemptGen) return
+  const base = {
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory
+  }
+  // Terminal reports go out BEFORE the job leaves the registries: the
+  // originating window / senderContents / subscriber windows and the taskbar
+  // are resolved through `pendingDownloads`, so unregistering first would
+  // silently drop the final completed/cancelled/error event for them.
+  switch (outcome.outcome) {
+    case 'completed':
+      reportProgress({
+        ...base,
+        savePath: outcome.savePath,
+        progress: 1,
+        receivedBytes: pending.expectedSize ?? pending.lastProgress.receivedBytes,
+        totalBytes: pending.expectedSize ?? pending.lastProgress.totalBytes,
+        status: 'completed'
+      })
+      unregisterModelJob(pending)
+      pending.settleJob?.({ status: 'completed', savePath: outcome.savePath })
+      break
+    case 'cancelled':
+      reportProgress({ ...base, progress: 0, status: 'cancelled' })
+      unregisterModelJob(pending)
+      pending.settleJob?.({ status: 'cancelled' })
+      break
+    case 'error':
+      reportProgress({
+        ...base,
+        progress: pending.lastProgress.progress,
+        receivedBytes: pending.lastProgress.receivedBytes,
+        totalBytes: pending.lastProgress.totalBytes,
+        status: 'error',
+        error: outcome.error
+      })
+      unregisterModelJob(pending)
+      pending.settleJob?.({ status: 'error', error: outcome.error })
+      break
+    case 'paused':
+      if (pending.cancelRequested) {
+        // A cancel arrived while this transport was settling and was
+        // deferred to the outcome. The transport parked (did not complete),
+        // so the cancel applies now: the stream is closed, staged artifacts
+        // are safe to delete.
+        pending.cancelRequested = false
+        finishDestructiveCancel(pending, destKey)
+        break
+      }
+      // Parked: staged bytes + sidecar retained; the job row stays in
+      // `pendingDownloads` as paused. `resumeModelDownload` restarts the
+      // transport; `cancelModelDownload` removes the staged state.
+      pending.suspended = true
+      break
+  }
+}
+
+/**
+ * Start (or join) a managed model download. The single entry point for every
+ * model transfer: the ComfyUI bridge (`startModelDownload` wraps this), the
+ * starter-template task, tray retries, and restored jobs.
+ */
+export async function startManagedModelJob(opts: ModelJobOptions): Promise<ModelJobHandle> {
+  const url = opts.url
+  const filename = stripQueryParams(opts.filename)
+  const directory = opts.directory
   // Resolve the initiating install so destination + existence check follow its
-  // model settings. An explicit `installationId` (from retries) wins over the
-  // live sender so a retry still targets the right install after its view is gone.
-  const resolvedInstallId = installationId ?? resolveSenderInstallationId(senderContents)
+  // model settings. An explicit `installationId` (from retries / templates)
+  // wins over the live sender so a retry still targets the right install
+  // after its view is gone.
+  const resolvedInstallId = opts.installationId ?? resolveSenderInstallationId(opts.senderContents)
   const ctx = await resolveDownloadContextById(resolvedInstallId)
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const savePath = path.join(baseDir, directory, filename)
-  const tempDir = modelTempDirFor(baseDir)
-  const tempPath = path.join(tempDir, tempFileNameFor(filename))
+
+  // Candidate identity for this request. Discarded (with its bookkeeping) if
+  // the request ends up joining an already-active job at the same destination.
+  const id = randomUUID()
 
   // Capture before the validation early-returns so even a synchronous
   // error (bad path / extension) lands a retryable terminal entry.
-  retryParamsByUrl.set(url, {
+  retryParamsById.set(id, {
     kind: 'model',
+    url,
     filename,
     directory,
-    window: win,
-    senderContents,
-    installationId: resolvedInstallId
+    window: opts.window,
+    senderContents: opts.senderContents,
+    installationId: resolvedInstallId,
+    savePath
   })
 
-  const makeProgress = (overrides: Partial<DownloadProgress>): DownloadProgress => ({
+  const makeProgress = (
+    overrides: Partial<DownloadProgress>
+  ): DownloadProgress & { id: string } => ({
+    id,
     url,
     filename,
     directory,
@@ -594,74 +1066,223 @@ export async function startModelDownload(
   })
 
   if (!isPathContained(savePath, baseDir)) {
-    reportProgress(
-      makeProgress({ status: 'error', error: 'Save path is outside models directory' })
-    )
-    return false
+    const error = 'Save path is outside models directory'
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, { status: 'error', error })
   }
 
   if (!hasValidExtension(filename)) {
-    reportProgress(
-      makeProgress({
-        status: 'error',
-        error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
-      })
-    )
-    return false
+    const error = `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, { status: 'error', error })
+  }
+
+  // Startup-safety barrier BEFORE the existence check: the startup pass
+  // quarantines legacy truncated files that sit under final model names.
+  // Admitting a job (or worse, reporting `alreadyPresent` for such a file)
+  // while that pass is still running would certify a truncated model as
+  // complete - the exact corruption #1322 is about. All callers share the
+  // memoized pass; when it is unsafe, model downloads cannot start at all
+  // (launch is gated on the same result, so ComfyUI is not running either).
+  let startupSafety: ModelDownloadStartupSafety
+  try {
+    startupSafety = await initializeModelDownloads()
+  } catch {
+    startupSafety = { safe: false, unsafePaths: [] }
+  }
+  if (!startupSafety.safe) {
+    const error =
+      'Model folders need attention before downloads can start ' +
+      '(a previous incomplete download could not be quarantined)'
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, { status: 'error', error })
   }
 
   // Report completed without downloading only when the file already exists
   // somewhere the install's ComfyUI actually searches.
   for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
     if (await regularFileExists(candidate)) {
-      const progress = makeProgress({ progress: 1, status: 'completed', savePath: candidate })
-      broadcastProgress(progress)
-      return true
+      reportProgress(makeProgress({ progress: 1, status: 'completed', savePath: candidate }))
+      return settledJobHandle(id, url, candidate, {
+        status: 'completed',
+        savePath: candidate,
+        alreadyPresent: true
+      })
     }
   }
-  const existing = pendingDownloads.get(url)
-  if (existing) {
-    // Downloads are keyed solely by URL, so one URL can't carry two concurrent
-    // destinations. If another install is already fetching this URL into a
-    // different dir, fail closed rather than complete into the wrong place.
-    if (!isSamePath(path.dirname(existing.savePath), path.dirname(savePath))) {
-      return false
-    }
-    if (win !== existing.window) {
-      existing.subscriberWindows.add(win)
-    }
-    if (!win.isDestroyed()) {
-      win.webContents.send('desktop2-download-progress', existing.lastProgress)
-    }
-    return true
+
+  // Shutdown admission gate, checked in the same synchronous block that
+  // registers the job: quit parking snapshots the active jobs once and waits
+  // on that snapshot, so a job admitted after the snapshot would run its
+  // preflight disk writes (and possibly a transport) with nothing awaiting
+  // them. Refuse admission outright - the caller gets a settled error handle
+  // and no registry entry, staging, or network activity is created.
+  if (quittingModelDownloads || isQuitInProgress()) {
+    const error = 'Application is shutting down'
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, { status: 'error', error })
   }
 
-  await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
-  await fs.promises.mkdir(tempDir, { recursive: true })
-
-  if (win.isDestroyed()) return false
+  // Join by canonical destination: another job already writing this exact
+  // final file (concurrent installs / template + manual download), whether it
+  // was started from the same URL or a different one. The same URL aimed at a
+  // DIFFERENT destination stays a fully independent job - jobs are keyed by
+  // id, never by URL, so it cannot attach to the wrong transfer.
+  const destKey = canonicalDestKey(savePath)
+  const idAtDest = modelJobIdByDest.get(destKey)
+  if (idAtDest !== undefined) {
+    const active = pendingDownloads.get(idAtDest)
+    if (active) {
+      // Joining is only safe when the caller wants the same bytes: the same
+      // source URL and (when both sides declare one) the same expected size.
+      // A different source aimed at the same final file is a conflict, not a
+      // join - silently attaching would hand the caller another URL's file.
+      if (
+        active.url !== url ||
+        (opts.expectedSize !== undefined &&
+          active.expectedSize !== undefined &&
+          opts.expectedSize !== active.expectedSize)
+      ) {
+        const error = `Another download is already writing ${filename} from a different source`
+        reportProgress(makeProgress({ status: 'error', error }))
+        return settledJobHandle(id, url, savePath, { status: 'error', error })
+      }
+      retryParamsById.delete(id)
+      createdAtById.delete(id)
+      return joinModelJob(active, opts)
+    }
+    modelJobIdByDest.delete(destKey)
+  }
 
   const initial = makeProgress({ status: 'pending' })
-  pendingDownloads.set(url, {
+  let settleJob!: (outcome: ModelJobOutcome) => void
+  const completion = new Promise<ModelJobOutcome>((resolve) => {
+    settleJob = resolve
+  })
+  const pending: PendingDownload = {
+    id,
+    kind: 'model',
     url,
     filename,
     directory,
     savePath,
-    tempPath,
-    window: win,
-    senderContents: senderContents !== win.webContents ? senderContents : undefined,
+    window: opts.window && !opts.window.isDestroyed() ? opts.window : undefined,
+    senderContents:
+      opts.senderContents && opts.senderContents !== opts.window?.webContents
+        ? opts.senderContents
+        : undefined,
     subscriberWindows: new Set(),
+    transport: null,
+    suspended: false,
+    installationId: resolvedInstallId,
+    expectedSize: opts.expectedSize,
+    explicitSession: opts.session,
+    progressSubscribers: opts.onProgress ? new Set([opts.onProgress]) : undefined,
+    settleJob,
+    completion,
     lastProgress: initial,
     lastSpeedBytes: 0,
     lastSpeedTime: Date.now()
-  })
-
-  const sess = (senderContents || win.webContents).session
-  attachSessionDownloadHandler(sess)
-  sess.downloadURL(url)
-
+  }
+  const starterOnProgress = opts.onProgress
+  const release = acquireModelJobLease(
+    pending,
+    starterOnProgress ? () => pending.progressSubscribers?.delete(starterOnProgress) : undefined
+  )
+  // Admission is atomic: the destination reservation and job registration
+  // happen in the same synchronous block as the join check above, so two
+  // concurrent starts for one destination can never both create a transport -
+  // the second start always finds (and joins) the first.
+  registerPending(pending)
+  modelJobIdByDest.set(destKey, id)
   reportProgress(initial)
-  return true
+
+  // Admission preflight: everything between registration and the first
+  // transport start. Controls landing during it only toggle state (pause and
+  // resume flip `suspended`; cancel removes the job from the registry) - the
+  // preflight completion below is the ONLY path that may start the first
+  // transport, so a pause -> resume during the awaits can never launch a
+  // second concurrent transport. Quit/sleep parking awaits `preflight` so an
+  // admitted job is durably staged on disk before the process exits.
+  pending.starting = true
+  const failPreflight = (error: string): void => {
+    reportProgress(makeProgress({ status: 'error', error }))
+    unregisterModelJob(pending)
+    pending.settleJob?.({ status: 'error', error })
+  }
+  pending.preflight = (async (): Promise<void> => {
+    try {
+      await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
+    } catch (err) {
+      pending.starting = false
+      // Cancel may have landed during the mkdir await and already reported
+      // and settled this job (or committed to a deferred destructive cancel
+      // that will) - a late mkdir failure is not ours to report.
+      if (pendingDownloads.get(id) !== pending || pending.cancelling) return
+      failPreflight(`Failed to create download directory: ${(err as Error).message}`)
+      return
+    }
+    // Cancelled during the mkdir await: the job already reported/settled (or
+    // committed to a deferred destructive cancel whose teardown will remove
+    // the staged artifacts) - do not create/recreate them.
+    if (pendingDownloads.get(id) !== pending || pending.cancelling) {
+      pending.starting = false
+      return
+    }
+    // Durable placeholder while the job is only in-memory: a quit/crash
+    // after admission must still leave a hydratable pair on disk. The
+    // transport re-verifies (and refreshes) it before any network activity.
+    const staged = ensureStagedPlaceholder(savePath, {
+      version: 2,
+      jobId: id,
+      url,
+      expectedSize: opts.expectedSize && opts.expectedSize > 0 ? opts.expectedSize : 0,
+      directory,
+      filename,
+      installationId: resolvedInstallId ?? undefined
+    })
+    pending.starting = false
+    if (!staged) {
+      failPreflight('Failed to prepare download staging files')
+      return
+    }
+    // A pause (user or quit/sleep parking) during preflight keeps the job
+    // parked until it is explicitly resumed; a deferred cancel means the
+    // teardown owns the job and no transport may ever start.
+    if (pending.suspended || pending.cancelling) return
+    void runModelTransport(pending)
+  })()
+  await pending.preflight
+  return { id, url, savePath, completion, release }
+}
+
+/** ComfyUI-bridge compatible wrapper (`downloadModel(url, filename, directory)
+ *  => boolean`). Dispatch success = a managed job was started, joined, or the
+ *  file already existed; synchronous validation failures return false. */
+export async function startModelDownload(
+  win: BrowserWindow,
+  url: string,
+  rawFilename: string,
+  directory: string,
+  senderContents?: Electron.WebContents,
+  installationId?: string | null
+): Promise<boolean> {
+  const handle = await startManagedModelJob({
+    url,
+    filename: rawFilename,
+    directory,
+    window: win,
+    senderContents,
+    installationId
+  })
+  // Only a pre-dispatch failure (validation / conflict) reports false, so the
+  // bridge keeps its existing semantics: `true` means "the download is
+  // underway (or done)", not "it finished successfully".
+  const active = pendingDownloads.get(handle.id)
+  if (active) return true
+  const settled = await Promise.race([handle.completion, Promise.resolve(null)])
+  if (settled === null) return true
+  return settled.status === 'completed'
 }
 
 export async function startAssetDownload(
@@ -675,7 +1296,9 @@ export async function startAssetDownload(
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return false
 
-  const existing = pendingDownloads.get(url)
+  // Join an active asset/general download of the same URL. Managed model jobs
+  // sharing the URL are independent (different destination class entirely).
+  const existing = activeJobsForUrl(url).find((p) => p.kind !== 'model')
   if (existing) {
     if (win !== existing.window) {
       existing.subscriberWindows.add(win)
@@ -691,7 +1314,10 @@ export async function startAssetDownload(
   // reported twice in quick succession), and that request must join this
   // download instead of racing past the pending check above and starting a
   // second download, which would save a duplicate file.
+  const id = randomUUID()
   const pending: PendingDownload = {
+    id,
+    kind: 'asset',
     url,
     filename: path.basename(safeFilename),
     directory: '',
@@ -702,6 +1328,7 @@ export async function startAssetDownload(
     senderContents: senderContents !== win.webContents ? senderContents : undefined,
     subscriberWindows: new Set(),
     lastProgress: {
+      id,
       url,
       filename: path.basename(safeFilename),
       directory: '',
@@ -711,7 +1338,7 @@ export async function startAssetDownload(
     lastSpeedBytes: 0,
     lastSpeedTime: Date.now()
   }
-  pendingDownloads.set(url, pending)
+  registerPending(pending)
 
   // Failures below report a terminal `error` entry and resolve false instead
   // of rethrowing: `retryDownload` re-dispatches fire-and-forget, so a
@@ -726,7 +1353,7 @@ export async function startAssetDownload(
       status: 'error',
       error: `Failed to prepare save path: ${err instanceof Error ? err.message : String(err)}`
     })
-    pendingDownloads.delete(url)
+    unregisterPending(pending)
     return false
   }
   const savedFilename = path.basename(savePath)
@@ -749,20 +1376,21 @@ export async function startAssetDownload(
       status: 'error',
       error: `Failed to create download directory: ${err instanceof Error ? err.message : String(err)}`
     })
-    pendingDownloads.delete(url)
+    unregisterPending(pending)
     return false
   }
 
   if (win.isDestroyed()) {
-    pendingDownloads.delete(url)
+    unregisterPending(pending)
     return false
   }
 
   // Register retry params only once the download is viable: an earlier
   // registration would survive a mkdir failure or destroyed window as a
   // ghost entry with no matching pending download.
-  retryParamsByUrl.set(url, {
+  retryParamsById.set(pending.id, {
     kind: 'asset',
+    url,
     filename: path.relative(outputDir, savePath),
     outputDir,
     authToken,
@@ -822,6 +1450,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
     }
 
     reportProgress({
+      id: pending.id,
       url: pending.url,
       filename: pending.filename,
       directory: pending.directory,
@@ -869,6 +1498,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
           } catch {}
           if (!fs.existsSync(pending.savePath)) {
             reportProgress({
+              id: pending.id,
               url: pending.url,
               filename: pending.filename,
               directory: pending.directory,
@@ -876,7 +1506,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
               status: 'error',
               error: 'Failed to move downloaded file to final location'
             })
-            pendingDownloads.delete(pending.url)
+            unregisterPending(pending)
             return
           }
         }
@@ -886,6 +1516,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         } catch {}
       }
       reportProgress({
+        id: pending.id,
         url: pending.url,
         filename: pending.filename,
         directory: pending.directory,
@@ -904,6 +1535,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         } catch {}
       }
       reportProgress({
+        id: pending.id,
         url: pending.url,
         filename: pending.filename,
         directory: pending.directory,
@@ -920,6 +1552,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         } catch {}
       }
       reportProgress({
+        id: pending.id,
         url: pending.url,
         filename: pending.filename,
         directory: pending.directory,
@@ -928,7 +1561,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         error: `Download failed: ${state}`
       })
     }
-    pendingDownloads.delete(pending.url)
+    unregisterPending(pending)
   })
 }
 
@@ -975,7 +1608,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
                 tempFileNameFor(pending.filename)
               )
               pending.lastProgress = { ...pending.lastProgress, filename: pending.filename }
-              const retryParams = retryParamsByUrl.get(pending.url)
+              const retryParams = retryParamsById.get(pending.id)
               if (retryParams?.kind === 'asset') {
                 retryParams.filename = path.relative(baseDir, candidate)
               }
@@ -1032,7 +1665,10 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       const url = item.getURL()
       const filename = path.basename(savePath)
       const fallbackWindow = win || mainWindow || BrowserWindow.getAllWindows()[0]
+      const id = randomUUID()
       const general: PendingDownload = {
+        id,
+        kind: 'general',
         url,
         filename,
         directory: '',
@@ -1040,11 +1676,11 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
         window: fallbackWindow!,
         subscriberWindows: new Set(),
         item,
-        lastProgress: { url, filename, progress: 0, status: 'pending' },
+        lastProgress: { id, url, filename, progress: 0, status: 'pending' },
         lastSpeedBytes: 0,
         lastSpeedTime: Date.now()
       }
-      pendingDownloads.set(url, general)
+      registerPending(general)
       reportProgress(general.lastProgress)
       attachDownloadListeners(item, general)
     }
@@ -1052,10 +1688,38 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
 }
 
 // ---- Pause / Resume / Cancel ----
+//
+// Controls accept either a stable job id or the source URL (`findActiveByRef`;
+// URL resolution requires an unambiguous match). Managed model jobs are driven
+// through their transport; asset/general downloads keep the Electron
+// DownloadItem controls.
 
-export function pauseModelDownload(url: string): boolean {
-  const pending = pendingDownloads.get(url)
+export function pauseModelDownload(ref: string): boolean {
+  const pending = findActiveByRef(ref)
   if (!pending) return false
+  if (pending.kind === 'model') {
+    // A committed destructive cancel owns the job's remaining transitions -
+    // pausing a job that is being torn down is not a real control.
+    if (pending.cancelling) return false
+    // An explicit pause always cancels a pending wake auto-resume: the user
+    // parked this job deliberately (possibly while a post-wake connectivity
+    // wait was in flight) and it must stay parked until they resume it.
+    pending.resumeOnWake = false
+    if (pending.suspended) return true
+    // Mark suspended synchronously so a resume/cancel that lands while the
+    // transport is still flushing sees the job as parked (and resume can
+    // start a fresh attempt that drains the old stream first).
+    pending.suspended = true
+    if (pending.transport) {
+      // Transport teardown flushes + keeps staged bytes and sidecar,
+      // resolving its `done` as 'paused'. Record whether the pause actually
+      // took the terminal claim - a cancel landing during the teardown may
+      // only settle immediately when the outcome is provably 'paused'.
+      pending.pauseHoldsClaim = pending.transport.pause()
+    }
+    reportProgress({ ...pending.lastProgress, status: 'paused' })
+    return true
+  }
   if (pending.item && !pending.item.isPaused()) {
     pending.item.pause()
     reportProgress({
@@ -1066,9 +1730,27 @@ export function pauseModelDownload(url: string): boolean {
   return true
 }
 
-export function resumeModelDownload(url: string): boolean {
-  const pending = pendingDownloads.get(url)
+export function resumeModelDownload(ref: string): boolean {
+  const pending = findActiveByRef(ref)
   if (!pending) return false
+  if (pending.kind === 'model') {
+    // A committed destructive cancel owns the job's remaining transitions -
+    // it must never be resumed back to life.
+    if (pending.cancelling) return false
+    // Explicitly resumed - the wake waiter no longer owns this job.
+    pending.resumeOnWake = false
+    // Never start a transport once quit parking has begun: the staged state
+    // is already durable and the app is exiting for good.
+    if (quittingModelDownloads || isQuitInProgress()) return false
+    if (pending.suspended) {
+      pending.suspended = false
+      reportProgress({ ...pending.lastProgress, status: 'downloading' })
+      // During admission preflight only the state flips - the preflight
+      // completion is the single path that starts the first transport.
+      if (!pending.starting) void runModelTransport(pending)
+    }
+    return true
+  }
   if (pending.item && pending.item.isPaused()) {
     pending.item.resume()
     reportProgress({
@@ -1079,16 +1761,83 @@ export function resumeModelDownload(url: string): boolean {
   return true
 }
 
-export function cancelModelDownload(url: string): boolean {
-  const pending = pendingDownloads.get(url)
+export function cancelModelDownload(ref: string): boolean {
+  const pending = findActiveByRef(ref)
   if (!pending) return false
+  if (pending.kind === 'model') {
+    // Already committed to a destructive teardown - the pending cancel owns
+    // every remaining transition; a second cancel is an idempotent success.
+    if (pending.cancelling) return true
+    if (pending.transport) {
+      // An active transport deletes the staged bytes + sidecar and resolves
+      // 'cancelled'; runModelTransport unregisters, broadcasts, and settles
+      // the job.
+      if (!pending.suspended && pending.transport.cancel()) return true
+      if (pending.suspended && pending.pauseHoldsClaim) {
+        // Pause teardown holds the transport's terminal claim, so the only
+        // possible outcome is 'paused'. Commit the destructive cancel now:
+        // free the destination for replacement jobs and refuse further
+        // controls, but report/settle only after the old stream has closed
+        // and the staged cleanup outcome is known - settling earlier would
+        // claim a clean cancel while the bytes/sidecar may still survive.
+        pending.cancelling = true
+        pending.attemptGen = (pending.attemptGen ?? 0) + 1
+        const transport = pending.transport
+        pending.transport = null
+        const destKey = canonicalDestKey(pending.savePath)
+        if (modelJobIdByDest.get(destKey) === pending.id) modelJobIdByDest.delete(destKey)
+        // Track the WHOLE teardown (stream close + staged cleanup + settle)
+        // as the destination's closing entry: quit waits for it, and a
+        // replacement transport at this destination starts only after the
+        // cleanup outcome is decided.
+        trackClosingStream(
+          destKey,
+          transport.done.then(() => finishDestructiveCancel(pending, destKey))
+        )
+        return true
+      }
+      // The transport refused the cancel (or the pause that parked this job
+      // lost the claim race): finalize verification may already hold the
+      // terminal claim and the completed model may be mid-install. Reporting
+      // a synthetic cancel here could lie about an installed model, so
+      // defer: the outcome handler in runModelTransport applies the cancel
+      // if the transport parks ('paused'), and lets completed/error win.
+      pending.cancelRequested = true
+      return true
+    }
+    // No live transport: parked (paused/hydrated), still in preflight, or
+    // mid-attempt while a resumed transport waits on a predecessor's closing
+    // stream. Commit the destructive cancel and invalidate the attempt
+    // bookkeeping so nothing can resurrect the job, then run the teardown -
+    // deferred behind the destination's closing stream when a prior stream
+    // is still flushing (its writes could recreate the artifacts after an
+    // eager deletion, and deleting under an open handle fails on Windows).
+    pending.cancelling = true
+    pending.attemptGen = (pending.attemptGen ?? 0) + 1
+    const destKey = canonicalDestKey(pending.savePath)
+    if (modelJobIdByDest.get(destKey) === pending.id) modelJobIdByDest.delete(destKey)
+    const closing = closingStreamsByDest.get(destKey)
+    if (closing) {
+      // Chain the teardown behind the flushing stream and re-register it as
+      // the closing entry so quit and replacement transports wait for the
+      // cleanup, not just the stream close.
+      trackClosingStream(
+        destKey,
+        closing.then(() => finishDestructiveCancel(pending, destKey))
+      )
+    } else {
+      finishDestructiveCancel(pending, destKey)
+    }
+    return true
+  }
   if (pending.item) {
     pending.item.cancel()
   } else {
     // Download hasn't reached will-download yet - clean up immediately
-    pendingDownloads.delete(url)
+    unregisterPending(pending)
     reportProgress({
-      url,
+      id: pending.id,
+      url: pending.url,
       filename: pending.filename,
       directory: pending.directory,
       progress: 0,
@@ -1098,45 +1847,74 @@ export function cancelModelDownload(url: string): boolean {
   return true
 }
 
-/** Re-dispatch a terminal download from its captured params. No-op if still in
- *  flight or its params were evicted. Removes the old terminal row first (from
- *  the buffer and every renderer store) so the retry gets a fresh slot. */
-export function retryDownload(url: string): boolean {
-  if (pendingDownloads.has(url)) return false
-  const params = retryParamsByUrl.get(url)
+/** Re-dispatch a terminal download from its captured params. No-op if an
+ *  equivalent job is still in flight or its params were evicted. Removes the
+ *  old terminal row first (from the buffer and every renderer store) so the
+ *  retry gets a fresh slot and a fresh job id. A model retry starts a managed
+ *  job that resumes any retained staged bytes. */
+export function retryDownload(ref: string): boolean {
+  const row = findRecentByRef(ref)
+  if (!row || row.id === undefined) return false
+  const params = retryParamsById.get(row.id)
   if (!params) return false
+  // Don't double-dispatch while an equivalent job is already active. Model
+  // jobs compare CANONICAL destinations (URL + directory is ambiguous: two
+  // installs can share both while resolving to different model roots, and a
+  // retry for one must not be blocked by the other's active download).
+  // Includes jobs committed to a destructive cancel - their teardown still
+  // owns the destination's staged artifacts.
+  if (params.kind === 'model' && params.savePath) {
+    const destKey = canonicalDestKey(params.savePath)
+    for (const active of pendingDownloads.values()) {
+      if (active.kind === 'model' && canonicalDestKey(active.savePath) === destKey) return false
+    }
+  } else {
+    for (const active of activeJobsForUrl(params.url)) {
+      if ((active.directory ?? '') === (params.directory ?? '')) return false
+    }
+  }
 
-  const win = !params.window.isDestroyed()
-    ? params.window
-    : mainWindow && !mainWindow.isDestroyed()
-      ? mainWindow
-      : (BrowserWindow.getAllWindows()[0] ?? null)
-  if (!win || win.isDestroyed()) return false
+  const win =
+    params.window && !params.window.isDestroyed()
+      ? params.window
+      : mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow
+        : (BrowserWindow.getAllWindows()[0] ?? null)
+  // Assets stream through a DownloadItem and genuinely need a window; model
+  // jobs run headless on the managed transport.
+  if (params.kind === 'asset' && (!win || win.isDestroyed())) return false
 
   const sender =
     params.senderContents && !params.senderContents.isDestroyed()
       ? params.senderContents
       : undefined
 
-  const idx = recentDownloads.findIndex((d) => d.url === url)
+  const idx = recentDownloads.findIndex((d) => d.id === row.id)
   if (idx >= 0) recentDownloads.splice(idx, 1)
-  createdAtByUrl.delete(url)
-  _broadcastToRenderer('model-download-removed', { url })
+  dropRowBookkeeping(row)
+  _broadcastToRenderer('model-download-removed', { url: row.url, id: row.id })
   downloadEvents.emit('tray-state-changed')
 
   if (params.kind === 'asset') {
     // Best-effort token reuse - if the captured token has expired the
     // download simply re-enters `error` and stays retryable.
-    void startAssetDownload(win, url, params.filename, params.outputDir!, params.authToken, sender)
-  } else {
-    void startModelDownload(
-      win,
-      url,
+    void startAssetDownload(
+      win!,
+      params.url,
       params.filename,
-      params.directory ?? '',
-      sender,
-      params.installationId
+      params.outputDir!,
+      params.authToken,
+      sender
     )
+  } else {
+    void startManagedModelJob({
+      url: params.url,
+      filename: params.filename,
+      directory: params.directory ?? '',
+      window: win ?? undefined,
+      senderContents: sender,
+      installationId: params.installationId
+    })
   }
   return true
 }
@@ -1212,77 +1990,523 @@ export function getAllDownloads(): DownloadProgress[] {
   for (const recent of recentDownloads) {
     result.push(recent)
   }
-  // Seed the All-Downloads modal with template-mirror rows too, matching what
-  // `getDownloadsTrayState()` shows in the tray popup.
-  for (const bucket of templateTrayMirrorByInstall.values()) {
-    for (const entry of bucket.values()) result.push(entry)
-  }
   return result
 }
 
-/** Remove `url` from any per-install template mirror bucket, pruning emptied
- *  buckets. Mirrored rows live outside `recentDownloads`, so the recent-buffer
- *  cleanup paths must drop them here too or finished ones linger forever. */
-function removeMirroredTemplateRow(url: string): boolean {
-  for (const [installationId, bucket] of templateTrayMirrorByInstall) {
-    if (bucket.delete(url)) {
-      createdAtByUrl.delete(url)
-      if (bucket.size === 0) templateTrayMirrorByInstall.delete(installationId)
-      return true
-    }
-  }
-  return false
-}
-
-/** Dismiss a single terminal entry from the recent buffer (cancel in-flight
- *  ones first). Broadcasts `model-download-removed` so every renderer drops it. */
-export function dismissRecentDownload(url: string): boolean {
-  const idx = recentDownloads.findIndex((d) => d.url === url)
-  const removedMirror = removeMirroredTemplateRow(url)
-  if (idx < 0 && !removedMirror) return false
-  if (idx >= 0) recentDownloads.splice(idx, 1)
-  createdAtByUrl.delete(url)
-  retryParamsByUrl.delete(url)
-  _broadcastToRenderer('model-download-removed', { url })
+/** Dismiss a single terminal entry from the recent buffer. Accepts a job id
+ *  or an unambiguous URL. Broadcasts `model-download-removed` so every
+ *  renderer drops it. */
+export function dismissRecentDownload(ref: string): boolean {
+  const row = findRecentByRef(ref)
+  if (!row) return false
+  const idx = recentDownloads.indexOf(row)
+  if (idx < 0) return false
+  recentDownloads.splice(idx, 1)
+  dropRowBookkeeping(row)
+  _broadcastToRenderer('model-download-removed', { url: row.url, id: row.id })
   downloadEvents.emit('tray-state-changed')
   return true
 }
 
-/** Bulk-dismiss every terminal entry from the recent buffer and the finished
- *  template-mirror rows. */
+/** Bulk-dismiss every terminal entry from the recent buffer. */
 export function clearFinishedDownloads(): number {
   const removedUrls: string[] = []
+  const removedRefs: string[] = []
   const removed = recentDownloads.splice(0, recentDownloads.length)
   for (const r of removed) {
-    createdAtByUrl.delete(r.url)
-    retryParamsByUrl.delete(r.url)
+    dropRowBookkeeping(r)
     removedUrls.push(r.url)
-  }
-  // Purge terminal template-mirror rows too; drop buckets left empty.
-  for (const [installationId, bucket] of templateTrayMirrorByInstall) {
-    for (const [url, entry] of bucket) {
-      if (isTerminalStatus(entry.status)) {
-        bucket.delete(url)
-        createdAtByUrl.delete(url)
-        removedUrls.push(url)
-      }
-    }
-    if (bucket.size === 0) templateTrayMirrorByInstall.delete(installationId)
+    removedRefs.push(r.id ?? r.url)
   }
   if (removedUrls.length === 0) return 0
-  _broadcastToRenderer('model-downloads-cleared-finished', { urls: removedUrls })
+  _broadcastToRenderer('model-downloads-cleared-finished', { urls: removedUrls, refs: removedRefs })
   downloadEvents.emit('tray-state-changed')
   return removedUrls.length
 }
 
 /** Detach a closing window's downloads; they continue in the background via
- *  broadcastProgress. */
+ *  broadcastProgress. Drops the job's references to the window (and its
+ *  WebContents): a paused/hydrated job can sit in the registry indefinitely
+ *  with no progress event to run the lazy destroyed-window cleanup, so a
+ *  retained reference would pin the closed BrowserWindow forever. */
 export function detachWindowDownloads(win: BrowserWindow): void {
+  const contents = win.isDestroyed() ? undefined : win.webContents
+  // The initiating sender is usually a ComfyUI WebContentsView hosted by the
+  // window, not the window's own webContents - match by owner (or by already
+  // being destroyed), not only by identity with `win.webContents`.
+  const ownedByWin = (wc: Electron.WebContents | undefined): boolean => {
+    if (!wc) return false
+    if (wc.isDestroyed()) return true
+    if (contents && wc === contents) return true
+    try {
+      return BrowserWindow.fromWebContents(wc) === win
+    } catch {
+      return false
+    }
+  }
   for (const pending of pendingDownloads.values()) {
     if (pending.window === win) {
       if (!win.isDestroyed()) win.setProgressBar(-1)
+      pending.window = undefined
+    }
+    pending.subscriberWindows.delete(win)
+    if (ownedByWin(pending.senderContents)) pending.senderContents = undefined
+  }
+  // Retry params live as long as their terminal row (recent-buffer cap), so
+  // they too would pin the closed window/WebContents.
+  for (const params of retryParamsById.values()) {
+    if (params.window === win) params.window = undefined
+    if (ownedByWin(params.senderContents)) params.senderContents = undefined
+  }
+}
+
+// ---- Restart lifecycle for managed model jobs --------------------------------
+
+/**
+ * Startup pass over every launcher-managed model root, run BEFORE any ComfyUI
+ * can scan the model dirs:
+ *  1. migrate legacy `<model>` + `<model>.dl-meta` partials (affected releases
+ *     wrote failed template downloads straight to the final path) so truncated
+ *     files no longer masquerade as loadable models;
+ *  2. restore every staged `.part` + sidecar as an actionable paused job in
+ *     the Downloads surfaces (Resume continues with Range; Cancel removes the
+ *     staged state).
+ *
+ * Memoized while safe: the app kicks it off at startup, `handleLaunch` awaits
+ * it before spawning any ComfyUI process, and `startManagedModelJob` awaits
+ * it before admitting any model job; all share one pass. An UNSAFE pass
+ * (known-incomplete files still visible under final model names) is NOT
+ * memoized - the lock that blocked quarantine may have been released, so the
+ * next launch attempt must re-run the migration instead of reusing a stale
+ * "checked" result. A REJECTED pass is likewise not memoized.
+ *
+ * `invalidateModelDownloadStartupPass` marks the memoized result stale (the
+ * scan roots changed - e.g. a new installation was created whose model dirs
+ * the startup pass never covered). The next call chains a fresh pass behind
+ * any in-flight one so two passes can never migrate the same roots
+ * concurrently.
+ */
+export function initializeModelDownloads(): Promise<ModelDownloadStartupSafety> {
+  if (_modelDownloadsInit && !_modelDownloadsInitStale) return _modelDownloadsInit
+  _modelDownloadsInitStale = false
+  const prior: Promise<unknown> = _modelDownloadsInit ?? Promise.resolve()
+  const run = prior
+    .catch(() => undefined)
+    .then(() => doInitializeModelDownloads())
+    .then(
+      (safety) => {
+        if (!safety.safe && _modelDownloadsInit === run) _modelDownloadsInit = null
+        return safety
+      },
+      (err: unknown) => {
+        if (_modelDownloadsInit === run) _modelDownloadsInit = null
+        throw err
+      }
+    )
+  _modelDownloadsInit = run
+  return run
+}
+
+/** Mark the memoized startup pass stale so the next `initializeModelDownloads`
+ *  call re-runs migration/scan over the CURRENT roots. Called when an
+ *  installation is created: its model dirs may predate the launcher (or hold
+ *  legacy artifacts from an affected release) and were not part of the
+ *  startup pass. */
+export function invalidateModelDownloadStartupPass(): void {
+  _modelDownloadsInitStale = true
+}
+
+/** Result of the startup migration/hydration pass, consumed by launch gating. */
+export interface ModelDownloadStartupSafety {
+  /** False when a model root may still expose a known-incomplete file under
+   *  a final model extension (quarantine failed, or the migration pass
+   *  itself could not run). Launching ComfyUI would scan truncated models. */
+  safe: boolean
+  /** The still-visible incomplete final-extension files, when known. */
+  unsafePaths: string[]
+}
+
+let _modelDownloadsInit: Promise<ModelDownloadStartupSafety> | null = null
+let _modelDownloadsInitStale = false
+
+/** Each producer's LATEST KNOWN unsafe findings, keyed by canonical path. A
+ *  producer that fails outright on a pass retains its previous snapshot (its
+ *  findings are still unresolved); a producer that succeeds replaces its
+ *  snapshot with the pass's findings. Warning rows are reconciled against the
+ *  UNION of both snapshots, so one path reported by both producers keeps a
+ *  visible row until BOTH stop reporting it - keying rows by path alone once
+ *  let a later clean migration pass dismiss the only row for a path the scan
+ *  still considered unsafe. */
+const unsafeModelSnapshots: Record<'migration' | 'scan', Map<string, string>> = {
+  migration: new Map(),
+  scan: new Map()
+}
+
+const UNSAFE_MODEL_MESSAGES: Record<'migration' | 'scan', string> = {
+  migration:
+    'Incomplete download from a previous version could not be quarantined; ' +
+    'the file is truncated and may appear broken in ComfyUI. ' +
+    'It will be retried on the next launch.',
+  scan:
+    'A crashed download left an unusable placeholder under this model name ' +
+    'and it could not be removed; the file may appear broken in ComfyUI. ' +
+    'It will be retried on the next launch.'
+}
+
+/** Persistent "still visible under a final model name" warning rows, keyed by
+ *  canonical unsafe path. Stable per path so an UNSAFE pass that is retried
+ *  (unsafe results are not memoized) updates one row instead of stacking a
+ *  duplicate on every blocked launch attempt, and a later pass that resolves
+ *  the path everywhere dismisses its stale warning. */
+const unsafeModelWarnings = new Map<string, { id: string; path: string }>()
+
+/** All paths currently considered unsafe by any producer, deduplicated by
+ *  canonical path. */
+function currentUnsafeModelPaths(): string[] {
+  const union = new Map<string, string>()
+  for (const snapshot of Object.values(unsafeModelSnapshots)) {
+    for (const [key, p] of snapshot) if (!union.has(key)) union.set(key, p)
+  }
+  return [...union.values()]
+}
+
+/** Fold one producer's pass result into its snapshot (`null` = the producing
+ *  step itself failed; keep its previous findings) and reconcile the warning
+ *  rows against the union of both snapshots. */
+function reconcileUnsafeModelWarnings(
+  origin: 'migration' | 'scan',
+  currentPaths: string[] | null
+): void {
+  if (currentPaths !== null) {
+    const next = new Map<string, string>()
+    for (const p of currentPaths) next.set(canonicalDestKey(p), p)
+    unsafeModelSnapshots[origin] = next
+  }
+  const union = new Map<string, { path: string; origin: 'migration' | 'scan' }>()
+  for (const o of ['migration', 'scan'] as const) {
+    for (const [key, p] of unsafeModelSnapshots[o]) {
+      if (!union.has(key)) union.set(key, { path: p, origin: o })
     }
   }
+  for (const [key, warning] of [...unsafeModelWarnings]) {
+    if (union.has(key)) continue
+    unsafeModelWarnings.delete(key)
+    dismissRecentDownload(warning.id)
+  }
+  for (const [key, { path: unsafePath, origin: rowOrigin }] of union) {
+    let warning = unsafeModelWarnings.get(key)
+    if (!warning) {
+      warning = { id: randomUUID(), path: unsafePath }
+      unsafeModelWarnings.set(key, warning)
+    }
+    console.error(
+      'Model download startup: incomplete model could not be quarantined ' +
+        `(will retry next launch): ${unsafePath}`
+    )
+    reportProgress({
+      id: warning.id,
+      url: '',
+      filename: path.basename(unsafePath),
+      directory: path.basename(path.dirname(unsafePath)),
+      progress: 0,
+      status: 'error',
+      error: UNSAFE_MODEL_MESSAGES[rowOrigin]
+    })
+  }
+}
+
+async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety> {
+  let roots: string[]
+  try {
+    roots = await collectModelScanRoots()
+  } catch (err) {
+    // Without the roots the legacy migration cannot certify anything -
+    // treat the whole pass as unsafe rather than silently skipping it.
+    console.error('Model download startup: collecting model roots failed:', err)
+    return { safe: false, unsafePaths: [] }
+  }
+  // Known-incomplete model files that could NOT be hidden from ComfyUI's
+  // scan (move failed, e.g. file locked). Their sidecars were kept so the
+  // next launch retries; surface each as a persistent error row so the user
+  // knows the file is truncated - it would otherwise silently load as a
+  // broken model. Never delete the bytes. Launch is gated on `safe` so
+  // ComfyUI cannot scan these as models.
+  let migrationUnsafe: string[] | null
+  try {
+    migrationUnsafe = (await migrateLegacyModelDownloadArtifacts(roots)).unsafe
+  } catch (err) {
+    console.error('Model download startup: legacy artifact migration failed:', err)
+    migrationUnsafe = null
+  }
+  reconcileUnsafeModelWarnings('migration', migrationUnsafe)
+  let staged: DiscoveredStagedDownload[] = []
+  let scanUnsafe: string[] | null
+  try {
+    const scan = await scanForStagedDownloads(roots)
+    staged = scan.downloads
+    scanUnsafe = scan.unsafeFinalPaths
+  } catch (err) {
+    // The staged scan is strict and is also what finds zero-byte final-name
+    // claim markers: a failed (or partial) scan cannot certify that no
+    // broken file is visible under a final model name, so the pass is
+    // unsafe - not merely "lost Downloads rows". Markers a PREVIOUS pass
+    // found (and could not clear) also stay unsafe until a successful scan
+    // proves them gone.
+    console.error('Model download startup: staged download scan failed:', err)
+    scanUnsafe = null
+  }
+  reconcileUnsafeModelWarnings('scan', scanUnsafe)
+  const unsafePaths = currentUnsafeModelPaths()
+  const safety: ModelDownloadStartupSafety = {
+    safe: migrationUnsafe !== null && scanUnsafe !== null && unsafePaths.length === 0,
+    unsafePaths
+  }
+  for (const job of staged) {
+    const { finalPath } = job
+    const destKey = canonicalDestKey(finalPath)
+    if (modelJobIdByDest.has(destKey)) continue
+    // The destination may also be owned by a job that no longer holds the
+    // reservation but is still tearing down - a committed destructive cancel
+    // releases `modelJobIdByDest` before its deferred cleanup deletes the
+    // staged artifacts. Hydrating that pair here would resurrect the
+    // cancelled job as a paused row (and the teardown would then treat the
+    // new row as a replacement owner and skip the deletion the user asked
+    // for). Reachable because an unsafe pass is retried, not memoized.
+    if (closingStreamsByDest.has(destKey)) continue
+    let destOwned = false
+    for (const p of pendingDownloads.values()) {
+      if (p.kind === 'model' && canonicalDestKey(p.savePath) === destKey) {
+        destOwned = true
+        break
+      }
+    }
+    if (destOwned) continue
+
+    // The scan snapshot is stale by now (the walk awaited between roots): a
+    // destructive cancel that held no registry entry when checked above may
+    // have ALREADY finished and deleted the pair. Re-read the pair
+    // synchronously in the same event-loop turn as the registration below so
+    // nothing can delete it in between - registering from the snapshot alone
+    // would resurrect a destination the user cancelled.
+    const fresh = revalidateStagedPair(finalPath)
+    if (fresh === null) continue
+    const { meta, stagedBytes } = fresh
+
+    // Restore the persisted job identity so restart hydration keeps the same
+    // stable ID; fall back to a fresh one for legacy-migrated sidecars (no
+    // jobId) or a copied model dir that duplicates an ID.
+    const id = meta.jobId && !pendingDownloads.has(meta.jobId) ? meta.jobId : randomUUID()
+    const progress: DownloadProgress & { id: string } = {
+      id,
+      url: meta.url,
+      filename: meta.filename,
+      directory: meta.directory,
+      progress: meta.expectedSize > 0 ? Math.min(1, stagedBytes / meta.expectedSize) : 0,
+      receivedBytes: stagedBytes,
+      totalBytes: meta.expectedSize > 0 ? meta.expectedSize : undefined,
+      status: 'paused'
+    }
+    let settleJob!: (outcome: ModelJobOutcome) => void
+    const completion = new Promise<ModelJobOutcome>((resolve) => {
+      settleJob = resolve
+    })
+    const pending: PendingDownload = {
+      id,
+      kind: 'model',
+      url: meta.url,
+      filename: meta.filename,
+      directory: meta.directory,
+      savePath: finalPath,
+      subscriberWindows: new Set(),
+      transport: null,
+      suspended: true,
+      installationId: meta.installationId ?? null,
+      expectedSize: meta.expectedSize > 0 ? meta.expectedSize : undefined,
+      settleJob,
+      completion,
+      lastProgress: progress,
+      lastSpeedBytes: stagedBytes,
+      lastSpeedTime: Date.now()
+    }
+    registerPending(pending)
+    modelJobIdByDest.set(destKey, id)
+    retryParamsById.set(id, {
+      kind: 'model',
+      url: meta.url,
+      filename: meta.filename,
+      directory: meta.directory,
+      installationId: meta.installationId ?? null,
+      savePath: finalPath
+    })
+    reportProgress(progress)
+  }
+  return safety
+}
+
+/** True while any managed model job still needs quit-time attention. Drives
+ *  the deferred-quit suspension (`will-quit`) - parked (suspended) jobs need
+ *  no teardown, their staged state is already durable. */
+export function hasActiveModelTransfers(): boolean {
+  // Streams of cancelled/superseded transports may still be flushing to
+  // staging files; exiting before they close could truncate staged bytes.
+  if (closingStreamsByDest.size > 0) return true
+  for (const pending of pendingDownloads.values()) {
+    if (pending.kind !== 'model') continue
+    // A job still in admission preflight has no transport yet, but its
+    // durable staging placeholder may not have landed on disk - quit must
+    // wait for the preflight or the job would be lost on restart.
+    if (pending.transport || pending.starting) return true
+    // A non-parked job with no live transport is between transport attempts
+    // (e.g. awaiting session resolution inside runModelTransport). Skipping
+    // suspension here would let that attempt start a transport with nothing
+    // awaiting its stream; parking it is cheap and makes it hydratable. A
+    // committed destructive cancel is owned by its closing-stream entry.
+    if (!pending.suspended && !pending.cancelling) return true
+  }
+  return false
+}
+
+/** One-way latch: set once quit parking has begun, so a wake auto-resume
+ *  that is still waiting for connectivity cannot restart transfers during
+ *  shutdown (the app quits for good after `will-quit` parking). */
+let quittingModelDownloads = false
+
+/**
+ * Park every active managed model transfer for app quit: network stops, the
+ * staged bytes + sidecar stay on disk, and the next launch restores the job
+ * as paused via `initializeModelDownloads`. Resolves once every transport has
+ * flushed and closed its stream (bounded by `timeoutMs` as a safety valve so
+ * a wedged stream can't hang shutdown).
+ */
+export async function suspendActiveModelDownloadsForQuit(timeoutMs = 5000): Promise<void> {
+  quittingModelDownloads = true
+  const deadline = Date.now() + timeoutMs
+  let waits: Promise<unknown>[] = parkActiveModelTransfers({ resumeOnWake: false })
+  const seenClosings = new Set<Promise<unknown>>()
+  // Drain until stable: streams of cancelled/superseded transports may still
+  // be flushing to staging files (exiting before they close could truncate
+  // staged bytes), and settling one can REGISTER a new closing entry (a
+  // destructive cancel chains its staged cleanup behind the stream it was
+  // waiting on). A single snapshot would miss that continuation.
+  for (;;) {
+    for (const closing of closingStreamsByDest.values()) {
+      if (!seenClosings.has(closing)) {
+        seenClosings.add(closing)
+        waits.push(closing)
+      }
+    }
+    if (waits.length === 0) return
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return
+    const timedOut = await Promise.race([
+      Promise.all(waits).then(() => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), remaining))
+    ])
+    if (timedOut) return
+    waits = []
+  }
+}
+
+/** Park every active model job (network stopped, staged bytes + sidecar
+ *  flushed and kept). Shared by quit suspension and system-sleep suspension.
+ *  Returns the settle promises of the transports that were still running so
+ *  callers can bound-wait for their streams to flush. */
+function parkActiveModelTransfers(opts: { resumeOnWake: boolean }): Promise<unknown>[] {
+  const waits: Promise<unknown>[] = []
+  for (const pending of pendingDownloads.values()) {
+    if (pending.kind !== 'model') continue
+    if (opts.resumeOnWake && !pending.suspended) pending.resumeOnWake = true
+    const transport = pending.transport
+    pending.suspended = true
+    if (pending.starting && pending.preflight) {
+      // Still in admission preflight: wait for its durable staging
+      // placeholder to land on disk; `suspended` stops the preflight from
+      // starting a transport afterwards.
+      waits.push(pending.preflight)
+    }
+    if (transport) {
+      waits.push(transport.done)
+      pending.pauseHoldsClaim = transport.pause()
+      reportProgress({ ...pending.lastProgress, status: 'paused' })
+    }
+  }
+  return waits
+}
+
+/**
+ * System sleep: a socket that dies while the machine is asleep produces no
+ * events on wake, so an in-flight transfer would sit until the idle timeout
+ * fires. Park active jobs before sleep instead; `resumeModelDownloadsAfterWake`
+ * restarts them with a Range resume. User-paused jobs stay paused.
+ */
+export function suspendActiveModelDownloadsForSleep(): void {
+  // Entering sleep invalidates any post-wake waiter from a PREVIOUS cycle
+  // that is still polling for connectivity: without this, that stale waiter
+  // could auto-resume transfers while the machine is entering (or already
+  // in) this new sleep.
+  wakeResumeGen++
+  parkActiveModelTransfers({ resumeOnWake: true })
+}
+
+/** Generation token for the post-wake connectivity waiter. Every sleep entry
+ *  and every wake pass bumps it, invalidating any older waiter still polling
+ *  for connectivity so only the newest wake pass may auto-resume jobs. */
+let wakeResumeGen = 0
+
+/** Wake: wait (bounded) for connectivity, then resume the jobs that sleep
+ *  parked. The `resumeOnWake` flags stay on the jobs while we wait (instead of
+ *  being drained upfront) so a user action during the wait - pause, resume,
+ *  cancel - takes ownership of its job away from the waiter. Quit parking or a
+ *  newer sleep/wake cycle invalidates the waiter entirely. */
+export async function resumeModelDownloadsAfterWake(): Promise<void> {
+  if (quittingModelDownloads) return
+  let anyFlagged = false
+  for (const pending of pendingDownloads.values()) {
+    if (pending.kind === 'model' && pending.resumeOnWake) {
+      anyFlagged = true
+      break
+    }
+  }
+  if (!anyFlagged) return
+  const gen = ++wakeResumeGen
+  await waitForOnline(60_000)
+  // Re-check: quit parking may have begun while we waited for connectivity
+  // (its parked jobs must stay parked - they hydrate on the next launch), or
+  // another sleep/wake cycle superseded this waiter.
+  if (quittingModelDownloads || gen !== wakeResumeGen) return
+  for (const pending of [...pendingDownloads.values()]) {
+    if (pending.kind !== 'model' || !pending.resumeOnWake) continue
+    pending.resumeOnWake = false
+    if (pending.suspended) resumeModelDownload(pending.id)
+  }
+}
+
+/** Poll `net.isOnline()` until the network is back or `timeoutMs` elapses.
+ *  On timeout the caller proceeds anyway: a failed resume lands a retryable
+ *  error row instead of a silent stall. */
+async function waitForOnline(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      if (net.isOnline()) return
+    } catch {
+      return
+    }
+    if (Date.now() >= deadline) return
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+  }
+}
+
+/** Test-only: clear the one-way quit-parking latch so suites can exercise
+ *  quit suspension without poisoning later tests in the same module. */
+export function _test_resetModelDownloadsQuitLatch(): void {
+  quittingModelDownloads = false
+}
+
+/** Test-only: clear the memoized startup pass so suites can run it again. */
+export function _test_resetModelDownloadsInit(): void {
+  _modelDownloadsInit = null
+  _modelDownloadsInitStale = false
 }
 
 /** Remove the temp download directories and all their contents. */
@@ -1299,19 +2523,23 @@ export async function cleanupTempDownloads(): Promise<void> {
  *  `tray-state-changed`. Active entries are stubs carrying only `lastProgress`. */
 export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
   pendingDownloads.clear()
+  activeIdsByUrl.clear()
+  modelJobIdByDest.clear()
   for (const entry of snapshot.active) {
+    const id = entry.id ?? randomUUID()
     const stub: PendingDownload = {
+      id,
+      kind: 'model',
       url: entry.url,
       filename: entry.filename,
       directory: entry.directory ?? '',
       savePath: entry.savePath ?? '',
-      window: null as unknown as BrowserWindow,
       subscriberWindows: new Set(),
-      lastProgress: { ...entry },
+      lastProgress: { ...entry, id },
       lastSpeedBytes: 0,
       lastSpeedTime: Date.now()
     }
-    pendingDownloads.set(entry.url, stub)
+    registerPending(stub)
   }
   recentDownloads.length = 0
   for (const entry of snapshot.recent) {

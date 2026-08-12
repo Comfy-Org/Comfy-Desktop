@@ -18,34 +18,36 @@ function makeProgress(
 
 interface BroadcastHooks {
   /** Fires the store's `onModelDownloadRemoved` callback to fake main's removal broadcast. */
-  emitRemoved: (url: string) => void
-  emitClearedFinished: (urls: string[]) => void
+  emitRemoved: (url: string, id?: string) => void
+  emitClearedFinished: (urls: string[], refs?: string[]) => void
   dismissModelDownload: ReturnType<typeof vi.fn>
   clearFinishedModelDownloads: ReturnType<typeof vi.fn>
 }
 
 function installMockApi(): BroadcastHooks {
-  let removedCb: ((data: { url: string }) => void) | null = null
-  let clearedCb: ((data: { urls: string[] }) => void) | null = null
+  let removedCb: ((data: { url: string; id?: string }) => void) | null = null
+  let clearedCb: ((data: { urls: string[]; refs?: string[] }) => void) | null = null
   const dismissModelDownload = vi.fn().mockResolvedValue(true)
   const clearFinishedModelDownloads = vi.fn().mockResolvedValue(0)
   window.api = {
     listModelDownloads: vi.fn().mockResolvedValue([]),
     onModelDownloadProgress: vi.fn(() => vi.fn()),
-    onModelDownloadRemoved: vi.fn((cb: (data: { url: string }) => void) => {
+    onModelDownloadRemoved: vi.fn((cb: (data: { url: string; id?: string }) => void) => {
       removedCb = cb
       return vi.fn()
     }),
-    onModelDownloadsClearedFinished: vi.fn((cb: (data: { urls: string[] }) => void) => {
-      clearedCb = cb
-      return vi.fn()
-    }),
+    onModelDownloadsClearedFinished: vi.fn(
+      (cb: (data: { urls: string[]; refs?: string[] }) => void) => {
+        clearedCb = cb
+        return vi.fn()
+      }
+    ),
     dismissModelDownload,
     clearFinishedModelDownloads
   } as unknown as ElectronApi
   return {
-    emitRemoved: (url) => removedCb?.({ url }),
-    emitClearedFinished: (urls) => clearedCb?.({ urls }),
+    emitRemoved: (url, id) => removedCb?.({ url, id }),
+    emitClearedFinished: (urls, refs) => clearedCb?.({ urls, refs }),
     dismissModelDownload,
     clearFinishedModelDownloads
   }
@@ -176,6 +178,53 @@ describe('useDownloadStore', () => {
 
       expect(store.finishedDownloads).toHaveLength(1)
       expect(store.finishedDownloads[0].url).toBe('d')
+    })
+  })
+
+  describe('stable job ids (issue #1322)', () => {
+    it('keys rows by job id so the same URL at two destinations shows two rows', () => {
+      const url = 'https://example.com/shared.safetensors'
+      store.upsert(makeProgress({ url, id: 'job-1', directory: 'checkpoints' }))
+      store.upsert(makeProgress({ url, id: 'job-2', directory: 'loras' }))
+
+      expect(store.downloads.size).toBe(2)
+      expect(store.downloads.get('job-1')).toMatchObject({ directory: 'checkpoints' })
+      expect(store.downloads.get('job-2')).toMatchObject({ directory: 'loras' })
+    })
+
+    it('updates one id-keyed row across status transitions instead of adding rows', () => {
+      const url = 'https://example.com/a.bin'
+      store.upsert(makeProgress({ url, id: 'job-1', status: 'downloading', progress: 0.4 }))
+      store.upsert(makeProgress({ url, id: 'job-1', status: 'paused', progress: 0.4 }))
+
+      expect(store.downloads.size).toBe(1)
+      expect(store.downloads.get('job-1')).toMatchObject({ status: 'paused' })
+    })
+
+    it('drops an id-keyed row when the removal broadcast carries the id', () => {
+      const url = 'https://example.com/a.bin'
+      store.upsert(makeProgress({ url, id: 'job-1' }))
+
+      api.emitRemoved(url, 'job-1')
+      expect(store.downloads.size).toBe(0)
+    })
+
+    it('drops an id-keyed row when the removal broadcast only carries the URL', () => {
+      const url = 'https://example.com/a.bin'
+      store.upsert(makeProgress({ url, id: 'job-1' }))
+
+      api.emitRemoved(url)
+      expect(store.downloads.size).toBe(0)
+    })
+
+    it('clears id-keyed finished rows via the refs echo, leaving others intact', () => {
+      const url = 'https://example.com/shared.safetensors'
+      store.upsert(makeProgress({ url, id: 'job-1', status: 'error' }))
+      store.upsert(makeProgress({ url, id: 'job-2', status: 'downloading' }))
+
+      api.emitClearedFinished([url], ['job-1'])
+      expect(store.downloads.has('job-1')).toBe(false)
+      expect(store.downloads.get('job-2')).toMatchObject({ status: 'downloading' })
     })
   })
 

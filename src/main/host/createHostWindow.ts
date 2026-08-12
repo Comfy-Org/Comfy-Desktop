@@ -43,6 +43,7 @@ import { ensureSystemModal } from '../popups/systemModal'
 import { hideCheckoutBackdrop, showCheckoutBackdrop } from '../popups/checkoutBackdrop'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
+import { expectedPartitionFor } from './partition'
 import {
   comfyWindows,
   computeBodyMode,
@@ -1111,21 +1112,11 @@ export function loadTitleBarUrl(titleBarView: WebContentsView, installationId: s
   void tbLoad.catch(() => {})
 }
 
-/**
- * Resolve the comfyView session partition an install must be loaded
- * into. Unique-partition installs (`browserPartition === 'unique'`)
- * get their own `persist:${id}` bucket so cookies / IndexedDB /
- * Service Workers don't leak across sibling installs; everything
- * else shares `persist:shared`. Used by both the install-backed
- * wrapper (constructing a fresh comfyView) and `rebuildComfyViewIfNeeded`
- * to flip a chooser host's view onto a partition that matches the
- * install being attached in place.
- */
-export function expectedPartitionFor(installation: InstallationRecord): string {
-  return (installation.browserPartition as string | undefined) === 'unique'
-    ? `persist:${installation.id}`
-    : 'persist:shared'
-}
+// Re-exported from the dependency-free `partition.ts` (see rationale there).
+// Used by both the install-backed wrapper (constructing a fresh comfyView)
+// and `rebuildComfyViewIfNeeded` to flip a chooser host's view onto a
+// partition that matches the install being attached in place.
+export { expectedPartitionFor }
 
 /**
  * Construct a comfyView with the mode-agnostic listeners attached.

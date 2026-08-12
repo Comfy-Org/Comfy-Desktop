@@ -1,4 +1,8 @@
 export interface ComfyDownloadProgress {
+  /** Stable per-job identifier assigned by the desktop app. The download
+   *  controls accept it in place of the URL. Optional: older desktop
+   *  versions do not send it. */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -66,6 +70,7 @@ export interface ComfyDesktop2TelemetryBridge {
 }
 export interface ComfyDesktop2Bridge {
   isRemote(): boolean
+  openTerminal?: () => Promise<boolean>
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
   downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>
   pauseDownload?: (url: string) => Promise<boolean>

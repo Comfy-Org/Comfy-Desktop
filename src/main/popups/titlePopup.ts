@@ -2297,31 +2297,39 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // Per-entry download action dispatched from the popup's downloads view.
   // Routes pause / resume / cancel / dismiss through the existing
   // download-manager APIs and `show-in-folder` through Electron's shell.
-  // `clear-finished` is the only action that doesn't carry a url.
+  // `clear-finished` is the only action that doesn't carry a reference.
+  // Entries are addressed by stable job id (`ref`) with the download URL as a
+  // compatibility fallback for older popup bundles.
   ipcMain.on(
     'comfy-titlepopup:downloads-action',
-    (_event, payload: { action?: unknown; url?: unknown; savePath?: unknown }) => {
-      const { action, url, savePath } = payload ?? {}
+    (_event, payload: { action?: unknown; ref?: unknown; url?: unknown; savePath?: unknown }) => {
+      const { action, ref: rawRef, url, savePath } = payload ?? {}
       if (action === 'clear-finished') {
         clearFinishedDownloads()
         return
       }
-      if (typeof url !== 'string' || url.length === 0) return
+      const ref =
+        typeof rawRef === 'string' && rawRef.length > 0
+          ? rawRef
+          : typeof url === 'string' && url.length > 0
+            ? url
+            : null
+      if (ref === null) return
       switch (action) {
         case 'pause':
-          pauseModelDownload(url)
+          pauseModelDownload(ref)
           return
         case 'resume':
-          resumeModelDownload(url)
+          resumeModelDownload(ref)
           return
         case 'cancel':
-          cancelModelDownload(url)
+          cancelModelDownload(ref)
           return
         case 'dismiss':
-          dismissRecentDownload(url)
+          dismissRecentDownload(ref)
           return
         case 'retry':
-          retryDownload(url)
+          retryDownload(ref)
           return
         case 'show-in-folder':
           if (typeof savePath === 'string' && savePath.length > 0) {
