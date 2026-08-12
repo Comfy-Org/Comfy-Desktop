@@ -15,7 +15,7 @@ const i18n = createI18n({
 
 const wrappers: VueWrapper[] = []
 
-function mountAlert(props: Record<string, unknown> = {}) {
+function mountAlert(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const wrapper = mount(BaseAlert, {
     props: {
       open: true,
@@ -23,6 +23,7 @@ function mountAlert(props: Record<string, unknown> = {}) {
       message: 'Something happened.',
       ...props
     },
+    slots,
     global: {
       plugins: [i18n],
       stubs: { Teleport: { template: '<div><slot /></div>' } }
@@ -211,6 +212,16 @@ describe('BaseAlert', () => {
   it('renders low-emphasis hint text below the main content', () => {
     const wrapper = mountAlert({ hint: 'This can be changed in Preferences.' })
 
+    expect(wrapper.find('.base-alert-hint').text()).toBe('This can be changed in Preferences.')
+  })
+
+  it('renders hint text when the default slot replaces the main content', () => {
+    const wrapper = mountAlert(
+      { hint: 'This can be changed in Preferences.' },
+      { default: '<div data-testid="custom-content">Custom content</div>' }
+    )
+
+    expect(wrapper.find('[data-testid="custom-content"]').text()).toBe('Custom content')
     expect(wrapper.find('.base-alert-hint').text()).toBe('This can be changed in Preferences.')
   })
 

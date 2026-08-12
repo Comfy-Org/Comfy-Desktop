@@ -119,6 +119,26 @@ describe('useLocalInstanceGuard', () => {
     expect(mockConfirm).not.toHaveBeenCalled()
   })
 
+  it('prompts when reading the warning preference fails', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'target' }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
+    )
+    sessionStore.runningInstances.set('running-1', {
+      installationId: 'running-1',
+      installationName: 'Running Install',
+      mode: 'window'
+    })
+    vi.mocked(window.api.getSetting).mockRejectedValueOnce(new Error('settings unavailable'))
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
+    expect(mockConfirm).toHaveBeenCalled()
+    expect(result).toBe(true)
+  })
+
   it('allows a restart without prompting or stopping other local instances', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'target' }),

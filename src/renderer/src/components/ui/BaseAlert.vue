@@ -229,8 +229,8 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
-              <p v-if="hint" class="base-alert-hint">{{ hint }}</p>
             </slot>
+            <p v-if="hint" class="base-alert-hint">{{ hint }}</p>
             <!-- Sits below message + details (unlike the default slot, which replaces them). -->
             <div v-if="$slots.extra" class="base-alert-extra">
               <slot name="extra" />
