@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { download } from '../../lib/download'
 import { setTemplateTrayMirror, clearTemplateTrayMirror } from '../../lib/comfyDownloadManager'
-import { getModelsBaseDir } from '../../lib/modelDownloadPaths'
+import { resolveDownloadContext } from '../../lib/modelDownloadPaths'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
@@ -277,7 +277,9 @@ async function runTask(
     failed: false
   }))
 
-  const baseDir = getModelsBaseDir()
+  // Download into the install's effective primary models dir (respects
+  // useSharedModels / modelDirs / modelDirsPrimary), not the global shared dir.
+  const baseDir = resolveDownloadContext(installation).downloadBaseDir
 
   // Pre-flight disk guard against the coarse estimate (× headroom): a hard error
   // beats N failed writes when there's clearly no room.

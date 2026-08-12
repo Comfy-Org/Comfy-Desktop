@@ -277,7 +277,7 @@ describe('installations.resolveAutoLaunchInstall', () => {
   })
 })
 
-describe('installations.load (useSharedPaths → useSharedModels/useSharedInputOutput migration)', () => {
+describe('installations.load (legacy shared-storage flag migrations)', () => {
   function writeRawInstallations(records: Record<string, unknown>[]): string {
     // On win32 `dataDir()` is the Electron userData path directly (no `data/`).
     fs.mkdirSync(userDataPath, { recursive: true })
@@ -286,7 +286,7 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     return file
   }
 
-  it('translates legacy useSharedPaths: true → both new flags true', async () => {
+  it('translates legacy useSharedPaths: true -> all new flags true', async () => {
     writeRawInstallations([
       {
         id: 'legacy-on',
@@ -302,11 +302,13 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'legacy-on')!
     expect(rec.useSharedModels).toBe(true)
-    expect(rec.useSharedInputOutput).toBe(true)
+    expect(rec.useSharedInput).toBe(true)
+    expect(rec.useSharedOutput).toBe(true)
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
-  it('translates legacy useSharedPaths: false → useSharedModels: true, useSharedInputOutput: false', async () => {
+  it('translates legacy useSharedPaths: false -> useSharedModels: true, per-folder flags false', async () => {
     // The migration forces `useSharedModels: true` regardless of the legacy
     // value (isolating paths meant input/output, not the model library).
     writeRawInstallations([
@@ -324,8 +326,66 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'legacy-off')!
     expect(rec.useSharedModels).toBe(true)
-    expect(rec.useSharedInputOutput).toBe(false)
+    expect(rec.useSharedInput).toBe(false)
+    expect(rec.useSharedOutput).toBe(false)
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
+  })
+
+  it('splits legacy useSharedInputOutput into useSharedInput + useSharedOutput', async () => {
+    writeRawInstallations([
+      {
+        id: 'split-off',
+        name: 'Split Off',
+        installPath: path.join(tmpRoot, 'split-off'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: false
+      },
+      {
+        id: 'split-on',
+        name: 'Split On',
+        installPath: path.join(tmpRoot, 'split-on'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: true
+      }
+    ])
+    const installations = await loadInstallations()
+    const list = await installations.list()
+    const off = list.find((r) => r.id === 'split-off')!
+    expect(off.useSharedInput).toBe(false)
+    expect(off.useSharedOutput).toBe(false)
+    expect(off).not.toHaveProperty('useSharedInputOutput')
+    const on = list.find((r) => r.id === 'split-on')!
+    expect(on.useSharedInput).toBe(true)
+    expect(on.useSharedOutput).toBe(true)
+    expect(on).not.toHaveProperty('useSharedInputOutput')
+  })
+
+  it('keeps newer per-folder flags when a mixed-schema record also has the legacy flag', async () => {
+    // A downgrade/upgrade cycle can leave both the legacy flag and the new
+    // per-folder flags on one record; the per-folder values are newer and win.
+    writeRawInstallations([
+      {
+        id: 'mixed',
+        name: 'Mixed',
+        installPath: path.join(tmpRoot, 'mixed'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: false,
+        useSharedInput: true,
+        useSharedOutput: false
+      }
+    ])
+    const installations = await loadInstallations()
+    const rec = (await installations.list()).find((r) => r.id === 'mixed')!
+    expect(rec.useSharedInput).toBe(true)
+    expect(rec.useSharedOutput).toBe(false)
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
   it('leaves records without useSharedPaths untouched (no implicit migration)', async () => {
@@ -346,8 +406,10 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'modern')!
     expect(rec.useSharedModels).toBe(false)
-    expect(rec.useSharedInputOutput).toBeUndefined()
+    expect(rec.useSharedInput).toBeUndefined()
+    expect(rec.useSharedOutput).toBeUndefined()
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
   it('strips legacy useSharedPaths from disk on next write', async () => {
@@ -368,8 +430,10 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as Record<string, unknown>[]
     const persisted = raw.find((r) => r['id'] === 'legacy-strip')!
     expect(persisted).not.toHaveProperty('useSharedPaths')
+    expect(persisted).not.toHaveProperty('useSharedInputOutput')
     expect(persisted['useSharedModels']).toBe(true)
-    expect(persisted['useSharedInputOutput']).toBe(true)
+    expect(persisted['useSharedInput']).toBe(true)
+    expect(persisted['useSharedOutput']).toBe(true)
   })
 })
 
@@ -695,5 +759,69 @@ describe('installations.uniqueName', () => {
     const { uniqueName } = await loadInstallations()
     const existing = recs('ComfyUI') // id-0
     expect(uniqueName('ComfyUI', existing, 'id-0')).toBe('ComfyUI')
+  })
+})
+
+describe('mutations fail closed when installations.json cannot be recovered (issue #1367)', () => {
+  it('serves stale .bak records for reads but rejects mutations', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const dataPath = path.join(userDataPath, 'installations.json')
+    // A stale backup that predates a later rename of the install.
+    fs.copyFileSync(dataPath, dataPath + '.bak')
+
+    const realRead = fs.promises.readFile.bind(fs.promises) as typeof fs.promises.readFile
+    vi.spyOn(fs.promises, 'readFile').mockImplementation(((
+      p: Parameters<typeof fs.promises.readFile>[0],
+      opts?: unknown
+    ) => {
+      if (p === dataPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM' // lock never clears
+        return Promise.reject(err)
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.promises.readFile)
+
+    // Reads degrade to the backup records...
+    expect(await installations.list()).toHaveLength(1)
+    // ...but a read-modify-write must fail closed: saving a list built from
+    // the stale backup would overwrite the newer primary once the lock clears.
+    await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
+      /cannot be recovered/
+    )
+
+    vi.restoreAllMocks()
+    const persisted = await installations.get(entry.id)
+    expect(persisted!.name).toBe('Local A')
+  })
+
+  it('rejects mutations when installations.json is readable but corrupt', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const dataPath = path.join(userDataPath, 'installations.json')
+    // Truncated write / interrupted power cycle: readable, but not JSON.
+    const corrupt = fs.readFileSync(dataPath, 'utf-8').slice(0, 20)
+    fs.writeFileSync(dataPath, corrupt)
+    fs.rmSync(dataPath + '.bak', { force: true })
+
+    // Reads degrade to an empty list...
+    expect(await installations.list()).toEqual([])
+    // ...but a mutation must not replace the corrupt file with a list built
+    // from nothing, losing every prior record.
+    await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
+      /cannot be recovered/
+    )
+    expect(fs.readFileSync(dataPath, 'utf-8')).toBe(corrupt)
   })
 })

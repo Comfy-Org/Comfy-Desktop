@@ -19,6 +19,10 @@ interface ModelsDir {
   /** Locked rows (e.g. the install's own models dir) can't be removed or
    *  browsed/replaced; they show a lock icon. */
   locked?: boolean
+  /** Read-only rows (e.g. global shared dirs shown in a per-instance list)
+   *  can't be removed or browsed/replaced here, but keep the normal folder
+   *  icon (no lock) and stay promotable unless `promotable` is false. */
+  readonly?: boolean
   /** Set false to also forbid promoting the row to primary (e.g. the
    *  install's own models dir while shared models is on — the primary is a
    *  global shared dir there). Defaults to true. */
@@ -32,6 +36,9 @@ interface ModelsDir {
 
 interface Props {
   dirs: ModelsDir[]
+  /** Add-button label; defaults to the shared-directory wording used by
+   *  Desktop Settings. The per-instance pane passes plain "Add Directory". */
+  addLabel?: string
 }
 
 const props = defineProps<Props>()
@@ -66,7 +73,7 @@ function canPromote(dir: ModelsDir): boolean {
 }
 
 function canRemove(dir: ModelsDir): boolean {
-  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked
+  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked && !dir.readonly
 }
 
 function hasMenuActions(dir: ModelsDir): boolean {
@@ -213,7 +220,7 @@ const rows = computed(() =>
           <ChevronRight :size="14" aria-hidden="true" />
         </button>
         <button
-          v-if="!row.locked && !row.isExtra"
+          v-if="!row.locked && !row.isExtra && !row.readonly"
           type="button"
           class="models-dir-action"
           :aria-label="t('common.browse', 'Browse')"
@@ -269,7 +276,7 @@ const rows = computed(() =>
 
     <button type="button" class="models-dir-add" @click="emit('add')">
       <Plus :size="14" aria-hidden="true" />
-      <span>{{ t('models.addDir', 'Add directory') }}</span>
+      <span>{{ props.addLabel ?? t('models.addDir', 'Add Shared Directory') }}</span>
     </button>
   </div>
 </template>

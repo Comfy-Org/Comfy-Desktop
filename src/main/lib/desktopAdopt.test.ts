@@ -1082,7 +1082,8 @@ describe('adoptDesktopInstall', () => {
         autoUpdateComfyUI: false,
         // New shared-paths schema — `useSharedPaths` is gone.
         useSharedModels: true,
-        useSharedInputOutput: false,
+        useSharedInput: false,
+        useSharedOutput: false,
         inputDir: path.join(legacy.basePath, 'input'),
         outputDir: path.join(legacy.basePath, 'output'),
         copiedFrom: 'legacy-desktop',

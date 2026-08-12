@@ -17,7 +17,13 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
   setTemplateTrayMirror: vi.fn(),
   clearTemplateTrayMirror: vi.fn()
 }))
-vi.mock('../../lib/modelDownloadPaths', () => ({ getModelsBaseDir: () => '/tmp/models' }))
+vi.mock('../../lib/modelDownloadPaths', () => ({
+  resolveDownloadContext: () => ({
+    downloadBaseDir: '/tmp/models',
+    modelRoots: ['/tmp/models'],
+    extraPaths: []
+  })
+}))
 // Keep the task hermetic — never touch the real filesystem. `stat` rejects so
 // the loop treats every file as "not present" and proceeds to `download`.
 vi.mock('fs', () => ({
@@ -148,6 +154,19 @@ describe('awaitTemplateDownloadSettled', () => {
     requestSkipTemplateDownload('skip-1')
     await vi.advanceTimersByTimeAsync(300) // one poll tick
     await expect(settled).resolves.toBe('skipped')
+  })
+
+  it("downloads into the install's effective primary models dir (resolveDownloadContext)", async () => {
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    download.mockResolvedValue(undefined)
+    startTemplateDownload(makeInstall('dest-1'), 0, { sendOutput })
+    await flush()
+
+    // Destination must come from the install-aware context, not a global dir.
+    const destPath = download.mock.calls[0]![1] as string
+    expect(destPath.split(/[\\/]/).join('/')).toBe('/tmp/models/checkpoints/m.safetensors')
   })
 
   it('mirrors the download into the tray from the start, before any Skip (#1173)', async () => {

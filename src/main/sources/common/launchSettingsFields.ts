@@ -95,13 +95,16 @@ export interface LaunchSettingsOptions {
 
 /**
  * Per-install storage toggles + input/output path fields for the picker's Storage tab.
- * `useSharedModels` gates `--extra-model-paths-config`; `useSharedInputOutput` gates
- * `--input-directory` / `--output-directory`, falling back to the per-install fields
- * below (then `<installPath>/{input,output}`) when off. Shared-storage sources only.
+ * `useSharedModels` gates whether the global shared dirs are included in the
+ * generated `--extra-model-paths-config` (per-install `modelDirs` always apply);
+ * `useSharedInput` / `useSharedOutput` independently gate `--input-directory` /
+ * `--output-directory`, falling back to the per-install fields below (then
+ * `<installPath>/{input,output}`) when off. Shared-storage sources only.
  */
 export function buildStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
   const useSharedModels = (installation.useSharedModels as boolean | undefined) !== false
-  const useSharedInputOutput = (installation.useSharedInputOutput as boolean | undefined) !== false
+  const useSharedInput = (installation.useSharedInput as boolean | undefined) !== false
+  const useSharedOutput = (installation.useSharedOutput as boolean | undefined) !== false
   // The install's own default dirs are computed (never persisted) so a clone
   // derives its own paths instead of pointing back at the original install.
   const installPath = installation.installPath as string | undefined
@@ -119,17 +122,26 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
       requiresRestart: true
     },
     {
-      id: 'useSharedInputOutput',
-      label: t('common.useSharedInputOutput'),
-      value: useSharedInputOutput,
+      id: 'useSharedInput',
+      label: t('common.useSharedInput'),
+      value: useSharedInput,
       editable: true,
       editType: 'boolean',
-      tooltip: t('tooltips.useSharedInputOutput'),
+      tooltip: t('tooltips.useSharedInput'),
       requiresRestart: true
     },
-    // Per-install model directories, only meaningful when `useSharedModels === false`.
-    // StoragePane.vue renders this through its own ModelsDirList (not the generic
-    // SettingsSectionList) and hides it while shared models is on.
+    {
+      id: 'useSharedOutput',
+      label: t('common.useSharedOutput'),
+      value: useSharedOutput,
+      editable: true,
+      editType: 'boolean',
+      tooltip: t('tooltips.useSharedOutput'),
+      requiresRestart: true
+    },
+    // Per-install model directories, always applied in addition to the shared
+    // dirs (when those are enabled). StoragePane.vue renders this through its
+    // own ModelsDirList (not the generic SettingsSectionList).
     {
       id: 'modelDirs',
       label: t('common.perInstallModelDirs'),
@@ -158,9 +170,10 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
       editable: false,
       editType: 'hidden'
     },
-    // Per-install paths, only meaningful when `useSharedInputOutput === false`;
-    // StoragePane.vue hides them while the toggle is on. Empty value falls back
-    // to the computed install default below (never persisted).
+    // Per-install paths, only meaningful when the matching `useSharedInput` /
+    // `useSharedOutput` flag is false; StoragePane.vue hides each while its
+    // toggle is on. Empty value falls back to the computed install default
+    // below (never persisted).
     {
       id: 'inputDir',
       label: t('common.perInstallInputDir'),

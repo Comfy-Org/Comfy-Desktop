@@ -74,7 +74,9 @@ import {
   syncCustomModelFolders,
   discoverExtraModelFolders,
   instanceModelPathsYaml,
-  isSamePath
+  resolveLauncherModelDirs,
+  isSamePath,
+  rehomeOwnModelsPrimary
 } from '../models'
 import { copyDirWithProgress } from '../copy'
 import { fetchJSON } from '../fetch'
@@ -193,6 +195,7 @@ export {
   syncCustomModelFolders,
   discoverExtraModelFolders,
   instanceModelPathsYaml,
+  resolveLauncherModelDirs,
   isSamePath,
   copyDirWithProgress,
   fetchJSON,
@@ -913,6 +916,16 @@ export async function performCopy(
       copyReason
     }
 
+    // A promoted download target that names the source's own models dir is an
+    // absolute path inside the source install; point the copy at its own.
+    if (typeof recordData.modelDirsPrimary === 'string') {
+      recordData.modelDirsPrimary = rehomeOwnModelsPrimary(
+        recordData.modelDirsPrimary,
+        inst.installPath,
+        destPath
+      )
+    }
+
     if (adopted) {
       const newComfyUI = path.join(destPath, 'ComfyUI')
       const newAdoptedPython = path.join(
@@ -941,7 +954,8 @@ export async function performCopy(
         // legacy workspace. inputDir/outputDir are left unset so launch falls
         // back to this copy's own `<comfyDir>/{input,output}` — keeping the
         // record clone-safe (no absolute path pointing at a specific install).
-        useSharedInputOutput: false
+        useSharedInput: false,
+        useSharedOutput: false
       }
     }
 
