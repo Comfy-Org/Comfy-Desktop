@@ -13,6 +13,8 @@ interface Props {
   open: boolean
   title: string
   message?: string
+  /** Low-emphasis guidance rendered below the main content. */
+  hint?: string
   buttonLabel?: string
   /** Render Cancel + primary; ESC / backdrop emit `cancel`. */
   showCancel?: boolean
@@ -39,6 +41,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   message: '',
+  hint: '',
   buttonLabel: undefined,
   showCancel: false,
   cancelLabel: undefined,
@@ -199,7 +202,7 @@ onBeforeUnmount(() => {
             </button>
           </header>
           <div
-            v-if="message || hasDetails || $slots.default || $slots.extra"
+            v-if="message || hint || hasDetails || $slots.default || $slots.extra"
             class="base-alert-message"
           >
             <slot>
@@ -226,6 +229,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
+              <p v-if="hint" class="base-alert-hint">{{ hint }}</p>
             </slot>
             <!-- Sits below message + details (unlike the default slot, which replaces them). -->
             <div v-if="$slots.extra" class="base-alert-extra">
@@ -385,6 +389,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   margin-top: 12px;
+}
+
+.base-alert-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--text-muted) 75%, transparent);
 }
 
 .base-alert-extra {

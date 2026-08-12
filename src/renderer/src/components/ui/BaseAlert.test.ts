@@ -208,6 +208,12 @@ describe('BaseAlert', () => {
     expect(items.at(1)?.text()).toBe('-2 pip pkgs')
   })
 
+  it('renders low-emphasis hint text below the main content', () => {
+    const wrapper = mountAlert({ hint: 'This can be changed in Preferences.' })
+
+    expect(wrapper.find('.base-alert-hint').text()).toBe('This can be changed in Preferences.')
+  })
+
   it('applies the rich-variant panel modifier when messageDetails is non-empty', () => {
     const wrapper = mountAlert({
       messageDetails: [{ label: 'Notes', items: ['x'] }]

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
@@ -39,6 +39,10 @@ vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: '
 import { buildSettingsSections } from './registerSettingsHandlers'
 
 describe('buildSettingsSections', () => {
+  beforeEach(() => {
+    for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+  })
+
   it('does not offer the Manager security level globally (it is per-install)', () => {
     // The level is per-install, on each install's Startup Args tab
     // (buildLaunchSettingsFields); a global field silently overriding every
@@ -47,5 +51,28 @@ describe('buildSettingsSections', () => {
       (s) => (s.fields as { id?: string }[] | undefined) ?? []
     )
     expect(fields.map((f) => f.id)).not.toContain('managerSecurityLevel')
+  })
+
+  it('offers a default-on preference for the multiple-instance warning', () => {
+    const fields = buildSettingsSections().flatMap(
+      (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
+    )
+
+    expect(fields).toContainEqual(
+      expect.objectContaining({
+        id: 'warnBeforeRunningMultipleInstances',
+        label: 'Warn before running multiple instances',
+        type: 'boolean',
+        value: true
+      })
+    )
+
+    mockSettings.warnBeforeRunningMultipleInstances = false
+    const updatedFields = buildSettingsSections().flatMap(
+      (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
+    )
+    expect(
+      updatedFields.find((field) => field.id === 'warnBeforeRunningMultipleInstances')?.value
+    ).toBe(false)
   })
 })
