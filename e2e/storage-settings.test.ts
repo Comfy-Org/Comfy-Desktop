@@ -15,6 +15,7 @@ let addedModelsDir: string
 let inputDir: string
 let outputDir: string
 let replacementOutputDir: string
+let settingsDir: string
 
 const INSTALL_ID = 'inst-storage-settings-test'
 const MARKER_FILENAME = '.comfyui-desktop-2'
@@ -55,6 +56,15 @@ test.beforeAll(async () => {
     ]
   })
   popup = titlePopupPage(ctx.app)
+  // settings.json lives in the main process's configDir(): XDG config on
+  // Linux, Electron userData elsewhere (which on macOS resolves outside the
+  // harness's isolated home dir). Ask the app once rather than guessing the
+  // layout; later evaluate calls can race popup navigations.
+  settingsDir = await ctx.app.evaluate(({ app }) => {
+    if (process.platform !== 'linux') return app.getPath('userData')
+    const base = process.env.XDG_CONFIG_HOME || `${app.getPath('home')}/.config`
+    return `${base}/comfyui-desktop-2`
+  })
   await ctx.app.evaluate(
     ({ dialog }, selectedPaths) => {
       const queue = [...selectedPaths]
@@ -135,12 +145,6 @@ test('Shared Output browse persists the selected output directory @windows @maco
 })
 
 async function readPersistedSettings(): Promise<Record<string, unknown>> {
-  const settingsPath = path.join(
-    ctx.homeDir,
-    'AppData',
-    'Roaming',
-    'comfyui-desktop-2',
-    'settings.json'
-  )
+  const settingsPath = path.join(settingsDir, 'settings.json')
   return JSON.parse(await readFile(settingsPath, 'utf-8')) as Record<string, unknown>
 }

@@ -4,11 +4,16 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import type { InstallationRecord } from '../shared'
 import type { LaunchCommand } from '../../../types/sources'
 
-const { root } = await vi.hoisted(async () => {
+const { root, priorXdgDataHome } = await vi.hoisted(async () => {
   const { mkdtempSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
-  return { root: mkdtempSync(join(tmpdir(), 'launch-storage-')) }
+  const root = mkdtempSync(join(tmpdir(), 'launch-storage-'))
+  // dataDir() resolves via XDG on Linux (not Electron userData); pin it under
+  // the test root so the per-install YAML lands in the sandbox on every OS.
+  const priorXdgDataHome = process.env.XDG_DATA_HOME
+  process.env.XDG_DATA_HOME = join(root, 'xdg-data')
+  return { root, priorXdgDataHome }
 })
 
 vi.mock('electron', () => ({
@@ -39,6 +44,7 @@ vi.mock('../../../settings', () => ({
 }))
 
 import { applyStorageLaunchArgs } from './launch'
+import { dataDir } from '../../paths'
 import * as settingsMock from '../../../settings'
 
 const globalInput = path.join(root, 'global-input')
@@ -62,7 +68,7 @@ function makeLaunchCmd(overrides: Record<string, unknown> = {}): LaunchCommand {
 }
 
 function yamlPath(installationId: string): string {
-  return path.join(root, 'userData', 'instance-model-paths', `${installationId}.yaml`)
+  return path.join(dataDir(), 'instance-model-paths', `${installationId}.yaml`)
 }
 
 function mockSettings(values: Record<string, unknown>): void {
@@ -78,6 +84,8 @@ afterEach(() => {
 })
 
 afterAll(() => {
+  if (priorXdgDataHome === undefined) delete process.env.XDG_DATA_HOME
+  else process.env.XDG_DATA_HOME = priorXdgDataHome
   fs.rmSync(root, { recursive: true, force: true })
 })
 
