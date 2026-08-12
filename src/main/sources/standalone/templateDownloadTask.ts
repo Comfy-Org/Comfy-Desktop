@@ -295,8 +295,10 @@ async function runTask(
     failed: false
   }))
 
-  // Resolve the SAME base dir the manager will download into for this install,
-  // so preflight/path checks and the actual writes can't disagree.
+  // Resolve the SAME base dir the manager will download into for this install
+  // (respects useSharedModels / modelDirs / modelDirsPrimary, not the global
+  // shared dir), through the same byId lookup the manager itself uses so
+  // preflight/path checks and the actual writes can't disagree.
   const ctx = await resolveDownloadContextById(installation.id)
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
 

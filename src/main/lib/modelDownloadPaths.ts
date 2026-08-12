@@ -19,6 +19,12 @@ export function getSharedModelsDirs(): string[] {
   return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
 }
 
+/** Installation-aware download context for callers that already hold the
+ *  record (e.g. the template-model task). Sync: no store lookup needed. */
+export function resolveDownloadContext(inst: installations.InstallationRecord): InstallModelSearch {
+  return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+}
+
 /**
  * Every launcher-managed model root where staged model downloads (or legacy
  * final-path partials) may live: the shared models dirs plus each known
@@ -35,7 +41,7 @@ export async function collectModelScanRoots(): Promise<string[]> {
   for (const dir of shared) roots.add(dir)
   for (const inst of await installations.list()) {
     if (!inst.installPath) continue
-    const search = resolveInstallModelSearchPaths(inst, shared)
+    const search = resolveDownloadContext(inst)
     for (const root of search.modelRoots) roots.add(root)
     for (const extra of search.extraPaths) roots.add(extra.dir)
   }
@@ -49,7 +55,7 @@ export async function resolveDownloadContextById(
   try {
     const inst = await installations.get(installationId)
     if (!inst || !inst.installPath) return null
-    return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+    return resolveDownloadContext(inst)
   } catch {
     return null
   }

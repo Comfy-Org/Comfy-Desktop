@@ -84,7 +84,8 @@ export function buildElectronApi(): ElectronApi {
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
-    openGlobalSettings: () => ipcRenderer.send('comfy-titlepopup:open-global-settings'),
+    openGlobalSettings: (tab) =>
+      ipcRenderer.send('comfy-titlepopup:open-global-settings', tab ? { tab } : undefined),
     openInstancePicker: (opts) =>
       ipcRenderer.send('comfy-window:open-instance-picker-for-install', {
         installationId: opts?.installationId ?? null,
@@ -471,7 +472,7 @@ export function buildElectronApi(): ElectronApi {
             installationId?: string
             actionId?: string
             version?: string | null
-            settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global'
+            settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
             startupRestore?: boolean
           }
         )

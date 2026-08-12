@@ -177,13 +177,13 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     }
   },
   {
-    id: 'api_seedance2_0_r2v',
+    id: 'api_seedance2_5_r2v',
     modality: 'video',
     apiNode: true,
     snapshot: {
-      title: 'Seedance 2.0: Reference to Video',
+      title: 'Seedance 2.5: Reference to Video',
       description:
-        'Generate cinematic videos from reference images and text prompts. Preserve subject identity and composition while adding expressive motion with synchronized audio. Control camera movement and lighting through detailed prompts.',
+        'Generate reference-driven videos with Seedance 2.5 by supplying up to 20 images, 6 video clips, and 6 audio clips to control character consistency, visual style, and motion rhythm in a single 4–30 second output with synchronized sound and lip-synced dialogue. Ideal for e-commerce product showcases, brand advertising, and character-driven short series.',
       sizeBytes: 0,
       mediaSubtype: 'webp'
     }

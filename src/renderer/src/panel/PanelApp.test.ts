@@ -156,9 +156,14 @@ interface InstallationLike {
 }
 
 type PanelTriggerPayload = {
-  kind: 'install-update' | 'app-update-restart-prompt' | 'app-update-download-prompt'
+  kind:
+    | 'install-update'
+    | 'app-update-restart-prompt'
+    | 'app-update-download-prompt'
+    | 'picker-pick-install'
   installationId?: string
   version?: string | null
+  isRestart?: boolean
 }
 
 interface MockApiState {
@@ -308,6 +313,7 @@ function installMockApi(initial?: {
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
     getListActions: vi.fn(async () => []),
+    runAction: vi.fn(async () => ({ ok: true })),
     // Picker thumbnail warm-up fetches the bundled-template options on the
     // first-use cold-start path; returning users must never trigger it.
     getFieldOptions: vi.fn(async () => []),
@@ -765,6 +771,47 @@ describe('PanelApp', () => {
     })
   })
 
+  it('preserves restart intent when a chooser host relaunches a booting instance', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const api = (
+      window as unknown as {
+        api: {
+          getRunningInstances: ReturnType<typeof vi.fn>
+          getListActions: ReturnType<typeof vi.fn>
+          getSetting: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    api.getRunningInstances.mockResolvedValueOnce([
+      {
+        installationId: 'other-id',
+        installationName: 'Other Install',
+        mode: 'window'
+      }
+    ])
+    api.getListActions.mockResolvedValueOnce([
+      {
+        id: 'launch',
+        label: 'Launch',
+        style: 'primary',
+        showProgress: false
+      }
+    ])
+    mountPanel()
+    await flushPromises()
+    api.getSetting.mockClear()
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: 'test-id', isRestart: true })
+    )
+    await flushPromises()
+
+    expect(api.getListActions).toHaveBeenCalledWith('test-id')
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+    expect(api.getSetting).not.toHaveBeenCalledWith('warnBeforeRunningMultipleInstances')
+  })
+
   it('opens the instance picker on the Config tab when a panel-trigger-overlay open-settings event arrives with tab=comfy', async () => {
     // `comfy://open-settings?tab=comfy` on an install-backed host
     // opens the picker on the Config tab — the same surface the
@@ -813,6 +860,30 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(api.openGlobalSettings).toHaveBeenCalledTimes(1)
+    expect(api.openInstancePicker).not.toHaveBeenCalled()
+  })
+
+  it('opens global settings on its Storage tab when open-settings arrives with tab=global-storage', async () => {
+    // The instance pane's "Manage Shared Directories" link deep-links to
+    // Global Desktop Settings landed on Storage, not just the popup itself.
+    mountPanel()
+    await flushPromises()
+    const api = (
+      window as unknown as {
+        api: {
+          openInstancePicker: ReturnType<typeof vi.fn>
+          openGlobalSettings: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'open-settings', settingsTab: 'global-storage' })
+    )
+    await flushPromises()
+
+    expect(api.openGlobalSettings).toHaveBeenCalledTimes(1)
+    expect(api.openGlobalSettings).toHaveBeenCalledWith('storage')
     expect(api.openInstancePicker).not.toHaveBeenCalled()
   })
 

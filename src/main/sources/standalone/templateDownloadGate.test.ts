@@ -8,17 +8,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const resolveTemplateModels = vi.fn<() => Promise<Array<Record<string, unknown>>>>()
 const startManagedModelJob = vi.fn()
-const getDiskSpace = vi.fn(async () => ({ free: 1e15, total: 1e15 }))
+const getDiskSpace = vi.fn(async (_dir: string) => ({ free: 1e15, total: 1e15 }))
+const resolveDownloadContextById = vi.fn(async (_id: string): Promise<unknown> => null)
 
 vi.mock('./templateModels', () => ({ resolveTemplateModels: () => resolveTemplateModels() }))
 vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(async () => []) }))
-vi.mock('../../lib/disk', () => ({ getDiskSpace: () => getDiskSpace() }))
+vi.mock('../../lib/disk', () => ({ getDiskSpace: (dir: string) => getDiskSpace(dir) }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   startManagedModelJob: (...a: unknown[]) => startManagedModelJob(...a)
 }))
 vi.mock('../../lib/modelDownloadPaths', () => ({
   getModelsBaseDir: () => '/tmp/models',
-  resolveDownloadContextById: vi.fn(async () => null)
+  resolveDownloadContextById: (id: string) => resolveDownloadContextById(id)
 }))
 // Keep the task hermetic - never touch the real filesystem. `stat` rejects so
 // the completed-size probe is simply skipped.
@@ -83,6 +84,7 @@ describe('awaitTemplateDownloadSettled', () => {
     jobReleases.clear()
     sendOutput.mockReset()
     getDiskSpace.mockReset().mockResolvedValue({ free: 1e15, total: 1e15 })
+    resolveDownloadContextById.mockReset().mockResolvedValue(null)
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -180,6 +182,26 @@ describe('awaitTemplateDownloadSettled', () => {
         onProgress: expect.any(Function)
       })
     )
+  })
+
+  it("uses the install's effective primary models dir for preflight, not a global dir (#1376)", async () => {
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    // Install-aware storage context (useSharedModels / modelDirs / modelDirsPrimary)
+    // resolved through the same byId lookup the download manager itself uses.
+    resolveDownloadContextById.mockResolvedValue({
+      downloadBaseDir: '/install/models',
+      modelRoots: ['/install/models'],
+      extraPaths: []
+    })
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
+    startTemplateDownload(makeInstall('dest-1'), 1024, { sendOutput })
+    await flush()
+
+    // Disk preflight must probe the install-aware base dir, not '/tmp/models'.
+    expect(resolveDownloadContextById).toHaveBeenCalledWith('dest-1')
+    expect(getDiskSpace).toHaveBeenCalledWith('/install/models')
   })
 
   it("resolves 'aborted' when the gate's own signal aborts (launch teardown)", async () => {
