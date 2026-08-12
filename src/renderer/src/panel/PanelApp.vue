@@ -297,7 +297,7 @@ useDeepLinkRouter({
         await chooserHandoff.handleChooserPick(inst)
       }
     } else {
-      await chooserHandoff.performPickerLaunch(inst)
+      await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {

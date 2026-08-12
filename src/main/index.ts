@@ -2118,7 +2118,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (panelView.webContents.isDestroyed()) return
         sendToPanelDeferred(panelView, 'panel-trigger-overlay', {
           kind: 'picker-pick-install',
-          installationId
+          installationId,
+          isRestart: true
         })
       }
     })

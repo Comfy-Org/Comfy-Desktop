@@ -201,6 +201,16 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
     )
   })
 
+  it('forwards restart intent to the local-instance launch guard', async () => {
+    const showProgress = vi.fn()
+    const { executeAction } = useListAction('chooser', { showProgress })
+
+    await executeAction(INSTALL, LAUNCH_ACTION, { isRestart: true })
+
+    expect(mockCheckBeforeLaunch).toHaveBeenCalledWith('inst-launch', { isRestart: true })
+    expect(showProgress).toHaveBeenCalledOnce()
+  })
+
   it('does NOT fire onGuardsPassed when the action is disabled', async () => {
     const onGuardsPassed = vi.fn()
     const showProgress = vi.fn()

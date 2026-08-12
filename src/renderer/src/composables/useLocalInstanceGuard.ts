@@ -12,7 +12,14 @@ export function useLocalInstanceGuard() {
 
   // Returns true to proceed, false if cancelled. On replace, stops the
   // running instance(s) before returning.
-  async function checkBeforeLaunch(targetId: string): Promise<boolean> {
+  async function checkBeforeLaunch(
+    targetId: string,
+    opts: { isRestart?: boolean } = {}
+  ): Promise<boolean> {
+    // A restart restores the user's existing multi-instance arrangement.
+    // They already accepted that arrangement when launching the instances.
+    if (opts.isRestart) return true
+
     const target = installationStore.installations.find((i) => i.id === targetId)
     if (target && target.sourceCategory !== 'local') return true
 
