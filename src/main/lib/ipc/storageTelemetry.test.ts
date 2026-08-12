@@ -75,6 +75,8 @@ function drive(overrides: Partial<DriveInfo>): DriveInfo {
     driveSizeGb: null,
     volumeSizeGb: null,
     volumeFreeGb: null,
+    pcieMaxGen: null,
+    pcieSlotMaxGen: null,
     driveKey: null,
     ...overrides
   }
@@ -90,6 +92,8 @@ const NVME = drive({
   driveSizeGb: 2000,
   volumeSizeGb: 2000,
   volumeFreeGb: 500,
+  pcieMaxGen: 4,
+  pcieSlotMaxGen: 3,
   driveKey: '\\\\.\\PHYSICALDRIVE0'
 })
 
@@ -159,12 +163,17 @@ describe('emitStorageTelemetry', () => {
     expect(props.install_bus).toBe('nvme')
     expect(props.install_drive_model).toBe('Samsung SSD 990 PRO 2TB')
     expect(props.install_drive_size_gb).toBe(2000)
+    expect(props.install_pcie_max_gen).toBe(4)
+    expect(props.install_pcie_slot_max_gen).toBe(3)
     expect(props.install_drive_key).toBe(0)
 
     expect(props.models_dirs_count).toBe(2)
     expect(props.models_storage_classes).toEqual(['nvme_ssd', 'hdd'])
+    expect(props.models_pcie_max_gens).toEqual([4, null])
     expect(props.models_drive_keys).toEqual([0, 1])
     expect(props.models_primary_storage_class).toBe('hdd')
+    expect(props.models_primary_pcie_max_gen).toBeNull()
+    expect(props.models_primary_pcie_slot_max_gen).toBeNull()
     expect(props.models_primary_drive_key).toBe(1)
 
     expect(props.distinct_drive_count).toBe(2)

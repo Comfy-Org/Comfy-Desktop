@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type * as PcieInfoModule from './pcieInfo'
 
 // Per-test fixture data returned by the mocked systeminformation probes.
 let mockFsSize: unknown[] = []
 let mockBlockDevices: unknown[] = []
 let mockDiskLayout: unknown[] = []
 let mockShouldThrow = false
+let mockPcie = new Map<string, { maxGen: number | null; slotMaxGen: number | null }>()
+let mockPcieShouldReject = false
 
 vi.mock('systeminformation', () => ({
   default: {
@@ -14,6 +17,19 @@ vi.mock('systeminformation', () => ({
     diskLayout: () => Promise.resolve(mockDiskLayout)
   }
 }))
+
+// Replace only the probe (it spawns processes / reads sysfs); keep the real
+// deviceLookupKey so the join logic under test is the production one.
+vi.mock('./pcieInfo', async (importOriginal) => {
+  const actual = await importOriginal<typeof PcieInfoModule>()
+  return {
+    ...actual,
+    probePcieLinkCaps: () =>
+      mockPcieShouldReject
+        ? Promise.reject(new Error('pcie probe failed'))
+        : Promise.resolve(mockPcie)
+  }
+})
 
 import { classifyPaths, _resetForTest } from './storageInfo'
 
@@ -29,6 +45,8 @@ beforeEach(() => {
   mockBlockDevices = []
   mockDiskLayout = []
   mockShouldThrow = false
+  mockPcie = new Map()
+  mockPcieShouldReject = false
 })
 
 afterEach(() => {
@@ -278,6 +296,84 @@ describe('classifyPaths - Windows', () => {
     mockShouldThrow = false
     const map = await classifyPaths(['C:\\a'])
     expect(map.get('C:\\a')!.storageClass).toBe('nvme_ssd')
+  })
+})
+
+// --- PCIe link caps join ------------------------------------------------------
+
+describe('classifyPaths - PCIe link caps', () => {
+  beforeEach(() => {
+    setPlatform('win32')
+    windowsFixtures()
+  })
+
+  it('joins drive and slot max generations onto NVMe drives', async () => {
+    mockPcie = new Map([['physicaldrive0', { maxGen: 4, slotMaxGen: 3 }]])
+    const map = await classifyPaths(['C:\\a'])
+    const info = map.get('C:\\a')!
+    expect(info.pcieMaxGen).toBe(4)
+    expect(info.pcieSlotMaxGen).toBe(3)
+  })
+
+  it('never attaches PCIe caps to non-NVMe drives, even when probed', async () => {
+    // A (bogus) probe entry for the SATA drive must be ignored: it would
+    // describe the shared AHCI controller, not the drive.
+    mockPcie = new Map([['physicaldrive1', { maxGen: 3, slotMaxGen: 3 }]])
+    const map = await classifyPaths(['D:\\models'])
+    const info = map.get('D:\\models')!
+    expect(info.storageClass).toBe('hdd')
+    expect(info.pcieMaxGen).toBeNull()
+    expect(info.pcieSlotMaxGen).toBeNull()
+  })
+
+  it('leaves the fields null when the probe has no data for the drive', async () => {
+    const map = await classifyPaths(['C:\\a'])
+    const info = map.get('C:\\a')!
+    expect(info.storageClass).toBe('nvme_ssd')
+    expect(info.pcieMaxGen).toBeNull()
+    expect(info.pcieSlotMaxGen).toBeNull()
+  })
+
+  it('a rejecting PCIe probe does not sink the storage snapshot', async () => {
+    mockPcieShouldReject = true
+    const map = await classifyPaths(['C:\\a'])
+    const info = map.get('C:\\a')!
+    expect(info.storageClass).toBe('nvme_ssd') // classification unaffected
+    expect(info.pcieMaxGen).toBeNull()
+  })
+
+  it('joins by normalized device key on Linux (/dev/nvme0n1 -> nvme0n1)', async () => {
+    setPlatform('linux')
+    mockFsSize = [
+      { fs: '/dev/nvme0n1p2', type: 'ext4', size: 1000 * GB, available: 300 * GB, mount: '/' }
+    ]
+    mockBlockDevices = [
+      {
+        name: 'nvme0n1p2',
+        mount: '/',
+        type: 'part',
+        fsType: 'ext4',
+        physical: '',
+        removable: false,
+        protocol: 'nvme',
+        device: '/dev/nvme0n1'
+      }
+    ]
+    mockDiskLayout = [
+      {
+        device: '/dev/nvme0n1',
+        type: 'NVMe',
+        name: 'WD_BLACK SN850X 1000GB',
+        vendor: 'Western Digital',
+        size: 1000 * GB,
+        interfaceType: 'PCIe'
+      }
+    ]
+    mockPcie = new Map([['nvme0n1', { maxGen: 4, slotMaxGen: 4 }]])
+    const map = await classifyPaths(['/home/u/comfy'])
+    const info = map.get('/home/u/comfy')!
+    expect(info.pcieMaxGen).toBe(4)
+    expect(info.pcieSlotMaxGen).toBe(4)
   })
 })
 

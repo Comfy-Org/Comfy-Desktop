@@ -5,7 +5,8 @@
  * instance boot (alongside `session.instance_started`, same trigger). Answers
  * "what kind of drive is ComfyUI installed on, what kind are the models on,
  * and are they the same drive?" - the axes are storage class (hdd / sata_ssd
- * / nvme_ssd / ...), bus, drive model, and anonymous same-drive grouping.
+ * / nvme_ssd / ...), bus, drive model, max PCIe link generation (drive and
+ * slot, NVMe only), and anonymous same-drive grouping.
  *
  * PRIVACY: no paths, mount points, drive letters, labels, serials or UUIDs
  * leave the process. Physical-drive identity is reduced to `*_drive_key`
@@ -168,6 +169,11 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       install_drive_size_gb: install?.driveSizeGb ?? null,
       install_volume_size_gb: install?.volumeSizeGb ?? null,
       install_volume_free_gb: install?.volumeFreeGb ?? null,
+      // Max PCIe link generations (capability, not the idle-downtrained
+      // negotiated speed): NVMe drives only, null elsewhere. drive < slot
+      // means the slot has headroom; drive > slot means the drive is capped.
+      install_pcie_max_gen: install?.pcieMaxGen ?? null,
+      install_pcie_slot_max_gen: install?.pcieSlotMaxGen ?? null,
       install_drive_key: installKey,
 
       models_dirs_count: modelDirs.length,
@@ -176,6 +182,7 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       models_buses: models.map((m) => m?.bus ?? 'unknown'),
       models_external: models.map((m) => m?.external ?? null),
       models_drive_models: models.map((m) => scrubOrNull(m?.driveModel ?? null)),
+      models_pcie_max_gens: models.map((m) => m?.pcieMaxGen ?? null),
       models_drive_keys: modelKeys,
 
       models_primary_storage_class: primary?.storageClass ?? 'unknown',
@@ -183,6 +190,8 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       models_primary_drive_model: scrubOrNull(primary?.driveModel ?? null),
       models_primary_drive_size_gb: primary?.driveSizeGb ?? null,
       models_primary_volume_free_gb: primary?.volumeFreeGb ?? null,
+      models_primary_pcie_max_gen: primary?.pcieMaxGen ?? null,
+      models_primary_pcie_slot_max_gen: primary?.pcieSlotMaxGen ?? null,
       models_primary_drive_key: primaryKey,
 
       cache_storage_class: cache?.storageClass ?? 'unknown',

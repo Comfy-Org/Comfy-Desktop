@@ -14,6 +14,9 @@
  *   blockDevices() volume -> physical device link (`device` field)
  *   diskLayout()   physical disks: media type, bus, model, vendor, size
  *
+ * plus a fourth, first-party probe (`pcieInfo.ts`) that joins max PCIe link
+ * generations (drive + slot) onto NVMe drives.
+ *
  * The join is best-effort: Storage Spaces / RAID / LVM report as `virtual`,
  * network volumes as `network`, and anything unresolvable as `unknown` -
  * we never guess. Results are snapshotted once per process (the underlying
@@ -32,6 +35,7 @@
 import path from 'path'
 import si from 'systeminformation'
 import type { Systeminformation } from 'systeminformation'
+import { probePcieLinkCaps, deviceLookupKey, type PcieLinkCaps } from './pcieInfo'
 
 export type StorageClass =
   | 'hdd'
@@ -70,6 +74,17 @@ export interface DriveInfo {
   volumeSizeGb: number | null
   volumeFreeGb: number | null
   /**
+   * Max PCIe link generation (1-6) the drive itself supports. NVMe drives
+   * only (SATA/USB/virtual have no per-drive PCIe link); null when unknown
+   * or not applicable. Capability, not the negotiated speed - the live link
+   * downtrains at idle and would under-report.
+   */
+  pcieMaxGen: number | null
+  /** Max PCIe link generation of the port/slot the drive is attached to,
+   *  same domain as `pcieMaxGen`. Together they expose "Gen4 drive in a
+   *  Gen3 slot". */
+  pcieSlotMaxGen: number | null
+  /**
    * Grouping key: two paths with the same non-null key are on the same
    * physical drive (or at least the same volume when the physical join
    * failed). `null` when the path could not be resolved to any volume.
@@ -82,6 +97,8 @@ interface StorageSnapshot {
   fsSize: Systeminformation.FsSizeData[]
   blockDevices: Systeminformation.BlockDevicesData[]
   diskLayout: Systeminformation.DiskLayoutData[]
+  /** PCIe link caps per physical NVMe device (`deviceLookupKey` keys). */
+  pcie: Map<string, PcieLinkCaps>
 }
 
 /**
@@ -126,12 +143,15 @@ let cachedSnapshot: StorageSnapshot | null = null
 
 async function fetchSnapshot(): Promise<StorageSnapshot | null> {
   try {
-    const [fsSize, blockDevices, diskLayout] = await Promise.all([
+    const [fsSize, blockDevices, diskLayout, pcie] = await Promise.all([
       si.fsSize(),
       si.blockDevices(),
-      si.diskLayout()
+      si.diskLayout(),
+      // Optional enrichment: its failure must never sink the whole snapshot
+      // (probePcieLinkCaps never rejects by contract; this is belt-and-braces).
+      probePcieLinkCaps().catch(() => new Map<string, PcieLinkCaps>())
     ])
-    return { fsSize, blockDevices, diskLayout }
+    return { fsSize, blockDevices, diskLayout, pcie }
   } catch {
     return null
   }
@@ -277,7 +297,8 @@ function classify(
   volume: Systeminformation.FsSizeData | null,
   bd: Systeminformation.BlockDevicesData | null,
   dl: Systeminformation.DiskLayoutData | null,
-  fallbackKey: string | null
+  fallbackKey: string | null,
+  pcie: Map<string, PcieLinkCaps>
 ): DriveInfo {
   const bus = normalizeBus(dl?.interfaceType || bd?.protocol)
   let media = normalizeMedia(dl?.type)
@@ -323,6 +344,14 @@ function classify(
 
   const driveSize = dl && dl.size > 0 ? Math.round(dl.size / BYTES_PER_GB) : null
 
+  // PCIe link caps apply only to drives that ARE a PCIe endpoint (NVMe).
+  // For anything else a joined value would describe some shared controller,
+  // not this drive - never attach it.
+  let pcieCaps: PcieLinkCaps | undefined
+  if (!virtual && (bus === 'nvme' || bus === 'pcie') && dl?.device) {
+    pcieCaps = pcie.get(deviceLookupKey(dl.device))
+  }
+
   return {
     storageClass,
     bus,
@@ -335,6 +364,8 @@ function classify(
     volumeSizeGb: volume && volume.size > 0 ? Math.round(volume.size / BYTES_PER_GB) : null,
     volumeFreeGb:
       volume && volume.available >= 0 ? Math.round(volume.available / BYTES_PER_GB) : null,
+    pcieMaxGen: pcieCaps?.maxGen ?? null,
+    pcieSlotMaxGen: pcieCaps?.slotMaxGen ?? null,
     driveKey: dl?.device || bd?.device || fallbackKey
   }
 }
@@ -352,6 +383,8 @@ function networkInfo(volume: Systeminformation.FsSizeData | null, key: string): 
     volumeSizeGb: volume && volume.size > 0 ? Math.round(volume.size / BYTES_PER_GB) : null,
     volumeFreeGb:
       volume && volume.available >= 0 ? Math.round(volume.available / BYTES_PER_GB) : null,
+    pcieMaxGen: null,
+    pcieSlotMaxGen: null,
     driveKey: key
   }
 }
@@ -367,6 +400,8 @@ const UNRESOLVED: DriveInfo = {
   driveSizeGb: null,
   volumeSizeGb: null,
   volumeFreeGb: null,
+  pcieMaxGen: null,
+  pcieSlotMaxGen: null,
   driveKey: null
 }
 
@@ -401,7 +436,7 @@ function resolveWindows(p: string, snap: StorageSnapshot): DriveInfo {
     ? (snap.diskLayout.find((d) => d.device?.trim().toLowerCase() === physDev.toLowerCase()) ??
       null)
     : null
-  return classify(volume, bd, dl, `vol:${letter}`)
+  return classify(volume, bd, dl, `vol:${letter}`, snap.pcie)
 }
 
 /** Longest containing mount point, path-component aware (`/mnt/a` does not
@@ -462,7 +497,7 @@ function resolvePosix(p: string, snap: StorageSnapshot): DriveInfo {
     : null
 
   const fallbackKey = `vol:${volume.mount}`
-  return classify(volume, bd, dl, fallbackKey)
+  return classify(volume, bd, dl, fallbackKey, snap.pcie)
 }
 
 /**
