@@ -483,7 +483,7 @@ function handleRevealPath(path: string): void {
     <GlobalSettingsMicroSection :title="t('settings.inputStorage', 'Input')">
       <template v-if="useSharedInputField" #actions>
         <label class="storage-header-toggle">
-          <span>{{ t('common.useSharedFolder', 'Use Shared Folder') }}</span>
+          <span>{{ t('comfyUISettings.useSharedInput', 'Use Shared Input') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
           <BooleanToggle
             :field="useSharedInputField"
@@ -516,7 +516,7 @@ function handleRevealPath(path: string): void {
     <GlobalSettingsMicroSection :title="t('settings.outputStorage', 'Output')">
       <template v-if="useSharedOutputField" #actions>
         <label class="storage-header-toggle">
-          <span>{{ t('common.useSharedFolder', 'Use Shared Folder') }}</span>
+          <span>{{ t('comfyUISettings.useSharedOutput', 'Use Shared Output') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
           <BooleanToggle
             :field="useSharedOutputField"
