@@ -479,7 +479,8 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       // off — the workspace is pinned to legacy basePath via the
       // per-install inputDir/outputDir fields, which launch.ts handles.
       useSharedModels: true,
-      useSharedInputOutput: false,
+      useSharedInput: false,
+      useSharedOutput: false,
       inputDir: path.join(adoptedBaseDir, 'input'),
       outputDir: path.join(adoptedBaseDir, 'output'),
       launchArgs: '--listen 127.0.0.1 --port 8188',

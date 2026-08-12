@@ -5,6 +5,7 @@ import { useModal } from '../../composables/useModal'
 import GlobalSettingsMicroSection from './GlobalSettingsMicroSection.vue'
 import ModelsDirList from './ModelsDirList.vue'
 import StorageDirRow from '../../views/comfyUISettings/StorageDirRow.vue'
+import { samePath } from '../../lib/pathCompare'
 import type { DetailField } from '../../types/ipc'
 
 // Shared global-storage UI rendered identically by the Global Settings
@@ -23,6 +24,7 @@ export interface GlobalStorageSnapshot {
 }
 
 interface GlobalSettingsBridge {
+  platform?: string
   globalSettingsUpdateField(
     fieldId: string,
     value: unknown
@@ -93,9 +95,15 @@ function handleOpenModelsDir(index: number): void {
   if (dir) bridge?.globalSettingsOpenPath(dir.path)
 }
 
+/** Whether a picked path already appears in the shared models list. */
+function isListedModelsDir(path: string): boolean {
+  const win = bridge?.platform === 'win32'
+  return props.snapshot.modelsDirs.some((d) => samePath(d.path, path, win))
+}
+
 async function handleAddModelsDir(): Promise<void> {
   const picked = await bridge?.globalSettingsBrowseFolder()
-  if (!picked) return
+  if (!picked || isListedModelsDir(picked)) return
   emit('touched')
   const dirs = props.snapshot.modelsDirs.map((d) => d.path)
   dirs.push(picked)
@@ -133,7 +141,7 @@ async function handleMakePrimary(index: number): Promise<void> {
 async function handleChangeModelsDir(index: number): Promise<void> {
   const current = props.snapshot.modelsDirs[index]?.path
   const picked = await bridge?.globalSettingsBrowseFolder(current)
-  if (!picked || picked === current) return
+  if (!picked || isListedModelsDir(picked)) return
   emit('touched')
   const dirs = props.snapshot.modelsDirs.map((d) => d.path)
   dirs[index] = picked
@@ -156,10 +164,13 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     />
   </GlobalSettingsMicroSection>
 
-  <GlobalSettingsMicroSection :title="t('settings.sharedDirectories', 'Shared Directories')">
+  <GlobalSettingsMicroSection
+    :title="t('settings.sharedDirectories', 'Shared Directories')"
+    :tooltip="t('tooltips.sharedDirectories')"
+  >
     <StorageDirRow
       v-if="sharedInputField"
-      :label="sharedInputField.label || t('media.inputDir', 'Input Directory')"
+      :label="sharedInputField.label || t('media.inputDir', 'Shared Input')"
       :path="sharedFieldPath(sharedInputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
@@ -167,7 +178,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     />
     <StorageDirRow
       v-if="sharedOutputField"
-      :label="sharedOutputField.label || t('media.outputDir', 'Output Directory')"
+      :label="sharedOutputField.label || t('media.outputDir', 'Shared Output')"
       :path="sharedFieldPath(sharedOutputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"

@@ -31,23 +31,31 @@ export interface InstallationRecord {
   /** Most-recent launch ms keyed by source category; written together with
    *  `lastLaunchedAt` via `markLaunched()` so the two stay consistent. */
   lastLaunchedAtByCategory?: Record<string, number>
-  /** When true (default), launch injects `--extra-model-paths-config` from the
-   *  global `modelsDirs` so this install sees the shared model library. */
+  /** When true (default), the global `modelsDirs` are included in the
+   *  `--extra-model-paths-config` YAML so this install sees the shared model
+   *  library. Per-install `modelDirs` apply regardless of this flag. */
   useSharedModels?: boolean
-  /** When true (default), launch injects `--input-directory` /
-   *  `--output-directory` from the global settings; else uses the per-install
-   *  dirs below or ComfyUI's `<installPath>/{input,output}` defaults. */
-  useSharedInputOutput?: boolean
-  /** Per-install extra (external) model directories, used only when
-   *  `useSharedModels === false`. Never includes the install's own models dir.
-   *  Written to a per-install `--extra-model-paths-config` YAML at launch. */
+  /** When true (default), launch injects `--input-directory` from the global
+   *  settings; else uses the per-install `inputDir` below or ComfyUI's
+   *  `<installPath>/input` default. */
+  useSharedInput?: boolean
+  /** When true (default), launch injects `--output-directory` from the global
+   *  settings; else uses the per-install `outputDir` below or ComfyUI's
+   *  `<installPath>/output` default. */
+  useSharedOutput?: boolean
+  /** Per-install extra (external) model directories, always applied in
+   *  addition to the shared dirs (when those are enabled). Never includes the
+   *  install's own models dir. Written to the per-install
+   *  `--extra-model-paths-config` YAML at launch. */
   modelDirs?: string[]
-  /** External `modelDirs` entry promoted to primary (`is_default`). Null/absent
-   *  means the install's own models dir is primary (ComfyUI's built-in default). */
+  /** Effective dir promoted to primary (`is_default`); may point at a shared
+   *  or per-install dir. Null/absent means the first shared dir when shared
+   *  models is on, else the install's own models dir (ComfyUI's built-in
+   *  default). */
   modelDirsPrimary?: string | null
-  /** Per-install input dir, used only when `useSharedInputOutput === false`. */
+  /** Per-install input dir, used only when `useSharedInput === false`. */
   inputDir?: string
-  /** Per-install output dir, used only when `useSharedInputOutput === false`. */
+  /** Per-install output dir, used only when `useSharedOutput === false`. */
   outputDir?: string
   /** POC: starter template id the user picked in the install wizard. Durable
    *  record of intent; survives relaunches. */
@@ -68,21 +76,42 @@ export interface InstallationRecord {
 }
 
 /**
- * In-memory migration of legacy `useSharedPaths` → `useSharedModels` +
- * `useSharedInputOutput`. `useSharedModels` is forced true (users who isolated
- * paths almost certainly meant input/output, not their model library);
- * `useSharedInputOutput` copies the legacy value; the legacy key is stripped.
- * Applied on every `load()`; disk is cleaned on the next write.
+ * In-memory migrations of legacy shared-storage flags, applied on every
+ * `load()`; disk is cleaned on the next write.
+ *
+ * 1. `useSharedPaths` -> `useSharedModels` + `useSharedInputOutput`.
+ *    `useSharedModels` is forced true (users who isolated paths almost
+ *    certainly meant input/output, not their model library).
+ * 2. `useSharedInputOutput` -> `useSharedInput` + `useSharedOutput`
+ *    (per-folder granularity); both copy the legacy value.
+ *
+ * The steps chain, so a `useSharedPaths`-era record lands directly on the
+ * current per-folder schema.
  */
 function migrateRecord(record: InstallationRecord): InstallationRecord {
-  if (!('useSharedPaths' in record)) return record
-  const legacy = record.useSharedPaths as boolean | undefined
-  const { useSharedPaths: _drop, ...rest } = record
-  return {
-    ...rest,
-    useSharedModels: true,
-    useSharedInputOutput: typeof legacy === 'boolean' ? legacy : true
-  } as InstallationRecord
+  let rec = record
+  if ('useSharedPaths' in rec) {
+    const legacy = rec.useSharedPaths as boolean | undefined
+    const { useSharedPaths: _drop, ...rest } = rec
+    rec = {
+      ...rest,
+      useSharedModels: true,
+      useSharedInputOutput: typeof legacy === 'boolean' ? legacy : true
+    } as InstallationRecord
+  }
+  if ('useSharedInputOutput' in rec) {
+    const legacy = rec.useSharedInputOutput as boolean | undefined
+    const value = typeof legacy === 'boolean' ? legacy : true
+    const { useSharedInputOutput: _drop, ...rest } = rec
+    // A mixed-schema record (downgrade/upgrade cycle) may already carry the
+    // per-folder flags; those are newer, so they win over the legacy value.
+    rec = {
+      ...rest,
+      useSharedInput: typeof rest.useSharedInput === 'boolean' ? rest.useSharedInput : value,
+      useSharedOutput: typeof rest.useSharedOutput === 'boolean' ? rest.useSharedOutput : value
+    } as InstallationRecord
+  }
+  return rec
 }
 
 const dataPath = path.join(dataDir(), 'installations.json')
