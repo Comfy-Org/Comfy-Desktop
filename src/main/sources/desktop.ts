@@ -43,7 +43,8 @@ export const desktop: SourcePlugin = {
       // `skipSharedPaths` on the launch command is the real opt-out; these flags are
       // persisted as `false` only to keep the record's intent obvious in the JSON.
       useSharedModels: false,
-      useSharedInputOutput: false
+      useSharedInput: false,
+      useSharedOutput: false
     }
   },
 
@@ -162,7 +163,8 @@ export const desktop: SourcePlugin = {
     return {
       launchMode: 'external',
       useSharedModels: false,
-      useSharedInputOutput: false,
+      useSharedInput: false,
+      useSharedOutput: false,
       desktopExePath: findDesktopExecutable() || undefined
     }
   },

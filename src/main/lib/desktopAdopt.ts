@@ -1312,7 +1312,8 @@ async function runAdoption(
       // Shared input/output = off (workspace pinned to legacy basePath via
       // the per-install inputDir/outputDir fields below).
       useSharedModels: true,
-      useSharedInputOutput: false,
+      useSharedInput: false,
+      useSharedOutput: false,
       inputDir,
       outputDir,
       copiedFrom: 'legacy-desktop',

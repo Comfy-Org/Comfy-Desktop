@@ -816,6 +816,30 @@ describe('PanelApp', () => {
     expect(api.openInstancePicker).not.toHaveBeenCalled()
   })
 
+  it('opens global settings on its Storage tab when open-settings arrives with tab=global-storage', async () => {
+    // The instance pane's "Manage Shared Directories" link deep-links to
+    // Global Desktop Settings landed on Storage, not just the popup itself.
+    mountPanel()
+    await flushPromises()
+    const api = (
+      window as unknown as {
+        api: {
+          openInstancePicker: ReturnType<typeof vi.fn>
+          openGlobalSettings: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'open-settings', settingsTab: 'global-storage' })
+    )
+    await flushPromises()
+
+    expect(api.openGlobalSettings).toHaveBeenCalledTimes(1)
+    expect(api.openGlobalSettings).toHaveBeenCalledWith('storage')
+    expect(api.openInstancePicker).not.toHaveBeenCalled()
+  })
+
   it('shows the "Desktop Update Ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
     // Issue #488 — auto-on click on the 'ready' pill (or the auto
     // restart-prompt that fires on user-initiated download

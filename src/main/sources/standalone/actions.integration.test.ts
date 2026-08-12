@@ -81,7 +81,8 @@ function makeInstallation(
     // Isolate models / input / output to per-install dirs for this test
     // (no shared injection from global settings).
     useSharedModels: false,
-    useSharedInputOutput: false,
+    useSharedInput: false,
+    useSharedOutput: false,
     ...overrides
   } as InstallationRecord
 }

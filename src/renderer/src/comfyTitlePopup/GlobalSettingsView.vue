@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
@@ -30,6 +30,9 @@ interface ModelsDir {
 }
 
 interface Snapshot {
+  /** Tab to land on; non-null only on the open push (rebroadcasts carry
+   *  null so live data refreshes never retarget the user's tab). */
+  initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -87,6 +90,17 @@ const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
 type TabId = 'general' | 'updates' | 'storage' | 'advanced'
 const activeTab = ref<TabId>('general')
+
+// Each open pushes a fresh snapshot object, so watching by identity lets a
+// reopen re-apply its requested tab. Rebroadcasts carry initialTab null and
+// are ignored, so a live refresh never yanks the user off their tab.
+watch(
+  () => props.snapshot,
+  (snap) => {
+    if (snap.initialTab) activeTab.value = snap.initialTab
+  },
+  { immediate: true }
+)
 
 const tabs = computed(() => [
   { id: 'general' as const, label: props.snapshot.i18n.overview, icon: Settings2 },

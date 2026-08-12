@@ -958,7 +958,6 @@ defineExpose({
               <!-- Lazy-mounted via `v-else-if` so picker opens that never
                    visit Storage skip rendering the global model-dir UI. -->
               <StoragePane
-                :installation="installation"
                 :snapshot="globalSettingsSnapshot"
                 :sections="storageSections"
                 :pending-restart-field-ids="pendingRestartFieldIds"

@@ -74,6 +74,7 @@ interface GlobalSettingsModelsDir {
 }
 
 interface GlobalSettingsSnapshot {
+  initialTab: 'general' | 'updates' | 'storage' | 'advanced' | null
   generalFields: Record<string, unknown>[]
   languageFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -169,6 +170,7 @@ const pickerSnapshot = ref<PickerSnapshot>({
   storage: { sharedDirectoriesFields: [], modelsDirs: [], modelsSystemDefault: '' }
 })
 const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
+  initialTab: null,
   generalFields: [],
   languageFields: [],
   telemetryFields: [],

@@ -91,6 +91,9 @@ export interface PopupGlobalSettingsModelsDir {
 /** Snapshot for the global-settings popup; field arrays are loose-typed (the
  *  renderer casts to `DetailField` on receipt). */
 export interface PopupGlobalSettingsSnapshot {
+  /** Tab to land on; non-null only on the open push (rebroadcasts carry
+   *  null so live data refreshes never retarget the user's tab). */
+  initialTab: 'general' | 'updates' | 'storage' | 'advanced' | null
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
   desktopUpdateFields: Record<string, unknown>[]
@@ -171,8 +174,9 @@ export type PopupDownloadAction =
   | { action: 'retry'; url: string }
   | { action: 'clear-finished' }
 
-/** Settings tabs the popup can deep-link the host's panelView into. */
-export type PopupSettingsTab = 'comfy' | 'directories' | 'downloads' | 'global'
+/** Settings tabs the popup can deep-link the host's panelView into.
+ *  `'global-storage'` opens Global Desktop Settings on its Storage tab. */
+export type PopupSettingsTab = 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
 
 export interface ComfyTitlePopupBridge {
   /** Host OS, for OS-conditional copy without IPC. */
@@ -414,6 +418,16 @@ function isPopupConfig(value: unknown): value is TitlePopupConfig {
 function isGlobalSettingsSnapshot(value: unknown): value is PopupGlobalSettingsSnapshot {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
+  const tab = v['initialTab']
+  if (
+    tab !== null &&
+    tab !== 'general' &&
+    tab !== 'updates' &&
+    tab !== 'storage' &&
+    tab !== 'advanced'
+  ) {
+    return false
+  }
   if (!Array.isArray(v['generalFields'])) return false
   if (!Array.isArray(v['telemetryFields'])) return false
   if (!Array.isArray(v['desktopUpdateFields'])) return false
