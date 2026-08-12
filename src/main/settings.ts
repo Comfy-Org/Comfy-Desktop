@@ -41,6 +41,9 @@ export interface KnownSettings {
    *  (guards against accidentally killing a ComfyUI that took minutes to boot).
    *  Default false — windows close without a prompt. */
   confirmBeforeClosingWindow?: boolean
+  /** When true (default), launching another local instance while one is running
+   *  or starting asks the user whether to close the existing instances first. */
+  warnBeforeRunningMultipleInstances?: boolean
   pypiMirror?: string
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
@@ -217,6 +220,10 @@ const SETTINGS_SCHEMA = {
   confirmBeforeClosingWindow: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
+  },
+  warnBeforeRunningMultipleInstances: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
   },
   // Mirror URL can be a private/identifying endpoint — presence only.
   pypiMirror: { nullable: false, telemetry: { policy: 'presence' } },

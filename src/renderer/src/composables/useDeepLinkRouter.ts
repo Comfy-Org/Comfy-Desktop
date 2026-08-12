@@ -24,7 +24,7 @@ interface DeepLinkRouterOpts {
    *  missing action + reveal handshake). */
   pickInstallFromPicker?: (
     installation: Installation,
-    opts?: { startupRestore?: boolean }
+    opts?: { startupRestore?: boolean; isRestart?: boolean }
   ) => Promise<void> | void
   /** Picker "More" menu selected an install-level action; dispatches
    *  through the same `useInstallContextMenu` path the dashboard kebab uses. */
@@ -110,7 +110,8 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             return
           }
           await opts.pickInstallFromPicker?.(inst, {
-            startupRestore: payload.startupRestore === true
+            startupRestore: payload.startupRestore === true,
+            isRestart: payload.isRestart === true
           })
           return
         }

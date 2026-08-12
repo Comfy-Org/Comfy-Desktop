@@ -12,7 +12,14 @@ export function useLocalInstanceGuard() {
 
   // Returns true to proceed, false if cancelled. On replace, stops the
   // running instance(s) before returning.
-  async function checkBeforeLaunch(targetId: string): Promise<boolean> {
+  async function checkBeforeLaunch(
+    targetId: string,
+    opts: { isRestart?: boolean } = {}
+  ): Promise<boolean> {
+    // A restart restores the user's existing multi-instance arrangement.
+    // They already accepted that arrangement when launching the instances.
+    if (opts.isRestart) return true
+
     const target = installationStore.installations.find((i) => i.id === targetId)
     if (target && target.sourceCategory !== 'local') return true
 
@@ -37,11 +44,17 @@ export function useLocalInstanceGuard() {
 
     if (runningLocal.length === 0) return true
 
+    const warningEnabled = await window.api
+      .getSetting('warnBeforeRunningMultipleInstances')
+      .catch(() => true)
+    if (warningEnabled === false) return true
+
     // Two non-cancel actions: primary "Close & Launch", secondary "Run All"
     // (side by side). Header ✕ is the dismiss since the footer is full.
     const choice = await dialogs.confirm({
       title: t('launch.instanceRunningTitle'),
       message: t('launch.instanceRunningMessage'),
+      hint: t('launch.instanceRunningPreferencesHint'),
       messageDetails: [
         { label: t('launch.instanceRunningListLabel'), items: runningLocal.map((r) => r.name) }
       ],

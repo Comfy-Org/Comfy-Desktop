@@ -21,6 +21,7 @@ vi.stubGlobal('window', {
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(),
     onInstallationsVersionsUpdated: vi.fn(),
+    getSetting: vi.fn().mockResolvedValue(undefined),
     stopComfyUI: vi.fn().mockResolvedValue(undefined),
     closeComfyWindow: vi.fn().mockResolvedValue(true)
   }
@@ -93,8 +94,71 @@ describe('useLocalInstanceGuard', () => {
 
     const result = await guard.checkBeforeLaunch('target')
 
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ hint: 'launch.instanceRunningPreferencesHint' })
+    )
+    expect(result).toBe(true)
+  })
+
+  it('allows multiple local instances without prompting when the warning is disabled', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'target' }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
+    )
+    sessionStore.runningInstances.set('running-1', {
+      installationId: 'running-1',
+      installationName: 'Running Install',
+      mode: 'window'
+    })
+    vi.mocked(window.api.getSetting).mockResolvedValueOnce(false)
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
+    expect(result).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
+  })
+
+  it('prompts when reading the warning preference fails', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'target' }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
+    )
+    sessionStore.runningInstances.set('running-1', {
+      installationId: 'running-1',
+      installationName: 'Running Install',
+      mode: 'window'
+    })
+    vi.mocked(window.api.getSetting).mockRejectedValueOnce(new Error('settings unavailable'))
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
     expect(mockConfirm).toHaveBeenCalled()
     expect(result).toBe(true)
+  })
+
+  it('allows a restart without prompting or stopping other local instances', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'target' }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
+    )
+    sessionStore.runningInstances.set('running-1', {
+      installationId: 'running-1',
+      installationName: 'Running Install',
+      mode: 'window'
+    })
+    vi.mocked(window.api.getSetting).mockResolvedValueOnce(true)
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target', { isRestart: true })
+
+    expect(result).toBe(true)
+    expect(window.api.getSetting).not.toHaveBeenCalled()
+    expect(mockConfirm).not.toHaveBeenCalled()
+    expect(window.api.stopComfyUI).not.toHaveBeenCalled()
+    expect(window.api.closeComfyWindow).not.toHaveBeenCalled()
   })
 
   it('prompts when another local instance is launching (not yet fully booted)', async () => {
