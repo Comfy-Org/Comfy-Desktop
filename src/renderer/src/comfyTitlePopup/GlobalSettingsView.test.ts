@@ -275,7 +275,7 @@ describe('GlobalSettingsView', () => {
     expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
-  it('Storage tab appends a duplicate shared models directory', async () => {
+  it('Storage tab ignores adding a directory that is already listed', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/mnt/extra/models'
     const wrapper = mountView()
@@ -286,9 +286,36 @@ describe('GlobalSettingsView', () => {
     await nextTick()
     await wrapper.find('.models-dir-add').trigger('click')
     await flushPromises()
-    expect(bridge.setModelsDirsCalls).toEqual([
-      ['/home/u/ComfyUI/models', '/mnt/extra/models', '/mnt/extra/models']
-    ])
+    expect(bridge.setModelsDirsCalls).toEqual([])
+  })
+
+  it('Storage tab ignores adding a listed directory with different separators or trailing slash', async () => {
+    const bridge = installMockBridge()
+    bridge.browseFolderReturn = '/mnt/extra/models/'
+    const wrapper = mountView()
+    await wrapper
+      .findAll('.gs-tab')
+      .find((t) => t.text() === 'Storage')!
+      .trigger('click')
+    await nextTick()
+    await wrapper.find('.models-dir-add').trigger('click')
+    await flushPromises()
+    expect(bridge.setModelsDirsCalls).toEqual([])
+  })
+
+  it('Storage tab ignores re-pointing a models dir at another listed directory', async () => {
+    const bridge = installMockBridge()
+    bridge.browseFolderReturn = '/mnt/extra/models'
+    const wrapper = mountView()
+    await wrapper
+      .findAll('.gs-tab')
+      .find((t) => t.text() === 'Storage')!
+      .trigger('click')
+    await nextTick()
+    const browseBtns = wrapper.findAll('.models-dir-row .models-dir-action')
+    await browseBtns[0]!.trigger('click')
+    await flushPromises()
+    expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
   it('Storage tab removes a non-primary shared models directory after confirmation', async () => {
