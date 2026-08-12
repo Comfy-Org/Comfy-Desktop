@@ -48,10 +48,25 @@ describe('writeFileSafe', () => {
   })
 
   it('durable: fsyncs the temp file before the rename publishes it', () => {
-    const fsyncSpy = vi.spyOn(fs, 'fsyncSync')
+    const order: string[] = []
+    const realFsync = fs.fsyncSync.bind(fs)
+    vi.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
+      order.push('fsync')
+      realFsync(fd)
+    })
+    const realRename = fs.renameSync.bind(fs)
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      order.push('rename')
+      realRename(from, to)
+    })
+
     writeFileSafe(filePath, 'data', { durable: true })
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('data')
-    expect(fsyncSpy).toHaveBeenCalled()
+    // The temp-file fsync must land BEFORE the rename publishes the file;
+    // fsyncing only after would leave a window where a power cut publishes
+    // unsynced bytes. (A post-rename directory fsync may add more entries.)
+    expect(order[0]).toBe('fsync')
+    expect(order).toContain('rename')
   })
 
   it('retries the rename through transient Windows locks (EPERM/EACCES/EBUSY)', () => {
@@ -122,7 +137,14 @@ describe('readFileSafe', () => {
     }) as typeof fs.readFileSync)
     const copySpy = vi.spyOn(fs, 'copyFileSync')
 
-    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'stale backup' })
+    // `primaryUnreadable` tells read-modify-write callers to fail closed:
+    // saving state derived from this stale backup would overwrite the newer
+    // locked primary once the lock clears.
+    expect(readFileSafe(filePath)).toEqual({
+      kind: 'data',
+      data: 'stale backup',
+      primaryUnreadable: true
+    })
     // The primary still exists and is newer - restoring .bak over it would
     // roll back the most recent writes (the bug behind the update loop).
     expect(copySpy).not.toHaveBeenCalled()
@@ -219,7 +241,11 @@ describe('readFileSafeAsync', () => {
     }) as typeof fs.promises.readFile)
     const copySpy = vi.spyOn(fs.promises, 'copyFile')
 
-    expect(await readFileSafeAsync(filePath)).toEqual({ kind: 'data', data: 'stale backup' })
+    expect(await readFileSafeAsync(filePath)).toEqual({
+      kind: 'data',
+      data: 'stale backup',
+      primaryUnreadable: true
+    })
     expect(copySpy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('newer primary')

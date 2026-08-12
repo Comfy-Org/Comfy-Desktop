@@ -59,13 +59,16 @@ export function getSafeFileDiagnostics(): { bakFallbacks: number } {
 }
 
 /** Outcome of a single-file read with transient-lock retries.
- *  - `data`: file read fine and was non-empty.
+ *  - `data`: file read fine and was non-empty. `primaryUnreadable` is set when
+ *    the content came from `.bak` because the primary EXISTS but could not be
+ *    read - the primary is typically newer, so read-modify-write callers must
+ *    fail closed instead of saving the stale backup state over it.
  *  - `absent`: file does not exist or is empty - the "genuinely gone" cases.
  *  - `unreadable`: file EXISTS but could not be read (lock outlasted the retry
  *    budget, or a non-transient error). Callers must NOT treat this as absent:
  *    the file's real content is unknown. */
 export type SafeReadOutcome =
-  | { kind: 'data'; data: string }
+  | { kind: 'data'; data: string; primaryUnreadable?: true }
   | { kind: 'absent' }
   | { kind: 'unreadable' }
 
@@ -178,26 +181,44 @@ export function writeFileSafe(
  *  still exists and is typically NEWER than `.bak`, so restoring would roll
  *  back the most recent writes (issue #1367: that rollback erases the
  *  startup-update loop-breaker marker). Locked reads are retried, then served
- *  from `.bak` WITHOUT restoring. */
+ *  from `.bak` WITHOUT restoring, tagged `primaryUnreadable` so callers about
+ *  to write back must fail closed (see `SafeReadOutcome`). */
 export function readFileSafe(filePath: string): SafeReadOutcome {
-  const bakPath = filePath + '.bak'
   const primary = readFileWithRetrySync(filePath)
   if (primary.kind === 'data') return primary
 
-  const bak = readFileWithRetrySync(bakPath)
+  const bakPath = filePath + '.bak'
+  const { outcome, restoreBak } = resolveBakFallback(primary, readFileWithRetrySync(bakPath))
+  if (restoreBak) {
+    try {
+      fs.copyFileSync(bakPath, filePath)
+    } catch {}
+  }
+  return outcome
+}
+
+/** Fallback policy shared by readFileSafe / readFileSafeAsync once the primary
+ *  read has missed: which content to serve, whether `.bak` may be restored
+ *  over the primary (only when the primary is genuinely absent), and tagging
+ *  `.bak` data served for an unreadable primary (see `SafeReadOutcome`). */
+function resolveBakFallback(
+  primary: { kind: 'absent' } | { kind: 'unreadable' },
+  bak: SafeReadOutcome
+): { outcome: SafeReadOutcome; restoreBak: boolean } {
   if (bak.kind === 'data') {
     _bakFallbacks++
-    if (primary.kind === 'absent') {
-      try {
-        fs.copyFileSync(bakPath, filePath)
-      } catch {}
+    return {
+      outcome: primary.kind === 'unreadable' ? { ...bak, primaryUnreadable: true } : bak,
+      restoreBak: primary.kind === 'absent'
     }
-    return bak
   }
-
-  return primary.kind === 'unreadable' || bak.kind === 'unreadable'
-    ? { kind: 'unreadable' }
-    : { kind: 'absent' }
+  return {
+    outcome:
+      primary.kind === 'unreadable' || bak.kind === 'unreadable'
+        ? { kind: 'unreadable' }
+        : { kind: 'absent' },
+    restoreBak: false
+  }
 }
 
 /** Async twin of `writeTmpSync`. */
@@ -254,22 +275,15 @@ export async function writeFileSafeAsync(
  *  genuinely absent, and report `unreadable` rather than absent when a file
  *  exists but cannot be read. */
 export async function readFileSafeAsync(filePath: string): Promise<SafeReadOutcome> {
-  const bakPath = filePath + '.bak'
   const primary = await readFileWithRetryAsync(filePath)
   if (primary.kind === 'data') return primary
 
-  const bak = await readFileWithRetryAsync(bakPath)
-  if (bak.kind === 'data') {
-    _bakFallbacks++
-    if (primary.kind === 'absent') {
-      try {
-        await fs.promises.copyFile(bakPath, filePath)
-      } catch {}
-    }
-    return bak
+  const bakPath = filePath + '.bak'
+  const { outcome, restoreBak } = resolveBakFallback(primary, await readFileWithRetryAsync(bakPath))
+  if (restoreBak) {
+    try {
+      await fs.promises.copyFile(bakPath, filePath)
+    } catch {}
   }
-
-  return primary.kind === 'unreadable' || bak.kind === 'unreadable'
-    ? { kind: 'unreadable' }
-    : { kind: 'absent' }
+  return outcome
 }

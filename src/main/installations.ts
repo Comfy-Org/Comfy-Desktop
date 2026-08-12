@@ -181,21 +181,27 @@ async function loadOutcome(): Promise<{ records: InstallationRecord[]; unreadabl
   const read = await readFileSafeAsync(dataPath)
   if (read.kind === 'unreadable') return { records: [], unreadable: true }
   if (read.kind === 'data') {
+    // Stale .bak content standing in for a locked primary is fine to READ,
+    // but flags the outcome unreadable so mutations fail closed instead of
+    // saving it over the newer primary.
+    const unreadable = read.primaryUnreadable === true
     try {
       const parsed: unknown = JSON.parse(read.data)
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return { records: (parsed as InstallationRecord[]).map(migrateRecord), unreadable: false }
+        return { records: (parsed as InstallationRecord[]).map(migrateRecord), unreadable }
       }
     } catch {}
+    return { records: [], unreadable }
   }
   return { records: [], unreadable: false }
 }
 
 /** Load for a read-modify-write cycle. Throws when installations.json EXISTS
- *  but cannot be read right now (e.g. an AV lock outlasting the retry budget,
- *  with no readable .bak): the follow-up save() would replace every record
- *  with a list built from nothing, so the mutation must fail closed instead.
- *  Read-only callers use `load()`, which degrades to an empty list. */
+ *  but cannot be read right now (e.g. an AV lock outlasting the retry budget),
+ *  whether the read degraded to bare defaults or to stale .bak content: the
+ *  follow-up save() would replace the intact, newer records, so the mutation
+ *  must fail closed instead. Read-only callers use `load()`, which degrades
+ *  gracefully. */
 async function loadForWrite(): Promise<InstallationRecord[]> {
   const { records, unreadable } = await loadOutcome()
   if (unreadable) {

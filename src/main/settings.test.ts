@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-settings-'))
 const homePath = path.join(tmpRoot, 'home')
@@ -642,5 +642,39 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     for (const value of Object.values(props)) {
       expect(['boolean', 'number', 'string']).toContain(value === null ? 'boolean' : typeof value)
     }
+  })
+})
+
+describe('locked settings.json served from .bak (issue #1367)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('serves the stale .bak for reads but refuses to persist over the locked primary', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: 'https://newer.example' }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ pypiMirror: 'https://stale.example' }))
+
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM' // lock never clears
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+
+    // Reads degrade to the backup content...
+    expect(settings.get('pypiMirror')).toBe('https://stale.example')
+    // ...but a write is dropped: persisting state derived from the stale
+    // backup would overwrite the newer primary once the lock clears.
+    settings.set('confirmBeforeClosingWindow', true)
+
+    vi.restoreAllMocks()
+    expect(readPersistedSettings()).toEqual({ pypiMirror: 'https://newer.example' })
   })
 })

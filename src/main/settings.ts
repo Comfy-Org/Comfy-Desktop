@@ -399,20 +399,23 @@ function load(): Settings {
   return loadOutcome().settings
 }
 
-/** Load settings plus whether the file was UNREADABLE: it exists but could not
- *  be read (e.g. an AV lock outlasting the retry budget) and no readable .bak
- *  stood in. An unreadable file is served as bare defaults for this call, and
- *  `set()` refuses to persist while that holds - the file's real content is
- *  unknown, so saving anything derived from defaults would overwrite the
- *  user's intact settings (the failure environment of issue #1367). */
+/** Load settings plus whether settings.json must NOT be rewritten right now:
+ *  it exists but could not be read (e.g. an AV lock outlasting the retry
+ *  budget), so this call is serving bare defaults or stale `.bak` content in
+ *  its place. `set()` refuses to persist while that holds - the file's real
+ *  content is unknown, so saving anything derived from the stand-in would
+ *  overwrite the user's intact, newer settings (the failure environment of
+ *  issue #1367). */
 function loadOutcome(): { settings: Settings; unreadable: boolean } {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
+  let unreadable = false
   const read = readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
     return { settings: { ...defaults }, unreadable: true }
   }
   if (read.kind === 'data') {
+    unreadable = read.primaryUnreadable === true
     try {
       const obj: unknown = JSON.parse(read.data)
       if (obj && typeof obj === 'object' && !Array.isArray(obj))
@@ -571,8 +574,8 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       changed = true
     }
   }
-  if (changed) save(result)
-  return { settings: result, unreadable: false }
+  if (changed && !unreadable) save(result)
+  return { settings: result, unreadable }
 }
 
 function save(settings: Settings): void {
@@ -612,9 +615,9 @@ export function set<K extends string>(
   const { settings, unreadable } = loadOutcome()
   if (unreadable) {
     // Fail closed (issue #1367): settings.json exists but can't be read right
-    // now, so `settings` holds bare defaults. Persisting would replace the
-    // user's intact file with defaults-plus-one-key; dropping this write is
-    // the lesser harm.
+    // now, so `settings` holds bare defaults or stale .bak content. Persisting
+    // would replace the user's intact, newer file; dropping this write is the
+    // lesser harm.
     console.warn(`Settings: not persisting '${key}' - settings.json is currently unreadable`)
     return
   }
