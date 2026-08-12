@@ -457,6 +457,7 @@ function handleRevealPath(path: string): void {
 
       <ModelsDirList
         :dirs="modelDirRows"
+        :add-label="t('models.addInstanceDir', 'Add Directory')"
         @change="handleChangeModelDir"
         @remove="handleRemoveModelDir"
         @make-primary="handleMakeModelPrimary"

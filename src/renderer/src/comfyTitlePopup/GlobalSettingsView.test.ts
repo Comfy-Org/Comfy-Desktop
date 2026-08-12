@@ -246,6 +246,17 @@ describe('GlobalSettingsView', () => {
     expect(bridge.setModelsDirsCalls).toEqual([['/mnt/new/models', '/mnt/extra/models']])
   })
 
+  it('Storage tab labels the add button "Add Shared Directory"', async () => {
+    installMockBridge()
+    const wrapper = mountView()
+    await wrapper
+      .findAll('.gs-tab')
+      .find((t) => t.text() === 'Storage')!
+      .trigger('click')
+    await nextTick()
+    expect(wrapper.find('.models-dir-add').text()).toBe('Add Shared Directory')
+  })
+
   it('Storage tab adds a shared models directory through the bridge', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/new/models'

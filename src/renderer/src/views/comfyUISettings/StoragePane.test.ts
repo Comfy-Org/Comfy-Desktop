@@ -526,6 +526,13 @@ describe('StoragePane', () => {
       expect(items[0]!.text()).toContain('Use for Model Downloads')
     })
 
+    it('labels the add button "Add Directory", not the shared-directory wording', async () => {
+      installMockBridge()
+      const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
+      await nextTick()
+      expect(wrapper.find('.models-dir-add').text()).toBe('Add Directory')
+    })
+
     it('emits update-field with the appended dir when adding', async () => {
       const bridge = installMockBridge()
       bridge.browseFolderReturn = '/c/models'

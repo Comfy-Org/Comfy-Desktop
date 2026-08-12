@@ -36,6 +36,9 @@ interface ModelsDir {
 
 interface Props {
   dirs: ModelsDir[]
+  /** Add-button label; defaults to the shared-directory wording used by
+   *  Desktop Settings. The per-instance pane passes plain "Add Directory". */
+  addLabel?: string
 }
 
 const props = defineProps<Props>()
@@ -273,7 +276,7 @@ const rows = computed(() =>
 
     <button type="button" class="models-dir-add" @click="emit('add')">
       <Plus :size="14" aria-hidden="true" />
-      <span>{{ t('models.addDir', 'Add Shared Directory') }}</span>
+      <span>{{ props.addLabel ?? t('models.addDir', 'Add Shared Directory') }}</span>
     </button>
   </div>
 </template>
