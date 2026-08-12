@@ -190,22 +190,31 @@ async function loadOutcome(): Promise<{ records: InstallationRecord[]; unreadabl
       if (Array.isArray(parsed) && parsed.length > 0) {
         return { records: (parsed as InstallationRecord[]).map(migrateRecord), unreadable }
       }
-    } catch {}
+      // Readable and parseable but not a populated array (e.g. `[]`): nothing
+      // to lose, so a mutation may proceed.
+    } catch (err) {
+      // Readable but corrupt: the real records are unknown, so a mutation
+      // must not replace them with a list built from nothing.
+      console.warn('Installations: failed to parse installations JSON:', (err as Error).message)
+      return { records: [], unreadable: true }
+    }
     return { records: [], unreadable }
   }
   return { records: [], unreadable: false }
 }
 
 /** Load for a read-modify-write cycle. Throws when installations.json EXISTS
- *  but cannot be read right now (e.g. an AV lock outlasting the retry budget),
- *  whether the read degraded to bare defaults or to stale .bak content: the
- *  follow-up save() would replace the intact, newer records, so the mutation
- *  must fail closed instead. Read-only callers use `load()`, which degrades
- *  gracefully. */
+ *  but its records cannot be recovered right now - unreadable (e.g. an AV lock
+ *  outlasting the retry budget), standing in as stale .bak content, or
+ *  readable but corrupt: the follow-up save() would replace the intact records,
+ *  so the mutation must fail closed instead. Read-only callers use `load()`,
+ *  which degrades gracefully. */
 async function loadForWrite(): Promise<InstallationRecord[]> {
   const { records, unreadable } = await loadOutcome()
   if (unreadable) {
-    throw new Error('installations.json exists but is currently unreadable; refusing to modify it')
+    throw new Error(
+      'installations.json exists but its records cannot be recovered right now; refusing to modify it'
+    )
   }
   return records
 }

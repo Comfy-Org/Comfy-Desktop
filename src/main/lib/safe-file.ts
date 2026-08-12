@@ -47,6 +47,19 @@ function fsyncDirBestEffort(dirPath: string): void {
   } catch {}
 }
 
+/** Async twin of `fsyncDirBestEffort`, so the async write path never blocks
+ *  the event loop on a slow (busy or network-backed) volume. */
+async function fsyncDirBestEffortAsync(dirPath: string): Promise<void> {
+  try {
+    const handle = await fs.promises.open(dirPath, 'r')
+    try {
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+  } catch {}
+}
+
 /** Times a read fell back to `.bak` content (primary missing, empty, or locked
  *  past the retry budget - the counter does not distinguish which). Exposed so
  *  telemetry can flag machines whose settings reads are being served from the
@@ -255,7 +268,7 @@ export async function writeFileSafeAsync(
   for (let attempt = 0; ; attempt++) {
     try {
       await fs.promises.rename(tmpPath, filePath)
-      if (options.durable) fsyncDirBestEffort(path.dirname(filePath))
+      if (options.durable) await fsyncDirBestEffortAsync(path.dirname(filePath))
       return
     } catch (err) {
       if (isTransientFsError(err) && attempt < RENAME_RETRIES) {
