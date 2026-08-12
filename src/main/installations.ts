@@ -166,28 +166,61 @@ function maybeSeedFromEnv(): void {
   try {
     JSON.parse(seed) // validate before writing
     fs.mkdirSync(path.dirname(dataPath), { recursive: true })
-    writeFileSafe(dataPath, seed, true)
+    writeFileSafe(dataPath, seed, { backup: true })
   } catch (err) {
     console.warn('Installations: failed to apply E2E_INSTALLATIONS_SEED:', (err as Error).message)
   }
 }
 
 async function load(): Promise<InstallationRecord[]> {
+  return (await loadOutcome()).records
+}
+
+async function loadOutcome(): Promise<{ records: InstallationRecord[]; unreadable: boolean }> {
   maybeSeedFromEnv()
-  const raw = await readFileSafeAsync(dataPath)
-  if (raw) {
+  const read = await readFileSafeAsync(dataPath)
+  if (read.kind === 'unreadable') return { records: [], unreadable: true }
+  if (read.kind === 'data') {
+    // Stale .bak content standing in for a locked primary is fine to READ,
+    // but flags the outcome unreadable so mutations fail closed instead of
+    // saving it over the newer primary.
+    const unreadable = read.primaryUnreadable === true
     try {
-      const parsed: unknown = JSON.parse(raw)
+      const parsed: unknown = JSON.parse(read.data)
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return (parsed as InstallationRecord[]).map(migrateRecord)
+        return { records: (parsed as InstallationRecord[]).map(migrateRecord), unreadable }
       }
-    } catch {}
+      // Readable and parseable but not a populated array (e.g. `[]`): nothing
+      // to lose, so a mutation may proceed.
+    } catch (err) {
+      // Readable but corrupt: the real records are unknown, so a mutation
+      // must not replace them with a list built from nothing.
+      console.warn('Installations: failed to parse installations JSON:', (err as Error).message)
+      return { records: [], unreadable: true }
+    }
+    return { records: [], unreadable }
   }
-  return []
+  return { records: [], unreadable: false }
+}
+
+/** Load for a read-modify-write cycle. Throws when installations.json EXISTS
+ *  but its records cannot be recovered right now - unreadable (e.g. an AV lock
+ *  outlasting the retry budget), standing in as stale .bak content, or
+ *  readable but corrupt: the follow-up save() would replace the intact records,
+ *  so the mutation must fail closed instead. Read-only callers use `load()`,
+ *  which degrades gracefully. */
+async function loadForWrite(): Promise<InstallationRecord[]> {
+  const { records, unreadable } = await loadOutcome()
+  if (unreadable) {
+    throw new Error(
+      'installations.json exists but its records cannot be recovered right now; refusing to modify it'
+    )
+  }
+  return records
 }
 
 async function save(installations: InstallationRecord[]): Promise<void> {
-  await writeFileSafeAsync(dataPath, JSON.stringify(installations, null, 2), true)
+  await writeFileSafeAsync(dataPath, JSON.stringify(installations, null, 2), { backup: true })
 }
 
 export async function list(): Promise<InstallationRecord[]> {
@@ -220,7 +253,7 @@ export function uniqueName(
 
 export async function add(installation: Record<string, unknown>): Promise<InstallationRecord> {
   const entry = await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     installation.name = uniqueName(installation.name as string, installations)
     const entry = {
       id: nextInstallId(),
@@ -237,7 +270,7 @@ export async function add(installation: Record<string, unknown>): Promise<Instal
 
 export async function remove(id: string): Promise<void> {
   await enqueue(async () => {
-    const installations = (await load()).filter((i) => i.id !== id)
+    const installations = (await loadForWrite()).filter((i) => i.id !== id)
     await save(installations)
   })
   installationEvents.emit('changed')
@@ -248,7 +281,7 @@ export async function update(
   data: Record<string, unknown>
 ): Promise<InstallationRecord | null> {
   const updated = await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     const index = installations.findIndex((i) => i.id === id)
     if (index === -1) return null
     const existing = installations[index]!
@@ -269,7 +302,7 @@ export async function get(id: string): Promise<InstallationRecord | null> {
 
 export async function reorder(orderedIds: string[]): Promise<void> {
   await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     const byId: Record<string, InstallationRecord> = Object.fromEntries(
       installations.map((i) => [i.id, i])
     )
@@ -287,7 +320,7 @@ export async function reorder(orderedIds: string[]): Promise<void> {
 
 export async function ensureExists(sourceId: string, data: Record<string, unknown>): Promise<void> {
   const added = await enqueue(async () => {
-    const existing = await load()
+    const existing = await loadForWrite()
     if (existing.some((i) => i.sourceId === sourceId)) return false
     existing.push({
       id: nextInstallId(),
@@ -306,7 +339,7 @@ export async function ensureExists(sourceId: string, data: Record<string, unknow
  *  entry exists. */
 export async function enforceCloudName(): Promise<void> {
   const updated = await enqueue(async () => {
-    const all = await load()
+    const all = await loadForWrite()
     const index = all.findIndex((i) => i.sourceId === CLOUD_SOURCE_ID)
     if (index === -1) return null
     const existing = all[index]!
@@ -333,7 +366,7 @@ export async function markLaunched(
   resolveCategory?: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
   const updated = await enqueue(async () => {
-    const list = await load()
+    const list = await loadForWrite()
     const index = list.findIndex((i) => i.id === installationId)
     if (index === -1) return null
     const existing = list[index]!
@@ -366,7 +399,7 @@ export async function markLaunched(
  */
 export async function clearPendingTemplateOpen(installationId: string): Promise<boolean> {
   return enqueue(async () => {
-    const list = await load()
+    const list = await loadForWrite()
     const index = list.findIndex((i) => i.id === installationId)
     if (index === -1) return false
     const existing = list[index]!
@@ -448,7 +481,7 @@ export async function resolveAutoLaunchInstall(
 
 export async function seedDefaults(defaults: Record<string, unknown>[]): Promise<void> {
   const seeded = await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     if (installations.length > 0) return false
     for (const entry of defaults) {
       installations.push({

@@ -761,3 +761,67 @@ describe('installations.uniqueName', () => {
     expect(uniqueName('ComfyUI', existing, 'id-0')).toBe('ComfyUI')
   })
 })
+
+describe('mutations fail closed when installations.json cannot be recovered (issue #1367)', () => {
+  it('serves stale .bak records for reads but rejects mutations', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const dataPath = path.join(userDataPath, 'installations.json')
+    // A stale backup that predates a later rename of the install.
+    fs.copyFileSync(dataPath, dataPath + '.bak')
+
+    const realRead = fs.promises.readFile.bind(fs.promises) as typeof fs.promises.readFile
+    vi.spyOn(fs.promises, 'readFile').mockImplementation(((
+      p: Parameters<typeof fs.promises.readFile>[0],
+      opts?: unknown
+    ) => {
+      if (p === dataPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM' // lock never clears
+        return Promise.reject(err)
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.promises.readFile)
+
+    // Reads degrade to the backup records...
+    expect(await installations.list()).toHaveLength(1)
+    // ...but a read-modify-write must fail closed: saving a list built from
+    // the stale backup would overwrite the newer primary once the lock clears.
+    await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
+      /cannot be recovered/
+    )
+
+    vi.restoreAllMocks()
+    const persisted = await installations.get(entry.id)
+    expect(persisted!.name).toBe('Local A')
+  })
+
+  it('rejects mutations when installations.json is readable but corrupt', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const dataPath = path.join(userDataPath, 'installations.json')
+    // Truncated write / interrupted power cycle: readable, but not JSON.
+    const corrupt = fs.readFileSync(dataPath, 'utf-8').slice(0, 20)
+    fs.writeFileSync(dataPath, corrupt)
+    fs.rmSync(dataPath + '.bak', { force: true })
+
+    // Reads degrade to an empty list...
+    expect(await installations.list()).toEqual([])
+    // ...but a mutation must not replace the corrupt file with a list built
+    // from nothing, losing every prior record.
+    await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
+      /cannot be recovered/
+    )
+    expect(fs.readFileSync(dataPath, 'utf-8')).toBe(corrupt)
+  })
+})
