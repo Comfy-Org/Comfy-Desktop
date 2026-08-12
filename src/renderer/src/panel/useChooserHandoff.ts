@@ -28,10 +28,11 @@ export interface ChooserHandoffApi {
   /** Shared launch path for chooser-tile clicks and first-use auto-launch. */
   performChooserLaunch: (
     installation: Installation,
-    onMissingLaunchAction?: () => void
+    onMissingLaunchAction?: () => void,
+    opts?: { isRestart?: boolean }
   ) => Promise<ChooserLaunchOutcome>
   /** Bound to ChooserView's `pick` emit. */
-  handleChooserPick: (installation: Installation) => Promise<void>
+  handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
   /** Bound to ChooserView's `show-new-install` empty-state CTA. */
   handleChooserShowNewInstall: () => void
   /** Picker variant of `performChooserLaunch` without
@@ -89,7 +90,8 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
    *  auto-launch → no-op (the chained install already finished). */
   async function performChooserLaunch(
     installation: Installation,
-    onMissingLaunchAction: () => void = () => {}
+    onMissingLaunchAction: () => void = () => {},
+    opts?: { isRestart?: boolean }
   ): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
       // Focus the running window and leave the chooser host alive.
@@ -107,17 +109,25 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     // staking pre-guard could overwrite a sibling window's claim and attach
     // the install to the wrong window.
     await executeChooserAction(installation, launchAction, {
-      onGuardsPassed: () => prepareChooserHostHandoff(installation.id)
+      onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
+      isRestart: opts?.isRestart === true
     })
     return 'launched'
   }
 
-  async function handleChooserPick(installation: Installation): Promise<void> {
+  async function handleChooserPick(
+    installation: Installation,
+    launchOpts?: { isRestart?: boolean }
+  ): Promise<void> {
     // On missing launch action, bounce into the new-install flow in this
     // same host rather than a separate window.
-    await performChooserLaunch(installation, () => {
-      void opts.switchPanel('new-install', 'chooser_pick')
-    })
+    await performChooserLaunch(
+      installation,
+      () => {
+        void opts.switchPanel('new-install', 'chooser_pick')
+      },
+      { isRestart: launchOpts?.isRestart === true }
+    )
   }
 
   /** Picker launch path. Like `performChooserLaunch` but skips

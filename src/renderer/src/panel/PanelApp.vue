@@ -294,7 +294,9 @@ useDeepLinkRouter({
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
       } else {
-        await chooserHandoff.handleChooserPick(inst)
+        await chooserHandoff.handleChooserPick(inst, {
+          isRestart: pickOpts?.isRestart === true
+        })
       }
     } else {
       await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
