@@ -1082,25 +1082,34 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   // Admitting a job (or worse, reporting `alreadyPresent` for such a file)
   // while that pass is still running would certify a truncated model as
   // complete - the exact corruption #1322 is about. All callers share the
-  // memoized pass; when it is unsafe, model downloads cannot start at all
-  // (launch is gated on the same result, so ComfyUI is not running either).
+  // memoized pass. An unsafe pass is NARROW: it only refuses a job whose own
+  // destination is a still-visible incomplete file (the quarantine rename
+  // failed, e.g. the file is locked - a fresh transfer could not replace it
+  // either), and it only excludes those paths from the already-present check.
+  // Unrelated destinations, and a pass that merely failed to certify the
+  // roots, proceed normally - one stuck file must not disable every model
+  // download, and it never blocks launching ComfyUI itself.
   let startupSafety: ModelDownloadStartupSafety
   try {
     startupSafety = await initializeModelDownloads()
   } catch {
     startupSafety = { safe: false, unsafePaths: [] }
   }
-  if (!startupSafety.safe) {
+  const unsafeDestKeys = new Set(startupSafety.unsafePaths.map((p) => canonicalDestKey(p)))
+  if (unsafeDestKeys.has(canonicalDestKey(savePath))) {
     const error =
-      'Model folders need attention before downloads can start ' +
+      'This model file needs attention before it can be downloaded again ' +
       '(a previous incomplete download could not be quarantined)'
     reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, { status: 'error', error })
   }
 
   // Report completed without downloading only when the file already exists
-  // somewhere the install's ComfyUI actually searches.
+  // somewhere the install's ComfyUI actually searches. A known-incomplete
+  // file must never satisfy this check - it is exactly the truncated model
+  // #1322 is about.
   for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+    if (unsafeDestKeys.has(canonicalDestKey(candidate))) continue
     if (await regularFileExists(candidate)) {
       reportProgress(makeProgress({ progress: 1, status: 'completed', savePath: candidate }))
       return settledJobHandle(id, url, candidate, {
@@ -2116,11 +2125,14 @@ export function invalidateModelDownloadStartupPass(): void {
   _modelDownloadsInitStale = true
 }
 
-/** Result of the startup migration/hydration pass, consumed by launch gating. */
+/** Result of the startup migration/hydration pass. Advisory only: launch
+ *  awaits the pass for ordering but NEVER blocks on `safe` (a truncated file
+ *  that fails to load beats refusing to start); job admission uses
+ *  `unsafePaths` to refuse only jobs targeting those exact destinations. */
 export interface ModelDownloadStartupSafety {
   /** False when a model root may still expose a known-incomplete file under
    *  a final model extension (quarantine failed, or the migration pass
-   *  itself could not run). Launching ComfyUI would scan truncated models. */
+   *  itself could not run). ComfyUI may scan truncated models. */
   safe: boolean
   /** The still-visible incomplete final-extension files, when known. */
   unsafePaths: string[]
@@ -2229,8 +2241,9 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
   // scan (move failed, e.g. file locked). Their sidecars were kept so the
   // next launch retries; surface each as a persistent error row so the user
   // knows the file is truncated - it would otherwise silently load as a
-  // broken model. Never delete the bytes. Launch is gated on `safe` so
-  // ComfyUI cannot scan these as models.
+  // broken model. Never delete the bytes, and never block the launch: the
+  // warning rows are the surface, and job admission refuses re-downloads to
+  // these exact destinations until the quarantine succeeds.
   let migrationUnsafe: string[] | null
   try {
     migrationUnsafe = (await migrateLegacyModelDownloadArtifacts(roots)).unsafe

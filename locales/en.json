@@ -1215,8 +1215,6 @@
     "noEnvFound": "Cannot launch: no Python environment found. Create one first.",
     "managerConfigWriteFailed": "Cannot launch: the Manager security settings for this install could not be written to its config file. Launch was stopped so ComfyUI-Manager does not start with stale security settings. Check that the install folder is writable and try again.",
     "alreadyRunning": "ComfyUI is already running. Stop it before launching again.",
-    "modelDownloadsUnsafe": "Cannot launch: incomplete model downloads from a previous version could not be quarantined ({files}). ComfyUI would load these truncated files as broken models. Close any program using these files and try again.",
-    "modelDownloadsStartupFailed": "Cannot launch: the model download startup check failed, so incomplete model files may still be visible to ComfyUI. Check the logs and try again.",
     "installDirEmpty": "Instance folder is empty. Delete this instance and reinstall.",
     "installDirNotFound": "Instance folder not found. Reconnect the drive or restore the folder, then try again.",
     "installDirNotFoundTag": "Folder Not Found",

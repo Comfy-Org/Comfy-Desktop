@@ -1540,7 +1540,43 @@ describe('model download startup safety (issue #1322)', () => {
     mod._test_resetModelDownloadsInit()
   })
 
-  it('an unsafe startup pass blocks new managed model jobs', async () => {
+  it('refuses a job whose own destination is a still-unquarantined incomplete file', async () => {
+    mod._test_resetModelDownloadsInit()
+    const name = uniqueName()
+    const dest = path.join(getModelsBaseDir(), 'checkpoints', name)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    // The truncated final is still on disk (quarantine rename failed) - the
+    // existence check below admission must NOT certify it as alreadyPresent.
+    fs.writeFileSync(dest, 'truncated legacy bytes')
+    migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
+      finalized: [],
+      staged: [],
+      removedStaleMeta: [],
+      quarantined: [],
+      unsafe: [dest]
+    })
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await expect(h.completion).resolves.toMatchObject({
+      status: 'error',
+      error: expect.stringContaining('attention')
+    })
+    await flush()
+    // No staging, no transport, and no alreadyPresent certification of the
+    // truncated file: the job was refused at admission.
+    expect(transfers.length).toBe(before)
+    fs.rmSync(dest, { force: true })
+    // The unsafe pass was not memoized; a clean retry recovers.
+    const next = await mod.initializeModelDownloads()
+    expect(next.safe).toBe(true)
+    mod._test_resetModelDownloadsInit()
+  })
+
+  it('an unsafe pass does not block jobs for unrelated destinations', async () => {
     mod._test_resetModelDownloadsInit()
     migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
       finalized: [],
@@ -1556,14 +1592,33 @@ describe('model download startup safety (issue #1322)', () => {
       filename: name,
       directory: 'checkpoints'
     })
-    await expect(h.completion).resolves.toMatchObject({
-      status: 'error',
-      error: expect.stringContaining('attention')
-    })
+    // One stuck file elsewhere must not disable every model download: a real
+    // transfer starts for this unrelated destination.
+    await waitForTransfers(before + 1)
+    expect(mod.cancelModelDownload(h.id)).toBe(true)
+    await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
     await flush()
-    // No staging, no transport: the job was refused at admission.
-    expect(transfers.length).toBe(before)
-    // The unsafe pass was not memoized; a clean retry recovers.
+    const next = await mod.initializeModelDownloads()
+    expect(next.safe).toBe(true)
+    mod._test_resetModelDownloadsInit()
+  })
+
+  it('a pass that failed to certify the roots does not refuse new jobs', async () => {
+    mod._test_resetModelDownloadsInit()
+    migrateLegacyModelDownloadArtifacts.mockRejectedValueOnce(new Error('io failure'))
+    const name = uniqueName()
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    // The pass could not certify anything (safe=false, no findings), but that
+    // must not disable the download system - the job proceeds.
+    await waitForTransfers(before + 1)
+    expect(mod.cancelModelDownload(h.id)).toBe(true)
+    await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
     const next = await mod.initializeModelDownloads()
     expect(next.safe).toBe(true)
     mod._test_resetModelDownloadsInit()
