@@ -21,6 +21,13 @@ export interface SeedOptions {
   /** Runs after the isolated dirs are created but before launch. Use to drop
    *  platform-specific files the main process inspects during early boot. */
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
+  /** Launch against this exact profile dir instead of a fresh mkdtemp one,
+   *  with the same semantics as `LIFECYCLE_REUSE_DIR` (persisted settings are
+   *  folded into the seed; the dir survives cleanup). Lets a spec quit and
+   *  relaunch the SAME profile to cover restart hydration. The caller owns
+   *  creating and removing the dir. Not supported on macOS (Application
+   *  Support ignores the HOME override). */
+  profileDir?: string
 }
 
 export interface SeedInstallation {
@@ -103,16 +110,17 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
-  // Honor `LIFECYCLE_REUSE_DIR` to reuse a previous run's profile dir so a
-  // rerun doesn't redo the ~2-minute install. A reused dir is preserved on
-  // cleanup; a fresh dir is printed so the operator can re-export it.
-  const reuseDir = process.env['LIFECYCLE_REUSE_DIR']
+  // Honor an explicit `profileDir` (spec-driven relaunch of the same
+  // profile) or `LIFECYCLE_REUSE_DIR` (operator rerun without redoing the
+  // ~2-minute install). A reused dir is preserved on cleanup; a fresh dir is
+  // printed so the operator can re-export it.
+  const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
   // macOS ignores the HOME override for userData (Application Support), so
   // a reused profile's persisted settings can neither be read back nor kept
   // from clobbering the developer's real profile - only fresh runs are
   // supported there.
   if (reuseDir && process.platform === 'darwin') {
-    throw new Error('LIFECYCLE_REUSE_DIR is not supported on macOS: Electron resolves userData outside the isolated profile dir, so persisted settings cannot be reused safely - unset it and run against a fresh profile')
+    throw new Error('Profile reuse (profileDir / LIFECYCLE_REUSE_DIR) is not supported on macOS: Electron resolves userData outside the isolated profile dir, so persisted settings cannot be reused safely - run against a fresh profile')
   }
   const homeDir = reuseDir ?? await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
   if (reuseDir) {
