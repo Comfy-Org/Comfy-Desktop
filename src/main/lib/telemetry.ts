@@ -582,7 +582,10 @@ export function initTelemetry(opts: InitOptions): void {
     client.on('error', () => {
       // The SDK removes HTTP-failed non-network batches from memory. Keep the
       // disk queue authoritative and allow a later trigger/restart to requeue.
+      // Re-dirtying is what makes the later trigger actually reread the file:
+      // a prior flush may have marked it clean once every entry was queued.
       queuedPendingIdentityMergeIds.clear()
+      pendingIdentityMergeFileDirty = true
     })
   } catch {
     client = null
@@ -1651,9 +1654,17 @@ export async function shutdown(reason: string): Promise<void> {
     if (firebaseConsensusPending) releaseFirebasePendingConsensus()
     // A successful sign-in whose confirming re-report is outrun by the quit
     // still deserves its attribution; no contrary resolution was observed.
+    // Unless a DIFFERENT user is still bound (a mid-switch quit): capture()
+    // would land the event under their distinct id, crediting the new
+    // sign-in to the previous account, so an unconfirmed switch discards.
+    // Unbound is safe - the event lands on the anonymous id, which only
+    // ever merges into the staged user if they are later confirmed.
     if (pendingLoginAttribution) {
-      capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, pendingLoginAttribution.context)
+      const { userId, context } = pendingLoginAttribution
       pendingLoginAttribution = null
+      if (boundUserId === null || userId === boundUserId) {
+        capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+      }
     }
     capture('comfy.desktop.session.ended', {
       reason,

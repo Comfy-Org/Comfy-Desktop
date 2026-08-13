@@ -933,6 +933,27 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
   })
 
+  it('requeues an unacknowledged identity merge on a later same-process trigger', async () => {
+    posthogClientMock.autoFailNextIdentifies = 1
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+    expect(pendingIdentityMergeMock.entries).toHaveLength(1)
+    // Let the failed flush settle so the in-flight dedup releases before the
+    // next trigger, as it does for any real later trigger.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    identifies.length = 0
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(0))
+    expect(identifies).toContainEqual(
+      expect.objectContaining({
+        distinctId: 'user-123',
+        properties: expect.objectContaining({ $anon_distinct_id: 'anonymous-start' })
+      })
+    )
+  })
+
   it('keeps repeated binds of the same Firebase UID idempotent', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
     expect(identifies).toHaveLength(1)
@@ -1070,6 +1091,21 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
         properties: expect.objectContaining({ via: 'desktop_login_code' })
       })
     ])
+  })
+
+  it('discards a staged attribution at shutdown while a different user is still bound', async () => {
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.stageLoginAttribution('user-b', { via: 'desktop_login_code' })
+    captured.length = 0
+
+    await telemetry.shutdown('quit')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toHaveLength(0)
+    const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
+    expect(ended?.distinctId).toBe('user-a')
   })
 
   it('rate-limits at queue time and replays without re-tripping the limiter', () => {
