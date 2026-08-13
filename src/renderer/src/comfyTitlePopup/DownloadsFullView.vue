@@ -195,7 +195,12 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
         </div>
 
         <ul v-else :key="filter" class="dlm-list">
-          <li v-for="d in filtered" :key="d.id ?? d.url" class="dlm-row" :class="statusKindClass(d)">
+          <li
+            v-for="d in filtered"
+            :key="d.id ?? d.url"
+            class="dlm-row"
+            :class="statusKindClass(d)"
+          >
             <span :class="['dlm-leading', { 'dlm-thumb': isCompletedImage(d) }]">
               <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
                 <template #fallback>

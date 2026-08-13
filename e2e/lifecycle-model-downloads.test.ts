@@ -25,7 +25,7 @@ import {
   isPopupVisible,
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
-  type WebContentsPage,
+  type WebContentsPage
 } from './support/cdpPages'
 import { getTitlePopupBounds } from './support/devHooks'
 import { deterministicBytes, ModelDownloadServer } from './support/modelDownloadServer'
@@ -34,7 +34,10 @@ import { deterministicBytes, ModelDownloadServer } from './support/modelDownload
 // Electron resolves userData outside the isolated HOME there. The whole spec
 // launches against an explicit profile dir so the restart test can rehydrate
 // it, so it is skipped on macOS; Windows + Linux lifecycle runs cover it.
-test.skip(process.platform === 'darwin', 'profile reuse (restart hydration) is unsupported on macOS')
+test.skip(
+  process.platform === 'darwin',
+  'profile reuse (restart hydration) is unsupported on macOS'
+)
 
 test.describe.configure({ mode: 'serial' })
 
@@ -59,7 +62,7 @@ const JOBS: Record<'complete' | 'pause' | 'retry' | 'cancel', SeededJob> = {
     stagedSize: 256 * 1024,
     seed: 1,
     chunkSize: 128 * 1024,
-    chunkDelayMs: 5,
+    chunkDelayMs: 5
   },
   pause: {
     file: 'lc-pause.safetensors',
@@ -67,7 +70,7 @@ const JOBS: Record<'complete' | 'pause' | 'retry' | 'cancel', SeededJob> = {
     stagedSize: 64 * 1024,
     seed: 2,
     chunkSize: 64 * 1024,
-    chunkDelayMs: 40,
+    chunkDelayMs: 40
   },
   retry: {
     file: 'lc-retry.safetensors',
@@ -75,7 +78,7 @@ const JOBS: Record<'complete' | 'pause' | 'retry' | 'cancel', SeededJob> = {
     stagedSize: 128 * 1024,
     seed: 3,
     chunkSize: 64 * 1024,
-    chunkDelayMs: 5,
+    chunkDelayMs: 5
   },
   cancel: {
     file: 'lc-cancel.safetensors',
@@ -83,8 +86,8 @@ const JOBS: Record<'complete' | 'pause' | 'retry' | 'cancel', SeededJob> = {
     stagedSize: 64 * 1024,
     seed: 4,
     chunkSize: 64 * 1024,
-    chunkDelayMs: 40,
-  },
+    chunkDelayMs: 40
+  }
 }
 
 let ctx: AppContext
@@ -128,8 +131,8 @@ async function seedStagedPair(job: SeededJob): Promise<void> {
       etag: ETAG,
       lastModified: LAST_MODIFIED,
       directory: 'checkpoints',
-      filename: job.file,
-    }),
+      filename: job.file
+    })
   )
 }
 
@@ -139,8 +142,8 @@ async function launch(): Promise<void> {
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
-      modelsDirs: [modelRoot],
-    },
+      modelsDirs: [modelRoot]
+    }
   })
   popup = titlePopupPage(ctx.app)
 }
@@ -150,10 +153,12 @@ async function openFullDownloads(): Promise<void> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((r) => setTimeout(r, TITLE_REOPEN_SUPPRESSION_MS))
   await openDownloadsTray(ctx.titleBar)
-  await expect.poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-    timeout: 10_000,
-    intervals: [100, 200],
-  }).toBe(true)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 10_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
   await popup.waitForSelector('.downloads-link', { timeout: 10_000 })
   await waitForStableBounds()
   expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
@@ -205,11 +210,13 @@ function clickRowButton(file: string, ariaLabel: string): Promise<boolean> {
 }
 
 async function expectRowStatus(file: string, status: string, timeout = 60_000): Promise<void> {
-  await expect.poll(() => rowStatus(file), {
-    timeout,
-    intervals: [200, 400, 800],
-    message: `row for ${file} did not reach ${status}`,
-  }).toBe(status)
+  await expect
+    .poll(() => rowStatus(file), {
+      timeout,
+      intervals: [200, 400, 800],
+      message: `row for ${file} did not reach ${status}`
+    })
+    .toBe(status)
 }
 
 /** Assert a verified completion: exact final bytes, no staging left. */
@@ -231,7 +238,7 @@ test.beforeAll(async () => {
       etag: ETAG,
       lastModified: LAST_MODIFIED,
       chunkSize: job.chunkSize,
-      chunkDelayMs: job.chunkDelayMs,
+      chunkDelayMs: job.chunkDelayMs
     })
   }
   modelRoot = await mkdtemp(path.join(os.tmpdir(), 'launcher-e2e-models-'))
@@ -254,10 +261,12 @@ test('startup hydrates interrupted downloads as actionable paused rows @lifecycl
   await openFullDownloads()
   // The startup pass is fire-and-forget, so poll until all four staged pairs
   // have been hydrated and broadcast into the popup.
-  await expect.poll(() => popup.count('.dlm-row'), {
-    timeout: 30_000,
-    intervals: [250, 500, 1000],
-  }).toBe(4)
+  await expect
+    .poll(() => popup.count('.dlm-row'), {
+      timeout: 30_000,
+      intervals: [250, 500, 1000]
+    })
+    .toBe(4)
   for (const job of Object.values(JOBS)) {
     expect(await rowStatus(job.file)).toBe('is-paused')
     // Incomplete bytes are never visible under the final model name.
@@ -286,10 +295,12 @@ test('pause stops network activity and preserves staged bytes @lifecycle', async
   const part = finalPath(job) + '.part'
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
   // Wait until the transfer is provably mid-flight (staged bytes grew).
-  await expect.poll(() => fileSize(part), {
-    timeout: 30_000,
-    intervals: [100, 200],
-  }).toBeGreaterThan(job.stagedSize + job.chunkSize)
+  await expect
+    .poll(() => fileSize(part), {
+      timeout: 30_000,
+      intervals: [100, 200]
+    })
+    .toBeGreaterThan(job.stagedSize + job.chunkSize)
 
   expect(await clickRowButton(job.file, 'Pause')).toBe(true)
   await expectRowStatus(job.file, 'is-paused', 15_000)
@@ -339,10 +350,12 @@ test('cancel stops the transfer and removes staged bytes and metadata @lifecycle
   const job = JOBS.cancel
   const part = finalPath(job) + '.part'
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
-  await expect.poll(() => fileSize(part), {
-    timeout: 30_000,
-    intervals: [100, 200],
-  }).toBeGreaterThan(job.stagedSize + job.chunkSize)
+  await expect
+    .poll(() => fileSize(part), {
+      timeout: 30_000,
+      intervals: [100, 200]
+    })
+    .toBeGreaterThan(job.stagedSize + job.chunkSize)
 
   expect(await clickRowButton(job.file, 'Cancel')).toBe(true)
   await expectRowStatus(job.file, 'is-cancelled', 15_000)
@@ -350,10 +363,12 @@ test('cancel stops the transfer and removes staged bytes and metadata @lifecycle
   // Cancel semantics: staged bytes AND resume metadata removed (deletion is
   // deferred cleanup, so poll), final name never created.
   await expect.poll(() => fileSize(part), { timeout: 15_000, intervals: [200, 400] }).toBe(-1)
-  await expect.poll(() => fileSize(finalPath(job) + '.part.dl-meta'), {
-    timeout: 15_000,
-    intervals: [200, 400],
-  }).toBe(-1)
+  await expect
+    .poll(() => fileSize(finalPath(job) + '.part.dl-meta'), {
+      timeout: 15_000,
+      intervals: [200, 400]
+    })
+    .toBe(-1)
   expect(await fileSize(finalPath(job))).toBe(-1)
 })
 
@@ -368,10 +383,12 @@ test('quit + relaunch rehydrates the paused job and resume completes it @lifecyc
 
   await launch()
   await openFullDownloads()
-  await expect.poll(() => rowStatus(job.file), {
-    timeout: 30_000,
-    intervals: [250, 500, 1000],
-  }).toBe('is-paused')
+  await expect
+    .poll(() => rowStatus(job.file), {
+      timeout: 30_000,
+      intervals: [250, 500, 1000]
+    })
+    .toBe('is-paused')
   // Completed files from the previous session are left untouched, and the
   // finished registry rows (completed/cancelled) are gone - only the
   // interrupted job hydrates.

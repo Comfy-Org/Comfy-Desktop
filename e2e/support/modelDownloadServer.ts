@@ -43,7 +43,7 @@ export interface LoggedRequest {
 export function deterministicBytes(size: number, seed: number): Buffer {
   const buf = Buffer.allocUnsafe(size)
   for (let i = 0; i < size; i++) {
-    buf[i] = (i * 31 + seed * 17 + ((i >> 8) * 7)) & 0xff
+    buf[i] = (i * 31 + seed * 17 + (i >> 8) * 7) & 0xff
   }
   return buf
 }
