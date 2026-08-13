@@ -297,11 +297,25 @@ describe('network failure', () => {
   })
 
   it('aborts a stalled transfer and keeps staged bytes', async () => {
-    const handle = startModelTransfer(baseOpts({ idleTimeoutMs: 25 }))
-    const req = requests[0]!
-    const res = makeResponse(200, { 'content-length': '10', etag: '"v1"' })
-    req.emit('response', res)
-    res.emit('data', Buffer.from('012'))
+    // Fake timers: the idle timer must fire only when WE advance the clock,
+    // after the data chunk landed - otherwise a loaded runner could burn the
+    // 25 ms window during the synchronous response setup and abort before
+    // any byte was staged.
+    vi.useFakeTimers()
+    let handle!: ReturnType<typeof startModelTransfer>
+    let req!: (typeof requests)[number]
+    try {
+      handle = startModelTransfer(baseOpts({ idleTimeoutMs: 25 }))
+      req = requests[0]!
+      const res = makeResponse(200, { 'content-length': '10', etag: '"v1"' })
+      req.emit('response', res)
+      res.emit('data', Buffer.from('012'))
+      await vi.advanceTimersByTimeAsync(30)
+    } finally {
+      // The stream close callback that settles `done` is fs I/O, not a
+      // timer - real timers must be back before awaiting it.
+      vi.useRealTimers()
+    }
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect((outcome as { error: string }).error).toMatch(/stalled/)
@@ -1006,6 +1020,35 @@ describe('final destination conflicts', () => {
       expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
       expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
       expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+    } finally {
+      linkSpy.mockRestore()
+    }
+  })
+
+  it('fails closed on a real link error instead of degrading to claim+rename', async () => {
+    // Only capability-gap errno values (exFAT/FAT32-style) may use the
+    // claim-marker fallback; a genuine I/O failure must surface as the
+    // transfer error it is, keeping the staged bytes for retry.
+    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      const err = new Error('EIO: i/o error') as NodeJS.ErrnoException
+      err.code = 'EIO'
+      throw err
+    })
+    try {
+      const handle = startModelTransfer(baseOpts())
+      const req = requests[0]!
+      const res = makeResponse(200, { 'content-length': '10' })
+      req.emit('response', res)
+      res.emit('data', Buffer.from('0123456789'))
+      res.emit('end')
+      const outcome = await handle.done
+      expect(outcome.outcome).toBe('error')
+      expect((outcome as { error: string }).error).toMatch(/EIO/)
+      // No zero-byte claim marker was left at the final name; staged bytes
+      // and sidecar survive for retry.
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
     } finally {
       linkSpy.mockRestore()
     }

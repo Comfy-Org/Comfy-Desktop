@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 
 // Back `t()` with the real en.json (vitest `__dirname` doesn't line up with the
 // i18n module's relative `locales/` lookup), so the formatter is asserted
@@ -274,14 +275,16 @@ describe('truncateForMaxPath', () => {
 
   it('reserves room for the staging sidecar suffix', () => {
     // Build a path that fits MAX_PATH exactly on its own, so any positive
-    // reserve forces a truncation.
+    // reserve forces a truncation. The reserve is the same one the template
+    // task passes in production: sidecar suffix plus its atomic-write
+    // scratch suffix.
     const dir = 'C:\\models\\checkpoints'
     const ext = '.safetensors'
     const stemLen = 259 - dir.length - 1 - ext.length
     const name = 'x'.repeat(stemLen) + ext
     expect(truncateForMaxPath(dir, name, 'win32', 0)).toBe(name)
 
-    const reserve = '.part.dl-meta'.length
+    const reserve = STAGING_META_SUFFIX.length + STAGING_META_TMP_SUFFIX.length
     const out = truncateForMaxPath(dir, name, 'win32', reserve)!
     expect(out.endsWith(ext)).toBe(true)
     expect((dir + '\\' + out).length + reserve).toBeLessThanOrEqual(259)
@@ -289,10 +292,11 @@ describe('truncateForMaxPath', () => {
 
   it('returns null when the reserve leaves no room for a stem', () => {
     const ext = '.safetensors'
+    const reserve = STAGING_META_SUFFIX.length + STAGING_META_TMP_SUFFIX.length
     // Directory sized so exactly zero stem characters fit once the reserve
     // and extension are accounted for.
-    const dir = 'C:\\' + 'd'.repeat(259 - 3 - 1 - ext.length - '.part.dl-meta'.length)
-    expect(truncateForMaxPath(dir, 'm' + ext, 'win32', '.part.dl-meta'.length)).toBeNull()
+    const dir = 'C:\\' + 'd'.repeat(259 - 3 - 1 - ext.length - reserve)
+    expect(truncateForMaxPath(dir, 'm' + ext, 'win32', reserve)).toBeNull()
   })
 })
 

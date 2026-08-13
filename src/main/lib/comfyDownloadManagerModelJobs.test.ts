@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -120,7 +120,11 @@ vi.mock('./modelDownloadStaging', () => ({
 // and restores null so every other test keeps the real behavior.
 const overrides = vi.hoisted(() => ({
   installationsGet: null as null | ((id: string) => Promise<unknown>),
-  collectModelScanRoots: null as null | (() => Promise<string[]>)
+  collectModelScanRoots: null as null | (() => Promise<string[]>),
+  // Isolated models base dir (set in beforeAll): the real one resolves from
+  // settings/homedir, and the tests that stage real files at computed
+  // destinations must never dirty a developer's actual models directory.
+  modelsBaseDir: null as null | string
 }))
 vi.mock('../installations', async (importOriginal) => {
   const actual = await importOriginal<typeof InstallationsModule>()
@@ -137,7 +141,8 @@ vi.mock('./modelDownloadPaths', async (importOriginal) => {
     collectModelScanRoots: () =>
       overrides.collectModelScanRoots
         ? overrides.collectModelScanRoots()
-        : actual.collectModelScanRoots()
+        : actual.collectModelScanRoots(),
+    getModelsBaseDir: () => overrides.modelsBaseDir ?? actual.getModelsBaseDir()
   }
 })
 
@@ -150,7 +155,15 @@ import { _registerExtraBroadcastTarget, _unregisterExtraBroadcastTarget } from '
 let mod: typeof ComfyDownloadManager
 
 beforeAll(async () => {
+  overrides.modelsBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdm-models-'))
   mod = await import('./comfyDownloadManager')
+})
+
+afterAll(() => {
+  if (overrides.modelsBaseDir) {
+    fs.rmSync(overrides.modelsBaseDir, { recursive: true, force: true })
+    overrides.modelsBaseDir = null
+  }
 })
 
 /** Wait until the fake transport for the most recent job(s) exists. */
@@ -160,10 +173,18 @@ async function waitForTransfers(count: number): Promise<void> {
   })
 }
 
-/** Let the runModelTransport continuation (after `done` settles) run. */
+/** Let the runModelTransport continuation (after `done` settles) run.
+ *  A deliberately BOUNDED settling window (not an event wait): negative
+ *  assertions ("no extra transfer started") rely on it staying finite, and
+ *  positive state checks that can wait on an observable use `vi.waitFor` /
+ *  `waitForTransfers` instead. Two macrotask rounds, each draining a run of
+ *  microtasks, cover the manager's await chain with margin so adding an
+ *  await to the manager does not silently shorten the window. */
 async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) await Promise.resolve()
-  await new Promise((r) => setImmediate(r))
+  for (let round = 0; round < 2; round++) {
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    await new Promise((r) => setImmediate(r))
+  }
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {

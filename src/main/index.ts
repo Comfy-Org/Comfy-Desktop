@@ -1384,7 +1384,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // soon as settings/installation records are readable. Fire-and-forget so
     // it never delays first paint; `handleLaunch` awaits the same memoized
     // promise before any ComfyUI process can scan the model dirs (#1322).
-    void initializeModelDownloads()
+    // A failed pass is not memoized, so launch retries it; here it only
+    // needs logging (an unhandled rejection would surface as a crash).
+    initializeModelDownloads().catch((err) => {
+      console.warn('Model download startup pass failed at app startup:', err)
+    })
 
     // Strip Electron's default menu before any BrowserWindow opens so
     // OAuth / cloud-login popups (and every other window) can't reach

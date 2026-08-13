@@ -254,7 +254,10 @@ const closingStreamsByDest = new Map<string, Promise<void>>()
  *  themselves once resolved; multiple closings for one destination chain. */
 function trackClosingStream(destKey: string, done: Promise<unknown>): void {
   const prior = closingStreamsByDest.get(destKey) ?? Promise.resolve()
-  const entry: Promise<void> = Promise.all([prior, done]).then(() => {
+  // allSettled: a rejected teardown (e.g. progress broadcast onto destroyed
+  // WebContents) must still release the destination, or every later transfer
+  // for it would wait forever and quit suspension would burn its timeout.
+  const entry: Promise<void> = Promise.allSettled([prior, done]).then(() => {
     if (closingStreamsByDest.get(destKey) === entry) closingStreamsByDest.delete(destKey)
   })
   closingStreamsByDest.set(destKey, entry)
@@ -732,9 +735,10 @@ export interface ModelJobHandle {
   completion: Promise<ModelJobOutcome>
   /** Release THIS caller's lease on the job. Idempotent - calling it twice
    *  releases one lease once, and it can never release another caller's
-   *  lease. The transfer is cancelled (staged bytes removed) only when the
-   *  last lease is released; during app quit the job is parked resumably by
-   *  the quit path instead of cancelled. */
+   *  lease. Releasing the last lease PARKS the transfer resumably (network
+   *  stops, staged bytes + sidecar kept); only an explicit Downloads Cancel
+   *  is destructive. During app quit release defers to the quit path, which
+   *  parks every active transfer itself. */
   release: () => void
 }
 
@@ -2412,7 +2416,10 @@ export async function suspendActiveModelDownloadsForQuit(timeoutMs = 5000): Prom
     const remaining = deadline - Date.now()
     if (remaining <= 0) return
     const timedOut = await Promise.race([
-      Promise.all(waits).then(() => false),
+      // allSettled: a wait that rejects (e.g. a preflight that threw while
+      // broadcasting) must not abort the drain - the remaining streams still
+      // need to flush before quit.
+      Promise.allSettled(waits).then(() => false),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(true), remaining))
     ])
     if (timedOut) return

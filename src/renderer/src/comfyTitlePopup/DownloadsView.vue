@@ -184,7 +184,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
     <ul v-else class="downloads-list">
       <li
         v-for="d in orderedEntries"
-        :key="d.url"
+        :key="d.id ?? d.url"
         class="downloads-item"
         :class="[
           statusKindClass(d),

@@ -22,7 +22,7 @@ import { ALLOWED_EXTENSIONS } from './downloadFilename'
 export const STAGING_SUFFIX = '.part'
 export const STAGING_META_SUFFIX = '.part.dl-meta'
 /** Scratch suffix for atomic sidecar replacement (write tmp + rename). */
-const STAGING_META_TMP_SUFFIX = '.tmp'
+export const STAGING_META_TMP_SUFFIX = '.tmp'
 /** Sidecar suffix used by `lib/download.ts` (still valid for cache/env
  *  downloads - only model-dir artifacts are migrated away from it). */
 export const LEGACY_META_SUFFIX = '.dl-meta'
@@ -147,7 +147,7 @@ export function removeStagedArtifacts(finalPath: string): boolean {
 /** linkSync errno values that mean "this filesystem/inode cannot take a hard
  *  link" (a capability gap the rename fallback may bridge) rather than a real
  *  I/O or permission failure (which must fail the parking outright). */
-const LINK_UNSUPPORTED_CODES: ReadonlySet<string> = new Set([
+export const LINK_UNSUPPORTED_CODES: ReadonlySet<string> = new Set([
   'EPERM', // Windows exFAT/FAT32 and some network filesystems
   'ENOTSUP',
   'EOPNOTSUPP',
@@ -508,22 +508,26 @@ export async function scanForStagedDownloads(
       try {
         finalSize = fs.statSync(finalPath).size
       } catch {}
-      if (finalSize === 0 && stagedBytes > 0) {
+      if (finalSize === 0) {
         // A zero-byte file under the final model name next to OUR staged pair
         // is a crashed install's claim marker (the link-less install fallback
         // creates the final name empty, then renames the verified bytes onto
-        // it) - never a real model. Hide it before ComfyUI can scan it as a
-        // broken model; the staged pair hydrates as a normal paused job
-        // below. Park (no-clobber move), never delete in place: any bytes
-        // an external writer landed since the stat above survive under the
-        // parked non-model name. The parked file is then left alone even
-        // when it still looks empty - a writer that already had the original
-        // name open can land bytes at ANY later moment, and a stat-then-
-        // unlink here would drop those bytes into an unlinked inode. A
-        // still-empty parked `.part`-suffixed file is inert clutter, never a
-        // model. If the file cannot be moved (locked), the broken-looking
-        // final name stays visible - surface it as unsafe so launch is gated
-        // until it can be cleared.
+        // it) - never a real model. This must run even when the staged bytes
+        // are ALSO empty (the durable placeholder before any byte lands):
+        // two empty files would satisfy the identical-bytes branch below and
+        // delete the pair while leaving the zero-byte fake model visible.
+        // Hide it before ComfyUI can scan it as a broken model; the staged
+        // pair hydrates as a normal paused job below. Park (no-clobber
+        // move), never delete in place: any bytes an external writer landed
+        // since the stat above survive under the parked non-model name. The
+        // parked file is then left alone even when it still looks empty - a
+        // writer that already had the original name open can land bytes at
+        // ANY later moment, and a stat-then-unlink here would drop those
+        // bytes into an unlinked inode. A still-empty parked
+        // `.part`-suffixed file is inert clutter, never a model. If the file
+        // cannot be moved (locked), the broken-looking final name stays
+        // visible - surface it as unsafe so a warning row is shown and jobs
+        // for that exact destination are refused until it can be cleared.
         const parked = parkFileNoClobber(finalPath, (n) =>
           n === 0
             ? finalPath + '.claimed' + STAGING_SUFFIX

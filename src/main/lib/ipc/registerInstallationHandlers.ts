@@ -397,8 +397,11 @@ export function registerInstallationHandlers(): void {
       } catch (err) {
         _operationAborts.delete(installationId)
         // Install failed or was cancelled - tear down the background template
-        // download too (the models would have nowhere to land). This cancels
-        // the real managed model jobs (network stops; staged bytes removed).
+        // download too (the models would have nowhere to land). This releases
+        // this install's leases on the managed model jobs: a job no other
+        // caller holds is PARKED (network stops; staged bytes + sidecar kept,
+        // resumable from Downloads), and a job shared with another caller
+        // keeps transferring for its other holders.
         abortTemplateDownload(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {

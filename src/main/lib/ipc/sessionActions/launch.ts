@@ -388,6 +388,7 @@ async function runLaunch(
   } catch (err) {
     console.warn('Model download startup pass failed; launching anyway:', err)
   }
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   if (!source.skipInstall) {

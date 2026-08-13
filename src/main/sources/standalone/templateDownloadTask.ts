@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { startManagedModelJob, type ModelJobOutcome } from '../../lib/comfyDownloadManager'
 import { getModelsBaseDir, resolveDownloadContextById } from '../../lib/modelDownloadPaths'
-import { STAGING_META_SUFFIX } from '../../lib/modelDownloadStaging'
+import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
@@ -361,13 +361,14 @@ async function runTask(
 
       // Defensively fit the on-disk name within Windows MAX_PATH before any
       // write (no-op elsewhere / on short paths), reserving room for the
-      // staging sidecar suffix so `<name>.part.dl-meta` fits too. A too-long
-      // name that can't be shortened is a per-file failure, not a task failure.
+      // staging sidecar suffix plus its atomic-write scratch suffix so
+      // `<name>.part.dl-meta.tmp` fits too. A too-long name that can't be
+      // shortened is a per-file failure, not a task failure.
       const safeName = truncateForMaxPath(
         destDir,
         f.name,
         process.platform,
-        STAGING_META_SUFFIX.length
+        STAGING_META_SUFFIX.length + STAGING_META_TMP_SUFFIX.length
       )
       if (safeName === null) {
         f.failed = true
@@ -438,7 +439,12 @@ async function runTask(
                   : `[templates] Saved ${f.directory}/${safeName}.\n`
               )
             } finally {
+              // Untrack AND release: normally the job is already terminal
+              // here, so the idempotent release is a no-op, but if the
+              // manager ever keeps a settled job registered (e.g. for a
+              // manual retry) an unreleased lease would pin it forever.
               activeJobLeases?.delete(handle.release)
+              handle.release()
             }
           },
           MODEL_DOWNLOAD_RETRIES,

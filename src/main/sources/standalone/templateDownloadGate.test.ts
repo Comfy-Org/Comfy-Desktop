@@ -134,15 +134,18 @@ describe('awaitTemplateDownloadSettled', () => {
     ])
     startManagedModelJob.mockImplementation(async () => hangingJob('u'))
     startTemplateDownload(makeInstall('cancel-1'), 0, { sendOutput })
-    await flush()
+    // Event-driven: wait for the managed job to be dispatched instead of
+    // counting ticks (lease registration happens after the dispatch await).
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
 
     abortTemplateDownload('cancel-1')
     // The abort must release this install's own lease handle on the actual
     // managed transfer (never a URL- or id-addressed whole-job cancel -
     // another caller may hold its own lease on the same job), not just flip
-    // state. The manager cancels the transfer once the last lease is
-    // released, so a destination shared with another caller survives.
-    expect(jobReleases.get('id-u')).toHaveBeenCalled()
+    // state. The manager parks the transfer once the last lease is released,
+    // so a destination shared with another caller survives. The release may
+    // land via the add-after-abort re-release path, so wait for the event.
+    await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
     const ctrl = new AbortController()
     await expect(awaitTemplateDownloadSettled('cancel-1', ctrl.signal)).resolves.toBe('cancelled')
   })

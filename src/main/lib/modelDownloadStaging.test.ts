@@ -243,10 +243,34 @@ describe('scanForStagedDownloads', () => {
     expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
   })
 
+  it('parks a zero-byte claim marker even when the staged bytes are also empty', async () => {
+    // Crash right after the placeholder + claim marker were created, before
+    // any byte landed: final name and .part are BOTH zero bytes. Two empty
+    // files are byte-identical, so without the explicit zero-final guard the
+    // redundant-staging branch would delete the pair and leave the zero-byte
+    // fake model visible to ComfyUI (#1322). The marker must still be parked
+    // and the empty pair must hydrate as a normal paused job.
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    fs.writeFileSync(finalPath, '')
+    fs.writeFileSync(stagingPathFor(finalPath), '')
+    writeStagedMeta(stagingMetaPathFor(finalPath), validMeta())
+
+    const { downloads: found, unsafeFinalPaths } = await scanForStagedDownloads([tmpDir])
+    expect(found).toHaveLength(1)
+    expect(found[0]?.finalPath).toBe(finalPath)
+    expect(found[0]?.stagedBytes).toBe(0)
+    expect(unsafeFinalPaths).toHaveLength(0)
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(finalPath + '.claimed.part')).toBe(true)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(true)
+    expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
+  })
+
   it('reports the final path as unsafe when the zero-byte claim marker cannot be moved', async () => {
     // The marker is locked (e.g. a scanner holds it open on Windows): the
     // broken-looking file stays visible under a final model name, so the
-    // scan must surface it for launch gating instead of silently hydrating
+    // scan must surface it (warning row; jobs to that destination refused)
+    // instead of silently hydrating
     // around it. The staged pair still hydrates as an actionable paused job.
     // Both park primitives (hard link and claim+rename fallback) fail.
     const finalPath = path.join(tmpDir, 'model.safetensors')

@@ -33,7 +33,9 @@ export function resolveDownloadContext(inst: installations.InstallationRecord): 
  * best-effort: a failure to list installations or resolve an install's
  * model paths propagates, because a root silently dropped from the scan
  * would let the legacy migration certify directories it never looked at.
- * The caller treats the failure as an unsafe startup pass and gates launch.
+ * The caller treats the failure as an unsafe (non-memoized) startup pass:
+ * it warns, refuses jobs for known-unsafe destinations, and retries the
+ * pass later - launch itself is never blocked.
  */
 export async function collectModelScanRoots(): Promise<string[]> {
   const roots = new Set<string>()

@@ -108,9 +108,10 @@ const WIN_MAX_PATH = 259
  * Windows MAX_PATH limit (no-op on other platforms / short paths). Returns the
  * (possibly shortened) filename, or null when even an empty stem wouldn't fit.
  * `reserveSuffixLen` reserves extra room after the full path - used for the
- * managed download's staging sidecar (`<name>.part.dl-meta`) so the staged
- * artifacts fit MAX_PATH too, not just the final name. Pure - `platform` is
- * injected so it can be unit-tested off Windows.
+ * managed download's staging sidecar plus its atomic-write scratch file
+ * (`<name>.part.dl-meta.tmp`) so the staged artifacts fit MAX_PATH too, not
+ * just the final name. Pure - `platform` is injected so it can be
+ * unit-tested off Windows.
  */
 export function truncateForMaxPath(
   destDir: string,

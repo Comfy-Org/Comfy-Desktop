@@ -5,6 +5,7 @@ import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
 import {
   filesHaveSameBytes,
+  LINK_UNSUPPORTED_CODES,
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
@@ -750,6 +751,10 @@ async function installStagedAtFinal(
       await conflictOrAccept()
       return
     }
+    // Only a genuine link-capability gap justifies the claim-close-rename
+    // window below (same policy as `parkFileNoClobber`). A real I/O or
+    // permission failure must surface as the transfer error it is.
+    if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
     // Filesystem without hard links (exFAT/FAT32/network shares): claim the
     // final name with an exclusive create (atomically fails EEXIST if a file
     // appeared there), then rename onto our OWN empty claim marker. A bare
