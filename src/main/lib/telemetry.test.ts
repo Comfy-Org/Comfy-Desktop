@@ -47,6 +47,7 @@ interface CapturedCall {
   distinctId: string
   event: string
   properties?: Record<string, unknown>
+  timestamp?: Date
 }
 const captured: CapturedCall[] = []
 
@@ -932,6 +933,27 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
   })
 
+  it('requeues an unacknowledged identity merge on a later same-process trigger', async () => {
+    posthogClientMock.autoFailNextIdentifies = 1
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+    expect(pendingIdentityMergeMock.entries).toHaveLength(1)
+    // Let the failed flush settle so the in-flight dedup releases before the
+    // next trigger, as it does for any real later trigger.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    identifies.length = 0
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    await vi.waitFor(() => expect(pendingIdentityMergeMock.entries).toHaveLength(0))
+    expect(identifies).toContainEqual(
+      expect.objectContaining({
+        distinctId: 'user-123',
+        properties: expect.objectContaining({ $anon_distinct_id: 'anonymous-start' })
+      })
+    )
+  })
+
   it('keeps repeated binds of the same Firebase UID idempotent', () => {
     telemetry.applyFirebaseUserConsensus('user-123')
     expect(identifies).toHaveLength(1)
@@ -978,6 +1000,326 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
       installation_id: 'installation-id-fake',
       $process_person_profile: false
     })
+  })
+
+  it('quarantines authenticated writes while pending and replays them on same-user resolution', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    identifies.length = 0
+    captured.length = 0
+    exceptions.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.capture('pending.event')).toBe(true)
+    telemetry.captureException(new Error('pending'))
+    telemetry.registerPersonProperties({ plan: 'pro' })
+
+    expect(identifies).toHaveLength(0)
+    expect(captured).toHaveLength(0)
+    expect(exceptions).toHaveLength(0)
+    expect(anonymousIdentityMock.index).toBe(1)
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(identifies).toHaveLength(0)
+    expect(captured.map((call) => call.event)).toContain('pending.event')
+    expect(exceptions).toHaveLength(1)
+    expect(captured.every((call) => call.distinctId === 'user-123')).toBe(true)
+    expect(captured.at(-1)).toMatchObject({
+      distinctId: 'user-123',
+      event: 'comfy.desktop.person.set',
+      properties: { $set: { plan: 'pro' } }
+    })
+    telemetry.capture('resolved.event')
+    expect(captured.at(-1)?.distinctId).toBe('user-123')
+  })
+
+  it('discards quarantined writes when pending resolves to a different user', () => {
+    telemetry.applyFirebaseUserConsensus('user-a')
+    captured.length = 0
+    exceptions.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('during.switch')
+    telemetry.captureException(new Error('during switch'))
+    telemetry.applyFirebaseUserConsensus('user-b')
+
+    expect(captured.filter((call) => call.event === 'during.switch')).toHaveLength(0)
+    expect(exceptions).toHaveLength(0)
+  })
+
+  it('release ends the quarantine keeping the bound identity and replays held writes', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    identifies.length = 0
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('held.event')
+    expect(captured).toHaveLength(0)
+
+    telemetry.releaseFirebasePendingConsensus()
+
+    expect(identifies).toHaveLength(0)
+    expect(captured.map((call) => call.event)).toContain('held.event')
+    expect(captured.every((call) => call.distinctId === 'user-123')).toBe(true)
+    telemetry.capture('after.release')
+    expect(captured.at(-1)?.distinctId).toBe('user-123')
+  })
+
+  it('drains quarantined writes and the session end through a mid-navigation quit', async () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('before.quit')
+    await telemetry.shutdown('quit')
+
+    expect(captured.map((call) => call.event)).toContain('before.quit')
+    const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
+    expect(ended?.distinctId).toBe('user-123')
+  })
+
+  it('captures a still-staged login attribution during shutdown', async () => {
+    telemetry.stageLoginAttribution('user-123', { via: 'desktop_login_code' })
+    captured.length = 0
+
+    await telemetry.shutdown('quit')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toEqual([
+      expect.objectContaining({
+        properties: expect.objectContaining({ via: 'desktop_login_code' })
+      })
+    ])
+  })
+
+  it('discards a staged attribution at shutdown while a different user is still bound', async () => {
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.stageLoginAttribution('user-b', { via: 'desktop_login_code' })
+    captured.length = 0
+
+    await telemetry.shutdown('quit')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toHaveLength(0)
+    const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
+    expect(ended?.distinctId).toBe('user-a')
+  })
+
+  it('rate-limits at queue time and replays without re-tripping the limiter', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    for (let i = 0; i < 60; i++) {
+      expect(telemetry.capture('burst.event', { i })).toBe(true)
+    }
+    // The 61st is refused up front instead of being buffered and then
+    // silently dropped at replay after having been acknowledged.
+    expect(telemetry.capture('burst.event', { i: 60 })).toBe(false)
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(captured.filter((call) => call.event === 'burst.event')).toHaveLength(60)
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.telemetry.rate_limited')
+    ).toHaveLength(0)
+    expect(captured.find((call) => call.event === 'burst.event')?.timestamp).toBeInstanceOf(Date)
+  })
+
+  it('defers emit() renderer forwarding with the quarantined write until it ships', () => {
+    const { wc, sends } = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(wc)
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.emit('comfy.desktop.execution.error', { variant: 'standalone' })
+    expect(sends).toHaveLength(0)
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(captured.map((call) => call.event)).toContain('comfy.desktop.execution.error')
+    expect(sends).toHaveLength(1)
+  })
+
+  it('drops the deferred Datadog mirror when a quarantined exception is discarded', () => {
+    const { wc, sends } = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(wc)
+    telemetry.applyFirebaseUserConsensus('user-a')
+    captured.length = 0
+    exceptions.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.captureExceptionAndForward(new Error('boom'), { source: 'test' })).toBe(true)
+    expect(sends).toHaveLength(0)
+    expect(exceptions).toHaveLength(0)
+
+    telemetry.applyFirebaseUserConsensus('user-b')
+
+    expect(exceptions).toHaveLength(0)
+    expect(sends).toHaveLength(0)
+  })
+
+  it('applies $set_once markers deferred by the quarantine before a signed-out detach', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.registerPersonPropertiesOnce({ first_local_install_completed_at: 't1' })
+    expect(captured).toHaveLength(0)
+
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    const sets = captured.filter((call) => call.event === 'comfy.desktop.person.set')
+    expect(sets[0]).toMatchObject({
+      distinctId: 'user-123',
+      properties: { $set_once: { first_local_install_completed_at: 't1' } }
+    })
+  })
+
+  it('keeps anonymous events flowing while first-login consensus is pending', () => {
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('anon.event')
+
+    expect(captured.at(-1)).toMatchObject({
+      distinctId: 'anonymous-start',
+      event: 'anon.event',
+      properties: expect.objectContaining({ $process_person_profile: false })
+    })
+  })
+
+  it('emits login attribution when a same-user re-authentication resolves', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    identifies.length = 0
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.stageLoginAttribution('user-123', { via: 'desktop_login_code' })
+    telemetry.bindUserId('user-123', {})
+
+    expect(identifies).toHaveLength(0)
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toEqual([
+      expect.objectContaining({
+        distinctId: 'user-123',
+        properties: expect.objectContaining({ via: 'desktop_login_code' })
+      })
+    ])
+  })
+
+  it('attributes an account-switch login to the new UID at bind time', () => {
+    telemetry.applyFirebaseUserConsensus('user-a')
+    identifies.length = 0
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.stageLoginAttribution('user-b', { via: 'desktop_login_code' })
+    telemetry.bindUserId('user-b', {})
+
+    expect(identifies).toHaveLength(1)
+    expect(identifies[0]).toMatchObject({
+      distinctId: 'user-b',
+      properties: { $anon_distinct_id: 'anonymous-next-1' }
+    })
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toEqual([
+      expect.objectContaining({
+        distinctId: 'user-b',
+        properties: expect.objectContaining({ via: 'desktop_login_code' })
+      })
+    ])
+  })
+
+  it('discards a staged login attribution when consensus resolves signed out first', () => {
+    telemetry.setConsentState('undecided')
+    telemetry.stageLoginAttribution('user-b', { via: 'desktop_login_code' })
+    telemetry.bindUserId('user-b', {})
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebaseUserConsensus('user-b')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toHaveLength(0)
+  })
+
+  it('discards a staged login attribution when a different user is confirmed', () => {
+    telemetry.stageLoginAttribution('user-a', { via: 'desktop_login_code' })
+    telemetry.applyFirebaseUserConsensus('user-b')
+    // Even a later confirmation of the original UID stays silent: the switch
+    // already contradicted the staged sign-in.
+    telemetry.applyFirebaseUserConsensus('user-a')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toHaveLength(0)
+  })
+
+  it('does not flush a deferred UID while renderer consensus is pending', () => {
+    telemetry.setConsentState('undecided')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.applyFirebasePendingConsensus()
+
+    telemetry.setConsentState('granted')
+    expect(identifies).toHaveLength(0)
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+    expect(identifies).toHaveLength(1)
+    expect(identifies[0]?.distinctId).toBe('user-123')
+  })
+
+  it('performs the full anonymous transition only after pending resolves signed out', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    const personSet = captured.find((call) => call.event === 'comfy.desktop.person.set')
+    expect(personSet).toMatchObject({
+      distinctId: 'user-123',
+      properties: { $set: { is_authenticated: false } }
+    })
+    telemetry.capture('after.confirmed.logout')
+    expect(captured.at(-1)?.distinctId).toBe('anonymous-next-1')
+  })
+
+  it('ends the pending quarantine when consensus resolves while consent is denied', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.applyFirebasePendingConsensus()
+
+    telemetry.setConsentState('denied')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.setConsentState('granted')
+    captured.length = 0
+
+    expect(telemetry.capture('after.denied.resolution')).toBe(true)
+    expect(captured.at(-1)?.distinctId).toBe('user-123')
+  })
+
+  it('detaches the stale binding when an account switch resolves during denied consent', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.applyFirebasePendingConsensus()
+
+    telemetry.setConsentState('denied')
+    telemetry.applyFirebaseUserConsensus('user-456')
+    telemetry.setConsentState('granted')
+
+    captured.length = 0
+    expect(telemetry.capture('between.replays')).toBe(true)
+    // The switched-away user must not receive events recorded after their
+    // switch resolved; the gap runs anonymous until the new UID rebinds.
+    expect(captured.at(-1)?.distinctId).toBe('anonymous-next-1')
+
+    telemetry.applyFirebaseUserConsensus('user-456')
+    captured.length = 0
+    telemetry.capture('after.switch')
+    expect(captured.at(-1)?.distinctId).toBe('user-456')
   })
 
   it('uses a different anonymous D for an account switch', () => {
