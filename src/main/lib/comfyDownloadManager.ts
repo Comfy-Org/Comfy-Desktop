@@ -1101,9 +1101,14 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   }
   const unsafeDestKeys = new Set(startupSafety.unsafePaths.map((p) => canonicalDestKey(p)))
   if (unsafeDestKeys.has(canonicalDestKey(savePath))) {
+    // The quarantine was re-attempted by the awaited pass just above (unsafe
+    // passes are never memoized), so this fires only while the broken file is
+    // STILL immovable right now - and a completed transfer could not replace
+    // it at finalization either (install is strictly no-clobber). Refusing up
+    // front spares the full transfer; Retry re-runs the whole path.
     const error =
-      'This model file needs attention before it can be downloaded again ' +
-      '(a previous incomplete download could not be quarantined)'
+      'A previous incomplete download is stuck at this location, likely in ' +
+      'use by another program. Close it, then press Retry.'
     reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, { status: 'error', error })
   }
@@ -1868,6 +1873,15 @@ export function cancelModelDownload(ref: string): boolean {
 export function retryDownload(ref: string): boolean {
   const row = findRecentByRef(ref)
   if (!row || row.id === undefined) return false
+  // Unsafe-model warning rows carry no captured job params: Retry re-runs
+  // the startup quarantine pass instead of dispatching a transfer (unsafe
+  // passes are never memoized, so this attempts the rename again right now).
+  // A pass that succeeds dismisses the row; one that still cannot move the
+  // file updates the same row in place, so the row itself is left alone here.
+  if (isUnsafeModelWarningRow(row.id)) {
+    void initializeModelDownloads().catch(() => undefined)
+    return true
+  }
   const params = retryParamsById.get(row.id)
   if (!params) return false
   // Don't double-dispatch while an equivalent job is already active. Model
@@ -2160,13 +2174,13 @@ const unsafeModelSnapshots: Record<'migration' | 'scan', Map<string, string>> = 
 
 const UNSAFE_MODEL_MESSAGES: Record<'migration' | 'scan', string> = {
   migration:
-    'Incomplete download from a previous version could not be quarantined; ' +
-    'the file is truncated and may appear broken in ComfyUI. ' +
-    'It will be retried on the next launch.',
+    'An incomplete download from a previous version is stuck under this ' +
+    'model name and may appear broken in ComfyUI. The file is likely in use ' +
+    'by another program - close it, then press Retry.',
   scan:
     'A crashed download left an unusable placeholder under this model name ' +
-    'and it could not be removed; the file may appear broken in ComfyUI. ' +
-    'It will be retried on the next launch.'
+    'and it could not be removed; it may appear broken in ComfyUI. The file ' +
+    'is likely in use by another program - close it, then press Retry.'
 }
 
 /** Persistent "still visible under a final model name" warning rows, keyed by
@@ -2175,6 +2189,15 @@ const UNSAFE_MODEL_MESSAGES: Record<'migration' | 'scan', string> = {
  *  duplicate on every blocked launch attempt, and a later pass that resolves
  *  the path everywhere dismisses its stale warning. */
 const unsafeModelWarnings = new Map<string, { id: string; path: string }>()
+
+/** Whether a Downloads row id belongs to an unsafe-model warning row (these
+ *  have no retry params; their Retry re-runs the quarantine pass). */
+function isUnsafeModelWarningRow(id: string): boolean {
+  for (const warning of unsafeModelWarnings.values()) {
+    if (warning.id === id) return true
+  }
+  return false
+}
 
 /** All paths currently considered unsafe by any producer, deduplicated by
  *  canonical path. */

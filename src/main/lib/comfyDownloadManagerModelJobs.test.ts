@@ -1427,6 +1427,52 @@ describe('model download startup safety (issue #1322)', () => {
     mod._test_resetModelDownloadsInit()
   })
 
+  it('Retry on an unsafe warning row re-runs the quarantine pass', async () => {
+    mod._test_resetModelDownloadsInit()
+    const marker = path.join(os.tmpdir(), 'cdm-unsafe-retry', 'stuck-retry.safetensors')
+    const warningRows = () =>
+      mod
+        .getDownloadsTrayState()
+        .recent.filter((r) => r.filename === 'stuck-retry.safetensors' && r.status === 'error')
+    migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
+      finalized: [],
+      staged: [],
+      removedStaleMeta: [],
+      quarantined: [],
+      unsafe: [marker]
+    })
+    const first = await mod.initializeModelDownloads()
+    expect(first.safe).toBe(false)
+    expect(warningRows()).toHaveLength(1)
+    const warningId = warningRows()[0]!.id!
+
+    // Still stuck: Retry re-attempts the quarantine (a fresh migration run)
+    // and the SAME row stays in place instead of stacking a duplicate.
+    migrateLegacyModelDownloadArtifacts.mockResolvedValueOnce({
+      finalized: [],
+      staged: [],
+      removedStaleMeta: [],
+      quarantined: [],
+      unsafe: [marker]
+    })
+    const migrationsBefore = migrateLegacyModelDownloadArtifacts.mock.calls.length
+    expect(mod.retryDownload(warningId)).toBe(true)
+    // retryDownload kicked the pass synchronously; this joins the same run.
+    const stillStuck = await mod.initializeModelDownloads()
+    expect(stillStuck.safe).toBe(false)
+    expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrationsBefore + 1)
+    expect(warningRows()).toHaveLength(1)
+    expect(warningRows()[0]!.id).toBe(warningId)
+
+    // Lock released: Retry re-runs the pass, the quarantine succeeds, and the
+    // warning row is dismissed.
+    expect(mod.retryDownload(warningId)).toBe(true)
+    const resolved = await mod.initializeModelDownloads()
+    expect(resolved.safe).toBe(true)
+    expect(warningRows()).toHaveLength(0)
+    mod._test_resetModelDownloadsInit()
+  })
+
   it('a retried unsafe pass does not duplicate hydrated jobs', async () => {
     mod._test_resetModelDownloadsInit()
     const url = 'https://host.example/unsafe-hydrate.safetensors'
@@ -1584,7 +1630,7 @@ describe('model download startup safety (issue #1322)', () => {
     })
     await expect(h.completion).resolves.toMatchObject({
       status: 'error',
-      error: expect.stringContaining('attention')
+      error: expect.stringContaining('incomplete download is stuck')
     })
     await flush()
     // No staging, no transport, and no alreadyPresent certification of the
