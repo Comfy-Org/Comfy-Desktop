@@ -20,16 +20,26 @@ export class CloudSession {
   /** Deduped in-flight refresh: parallel callers share one rotation so they
    *  never race the refresh token (a race can revoke the whole token family). */
   private refreshing: Promise<string | null> | null = null
+  private loginInFlight: Promise<AuthStatus> | null = null
+
+  /** Latest browser-auth intent. Older flows may finish, but cannot replace
+   *  tokens chosen by a newer login, workspace switch, or logout. */
+  private authGeneration = 0
 
   /** Start the PKCE sign-in (system browser); persists tokens on success. */
-  async login(): Promise<AuthStatus> {
-    const { tokens, status } = await signIn()
-    saveTokens(tokens)
-    return status
+  login(): Promise<AuthStatus> {
+    if (this.loginInFlight) return this.loginInFlight
+    const login = this.authenticate().finally(() => {
+      if (this.loginInFlight === login) this.loginInFlight = null
+    })
+    this.loginInFlight = login
+    return login
   }
 
   /** Forget tokens. Installed environments are untouched. */
   logout(): void {
+    this.authGeneration += 1
+    this.loginInFlight = null
     clearTokens()
   }
 
@@ -86,7 +96,14 @@ export class CloudSession {
    * this re-runs sign-in pre-selecting the workspace (no silent re-scope exists).
    */
   async switchWorkspace(workspaceId: string): Promise<AuthStatus> {
-    const { tokens, status } = await signIn({ workspaceId })
+    this.loginInFlight = null
+    return this.authenticate(workspaceId)
+  }
+
+  private async authenticate(workspaceId?: string): Promise<AuthStatus> {
+    const generation = ++this.authGeneration
+    const { tokens, status } = workspaceId ? await signIn({ workspaceId }) : await signIn()
+    if (generation !== this.authGeneration) return this.status()
     saveTokens(tokens)
     return status
   }

@@ -59,6 +59,80 @@ describe('CloudSession.getAccessToken', () => {
   })
 })
 
+describe('CloudSession browser auth', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('single-flights repeated login requests', async () => {
+    let resolveLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
+    mocked(signIn).mockReturnValue(
+      new Promise((resolve) => {
+        resolveLogin = resolve
+      })
+    )
+    const session = new CloudSession()
+
+    const first = session.login()
+    const second = session.login()
+    resolveLogin({
+      tokens: { accessToken: 'current', expiresAt: future },
+      status: { signedIn: true, email: 'current@comfy.org' }
+    })
+
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2)
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(saveTokens).toHaveBeenCalledOnce()
+  })
+
+  it('does not persist a login that finishes after logout', async () => {
+    let resolveLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
+    mocked(signIn).mockReturnValue(
+      new Promise((resolve) => {
+        resolveLogin = resolve
+      })
+    )
+    const session = new CloudSession()
+
+    const login = session.login()
+    session.logout()
+    resolveLogin({
+      tokens: { accessToken: 'stale', expiresAt: future },
+      status: { signedIn: true, email: 'stale@comfy.org' }
+    })
+
+    await expect(login).resolves.toEqual({ signedIn: false })
+    expect(saveTokens).not.toHaveBeenCalled()
+  })
+
+  it('does not let an older workspace switch overwrite a newer login', async () => {
+    let resolveSwitch!: (value: Awaited<ReturnType<typeof signIn>>) => void
+    let resolveLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
+    mocked(signIn).mockImplementation((options) =>
+      new Promise((resolve) => {
+        if (options?.workspaceId) resolveSwitch = resolve
+        else resolveLogin = resolve
+      })
+    )
+    const session = new CloudSession()
+
+    const workspaceSwitch = session.switchWorkspace('old-workspace')
+    session.logout()
+    const login = session.login()
+    const currentTokens = { accessToken: 'current', expiresAt: future }
+    resolveLogin({
+      tokens: currentTokens,
+      status: { signedIn: true, email: 'current@comfy.org' }
+    })
+    await login
+    resolveSwitch({
+      tokens: { accessToken: 'stale', expiresAt: future },
+      status: { signedIn: true, workspaceId: 'old-workspace' }
+    })
+    await workspaceSwitch
+
+    expect(saveTokens).toHaveBeenCalledExactlyOnceWith(currentTokens)
+  })
+})
+
 describe('CloudSession workspace + provider', () => {
   afterEach(() => vi.clearAllMocks())
 
