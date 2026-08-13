@@ -1366,6 +1366,12 @@ export interface ElectronApi {
    *  unavailable. Renderers consume this via `useCloudCapacity`. */
   getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Distributions-visibility switch. Resolved at boot from the `distributions_enabled`
+   *  PostHog flag (shared with the platform website's flag of the same name); defaults
+   *  to `true` when the flag is unavailable, since the distributions UI shipped
+   *  unflagged before this switch existed. Renderers consume this via
+   *  `useDistributionsEnabled`. */
+  getDistributionsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>

@@ -96,6 +96,7 @@ import {
 } from './lib/deviceId'
 import { initExperiments } from './lib/experiments'
 import { initCloudCapacity } from './lib/cloudCapacity'
+import { initDistributionsEnabled } from './lib/distributionsEnabled'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1494,6 +1495,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // (a user who declined analytics still benefits from cloud being
     // throttled when GPUs are saturated). See `cloudCapacity.ts`.
     void initCloudCapacity({ distinctId: installationId })
+
+    // Boot the distributions-visibility switch. Same OPS-kill-switch shape as
+    // `initCloudCapacity` above (bypasses telemetry consent for the same reason);
+    // gates the Comfy Builder distributions UI on the `distributions_enabled`
+    // PostHog flag shared with the platform website. See `distributionsEnabled.ts`.
+    void initDistributionsEnabled({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache so the very first
     // dashboard render knows whether the signed-in user is on a paid

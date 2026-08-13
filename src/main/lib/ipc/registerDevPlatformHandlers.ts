@@ -18,6 +18,7 @@ import {
 } from '../../devplatform/distributions'
 import type { DistributionRow } from '../../devplatform/distributions'
 import type { AuthStatus, Workspace } from '../../cloud'
+import { getDistributionsEnabledAsync } from '../distributionsEnabled'
 import {
   installations,
   uniqueName,
@@ -122,10 +123,13 @@ export function registerDevPlatformHandlers(): void {
   })
 
   // Display rows for the current workspace. Signed out → empty (no network
-  // calls); the renderer already gates the grid on sign-in. The installed-version
+  // calls); the renderer already gates the grid on sign-in. Additionally gated
+  // on the `distributions_enabled` PostHog flag (see `distributionsEnabled.ts`):
+  // on top of, never instead of, the sign-in check above. The installed-version
   // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listDistributions, async (): Promise<DistributionRow[]> => {
     if (!session.isSignedIn()) return []
+    if (!(await getDistributionsEnabledAsync())) return []
     const host = await resolveHost()
     return listDistributionRows(getBuilderClient(), host, await installedDistributionVersions())
   })
@@ -138,6 +142,9 @@ export function registerDevPlatformHandlers(): void {
     DEVPLATFORM_CHANNELS.installDistribution,
     async (_event, distributionId: string): Promise<InstallDistributionResult> => {
       if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
+      if (!(await getDistributionsEnabledAsync())) {
+        return { ok: false, message: 'Distributions are not available.' }
+      }
       if (installing.has(distributionId)) return { ok: false, message: 'Install already starting.' }
       installing.add(distributionId)
       try {
@@ -194,6 +201,9 @@ export function registerDevPlatformHandlers(): void {
     DEVPLATFORM_CHANNELS.updateDistribution,
     async (_event, distributionId: string): Promise<InstallDistributionResult> => {
       if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
+      if (!(await getDistributionsEnabledAsync())) {
+        return { ok: false, message: 'Distributions are not available.' }
+      }
       if (installing.has(distributionId)) return { ok: false, message: 'Update already starting.' }
       installing.add(distributionId)
       try {

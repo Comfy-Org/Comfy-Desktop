@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useCloudCapacity } from '../composables/useCloudCapacity'
+import { useDistributionsEnabled } from '../composables/useDistributionsEnabled'
 import { useModal } from '../composables/useModal'
 import { Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
@@ -71,6 +72,7 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const modal = useModal()
+const distributionsEnabled = useDistributionsEnabled()
 
 onMounted(() => {
   if (installationStore.installations.length === 0) {
@@ -81,11 +83,20 @@ onMounted(() => {
 // Sign-in / workspace-switch can happen ON this page (the chip), so the
 // distribution list follows the session rather than mount timing. Keying on the
 // workspace id (not just signed-in) is what re-fetches after a switch, where the
-// store clears the grid but signed-in stays true.
+// store clears the grid but signed-in stays true. Also keyed on the
+// `distributions_enabled` flag so a boot-time flag resolution that arrives after
+// this first fires still triggers the fetch once the feature turns out to be on.
 watch(
-  () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
-  () => {
-    if (authStore.isSignedIn && authStore.distributions.length === 0) {
+  () => [authStore.isSignedIn, authStore.status.workspaceId, distributionsEnabled.enabled.value] as const,
+  async () => {
+    // Await the boot fetch so a still-resolving flag can't fire the network call
+    // on its optimistic (fail-open) default just before flipping to disabled.
+    await distributionsEnabled.whenReady()
+    if (
+      authStore.isSignedIn &&
+      distributionsEnabled.isEnabled() &&
+      authStore.distributions.length === 0
+    ) {
       void authStore.fetchDistributions().catch(() => {})
     }
   },
@@ -143,7 +154,7 @@ function installationBacksDistribution(inst: Installation, dist: Distribution): 
  *  and receded by the card, not filtered out — a hidden one is indistinguishable
  *  from one that was never published. */
 const chooserDistributions = computed<Distribution[]>(() => {
-  if (!authStore.isSignedIn) return []
+  if (!authStore.isSignedIn || !distributionsEnabled.isEnabled()) return []
   return authStore.distributions.filter(
     (dist) =>
       !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
@@ -170,7 +181,7 @@ const showNoMatches = computed(
 /** One quiet line under the grid when the signed-in workspace has nothing
  *  published (or the fetch failed). Never a panel: this page already has content. */
 const distributionNote = computed(() => {
-  if (!authStore.isSignedIn) return ''
+  if (!authStore.isSignedIn || !distributionsEnabled.isEnabled()) return ''
   if (searchQuery.value.trim()) return ''
   if (authStore.loadingDistributions) return ''
   if (distributionLoadFailed.value) return t('devPlatform.distribution.loadError')

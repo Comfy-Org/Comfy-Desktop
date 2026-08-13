@@ -33,6 +33,7 @@ import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudCapacityStatusAsync } from '../cloudCapacity'
+import { getDistributionsEnabledAsync } from '../distributionsEnabled'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 
@@ -50,6 +51,12 @@ export function registerAppHandlers(): void {
   // default is `'normal'` (no UI change). See `cloudCapacity.ts` for the
   // boot-time / consent caveats.
   ipcMain.handle('get-cloud-capacity', () => getCloudCapacityStatusAsync())
+
+  // Distributions-visibility switch. Resolved from the `distributions_enabled`
+  // PostHog flag via the same ops-flag path as cloud capacity; safe default is
+  // `true` (the feature shipped unflagged before this switch existed). See
+  // `distributionsEnabled.ts`.
+  ipcMain.handle('get-distributions-enabled', () => getDistributionsEnabledAsync())
 
   // Signed-in user's Comfy Cloud subscription tier ('free' | 'paid' |
   // 'unknown'). Used by the capacity gate to let paying users through
