@@ -295,6 +295,13 @@ function updaterErrorMessage(args: unknown[]): string {
 
 type DesktopUpdateOperation = 'check' | 'download' | 'apply_restart'
 let _lastUpdateError: { key: string; at: number } | null = null
+/** Per-session cap on identical `app_update.error` messages. A broken
+ *  install re-fails the 10-minute auto-check forever (2.6M events/28d
+ *  fleet-wide); the first few occurrences carry all the signal. Keyed on the
+ *  message alone so operation/version churn can't defeat it; a NEW failure
+ *  mode in the same session still ships its first occurrences. */
+const UPDATE_ERROR_SESSION_CAP = 5
+const _updateErrorEmitCounts: Map<string, number> = new Map()
 interface ActiveUpdateOperation {
   operation: DesktopUpdateOperation
   source: string
@@ -321,6 +328,9 @@ function emitDesktopUpdateError(
   const now = Date.now()
   if (_lastUpdateError?.key === key && now - _lastUpdateError.at < 1_000) return
   _lastUpdateError = { key, at: now }
+  const emittedForMessage = _updateErrorEmitCounts.get(message) ?? 0
+  if (emittedForMessage >= UPDATE_ERROR_SESSION_CAP) return
+  _updateErrorEmitCounts.set(message, emittedForMessage + 1)
   const errorObject = Array.isArray(error)
     ? error.find((value): value is Error => value instanceof Error)
     : error instanceof Error

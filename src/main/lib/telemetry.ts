@@ -187,6 +187,8 @@ export function _resetForTest(): void {
   pendingFirstLaunch = null
   pendingPersonSet = null
   pendingPersonSetOnce = null
+  queuedPersonSet = null
+  queuedPersonSetOnce = null
   pendingUserBinding = null
   defaultEventProperties = {}
   initialized = false
@@ -368,6 +370,17 @@ const _rateLimitWarned: Set<string> = new Set()
 let _eventsCapturedThisProcess = 0
 let _sessionCapWarned = false
 
+/**
+ * Per-process cap on identical `$exception` messages. Electron crash loops
+ * (renderer / GPU / utility exits) re-emit the same four messages thousands
+ * of times per machine — 93.9% of ~1.9M `$exception`/mo. The first few
+ * occurrences carry all the signal; repeats of the same message in the same
+ * process are pure crash-loop volume. Distinct messages are unaffected, so
+ * new failure modes still ship their first occurrences.
+ */
+const EXCEPTION_MESSAGE_SESSION_CAP = 5
+const _exceptionMessageCounts: Map<string, number> = new Map()
+
 function _bypassRateLimit(event: string): boolean {
   // Failure events are reliability signal we never want to silently
   // throttle. Telemetry-self events bypass to avoid recursion when
@@ -447,6 +460,7 @@ function _recordCapturedEvent(event: string): void {
 export function _test_resetVolumeGuards(): void {
   _rateLimitStamps.clear()
   _rateLimitWarned.clear()
+  _exceptionMessageCounts.clear()
   _eventsCapturedThisProcess = 0
   _sessionCapWarned = false
 }
@@ -544,6 +558,12 @@ export function initTelemetry(opts: InitOptions): void {
       host: cfg.host,
       flushAt: 20,
       flushInterval: 10_000,
+      // Never emit the SDK's implicit `$feature_flag_called` event from any
+      // flag read (`getOpsFlag` also opts out per-call). Flag evaluation
+      // itself is unaffected; exposures are recorded explicitly via
+      // `experiments.ts`. Client-level so a future call site can't silently
+      // reintroduce a per-evaluation event (3.37M/28d at its peak).
+      sendFeatureFlagEvent: false,
       // GeoIP: posthog-node runs in the desktop main process ON the user's
       // machine, so the request IP is the real user IP and PostHog can derive
       // the user's location. We opt IN to country-level cohorts (the IP is no
@@ -591,6 +611,18 @@ let pendingFirstLaunch: TelemetryContext | null = null
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
 /** Same, for write-once (`$set_once`) markers. */
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
+/**
+ * Authenticated person-property updates waiting to ride the NEXT captured
+ * event. PostHog applies `$set` / `$set_once` from any event's properties, so
+ * attaching them to an event that ships anyway replaces the dedicated
+ * `comfy.desktop.person.set` carrier event (15.2M/28d of pure overhead).
+ * `session.ended` at shutdown is the guaranteed last carrier in a clean
+ * session; identity boundaries flush eagerly via
+ * `flushQueuedPersonProperties` so an update can never land on the wrong
+ * person. Scrubbed at enqueue time.
+ */
+let queuedPersonSet: Record<string, TelemetryValue> | null = null
+let queuedPersonSetOnce: Record<string, TelemetryValue> | null = null
 
 interface PendingUserBinding {
   userId: string
@@ -617,6 +649,8 @@ function discardDeferredTelemetry(): void {
   pendingFirstLaunch = null
   pendingPersonSet = null
   pendingPersonSetOnce = null
+  queuedPersonSet = null
+  queuedPersonSetOnce = null
   pendingUserBinding = null
 }
 
@@ -888,7 +922,11 @@ export function applyFirebaseAnonymousConsensus(): void {
   pendingPersonSetOnce = null
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
+    flushQueuedPersonProperties()
   }
+  // Whatever could not flush must never ride an event under the next identity.
+  queuedPersonSet = null
+  queuedPersonSetOnce = null
   const safeAnonymousId = nextAnonymousDistinctId ?? rotatePersistedAnonymousDistinctId()
   boundUserId = null
   nextAnonymousDistinctId = null
@@ -954,9 +992,11 @@ function scrubProperties(properties: TelemetryContext): TelemetryContext {
 }
 
 /**
- * Update the already-identified Firebase person via an explicit event.
- * Returns whether the write was admitted, so deferred-buffer flushes can
- * retain their payload on a drop. Empty input is trivially admitted.
+ * Queue person-property updates for the already-identified Firebase person.
+ * Delivery rides the next captured event (see `queuedPersonSet`) instead of
+ * spending a dedicated event per update. Returns whether the update was
+ * accepted, so deferred-buffer flushes can retain their payload on a drop.
+ * Empty input is trivially accepted.
  */
 function capturePersonProperties(
   set: Record<string, TelemetryValue> | null,
@@ -964,19 +1004,36 @@ function capturePersonProperties(
 ): boolean {
   if (!canEmit() || !distinctId || !boundUserId) return false
   if (consentState !== 'granted') return false
-  if ((!set || Object.keys(set).length === 0) && (!setOnce || Object.keys(setOnce).length === 0)) {
-    return true
-  }
-  const properties: TelemetryContext = {}
   if (set && Object.keys(set).length > 0) {
-    ;(properties as Record<string, unknown>).$set = scrubProperties(set as TelemetryContext)
+    queuedPersonSet = {
+      ...(queuedPersonSet || {}),
+      ...(scrubProperties(set as TelemetryContext) as Record<string, TelemetryValue>)
+    }
   }
   if (setOnce && Object.keys(setOnce).length > 0) {
-    ;(properties as Record<string, unknown>).$set_once = scrubProperties(
-      setOnce as TelemetryContext
-    )
+    // First write wins, mirroring registerPersonPropertiesOnce.
+    queuedPersonSetOnce = {
+      ...(scrubProperties(setOnce as TelemetryContext) as Record<string, TelemetryValue>),
+      ...(queuedPersonSetOnce || {})
+    }
   }
-  return capture('comfy.desktop.person.set', properties)
+  return true
+}
+
+/**
+ * Ship queued person updates NOW as a dedicated `comfy.desktop.person.set`
+ * event. Only for identity boundaries (logout, account switch), where waiting
+ * for a carrier event would attribute the update to the next identity.
+ */
+function flushQueuedPersonProperties(): void {
+  if (!queuedPersonSet && !queuedPersonSetOnce) return
+  const properties: TelemetryContext = {}
+  if (queuedPersonSet) (properties as Record<string, unknown>).$set = queuedPersonSet
+  if (queuedPersonSetOnce) (properties as Record<string, unknown>).$set_once = queuedPersonSetOnce
+  if (capture('comfy.desktop.person.set', properties)) {
+    queuedPersonSet = null
+    queuedPersonSetOnce = null
+  }
 }
 
 /**
@@ -997,12 +1054,30 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
     const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+    // Ride queued person updates on this event instead of a dedicated
+    // person.set capture. Skipped when the caller supplies its own
+    // $set/$set_once (the explicit flush path); cleared only after the SDK
+    // accepted the event so a dropped carrier keeps the update queued.
+    const attachQueuedPersonProps =
+      boundUserId !== null &&
+      consentState === 'granted' &&
+      (queuedPersonSet !== null || queuedPersonSetOnce !== null) &&
+      !('$set' in merged) &&
+      !('$set_once' in merged)
+    if (attachQueuedPersonProps) {
+      if (queuedPersonSet) (merged as Record<string, unknown>).$set = queuedPersonSet
+      if (queuedPersonSetOnce) (merged as Record<string, unknown>).$set_once = queuedPersonSetOnce
+    }
     client!.capture({
       distinctId,
       event,
       properties: scrubProperties(merged)
     })
     _recordCapturedEvent(event)
+    if (attachQueuedPersonProps) {
+      queuedPersonSet = null
+      queuedPersonSetOnce = null
+    }
     return true
   } catch {
     // swallow - telemetry must never break the app
@@ -1042,8 +1117,8 @@ export function captureFirstLaunch(properties: TelemetryContext = {}): void {
  * Update PostHog person properties for the current distinct id (`$set`).
  *
  * Before login, queue person props without any PostHog write. The
- * initial Firebase UID identify applies them; later authenticated updates use
- * an explicit capture-`$set` event.
+ * initial Firebase UID identify applies them; later authenticated updates
+ * ride `$set` on the next captured event (see `queuedPersonSet`).
  */
 export function registerPersonProperties(properties: Record<string, TelemetryValue>): void {
   if (!canEmit() || consentState === 'denied') return
@@ -1132,6 +1207,9 @@ export function captureException(error: unknown, properties: TelemetryContext = 
         safeErrorRecord[scrubAll(key).slice(0, 128)] = scrubAll(value).slice(0, ERROR_MESSAGE_MAX)
       }
     }
+    const messageKey = `${safeError.name}:${safeError.message}`
+    const identicalSent = _exceptionMessageCounts.get(messageKey) ?? 0
+    if (identicalSent >= EXCEPTION_MESSAGE_SESSION_CAP) return false
     client!.captureException(
       safeError,
       distinctId,
@@ -1139,6 +1217,8 @@ export function captureException(error: unknown, properties: TelemetryContext = 
         enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
       ) as TelemetryContext
     )
+    // Counted only after the SDK accepted it, so a throw doesn't burn a slot.
+    _exceptionMessageCounts.set(messageKey, identicalSent + 1)
     _recordCapturedEvent('comfy.desktop.exception.error')
     return true
   } catch {
