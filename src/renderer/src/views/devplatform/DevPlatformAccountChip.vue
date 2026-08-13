@@ -2,11 +2,12 @@
 /**
  * Account chip: persistent identity, top-right (the Docker Desktop pattern).
  *
- * Signed out it is one quiet log-in button that runs the browser handoff
- * itself. Signed in it names the account AND the workspace on the chip face:
- * a token carries exactly one workspace claim, so everything downstream
- * belongs to whichever workspace this chip names; keeping it visible makes a
- * wrong-workspace mistake self-correcting.
+ * Signed out it renders NOTHING — logging in lives in the title-bar file menu
+ * and nowhere else, so the dashboard shows no account affordance until there
+ * is an account to show. Signed in it names the account AND the workspace on
+ * the chip face: a token carries exactly one workspace claim, so everything
+ * downstream belongs to whichever workspace this chip names; keeping it
+ * visible makes a wrong-workspace mistake self-correcting.
  *
  * The dropdown is a WORKSPACE SWITCHER: it lists the account's workspaces and
  * switches the active one. A cloud PKCE token is scoped at consent time, so a
@@ -19,7 +20,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Loader2, LogIn, LogOut } from 'lucide-vue-next'
+import { Check, ChevronDown, Loader2, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
 import { useDialogs } from '../../composables/useDialogs'
@@ -38,7 +39,6 @@ const dialogs = useDialogs()
 const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
-const signingIn = ref(false)
 /** Workspace id currently being switched to, or null. Drives the row spinner
  *  and blocks a second concurrent switch. */
 const switchingTo = ref<string | null>(null)
@@ -108,18 +108,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onPointerDown)
 })
 
-async function onSignIn(): Promise<void> {
-  if (signingIn.value) return
-  signingIn.value = true
-  try {
-    await store.signIn()
-  } catch {
-    // Cancelled or failed browser handoff: the button simply re-arms.
-  } finally {
-    signingIn.value = false
-  }
-}
-
 async function onSelectWorkspace(workspaceId: string): Promise<void> {
   // Already the active workspace, or a switch is already in flight.
   if (workspaceId === currentWorkspaceId.value || switchingTo.value) return
@@ -158,22 +146,9 @@ async function onSignOut(): Promise<void> {
 
 <template>
   <div ref="rootRef" class="account-chip" @keydown="onKeydown">
-    <!-- Signed out: one quiet button. Deliberately not the yellow primary. -->
-    <button
-      v-if="!store.isSignedIn"
-      type="button"
-      class="brand-tertiary account-chip__signin"
-      data-testid="devplatform-account-signin"
-      :disabled="signingIn"
-      :aria-busy="signingIn"
-      @click="onSignIn"
-    >
-      <Loader2 v-if="signingIn" :size="16" class="account-chip__spinner" aria-hidden="true" />
-      <LogIn v-else :size="16" aria-hidden="true" />
-      <span>{{ $t('devPlatform.signIn.cta') }}</span>
-    </button>
-
-    <template v-else>
+    <!-- Signed out renders nothing at all: the file menu's "Log in" is the
+         app's only sign-in affordance. -->
+    <template v-if="store.isSignedIn">
       <button
         ref="faceRef"
         type="button"
@@ -279,12 +254,6 @@ async function onSignOut(): Promise<void> {
   align-items: flex-end;
 }
 
-.account-chip__signin {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .account-chip__spinner {
   animation: account-chip-spin 900ms linear infinite;
 }
@@ -295,9 +264,9 @@ async function onSignOut(): Promise<void> {
 }
 
 /* Chip face: frosted, quiet, and two-line so the workspace never has to be
-   truncated out of existence on a narrow window. Shares the 6px radius of
-   `button.brand-tertiary`: the signed-out control that occupies this same
-   slot: so the two states of one affordance keep one silhouette. */
+   truncated out of existence on a narrow window. Keeps the 6px radius of
+   `button.brand-tertiary` so it sits in the same visual family as the rest of
+   the dashboard's quiet controls. */
 .account-chip__face {
   display: inline-flex;
   align-items: center;

@@ -7,9 +7,14 @@
  * Access/refresh tokens NEVER cross this boundary: handlers return and broadcast
  * only renderer-safe shapes: `AuthStatus`, `Workspace[]`, and distribution
  * DISPLAY rows: never a token or a download ref.
+ *
+ * `signInToCloud` is exported alongside the handlers because the title-bar file
+ * menu starts sign-ins from main, with no renderer in the loop. It shares the
+ * same auth broadcast as renderer-driven sign-ins.
  */
 import { BrowserWindow, ipcMain } from 'electron'
 
+import { comfyWindows } from '../../host/registry'
 import { getBuilderClient, getCloudSession } from '../../devplatform/session'
 import {
   listDistributionRows,
@@ -55,14 +60,43 @@ export interface InstallDistributionResult {
 }
 
 /**
- * Push the renderer-safe {@link AuthStatus} to every window so all surfaces
- * update in lockstep. Only the status (never tokens) is sent. Exported so a
- * mid-request session expiry could announce itself later.
+ * Push the renderer-safe {@link AuthStatus} to every surface so they update in
+ * lockstep. Only the status (never tokens) is sent.
+ *
+ * A host window loads NO page of its own - the dashboard/chooser renderer lives
+ * in a child `panelView` WebContentsView - so `BrowserWindow.getAllWindows()`
+ * alone delivers to an empty webContents and the chip never repaints. That went
+ * unnoticed while the only sign-in trigger was the chip itself, which set the
+ * store from `signIn()`'s return value and never needed the push. Now that the
+ * file menu starts sign-ins from main, this broadcast is the only path back.
  */
 export function broadcastAuthChanged(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
+  for (const entry of comfyWindows.values()) {
+    const panel = entry.panelView
+    if (panel && !panel.webContents.isDestroyed())
+      panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
+  }
+}
+
+/**
+ * Run the browser sign-in handoff and announce the result. The primitive
+ * behind both the `comfybuilder:signIn` IPC and the title-bar file menu's
+ * sign-in item. `CloudSession` owns browser-auth race handling.
+ */
+export async function signInToCloud(): Promise<AuthStatus> {
+  const session = getCloudSession()
+  const status = await session.login()
+  broadcastAuthChanged(status)
+  return status
+}
+
+/** Sign-in state for main-side surfaces that decide what to render (the file
+ *  menu). Renderer surfaces read it over `getAuthStatus` instead. */
+export function isSignedInToCloud(): boolean {
+  return getCloudSession().status().signedIn
 }
 
 /**
@@ -75,29 +109,13 @@ export function broadcastAuthChanged(status: AuthStatus): void {
 export function registerDevPlatformHandlers(): void {
   const session = getCloudSession()
 
-  // Bumped by signOut so a sign-in already out in the browser when the user
-  // signs out cannot resurrect the session when its flow completes.
-  let signOutGeneration = 0
-
   // Distribution ids whose install-kickoff is mid-flight, so a double-click
   // cannot create two records for the same distribution.
   const installing = new Set<string>()
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, async (): Promise<AuthStatus> => {
-    const generation = signOutGeneration
-    const status = await session.login()
-    // Signed out while the browser flow was in flight: the login persisted
-    // tokens, so drop them rather than leave a session the user tried to kill.
-    if (generation !== signOutGeneration) {
-      session.logout()
-      return SIGNED_OUT
-    }
-    broadcastAuthChanged(status)
-    return status
-  })
+  ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, (): AuthStatus => {
-    signOutGeneration += 1
     session.logout()
     broadcastAuthChanged(SIGNED_OUT)
     return SIGNED_OUT
@@ -111,17 +129,12 @@ export function registerDevPlatformHandlers(): void {
   // is scoped at consent time), so it can open the browser and change identity:
   // broadcast the new status so every surface re-scopes together.
   ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, async (_event, workspaceId: string): Promise<AuthStatus> => {
-    const generation = signOutGeneration
     const status = await session.switchWorkspace(workspaceId)
-    if (generation !== signOutGeneration) {
-      session.logout()
-      return SIGNED_OUT
-    }
     broadcastAuthChanged(status)
     return status
   })
 
-  // Display rows for the current workspace. Signed out → empty (no network
+  // Display rows for the current workspace. Signed out -> empty (no network
   // calls); the renderer already gates the grid on sign-in. The installed-version
   // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listDistributions, async (): Promise<DistributionRow[]> => {
@@ -132,8 +145,8 @@ export function registerDevPlatformHandlers(): void {
 
   // Resolve the host artifact for one distribution and create an `installing`
   // record, then hand the id back so the renderer runs the normal
-  // `installInstance` + progress flow. The install itself (download → verify
-  // sha → extract) runs in the comfybuilder SourcePlugin.
+  // `installInstance` + progress flow. The install itself (download -> verify
+  // sha -> extract) runs in the comfybuilder SourcePlugin.
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.installDistribution,
     async (_event, distributionId: string): Promise<InstallDistributionResult> => {
