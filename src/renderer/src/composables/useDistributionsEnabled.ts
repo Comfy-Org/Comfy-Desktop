@@ -52,6 +52,6 @@ export function useDistributionsEnabled(): {
   return {
     enabled: readonly(enabled) as Readonly<typeof enabled>,
     isEnabled: () => enabled.value,
-    whenReady: ensureLoaded,
+    whenReady: ensureLoaded
   }
 }

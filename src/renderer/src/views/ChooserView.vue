@@ -86,7 +86,12 @@ onMounted(() => {
 // `distributions_enabled` flag so a boot-time flag resolution that arrives after
 // this first fires still triggers the fetch once the feature turns out to be on.
 watch(
-  () => [authStore.isSignedIn, authStore.status.workspaceId, distributionsEnabled.enabled.value] as const,
+  () =>
+    [
+      authStore.isSignedIn,
+      authStore.status.workspaceId,
+      distributionsEnabled.enabled.value
+    ] as const,
   async () => {
     // Await the boot fetch so a still-resolving flag can't fire the network call
     // on its optimistic (fail-open) default just before flipping to disabled.

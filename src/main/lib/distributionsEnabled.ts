@@ -38,7 +38,11 @@ export function initDistributionsEnabled(opts: {
 }): Promise<void> {
   if (initPromise) return initPromise
   initPromise = mainTelemetry
-    .getOpsFlag(DISTRIBUTIONS_ENABLED_FLAG_KEY, opts.distinctId, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    .getOpsFlag(
+      DISTRIBUTIONS_ENABLED_FLAG_KEY,
+      opts.distinctId,
+      opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    )
     .then((value) => {
       if (typeof value === 'boolean') {
         cached = value
