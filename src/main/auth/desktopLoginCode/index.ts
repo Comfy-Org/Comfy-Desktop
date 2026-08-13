@@ -257,13 +257,12 @@ export async function signInViaDesktopLoginCode(
     )
     if (!injected) return 'handled'
     if (controller.signal.aborted) return 'handled'
-    // Bind only after the session was successfully installed. Hosted Cloud
-    // views wait for their declarative auth reporter; local/legacy views use
-    // the main-verified fallback, so this produces exactly one success.
-    bindSignedInUser(user, comfyContents)
-    mainTelemetry.capture('comfy.desktop.identity.login_attributed', {
-      via: 'desktop_login_code'
-    })
+    // Bind only after the session was successfully installed. The injected
+    // session reloads hosted Cloud views, so the bind holds this user as
+    // pending and the consensus layer identifies — and emits the login
+    // attribution — once a document re-reports the same UID. Local/legacy
+    // views confirm through their scoped reporter the same way.
+    bindSignedInUser(user, comfyContents, { via: 'desktop_login_code' })
     restoreParentWindow(opts.parentWindow)
     return 'handled'
   } catch (err) {

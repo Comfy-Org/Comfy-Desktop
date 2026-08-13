@@ -150,8 +150,8 @@ export async function handleFirebasePopup(
     if (!injected) return
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
     // Do not report success until the session is installed in the initiating
-    // view. Hosted Cloud views bind through declarative auth consensus;
-    // local/legacy views use the main-verified fallback.
+    // view. The bind holds this user as pending through the post-injection
+    // reload; the consensus layer identifies once a document re-reports it.
     bindSignedInUser(user, comfyContents)
     // Pull the user back into the app after the browser completes sign-in.
     restoreParentWindow(opts.parentWindow)

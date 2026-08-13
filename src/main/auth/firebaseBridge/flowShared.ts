@@ -60,21 +60,38 @@ export function emitSignInFailure(
   return failure
 }
 
-/** Submit a Desktop-verified Firebase user to the process-wide identity consensus. */
-export function bindSignedInUser(user: Record<string, unknown>, source: WebContents): void {
+function verifiedIdentityFromUser(user: Record<string, unknown>): {
+  uid: string
+  properties: Record<string, string | number>
+} | null {
+  const uid = typeof user.uid === 'string' && user.uid.length > 0 ? user.uid : null
+  if (!uid) return null
+  const email = typeof user.email === 'string' && user.email.length > 0 ? user.email : null
+  const at = email ? email.lastIndexOf('@') : -1
+  const emailDomain = at >= 0 ? email!.slice(at + 1).toLowerCase() : null
+  const properties: Record<string, string | number> = {
+    signed_in_via: 'desktop_2',
+    signed_in_at_ms: Date.now()
+  }
+  if (email) properties.email = email
+  if (emailDomain) properties.email_domain = emailDomain
+  return { uid, properties }
+}
+
+/**
+ * Submit a Desktop-verified Firebase user to the process-wide identity
+ * consensus, with an optional one-shot login-attribution payload that the
+ * consensus layer emits once this UID is confirmed.
+ */
+export function bindSignedInUser(
+  user: Record<string, unknown>,
+  source: WebContents,
+  attribution: mainTelemetry.TelemetryContext | null = null
+): void {
   try {
-    const uid = typeof user.uid === 'string' && user.uid.length > 0 ? user.uid : null
-    if (!uid) return
-    const email = typeof user.email === 'string' && user.email.length > 0 ? user.email : null
-    const at = email ? email.lastIndexOf('@') : -1
-    const emailDomain = at >= 0 ? email!.slice(at + 1).toLowerCase() : null
-    const properties: Record<string, string | number> = {
-      signed_in_via: 'desktop_2',
-      signed_in_at_ms: Date.now()
-    }
-    if (email) properties.email = email
-    if (emailDomain) properties.email_domain = emailDomain
-    bindMainVerifiedFirebaseUser(uid, properties, source)
+    const identity = verifiedIdentityFromUser(user)
+    if (!identity) return
+    bindMainVerifiedFirebaseUser(identity.uid, identity.properties, source, attribution)
   } catch {
     // Telemetry must never break the auth flow.
   }
