@@ -17,7 +17,9 @@ export function useLauncherPrefs() {
   async function loadPrefs(): Promise<void> {
     if (loadPromise) return loadPromise
     loadPromise = (async () => {
-      const firstUse = await (window.api.getSetting('firstUseCompleted') as Promise<boolean | undefined>)
+      const firstUse = await (window.api.getSetting('firstUseCompleted') as Promise<
+        boolean | undefined
+      >)
       firstUseCompleted.value = firstUse === true
       loaded.value = true
     })()
@@ -36,7 +38,7 @@ export function useLauncherPrefs() {
     firstUseCompleted,
     loaded,
     loadPrefs,
-    markFirstUseCompleted,
+    markFirstUseCompleted
   }
 }
 

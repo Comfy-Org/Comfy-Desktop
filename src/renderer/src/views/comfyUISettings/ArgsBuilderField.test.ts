@@ -11,42 +11,55 @@ const i18n = createI18n({
   locale: 'en',
   messages: { en: {} },
   missingWarn: false,
-  fallbackWarn: false,
+  fallbackWarn: false
 })
 
 const SCHEMA: ComfyArgDef[] = [
   { name: 'cpu', flag: '--cpu', help: 'Run on CPU only.', type: 'boolean', category: 'gpuVram' },
-  { name: 'lowvram', flag: '--lowvram', help: 'Reduce VRAM.', type: 'boolean', category: 'gpuVram' },
+  {
+    name: 'lowvram',
+    flag: '--lowvram',
+    help: 'Reduce VRAM.',
+    type: 'boolean',
+    category: 'gpuVram'
+  },
   { name: 'novram', flag: '--novram', help: 'No VRAM.', type: 'boolean', category: 'gpuVram' },
-  { name: 'port', flag: '--port', help: 'Server port.', type: 'value', metavar: 'PORT', category: 'network' },
+  {
+    name: 'port',
+    flag: '--port',
+    help: 'Server port.',
+    type: 'value',
+    metavar: 'PORT',
+    category: 'network'
+  }
 ]
 
 const FIELD: DetailField = {
   id: 'launchArgs',
   label: 'Startup Arguments',
   editType: 'args-builder',
-  value: '',
+  value: ''
 } as DetailField
 
 function stubElectronApi(): void {
   ;(window as unknown as { api: unknown }).api = {
-    getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA }),
+    getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA })
   }
 }
 
 const wrappers: VueWrapper[] = []
 
 async function mountField(
-  props: { field?: DetailField; installationId?: string | null } = {},
+  props: { field?: DetailField; installationId?: string | null } = {}
 ): Promise<VueWrapper> {
   const installationId = 'installationId' in props ? props.installationId : 'inst-1'
   const wrapper = mount(ArgsBuilderField, {
     props: {
       field: { ...FIELD, ...(props.field ?? {}) },
-      ...(installationId == null ? {} : { installationId }),
+      ...(installationId == null ? {} : { installationId })
     },
     global: { plugins: [i18n] },
-    attachTo: document.body,
+    attachTo: document.body
   })
   wrappers.push(wrapper)
   await flushPromises()
@@ -90,7 +103,7 @@ describe('ArgsBuilderField — inline autocomplete', () => {
     expect(wrapper.find('.args-raw-input-ac').text()).toContain('Reduce VRAM')
   })
 
-  it("emits `update` with the spliced flag when a suggestion is clicked", async () => {
+  it('emits `update` with the spliced flag when a suggestion is clicked', async () => {
     const wrapper = await mountField()
     const input = wrapper.get('input')
     await input.trigger('focusin')
@@ -140,7 +153,9 @@ describe('ArgsBuilderField — inline autocomplete', () => {
   it('still works as a plain text input when no installationId is provided', async () => {
     const wrapper = await mountField({ installationId: null })
     expect(wrapper.find('input').exists()).toBe(true)
-    expect((window as unknown as { api: { getComfyArgs: ReturnType<typeof vi.fn> } }).api.getComfyArgs).not.toHaveBeenCalled()
+    expect(
+      (window as unknown as { api: { getComfyArgs: ReturnType<typeof vi.fn> } }).api.getComfyArgs
+    ).not.toHaveBeenCalled()
     expect(wrapper.find('.args-raw-input-ac').exists()).toBe(false)
   })
 

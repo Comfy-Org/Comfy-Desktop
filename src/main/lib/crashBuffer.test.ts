@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { MAX_BUFFER_BYTES, clearCrash, getCrash, recordCrash, _resetCrashBuffer } from './crashBuffer'
+import {
+  MAX_BUFFER_BYTES,
+  clearCrash,
+  getCrash,
+  recordCrash,
+  _resetCrashBuffer
+} from './crashBuffer'
 
 describe('crashBuffer', () => {
   beforeEach(() => {
@@ -17,7 +23,7 @@ describe('crashBuffer', () => {
       installationName: 'Local',
       crashed: true,
       exitCode: 137,
-      lastStderr: 'OOM\n',
+      lastStderr: 'OOM\n'
     })
     const stored = getCrash('inst-1')
     expect(stored).not.toBeNull()
@@ -34,7 +40,7 @@ describe('crashBuffer', () => {
       installationName: 'Local',
       crashed: true,
       exitCode: 1,
-      lastStderr: big,
+      lastStderr: big
     })
     const stored = getCrash('inst-1')
     expect(stored?.lastStderr?.length).toBe(MAX_BUFFER_BYTES)
@@ -47,7 +53,7 @@ describe('crashBuffer', () => {
       installationName: 'Local',
       crashed: true,
       exitCode: 1,
-      lastStderr: 'oops',
+      lastStderr: 'oops'
     })
     clearCrash('inst-1')
     expect(getCrash('inst-1')).toBeNull()
@@ -59,14 +65,14 @@ describe('crashBuffer', () => {
       installationName: 'Local',
       crashed: true,
       exitCode: 1,
-      lastStderr: 'first',
+      lastStderr: 'first'
     })
     recordCrash({
       installationId: 'inst-1',
       installationName: 'Local',
       crashed: true,
       exitCode: 2,
-      lastStderr: 'second',
+      lastStderr: 'second'
     })
     expect(getCrash('inst-1')?.lastStderr).toBe('second')
     expect(getCrash('inst-1')?.exitCode).toBe(2)

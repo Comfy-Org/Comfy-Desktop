@@ -38,12 +38,24 @@ const NODE_IMPORT_LINE = /^\s*[\d.]+\s*seconds?:\s*.*[/\\]custom_nodes[/\\](.+?)
  */
 const ACTIVITY_MESSAGES: ReadonlyArray<{ match: RegExp; key: string }> = [
   { match: /\[(?:PRE|START)\] ComfyUI-Manager|ComfyUI-Manager/i, key: 'launch.activity.manager' },
-  { match: /FETCH ComfyRegistry|custom-node-list|api\.comfy\.org\/nodes/i, key: 'launch.activity.registry' },
+  {
+    match: /FETCH ComfyRegistry|custom-node-list|api\.comfy\.org\/nodes/i,
+    key: 'launch.activity.registry'
+  },
   { match: /Set vram state|Device:\s|VRAM/i, key: 'launch.activity.vram' },
-  { match: /pytorch version|optimization for attention|xformers|sage-attention|flash-attention/i, key: 'launch.activity.optimizing' },
-  { match: /Checkpoint files will always|model path|Adding extra search path/i, key: 'launch.activity.models' },
+  {
+    match: /pytorch version|optimization for attention|xformers|sage-attention|flash-attention/i,
+    key: 'launch.activity.optimizing'
+  },
+  {
+    match: /Checkpoint files will always|model path|Adding extra search path/i,
+    key: 'launch.activity.models'
+  },
   { match: /Database|alembic|Running upgrade|SQLite/i, key: 'launch.activity.database' },
-  { match: /Import times for custom nodes|Loading custom node|Loaded node/i, key: 'launch.activity.nodes' },
+  {
+    match: /Import times for custom nodes|Loading custom node|Loaded node/i,
+    key: 'launch.activity.nodes'
+  }
 ]
 
 /** Map a raw log line to a human i18n key, or null if it's not meaningful. */
@@ -61,6 +73,12 @@ export interface LaunchProgressTracker {
   start: () => void
   /** Feed a stdout/stderr chunk. Safe to call with partial lines. */
   ingest: (chunk: string) => void
+  /** Restart per-attempt `onPhaseEnter` observation for a boot retry. The UI
+   *  phase index stays monotonic (progress never regresses), but the retried
+   *  process re-logs its boot from the top - without this reset those re-hit
+   *  milestones would be invisible to the boot-phase telemetry buffer, and a
+   *  failing retry would flush an empty buffer (`failed_phase: null`). */
+  resetPhaseObservation: () => void
 }
 
 export function createLaunchProgressTracker(opts: {
@@ -82,6 +100,22 @@ export function createLaunchProgressTracker(opts: {
 
   // Index of the currently-active phase; -1 until the first milestone.
   let activeIdx = -1
+  // Per-boot-attempt phase observation for the telemetry side-channel.
+  // Separate from `activeIdx` because the UI index is monotonic across
+  // reboot/port retries while telemetry buffers per attempt.
+  let observedPhases = new Set<string>()
+
+  function observePhase(phase: string): void {
+    if (observedPhases.has(phase)) return
+    observedPhases.add(phase)
+    if (onPhaseEnter) {
+      try {
+        onPhaseEnter(phase)
+      } catch {
+        // side-channel telemetry must never break progress reporting
+      }
+    }
+  }
   // Nodes seen so far in the customNodes phase, for the X-of-Y detail.
   let nodesSeen = 0
   let stepsSent = false
@@ -95,7 +129,7 @@ export function createLaunchProgressTracker(opts: {
     // Weights ride along so the renderer paces the bar from the phase defs (the
     // single source of truth) — no mirrored table to keep in sync.
     sendProgress('steps', {
-      steps: phases.map((p) => ({ phase: p.phase, label: p.phase, weight: p.weight })),
+      steps: phases.map((p) => ({ phase: p.phase, label: p.phase, weight: p.weight }))
     })
   }
 
@@ -104,16 +138,10 @@ export function createLaunchProgressTracker(opts: {
     if (idx <= activeIdx) return
     activeIdx = idx
     const def = phases[idx]!
-    if (onPhaseEnter) {
-      try {
-        onPhaseEnter(def.phase)
-      } catch {
-        // side-channel telemetry must never break progress reporting
-      }
-    }
+    observePhase(def.phase)
     sendProgress(def.phase, {
       status: entryStatus(def),
-      percent: entryPercent(def),
+      percent: entryPercent(def)
     })
   }
 
@@ -166,6 +194,18 @@ export function createLaunchProgressTracker(opts: {
       break
     }
 
+    // Telemetry-only re-observation: after a reboot/port retry the respawned
+    // process re-logs milestones the monotonic UI index already passed. The
+    // loop above ignores those (i <= activeIdx), so scan them here purely for
+    // the per-attempt phase buffer; no progress is (re)sent.
+    for (let i = Math.min(activeIdx, phases.length - 1); i >= 0; i--) {
+      const def = phases[i]!
+      if (observedPhases.has(def.phase)) continue
+      if (!def.match.test(line)) continue
+      observePhase(def.phase)
+      break
+    }
+
     if (activeIdx < 0) return
     const def = phases[activeIdx]!
 
@@ -180,7 +220,7 @@ export function createLaunchProgressTracker(opts: {
         const name = nodeMatch[1]?.replace(/\.py$/, '') ?? ''
         sendProgress(def.phase, {
           status: name ? `${nodeCountLabel()} · ${name}` : nodeCountLabel(),
-          percent: pct,
+          percent: pct
         })
         return
       }
@@ -201,11 +241,17 @@ export function createLaunchProgressTracker(opts: {
       // the last step. Only when phase 0 is the never-matching `launchStart`.
       if (activeIdx < 0 && phases.length > 0) enterPhase(0)
     },
+    resetPhaseObservation(): void {
+      observedPhases = new Set()
+      // Mirror what `start()` records for a fresh boot: the retried attempt
+      // begins at the synthetic first phase.
+      if (activeIdx >= 0 && phases.length > 0) observePhase(phases[0]!.phase)
+    },
     ingest(chunk: string): void {
       pending += chunk
       const lines = pending.split(/\r?\n/)
       pending = lines.pop() ?? ''
       for (const line of lines) handleLine(line)
-    },
+    }
   }
 }

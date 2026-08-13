@@ -340,7 +340,6 @@ function onRawChange(value: string): void {
   localValue.value = value
   emit('update', value)
 }
-
 </script>
 
 <template>
@@ -822,11 +821,7 @@ function onRawChange(value: string): void {
 
 /* Member preview: monospaced and slightly dimmer so it reads as the option list. */
 .args-page-cluster-options {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-transform: none;
   letter-spacing: 0;
   color: color-mix(in srgb, var(--text-muted) 85%, transparent);

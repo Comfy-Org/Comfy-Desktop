@@ -1,8 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getComfyTerminalContentScript } from './comfyTerminalContentScript'
 
 describe('getComfyTerminalContentScript', () => {
   const script = getComfyTerminalContentScript()
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    const state = Reflect.get(window, '__comfyDesktopTerminalStopgap') as
+      | { tabBarObserver?: MutationObserver }
+      | undefined
+    state?.tabBarObserver?.disconnect()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+    Reflect.deleteProperty(window, '__comfyDesktop2')
+    Reflect.deleteProperty(window, '__comfyDesktopTerminalStopgap')
+    Reflect.deleteProperty(window, 'comfyAPI')
+  })
 
   it('returns a syntactically valid, self-contained IIFE', () => {
     expect(script.startsWith('(function () {')).toBe(true)
@@ -10,24 +27,12 @@ describe('getComfyTerminalContentScript', () => {
     expect(() => new Function(script)).not.toThrow()
   })
 
-  it('bails when the desktop terminal bridge is absent', () => {
-    expect(script).toContain('!window.__comfyDesktop2.Terminal')
+  it('bails when the desktop terminal opener is absent', () => {
+    expect(script).toContain(`typeof window.__comfyDesktop2.openTerminal !== 'function'`)
   })
 
   it('guards against double injection', () => {
     expect(script).toContain('window.__comfyDesktopTerminalStopgap')
-  })
-
-  it('inlines the xterm UMD build and its fit addon', () => {
-    expect(script).toContain('__xt.exports')
-    expect(script).toContain('__fit.exports')
-    expect(script).toContain('var XTerm =')
-    expect(script).toContain('var FitAddon =')
-  })
-
-  it('injects the xterm stylesheet exactly once via a stable id', () => {
-    expect(script).toContain('__comfyDesktopXtermCss')
-    expect(script).toContain('.xterm')
   })
 
   it('registers a custom bottom-panel tab through the extension API', () => {
@@ -51,10 +56,58 @@ describe('getComfyTerminalContentScript', () => {
     expect(script).toContain(`bottomPanelHasTab(app, 'command-terminal')`)
   })
 
-  it('uses the shared desktop terminal transport', () => {
-    for (const member of ['subscribe', 'write', 'resize', 'restart', 'onOutput', 'onExited']) {
-      expect(script).toContain(member)
+  it('opens the trusted Desktop terminal without exposing PTY operations', () => {
+    expect(script).toContain('window.__comfyDesktop2.openTerminal()')
+    for (const member of ['terminal-write', 'terminal-resize', 'terminal-restart']) {
+      expect(script).not.toContain(member)
     }
+  })
+
+  it('adds working popout buttons for Terminal and Logs', () => {
+    const openTerminalPopout = vi.fn()
+    const openLogsPopout = vi.fn()
+    Reflect.set(window, '__comfyDesktop2', {
+      openTerminal: vi.fn(),
+      Terminal: { openPopout: openTerminalPopout },
+      Logs: { openPopout: openLogsPopout }
+    })
+    Reflect.set(window, 'comfyAPI', {
+      app: {
+        app: {
+          extensions: [],
+          extensionManager: {
+            bottomPanel: {
+              panels: {
+                terminal: {
+                  tabs: [{ id: 'logs-terminal' }, { id: 'command-terminal' }]
+                }
+              }
+            }
+          },
+          registerExtension: vi.fn()
+        }
+      }
+    })
+    document.body.innerHTML = `
+      <div>
+        <button role="tab"><span>Logs</span></button>
+        <button role="tab"><span>Terminal</span></button>
+        <button aria-label="Close"></button>
+      </div>
+    `
+
+    new Function(script)()
+
+    const terminalButton = document.querySelector<HTMLButtonElement>(
+      '[data-popout-kind="terminal"]'
+    )
+    const logsButton = document.querySelector<HTMLButtonElement>('[data-popout-kind="logs"]')
+    if (!terminalButton || !logsButton) throw new Error('Expected popout buttons')
+    terminalButton.click()
+    logsButton.click()
+
+    expect(openTerminalPopout).toHaveBeenCalledOnce()
+    expect(openLogsPopout).toHaveBeenCalledOnce()
   })
 
   it('memoizes the assembled script', () => {

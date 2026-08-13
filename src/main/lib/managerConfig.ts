@@ -6,14 +6,35 @@ import path from 'path'
 // same content shape ComfyUI-Manager expects.
 const MANAGER_MIRROR_CHANNEL_URL = 'https://cdn.jsdelivr.net/gh/ltdrdata/ComfyUI-Manager@main'
 
-// Explicit security_level pins Manager away from `force_security_level_if_needed`
-// flipping behaviour for missing keys in a future Manager release.
-const MANAGER_MIRROR_CONFIG = `[default]
-channel_url = ${MANAGER_MIRROR_CHANNEL_URL}
-bypass_ssl = true
-network_mode = public
-security_level = normal
-`
+// ComfyUI-Manager's `security_level` values (most → least restrictive). These
+// must match the strings Manager reads from config.ini's [default] section;
+// `normal-` is the relaxed-on-localhost level. Manager has no API to change
+// this — it is read once at startup — so Desktop owns it via config.ini.
+export const MANAGER_SECURITY_LEVELS = ['strong', 'normal', 'normal-', 'weak'] as const
+export type ManagerSecurityLevel = (typeof MANAGER_SECURITY_LEVELS)[number]
+
+// Manager's own default when the key is absent. Pinned explicitly so the seeded
+// config never relies on Manager's implicit fallback.
+export const DEFAULT_MANAGER_SECURITY_LEVEL: ManagerSecurityLevel = 'normal'
+
+export function isManagerSecurityLevel(value: unknown): value is ManagerSecurityLevel {
+  return typeof value === 'string' && (MANAGER_SECURITY_LEVELS as readonly string[]).includes(value)
+}
+
+// Manager v4's `network_mode` values. `personal_cloud` relaxes the
+// network-position rule: with a non-loopback --listen, middle+-risk actions
+// (e.g. installing node packs) are denied at EVERY security_level unless the
+// mode is personal_cloud. Like security_level, Manager reads this once at
+// startup from config.ini's [default] section.
+export const MANAGER_NETWORK_MODES = ['public', 'private', 'offline', 'personal_cloud'] as const
+export type ManagerNetworkMode = (typeof MANAGER_NETWORK_MODES)[number]
+
+// Manager's own default when the key is absent.
+export const DEFAULT_MANAGER_NETWORK_MODE: ManagerNetworkMode = 'public'
+
+export function isManagerNetworkMode(value: unknown): value is ManagerNetworkMode {
+  return typeof value === 'string' && (MANAGER_NETWORK_MODES as readonly string[]).includes(value)
+}
 
 // Modern ComfyUI's system-user-api path. Desktop ships a modern bundle so this
 // is the target for fresh installs.
@@ -28,20 +49,170 @@ function legacyConfigPath(installPath: string): string {
   return path.join(installPath, 'ComfyUI', 'user', 'default', 'ComfyUI-Manager', 'config.ini')
 }
 
+// Build the full config body for a fresh install. Mirror keys are included
+// only when the user opted into the China-mirror flow; security_level and
+// network_mode are always set.
+function buildManagerConfig(opts: {
+  useChineseMirrors: boolean
+  securityLevel: ManagerSecurityLevel
+  networkMode: ManagerNetworkMode
+}): string {
+  const lines = ['[default]']
+  if (opts.useChineseMirrors) {
+    lines.push(`channel_url = ${MANAGER_MIRROR_CHANNEL_URL}`)
+    lines.push('bypass_ssl = true')
+  }
+  lines.push(`security_level = ${opts.securityLevel}`)
+  lines.push(`network_mode = ${opts.networkMode}`)
+  return lines.join('\n') + '\n'
+}
+
+// Set one `key = value` option inside an existing config's [default] section
+// (the only section Manager reads Desktop-owned options from), preserving
+// every other key the user (or Manager) wrote. A same-named key in another
+// section is left alone. Returns the original string unchanged when the value
+// already matches, so we avoid pointless rewrites.
+//
+// Case rules mirror Python's configparser, which Manager uses: section names
+// are case-sensitive (Manager indexes config['default'], so `[Default]` is a
+// different, unread section), while option keys are case-insensitive
+// (optionxform lowercases them, so `Security_Level` IS security_level).
+// Case-variant duplicates are collapsed to one canonical line - Manager's
+// migration path parses with strict=True, where such duplicates raise.
+function withDefaultOption(content: string, key: string, value: string): string {
+  const line = `${key} = ${value}`
+  const stripCR = (l: string) => (l.endsWith('\r') ? l.slice(0, -1) : l)
+  // configparser matches headers with r"\[(?P<header>[^]]+)\]" via re.match
+  // on the stripped line: the name ends at the FIRST `]` and trailing text
+  // (e.g. an inline comment) is ignored. Section names are case-sensitive.
+  const headerName = (l: string): string | null => {
+    const m = /^[ \t]*\[([^\]]+)\]/.exec(stripCR(l))
+    return m ? m[1]! : null
+  }
+  // configparser accepts both `=` and `:` delimiters - a hand-written
+  // `key: value` line must be replaced, not shadowed by an inserted `=`
+  // line (Manager parses with strict=False, where the later line wins).
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
+  const optionPattern = new RegExp(`^[ \\t]*${escapedKey}[ \\t]*[=:]`, 'i')
+  const isOptionKey = (l: string) => optionPattern.test(l)
+  // An indented non-blank line after an option is a continuation of its
+  // value in configparser; it must travel with the option line it extends.
+  const isContinuation = (l: string) => /^[ \t]+\S/.test(stripCR(l))
+
+  // strict=False merges repeated [default] sections (later duplicates win),
+  // so every default section is visited: the first matching option is
+  // replaced in place, every later duplicate - and each option's
+  // continuation lines - is removed, leaving exactly one canonical line.
+  const lines = content.split('\n')
+  let inDefault = false
+  let firstDefaultHeader = -1
+  let replaced = false
+  for (let i = 0; i < lines.length; i++) {
+    const current = lines[i] ?? ''
+    const section = headerName(current)
+    if (section !== null) {
+      inDefault = section === 'default'
+      if (inDefault && firstDefaultHeader === -1) firstDefaultHeader = i
+      continue
+    }
+    if (!inDefault || !isOptionKey(current)) continue
+    let contEnd = i + 1
+    while (contEnd < lines.length && isContinuation(lines[contEnd] ?? '')) contEnd++
+    if (!replaced) {
+      lines[i] = line + (current.endsWith('\r') ? '\r' : '')
+      replaced = true
+      lines.splice(i + 1, contEnd - (i + 1))
+    } else {
+      lines.splice(i, contEnd - i)
+      i--
+    }
+  }
+  if (!replaced) {
+    if (firstDefaultHeader === -1) {
+      const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : ''
+      return `${content}${separator}[default]\n${line}\n`
+    }
+    lines.splice(
+      firstDefaultHeader + 1,
+      0,
+      line + ((lines[firstDefaultHeader] ?? '').endsWith('\r') ? '\r' : '')
+    )
+  }
+  return lines.join('\n')
+}
+
+// Rewrite `file` so each given [default] option matches the requested value,
+// skipping the write when nothing changes. One read + at most one write even
+// when several options are reconciled.
+async function reconcileDefaultOptions(
+  file: string,
+  options: Record<string, string>
+): Promise<void> {
+  const current = await fs.promises.readFile(file, 'utf-8')
+  let updated = current
+  for (const [key, value] of Object.entries(options)) {
+    updated = withDefaultOption(updated, key, value)
+  }
+  if (updated !== current) {
+    await fs.promises.writeFile(file, updated, 'utf-8')
+  }
+}
+
 /**
- * Seed ComfyUI-Manager's config.ini for users who opted into the China mirror
- * flow. Writes only when no config exists at either the modern or the legacy
- * path — returning users with their own customised config keep full control,
- * and migrated users don't accidentally trip Manager's legacy-migration path.
+ * Reconcile ComfyUI-Manager's config.ini with Desktop settings before launch.
+ *
+ * - Modern config exists: it is the file Manager actually reads, so update its
+ *   `security_level` / `network_mode` when the user picked one - even when a
+ *   stale legacy file is also present. Users who never chose keep full control.
+ * - Legacy config only: update the legacy file in place. Creating the modern
+ *   config here would silently suppress Manager's `migrate_legacy_config` flow
+ *   and lose the user's other legacy options; editing content does not trip it.
+ * - Fresh install (neither file): writes a new config carrying the chosen
+ *   `security_level` / `network_mode` (and the China-mirror keys when opted
+ *   in). Writes nothing when neither a mirror nor an explicit Manager option
+ *   is requested, preserving the prior no-seed behavior.
  */
-export async function ensureManagerMirrorConfig(installPath: string): Promise<void> {
-  if (fs.existsSync(legacyConfigPath(installPath))) return
+export async function ensureManagerConfig(
+  installPath: string,
+  opts: {
+    useChineseMirrors: boolean
+    securityLevel?: ManagerSecurityLevel
+    networkMode?: ManagerNetworkMode
+  } = {
+    useChineseMirrors: false
+  }
+): Promise<void> {
+  const securityLevel = isManagerSecurityLevel(opts.securityLevel) ? opts.securityLevel : undefined
+  const networkMode = isManagerNetworkMode(opts.networkMode) ? opts.networkMode : undefined
   const target = modernConfigPath(installPath)
+  const legacy = legacyConfigPath(installPath)
+
+  const requested: Record<string, string> = {}
+  if (securityLevel) requested['security_level'] = securityLevel
+  if (networkMode) requested['network_mode'] = networkMode
+  const hasRequested = Object.keys(requested).length > 0
+
+  if (fs.existsSync(target)) {
+    if (hasRequested) await reconcileDefaultOptions(target, requested)
+    return
+  }
+
+  if (fs.existsSync(legacy)) {
+    if (hasRequested) await reconcileDefaultOptions(legacy, requested)
+    return
+  }
+
+  if (!opts.useChineseMirrors && !hasRequested) return
+  const content = buildManagerConfig({
+    useChineseMirrors: opts.useChineseMirrors,
+    securityLevel: securityLevel ?? DEFAULT_MANAGER_SECURITY_LEVEL,
+    networkMode: networkMode ?? DEFAULT_MANAGER_NETWORK_MODE
+  })
   try {
     await fs.promises.mkdir(path.dirname(target), { recursive: true })
     // 'wx' is atomic create-if-not-exists. A parallel writer wins, we no-op
     // (the EEXIST is the success signal).
-    await fs.promises.writeFile(target, MANAGER_MIRROR_CONFIG, { flag: 'wx', encoding: 'utf-8' })
+    await fs.promises.writeFile(target, content, { flag: 'wx', encoding: 'utf-8' })
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return
     throw err
@@ -50,7 +221,8 @@ export async function ensureManagerMirrorConfig(installPath: string): Promise<vo
 
 export const _internals = {
   MANAGER_MIRROR_CHANNEL_URL,
-  MANAGER_MIRROR_CONFIG,
+  buildManagerConfig,
+  withDefaultOption,
   modernConfigPath,
-  legacyConfigPath,
+  legacyConfigPath
 }

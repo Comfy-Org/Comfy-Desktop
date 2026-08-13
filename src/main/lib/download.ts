@@ -76,8 +76,15 @@ export function download(
   onProgress: ((progress: DownloadProgress) => void) | null,
   options?: DownloadOptions | number
 ): Promise<string> {
-  const opts: DownloadOptions = typeof options === 'number' ? { _maxRedirects: options } : options ?? {}
-  const { signal, expectedSize, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS, _maxRedirects = 5, _skipMirror = false } = opts
+  const opts: DownloadOptions =
+    typeof options === 'number' ? { _maxRedirects: options } : (options ?? {})
+  const {
+    signal,
+    expectedSize,
+    idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    _maxRedirects = 5,
+    _skipMirror = false
+  } = opts
 
   // Mirror retry is gated on useChineseMirrors to avoid a thundering-herd
   // tens-of-TB GCS egress event if R2 ever hiccups for the global user base.
@@ -87,11 +94,18 @@ export function download(
   const mirror = mirrorEnabled ? r2MirrorUrl(url) : undefined
   const tryMirror = async (primaryErr: Error): Promise<string> => {
     if (!mirror || mirror === url) throw primaryErr
-    try { fs.unlinkSync(destPath) } catch {}
-    try { fs.unlinkSync(downloadMetaPath(destPath)) } catch {}
+    try {
+      fs.unlinkSync(destPath)
+    } catch {}
+    try {
+      fs.unlinkSync(downloadMetaPath(destPath))
+    } catch {}
     try {
       return await download(mirror, destPath, onProgress, {
-        signal, expectedSize, _maxRedirects, _skipMirror: true,
+        signal,
+        expectedSize,
+        _maxRedirects,
+        _skipMirror: true
       })
     } catch {
       throw primaryErr
@@ -120,17 +134,25 @@ export function download(
       }
       if (resumeFrom === 0) {
         // URL mismatch or can't stat — start fresh
-        try { fs.unlinkSync(destPath) } catch {}
-        try { fs.unlinkSync(metaPath) } catch {}
+        try {
+          fs.unlinkSync(destPath)
+        } catch {}
+        try {
+          fs.unlinkSync(metaPath)
+        } catch {}
       } else if (existingMeta.expectedSize > 0 && resumeFrom >= existingMeta.expectedSize) {
         // Fully downloaded but meta wasn't cleaned up (crash after write, before meta delete)
-        try { fs.unlinkSync(metaPath) } catch {}
+        try {
+          fs.unlinkSync(metaPath)
+        } catch {}
         resolve(destPath)
         return
       }
     } else if (fs.existsSync(metaPath)) {
       // Stale meta without data file
-      try { fs.unlinkSync(metaPath) } catch {}
+      try {
+        fs.unlinkSync(metaPath)
+      } catch {}
     }
 
     const request = net.request(url)
@@ -144,8 +166,18 @@ export function download(
     let stalled = false
     let settled = false
     let fileStream: fs.WriteStream | null = null
-    const safeResolve = (v: string): void => { if (!settled) { settled = true; resolve(v) } }
-    const safeReject = (e: Error): void => { if (!settled) { settled = true; reject(e) } }
+    const safeResolve = (v: string): void => {
+      if (!settled) {
+        settled = true
+        resolve(v)
+      }
+    }
+    const safeReject = (e: Error): void => {
+      if (!settled) {
+        settled = true
+        reject(e)
+      }
+    }
 
     // No-progress watchdog: rearmed on every byte; if it fires the connection is
     // dead-but-not-erroring, so abort and reject with a retryable stall error.
@@ -183,7 +215,10 @@ export function download(
     if (signal) signal.addEventListener('abort', onAbort, { once: true })
 
     const cleanup = (): void => {
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimer = null
+      }
       if (signal) signal.removeEventListener('abort', onAbort)
     }
 
@@ -200,7 +235,11 @@ export function download(
           safeReject(new Error('Download failed: empty redirect location'))
           return
         }
-        download(loc, destPath, onProgress, { signal, expectedSize, _maxRedirects: _maxRedirects - 1 }).then(safeResolve, safeReject)
+        download(loc, destPath, onProgress, {
+          signal,
+          expectedSize,
+          _maxRedirects: _maxRedirects - 1
+        }).then(safeResolve, safeReject)
         return
       }
 
@@ -221,7 +260,9 @@ export function download(
       if (isResumed) {
         baseBytes = resumeFrom
       } else if (resumeFrom > 0) {
-        try { fs.unlinkSync(destPath) } catch {}
+        try {
+          fs.unlinkSync(destPath)
+        } catch {}
       }
 
       const rawContentLength = response.headers['content-length']
@@ -236,9 +277,11 @@ export function download(
       // Fail fast if caller's expectedSize conflicts with server's Content-Length
       if (expectedSize && sizeFromHeaders > 0 && expectedSize !== sizeFromHeaders) {
         cleanup()
-        safeReject(new Error(
-          `Download size mismatch: expected ${expectedSize} bytes but server reported ${sizeFromHeaders}`
-        ))
+        safeReject(
+          new Error(
+            `Download size mismatch: expected ${expectedSize} bytes but server reported ${sizeFromHeaders}`
+          )
+        )
         return
       }
 
@@ -253,8 +296,12 @@ export function download(
       fileStream = fs.createWriteStream(destPath, isResumed ? { flags: 'a' } : undefined)
       fileStream.on('error', (err: Error) => {
         cleanup()
-        try { fs.unlinkSync(destPath) } catch {}
-        try { fs.unlinkSync(metaPath) } catch {}
+        try {
+          fs.unlinkSync(destPath)
+        } catch {}
+        try {
+          fs.unlinkSync(metaPath)
+        } catch {}
         safeReject(err)
       })
 
@@ -267,7 +314,8 @@ export function download(
           const newBytes = receivedBytes - baseBytes
           const speedMBs = elapsedSecs > 0 ? newBytes / 1048576 / elapsedSecs : 0
           const effectiveTotal = effectiveSize || totalBytes
-          const percent = effectiveTotal > 0 ? Math.round((receivedBytes / effectiveTotal) * 100) : 0
+          const percent =
+            effectiveTotal > 0 ? Math.round((receivedBytes / effectiveTotal) * 100) : 0
           const remainingBytes = effectiveTotal - receivedBytes
           const etaSecs =
             speedMBs > 0 && effectiveTotal > 0 ? remainingBytes / 1048576 / speedMBs : -1
@@ -278,7 +326,7 @@ export function download(
             totalMB: effectiveTotal > 0 ? (effectiveTotal / 1048576).toFixed(1) : '?',
             speedMBs,
             elapsedSecs,
-            etaSecs,
+            etaSecs
           })
         }
       })
@@ -296,23 +344,35 @@ export function download(
               const actualSize = fs.statSync(destPath).size
               if (actualSize !== effectiveSize) {
                 // Size mismatch — delete everything, no resume possible
-                try { fs.unlinkSync(destPath) } catch {}
-                try { fs.unlinkSync(metaPath) } catch {}
-                safeReject(new Error(
-                  `Download incomplete: expected ${effectiveSize} bytes but got ${actualSize}`
-                ))
+                try {
+                  fs.unlinkSync(destPath)
+                } catch {}
+                try {
+                  fs.unlinkSync(metaPath)
+                } catch {}
+                safeReject(
+                  new Error(
+                    `Download incomplete: expected ${effectiveSize} bytes but got ${actualSize}`
+                  )
+                )
                 return
               }
             } catch (err) {
-              try { fs.unlinkSync(destPath) } catch {}
-              try { fs.unlinkSync(metaPath) } catch {}
+              try {
+                fs.unlinkSync(destPath)
+              } catch {}
+              try {
+                fs.unlinkSync(metaPath)
+              } catch {}
               safeReject(err as Error)
               return
             }
           }
 
           // Removing meta marks the download complete (the data file is already at destPath).
-          try { fs.unlinkSync(metaPath) } catch {}
+          try {
+            fs.unlinkSync(metaPath)
+          } catch {}
           safeResolve(destPath)
         })
       })

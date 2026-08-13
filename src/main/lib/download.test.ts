@@ -17,7 +17,9 @@ const settingsState: Record<string, unknown> = {}
 
 vi.mock('../settings', () => ({
   get: (key: string) => settingsState[key],
-  set: (key: string, value: unknown) => { settingsState[key] = value },
+  set: (key: string, value: unknown) => {
+    settingsState[key] = value
+  }
 }))
 
 vi.mock('electron', () => ({
@@ -27,17 +29,21 @@ vi.mock('electron', () => ({
         setHeader: vi.fn(),
         end: vi.fn(),
         abort: vi.fn(),
-        __url: url,
+        __url: url
       }) as FakeRequest
       requests.push(req)
       return req
-    }),
-  },
+    })
+  }
 }))
 
 import { download } from './download'
 
-function makeResponse(statusCode: number, body: Buffer | string, headers: Record<string, string | string[]> = {}): EventEmitter & { statusCode: number; headers: Record<string, string | string[]> } {
+function makeResponse(
+  statusCode: number,
+  body: Buffer | string,
+  headers: Record<string, string | string[]> = {}
+): EventEmitter & { statusCode: number; headers: Record<string, string | string[]> } {
   const res = Object.assign(new EventEmitter(), { statusCode, headers })
   const buf = typeof body === 'string' ? Buffer.from(body) : body
   if (!headers['content-length']) headers['content-length'] = String(buf.length)
@@ -119,7 +125,9 @@ describe('download — R2 mirror fallback for binaries', () => {
     // branch, _skipMirror=true prevents infinite ping-pong if the mirror itself
     // happens to live under R2_MIRROR_BASE_URL (it doesn't today, but lock it).
     const dest = path.join(tmpDir, 'bundle.7z')
-    const p = download(MIRROR_BIN, dest, null, { _skipMirror: true } as unknown as { _skipMirror: boolean })
+    const p = download(MIRROR_BIN, dest, null, { _skipMirror: true } as unknown as {
+      _skipMirror: boolean
+    })
     requests[0]!.emit('error', new Error('SECOND_DOWN'))
     await expect(p).rejects.toThrow(/SECOND_DOWN/)
     expect(requests.length).toBe(1)
@@ -146,7 +154,7 @@ describe('download — no-progress watchdog', () => {
   function openStreaming(req: FakeRequest, totalLen: number): EventEmitter {
     const res = Object.assign(new EventEmitter(), {
       statusCode: 200,
-      headers: { 'content-length': String(totalLen) } as Record<string, string>,
+      headers: { 'content-length': String(totalLen) } as Record<string, string>
     })
     req.emit('response', res)
     return res

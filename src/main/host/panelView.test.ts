@@ -5,23 +5,18 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import { _runningSessions } from '../lib/ipc/shared'
-import {
-  comfyWindows,
-  indexInstallationId,
-  nextWindowKey,
-  type ComfyWindowEntry,
-} from './registry'
+import { comfyWindows, indexInstallationId, nextWindowKey, type ComfyWindowEntry } from './registry'
 import { refreshComfyTabBody, setActivePanel } from './panelView'
 
 interface FakeWindow {
@@ -36,7 +31,7 @@ function makeWindow(opts: { destroyed?: boolean; focused?: boolean } = {}): Fake
     destroyed: opts.destroyed ?? false,
     focused: opts.focused ?? false,
     isDestroyed: () => win.destroyed,
-    isFocused: () => win.focused,
+    isFocused: () => win.focused
   }
   return win
 }
@@ -55,18 +50,22 @@ function makeWc(): FakeWebContents {
     destroyed: false,
     sent: [],
     isDestroyed: () => wc.destroyed,
-    send: (channel, ...args) => { wc.sent.push({ channel, args }) },
+    send: (channel, ...args) => {
+      wc.sent.push({ channel, args })
+    },
     focus: () => {},
-    isLoadingMainFrame: () => false,
+    isLoadingMainFrame: () => false
   }
   return wc
 }
 
-function makeEntry(opts: {
-  installationId?: string | null
-  activePanel?: ComfyWindowEntry['activePanel']
-  destroyed?: boolean
-} = {}): {
+function makeEntry(
+  opts: {
+    installationId?: string | null
+    activePanel?: ComfyWindowEntry['activePanel']
+    destroyed?: boolean
+  } = {}
+): {
   entry: ComfyWindowEntry
   titleBarWc: FakeWebContents
   layoutCalls: number
@@ -82,7 +81,9 @@ function makeEntry(opts: {
     panelView: null,
     activePanel: opts.activePanel ?? 'comfy',
     lastTheme: { bg: '#000', text: '#fff' },
-    layoutViews: () => { counters.layout += 1 },
+    layoutViews: () => {
+      counters.layout += 1
+    },
     comfyUrl: '',
     installationId: opts.installationId ?? null,
     constructedPartition: null,
@@ -92,12 +93,14 @@ function makeEntry(opts: {
     previewInstallationId: null,
     coldStartPendingReveal: false,
     _installCleanup: null,
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
   return {
     entry,
     titleBarWc,
-    get layoutCalls(): number { return counters.layout },
+    get layoutCalls(): number {
+      return counters.layout
+    }
   }
 }
 

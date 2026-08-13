@@ -9,9 +9,15 @@ import { captureState } from './store'
 import type { Snapshot, SnapshotDiff, SnapshotDiffSummary } from './types'
 import type { InstallationRecord } from '../../installations'
 
-export function formatSnapshotVersion(comfyui: { ref: string; commit: string | null; baseTag?: string; commitsAhead?: number }, style: 'short' | 'detail'): string {
+export function formatSnapshotVersion(
+  comfyui: { ref: string; commit: string | null; baseTag?: string; commitsAhead?: number },
+  style: 'short' | 'detail'
+): string {
   if (comfyui.commit) {
-    return formatComfyVersion({ commit: comfyui.commit, baseTag: comfyui.baseTag, commitsAhead: comfyui.commitsAhead }, style)
+    return formatComfyVersion(
+      { commit: comfyui.commit, baseTag: comfyui.baseTag, commitsAhead: comfyui.commitsAhead },
+      style
+    )
   }
   return comfyui.ref
 }
@@ -29,20 +35,25 @@ export async function resolveSnapshotVersion(
   installPath: string,
   comfyui: VersionResolvable,
   style: 'short' | 'detail',
-  options?: { comfyuiDir?: string; latestTagOverride?: LatestTagOverride },
+  options?: { comfyuiDir?: string; latestTagOverride?: LatestTagOverride }
 ): Promise<string> {
   if (!comfyui.commit) return comfyui.ref
   const snapshotCv: ComfyVersion = {
     commit: comfyui.commit,
     baseTag: comfyui.baseTag,
-    commitsAhead: comfyui.commitsAhead,
+    commitsAhead: comfyui.commitsAhead
   }
   const comfyuiDir = options?.comfyuiDir ?? (installPath ? path.join(installPath, 'ComfyUI') : '')
   if (!comfyuiDir || !hasGitDir(comfyuiDir)) {
     return formatComfyVersion(snapshotCv, style)
   }
   try {
-    const resolved = await resolveLocalVersion(comfyuiDir, comfyui.commit, undefined, options?.latestTagOverride)
+    const resolved = await resolveLocalVersion(
+      comfyuiDir,
+      comfyui.commit,
+      undefined,
+      options?.latestTagOverride
+    )
     return formatComfyVersion(resolved, style)
   } catch {
     return formatComfyVersion(snapshotCv, style)
@@ -58,14 +69,26 @@ export function diffSnapshots(a: Snapshot, b: Snapshot): SnapshotDiff {
     nodesChanged: [],
     pipsAdded: [],
     pipsRemoved: [],
-    pipsChanged: [],
+    pipsChanged: []
   }
 
   if (a.comfyui.ref !== b.comfyui.ref || a.comfyui.commit !== b.comfyui.commit) {
     diff.comfyuiChanged = true
     diff.comfyui = {
-      from: { ref: a.comfyui.ref, commit: a.comfyui.commit, baseTag: a.comfyui.baseTag, commitsAhead: a.comfyui.commitsAhead, formattedVersion: formatSnapshotVersion(a.comfyui, 'detail') },
-      to: { ref: b.comfyui.ref, commit: b.comfyui.commit, baseTag: b.comfyui.baseTag, commitsAhead: b.comfyui.commitsAhead, formattedVersion: formatSnapshotVersion(b.comfyui, 'detail') },
+      from: {
+        ref: a.comfyui.ref,
+        commit: a.comfyui.commit,
+        baseTag: a.comfyui.baseTag,
+        commitsAhead: a.comfyui.commitsAhead,
+        formattedVersion: formatSnapshotVersion(a.comfyui, 'detail')
+      },
+      to: {
+        ref: b.comfyui.ref,
+        commit: b.comfyui.commit,
+        baseTag: b.comfyui.baseTag,
+        commitsAhead: b.comfyui.commitsAhead,
+        formattedVersion: formatSnapshotVersion(b.comfyui, 'detail')
+      }
     }
   }
 
@@ -83,12 +106,17 @@ export function diffSnapshots(a: Snapshot, b: Snapshot): SnapshotDiff {
     const an = aNodes.get(key)
     if (!an) {
       diff.nodesAdded.push(bn)
-    } else if (an.version !== bn.version || an.commit !== bn.commit || an.enabled !== bn.enabled || an.type !== bn.type) {
+    } else if (
+      an.version !== bn.version ||
+      an.commit !== bn.commit ||
+      an.enabled !== bn.enabled ||
+      an.type !== bn.type
+    ) {
       diff.nodesChanged.push({
         id: bn.id,
         type: bn.type,
         from: { version: an.version, commit: an.commit, enabled: an.enabled },
-        to: { version: bn.version, commit: bn.commit, enabled: bn.enabled },
+        to: { version: bn.version, commit: bn.commit, enabled: bn.enabled }
       })
     }
   }
@@ -126,7 +154,7 @@ export async function diffAgainstCurrent(
     createdAt: new Date().toISOString(),
     trigger: 'manual',
     label: null,
-    ...state,
+    ...state
   }
   const diff = diffSnapshots(current, target)
   await resolveDiffVersions(installPath, diff)
@@ -138,7 +166,7 @@ export async function resolveDiffVersions(installPath: string, diff: SnapshotDif
   if (!diff.comfyui) return
   const [fromVersion, toVersion] = await Promise.all([
     resolveSnapshotVersion(installPath, diff.comfyui.from, 'detail'),
-    resolveSnapshotVersion(installPath, diff.comfyui.to, 'detail'),
+    resolveSnapshotVersion(installPath, diff.comfyui.to, 'detail')
   ])
   diff.comfyui.from.formattedVersion = fromVersion
   diff.comfyui.to.formattedVersion = toVersion
@@ -153,6 +181,6 @@ export function summarizeDiff(diff: SnapshotDiff): SnapshotDiffSummary {
     pipsRemoved: diff.pipsRemoved.length,
     pipsChanged: diff.pipsChanged.length,
     comfyuiChanged: diff.comfyuiChanged,
-    updateChannelChanged: diff.updateChannelChanged,
+    updateChannelChanged: diff.updateChannelChanged
   }
 }

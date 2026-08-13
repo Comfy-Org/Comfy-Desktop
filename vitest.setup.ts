@@ -24,8 +24,8 @@ if (!localStorageDescriptor || 'get' in localStorageDescriptor) {
       },
       setItem(key: string, value: string): void {
         storage.set(key, String(value))
-      },
-    },
+      }
+    }
   })
 }
 

@@ -1,11 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import { download } from '../../lib/download'
-import {
-  getModelsBaseDir,
-  setTemplateTrayMirror,
-  clearTemplateTrayMirror,
-} from '../../lib/comfyDownloadManager'
+import { setTemplateTrayMirror, clearTemplateTrayMirror } from '../../lib/comfyDownloadManager'
+import { resolveDownloadContext } from '../../lib/modelDownloadPaths'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
@@ -18,7 +15,7 @@ import {
   describeDownloadFailure,
   gbStr,
   DISK_SPACE_ERROR,
-  type TemplateDownloadState,
+  type TemplateDownloadState
 } from './templateDownloadCore'
 import type { InstallationRecord } from '../../installations'
 
@@ -62,7 +59,7 @@ export function hasActiveTemplateDownloads(): boolean {
 }
 
 export function getTemplateDownloadState(
-  installationId: string,
+  installationId: string
 ): TemplateDownloadState | undefined {
   return _templateDownloads.get(installationId)
 }
@@ -158,10 +155,12 @@ const SETTLE_POLL_MS = 250
  */
 export function awaitTemplateDownloadSettled(
   installationId: string,
-  signal: AbortSignal,
+  signal: AbortSignal
 ): Promise<'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'> {
   return new Promise((resolve) => {
-    const settle = (reason: 'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'): void => {
+    const settle = (
+      reason: 'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'
+    ): void => {
       clearInterval(timer)
       signal.removeEventListener('abort', onAbort)
       _templateSkips.delete(installationId)
@@ -198,7 +197,7 @@ interface StartOpts {
 export function startTemplateDownload(
   installation: InstallationRecord,
   estimatedSizeBytes: number,
-  opts: StartOpts,
+  opts: StartOpts
 ): void {
   const installationId = installation.id
   const existing = _templateDownloads.get(installationId)
@@ -209,7 +208,7 @@ export function startTemplateDownload(
     files: [],
     estimatedTotalBytes: estimatedSizeBytes,
     speedMBs: 0,
-    etaSecs: -1,
+    etaSecs: -1
   }
   _templateDownloads.set(installationId, state)
   const abort = new AbortController()
@@ -224,7 +223,7 @@ export function startTemplateDownload(
   const taskOpts: StartOpts = { sendOutput: log }
 
   log(
-    `[templates] Starting background download for "${installation.bundledTemplateId}" (est. ${gbStr(estimatedSizeBytes)} GB)…\n`,
+    `[templates] Starting background download for "${installation.bundledTemplateId}" (est. ${gbStr(estimatedSizeBytes)} GB)…\n`
   )
 
   void runTask(installation, state, abort.signal, taskOpts).catch((err) => {
@@ -246,16 +245,22 @@ async function runTask(
   installation: InstallationRecord,
   state: TemplateDownloadState,
   signal: AbortSignal,
-  { sendOutput }: StartOpts,
+  { sendOutput }: StartOpts
 ): Promise<void> {
   const templateId = installation.bundledTemplateId as string
   await downloadTemplateInputAssets(installation, templateId, sendOutput, signal)
-  if (signal.aborted) { state.status = 'cancelled'; return }
+  if (signal.aborted) {
+    state.status = 'cancelled'
+    return
+  }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"…\n`)
   const models = await resolveTemplateModels(installation, templateId)
 
-  if (signal.aborted) { state.status = 'cancelled'; return }
+  if (signal.aborted) {
+    state.status = 'cancelled'
+    return
+  }
   if (models.length === 0) {
     state.status = 'done'
     sendOutput('[templates] No models required for this template.\n')
@@ -269,10 +274,12 @@ async function runTask(
     received: 0,
     total: 0,
     done: false,
-    failed: false,
+    failed: false
   }))
 
-  const baseDir = getModelsBaseDir()
+  // Download into the install's effective primary models dir (respects
+  // useSharedModels / modelDirs / modelDirsPrimary), not the global shared dir.
+  const baseDir = resolveDownloadContext(installation).downloadBaseDir
 
   // Pre-flight disk guard against the coarse estimate (× headroom): a hard error
   // beats N failed writes when there's clearly no room.
@@ -283,7 +290,7 @@ async function runTask(
         state.status = 'error'
         state.error = DISK_SPACE_ERROR
         sendOutput(
-          `[templates] Not enough disk space for template models: ~${gbStr(state.estimatedTotalBytes)} GB needed, ${gbStr(free)} GB free. Download cancelled — free up space and grab them in-app.\n`,
+          `[templates] Not enough disk space for template models: ~${gbStr(state.estimatedTotalBytes)} GB needed, ${gbStr(free)} GB free. Download cancelled — free up space and grab them in-app.\n`
         )
         return
       }
@@ -349,26 +356,27 @@ async function runTask(
                 if (p.percent >= lastLoggedPct + 10) {
                   lastLoggedPct = p.percent - (p.percent % 10)
                   sendOutput(
-                    `[templates]   ${f.name} — ${p.receivedMB}/${p.totalMB} MB at ${p.speedMBs.toFixed(1)} MB/s\n`,
+                    `[templates]   ${f.name} — ${p.receivedMB}/${p.totalMB} MB at ${p.speedMBs.toFixed(1)} MB/s\n`
                   )
                 }
               },
-              { signal },
+              { signal }
             )
           },
           MODEL_DOWNLOAD_RETRIES,
           {
             // A user cancel must not be retried — bail immediately.
-            isFatal: (err) =>
-              signal.aborted || (err as Error)?.message === 'Download cancelled',
+            isFatal: (err) => signal.aborted || (err as Error)?.message === 'Download cancelled',
             onRetry: (attempt, err) =>
               sendOutput(
-                `[templates] Retrying ${f.name} (attempt ${attempt}/${MODEL_DOWNLOAD_RETRIES + 1}): ${(err as Error).message}\n`,
-              ),
-          },
+                `[templates] Retrying ${f.name} (attempt ${attempt}/${MODEL_DOWNLOAD_RETRIES + 1}): ${(err as Error).message}\n`
+              )
+          }
         )
         f.done = true
-        try { f.total = (await fs.promises.stat(destPath)).size } catch { }
+        try {
+          f.total = (await fs.promises.stat(destPath)).size
+        } catch {}
         f.received = f.total || f.received
         sendOutput(`[templates] Saved ${f.directory}/${safeName}.\n`)
       } catch (err) {
@@ -378,7 +386,7 @@ async function runTask(
         sendOutput(describeDownloadFailure(f.name, msg))
       }
     },
-    signal,
+    signal
   )
 
   if (signal.aborted) {
@@ -392,7 +400,7 @@ async function runTask(
   sendOutput(
     anyDone
       ? '[templates] Template models ready.\n'
-      : '[templates] No template models could be downloaded.\n',
+      : '[templates] No template models could be downloaded.\n'
   )
 }
 
@@ -402,5 +410,5 @@ export {
   formatTemplateSubStatus,
   type TemplateDownloadState,
   type TemplateDownloadSummary,
-  type FileProgress,
+  type FileProgress
 } from './templateDownloadCore'

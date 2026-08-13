@@ -33,10 +33,7 @@ defineEmits<{
     />
   </div>
 
-  <div
-    v-if="!hideInstallPath"
-    class="field"
-  >
+  <div v-if="!hideInstallPath" class="field">
     <label>{{ $t('newInstall.installLocation') }}</label>
     <div class="path-input">
       <div class="path-open-wrap">
@@ -47,13 +44,14 @@ defineEmits<{
           :title="$t('actions.openDirectory', 'Open Directory')"
           :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
           @click="$emit('open')"
-        >{{ path }}</button>
+        >
+          {{ path }}
+        </button>
       </div>
       <button @click="$emit('browse')">{{ $t('common.browse') }}</button>
-      <button
-        v-if="path !== defaultPath"
-        @click="$emit('update:path', defaultPath)"
-      >{{ $t('common.resetDefault') }}</button>
+      <button v-if="path !== defaultPath" @click="$emit('update:path', defaultPath)">
+        {{ $t('common.resetDefault') }}
+      </button>
     </div>
     <PathDiskInfo
       :path-issues="pathIssues"

@@ -8,8 +8,7 @@ const steps = (...phases: string[]): ProgressStep[] =>
 const weighted = (entries: [string, number][]): ProgressStep[] =>
   entries.map(([phase, weight]) => ({ phase, label: phase, weight }))
 
-const sum = (w: Record<string, number>): number =>
-  Object.values(w).reduce((a, b) => a + b, 0)
+const sum = (w: Record<string, number>): number => Object.values(w).reduce((a, b) => a + b, 0)
 
 describe('fingerprintSteps', () => {
   it('is the sorted, |-joined phase ids (order-independent)', () => {
@@ -20,7 +19,13 @@ describe('fingerprintSteps', () => {
 
 describe('getPhaseWeights', () => {
   it('uses inline step weights when present (the launch path)', () => {
-    const w = getPhaseWeights(weighted([['gpu', 0.5], ['startingServer', 0.2], ['customNodes', 0.3]]))
+    const w = getPhaseWeights(
+      weighted([
+        ['gpu', 0.5],
+        ['startingServer', 0.2],
+        ['customNodes', 0.3]
+      ])
+    )
     expect(w).toEqual({ gpu: 0.5, startingServer: 0.2, customNodes: 0.3 })
   })
 
@@ -45,7 +50,12 @@ describe('getPhaseWeights', () => {
   })
 
   it('degrades to an equal split when inline weights are all zero', () => {
-    const w = getPhaseWeights(weighted([['a', 0], ['b', 0]]))
+    const w = getPhaseWeights(
+      weighted([
+        ['a', 0],
+        ['b', 0]
+      ])
+    )
     expect(w).toEqual({ a: 0.5, b: 0.5 })
   })
 

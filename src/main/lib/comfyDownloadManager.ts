@@ -1,21 +1,19 @@
+import { randomUUID } from 'crypto'
 import { app, BrowserWindow, dialog, nativeImage } from 'electron'
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
-import * as installations from '../installations'
 import { findInstallationIdByComfySender } from '../host/registry'
-import {
-  resolveInstallModelSearchPaths,
-  mapLegacyFolderType,
-  isSamePath,
-  TEMP_DIR_NAME,
-  type InstallModelSearch,
-} from './models'
+import { isSamePath, TEMP_DIR_NAME } from './models'
 import { _broadcastToRenderer } from './ipc/shared'
-import type { TemplateModelDownload } from '../sources/standalone/templateModels'
-
-export const ALLOWED_EXTENSIONS = ['.safetensors', '.sft', '.ckpt', '.pth', '.pt']
+import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
+import {
+  buildExistenceCandidates,
+  getModelsBaseDir,
+  regularFileExists,
+  resolveDownloadContextById
+} from './modelDownloadPaths'
 
 /** Asset (output) downloads whose final file is itself an image we can preview. */
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -23,7 +21,7 @@ export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 /**
  * Build "Save as type" filters for the generic Save dialog from the suggested
  * filename. Electron's `showSaveDialog`/`showSaveDialogSync` does not infer
- * filters from the default filename — on Windows the dropdown collapses to
+ * filters from the default filename - on Windows the dropdown collapses to
  * "All Files (*.*)" if you omit `filters`, which is the symptom field-reported
  * as "Can't save image from Preview Image node" (#989). Pick a primary filter
  * matching the file's actual extension so the dialog opens on the right
@@ -51,12 +49,12 @@ export function buildSaveDialogFilters(suggestedName: string): Electron.FileFilt
     wav: { name: 'WAV Audio', extensions: ['wav'] },
     mp3: { name: 'MP3 Audio', extensions: ['mp3'] },
     flac: { name: 'FLAC Audio', extensions: ['flac'] },
-    ogg: { name: 'OGG Audio', extensions: ['ogg'] },
+    ogg: { name: 'OGG Audio', extensions: ['ogg'] }
   }
 
   const primary = FAMILIES[ext]
   if (primary) return [primary, ALL_FILES]
-  // Unknown extension — keep it as a literal filter so the dialog still shows
+  // Unknown extension - keep it as a literal filter so the dialog still shows
   // the user what file type they're saving instead of collapsing to *.
   return [{ name: `${ext.toUpperCase()} File`, extensions: [ext] }, ALL_FILES]
 }
@@ -86,6 +84,10 @@ interface PendingDownload {
   filename: string
   directory: string
   savePath: string
+  /** Asset downloads: the destination as originally requested, before any
+   *  "name (1)" dedup. When the completed download is byte-identical to a
+   *  file already at this path, the download is discarded in its favor. */
+  requestedSavePath?: string
   tempPath?: string
   outputDir?: string
   window: BrowserWindow
@@ -100,6 +102,44 @@ interface PendingDownload {
 
 const attachedSessions = new WeakSet<Electron.Session>()
 const pendingDownloads = new Map<string, PendingDownload>()
+
+/** Chunked synchronous byte comparison. Bounded memory so it is safe for
+ *  large video outputs; sync because it runs inside the DownloadItem's
+ *  `done` handler alongside the existing renameSync. */
+function filesHaveEqualContent(a: string, b: string): boolean {
+  const CHUNK = 4 * 1024 * 1024
+  let fdA: number | undefined
+  let fdB: number | undefined
+  try {
+    const statA = fs.statSync(a)
+    const statB = fs.statSync(b)
+    if (statA.size !== statB.size) return false
+    fdA = fs.openSync(a, 'r')
+    fdB = fs.openSync(b, 'r')
+    const bufA = Buffer.alloc(CHUNK)
+    const bufB = Buffer.alloc(CHUNK)
+    let pos = 0
+    while (pos < statA.size) {
+      const nA = fs.readSync(fdA, bufA, 0, CHUNK, pos)
+      const nB = fs.readSync(fdB, bufB, 0, CHUNK, pos)
+      if (nA !== nB || nA <= 0) return false
+      if (!bufA.subarray(0, nA).equals(bufB.subarray(0, nB))) return false
+      pos += nA
+    }
+    return true
+  } catch {
+    return false
+  } finally {
+    if (fdA !== undefined)
+      try {
+        fs.closeSync(fdA)
+      } catch {}
+    if (fdB !== undefined)
+      try {
+        fs.closeSync(fdB)
+      } catch {}
+  }
+}
 let mainWindow: BrowserWindow | null = null
 
 /** Original dispatch params per URL, for `retryDownload`. Kept off the
@@ -143,7 +183,7 @@ function isTerminalStatus(status: DownloadProgress['status']): boolean {
 /**
  * Template-model downloads mirrored into the tray after the user skips ahead to
  * ComfyUI. The resume-capable background task stays the byte-owner; this is a
- * read-only reflection merged into the tray view-state, NOT a real download — so
+ * read-only reflection merged into the tray view-state, NOT a real download - so
  * it never touches `pendingDownloads`' DownloadItem lifecycle (cancel/retry/
  * temp-rename stay untouched). Scoped per install so concurrent installs can each
  * mirror their own rows without clobbering one another. */
@@ -243,117 +283,11 @@ export function setMainWindow(win: BrowserWindow | null): void {
   mainWindow = win
 }
 
-/** Primary shared models directory — `<dir>/<category>/<file>` is where both the
- *  in-window model downloader and the install-time template pre-download land
- *  files, so they must agree. Exported for the latter (see `templateModels.ts`). */
-export function getModelsBaseDir(): string {
-  const modelsDirs = settings.get('modelsDirs') as string[] | undefined
-  return modelsDirs?.[0] || settings.defaults.modelsDirs[0]!
-}
-
-/** Global shared model dirs; the fallback search set when a download can't be
- *  attributed to a specific install. */
-function getSharedModelsDirs(): string[] {
-  const modelsDirs = settings.get('modelsDirs') as string[] | undefined
-  return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
-}
-
 /** installationId backing a download's originating comfy webview, or null when
  *  it can't be attributed (destroyed view / non-comfy sender). */
 function resolveSenderInstallationId(senderContents?: Electron.WebContents): string | null {
   if (!senderContents || senderContents.isDestroyed()) return null
   return findInstallationIdByComfySender(senderContents)
-}
-
-/** Resolve an install's model search context (shared vs per-install dirs + its
- *  `extra_model_paths.yaml`). Null when unattributable; callers then fall back
- *  to the global shared dir. */
-async function resolveDownloadContextById(
-  installationId: string | null,
-): Promise<InstallModelSearch | null> {
-  if (!installationId) return null
-  try {
-    const inst = await installations.get(installationId)
-    if (!inst || !inst.installPath) return null
-    return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
-  } catch {
-    return null
-  }
-}
-
-/** True when every model in `models` already exists somewhere the install's
- *  ComfyUI would find it — the same search set a download uses to short-circuit
- *  to "completed". Empty `models` returns false (nothing to call downloaded). */
-export async function areModelsPresent(
-  installationId: string | null,
-  models: ReadonlyArray<Pick<TemplateModelDownload, 'directory' | 'filename'>>,
-): Promise<boolean> {
-  if (models.length === 0) return false
-  const ctx = await resolveDownloadContextById(installationId)
-  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
-  const checks = await Promise.all(
-    models.map(async ({ directory, filename }) => {
-      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
-        if (await regularFileExists(candidate)) return true
-      }
-      return false
-    }),
-  )
-  return checks.every(Boolean)
-}
-
-/** Folder types whose ComfyUI defaults register multiple dirs, so a download
- *  must also check the alternates. Mirrors `folder_paths.py`. */
-const ROOT_FOLDER_ALTERNATES: Readonly<Record<string, string[]>> = {
-  text_encoders: ['text_encoders', 'clip'],
-  diffusion_models: ['diffusion_models', 'unet'],
-  controlnet: ['controlnet', 't2i_adapter'],
-}
-
-/** Relative `<type>/<remainder>` directory candidates for a download hint,
- *  expanded to include a model root's legacy/secondary type dirs. */
-function rootRelDirsForDirectory(directory: string): string[] {
-  const segments = directory.split(/[\\/]+/).filter(Boolean)
-  if (segments.length === 0) return [directory]
-  const rawType = segments[0]!
-  const remainder = segments.slice(1)
-  const heads = ROOT_FOLDER_ALTERNATES[mapLegacyFolderType(rawType)] ?? [rawType]
-  return heads.map((head) => path.join(head, ...remainder))
-}
-
-/** Every place a model file could already exist for an install — so an instant
- *  "completed" only fires when its ComfyUI would actually find the file:
- *  destination, every model root, and matching `extra_model_paths.yaml` dirs. */
-export function buildExistenceCandidates(
-  ctx: InstallModelSearch | null,
-  baseDir: string,
-  directory: string,
-  filename: string,
-): string[] {
-  const out = new Set<string>()
-  out.add(path.join(baseDir, directory, filename))
-  if (ctx) {
-    // Each complete root, including legacy/secondary type dirs ComfyUI also
-    // searches (e.g. a `text_encoders` download is satisfied by `<root>/clip`).
-    const relDirs = rootRelDirsForDirectory(directory)
-    for (const root of ctx.modelRoots) {
-      for (const rel of relDirs) {
-        out.add(path.join(root, rel, filename))
-      }
-    }
-    // Arbitrarily-mapped dirs from the install's own extra_model_paths.yaml.
-    const segments = directory.split(/[\\/]+/).filter(Boolean)
-    if (segments.length > 0) {
-      const type = mapLegacyFolderType(segments[0]!)
-      const remainder = segments.slice(1)
-      for (const extra of ctx.extraPaths) {
-        if (extra.type === type) {
-          out.add(path.join(extra.dir, ...remainder, filename))
-        }
-      }
-    }
-  }
-  return [...out]
 }
 
 /** Temp dir on the destination's volume so the final rename is atomic (no EXDEV). */
@@ -376,6 +310,34 @@ const WIN_MAX_PATH = 259
 const DEDUP_RESERVE = 6
 
 /**
+ * Unique temp file name for an in-flight download. A random nonce (not just
+ * a timestamp) prevents collisions when two downloads with the same leaf
+ * name start in the same millisecond - plausible now that nested output
+ * subfolders make identical basenames (a/video.mp4, b/video.mp4) common.
+ */
+function tempFileNameFor(filename: string): string {
+  return `${Date.now()}-${randomUUID().slice(0, 8)}-${filename}.tmp`
+}
+
+// Reserved DOS device names; Windows treats these as devices even with an
+// extension (e.g. "NUL.png").
+const WIN_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
+
+/**
+ * Reject path segments that are unsafe on Windows regardless of host
+ * platform (output dirs may be on shared/synced storage): NTFS alternate
+ * data streams and other invalid characters, control characters, reserved
+ * device names, and trailing dot/space aliases that make filesystem
+ * identity disagree with the lexical name.
+ */
+function isUnsafePathSegment(segment: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  if (/[<>:"|?*\u0000-\u001F]/.test(segment)) return true
+  if (segment.endsWith('.') || segment.endsWith(' ')) return true
+  return WIN_RESERVED_NAMES.test(segment)
+}
+
+/**
  * Sanitize an asset filename to prevent path traversal and ensure it fits
  * within filesystem limits.  Returns null if the filename is invalid.
  */
@@ -385,18 +347,22 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
   // Normalise separators and collapse sequences
   let safe = filename.replace(/\\/g, '/')
 
-  // Strip path traversal components
-  safe = safe.split('/').filter((seg) => seg !== '..' && seg !== '.').join('/')
+  // Reject absolute paths and traversal before treating the name as relative.
+  if (safe.startsWith('/') || /^[a-z]:/i.test(safe) || safe.split('/').includes('..')) {
+    return null
+  }
 
-  // Remove leading slashes (absolute path attempt)
-  safe = safe.replace(/^\/+/, '')
+  safe = safe
+    .split('/')
+    .filter((seg) => seg !== '.')
+    .join('/')
 
   if (safe === '') return null
 
   // Verify the resolved path stays inside outputDir
   const resolved = path.resolve(outputDir, safe)
   const resolvedBase = path.resolve(outputDir)
-  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+  if (!isPathContained(resolved, resolvedBase)) {
     return null
   }
 
@@ -410,18 +376,55 @@ export function sanitizeAssetFilename(filename: string, outputDir: string): stri
       const dirPart = path.resolve(outputDir, dir)
       const available = WIN_MAX_PATH - dirPart.length - 1 - ext.length - DEDUP_RESERVE
       if (available <= 0) return null
-      const truncatedStem = stem.substring(0, available)
+      // Trim trailing dots/spaces the truncation may expose so a legitimate
+      // long name is shortened rather than rejected below.
+      const truncatedStem = stem.substring(0, available).replace(/[. ]+$/, '')
+      if (truncatedStem === '') return null
       safe = dir && dir !== '.' ? dir + '/' + truncatedStem + ext : truncatedStem + ext
     }
   }
 
+  // Validate segments last so truncation results are covered too.
+  if (safe.split('/').some((seg) => isUnsafePathSegment(seg))) return null
+
   return safe
 }
 
+export function resolveAssetSavePath(
+  currentSavePath: string,
+  serverName: string,
+  outputDir: string
+): string | null {
+  if (!isPathContained(currentSavePath, outputDir)) return null
+
+  const currentDirectory = path.dirname(path.relative(outputDir, currentSavePath))
+  const normalizedServerName = serverName.replace(/\\/g, '/')
+  const safeServerName = sanitizeAssetFilename(normalizedServerName, outputDir)
+  if (!safeServerName) return null
+  const serverPath = currentDirectory === '.' ? safeServerName : path.basename(safeServerName)
+  const relativePath =
+    currentDirectory === '.' ? serverPath : path.join(currentDirectory, serverPath)
+  const safeRelativePath = sanitizeAssetFilename(relativePath, outputDir)
+  return safeRelativePath ? path.join(outputDir, safeRelativePath) : null
+}
+
+/**
+ * Lexical containment check - deliberately no realpath. Symlinks/junctions
+ * the user created inside the output/models directory are respected: a save
+ * path under `outputDir/mylink/...` passes and the write follows the link to
+ * its target. Only the local user can create such links (a remote server
+ * cannot), so following them is user intent, not an escape vector.
+ */
 export function isPathContained(filePath: string, baseDir: string): boolean {
   const resolved = path.resolve(filePath)
   const resolvedBase = path.resolve(baseDir)
-  return resolved.startsWith(resolvedBase + path.sep)
+  const relative = path.relative(resolvedBase, resolved)
+  return (
+    relative !== '' &&
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  )
 }
 
 export function hasValidExtension(filename: string): boolean {
@@ -438,11 +441,6 @@ function hasImageExtension(filePath: string): boolean {
  *  `outputDir`; model downloads never do) whose final file is an image. */
 function isImageAsset(pending: PendingDownload): boolean {
   return !!pending.outputDir && hasImageExtension(pending.savePath)
-}
-
-export function stripQueryParams(rawFilename: string): string {
-  const qIdx = rawFilename.indexOf('?')
-  return qIdx >= 0 ? rawFilename.substring(0, qIdx) : rawFilename
 }
 
 function broadcastProgress(progress: DownloadProgress): void {
@@ -462,7 +460,7 @@ function broadcastProgress(progress: DownloadProgress): void {
       }
     }
   }
-  // Fan out to every renderer so the Settings → Downloads tab and popup store
+  // Fan out to every renderer so the Settings -> Downloads tab and popup store
   // both receive live progress events.
   _broadcastToRenderer('model-download-progress', progress)
   // Push terminal entries to the recent buffer first so the snapshot the
@@ -487,7 +485,7 @@ function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress): voi
 }
 
 /** First-seen timestamp per URL, preserved across status transitions and the
- *  pending→recent migration; cleared on full eviction from `recentDownloads`. */
+ *  pending->recent migration; cleared on full eviction from `recentDownloads`. */
 const createdAtByUrl = new Map<string, number>()
 
 function reportProgress(progress: DownloadProgress): void {
@@ -512,25 +510,18 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-/** True only for an existing regular file, so the instant-complete shortcut
- *  doesn't fire on a directory that merely shares the model's name. */
-async function regularFileExists(filePath: string): Promise<boolean> {
-  try {
-    return (await fs.promises.stat(filePath)).isFile()
-  } catch {
-    return false
-  }
-}
-
 export function parseContentDispositionFilename(header: string | null): string | null {
   if (!header) return null
   // Try filename*= (RFC 5987 encoded)
   const starMatch = header.match(/filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;\s]+)/i)
   if (starMatch?.[1]) {
-    try { return decodeURIComponent(starMatch[1]) } catch { }
+    try {
+      return decodeURIComponent(starMatch[1])
+    } catch {}
   }
   // Try filename="..." or filename=...
-  const match = header.match(/filename\s*=\s*"([^"]+)"/i) || header.match(/filename\s*=\s*([^;\s]+)/i)
+  const match =
+    header.match(/filename\s*=\s*"([^"]+)"/i) || header.match(/filename\s*=\s*([^;\s]+)/i)
   return match?.[1] ?? null
 }
 
@@ -546,7 +537,7 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
       const rcd = new URL(u).searchParams.get('response-content-disposition')
       const rcdName = parseContentDispositionFilename(rcd)
       if (rcdName) return rcdName
-    } catch { }
+    } catch {}
   }
 
   return null
@@ -569,7 +560,7 @@ export async function startModelDownload(
   rawFilename: string,
   directory: string,
   senderContents?: Electron.WebContents,
-  installationId?: string | null,
+  installationId?: string | null
 ): Promise<boolean> {
   const filename = stripQueryParams(rawFilename)
   // Resolve the initiating install so destination + existence check follow its
@@ -580,7 +571,7 @@ export async function startModelDownload(
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const savePath = path.join(baseDir, directory, filename)
   const tempDir = modelTempDirFor(baseDir)
-  const tempPath = path.join(tempDir, `${Date.now()}-${filename}.tmp`)
+  const tempPath = path.join(tempDir, tempFileNameFor(filename))
 
   // Capture before the validation early-returns so even a synchronous
   // error (bad path / extension) lands a retryable terminal entry.
@@ -590,30 +581,32 @@ export async function startModelDownload(
     directory,
     window: win,
     senderContents,
-    installationId: resolvedInstallId,
+    installationId: resolvedInstallId
   })
 
-  const makeProgress = (
-    overrides: Partial<DownloadProgress>,
-  ): DownloadProgress => ({
+  const makeProgress = (overrides: Partial<DownloadProgress>): DownloadProgress => ({
     url,
     filename,
     directory,
     progress: 0,
     status: 'pending',
-    ...overrides,
+    ...overrides
   })
 
   if (!isPathContained(savePath, baseDir)) {
-    reportProgress(makeProgress({ status: 'error', error: 'Save path is outside models directory' }))
+    reportProgress(
+      makeProgress({ status: 'error', error: 'Save path is outside models directory' })
+    )
     return false
   }
 
   if (!hasValidExtension(filename)) {
-    reportProgress(makeProgress({
-      status: 'error',
-      error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`,
-    }))
+    reportProgress(
+      makeProgress({
+        status: 'error',
+        error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
+      })
+    )
     return false
   }
 
@@ -660,7 +653,7 @@ export async function startModelDownload(
     subscriberWindows: new Set(),
     lastProgress: initial,
     lastSpeedBytes: 0,
-    lastSpeedTime: Date.now(),
+    lastSpeedTime: Date.now()
   })
 
   const sess = (senderContents || win.webContents).session
@@ -677,36 +670,10 @@ export async function startAssetDownload(
   filename: string,
   outputDir: string,
   authToken?: string,
-  senderContents?: Electron.WebContents,
+  senderContents?: Electron.WebContents
 ): Promise<boolean> {
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return false
-  const savePath = await deduplicatePath(path.join(outputDir, safeFilename))
-  const savedFilename = path.basename(savePath)
-  // Temp dir is a sibling of the output dir — same filesystem for atomic rename,
-  // but outside the output dir so ComfyUI won't scan it.
-  const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
-  const tempPath = path.join(tempDir, `${Date.now()}-${savedFilename}.tmp`)
-
-  retryParamsByUrl.set(url, {
-    kind: 'asset',
-    filename: savedFilename,
-    outputDir,
-    authToken,
-    window: win,
-    senderContents,
-  })
-
-  const makeProgress = (
-    overrides: Partial<DownloadProgress>,
-  ): DownloadProgress => ({
-    url,
-    filename: savedFilename,
-    directory: '',
-    progress: 0,
-    status: 'pending',
-    ...overrides,
-  })
 
   const existing = pendingDownloads.get(url)
   if (existing) {
@@ -719,25 +686,88 @@ export async function startAssetDownload(
     return true
   }
 
-  await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
-  await fs.promises.mkdir(tempDir, { recursive: true })
-
-  if (win.isDestroyed()) return false
-
-  const initial = makeProgress({ status: 'pending' })
-  pendingDownloads.set(url, {
+  // Reserve the URL before the first await: the same URL can be requested
+  // again while the async setup below is still in flight (e.g. an output
+  // reported twice in quick succession), and that request must join this
+  // download instead of racing past the pending check above and starting a
+  // second download, which would save a duplicate file.
+  const pending: PendingDownload = {
     url,
-    filename: savedFilename,
+    filename: path.basename(safeFilename),
     directory: '',
-    savePath,
-    tempPath,
+    savePath: path.join(outputDir, safeFilename),
+    requestedSavePath: path.join(outputDir, safeFilename),
     outputDir,
     window: win,
     senderContents: senderContents !== win.webContents ? senderContents : undefined,
     subscriberWindows: new Set(),
-    lastProgress: initial,
+    lastProgress: {
+      url,
+      filename: path.basename(safeFilename),
+      directory: '',
+      progress: 0,
+      status: 'pending'
+    },
     lastSpeedBytes: 0,
-    lastSpeedTime: Date.now(),
+    lastSpeedTime: Date.now()
+  }
+  pendingDownloads.set(url, pending)
+
+  // Failures below report a terminal `error` entry and resolve false instead
+  // of rethrowing: `retryDownload` re-dispatches fire-and-forget, so a
+  // rejection here would surface as an unhandled promise rejection rather
+  // than an error row, unlike `startModelDownload`'s failure paths.
+  let savePath: string
+  try {
+    savePath = await deduplicatePath(path.join(outputDir, safeFilename))
+  } catch (err) {
+    reportProgress({
+      ...pending.lastProgress,
+      status: 'error',
+      error: `Failed to prepare save path: ${err instanceof Error ? err.message : String(err)}`
+    })
+    pendingDownloads.delete(url)
+    return false
+  }
+  const savedFilename = path.basename(savePath)
+  // Temp dir is a sibling of the output dir - same filesystem for atomic rename,
+  // but outside the output dir so ComfyUI won't scan it.
+  const tempDir = path.join(path.dirname(outputDir), TEMP_DIR_NAME)
+  pending.savePath = savePath
+  pending.filename = savedFilename
+  pending.tempPath = path.join(tempDir, tempFileNameFor(savedFilename))
+  pending.lastProgress = { ...pending.lastProgress, filename: savedFilename }
+
+  try {
+    await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
+    await fs.promises.mkdir(tempDir, { recursive: true })
+  } catch (err) {
+    // Release the reservation so the URL is not stuck pointing at a download
+    // that never started.
+    reportProgress({
+      ...pending.lastProgress,
+      status: 'error',
+      error: `Failed to create download directory: ${err instanceof Error ? err.message : String(err)}`
+    })
+    pendingDownloads.delete(url)
+    return false
+  }
+
+  if (win.isDestroyed()) {
+    pendingDownloads.delete(url)
+    return false
+  }
+
+  // Register retry params only once the download is viable: an earlier
+  // registration would survive a mkdir failure or destroyed window as a
+  // ghost entry with no matching pending download.
+  retryParamsByUrl.set(url, {
+    kind: 'asset',
+    filename: path.relative(outputDir, savePath),
+    outputDir,
+    authToken,
+    window: win,
+    senderContents
   })
 
   const sess = (senderContents || win.webContents).session
@@ -749,7 +779,7 @@ export async function startAssetDownload(
     : undefined
   sess.downloadURL(url, downloadOptions)
 
-  reportProgress(initial)
+  reportProgress(pending.lastProgress)
   return true
 }
 
@@ -800,18 +830,43 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       totalBytes: total,
       speedBytesPerSec: speed,
       etaSeconds: eta,
-      status: item.isPaused() ? 'paused' : 'downloading',
+      status: item.isPaused() ? 'paused' : 'downloading'
     })
   })
 
   item.once('done', (_ev, state) => {
     if (state === 'completed') {
+      // If a byte-identical file already sits at the originally requested
+      // destination, keep it and discard the temp copy instead of saving a
+      // duplicate "name (1)" file. This is the normal case when the "remote"
+      // server is actually local and writes its outputs into the same
+      // directory the auto-download saves to, and when a re-run re-serves an
+      // output that was already downloaded.
+      if (
+        pending.tempPath &&
+        pending.outputDir &&
+        pending.requestedSavePath &&
+        pending.requestedSavePath !== pending.savePath &&
+        filesHaveEqualContent(pending.tempPath, pending.requestedSavePath)
+      ) {
+        try {
+          fs.unlinkSync(pending.tempPath)
+        } catch {}
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
+        pending.savePath = pending.requestedSavePath
+        pending.filename = path.basename(pending.requestedSavePath)
+        pending.tempPath = undefined
+      }
       // Model downloads use a temp file that needs to be moved to the final path
       if (pending.tempPath) {
         try {
           fs.renameSync(pending.tempPath, pending.savePath)
         } catch {
-          try { fs.unlinkSync(pending.tempPath) } catch { }
+          try {
+            fs.unlinkSync(pending.tempPath)
+          } catch {}
           if (!fs.existsSync(pending.savePath)) {
             reportProgress({
               url: pending.url,
@@ -819,14 +874,16 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
               directory: pending.directory,
               progress: 0,
               status: 'error',
-              error: 'Failed to move downloaded file to final location',
+              error: 'Failed to move downloaded file to final location'
             })
             pendingDownloads.delete(pending.url)
             return
           }
         }
-        // Try to remove the temp directory if it's now empty (safe — fails silently if not empty)
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        // Try to remove the temp directory if it's now empty (safe - fails silently if not empty)
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
       }
       reportProgress({
         url: pending.url,
@@ -835,24 +892,32 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         savePath: pending.savePath,
         progress: 1,
         status: 'completed',
-        isImage: isImageAsset(pending),
+        isImage: isImageAsset(pending)
       })
     } else if (state === 'cancelled') {
       if (pending.tempPath) {
-        try { fs.unlinkSync(pending.tempPath) } catch { }
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        try {
+          fs.unlinkSync(pending.tempPath)
+        } catch {}
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
       }
       reportProgress({
         url: pending.url,
         filename: pending.filename,
         directory: pending.directory,
         progress: 0,
-        status: 'cancelled',
+        status: 'cancelled'
       })
     } else {
       if (pending.tempPath) {
-        try { fs.unlinkSync(pending.tempPath) } catch { }
-        try { fs.rmdirSync(path.dirname(pending.tempPath)) } catch { }
+        try {
+          fs.unlinkSync(pending.tempPath)
+        } catch {}
+        try {
+          fs.rmdirSync(path.dirname(pending.tempPath))
+        } catch {}
       }
       reportProgress({
         url: pending.url,
@@ -860,7 +925,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         directory: pending.directory,
         progress: 0,
         status: 'error',
-        error: `Download failed: ${state}`,
+        error: `Download failed: ${state}`
       })
     }
     pendingDownloads.delete(pending.url)
@@ -875,7 +940,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
     const pending = findPendingForItem(item)
 
     if (pending) {
-      // Managed download — auto-save to the resolved path
+      // Managed download - auto-save to the resolved path
       pending.item = item
 
       // Resolve a better asset filename from the server response: cloud uses
@@ -884,12 +949,13 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       if (pending.tempPath && pending.outputDir) {
         const serverName = resolveServerFilename(item)
         if (serverName) {
-          // Use the output dir root so the server name lands directly there.
           const baseDir = pending.outputDir
-          const safeServer = sanitizeAssetFilename(serverName, baseDir)
-          if (safeServer) {
-            const newSavePath = path.join(baseDir, safeServer)
+          const newSavePath = resolveAssetSavePath(pending.savePath, serverName, baseDir)
+          if (newSavePath) {
             if (newSavePath !== pending.savePath) {
+              // The server-resolved name is now the requested destination the
+              // completed download compares against for content-identity.
+              pending.requestedSavePath = newSavePath
               // Synchronous dedup since will-download must be handled synchronously.
               const saveDir = path.dirname(newSavePath)
               let candidate = newSavePath
@@ -904,8 +970,15 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
               fs.mkdirSync(path.dirname(candidate), { recursive: true })
               pending.savePath = candidate
               pending.filename = path.basename(candidate)
-              pending.tempPath = path.join(path.dirname(pending.tempPath), `${Date.now()}-${pending.filename}.tmp`)
+              pending.tempPath = path.join(
+                path.dirname(pending.tempPath),
+                tempFileNameFor(pending.filename)
+              )
               pending.lastProgress = { ...pending.lastProgress, filename: pending.filename }
+              const retryParams = retryParamsByUrl.get(pending.url)
+              if (retryParams?.kind === 'asset') {
+                retryParams.filename = path.relative(baseDir, candidate)
+              }
             }
           }
         }
@@ -914,7 +987,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       item.setSavePath(pending.tempPath!)
       attachDownloadListeners(item, pending)
     } else {
-      // General download — browser-like save dialog
+      // General download - browser-like save dialog
       const suggestedName = item.getFilename()
       const downloadsDir = app.getPath('downloads')
       // Seed the dialog with the directory the user last saved to, matching
@@ -925,13 +998,14 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       // (Electron only sets it for page-initiated ones), so fall back to the
       // focused window for the Save dialog parent.
       const sourceWin = webContents ? BrowserWindow.fromWebContents(webContents) : null
-      const win = sourceWin ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
+      const win =
+        sourceWin ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
 
       let savePath: string | undefined
       if (win) {
         const filePath = dialog.showSaveDialogSync(win, {
           defaultPath: path.join(startDir, suggestedName),
-          filters: buildSaveDialogFilters(suggestedName),
+          filters: buildSaveDialogFilters(suggestedName)
         })
         if (filePath) {
           savePath = filePath
@@ -968,7 +1042,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
         item,
         lastProgress: { url, filename, progress: 0, status: 'pending' },
         lastSpeedBytes: 0,
-        lastSpeedTime: Date.now(),
+        lastSpeedTime: Date.now()
       }
       pendingDownloads.set(url, general)
       reportProgress(general.lastProgress)
@@ -986,7 +1060,7 @@ export function pauseModelDownload(url: string): boolean {
     pending.item.pause()
     reportProgress({
       ...pending.lastProgress,
-      status: 'paused',
+      status: 'paused'
     })
   }
   return true
@@ -999,7 +1073,7 @@ export function resumeModelDownload(url: string): boolean {
     pending.item.resume()
     reportProgress({
       ...pending.lastProgress,
-      status: 'downloading',
+      status: 'downloading'
     })
   }
   return true
@@ -1011,14 +1085,14 @@ export function cancelModelDownload(url: string): boolean {
   if (pending.item) {
     pending.item.cancel()
   } else {
-    // Download hasn't reached will-download yet — clean up immediately
+    // Download hasn't reached will-download yet - clean up immediately
     pendingDownloads.delete(url)
     reportProgress({
       url,
       filename: pending.filename,
       directory: pending.directory,
       progress: 0,
-      status: 'cancelled',
+      status: 'cancelled'
     })
   }
   return true
@@ -1051,11 +1125,18 @@ export function retryDownload(url: string): boolean {
   downloadEvents.emit('tray-state-changed')
 
   if (params.kind === 'asset') {
-    // Best-effort token reuse — if the captured token has expired the
+    // Best-effort token reuse - if the captured token has expired the
     // download simply re-enters `error` and stays retryable.
     void startAssetDownload(win, url, params.filename, params.outputDir!, params.authToken, sender)
   } else {
-    void startModelDownload(win, url, params.filename, params.directory ?? '', sender, params.installationId)
+    void startModelDownload(
+      win,
+      url,
+      params.filename,
+      params.directory ?? '',
+      sender,
+      params.installationId
+    )
   }
   return true
 }
@@ -1079,7 +1160,7 @@ const thumbnailCache = new Map<string, string>()
  *  Lazy + cached so it only runs for visible image rows.
  *
  *  `savePath` is a LOCAL filesystem path (a download's `savePath`), never a
- *  remote/source URL — this only ever reads from disk, never the network. A
+ *  remote/source URL - this only ever reads from disk, never the network. A
  *  value with a URL scheme is rejected so a caller passing the wrong field
  *  (e.g. the entry's `url`) can't trigger a path-resolve on a URL. */
 export async function getDownloadThumbnail(savePath: unknown): Promise<string | null> {
@@ -1121,7 +1202,7 @@ export async function getDownloadThumbnail(savePath: unknown): Promise<string | 
   }
 }
 
-/** Full snapshot for the renderer store to seed from on mount — active entries
+/** Full snapshot for the renderer store to seed from on mount - active entries
  *  plus the recent terminal buffer. */
 export function getAllDownloads(): DownloadProgress[] {
   const result: DownloadProgress[] = []
@@ -1208,10 +1289,10 @@ export function detachWindowDownloads(win: BrowserWindow): void {
 export async function cleanupTempDownloads(): Promise<void> {
   try {
     await fs.promises.rm(getTempDir(), { recursive: true, force: true })
-  } catch { }
+  } catch {}
   try {
     await fs.promises.rm(getAssetTempDir(), { recursive: true, force: true })
-  } catch { }
+  } catch {}
 }
 
 /** Test-only: replace the in-memory buffers with `snapshot` and emit
@@ -1228,7 +1309,7 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
       subscriberWindows: new Set(),
       lastProgress: { ...entry },
       lastSpeedBytes: 0,
-      lastSpeedTime: Date.now(),
+      lastSpeedTime: Date.now()
     }
     pendingDownloads.set(entry.url, stub)
   }
@@ -1238,5 +1319,3 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
   }
   downloadEvents.emit('tray-state-changed')
 }
-
-

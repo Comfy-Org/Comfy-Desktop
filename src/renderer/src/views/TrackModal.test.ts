@@ -21,7 +21,7 @@ const messages = {
       name: 'Name',
       browse: 'Browse',
       namePlaceholder: 'e.g. ComfyUI Main',
-      backToDashboard: 'Back to Dashboard',
+      backToDashboard: 'Back to Dashboard'
     },
     git: { venv: 'Virtual Environment', venvNotFound: 'Not found' },
     track: {
@@ -37,9 +37,9 @@ const messages = {
       cannotTrack: 'Cannot Track',
       version: 'Version',
       repository: 'Repository',
-      branch: 'Branch',
-    },
-  },
+      branch: 'Branch'
+    }
+  }
 }
 
 function createTestI18n() {
@@ -60,7 +60,7 @@ const gitProbe: ProbeResult = {
   version: 'abcdef12',
   repo: 'https://github.com/comfyanonymous/ComfyUI.git',
   branch: 'master',
-  commit: 'abcdef12',
+  commit: 'abcdef12'
 }
 
 function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
@@ -70,7 +70,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     probeInstallation: vi.fn().mockResolvedValue([gitProbe]),
     trackInstallation: vi.fn().mockResolvedValue({ ok: true }),
     openPath: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
+    ...overrides
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -86,9 +86,9 @@ function mountTrack() {
         BrandTakeoverLayout: { template: '<div><slot /><slot name="footer-left" /></div>' },
         TakeoverBack: true,
         BaseSelect: true,
-        HardDrive: true,
-      },
-    },
+        HardDrive: true
+      }
+    }
   })
 }
 
@@ -119,7 +119,7 @@ describe('TrackModal — browse-only install directory', () => {
 
   it('opens the folder in the file manager when the populated path text is clicked', async () => {
     const api = installMockApi({
-      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
     })
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
@@ -136,7 +136,7 @@ describe('TrackModal — browse-only install directory', () => {
 
   it('probes and enables Track Install when a folder is picked via Browse', async () => {
     const api = installMockApi({
-      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
     })
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
@@ -154,7 +154,7 @@ describe('TrackModal — browse-only install directory', () => {
   it('keeps Track Install disabled when no install is detected at the picked folder', async () => {
     const api = installMockApi({
       browseFolder: vi.fn().mockResolvedValue('/tmp/not-comfy'),
-      probeInstallation: vi.fn().mockResolvedValue([]),
+      probeInstallation: vi.fn().mockResolvedValue([])
     })
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
@@ -178,12 +178,12 @@ describe('TrackModal — install path resolution on save', () => {
       sourceId: 'standalone',
       sourceLabel: 'Standalone',
       version: 'v0.1.0',
-      installPath: '/Users/jo/standalone',
+      installPath: '/Users/jo/standalone'
     }
     const api = installMockApi({
       // User browses to the nested ComfyUI folder; the probe corrects the root.
       browseFolder: vi.fn().mockResolvedValue('/Users/jo/standalone/ComfyUI'),
-      probeInstallation: vi.fn().mockResolvedValue([standaloneProbe]),
+      probeInstallation: vi.fn().mockResolvedValue([standaloneProbe])
     })
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
@@ -202,7 +202,7 @@ describe('TrackModal — install path resolution on save', () => {
 
   it('falls back to the picked folder when the probe has no resolved root', async () => {
     const api = installMockApi({
-      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
       // gitProbe has no installPath.
     })
     const wrapper = mountTrack()

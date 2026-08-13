@@ -41,7 +41,7 @@ export interface InstanceNavStateSources {
 
 export function useInstanceNavState(
   target: Ref<Installation | null | undefined>,
-  sources: InstanceNavStateSources,
+  sources: InstanceNavStateSources
 ): InstanceNavState {
   // Single run-state derivation, shared with the footer CTA so they can't drift.
   const activeInstallationId = computed(() => toValue(sources.activeInstallationId) ?? null)
@@ -55,11 +55,13 @@ export function useInstanceNavState(
   const isCurrentChooser = computed(() => toValue(sources.currentView) === 'dashboard')
 
   const targetClass = computed<NavClass>(() =>
-    navClass(normaliseCategory(target.value?.sourceCategory) ?? 'local'),
+    navClass(normaliseCategory(target.value?.sourceCategory) ?? 'local')
   )
 
   // Picker rows are install targets only; remote folds into the cloud rows.
-  const targetKind = computed<TargetKind>(() => (targetClass.value === 'cloud' ? 'cloud' : 'instance'))
+  const targetKind = computed<TargetKind>(() =>
+    targetClass.value === 'cloud' ? 'cloud' : 'instance'
+  )
 
   const isTargetCurrentHost = computed(() => {
     const id = target.value?.id
@@ -80,7 +82,7 @@ export function useInstanceNavState(
     currentView: toValue(sources.currentView),
     target: targetKind.value,
     targetRun: targetRun.value,
-    intent,
+    intent
   })
 
   return {
@@ -93,6 +95,6 @@ export function useInstanceNavState(
     isTargetCurrentHost,
     isTargetRunningElsewhere,
     isTargetRunningHere,
-    navInput,
+    navInput
   }
 }

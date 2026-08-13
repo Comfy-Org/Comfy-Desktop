@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Folder, FolderOpen, RotateCcw } from 'lucide-vue-next'
+import { ExternalLink, Folder, FolderOpen, RotateCcw } from 'lucide-vue-next'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
 /** Readonly directory row: an icon, a clickable path that opens the folder, an
@@ -15,6 +15,10 @@ interface Props {
   tag?: string
   /** Show a reset-to-default action. */
   resettable?: boolean
+  /** Show the Browse action. Off for rows edited elsewhere (shared dirs). */
+  browsable?: boolean
+  /** Show a "manage in Desktop Settings" action instead of local editing. */
+  manageable?: boolean
   /** Globally-shared dir → shows the shared badge on its icon. */
   shared?: boolean
 }
@@ -23,13 +27,16 @@ withDefaults(defineProps<Props>(), {
   label: '',
   tag: '',
   resettable: false,
-  shared: false,
+  browsable: true,
+  manageable: false,
+  shared: false
 })
 
 const emit = defineEmits<{
   open: []
   browse: []
   reset: []
+  manage: []
 }>()
 
 const { t } = useI18n()
@@ -46,11 +53,14 @@ const { t } = useI18n()
           class="storage-dir-name"
           :title="t('models.openDir', 'Open folder')"
           @click="emit('open')"
-        >{{ path }}</button>
+        >
+          {{ path }}
+        </button>
       </div>
       <span v-if="tag" class="storage-dir-tag">{{ tag }}</span>
       <div class="storage-dir-actions">
         <button
+          v-if="browsable"
           type="button"
           class="storage-dir-action"
           :aria-label="t('common.browse', 'Browse')"
@@ -58,6 +68,20 @@ const { t } = useI18n()
           @click="emit('browse')"
         >
           <FolderOpen :size="14" aria-hidden="true" />
+        </button>
+        <button
+          v-if="manageable"
+          type="button"
+          class="storage-dir-action"
+          :aria-label="
+            t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings')
+          "
+          :title="
+            t('comfyUISettings.manageSharedDirs', 'Manage Shared Directories in Desktop Settings')
+          "
+          @click="emit('manage')"
+        >
+          <ExternalLink :size="14" aria-hidden="true" />
         </button>
         <button
           v-if="resettable"

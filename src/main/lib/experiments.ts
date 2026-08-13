@@ -104,7 +104,7 @@ function backfillSessionCache(flags: Record<string, FeatureFlagValue>): void {
  *
  * The returned promise is cached so `getFlagAsync()` can await it — a
  * renderer query landing before the fetch settles then sees the resolved
- * value instead of falling back to control (mirrors `cloudCapacity`).
+ * value instead of falling back to control.
  *
  * Idempotent within a process.
  */
@@ -115,11 +115,9 @@ export function initExperiments(opts: {
 }): Promise<void> {
   // Idempotent within a process: repeated calls return the same in-flight
   // promise without re-running the cache load or fetch. The `opts.distinctId`
-  // and `opts.personProperties` of subsequent calls are intentionally ignored
-  // — identity changes mid-session (e.g. after `bindUserId`) do not
-  // re-evaluate experiments. Variant stability for an installation is a
-  // property we want; rotating variants when a user logs in would
-  // contaminate the experiment population.
+  // and `opts.personProperties` of subsequent calls are intentionally ignored.
+  // The caller supplies the installation-stable assignment key, so anonymous
+  // rotation and Firebase consensus changes cannot move experiment arms.
   if (initPromise) return initPromise
   cached = readCacheSync() ?? {}
   initPromise = mainTelemetry
@@ -156,7 +154,7 @@ export function getFlag(key: string): FeatureFlagValue | undefined {
  * Awaitable flag accessor. Awaits the in-flight boot fetch (if any) before
  * reading, so a query landing before the fetch settles sees the resolved
  * value rather than falling back to control. Prefer this from IPC handlers;
- * `getFlag()` stays for hot sync reads. Mirrors `getCloudCapacityStatusAsync`.
+ * `getFlag()` stays for hot sync reads.
  */
 export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
   if (initPromise) {

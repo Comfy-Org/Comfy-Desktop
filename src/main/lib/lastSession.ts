@@ -8,9 +8,7 @@ import { isQuitInProgress } from './quit-state'
  * boot can reopen it. `instance` carries the installation id so the boot flow
  * can re-launch that specific install; `dashboard` opens the chooser host.
  */
-export type LastActiveSurface =
-  | { kind: 'dashboard' }
-  | { kind: 'instance'; installationId: string }
+export type LastActiveSurface = { kind: 'dashboard' } | { kind: 'instance'; installationId: string }
 
 const lastSessionPath = (): string => path.join(stateDir(), 'last-session.json')
 
@@ -21,7 +19,8 @@ function isSurface(value: unknown): value is LastActiveSurface {
   if (!value || typeof value !== 'object') return false
   const v = value as { kind?: unknown; installationId?: unknown }
   if (v.kind === 'dashboard') return true
-  if (v.kind === 'instance') return typeof v.installationId === 'string' && v.installationId.length > 0
+  if (v.kind === 'instance')
+    return typeof v.installationId === 'string' && v.installationId.length > 0
   return false
 }
 

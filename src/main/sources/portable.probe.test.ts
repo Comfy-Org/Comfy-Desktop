@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 import { portable } from './portable'
@@ -83,4 +83,3 @@ describe('portable probeInstallation', () => {
     expect(result!.installPath).toBe(nested)
   })
 })
-

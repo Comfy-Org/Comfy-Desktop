@@ -16,6 +16,7 @@ export type { VersionStatRow }
 const props = withDefaults(
   defineProps<{
     headline: string
+    headlineProduct?: string
     /** Accent the headline (an update is waiting). */
     headlineHighlight?: boolean
     badge?: string | null
@@ -27,6 +28,7 @@ const props = withDefaults(
     runningActionIds?: Set<string>
   }>(),
   {
+    headlineProduct: '',
     headlineHighlight: false,
     badge: null,
     badgeTone: 'current',
@@ -46,10 +48,19 @@ function isRunning(id: string): boolean {
 <template>
   <div class="version-stat-panel">
     <div class="version-stat-headline-row">
-      <p class="version-stat-headline" :class="{ 'is-update-available': headlineHighlight }">
-        {{ headline }}
+      <p class="version-stat-headline">
+        <span v-if="headlineProduct" class="channel-picker-headline-product">{{
+          headlineProduct
+        }}</span>
+        <span
+          class="channel-picker-headline-version"
+          :class="{ 'is-update-available': headlineHighlight }"
+          >{{ headline }}</span
+        >
       </p>
-      <span v-if="badge" class="version-stat-badge" :class="badgeTone">{{ badge }}</span>
+      <span v-if="badge" class="version-stat-badge channel-picker-badge" :class="badgeTone">{{
+        badge
+      }}</span>
     </div>
 
     <dl v-if="rows.length > 0 || actions.length > 0" class="version-stat-rows">
@@ -98,13 +109,17 @@ function isRunning(id: string): boolean {
 
 .version-stat-headline {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   font-size: 18px;
   font-weight: 600;
   line-height: 24px;
   color: var(--text);
 }
 
-.version-stat-headline.is-update-available {
+.version-stat-headline .is-update-available {
   color: var(--accent);
 }
 

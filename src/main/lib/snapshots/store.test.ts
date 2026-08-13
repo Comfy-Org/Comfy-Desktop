@@ -23,6 +23,16 @@ vi.mock('../telemetry', () => ({
   emit: vi.fn()
 }))
 
+// Imports the R2 catalog (electron `net`, cacheDir) transitively — stub it
+// out so this unit test stays free of the Electron runtime.
+vi.mock('../../sources/standalone/torchStackCatalog', () => ({
+  classifyTorchStackForSnapshot: vi.fn(() => ({
+    kind: 'observed',
+    torchVersion: null,
+    observedAt: '2026-03-01T12:00:00.000Z'
+  }))
+}))
+
 vi.mock('fs', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
   return {
@@ -193,9 +203,7 @@ describe('captureState commit-matching guard', () => {
     mockedReadGitHead.mockReturnValue('abc1234')
     vi.mocked(getActiveUvPath).mockReturnValue('/legacy/.venv/bin/uv')
     vi.mocked(getActivePythonPath).mockReturnValue('/legacy/.venv/bin/python3')
-    vi.mocked(fs.existsSync).mockImplementation(
-      (p) => String(p) === '/legacy/.venv/bin/uv'
-    )
+    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === '/legacy/.venv/bin/uv')
     vi.mocked(pipFreeze).mockResolvedValue({ torch: '2.4.0', numpy: '1.26.4' })
 
     const installation = {
@@ -212,10 +220,7 @@ describe('captureState commit-matching guard', () => {
     const state = await captureState('/installs/adopted', installation)
 
     expect(getActiveUvPath).toHaveBeenCalledWith(installation)
-    expect(pipFreeze).toHaveBeenCalledWith(
-      '/legacy/.venv/bin/uv',
-      '/legacy/.venv/bin/python3'
-    )
+    expect(pipFreeze).toHaveBeenCalledWith('/legacy/.venv/bin/uv', '/legacy/.venv/bin/python3')
     expect(Object.keys(state.pipPackages).length).toBe(2)
   })
 
@@ -303,7 +308,7 @@ describe('captureSnapshotIfChanged telemetry', () => {
     // will produce (manifest read fails → ref:'unknown', commit comes from
     // mocked readGitHead, no nodes, no pip).
     const matching = {
-      version: 1,
+      version: 2,
       createdAt: '2026-01-01T00:00:00.000Z',
       trigger: 'boot' as const,
       label: null,
@@ -311,7 +316,14 @@ describe('captureSnapshotIfChanged telemetry', () => {
       customNodes: [],
       pipPackages: {},
       pythonVersion: undefined,
-      updateChannel: 'stable'
+      updateChannel: 'stable',
+      // Same stack identity as the mocked classifier but an older observedAt —
+      // dedupe must compare identity only, or every boot would re-snapshot.
+      torchStack: {
+        kind: 'observed' as const,
+        torchVersion: null,
+        observedAt: '2026-01-01T00:00:00.000Z'
+      }
     }
     const lastFilename = 'last.json'
     // loadSnapshot reads through `resolveSnapshotPath` which uses
@@ -404,7 +416,10 @@ describe('ensureCurrentSnapshotOnTop', () => {
   } as InstallationRecord
 
   // The live state `captureState` produces here: ref 'unknown' (manifest read
-  // fails), commit from mocked readGitHead, no nodes, no pip, channel 'stable'.
+  // fails), commit from mocked readGitHead, no nodes, no pip, channel 'stable',
+  // and the mocked observed torch stack (torchVersion null, tuple fields
+  // absent — torchStacksMatch distinguishes null from undefined and ignores
+  // only observedAt).
   const liveStateSnapshot = {
     version: 1,
     createdAt: '2025-01-01T00:00:00.000Z',
@@ -414,7 +429,12 @@ describe('ensureCurrentSnapshotOnTop', () => {
     customNodes: [],
     pipPackages: {},
     pythonVersion: undefined,
-    updateChannel: 'stable'
+    updateChannel: 'stable',
+    torchStack: {
+      kind: 'observed' as const,
+      torchVersion: null,
+      observedAt: '2025-01-01T00:00:00.000Z'
+    }
   }
 
   function seedTopSnapshot(memory: Map<string, string>, snapshot: object, filename: string): void {
@@ -440,7 +460,12 @@ describe('ensureCurrentSnapshotOnTop', () => {
     // The imported snapshot is kept (retry can still use it).
     expect(
       memory.has(
-        path.join('/test/install', '.launcher', 'snapshots', '20250101_000000_000-manual-imported.json')
+        path.join(
+          '/test/install',
+          '.launcher',
+          'snapshots',
+          '20250101_000000_000-manual-imported.json'
+        )
       )
     ).toBe(true)
     // The written snapshot records the live commit.

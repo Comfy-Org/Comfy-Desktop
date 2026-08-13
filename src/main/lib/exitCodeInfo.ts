@@ -22,7 +22,7 @@ const NTSTATUS_KINDS: ReadonlyMap<number, CrashKind> = new Map([
   [0xc0000005, 'access-violation'],
   [0xc000001d, 'illegal-instruction'],
   [0xc0000409, 'stack-buffer-overrun'],
-  [0xc0000374, 'heap-corruption'],
+  [0xc0000374, 'heap-corruption']
 ])
 
 export interface DecodedExitCode {

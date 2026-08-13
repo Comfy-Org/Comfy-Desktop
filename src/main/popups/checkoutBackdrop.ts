@@ -55,7 +55,7 @@ function ensureBackdrop(parent: BrowserWindow): CheckoutBackdropEntry {
 
   ensureIpc()
   const view = new WebContentsView({
-    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false },
+    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
   })
   view.setBackgroundColor('#00000000')
   view.setVisible(false)

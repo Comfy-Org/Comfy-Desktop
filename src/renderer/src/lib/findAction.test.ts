@@ -15,7 +15,7 @@ describe('findActionById', () => {
   it('finds a top-level section action by id', () => {
     const sections: DetailSection[] = [
       { tab: 'status', actions: [action('launch'), action('delete')] },
-      { tab: 'update', actions: [action('check-update')] },
+      { tab: 'update', actions: [action('check-update')] }
     ]
     const result = findActionById(sections, 'delete')
     expect(result?.id).toBe('delete')
@@ -37,24 +37,24 @@ describe('findActionById', () => {
               {
                 value: 'stable',
                 label: 'Stable',
-                data: { actions: [action('update-comfyui'), action('copy-update')] },
+                data: { actions: [action('update-comfyui'), action('copy-update')] }
               },
               {
                 value: 'latest',
                 label: 'Latest',
-                data: { actions: [action('switch-channel')] },
-              },
-            ],
-          },
+                data: { actions: [action('switch-channel')] }
+              }
+            ]
+          }
         ],
-        actions: [action('check-update')],
-      },
+        actions: [action('check-update')]
+      }
     ]
     const result = findActionById(sections, 'update-comfyui')
     expect(result?.id).toBe('update-comfyui')
   })
 
-  it('prefers the action on the install\'s currently-selected channel when the same id appears across channels', () => {
+  it("prefers the action on the install's currently-selected channel when the same id appears across channels", () => {
     // Both stable and latest expose `update-comfyui`; given the install
     // is on 'latest', the latest-channel action wins.
     const sections: DetailSection[] = [
@@ -70,17 +70,17 @@ describe('findActionById', () => {
               {
                 value: 'stable',
                 label: 'Stable',
-                data: { actions: [{ ...action('update-comfyui'), label: 'stable-update' }] },
+                data: { actions: [{ ...action('update-comfyui'), label: 'stable-update' }] }
               },
               {
                 value: 'latest',
                 label: 'Latest',
-                data: { actions: [{ ...action('update-comfyui'), label: 'latest-update' }] },
-              },
-            ],
-          },
-        ],
-      },
+                data: { actions: [{ ...action('update-comfyui'), label: 'latest-update' }] }
+              }
+            ]
+          }
+        ]
+      }
     ]
     const result = findActionById(sections, 'update-comfyui', 'latest')
     expect(result?.label).toBe('latest-update')
@@ -100,17 +100,17 @@ describe('findActionById', () => {
               {
                 value: 'stable',
                 label: 'Stable',
-                data: { actions: [{ ...action('update-comfyui'), label: 'stable-update' }] },
+                data: { actions: [{ ...action('update-comfyui'), label: 'stable-update' }] }
               },
               {
                 value: 'latest',
                 label: 'Latest',
-                data: { actions: [{ ...action('update-comfyui'), label: 'latest-update' }] },
-              },
-            ],
-          },
-        ],
-      },
+                data: { actions: [{ ...action('update-comfyui'), label: 'latest-update' }] }
+              }
+            ]
+          }
+        ]
+      }
     ]
     const result = findActionById(sections, 'update-comfyui')
     expect(result?.label).toBe('stable-update')
@@ -134,12 +134,12 @@ describe('findActionById', () => {
               {
                 value: 'stable',
                 label: 'Stable',
-                data: { actions: [{ ...action('check-update'), label: 'nested' }] },
-              },
-            ],
-          },
-        ],
-      },
+                data: { actions: [{ ...action('check-update'), label: 'nested' }] }
+              }
+            ]
+          }
+        ]
+      }
     ]
     const result = findActionById(sections, 'check-update', 'stable')
     expect(result?.label).toBe('top-level')

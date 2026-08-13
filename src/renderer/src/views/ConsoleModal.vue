@@ -20,7 +20,6 @@ const sessionStore = useSessionStore()
 
 const api = window.api
 
-
 const session = computed(() => {
   if (!props.installationId) return undefined
   return sessionStore.getSession(props.installationId)
@@ -56,10 +55,7 @@ const showWindowBtn = computed(() => {
 
 const comfyUrl = computed(() => {
   if (!runningInfo.value) return null
-  return (
-    runningInfo.value.url ||
-    `http://127.0.0.1:${runningInfo.value.port || 8188}`
-  )
+  return runningInfo.value.url || `http://127.0.0.1:${runningInfo.value.port || 8188}`
 })
 
 const terminalOutput = computed(() => {
@@ -67,8 +63,10 @@ const terminalOutput = computed(() => {
 })
 
 const terminalRef = ref<HTMLDivElement | null>(null)
-const { isAtBottom, terminalExpanded, handleTerminalScroll, scrollToBottom } =
-  useTerminalScroll(terminalRef, () => terminalOutput.value)
+const { isAtBottom, terminalExpanded, handleTerminalScroll, scrollToBottom } = useTerminalScroll(
+  terminalRef,
+  () => terminalOutput.value
+)
 
 watch(
   () => props.installationId,
@@ -83,62 +81,63 @@ watch(
 
 <template>
   <div v-if="installationId" class="view-modal-content">
-      <div class="view-modal-header">
-        <div class="view-modal-title">{{ title }}</div>
-        <button class="view-modal-close" @click="emit('close')">{{ (!isExited && !errorInfo) ? '−' : '✕' }}</button>
+    <div class="view-modal-header">
+      <div class="view-modal-title">{{ title }}</div>
+      <button class="view-modal-close" @click="emit('close')">
+        {{ !isExited && !errorInfo ? '−' : '✕' }}
+      </button>
+    </div>
+    <div class="view-modal-body">
+      <div v-if="errorInfo?.message" class="console-error-message">{{ errorInfo.message }}</div>
+      <button
+        type="button"
+        class="terminal-toggle"
+        :aria-expanded="terminalExpanded"
+        @click="terminalExpanded = !terminalExpanded"
+      >
+        <span class="terminal-toggle-icon">{{ terminalExpanded ? '▾' : '▸' }}</span>
+        <span>{{ $t('list.console') }}</span>
+      </button>
+      <div
+        v-show="terminalExpanded"
+        id="console-terminal"
+        ref="terminalRef"
+        class="terminal-output"
+        @scroll="handleTerminalScroll"
+      >
+        {{ terminalOutput }}
       </div>
-      <div class="view-modal-body">
-        <div v-if="errorInfo?.message" class="console-error-message">{{ errorInfo.message }}</div>
-        <button type="button" class="terminal-toggle" :aria-expanded="terminalExpanded" @click="terminalExpanded = !terminalExpanded">
-          <span class="terminal-toggle-icon">{{ terminalExpanded ? '▾' : '▸' }}</span>
-          <span>{{ $t('list.console') }}</span>
-        </button>
-        <div
-          v-show="terminalExpanded"
-          id="console-terminal"
-          ref="terminalRef"
-          class="terminal-output"
-          @scroll="handleTerminalScroll"
-        >{{ terminalOutput }}</div>
-      </div>
+    </div>
 
-      <!-- Bottom bar (pinned outside scrollable body) -->
-      <div class="view-modal-footer">
-        <div class="view-bottom">
-          <button
-            v-if="showWindowBtn"
-            class="accent"
-            @click="api.focusComfyWindow(installationId!)"
-          >
-            {{ $t('running.showWindow') }}
-          </button>
-          <button
-            v-if="comfyUrl && runningInfo?.mode === 'console'"
-            @click="api.openPath(comfyUrl)"
-          >
-            {{ $t('console.openInBrowser') }}
-          </button>
-          <button
-            v-if="isStopping"
-            class="danger-solid"
-            disabled
-          >
-            {{ $t('console.stopping') }}
-          </button>
-          <button
-            v-else-if="!isExited && !errorInfo"
-            class="danger-solid"
-            @click="api.stopComfyUI(installationId!)"
-          >
-            {{ $t('console.stop') }}
-          </button>
-          <button
-            v-if="errorInfo"
-            @click="sessionStore.clearErrorInstance(installationId!); emit('close')"
-          >
-            {{ $t('running.dismiss') }}
-          </button>
-        </div>
+    <!-- Bottom bar (pinned outside scrollable body) -->
+    <div class="view-modal-footer">
+      <div class="view-bottom">
+        <button v-if="showWindowBtn" class="accent" @click="api.focusComfyWindow(installationId!)">
+          {{ $t('running.showWindow') }}
+        </button>
+        <button v-if="comfyUrl && runningInfo?.mode === 'console'" @click="api.openPath(comfyUrl)">
+          {{ $t('console.openInBrowser') }}
+        </button>
+        <button v-if="isStopping" class="danger-solid" disabled>
+          {{ $t('console.stopping') }}
+        </button>
+        <button
+          v-else-if="!isExited && !errorInfo"
+          class="danger-solid"
+          @click="api.stopComfyUI(installationId!)"
+        >
+          {{ $t('console.stop') }}
+        </button>
+        <button
+          v-if="errorInfo"
+          @click="
+            sessionStore.clearErrorInstance(installationId!)
+            emit('close')
+          "
+        >
+          {{ $t('running.dismiss') }}
+        </button>
       </div>
+    </div>
   </div>
 </template>

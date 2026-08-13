@@ -85,7 +85,13 @@ options:
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
     expect(byName.get('preview-method')?.choices).toEqual(['none', 'auto', 'latent2rgb', 'taesd'])
-    expect(byName.get('verbose')?.choices).toEqual(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+    expect(byName.get('verbose')?.choices).toEqual([
+      'DEBUG',
+      'INFO',
+      'WARNING',
+      'ERROR',
+      'CRITICAL'
+    ])
   })
 
   it('detects mutually exclusive groups from usage line', () => {
@@ -275,10 +281,7 @@ describe('filterUnsupportedArgs', () => {
 
   it('does not double-consume value after --known=value', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
-    const filtered = filterUnsupportedArgs(
-      ['--port=8188', '--enable-manager'],
-      schema
-    )
+    const filtered = filterUnsupportedArgs(['--port=8188', '--enable-manager'], schema)
     expect(filtered).toEqual(['--port=8188', '--enable-manager'])
   })
 
@@ -291,10 +294,7 @@ options:
   --port PORT           Set the listen port.
 `
     const schema = parseHelpOutput(help)
-    const filtered = filterUnsupportedArgs(
-      ['--cache-ram', '4', '8', '--port', '8188'],
-      schema
-    )
+    const filtered = filterUnsupportedArgs(['--cache-ram', '4', '8', '--port', '8188'], schema)
     expect(filtered).toEqual(['--cache-ram', '4', '8', '--port', '8188'])
   })
 })

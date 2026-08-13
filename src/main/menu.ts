@@ -26,7 +26,7 @@ export type AppMenuHandlers = {
 export function installAppMenu(
   platform: NodeJS.Platform = process.platform,
   devOverrides?: AppMenuDevOverrides,
-  handlers?: AppMenuHandlers,
+  handlers?: AppMenuHandlers
 ): void {
   const routedDevTools =
     typeof devOverrides?.toggleEmbeddedDevTools === 'function'
@@ -45,8 +45,8 @@ export function installAppMenu(
           accelerator: 'Control+Shift+I',
           click: (_menuItem, bw) => {
             routedDevTools(bw)
-          },
-        },
+          }
+        }
       )
     }
     Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'View', submenu: viewSubmenu }]))
@@ -65,7 +65,7 @@ export function installAppMenu(
             label: 'Check for Updates…',
             click: () => {
               onCheckForUpdates()
-            },
+            }
           },
           { type: 'separator' },
           { role: 'services' },
@@ -74,8 +74,8 @@ export function installAppMenu(
           { role: 'hideOthers' },
           { role: 'unhide' },
           { type: 'separator' },
-          { role: 'quit' },
-        ],
+          { role: 'quit' }
+        ]
       }
     : { role: 'appMenu' }
 
@@ -94,10 +94,10 @@ export function installAppMenu(
                 accelerator: 'Alt+Command+I',
                 click: (_menuItem, bw) => {
                   routedDevTools(bw)
-                },
-              },
-            ],
-          },
+                }
+              }
+            ]
+          }
         ] as MenuItemConstructorOptions[])
       : []),
     {
@@ -107,9 +107,9 @@ export function installAppMenu(
         { role: 'zoom' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
-        { role: 'front' },
-      ],
-    },
+        { role: 'front' }
+      ]
+    }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

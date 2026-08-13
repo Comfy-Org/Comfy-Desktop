@@ -4,16 +4,16 @@ import {
   getCachedFeatureFlagRegistry,
   isCachedFeatureFlagAvailable,
   clearFeatureFlagRegistryCache,
-  getComfyFeatureFlagRegistry,
+  getComfyFeatureFlagRegistry
 } from './comfy-feature-flags'
 
 describe('parseFeatureFlagOutput', () => {
   it('parses valid JSON output', () => {
     const stdout = JSON.stringify({
-      show_signin_button: { type: 'bool', default: false, description: 'Show sign-in' },
+      show_signin_button: { type: 'bool', default: false, description: 'Show sign-in' }
     })
     expect(parseFeatureFlagOutput(stdout)).toEqual({
-      show_signin_button: { type: 'bool', default: false, description: 'Show sign-in' },
+      show_signin_button: { type: 'bool', default: false, description: 'Show sign-in' }
     })
   })
 
@@ -46,7 +46,7 @@ describe('parseFeatureFlagOutput', () => {
   it('preserves multiple flag entries', () => {
     const stdout = JSON.stringify({
       flag_a: { type: 'bool', default: true, description: 'A' },
-      flag_b: { type: 'int', default: 10, description: 'B' },
+      flag_b: { type: 'int', default: 10, description: 'B' }
     })
     const reg = parseFeatureFlagOutput(stdout)
     expect(Object.keys(reg)).toEqual(['flag_a', 'flag_b'])

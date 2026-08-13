@@ -703,7 +703,11 @@ export function lsRemoteStableTags(url: string): Promise<string[]> {
   if (isPygit2Configured()) {
     return runPygit2(['ls-remote-tags', url], 15000).then(({ exitCode, stdout }) => {
       if (exitCode !== 0) return []
-      const tags = stdout.trim().split('\n').map((s) => s.trim()).filter(Boolean)
+      const tags = stdout
+        .trim()
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
       return filterAndSort(tags)
     })
   }
@@ -1221,16 +1225,23 @@ export function gitCheckoutCommit(
 export async function rollbackComfySource(
   comfyuiDir: string,
   targetHead: string,
-  sendOutput?: (text: string) => void,
+  sendOutput?: (text: string) => void
 ): Promise<boolean> {
   if (readGitHead(comfyuiDir) === targetHead) return true
   sendOutput?.(`\nRolling back ComfyUI source to ${targetHead.slice(0, 7)}…\n`)
-  const result = await gitCheckoutCommit(comfyuiDir, targetHead, sendOutput ?? (() => {}), undefined)
+  const result = await gitCheckoutCommit(
+    comfyuiDir,
+    targetHead,
+    sendOutput ?? (() => {}),
+    undefined
+  )
   const head = readGitHead(comfyuiDir)
   const ok = result.exitCode === 0 && !!head && head.startsWith(targetHead.slice(0, 7))
-  sendOutput?.(ok
-    ? `Rolled back ComfyUI source to ${targetHead.slice(0, 7)}.\n`
-    : `⚠ Failed to roll back ComfyUI source to ${targetHead.slice(0, 7)}.\n`)
+  sendOutput?.(
+    ok
+      ? `Rolled back ComfyUI source to ${targetHead.slice(0, 7)}.\n`
+      : `⚠ Failed to roll back ComfyUI source to ${targetHead.slice(0, 7)}.\n`
+  )
   return ok
 }
 

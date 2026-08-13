@@ -107,7 +107,8 @@ const restoreCancellable = computed<boolean>(
  *  when the row isn't loaded locally yet. */
 const restoreFromLabel = computed<string>(() => {
   const file = restoreOpFile.value
-  if (!file) return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
+  if (!file)
+    return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
   const target = snapshots.value.find((s) => s.filename === file)
   if (target) {
     const trigger = triggerLabel(target.trigger, t)
@@ -140,33 +141,37 @@ function retryRestore(): void {
   clearRestoreTerminal()
   emit('op-retry')
 }
-watch(restoreOp, (op, prev) => {
-  if (!op) return
-  // In-flight → done transition only.
-  if (!op.done || (prev && prev.done)) return
-  if (op.ok) {
-    clearRestoreTerminal()
-    restoreTerminal.value = 'ok'
-    restoreOkTimer = setTimeout(() => {
-      restoreTerminal.value = null
-      restoreOkTimer = null
-      // Reload so the post-restore snapshot lands as the newest entry.
-      void load()
-      emit('refresh-all')
-      emit('op-dismiss')
-    }, 1800)
-  } else if (op.error === MSG_CANCELLED) {
-    clearRestoreTerminal()
-    // An import cancel keeps a card up (the staged target is still retryable),
-    // but as a neutral "cancelled" state — not a red failure.
-    if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
-    else emit('op-dismiss')
-  } else {
-    clearRestoreTerminal()
-    restoreTerminal.value = 'error'
-    restoreErrorMessage.value = op.error ?? ''
-  }
-}, { immediate: true })
+watch(
+  restoreOp,
+  (op, prev) => {
+    if (!op) return
+    // In-flight → done transition only.
+    if (!op.done || (prev && prev.done)) return
+    if (op.ok) {
+      clearRestoreTerminal()
+      restoreTerminal.value = 'ok'
+      restoreOkTimer = setTimeout(() => {
+        restoreTerminal.value = null
+        restoreOkTimer = null
+        // Reload so the post-restore snapshot lands as the newest entry.
+        void load()
+        emit('refresh-all')
+        emit('op-dismiss')
+      }, 1800)
+    } else if (op.error === MSG_CANCELLED) {
+      clearRestoreTerminal()
+      // An import cancel keeps a card up (the staged target is still retryable),
+      // but as a neutral "cancelled" state — not a red failure.
+      if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
+      else emit('op-dismiss')
+    } else {
+      clearRestoreTerminal()
+      restoreTerminal.value = 'error'
+      restoreErrorMessage.value = op.error ?? ''
+    }
+  },
+  { immediate: true }
+)
 onUnmounted(() => {
   clearRestoreTerminal()
   unsubChanges?.()
@@ -547,6 +552,20 @@ async function handleImport(): Promise<void> {
     }
     return
   }
+  // Kept-local PyTorch disclosure: the snapshot's recorded stack can't be
+  // applied on this machine, so the restore will keep the local stack.
+  // Surface that BEFORE running the restore; cancelling leaves only the
+  // staged token behind (it self-prunes), nothing was mutated.
+  if (importResult.torchStackNotice) {
+    const noticeChoice = await dialogs.confirm({
+      title: t('snapshots.importTorchNoticeTitle', 'Snapshot uses a different PyTorch'),
+      message: importResult.torchStackNotice,
+      confirmLabel: t('standalone.snapshotRestore', 'Restore'),
+      tone: 'primary'
+    })
+    if (noticeChoice !== 'primary') return
+  }
+
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
     action: 'import',
     snapshot_count_bucket: toCountBucket(snapshots.value.length),
@@ -710,7 +729,12 @@ async function handleImport(): Promise<void> {
               role="status"
               :data-testid="TID.snapshotsOpCard"
             >
-              <p v-if="restoreFromLabel" class="snapshots-op-card-target">
+              <!-- A successful import is an apply, not a rollback; "Rolled
+                   back to {label}" is only for restores of local history. -->
+              <p v-if="restoreOpIsImport" class="snapshots-op-card-target">
+                {{ t('snapshots.restoredImported', 'Applied imported snapshot') }}
+              </p>
+              <p v-else-if="restoreFromLabel" class="snapshots-op-card-target">
                 {{ t('snapshots.restoredFrom', { label: restoreFromLabel }) }}
               </p>
             </div>
@@ -757,6 +781,7 @@ async function handleImport(): Promise<void> {
               type="button"
               class="snapshots-rail-cta"
               :aria-label="t('snapshots.createSnapshot', 'Create Snapshot')"
+              :data-testid="TID.snapshotsSaveCta"
               @click="handleSave"
             >
               <span>{{ t('snapshots.createNew', 'Create Snapshot') }}</span>
@@ -802,10 +827,7 @@ async function handleImport(): Promise<void> {
                 <!-- "Release notes": changes vs the previous snapshot.
                      Hidden for the oldest snapshot (no predecessor); copy
                      events interleaved in the timeline don't count. -->
-                <div
-                  v-if="item.snapshotIndex < snapshots.length - 1"
-                  class="snap-diff-accordion"
-                >
+                <div v-if="item.snapshotIndex < snapshots.length - 1" class="snap-diff-accordion">
                   <button
                     type="button"
                     class="snap-diff-trigger"

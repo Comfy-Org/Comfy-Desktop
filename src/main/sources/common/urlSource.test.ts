@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 
 import { createUrlSource } from './urlSource'
@@ -15,7 +15,7 @@ function makeInstall(): InstallationRecord {
     createdAt: new Date().toISOString(),
     sourceId: 'x',
     remoteUrl: 'https://example.com/',
-    status: 'installed',
+    status: 'installed'
   } as unknown as InstallationRecord
 }
 
@@ -37,7 +37,7 @@ describe('createUrlSource â€” rename action', () => {
       labelKey: 'cloud.label',
       descKey: 'cloud.desc',
       category: 'cloud',
-      defaultUrl: 'https://cloud.comfy.org/',
+      defaultUrl: 'https://cloud.comfy.org/'
     })
     expect(detailActionIds(cloud)).not.toContain('rename')
   })
@@ -48,8 +48,26 @@ describe('createUrlSource â€” rename action', () => {
       labelKey: 'remote.label',
       descKey: 'remote.desc',
       category: 'remote',
-      defaultUrl: 'http://localhost:8188',
+      defaultUrl: 'http://localhost:8188'
     })
     expect(detailActionIds(remote)).toContain('rename')
+  })
+})
+
+describe('createUrlSource - settings fields', () => {
+  it('never offers the Manager security level (local-only: it reconciles an on-disk config.ini)', () => {
+    const remote = createUrlSource({
+      id: 'remote',
+      labelKey: 'remote.label',
+      descKey: 'remote.desc',
+      category: 'remote',
+      defaultUrl: 'http://localhost:8188'
+    })
+    const sections = remote.getDetailSections(makeInstall()) as Record<string, unknown>[]
+    const fieldIds = sections.flatMap((s) =>
+      ((s.fields as { id?: string }[] | undefined) ?? []).map((f) => f.id)
+    )
+    expect(fieldIds).not.toContain('managerSecurityLevel')
+    expect(fieldIds).not.toContain('managerNetworkMode')
   })
 })

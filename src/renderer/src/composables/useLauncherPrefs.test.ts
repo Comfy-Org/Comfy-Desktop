@@ -9,7 +9,7 @@ vi.stubGlobal('window', {
     onInstallationsChanged: vi.fn(),
     onInstallationsVersionsUpdated: vi.fn(),
     getSetting: vi.fn().mockResolvedValue(undefined),
-    setSetting: vi.fn().mockResolvedValue(undefined),
+    setSetting: vi.fn().mockResolvedValue(undefined)
   }
 })
 

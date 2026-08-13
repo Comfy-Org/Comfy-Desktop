@@ -128,7 +128,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => dialogs.confirm({ ...o, tone: 'danger' }),
-    alert: (o) => dialogs.alert(o),
+    alert: (o) => dialogs.alert(o)
   })
   const actionGuard = useActionGuard()
   const { confirmMigration } = useMigrateAction()
@@ -170,7 +170,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   // Id of the install whose payload is currently painted; backs `sectionsFresh`.
   const sectionsPayloadId = ref<string | null>(null)
   // Request id: each load captures the next value and only writes back if
-  // still latest, so an A→B→A late response can't overwrite the pane.
+  // still latest, so an A->B->A late response can't overwrite the pane.
   let requestSeq = 0
 
   async function loadAll(installationId: string, installPath: string): Promise<void> {
@@ -384,8 +384,15 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       setFieldError(installId, field.id, message)
       return
     }
-    // Restart-required dirty tracking, only after a successful IPC.
-    if (field.requiresRestart && sessionStore.isRunning(installId)) {
+    // Restart-required dirty tracking, only after a successful IPC. A
+    // launching instance counts: the spawned process consumed its
+    // configuration at launch start, so an edit made while it boots is not
+    // reflected in it either - without tracking, the instance would come up
+    // on the old values with the UI showing the new ones and no restart CTA.
+    if (
+      field.requiresRestart &&
+      (sessionStore.isRunning(installId) || sessionStore.isLaunching(installId))
+    ) {
       const baseline = restartBaselines.value.get(installId)?.get(field.id) ?? priorValue
       if (restartFieldsEqual(value, baseline)) {
         clearRestartDirty(installId, field.id)
@@ -496,7 +503,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       )
     }
 
-    // 4-8. Shopping-list chain: fieldSelects → select → prompt → confirm →
+    // 4-8. Shopping-list chain: fieldSelects -> select -> prompt -> confirm ->
     //      disk-check. Each returns the merged action or null on cancel.
     //      Confirm skips migrate (handled in step 2); confirm + disk-check
     //      stay on `useModal` for `confirmWithOptions` parity.
@@ -520,9 +527,9 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
     if (!(await runDiskSpaceCheck(mutableAction, inst, modal, t, null, dialogs))) return
 
-    // 9. showProgress: the synthetic `restart` id maps to stop → wait → launch.
+    // 9. showProgress: the synthetic `restart` id maps to stop -> wait -> launch.
     //    REQUIRES_STOPPED ops against a running install wrap apiCall to
-    //    stop → wait → run, and append a relaunch for IN_PLACE_RELAUNCH.
+    //    stop -> wait -> run, and append a relaunch for IN_PLACE_RELAUNCH.
     if (mutableAction.showProgress) {
       const rawTitle = (mutableAction.progressTitle || mutableAction.label).replace(
         /\{(\w+)\}/g,
@@ -647,7 +654,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     // cloud/remote have no local Python process to stop. Grouped at the head of
     // the destructive cluster (Forget/Uninstall) and styled danger to match.
     if (inst.sourceCategory !== 'cloud' && sessionStore.isRunning(inst.id)) {
-      const stopAction: ActionDef = { id: 'stop', label: t('actions.stop', 'Stop'), style: 'danger', enabled: true }
+      const stopAction: ActionDef = {
+        id: 'stop',
+        label: t('actions.stop', 'Stop'),
+        style: 'danger',
+        enabled: true
+      }
       const firstDanger = acts.findIndex((a) => a.style === 'danger')
       if (firstDanger === -1) acts.push(stopAction)
       else acts.splice(firstDanger, 0, stopAction)
@@ -725,31 +737,55 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       const inst = toValue(opts.installation)
       return inst ? sessionStore.isRunning(inst.id) : false
     },
-    (running, wasRunning) => {
-      const inst = toValue(opts.installation)
-      if (!inst) return
+    () => {
+      if (!toValue(opts.installation)) return
       // Refetch so the "Running details" port row (sourced from main) appears
       // on launch and clears on stop. Race-safe via reload()'s requestSeq.
       void reload()
-      // Stop edge: nothing is left to apply (next launch picks up new values).
-      if (wasRunning && !running) clearRestartAndErrors(inst.id)
     }
   )
 
-  // A restart may not surface a running→stopped dip (e.g. a remote connection
+  // Pending-restart cleanup is keyed on the session maps themselves (not the
+  // selected install) so lifecycle edges of off-screen installs are not
+  // missed - e.g. install A stops or fails its launch while B is selected.
+  // Stop edge: nothing is left to apply (next launch picks up new values).
+  watch(
+    () => [...sessionStore.runningInstances.keys()],
+    (runningIds, prevIds) => {
+      const running = new Set(runningIds)
+      for (const id of prevIds) {
+        if (!running.has(id)) clearRestartAndErrors(id)
+      }
+    }
+  )
+
+  // A restart may not surface a running->stopped dip (e.g. a remote connection
   // has no process to kill, so the snapshot can coalesce stop+relaunch into one
   // running broadcast). Catch the relaunch via the launching edge instead: any
   // (re)launch re-reads the persisted values, so the pending-restart state is
   // satisfied the moment a new launch begins.
   watch(
-    () => {
-      const inst = toValue(opts.installation)
-      return inst ? sessionStore.isLaunching(inst.id) : false
-    },
-    (launching, wasLaunching) => {
-      const inst = toValue(opts.installation)
-      if (!inst) return
-      if (launching && !wasLaunching) clearRestartAndErrors(inst.id)
+    () => [...sessionStore.launchingInstances.keys()],
+    (launchingIds, prevIds) => {
+      const launching = new Set(launchingIds)
+      const prev = new Set(prevIds)
+      // Rising edge: a new launch begins and re-reads the persisted values,
+      // satisfying any pending state. Edits made DURING the boot window land
+      // after this clear, so they stay pending into the running state (the
+      // booting process consumed its config at launch start).
+      for (const id of launching) {
+        if (!prev.has(id)) clearRestartAndErrors(id)
+      }
+      // Failed launch (launching ends without reaching running): the edits
+      // are persisted and the next launch will pick them up, so nothing is
+      // pending on the now-stopped install. On a successful launch the id is
+      // already in running when this falling edge fires, so boot-window
+      // edits are kept.
+      for (const id of prev) {
+        if (!launching.has(id) && !sessionStore.isRunning(id)) {
+          clearRestartAndErrors(id)
+        }
+      }
     }
   )
 

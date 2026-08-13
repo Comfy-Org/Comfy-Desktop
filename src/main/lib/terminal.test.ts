@@ -49,20 +49,18 @@ const { spawned, spawn } = vi.hoisted(() => {
   }
 
   const spawnedList: FakePty[] = []
-  const spawnFn = vi.fn(
-    (_file: string, _args: string[], opts: { cols: number; rows: number }) => {
-      const p = new FakePty(opts.cols, opts.rows)
-      spawnedList.push(p)
-      return p
-    },
-  )
+  const spawnFn = vi.fn((_file: string, _args: string[], opts: { cols: number; rows: number }) => {
+    const p = new FakePty(opts.cols, opts.rows)
+    spawnedList.push(p)
+    return p
+  })
   return { spawned: spawnedList, spawn: spawnFn }
 })
 
 vi.mock('node-pty', () => ({ default: { spawn } }))
 
 vi.mock('../installations', () => ({
-  get: vi.fn(async (id: string) => ({ id, name: id, installPath: `/installs/${id}` })),
+  get: vi.fn(async (id: string) => ({ id, name: id, installPath: `/installs/${id}` }))
 }))
 
 import {
@@ -73,7 +71,7 @@ import {
   disposeTerminal,
   disposeAllTerminals,
   setTerminalEnvResolver,
-  _resetTerminalsForTest,
+  _resetTerminalsForTest
 } from './terminal'
 
 interface FakeWebContents {
@@ -93,7 +91,7 @@ function makeWebContents(): FakeWebContents {
     once(event, cb) {
       if (event === 'destroyed') this.destroyedCb = cb
     },
-    isDestroyed: () => false,
+    isDestroyed: () => false
   }
   return wc
 }
@@ -138,7 +136,7 @@ describe('terminal manager', () => {
     expect(init).toContain('standalone-env')
   })
 
-  it('activates a git install\'s own venv without referencing standalone-env', async () => {
+  it("activates a git install's own venv without referencing standalone-env", async () => {
     setTerminalEnvResolver(() => ({ venvDir: '/repo/.venv', promptName: '.venv' }))
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
     const init = ptyAt(0).written.join('\n')
@@ -148,11 +146,11 @@ describe('terminal manager', () => {
     expect(init).not.toMatch(/\bpip\b/)
   })
 
-  it('puts a portable install\'s embedded python on PATH and routes pip through it', async () => {
+  it("puts a portable install's embedded python on PATH and routes pip through it", async () => {
     setTerminalEnvResolver(() => ({
       pathPrepends: ['/p/python_embeded', '/p/python_embeded/Scripts'],
       promptName: 'python_embeded',
-      pip: { exe: '/p/python_embeded/python.exe', args: ['-s', '-m', 'pip'] },
+      pip: { exe: '/p/python_embeded/python.exe', args: ['-s', '-m', 'pip'] }
     }))
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
     const init = ptyAt(0).written.join('\n')
@@ -189,10 +187,7 @@ describe('terminal manager', () => {
     ptyAt(0).emitData('world')
 
     const outputs = wc.sent.filter((m) => m.channel === 'terminal-output')
-    expect(outputs.map((m) => (m.payload as { data: string }).data)).toEqual([
-      'hello ',
-      'world',
-    ])
+    expect(outputs.map((m) => (m.payload as { data: string }).data)).toEqual(['hello ', 'world'])
     expect(getTerminalRestore('inst-a')?.buffer.join('')).toBe('hello world')
   })
 
@@ -234,9 +229,7 @@ describe('terminal manager', () => {
     const wc = makeWebContents()
     await subscribeTerminal('inst-a', asWc(wc))
     ptyAt(0).emitData('old-session-output')
-    expect(getTerminalRestore('inst-a')?.buffer.join('')).toContain(
-      'old-session-output',
-    )
+    expect(getTerminalRestore('inst-a')?.buffer.join('')).toContain('old-session-output')
 
     ptyAt(0).emitExit()
 
@@ -277,7 +270,7 @@ describe('terminal manager', () => {
     // Two surfaces racing to subscribe must share one PTY, not orphan extras.
     await Promise.all([
       subscribeTerminal('inst-a', asWc(makeWebContents())),
-      subscribeTerminal('inst-a', asWc(makeWebContents())),
+      subscribeTerminal('inst-a', asWc(makeWebContents()))
     ])
 
     expect(spawn).toHaveBeenCalledTimes(1)

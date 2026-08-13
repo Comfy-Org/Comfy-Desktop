@@ -7,7 +7,7 @@ describe('decodeExitCode', () => {
     expect(decodeExitCode(0xc0000005)).toEqual({
       code: 3221225477,
       hex: '0xC0000005',
-      kind: 'access-violation',
+      kind: 'access-violation'
     })
   })
 
@@ -16,7 +16,7 @@ describe('decodeExitCode', () => {
     expect(decodeExitCode(3221225477)).toEqual({
       code: 3221225477,
       hex: '0xC0000005',
-      kind: 'access-violation',
+      kind: 'access-violation'
     })
   })
 
@@ -26,7 +26,7 @@ describe('decodeExitCode', () => {
     expect(decodeExitCode(-1073741819)).toEqual({
       code: 3221225477,
       hex: '0xC0000005',
-      kind: 'access-violation',
+      kind: 'access-violation'
     })
   })
 
@@ -45,7 +45,7 @@ describe('decodeExitCode', () => {
     expect(decodeExitCode(0xc0000017)).toEqual({
       code: 0xc0000017,
       hex: '0xC0000017',
-      kind: 'unknown',
+      kind: 'unknown'
     })
   })
 

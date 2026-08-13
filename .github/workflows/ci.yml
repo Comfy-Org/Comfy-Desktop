@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - main
@@ -45,6 +47,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Format
+            command: pnpm run format:check
           - name: Lint
             command: pnpm run lint
           - name: Typecheck

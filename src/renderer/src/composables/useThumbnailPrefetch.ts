@@ -41,9 +41,11 @@ function scheduleIdle(fn: () => void, timeoutMs: number): () => void {
 /** True on a metered / very slow connection where speculative fetching would
  *  hurt more than help. Conservative: only bails on explicit data-saver or 2g. */
 function shouldSkipForNetwork(): boolean {
-  const conn = (navigator as unknown as {
-    connection?: { saveData?: boolean; effectiveType?: string }
-  }).connection
+  const conn = (
+    navigator as unknown as {
+      connection?: { saveData?: boolean; effectiveType?: string }
+    }
+  ).connection
   if (!conn) return false
   if (conn.saveData) return true
   return conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g'
@@ -70,7 +72,10 @@ export function useThumbnailPrefetch(options: PrefetchOptions = {}): {
     // Important work wins: back off (timer, not idle) and re-check later rather
     // than competing for the network/CPU now.
     if (isBusy()) {
-      const id = window.setTimeout(() => { cancellers.delete(cancel); pump() }, BUSY_BACKOFF_MS)
+      const id = window.setTimeout(() => {
+        cancellers.delete(cancel)
+        pump()
+      }, BUSY_BACKOFF_MS)
       const cancel = (): void => window.clearTimeout(id)
       cancellers.add(cancel)
       return
@@ -118,7 +123,10 @@ export function useThumbnailPrefetch(options: PrefetchOptions = {}): {
     cancellers.clear()
     // Detach handlers on still-loading images so their closures can be GC'd
     // without waiting for the request to settle.
-    for (const img of inFlightImages) { img.onload = null; img.onerror = null }
+    for (const img of inFlightImages) {
+      img.onload = null
+      img.onerror = null
+    }
     inFlightImages.clear()
   })
 

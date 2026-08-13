@@ -1,10 +1,10 @@
 import { getCurrentInstance, onMounted, readonly, ref } from 'vue'
 
 // Boot-time distributions-visibility switch for the Comfy Builder distribution
-// UI, mirroring `useCloudCapacity`. Loaded once per process (shared
-// `loadPromise`), no mid-session refresh. Fails OPEN to `true`: the
-// distributions UI shipped unflagged before this switch existed, so a missing
-// preload bridge or a fetch miss must never accidentally hide it.
+// UI. Loaded once per process (shared `loadPromise`), no mid-session refresh.
+// Fails OPEN to `true`: the distributions UI shipped unflagged before this
+// switch existed, so a missing preload bridge or a fetch miss must never
+// accidentally hide it.
 const enabled = ref(true)
 let loadPromise: Promise<void> | null = null
 

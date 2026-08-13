@@ -2,15 +2,8 @@
 // state by eye: Cmd+Alt+U cycles the app-update pill, Cmd+Alt+I toggles the
 // install-update override. globalShortcut fires regardless of focused window.
 import { globalShortcut, type WebContentsView } from 'electron'
-import {
-  _test_setUpdateState,
-  getCurrentUpdateState,
-  type AppUpdateState,
-} from './updater'
-import {
-  installUpdateOverrides,
-  INSTALL_UPDATE_GLOBAL_KEY,
-} from './e2eOverrides'
+import { _test_setUpdateState, getCurrentUpdateState, type AppUpdateState } from './updater'
+import { installUpdateOverrides, INSTALL_UPDATE_GLOBAL_KEY } from './e2eOverrides'
 import { comfyWindows, isInstallHost } from '../host/registry'
 
 const APP_UPDATE_ACCELERATOR = 'CommandOrControl+Alt+U'
@@ -35,7 +28,7 @@ export function cycleAppUpdateState(current: AppUpdateState): AppUpdateState {
 interface DevShortcutsDeps {
   // Injected to avoid pulling this module into the main/index.ts import graph.
   computeInstallUpdateAvailable: (
-    installationId: string,
+    installationId: string
   ) => Promise<{ available: boolean; version?: string }>
 }
 
@@ -62,7 +55,7 @@ export function registerDevShortcuts(deps: DevShortcutsDeps): void {
     } else {
       installUpdateOverrides.set(INSTALL_UPDATE_GLOBAL_KEY, {
         available: true,
-        version: DEV_FAKE_VERSION,
+        version: DEV_FAKE_VERSION
       })
     }
     broadcastInstallUpdateToAllHosts(deps)

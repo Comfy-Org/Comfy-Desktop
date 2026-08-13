@@ -105,7 +105,7 @@ const bridge: ComfySystemModalBridge = {
     }
     ipcRenderer.on('comfy-systemmodal:set-modal', handler)
     return () => ipcRenderer.removeListener('comfy-systemmodal:set-modal', handler)
-  },
+  }
 }
 
 if (process.contextIsolated) {

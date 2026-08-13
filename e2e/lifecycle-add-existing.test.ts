@@ -3,14 +3,14 @@
  *
  * Pre-stages a standalone-shaped ComfyUI directory on disk (real git init
  * + tagged commit, empty `standalone-env/`, `ComfyUI/main.py`, a manifest)
- * and drives the importer through the underlying IPC contract:
- *   `probeInstallation(dir)` → renderer-side source pick →
- *   `trackInstallation({ ...probe, installPath, name })`.
+ * and drives the real importer UI end-to-end:
+ *   waffle menu → Add Existing Instance → TrackModal takeover →
+ *   Browse (native dialog stubbed with the staged path) → real probe →
+ *   Track Install → chooser tile.
  *
- * The IPC bypass mirrors what `TrackModal.vue` does internally; the UI
- * surface is covered by the chooser test. The point here is to lock down
- * the wiring that turns a folder on disk into a chooser tile whose
- * resolved `comfyVersion` reflects the staged git ref.
+ * Only the OS directory picker is stubbed (Playwright cannot drive native
+ * dialogs); the stub supplies the path and nothing else — the probe and
+ * tracking run for real against the staged directory.
  */
 
 import os from 'node:os'
@@ -20,26 +20,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
+import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 
 let ctx: AppContext
 let stagedPath: string
 
 const TRACKED_NAME = 'Pre-Staged Install'
-
-interface ProbeResult {
-  sourceId: string
-  sourceLabel: string
-  version?: string
-  commit?: string
-  comfyVersion?: { commit: string; baseTag?: string; commitsAhead?: number }
-  [key: string]: unknown
-}
-
-interface TrackResult {
-  ok: boolean
-  message?: string
-  entry?: { id: string; name: string; installPath: string; sourceId: string }
-}
 
 interface Installation {
   id: string
@@ -96,6 +82,15 @@ test.beforeAll(async () => {
     settings: { firstUseCompleted: true, telemetryEnabled: false },
   })
   await expectChooserVisible(ctx.panel)
+
+  // Stub only the native directory picker (Playwright cannot drive OS
+  // dialogs) — it supplies the staged path; probe + track stay real.
+  await ctx.app.evaluate(({ dialog }, dirPath) => {
+    ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [dirPath],
+    })
+  }, stagedPath)
 })
 
 test.afterAll(async () => {
@@ -103,34 +98,53 @@ test.afterAll(async () => {
   if (stagedPath) await rm(stagedPath, { recursive: true, force: true })
 })
 
-test('probe detects the staged standalone-shaped directory @lifecycle', async () => {
-  const results = await ctx.panel.evaluate<ProbeResult[]>(
-    `window.api.probeInstallation(${JSON.stringify(stagedPath)})`,
-  )
-  const standalone = results.find((r) => r.sourceId === 'standalone')
-  expect(standalone, `probe did not detect standalone source. got: ${JSON.stringify(results)}`).toBeDefined()
-  // The standalone probe attaches a resolved `comfyVersion` whenever the
-  // ComfyUI/.git dir is reachable. Without it the tile would fall back to
-  // the manifest's `comfyui_ref` string.
-  expect(standalone!.comfyVersion?.commit).toMatch(/^[0-9a-f]{40}$/)
-})
+test('waffle menu → Add Existing → Browse probes the staged directory → Track Install registers it @lifecycle', async () => {
+  // Real entry point: title-bar waffle menu → "Add Existing Instance".
+  // On a dashboard host the flow takes over the current window's panel.
+  expect(await ctx.titleBar.click('.title-menu-button')).toBe(true)
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible('li.item', { timeout: 10_000 })
+  expect(await popup.clickByText('li.item', 'Add Existing Instance')).toBe(true)
 
-test('track-installation registers the directory and chooser shows the tile @lifecycle', async () => {
-  const probeResults = await ctx.panel.evaluate<ProbeResult[]>(
-    `window.api.probeInstallation(${JSON.stringify(stagedPath)})`,
-  )
-  const probe = probeResults.find((r) => r.sourceId === 'standalone')!
-  const trackPayload = {
-    name: TRACKED_NAME,
-    installPath: stagedPath,
-    ...probe,
-  }
-  const result = await ctx.panel.evaluate<TrackResult>(
-    `window.api.trackInstallation(${JSON.stringify(trackPayload)})`,
-  )
-  expect(result.ok, `trackInstallation failed: ${result.message ?? ''}`).toBe(true)
-  expect(result.entry?.installPath).toBe(stagedPath)
+  await ctx.panel.waitForVisible('[data-testid="track-modal"]', { timeout: 10_000 })
 
+  // Browse — the stubbed OS dialog returns the staged path; TrackModal
+  // then fires the real probe against it.
+  expect(await ctx.panel.click('.track-path-row .brand-tertiary')).toBe(true)
+  await ctx.panel.waitFor(
+    async () => (await ctx.panel.allText('.track-path-open')).some((t) => t.includes(stagedPath)),
+    { timeout: 10_000, message: 'picked directory never appeared in the path field' },
+  )
+
+  // The real probe resolves the staged git ref: the detected-type select
+  // fills and the summary shows a version row (would fall back to the
+  // manifest's raw ref string without ComfyUI/.git).
+  await ctx.panel.waitFor(
+    async () => {
+      const values = await ctx.panel.allText('.brand-summary__value')
+      return values.length > 0 && values.some((v) => v.trim().length > 0)
+    },
+    { timeout: 15_000, message: 'probe never populated the detected-install summary' },
+  )
+
+  // Name + Track Install stay in the same test as the modal setup above:
+  // the flow is one user journey through a single TrackModal instance, and
+  // splitting it would leave the second half depending on modal state from
+  // an earlier test (broken under focused runs / worker restarts).
+  await ctx.panel.evaluate<void>(
+    `(() => {
+      const el = document.querySelector('#track-name')
+      if (!el) throw new Error('track name input not found')
+      el.value = ${JSON.stringify(TRACKED_NAME)}
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`,
+  )
+  expect(await ctx.panel.click('.track-save')).toBe(true)
+
+  // Save closes the takeover and lands back on the chooser.
+  await expectChooserVisible(ctx.panel)
   await ctx.panel.waitFor(
     async () =>
       (await ctx.panel.allText(
@@ -145,6 +159,10 @@ test('track-installation registers the directory and chooser shows the tile @lif
   const tracked = installs.find((i) => i.name === TRACKED_NAME)
   expect(tracked, 'tracked install not present in get-installations result').toBeDefined()
   expect(tracked!.sourceId).toBe('standalone')
+  expect(tracked!.installPath).toBe(stagedPath)
+  // The standalone probe attaches a resolved `comfyVersion` whenever the
+  // ComfyUI/.git dir is reachable; the tracked record must carry it.
+  expect(tracked!.comfyVersion?.commit).toMatch(/^[0-9a-f]{40}$/)
   // Renderer-facing `version` is derived from the resolved comfyVersion via
   // `enrichInstallationsForRenderer`; with git present it should not fall
   // back to the raw sourceId string.

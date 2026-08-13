@@ -23,21 +23,25 @@ export interface ChooserHandoffApi {
    *  close-on-instance-started fallback subscription. */
   prepareChooserHostHandoff: (
     installationId: string,
-    triggersInstanceStart?: boolean,
+    triggersInstanceStart?: boolean
   ) => Promise<void>
   /** Shared launch path for chooser-tile clicks and first-use auto-launch. */
   performChooserLaunch: (
     installation: Installation,
     onMissingLaunchAction?: () => void,
+    opts?: { isRestart?: boolean }
   ) => Promise<ChooserLaunchOutcome>
   /** Bound to ChooserView's `pick` emit. */
-  handleChooserPick: (installation: Installation) => Promise<void>
+  handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
   /** Bound to ChooserView's `show-new-install` empty-state CTA. */
   handleChooserShowNewInstall: () => void
   /** Picker variant of `performChooserLaunch` without
    *  `prepareChooserHostHandoff`, so the install-backed host isn't
    *  swapped out; launch lands in a fresh window. */
-  performPickerLaunch: (installation: Installation) => Promise<ChooserLaunchOutcome>
+  performPickerLaunch: (
+    installation: Installation,
+    opts?: { isRestart?: boolean }
+  ) => Promise<ChooserLaunchOutcome>
 }
 
 /** Owns the install-less chooser host's launch hand-off, reusing
@@ -47,7 +51,7 @@ export interface ChooserHandoffApi {
 export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   const sessionStore = useSessionStore()
   const { executeAction: executeChooserAction } = useListAction('chooser', {
-    showProgress: opts.showProgress,
+    showProgress: opts.showProgress
   })
 
   /** Fallback close-on-launch subscription, set only when the in-place
@@ -61,7 +65,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
    *  launch-class ops) close this host once `instance-started` fires. */
   async function prepareChooserHostHandoff(
     installationId: string,
-    triggersInstanceStart = true,
+    triggersInstanceStart = true
   ): Promise<void> {
     // Drop any prior subscription so a stale one can't close this host on
     // an unrelated `instance-started`.
@@ -87,6 +91,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   async function performChooserLaunch(
     installation: Installation,
     onMissingLaunchAction: () => void = () => {},
+    opts?: { isRestart?: boolean }
   ): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
       // Focus the running window and leave the chooser host alive.
@@ -94,9 +99,8 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
       return 'focused-running'
     }
     const actions = await window.api.getListActions(installation.id)
-    const launchAction = actions.find((a) => a.id === 'launch')
-      ?? actions.find((a) => a.style === 'primary')
-      ?? null
+    const launchAction =
+      actions.find((a) => a.id === 'launch') ?? actions.find((a) => a.style === 'primary') ?? null
     if (!launchAction) {
       onMissingLaunchAction()
       return 'missing-action'
@@ -106,16 +110,24 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     // the install to the wrong window.
     await executeChooserAction(installation, launchAction, {
       onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
+      isRestart: opts?.isRestart === true
     })
     return 'launched'
   }
 
-  async function handleChooserPick(installation: Installation): Promise<void> {
+  async function handleChooserPick(
+    installation: Installation,
+    launchOpts?: { isRestart?: boolean }
+  ): Promise<void> {
     // On missing launch action, bounce into the new-install flow in this
     // same host rather than a separate window.
-    await performChooserLaunch(installation, () => {
-      void opts.switchPanel('new-install', 'chooser_pick')
-    })
+    await performChooserLaunch(
+      installation,
+      () => {
+        void opts.switchPanel('new-install', 'chooser_pick')
+      },
+      { isRestart: launchOpts?.isRestart === true }
+    )
   }
 
   /** Picker launch path. Like `performChooserLaunch` but skips
@@ -124,17 +136,17 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
    *  guard is belt-and-braces for the IPC-forward-then-running race. */
   async function performPickerLaunch(
     installation: Installation,
+    opts?: { isRestart?: boolean }
   ): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
       await window.api.focusComfyWindow(installation.id)
       return 'focused-running'
     }
     const actions = await window.api.getListActions(installation.id)
-    const launchAction = actions.find((a) => a.id === 'launch')
-      ?? actions.find((a) => a.style === 'primary')
-      ?? null
+    const launchAction =
+      actions.find((a) => a.id === 'launch') ?? actions.find((a) => a.style === 'primary') ?? null
     if (!launchAction) return 'missing-action'
-    await executeChooserAction(installation, launchAction)
+    await executeChooserAction(installation, launchAction, { isRestart: opts?.isRestart === true })
     return 'launched'
   }
 
@@ -153,6 +165,6 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     performChooserLaunch,
     handleChooserPick,
     handleChooserShowNewInstall,
-    performPickerLaunch,
+    performPickerLaunch
   }
 }

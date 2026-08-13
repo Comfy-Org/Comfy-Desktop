@@ -28,9 +28,15 @@ function setup() {
     dismissFileMenu: vi.fn(),
     clickDownloadsTray: vi.fn(),
     clickInstallPill: vi.fn(),
-    onMenuOpened: (cb) => { opened.push(cb); return () => {} },
-    onMenuClosed: (cb) => { closed.push(cb); return () => {} },
-    onDownloadsChanged: () => () => {},
+    onMenuOpened: (cb) => {
+      opened.push(cb)
+      return () => {}
+    },
+    onMenuClosed: (cb) => {
+      closed.push(cb)
+      return () => {}
+    },
+    onDownloadsChanged: () => () => {}
   }
   const nullRef = shallowRef<HTMLElement | null>(null) as Readonly<ShallowRef<HTMLElement | null>>
   let api!: ReturnType<typeof useTitleBarMenus>
@@ -41,17 +47,17 @@ function setup() {
         hideTip: () => {},
         fileBtnRef: nullRef,
         downloadsBtnRef: nullRef,
-        installPillRef: nullRef,
+        installPillRef: nullRef
       })
       return () => h('div')
-    },
+    }
   })
   mount(Host)
   return {
     api,
     bridge,
     openMenu: (menu: TitleMenuKind) => opened.forEach((cb) => cb({ menu })),
-    closeMenu: (menu: TitleMenuKind) => closed.forEach((cb) => cb({ menu })),
+    closeMenu: (menu: TitleMenuKind) => closed.forEach((cb) => cb({ menu }))
   }
 }
 

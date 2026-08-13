@@ -21,13 +21,13 @@ const i18n = createI18n({
         privacyModalTitle: 'Privacy Policy',
         noticesModalTitle: 'Third-Party Notices',
         legalDocEffective: 'Effective',
-        legalDocAppliesTo: 'Applies to',
+        legalDocAppliesTo: 'Applies to'
       },
-      common: { close: 'Close' },
-    },
+      common: { close: 'Close' }
+    }
   },
   missingWarn: false,
-  fallbackWarn: false,
+  fallbackWarn: false
 })
 
 function mountModal(doc?: LegalDocId) {
@@ -36,8 +36,8 @@ function mountModal(doc?: LegalDocId) {
     global: {
       plugins: [i18n],
       // Stub Teleport so content renders inside the wrapper for assertions.
-      stubs: { Teleport: { template: '<div><slot /></div>' } },
-    },
+      stubs: { Teleport: { template: '<div><slot /></div>' } }
+    }
   })
 }
 
@@ -46,7 +46,7 @@ describe('TermsModal', () => {
     ['eula', 'End-User License Agreement'],
     ['tos', 'Terms of Service'],
     ['privacy', 'Privacy Policy'],
-    ['notices', 'Third-Party Notices'],
+    ['notices', 'Third-Party Notices']
   ])('renders the correct title and meta for doc="%s"', (doc, expectedTitle) => {
     const wrapper = mountModal(doc)
     expect(wrapper.find('.terms-title').text()).toBe(expectedTitle)

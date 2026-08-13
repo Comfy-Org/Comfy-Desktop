@@ -3,7 +3,7 @@
  *
  * Drives the real picker bridge (`window.__comfyTitlePopup`) from a dashboard
  * (chooser) host and asserts the navigation outcome via recorded IPC
- * invocations + BrowserWindow counts. Mirrors `lifecycle-picker-cluster.test.ts`.
+ * invocations + BrowserWindow counts. Mirrors `picker-cluster.test.ts`.
  *
  * Covers: stopped instance → same-window launch; running instance → focus;
  * cloud → new-window via the caret. The decision itself is exhaustively unit
@@ -78,7 +78,7 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('Dashboard → stopped instance: same-window launch, no new window @lifecycle', async () => {
+test('Dashboard → stopped instance: same-window launch, no new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'pickInstall')
 
@@ -103,7 +103,7 @@ test('Dashboard → stopped instance: same-window launch, no new window @lifecyc
   })
 })
 
-test('Dashboard → running instance: focus existing window @lifecycle', async () => {
+test('Dashboard → running instance: focus existing window @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, { installationId: INSTALL_A_ID, installationName: INSTALL_A_NAME })
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'pickInstall')
@@ -124,7 +124,7 @@ test('Dashboard → running instance: focus existing window @lifecycle', async (
   expect(await liveWindowCount(ctx.app)).toBe(before)
 })
 
-test('Dashboard → cloud via "Open in new window": spawns a new window @lifecycle', async () => {
+test('Dashboard → cloud via "Open in new window": spawns a new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'pickInstall')
 

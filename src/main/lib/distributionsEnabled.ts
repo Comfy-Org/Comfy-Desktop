@@ -15,7 +15,7 @@
  * default is `true` (fail OPEN) — a fetch miss/timeout must never accidentally hide
  * a feature every existing user already sees.
  *
- * Mirrors `cloudCapacity.ts`: fetched once at boot; running apps pick up new values
+ * Mirrors `cloudFreeRuns.ts`: fetched once at boot; running apps pick up new values
  * on restart.
  */
 import * as mainTelemetry from './telemetry'

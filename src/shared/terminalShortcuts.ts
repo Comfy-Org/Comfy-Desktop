@@ -44,7 +44,7 @@ export type TerminalKeyAction = 'copy' | 'paste' | 'swallow' | 'passthrough'
 export function decideTerminalKeyAction(
   e: TerminalKeyEventLike,
   platform: TerminalPlatform,
-  hasSelection: boolean,
+  hasSelection: boolean
 ): TerminalKeyAction {
   // Only act on key-down; key-up/press for the same chord would double-fire.
   if (e.type !== 'keydown') return 'passthrough'

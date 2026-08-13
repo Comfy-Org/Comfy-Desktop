@@ -1,5 +1,5 @@
 /**
- * Main-process telemetry — single capture point for the launcher.
+ * Main-process telemetry - single capture point for the launcher.
  *
  * =========================================================================
  * REFERENCE FOR ANYONE ADDING NEW TELEMETRY
@@ -9,13 +9,14 @@
  *
  * `posthog-node` runs here in main. Renderer events flow over IPC
  * (`window.api.captureTelemetry` / `captureExceptionTelemetry` /
- * `registerTelemetryProperties` / `telemetryBindUserId` /
- * `telemetryUnbindUserId` / `telemetryGetExperimentFlag` /
- * `telemetryRecordExposure`) to handlers in `ipc/registerTelemetryHandlers.ts`.
+ * `registerTelemetryProperties` / `telemetryGetExperimentFlag` /
+ * `telemetryRecordExposure`, plus trusted Cloud's declarative
+ * `__comfyDesktop2.Telemetry.reportFirebaseAuthState`) to handlers in
+ * `ipc/registerTelemetryHandlers.ts`.
  * Datadog RUM still runs in the renderer (browser-only) but is gated to a
  * small failure-event allow-list in `src/shared/datadogMirroredEvents.ts`.
  *
- * ## Adding a product event — checklist
+ * ## Adding a product event - checklist
  *
  *   1. Pick a name. Convention: `comfy.desktop.<area>.<verb>` snake_case
  *      (e.g. `comfy.desktop.instance.switched`). Add to whichever code path
@@ -27,39 +28,38 @@
  *      get scrubbed by `scrubAll()` as a safety net, but the discipline is
  *      to send `directory_bucket: 'checkpoints'` not raw `directory: '/Users/x/foo'`.
  *      Use helpers in `src/renderer/src/lib/telemetry.ts` (`toSizeBucket`,
- *      `toCountBucket`, `toErrorBucket`, `toModelDirectoryBucket`,
- *      `deriveGpuTier`, etc.) — extend them instead of inlining new bucketing.
+ *      `toCountBucket`, `toErrorBucket`, `toModelDirectoryBucket`) and
+ *      `src/shared/gpuTier.ts` - extend them instead of inlining new bucketing.
  *   4. If the event is a *failure* (`*.error`, crash, install failure, etc.),
  *      add the event name to `DATADOG_MIRRORED_EVENT_NAMES` so it also
  *      reaches Datadog and a monitor can fire on it.
  *   5. Add an insight to the relevant PostHog dashboard. Don't ship events
- *      that don't end up on a dashboard or in a saved query — that's how
+ *      that don't end up on a dashboard or in a saved query - that's how
  *      telemetry rots into noise.
  *
  * ## Identity model
  *
+ *   - anonymous distinct id = website PostHog `$device_id` (`W`) on an
+ *     attributed fresh Windows install, otherwise a random Desktop ID (`D`).
+ *     It is persisted separately from installation metadata. Every pre-auth
+ *     write uses W/D and forces `$process_person_profile: false`.
  *   - `installation_id` = `SHA-256(machine_id + salt)`, from `deviceId.ts`.
- *     The anonymous distinct_id. INVARIANT: never pass it to
- *     `client.identify()` — PostHog would mark it identified, and it won't
- *     merge one identified id into another, so the login alias below silently
- *     no-ops (prod: 0/13,528 stitched). Anonymous person-prop writes go
- *     through capture-`$set` instead, which updates the person without
- *     identifying the id.
- *   - `download_token`: web → desktop acquisition bridge. The Windows
- *     installer persists an opaque token from its filename; after consent,
- *     Desktop aliases that token into `installation_id` and includes it only
- *     on explicit acquisition/attribution events so regular product events do
- *     not carry an extra join token.
- *   - `user_id`: set on login via `bindUserId`. The ONLY `client.identify()`
- *     call. Aliases `installation_id` → `user_id` (now merges, since the anon
- *     id was never identified). Logout (`unbindUserId`) restores the anon
- *     distinct_id — not `posthog.reset()`, which would clobber it.
+ *     It is only an event/person property; it is never a PostHog identity.
+ *     Caveat: many call sites still override this key per-call with the
+ *     per-install record id (`inst-<ms>`, `installations.ts`), so the value
+ *     is not yet uniformly machine-scoped; #1159 redirects those overrides
+ *     to `install_id`.
+ *   - Firebase UID (`F`) is set only after every live auth-reporting view agrees
+ *     on the resolved user. This is the only `client.identify()` call and
+ *     carries W/D as `$anon_distinct_id`, merging the anonymous history without
+ *     an alias event. Before that write, a fresh D is persisted for logout,
+ *     account switch, or the next startup.
  *
  * ## Consent (three-state)
  *
- *   - `'granted'`   — collect everything.
- *   - `'denied'`    — collect nothing.
- *   - `'undecided'` — fresh install or Desktop-1 migrator; collect ONLY
+ *   - `'granted'`   - collect everything.
+ *   - `'denied'`    - collect nothing.
+ *   - `'undecided'` - fresh install or Desktop-1 migrator; collect ONLY
  *                     `comfy.desktop.first_use.consent_decision` until the
  *                     user makes a choice.
  *
@@ -70,7 +70,7 @@
  *
  *   PostHog gets everything. Datadog only mirrors the failure / reliability
  *   allow-list in `src/shared/datadogMirroredEvents.ts`. Datadog is for
- *   alerting, not analysis — adding a name to the allow-list is a
+ *   alerting, not analysis - adding a name to the allow-list is a
  *   deliberate ops decision ("I want a monitor on this"). PostHog
  *   dashboards + ad-hoc HogQL are the source of truth for everything else.
  *
@@ -80,7 +80,7 @@
  *   or `window.api.telemetryGetExperimentFlag(key)` from the renderer
  *   (cache-first; first-ever boot fails closed to control). Record
  *   exposure with `recordExposure(key, variant, source)` or its IPC
- *   equivalent — per-session dedup is enforced main-side. Outcome events
+ *   equivalent - per-session dedup is enforced main-side. Outcome events
  *   are normal product events; PostHog joins them to the exposure at query
  *   time via the standard experiment view.
  *
@@ -105,6 +105,7 @@
  */
 import { app } from 'electron'
 import { PostHog } from 'posthog-node'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
 // re-exported by `posthog-node`. Inlining the shape we actually use.
@@ -116,8 +117,21 @@ import {
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
-import { buildErrorFields } from '../../shared/errorEvent'
-import { scrubAll } from '../../shared/piiScrub'
+import { buildErrorFields, ERROR_MESSAGE_MAX, ERROR_STACK_MAX } from '../../shared/errorEvent'
+import { normalizeExceptionContext, scrubAll } from '../../shared/piiScrub'
+import {
+  clearPersistedUnmergeableAnonymousEpoch,
+  hasPersistedUnmergeableAnonymousEpoch,
+  persistUnmergeableAnonymousEpoch,
+  rotatePersistedAnonymousDistinctId
+} from './anonymousIdentity'
+import { normalizePostHogUserId } from './opaqueIdentifier'
+import {
+  clearPendingIdentityMerges,
+  type PendingIdentityProperties,
+  readPendingIdentityMerges,
+  reservePendingIdentityMerge
+} from './pendingIdentityMerge'
 
 export type TelemetryValue = boolean | number | string | null | undefined
 export type TelemetryContext = Record<string, TelemetryValue | TelemetryValue[]>
@@ -125,7 +139,7 @@ export type TelemetryContext = Record<string, TelemetryValue | TelemetryValue[]>
 /**
  * Long-lived renderer WebContents that receive main-emitted telemetry events
  * for fan-out to renderer-side Datadog RUM. Registered exactly once per host
- * window — the title-bar WebContents, which is built unconditionally for
+ * window - the title-bar WebContents, which is built unconditionally for
  * every host window in `createHostWindow()` and survives mode flips, so
  * Datadog RUM gets a session per host window regardless of whether the
  * panelView is currently mounted.
@@ -151,34 +165,41 @@ export function unregisterTelemetryRelayTarget(wc: Electron.WebContents): void {
   _telemetryRelayTargets.delete(wc)
 }
 
-/** @internal — exposed for tests. */
+/** @internal - exposed for tests. */
 export function _resetTelemetryRelayTargets(): void {
   _telemetryRelayTargets.clear()
 }
 
 /**
- * @internal — exposed for tests. Resets module-level identity / consent /
+ * @internal - exposed for tests. Resets module-level identity / consent /
  * pending state so consecutive test suites don't share state. Does not
- * close an in-flight PostHog client — tests bring their own mocked one.
+ * close an in-flight PostHog client - tests bring their own mocked one.
  */
 export function _resetForTest(): void {
   client = null
   distinctId = null
-  installationDeviceId = null
+  anonymousDistinctId = null
+  nextAnonymousDistinctId = null
+  boundUserId = null
+  firebaseConsensusPending = false
+  installationIdProperty = null
   consentState = 'undecided'
   pendingSessionStart = null
   pendingFirstLaunch = null
   pendingPersonSet = null
   pendingPersonSetOnce = null
-  pendingMigrationAlias = null
-  pendingDownloadTokenAlias = null
-  pendingDownloadTokenEventProperties = null
+  pendingUserBinding = null
+  quarantinedWrites = []
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
+  pendingIdentityMergeFlush = null
+  pendingIdentityMergeFileDirty = true
+  queuedPendingIdentityMergeIds.clear()
+  pendingLoginAttribution = null
 }
 
-/** @internal — exposed for tests. */
+/** @internal - exposed for tests. */
 export function _telemetryRelayTargetCount(): number {
   return _telemetryRelayTargets.size
 }
@@ -200,12 +221,28 @@ let client: PostHog | null = null
 let distinctId: string | null = null
 let bootstrapTimeMs: number = Date.now()
 let initialized = false
-/** When `true`, all PostHog WRITE paths (capture, identify, alias*,
+/** When `true`, all PostHog write paths (capture, identify,
  *  captureException, person-property updates) short-circuit. Set in
  *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlag`,
  *  `loadFeatureFlagsImmediate`, `shutdown`) deliberately ignore this
  *  so devs can still resolve feature flags in `pnpm dev`. */
 let suppressEmit = false
+
+/**
+ * A trusted auth reporter is between authoritative documents. Keep the
+ * current identity intact so a same-user navigation does not manufacture a
+ * logout/login pair, but quarantine PostHog writes until the new document
+ * resolves. This matters only after a Firebase user has been bound; before
+ * the first bind, anonymous events can continue and will be merged normally.
+ */
+let firebaseConsensusPending = false
+
+/** Whether writes are currently held for renderer auth consensus. Lets the
+ *  consensus module's deadline distinguish "still unresolved" from "already
+ *  resolved by the reconcile it just ran" without mirroring the flag. */
+export function isFirebaseConsensusPending(): boolean {
+  return firebaseConsensusPending
+}
 
 /** Short-circuit guard for all PostHog emission paths. Centralized so
  *  the dev-mode suppression and a missing client are checked
@@ -221,11 +258,13 @@ function canEmit(): boolean {
  * `client` so
  * per-event filters / breakdowns work without a join against the person
  * profile (PostHog person properties are joined at query time and are
- * point-in-time as of write — releasing a new app version while the user
+ * point-in-time as of write - releasing a new app version while the user
  * still has events from the old one would mis-attribute without this).
- * `installation_id` is added by `identify()` once the device id is known
- * at boot, so renderer events (routed in over IPC) and main events share a
- * single join key instead of splitting across person_id / installation_id.
+ * `installation_id` is added by `bindAnonymousId()` once installation metadata is known
+ * at boot, so renderer events (routed in over IPC) and main events share the
+ * machine hash as the default join key. Call sites that override it per-call
+ * with a per-install record id still split that key - #1159 moves those
+ * overrides to `install_id`.
  *
  * Per-call properties take precedence on key collision.
  */
@@ -240,7 +279,7 @@ let defaultEventProperties: Record<string, TelemetryValue> = {}
 export type Deployment = 'local' | 'cloud' | 'remote'
 
 /** Narrow an untrusted value (payload property, source-plugin category) to a
- *  valid `Deployment`, or `null` — never let junk reach the shared axis. */
+ *  valid `Deployment`, or `null` - never let junk reach the shared axis. */
 export function asDeployment(value: unknown): Deployment | null {
   return value === 'local' || value === 'cloud' || value === 'remote' ? value : null
 }
@@ -266,10 +305,10 @@ function deriveAppChannel(appVersion: string): string {
 /**
  * Three-state consent.
  *
- * - `'granted'` — user opted in. Everything ships.
- * - `'denied'` — user opted out. Nothing ships, EXCEPT the
- *   `PRE_CONSENT_ALLOWED_EVENTS` set — see the next paragraph for why.
- * - `'undecided'` — user has not chosen yet (fresh install OR a Desktop-1
+ * - `'granted'` - user opted in. Everything ships.
+ * - `'denied'` - user opted out. Nothing ships, EXCEPT the
+ *   `PRE_CONSENT_ALLOWED_EVENTS` set - see the next paragraph for why.
+ * - `'undecided'` - user has not chosen yet (fresh install OR a Desktop-1
  *   migrator whose `telemetryEnabled` setting was never set).
  *   Only events in `PRE_CONSENT_ALLOWED_EVENTS` ship; everything
  *   else is suppressed until the user makes a choice. Mirrors
@@ -281,7 +320,7 @@ function deriveAppChannel(appVersion: string): string {
  * write (which propagates to `setConsentState('denied')` here) and only
  * then calls `emitTelemetryAction('first_use.consent_decision', { decision: 'decline' })`.
  * If `isAllowedToFire` short-circuited on `'denied'` without consulting the
- * allow-list, every decline would be dropped — meaning we'd have 100%
+ * allow-list, every decline would be dropped - meaning we'd have 100%
  * accept-rate signal and zero ability to measure decline. The allow-list
  * is intentionally the FIRST check so the decision event survives the
  * exact state it triggers.
@@ -300,7 +339,7 @@ const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
 
 function isAllowedToFire(event: string): boolean {
   // Allow-list takes precedence over every state, including 'denied'.
-  // See the ConsentState docstring above for the full reasoning — short
+  // See the ConsentState docstring above for the full reasoning - short
   // version: the consent decision event races the 'denied' state flip
   // and would otherwise be dropped by its own decision.
   if (PRE_CONSENT_ALLOWED_EVENTS.has(event)) return true
@@ -309,7 +348,7 @@ function isAllowedToFire(event: string): boolean {
 }
 
 /**
- * SDK-level volume safety net — two layers, both belt-and-braces around
+ * SDK-level volume safety net - two layers, both belt-and-braces around
  * the per-call-site dedup guards that individual emit paths add.
  *
  * Motivation: the 2026-06-02 volume incident shipped 3M+ events of the
@@ -323,21 +362,20 @@ function isAllowedToFire(event: string): boolean {
  *
  * Layer 1: per-event-name sliding window.
  *   Drop further emits of the same event name once 60 fire in 60s.
- *   60/min is well above any legitimate product event rate (the
- *   loudest healthy event was `execution.completed` at ~36/user/day)
- *   and well below any loop signature (the incident was ~2/sec).
+ *   60/min is well above any legitimate product event rate and well below
+ *   any loop signature (the incident was ~2/sec).
  *   One `comfy.desktop.telemetry.rate_limited` warning fires per (event ×
  *   process) so dashboards surface that it happened.
  *
  * Layer 2: per-process total cap.
  *   After 5000 events captured this process, every further capture
- *   no-ops. 5000 covers a heavy multi-hour workflow user (~500–1000
- *   events) with 5–10x headroom, and turns "millions of events" into
+ *   no-ops. 5000 covers a heavy multi-hour workflow user (~500-1000
+ *   events) with 5-10x headroom, and turns "millions of events" into
  *   "at most 5000" for any single runaway install. One
  *   `comfy.desktop.telemetry.session_cap_hit` warning fires once when the
  *   cap is crossed.
  *
- * `*.error` events bypass Layer 1 — error volume is exactly the signal
+ * `*.error` events bypass Layer 1 - error volume is exactly the signal
  * we need most during incidents, and `*.error` events are not the
  * shape of any loop we've seen. Layer 2 still applies (a runaway
  * error loop would still hit the cap).
@@ -357,16 +395,27 @@ function _bypassRateLimit(event: string): boolean {
   return event.endsWith('.error') || event.startsWith('comfy.desktop.telemetry.')
 }
 
+function enforcePersonProcessingPolicy(properties: TelemetryContext): TelemetryContext {
+  if (boundUserId) return properties
+  // Force this after all caller/default merges so no anonymous callsite can
+  // accidentally opt back into person-profile creation.
+  return { ...properties, $process_person_profile: false }
+}
+
 function _emitWarning(event: string, properties: TelemetryContext): void {
-  if (!canEmit() || !distinctId) return
+  // Volume-guard warnings describe the moment they fire; dropping (not
+  // buffering) them during the quarantine keeps stale warnings from
+  // replaying after the state they warned about is gone.
+  if (!canEmit() || !distinctId || firebaseWritesQuarantined()) return
   try {
     client!.capture({
       distinctId,
       event,
-      properties: { ...defaultEventProperties, ...properties }
+      properties: enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
     })
+    forwardToRenderer(event, properties)
   } catch {
-    // ignore – the warning is best-effort
+    // ignore - the warning is best-effort
   }
 }
 
@@ -402,8 +451,15 @@ function _checkRateLimit(event: string): boolean {
     }
     return false
   }
-  stamps.push(now)
   return true
+}
+
+function _recordCapturedEvent(event: string): void {
+  _eventsCapturedThisProcess++
+  if (_bypassRateLimit(event)) return
+  const stamps = _rateLimitStamps.get(event) ?? []
+  if (!_rateLimitStamps.has(event)) _rateLimitStamps.set(event, stamps)
+  stamps.push(Date.now())
 }
 
 /**
@@ -419,9 +475,8 @@ export function _test_resetVolumeGuards(): void {
 }
 
 /**
- * Set the current consent state. The deferred `comfy.desktop.session.started`
- * event (and the deferred `identify` person-property update) fire as soon
- * as state transitions to `'granted'`.
+ * Set the current consent state. Undecided data may fire on grant; denied data
+ * is discarded.
  */
 export function setConsentState(state: ConsentState): void {
   const previous = consentState
@@ -430,6 +485,7 @@ export function setConsentState(state: ConsentState): void {
     // Best-effort flush so already-queued events still go out before we
     // start suppressing.
     void client?.flush().catch(() => {})
+    if (state === 'denied') discardDeferredTelemetry()
     return
   }
   // Transitioned to granted. Ship anything we held back.
@@ -439,10 +495,8 @@ export function setConsentState(state: ConsentState): void {
 }
 
 /**
- * Legacy two-state adapter. Existing callers can keep using `setConsent(bool)`
- * during the Phase-1 transition; new code calls `setConsentState` directly.
- * Note: this maps `false → 'denied'` (NOT `'undecided'`). Pass `'undecided'`
- * explicitly via `setConsentState` for the first-use case.
+ * Legacy two-state adapter. This maps false to denied; callers that need the
+ * pre-decision state must use `setConsentState('undecided')`.
  */
 export function setConsent(enabled: boolean): void {
   setConsentState(enabled ? 'granted' : 'denied')
@@ -459,12 +513,11 @@ export interface InitOptions {
 }
 
 /**
- * Initialize PostHog Node. Safe to call before consent decision is known —
+ * Initialize PostHog Node. Safe to call before consent decision is known -
  * events are queued by setConsent(false) and dropped at capture time.
  *
- * Note: the session-start event is intentionally NOT emitted here — the
- * `distinctId` is unknown until `identify()` runs. `identify()` issues
- * the session-start event once the device id is bound.
+ * Note: the session-start event is intentionally NOT emitted here - D is
+ * unknown until `bindAnonymousId()` runs, which flushes it under that D.
  */
 export function initTelemetry(opts: InitOptions): void {
   if (initialized) return
@@ -492,17 +545,17 @@ export function initTelemetry(opts: InitOptions): void {
   // analytics, (b) dev-mode app-update behavior tends to produce
   // pathological event shapes (e.g. the updater repeatedly
   // "discovering" the staged build). Beta / canary / stable channels
-  // still emit normally — only the unpackaged local-source case is
+  // still emit normally - only the unpackaged local-source case is
   // gated.
   //
   // FLAG READS are NOT suppressed: a dev working on a feature gated by
-  // a PostHog flag (e.g. `desktop-cloud-capacity`) needs to actually
+  // a PostHog flag (e.g. `free_tier_workflow_submission_enabled`) needs to actually
   // see the flag's resolved value at boot. Previously the entire
   // PostHog client was skipped in dev, which made `getOpsFlag` /
   // `loadFeatureFlagsImmediate` return defaults and stranded any
-  // capacity-protection or experiment testing. Now the client is
+  // operational-flag or experiment testing. Now the client is
   // always created so reads work; only the emission paths
-  // (`capture`, `identify`, `alias*`, `captureException`,
+  // (`capture`, `identify`, `captureException`,
   // `registerPersonProperties`) bail when `suppressEmit` is set.
   suppressEmit = !opts.isPackaged
 
@@ -525,11 +578,20 @@ export function initTelemetry(opts: InitOptions): void {
       // no stored IP, no city/coordinate "where are they now" tracking.
       disableGeoip: false
     })
+    client.on('flush', acknowledgeDeliveredIdentityMerges)
+    client.on('error', () => {
+      // The SDK removes HTTP-failed non-network batches from memory. Keep the
+      // disk queue authoritative and allow a later trigger/restart to requeue.
+      // Re-dirtying is what makes the later trigger actually reread the file:
+      // a prior flush may have marked it clean once every entry was queued.
+      queuedPendingIdentityMergeIds.clear()
+      pendingIdentityMergeFileDirty = true
+    })
   } catch {
     client = null
   }
 
-  // Stash session-start parameters until identify() can attribute them.
+  // Stash session-start parameters until the anonymous D is bound.
   // The session-start payload duplicates the defaults so an event-only
   // reader (no defaults yet) still sees them on the first event.
   pendingSessionStart = {
@@ -544,276 +606,536 @@ let pendingSessionStart: Record<string, TelemetryValue> | null = null
  * Deferred once-ever first-launch event payload. The guard file in
  * `deviceId.ts` is consumed at boot (so it can never re-fire on a later
  * launch), but on a fresh install consent is still `'undecided'` at that
- * moment — the event would be dropped by `isAllowedToFire` and the guard
+ * moment - the event would be dropped by `isAllowedToFire` and the guard
  * would be burned for nothing. Holding the payload here lets it ship on the
  * `undecided → granted` transition via `tryFlushDeferred()`, exactly like
  * `pendingSessionStart`. A `'denied'` choice never flushes it, which is the
  * intended consent outcome.
  */
 let pendingFirstLaunch: TelemetryContext | null = null
-/** Deferred anon person-prop writes, flushed via capture-`$set` on consent grant. */
+/** Person props collected before login and applied to Firebase UID at bind. */
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
-/** Same, for write-once (`$set_once`) markers; kept separate so merges don't collide. */
+/** Same, for write-once (`$set_once`) markers. */
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
 
-/**
- * Deferred legacy-id alias. Set by `deferMigrationAlias()` at boot if
- * there's a pending migration; fired by `tryFlushDeferred()` once
- * consent transitions to granted. The `onAliased` callback clears the
- * persisted pending state in `deviceId.ts` so we never re-fire the
- * alias on subsequent boots once it has shipped.
- */
-let pendingMigrationAlias: {
-  legacyId: string
-  installationId: string
-  idClass: string
-  onAliased: () => void
-} | null = null
-
-/**
- * Deferred acquisition alias. The website/download proxy can bind a web
- * anonymous person to an opaque `download_token`; Desktop later aliases that
- * same token into `installation_id` after consent, completing the web download
- * -> installed app bridge without putting a raw PostHog distinct id in the
- * installer filename.
- */
-let pendingDownloadTokenAlias: {
-  downloadToken: string
-  installationId: string
-  source: string
-  onAliased: () => void
-} | null = null
-let pendingDownloadTokenEventProperties: {
-  download_token: string
-  download_token_source: string
-} | null = null
-
-/**
- * The anonymous device identity bound at boot (typically `installation_id =
- * SHA-256(machine_id + salt)`). Kept separately from `distinctId` so the
- * logout path can switch the active distinct id back to this baseline
- * without re-deriving anything.
- *
- * On logout we explicitly do NOT call `posthog.reset()` (which would
- * generate a fresh anonymous id and clobber the deterministic
- * `installation_id`). Instead, we switch `distinctId` back to this remembered
- * baseline.
- */
-let installationDeviceId: string | null = null
-
-function takeDownloadTokenEventProperties(properties: TelemetryContext): TelemetryContext {
-  if (!pendingDownloadTokenEventProperties) return properties
-  const tokenProperties = pendingDownloadTokenEventProperties
-  pendingDownloadTokenEventProperties = null
-  return { ...properties, ...tokenProperties }
+interface PendingUserBinding {
+  userId: string
+  emitLoginEvent: boolean
+  properties: Record<string, TelemetryValue>
 }
 
-function applyDownloadTokenToPendingFirstLaunch(): void {
-  if (!pendingFirstLaunch || !pendingDownloadTokenEventProperties) return
-  pendingFirstLaunch = { ...pendingFirstLaunch, ...pendingDownloadTokenEventProperties }
-  pendingDownloadTokenEventProperties = null
+let pendingUserBinding: PendingUserBinding | null = null
+
+const FIREBASE_LOGIN_ATTRIBUTION_EVENT = 'comfy.desktop.identity.login_attributed'
+
+/**
+ * One-shot login-attribution payload for a Desktop-verified sign-in. Held
+ * here rather than riding the consensus layer's per-view state so view
+ * destruction or a cross-origin navigation cannot drop it. Emitted once
+ * consensus confirms `userId`, discarded when consensus resolves to anyone
+ * else or to anonymous, and drained at shutdown when the quit outruns the
+ * confirming re-report.
+ */
+let pendingLoginAttribution: { userId: string; context: TelemetryContext } | null = null
+
+export function stageLoginAttribution(userId: string, context: TelemetryContext): void {
+  // A 'denied' choice never defers a login conversion for later.
+  if (consentState === 'denied') return
+  pendingLoginAttribution = { userId, context }
 }
 
+/** A confirmation for any user settles the staged attribution: emitted for
+ *  the same UID, discarded as contradicted for any other. */
+function emitStagedLoginAttribution(confirmedUserId: string): void {
+  if (!pendingLoginAttribution) return
+  const { userId, context } = pendingLoginAttribution
+  pendingLoginAttribution = null
+  if (userId === confirmedUserId) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+}
+
+interface QuarantinedWrite {
+  kind: 'event' | 'exception'
+  event?: string
+  error?: unknown
+  properties: TelemetryContext
+  /** Mirror to the renderer relay on delivery. Deferred with the write so the
+   *  Datadog copy exists only when the PostHog copy actually ships. */
+  forward: boolean
+  /** Original capture time, restored on replay (events only - the SDK's
+   *  captureException accepts no timestamp). */
+  timestamp: Date
+}
+
+/**
+ * Writes held while renderer consensus is pending. Bounded: a wedged
+ * document must not grow this forever; the deadline in firebaseAuthIdentity
+ * releases the quarantine long before the cap matters in practice.
+ */
+let quarantinedWrites: QuarantinedWrite[] = []
+const QUARANTINED_WRITES_CAP = 200
+
+/** True when writes for the bound user must be held for consensus. */
+function firebaseWritesQuarantined(): boolean {
+  return firebaseConsensusPending && boundUserId !== null
+}
+
+function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
+  if (quarantinedWrites.length >= QUARANTINED_WRITES_CAP) return false
+  quarantinedWrites.push(write)
+  return true
+}
+
+/**
+ * Only call with the quarantine already lifted. Replays deliver directly,
+ * bypassing the rate limiter — each write was already charged against it at
+ * queue time, so a released burst cannot retro-drop acknowledged writes.
+ * Consent is re-checked: it may have flipped during the pending window.
+ */
+function flushQuarantinedWrites(): void {
+  if (quarantinedWrites.length === 0) return
+  const writes = quarantinedWrites
+  quarantinedWrites = []
+  if (!canEmit() || !distinctId) return
+  for (const write of writes) {
+    if (write.kind === 'exception') {
+      if (consentState === 'granted') deliverException(write.error, write.properties, write.forward)
+    } else if (write.event && isAllowedToFire(write.event)) {
+      deliverEvent(write.event, write.properties, write.forward, write.timestamp)
+    }
+  }
+}
+
+/**
+ * `anonymousDistinctId` is the active W/D for the current anonymous period.
+ * Once it is merged into Firebase UID, `nextAnonymousDistinctId` is the fresh
+ * Desktop D reserved before the identify write.
+ */
+let anonymousDistinctId: string | null = null
+let nextAnonymousDistinctId: string | null = null
+let boundUserId: string | null = null
+let installationIdProperty: string | null = null
+let pendingIdentityMergeFlush: Promise<void> | null = null
+/** Skips the merge file's synchronous read (and the redundant retry flush)
+ *  on later triggers once every persisted entry has been handed to the SDK;
+ *  reservations re-dirty it. Starts true because a previous run may have
+ *  left entries. */
+let pendingIdentityMergeFileDirty = true
+const queuedPendingIdentityMergeIds = new Set<string>()
+
+function discardDeferredTelemetry(): void {
+  pendingSessionStart = null
+  pendingFirstLaunch = null
+  pendingPersonSet = null
+  pendingPersonSetOnce = null
+  pendingUserBinding = null
+  pendingLoginAttribution = null
+  quarantinedWrites = []
+}
+
+function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
+  if (!Array.isArray(messages)) return
+  const delivered = new Set<string>()
+  const pending = readPendingIdentityMerges()
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue
+    const candidate = message as {
+      event?: unknown
+      distinct_id?: unknown
+      properties?: { $anon_distinct_id?: unknown }
+    }
+    if (candidate.event !== '$identify' || typeof candidate.distinct_id !== 'string') continue
+    const anonymousId = candidate.properties?.$anon_distinct_id
+    if (typeof anonymousId !== 'string') continue
+    for (const merge of pending) {
+      if (merge.userId === candidate.distinct_id && merge.anonymousId === anonymousId) {
+        delivered.add(merge.id)
+      }
+    }
+  }
+  if (delivered.size > 0 && clearPendingIdentityMerges(delivered)) {
+    for (const id of delivered) queuedPendingIdentityMergeIds.delete(id)
+  }
+}
+
+function flushPendingIdentityMerges(): Promise<void> {
+  if (pendingIdentityMergeFlush) return pendingIdentityMergeFlush
+  if (!canEmit() || consentState !== 'granted') return Promise.resolve()
+  if (!pendingIdentityMergeFileDirty) return Promise.resolve()
+
+  const pending = readPendingIdentityMerges()
+  if (pending.length === 0 && queuedPendingIdentityMergeIds.size === 0) {
+    pendingIdentityMergeFileDirty = false
+    return Promise.resolve()
+  }
+  const pendingIds = new Set(pending.map((merge) => merge.id))
+  for (const id of queuedPendingIdentityMergeIds) {
+    if (!pendingIds.has(id)) queuedPendingIdentityMergeIds.delete(id)
+  }
+  let admittedAny = false
+  for (const merge of pending) {
+    if (!queuedPendingIdentityMergeIds.has(merge.id)) {
+      try {
+        client!.identify({
+          distinctId: merge.userId,
+          properties: {
+            $set: merge.personSet,
+            ...(merge.personSetOnce ? { $set_once: merge.personSetOnce } : {}),
+            $anon_distinct_id: merge.anonymousId
+          }
+        })
+        queuedPendingIdentityMergeIds.add(merge.id)
+        admittedAny = true
+      } catch {
+        continue
+      }
+    }
+  }
+  // Fully-queued entries need no further reads or flush retries from this
+  // path: delivery is the SDK's (and the ack handler's) job. Otherwise an
+  // offline stretch turns every consensus confirmation into sync file I/O
+  // plus a doomed network flush. Entries whose identify threw stay dirty.
+  pendingIdentityMergeFileDirty = pending.some(
+    (merge) => !queuedPendingIdentityMergeIds.has(merge.id)
+  )
+  if (!admittedAny && queuedPendingIdentityMergeIds.size === 0) return Promise.resolve()
+
+  const activeClient = client!
+  pendingIdentityMergeFlush = activeClient
+    .flush()
+    .catch(() => {})
+    .finally(() => {
+      pendingIdentityMergeFlush = null
+    })
+  return pendingIdentityMergeFlush
+}
+
+/**
+ * Ship deferred one-shot state. Each buffer is cleared only when its capture
+ * was actually admitted - a silent drop (SDK throw, volume guard) keeps the
+ * payload queued for the next flush trigger instead of losing it forever.
+ */
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
   if (consentState !== 'granted') return
-  if (pendingPersonSet || pendingPersonSetOnce) {
-    capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
-    pendingPersonSet = null
-    pendingPersonSetOnce = null
+  // While quarantined, hold everything: flushing one-shots here would route
+  // them into the volatile quarantine buffer, which an account-switch
+  // resolution discards. Resolution paths re-trigger this flush.
+  if (firebaseWritesQuarantined()) return
+  if (boundUserId && (pendingPersonSet || pendingPersonSetOnce)) {
+    if (capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)) {
+      pendingPersonSet = null
+      pendingPersonSetOnce = null
+    }
   }
-  if (pendingMigrationAlias) {
-    // Snapshot + clear before await so a re-entrant flush doesn't double-fire.
-    const m = pendingMigrationAlias
-    pendingMigrationAlias = null
-    void (async () => {
-      const aliased = await aliasImmediateInternal(m.installationId, m.legacyId)
-      if (!aliased) return
-      // Intentionally NOT publishing `from_id` (the legacy random UUID)
-      // as an event property. The `alias` call above already merges
-      // the legacy person record into the new one in PostHog, so the
-      // legacy id is already linked where it needs to be. Shipping it
-      // again on a regular event would scatter it across the event
-      // properties column where it shows up in every export and
-      // ad-hoc query — unnecessary proliferation of an identifier.
-      capture('comfy.desktop.identity.migrated', {
-        installation_id: m.installationId,
-        id_class: m.idClass
-      })
-      try {
-        m.onAliased()
-      } catch {
-        // onAliased is the on-disk pending-alias / migration-guard cleanup
-        // — best-effort; a failure leaves the alias to re-fire next boot.
-      }
-    })()
-  }
-  if (pendingDownloadTokenAlias) {
-    const d = pendingDownloadTokenAlias
-    pendingDownloadTokenAlias = null
-    void (async () => {
-      const aliased = await aliasImmediateInternal(d.installationId, d.downloadToken)
-      if (!aliased) return
-      capture('comfy.desktop.identity.download_attributed', {
-        installation_id: d.installationId,
-        download_token: d.downloadToken,
-        download_token_source: d.source
-      })
-      try {
-        d.onAliased()
-      } catch {
-        // onAliased clears pending-download-token.txt; best-effort so a
-        // cleanup failure retries the alias on the next boot.
-      }
-    })()
-  }
-  if (pendingSessionStart) {
-    capture('comfy.desktop.session.started', pendingSessionStart)
+  if (pendingSessionStart && capture('comfy.desktop.session.started', pendingSessionStart)) {
     pendingSessionStart = null
   }
-  if (pendingFirstLaunch) {
-    capture('comfy.desktop.app.first_launch', pendingFirstLaunch)
+  if (pendingFirstLaunch && capture('comfy.desktop.app.first_launch', pendingFirstLaunch)) {
     pendingFirstLaunch = null
   }
-}
-
-/**
- * Queue a legacy-id alias to fire as soon as consent is granted. If
- * consent is already granted, fires synchronously via `tryFlushDeferred`.
- * If denied or undecided, the alias sits in module state and ships on
- * the next `setConsentState('granted')` transition.
- *
- * `onAliased` runs after the alias call resolves — the caller passes a
- * one-shot cleanup (clear the persisted pending-alias file + mark the
- * migration guard) so the alias does not re-fire on subsequent boots.
- * It is the caller's job to make `onAliased` idempotent — `tryFlushDeferred`
- * may run multiple times across a session.
- */
-export function deferMigrationAlias(opts: {
-  legacyId: string
-  installationId: string
-  idClass: string
-  onAliased: () => void
-}): void {
-  pendingMigrationAlias = opts
-  tryFlushDeferred()
-}
-
-/**
- * Queue the Windows download-token bridge to fire after consent. The token is
- * kept off global defaults; only explicit acquisition/attribution events get it.
- */
-export function deferDownloadTokenAlias(opts: {
-  downloadToken: string
-  installationId: string
-  source: string
-  attachToFirstLaunch?: boolean
-  onAliased: () => void
-}): void {
-  if (!opts.downloadToken) return
-  pendingDownloadTokenAlias = opts
-  if (opts.attachToFirstLaunch !== false) {
-    pendingDownloadTokenEventProperties = {
-      download_token: opts.downloadToken,
-      download_token_source: opts.source
-    }
-    applyDownloadTokenToPendingFirstLaunch()
-  } else {
-    pendingDownloadTokenEventProperties = null
+  // The binding flush also waits on the raw flag: consensus can be pending
+  // before the first bind ever lands (queued under undecided consent), and
+  // the deferred UID must not identify until that pending window resolves.
+  if (pendingUserBinding && !firebaseConsensusPending) {
+    const { userId, emitLoginEvent, properties } = pendingUserBinding
+    pendingUserBinding = null
+    applyFirebaseUserBinding(userId, emitLoginEvent, properties)
   }
-  tryFlushDeferred()
+  void flushPendingIdentityMerges()
 }
 
-/**
- * Bind the anonymous device id. Sets `distinctId` for capture attribution
- * and queues the person props as a capture-`$set`. Despite the name it does
- * NOT call `client.identify()` (that would burn the anon id — see the
- * identity model up top); only `bindUserId` identifies.
- */
-export function identify(id: string, properties: Record<string, TelemetryValue> = {}): void {
-  distinctId = id
-  installationDeviceId = id
-  // Stamp the anonymous device id as an event-level default so EVERY event
-  // (main-process captures AND renderer events routed in over IPC: template.*,
-  // first_use.*, fork) carries `installation_id`. This lets renderer and main
-  // events join natively on a single key instead of splitting across
-  // person_id / installation_id, which breaks the install→boot→run funnel.
-  // This is purely an event property — it does NOT identify the id (the
-  // anon-id invariant above is preserved; only `bindUserId` calls identify).
-  defaultEventProperties = { ...defaultEventProperties, installation_id: id }
-  if (Object.keys(properties).length > 0) {
-    pendingPersonSet = { ...(pendingPersonSet || {}), ...properties }
+/** Bind W/D for captures and a separate installation property. No SDK identify. */
+export function bindAnonymousId(
+  anonymousId: string,
+  installationId: string,
+  properties: Record<string, TelemetryValue> = {}
+): void {
+  distinctId = anonymousId
+  anonymousDistinctId = anonymousId
+  nextAnonymousDistinctId = null
+  boundUserId = null
+  installationIdProperty = installationId
+  defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
+  if (consentState !== 'denied' && Object.keys(properties).length > 0) {
+    pendingPersonSet = {
+      ...(pendingPersonSet || {}),
+      installation_id: installationId,
+      ...properties
+    }
   }
   if (!canEmit()) return
   tryFlushDeferred()
 }
 
 /**
- * Bind a `user_id` after a successful login.
- *
- * identity lifecycle.
- * Aliases the current anonymous `installation_id` into the new `user_id`
- * (PostHog merges histories), switches the active `distinct_id` to the
- * user id, sets `is_authenticated: true` as a person property, and emits
- * the canonical `app:user_logged_in` event.
- *
- * Suppressed unless consent is `'granted'` — auth signals are
- * identifying data and must not ship pre-consent.
- *
- * Caller responsibility (renderer): also call
- * `datadogRum.setUser({ id: userId })` so RUM tags subsequent events
- * with the user identity. (Datadog is browser-only; main cannot do
- * this from here.)
+ * Bind Firebase UID F with the active anonymous W/D as `$anon_distinct_id`.
+ * A fresh D is persisted before identify so logout, account switch, and the
+ * next process can never reuse an id that may have been merged into F.
  */
-export function bindUserId(userId: string, properties: Record<string, TelemetryValue> = {}): void {
-  if (!canEmit() || !installationDeviceId) return
-  if (consentState !== 'granted') return
-  const anonymousId = installationDeviceId
-  distinctId = userId
-  try {
-    client!.alias({ distinctId: userId, alias: anonymousId })
-  } catch {
-    // ignore
+function persistablePersonProperties(properties: TelemetryContext): PendingIdentityProperties {
+  const persistable: PendingIdentityProperties = {}
+  for (const [key, value] of Object.entries(properties)) {
+    if (
+      value === null ||
+      typeof value === 'boolean' ||
+      typeof value === 'number' ||
+      typeof value === 'string'
+    ) {
+      persistable[key] = value
+    }
   }
-  try {
-    client!.identify({
-      distinctId: userId,
-      properties: { $set: { ...properties, is_authenticated: true } }
-    })
-  } catch {
-    // ignore
+  return persistable
+}
+
+function queuePendingUserBinding(
+  userId: string,
+  emitLoginEvent: boolean,
+  properties: Record<string, TelemetryValue>
+): void {
+  const existing = pendingUserBinding?.userId === userId ? pendingUserBinding : null
+  pendingUserBinding = {
+    userId,
+    emitLoginEvent: emitLoginEvent || existing?.emitLoginEvent === true,
+    properties: { ...(existing?.properties ?? {}), ...properties }
   }
-  capture('app:user_logged_in', { user_id: userId })
 }
 
 /**
- * Switch back to the anonymous `installation_id` after a logout.
- *
- * **Not** `posthog.reset()`: that would generate a brand-new anonymous
- * device id and clobber the deterministic `installation_id`. Instead, we
- * restore `distinct_id` to the remembered baseline so subsequent events ride
- * under the device identity (not the prior user).
- *
- * Flips `is_authenticated` back to `false` via a capture-`$set` (not
- * `identify()`, which would re-burn the anon id for the next login).
- *
- * Caller responsibility (renderer): also clear Datadog
- * (`datadogRum.setUser({})` / `clearUser`) so RUM stops tagging events
- * with the prior user.
+ * The single exit from the write quarantine: the flag never goes false while
+ * the buffer still holds writes. Held writes belong to the user who was bound
+ * while they fired, so only a same-user confirmation (or a release that keeps
+ * the binding) replays them; any other resolution leaves their attribution
+ * ambiguous and discards.
  */
-export function unbindUserId(): void {
-  if (!installationDeviceId) return
-  distinctId = installationDeviceId
+function endFirebaseWriteQuarantine(disposition: 'replay' | 'discard'): void {
+  firebaseConsensusPending = false
+  if (disposition === 'replay') flushQuarantinedWrites()
+  else quarantinedWrites = []
+}
+
+/**
+ * Apply deferred person updates to the still-bound person before a detach,
+ * then wipe the buffers. They were collected for that account: never carry
+ * them into another Firebase person, but under granted consent they were
+ * merely deferred (e.g. by the write quarantine) and wiping them unapplied
+ * would permanently lose burned-guard $set_once markers.
+ */
+function settlePendingPersonBuffersForDetach(): void {
+  if (canEmit() && consentState === 'granted' && (pendingPersonSet || pendingPersonSetOnce)) {
+    capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
+  }
+  pendingPersonSet = null
+  pendingPersonSetOnce = null
+}
+
+function applyFirebaseUserBinding(
+  userId: string,
+  emitLoginEvent: boolean,
+  properties: Record<string, TelemetryValue> = {}
+): void {
+  // Resolved consensus always ends the pending quarantine, even when this
+  // binding cannot proceed (denied consent, unusable UID) — otherwise
+  // bound-user telemetry stays dropped until an unrelated consensus replay.
+  const normalizedUserId = normalizePostHogUserId(userId)
+  endFirebaseWriteQuarantine(
+    normalizedUserId !== null && normalizedUserId === boundUserId ? 'replay' : 'discard'
+  )
+  // Reject early rather than burn an anonymous rotation on an identify that
+  // can never merge.
+  if (!normalizedUserId) return
+  if (consentState === 'denied') {
+    // The old binding must not survive a resolved account switch: once
+    // consent returns, events would land on the previous user. Detach now
+    // (silently — consent is denied) and let a later replay bind the new UID.
+    if (boundUserId && boundUserId !== normalizedUserId) detachFromBoundUser()
+    return
+  }
+
+  if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    return
+  }
+  if (boundUserId === normalizedUserId) {
+    if (Object.keys(properties).length > 0) registerPersonProperties(properties)
+    if (emitLoginEvent) capture('app:user_logged_in', { user_id: normalizedUserId })
+    emitStagedLoginAttribution(normalizedUserId)
+    tryFlushDeferred()
+    return
+  }
+  if (boundUserId) settlePendingPersonBuffersForDetach()
+  if (consentState !== 'granted') {
+    if (boundUserId) {
+      detachFromBoundUser()
+      if (!anonymousDistinctId) return
+    }
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    return
+  }
+
+  if (boundUserId) {
+    detachFromBoundUser()
+    if (!anonymousDistinctId) return
+  }
+
+  const personSet = scrubProperties({
+    ...(pendingPersonSet || {}),
+    ...properties,
+    installation_id: installationIdProperty,
+    is_authenticated: true
+  })
+  const personSetOnce = pendingPersonSetOnce
+    ? scrubProperties(pendingPersonSetOnce as TelemetryContext)
+    : null
+  const anonymousId = anonymousDistinctId
+  const pendingMerge = reservePendingIdentityMerge({
+    anonymousId,
+    userId: normalizedUserId,
+    installationId: installationIdProperty,
+    personSet: persistablePersonProperties(personSet),
+    ...(personSetOnce ? { personSetOnce: persistablePersonProperties(personSetOnce) } : {})
+  })
+  if (!pendingMerge) {
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    return
+  }
+  pendingIdentityMergeFileDirty = true
+  const reservedNextAnonymousId = pendingMerge.nextAnonymousId
+
+  distinctId = normalizedUserId
+  try {
+    client!.identify({
+      distinctId: normalizedUserId,
+      properties: {
+        $set: personSet,
+        ...(personSetOnce ? { $set_once: personSetOnce } : {}),
+        $anon_distinct_id: anonymousId
+      }
+    })
+    queuedPendingIdentityMergeIds.add(pendingMerge.id)
+  } catch {
+    // Conservatively abandon D if the SDK may have partially accepted it.
+    anonymousDistinctId = reservedNextAnonymousId
+    nextAnonymousDistinctId = null
+    distinctId = reservedNextAnonymousId
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    return
+  }
+  boundUserId = normalizedUserId
+  nextAnonymousDistinctId = reservedNextAnonymousId
+  pendingPersonSet = null
+  pendingPersonSetOnce = null
+  pendingUserBinding = null
+  if (emitLoginEvent) {
+    capture('app:user_logged_in', { user_id: normalizedUserId })
+  }
+  emitStagedLoginAttribution(normalizedUserId)
+  tryFlushDeferred()
+}
+
+/** Apply declarative renderer consensus without emitting an interactive login conversion. */
+export function applyFirebaseUserConsensus(userId: string): void {
+  applyFirebaseUserBinding(userId, false)
+}
+
+/**
+ * Bind a main-process-verified interactive sign-in (OAuth loopback bridge or
+ * desktop login code). The verified flow owns the login-success conversion;
+ * declarative Cloud and scoped-local restored-session consensus stays silent.
+ * A login-attribution payload staged via `stageLoginAttribution` is emitted
+ * alongside the conversion — never before the UID is confirmed.
+ */
+export function bindUserId(userId: string, properties: Record<string, TelemetryValue> = {}): void {
+  applyFirebaseUserBinding(userId, true, properties)
+}
+
+/**
+ * Quarantine writes while an authoritative Firebase reporter is pending.
+ * Deliberately does not emit `is_authenticated: false`, rotate the anonymous
+ * identity, or clear the current Firebase binding. Held writes are replayed
+ * when the same user is confirmed and discarded on any other resolution.
+ */
+export function applyFirebasePendingConsensus(): void {
+  firebaseConsensusPending = true
+}
+
+/**
+ * End the pending quarantine without resolving consensus, keeping the bound
+ * identity. Used when a reporter exceeds its resolution deadline (and on
+ * shutdown): an unresolved document is no evidence of sign-out, and the held
+ * writes fired while the current user was bound, so they replay under it.
+ */
+export function releaseFirebasePendingConsensus(): void {
+  endFirebaseWriteQuarantine('replay')
+  tryFlushDeferred()
+}
+
+/**
+ * Detach from F and adopt the fresh D that was durably reserved before bind.
+ * Shared by the anonymous consensus outcome and the detach-before-rebind
+ * step of an account switch — which is why it does not touch the staged
+ * login attribution: during a switch that payload may belong to the
+ * incoming user, and its fate is settled at their confirmation instead.
+ */
+function detachFromBoundUser(): void {
+  endFirebaseWriteQuarantine('discard')
+  pendingUserBinding = null
+  if (!boundUserId) return
+  // Wiping the person buffers while unbound would permanently lose
+  // burned-guard $set_once markers; bound, they settle to the old person.
+  settlePendingPersonBuffersForDetach()
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
   }
+  const safeAnonymousId = nextAnonymousDistinctId ?? rotatePersistedAnonymousDistinctId()
+  boundUserId = null
+  nextAnonymousDistinctId = null
+  if (!safeAnonymousId) {
+    distinctId = null
+    anonymousDistinctId = null
+    return
+  }
+  anonymousDistinctId = safeAnonymousId
+  distinctId = safeAnonymousId
+}
+
+/**
+ * Detach from F as a resolved consensus outcome. Quarantined writes and any
+ * staged login attribution are discarded — an anonymous or conflicted
+ * resolution leaves their attribution ambiguous.
+ */
+export function applyFirebaseAnonymousConsensus(): void {
+  pendingLoginAttribution = null
+  detachFromBoundUser()
+}
+
+/**
+ * Replace an anonymous epoch that observed conflicting resolved auth states.
+ * Returns false when the clean identity could not be persisted; callers must
+ * keep the process anonymous and retry before any later Firebase bind.
+ */
+export function discardUnmergeableAnonymousEpoch(): boolean {
+  applyFirebaseAnonymousConsensus()
+  const cleanAnonymousId = rotatePersistedAnonymousDistinctId()
+  if (!cleanAnonymousId) return false
+  anonymousDistinctId = cleanAnonymousId
+  distinctId = cleanAnonymousId
+  nextAnonymousDistinctId = null
+  return clearPersistedUnmergeableAnonymousEpoch()
+}
+
+export function hasUnmergeableAnonymousEpoch(): boolean {
+  return hasPersistedUnmergeableAnonymousEpoch()
+}
+
+export function markAnonymousEpochUnmergeable(): boolean {
+  return persistUnmergeableAnonymousEpoch()
 }
 
 /**
  * Defense-in-depth: run every string-valued property through `scrubAll`
  * before it leaves the process. Callers should still scrub at the emit
  * site (so the field shape is intentional and the scrub is visible in
- * code review) — this is the last-resort safety net that catches future
+ * code review) - this is the last-resort safety net that catches future
  * emit sites that forget. Mirrors the renderer's `scrubTelemetryContext`
  * pass; without it, any new main-process call site that ships raw
  * strings (`error_message`, `last_stderr`, free-text from external libs)
@@ -839,51 +1161,86 @@ function scrubProperties(properties: TelemetryContext): TelemetryContext {
 }
 
 /**
- * Persist person props without identifying the distinct id: a `$set` /
- * `$set_once` on a captured event updates the person but emits no
- * `$identify`, so the anon id stays mergeable at login. Uses a dedicated
- * `comfy.desktop.person.set` event so the write is explicit and greppable.
+ * Update the already-identified Firebase person via an explicit event.
+ * Returns whether the write was admitted, so deferred-buffer flushes can
+ * retain their payload on a drop. Empty input is trivially admitted.
  */
 function capturePersonProperties(
   set: Record<string, TelemetryValue> | null,
   setOnce: Record<string, TelemetryValue> | null
-): void {
-  if (!canEmit() || !distinctId) return
-  if (consentState !== 'granted') return
+): boolean {
+  if (!canEmit() || !distinctId || !boundUserId) return false
+  if (consentState !== 'granted') return false
   if ((!set || Object.keys(set).length === 0) && (!setOnce || Object.keys(setOnce).length === 0)) {
-    return
+    return true
   }
   const properties: TelemetryContext = {}
   if (set && Object.keys(set).length > 0) {
     ;(properties as Record<string, unknown>).$set = scrubProperties(set as TelemetryContext)
   }
   if (setOnce && Object.keys(setOnce).length > 0) {
-    ;(properties as Record<string, unknown>).$set_once = scrubProperties(setOnce as TelemetryContext)
+    ;(properties as Record<string, unknown>).$set_once = scrubProperties(
+      setOnce as TelemetryContext
+    )
   }
-  capture('comfy.desktop.person.set', properties)
+  return capture('comfy.desktop.person.set', properties)
 }
 
-export function capture(event: string, properties: TelemetryContext = {}): void {
-  if (!canEmit() || !distinctId) return
-  if (!isAllowedToFire(event)) return
-  if (!_checkRateLimit(event)) return
-  _eventsCapturedThisProcess++
+/**
+ * Returns whether the event was admitted. A `false` means it was dropped
+ * (consent gate, volume guard, or SDK failure); one-shot callers use this to
+ * keep their deferred payload instead of losing it. While consensus is
+ * quarantined, `true` means the write was buffered for the bound user's
+ * confirmation — it ships on a same-user resolution or release and is
+ * discarded when consensus resolves to anyone else.
+ */
+export function capture(event: string, properties: TelemetryContext = {}): boolean {
+  return captureEvent(event, properties, false)
+}
+
+function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+  if (!canEmit() || !distinctId) return false
+  if (!isAllowedToFire(event)) return false
+  if (!_checkRateLimit(event)) return false
+  if (firebaseWritesQuarantined()) {
+    if (
+      !queueQuarantinedWrite({ kind: 'event', event, properties, forward, timestamp: new Date() })
+    )
+      return false
+    _recordCapturedEvent(event)
+    return true
+  }
+  if (!deliverEvent(event, properties, forward, null)) return false
+  _recordCapturedEvent(event)
+  return true
+}
+
+function deliverEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  timestamp: Date | null
+): boolean {
   try {
-    // Per-call properties override defaults on key collision — callers
+    // Per-call properties override defaults on key collision - callers
     // that explicitly pass `app_version` (e.g. session-start payload,
     // legacy event re-emitters) win.
     // `$ip` is intentionally NOT stripped here: PostHog needs the request IP
     // to derive country (`disableGeoip: false` at init). The raw IP and all
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
-    const merged = { ...defaultEventProperties, ...properties }
+    const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
     client!.capture({
-      distinctId,
+      distinctId: distinctId!,
       event,
-      properties: scrubProperties(merged)
+      properties: scrubProperties(merged),
+      ...(timestamp ? { timestamp } : {})
     })
+    if (forward) forwardToRenderer(event, properties)
+    return true
   } catch {
-    // ignore – telemetry must never break the app
+    // swallow - telemetry must never break the app
+    return false
   }
 }
 
@@ -893,7 +1250,7 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
  *
  * The caller's on-disk guard (in `deviceId.ts`) is consumed at boot, so this
  * fires for at most one launch in the installation's lifetime. But that launch
- * is, by definition, a fresh install whose consent is still `'undecided'` —
+ * is, by definition, a fresh install whose consent is still `'undecided'` -
  * routing it through plain `capture()` would drop it on the consent gate while
  * the guard stays burned, so the event would never reach PostHog. Instead we
  * queue the payload and let `tryFlushDeferred()` ship it on the
@@ -902,29 +1259,29 @@ export function capture(event: string, properties: TelemetryContext = {}): void 
  * in, or the rare migrator), it captures immediately.
  */
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
-  const eventProperties = takeDownloadTokenEventProperties(properties)
-  if (!canEmit() || !distinctId) {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
-    return
+  if (consentState === 'denied') return
+  if (
+    !canEmit() ||
+    !distinctId ||
+    consentState !== 'granted' ||
+    !capture('comfy.desktop.app.first_launch', properties)
+  ) {
+    // Not admitted (deferred or dropped): the on-disk guard is already
+    // burned, so keep the payload queued for the next flush trigger.
+    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
   }
-  if (consentState !== 'granted') {
-    pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...eventProperties }
-    return
-  }
-  capture('comfy.desktop.app.first_launch', eventProperties)
 }
 
 /**
  * Update PostHog person properties for the current distinct id (`$set`).
  *
- * Attach durable person props without firing a product event. Consent-gated:
- * queued in `pendingPersonSet` until granted. Routes through capture-`$set`
- * (not `identify()`) so it never burns the anon id; correct post-login too,
- * where the distinct id is the already-identified `user_id`.
+ * Before login, queue person props without any PostHog write. The
+ * initial Firebase UID identify applies them; later authenticated updates use
+ * an explicit capture-`$set` event.
  */
 export function registerPersonProperties(properties: Record<string, TelemetryValue>): void {
-  if (!canEmit()) return
-  if (consentState !== 'granted' || !distinctId) {
+  if (!canEmit() || consentState === 'denied') return
+  if (consentState !== 'granted' || !distinctId || !boundUserId || firebaseWritesQuarantined()) {
     pendingPersonSet = { ...(pendingPersonSet || {}), ...properties }
     return
   }
@@ -940,12 +1297,12 @@ export function registerPersonProperties(properties: Record<string, TelemetryVal
  * a reinstall or a second machine.
  *
  * Like `registerPersonProperties` but `$set_once` (write-once markers such
- * as `first_generation_at`). Same anon-safe capture-`$set_once` path.
+ * as `first_generation_at`). Pre-auth values are applied only at UID bind.
  */
 export function registerPersonPropertiesOnce(properties: Record<string, TelemetryValue>): void {
-  if (!canEmit()) return
-  if (consentState !== 'granted' || !distinctId) {
-    pendingPersonSetOnce = { ...(pendingPersonSetOnce || {}), ...properties }
+  if (!canEmit() || consentState === 'denied') return
+  if (consentState !== 'granted' || !distinctId || !boundUserId || firebaseWritesQuarantined()) {
+    pendingPersonSetOnce = { ...properties, ...(pendingPersonSetOnce || {}) }
     return
   }
   capturePersonProperties(null, properties)
@@ -968,7 +1325,7 @@ export type InstallMethod = 'express' | 'manual' | 'adopt' | 'migrate'
  * than inlined at each completion site: express/manual, adopt, migrate) so
  * the event's property shape can't drift between the three call sites.
  *
- * `installation_id` is already an event-level default once `identify()` ran
+ * `installation_id` is already an event-level default once `bindAnonymousId()` ran
  * at boot; it's passed explicitly here too so the event is self-describing
  * even in queries that don't rely on the default (and so the value is the
  * specific install that completed, not just the device).
@@ -985,44 +1342,82 @@ export function captureInstallCompleted(opts: {
   })
   // Durable per-person activation milestone (#1224). All four methods
   // (express/manual/adopt/migrate) are local installs, so this stamps the
-  // person the first time they EVER complete a local install — even across
+  // person the first time they EVER complete a local install - even across
   // quits, reinstalls, or a second machine. Lets the funnel distinguish
   // "onboarded but never installed" from "abandoned then recovered later".
   registerPersonPropertiesOnce({ first_local_install_completed_at: new Date().toISOString() })
 }
 
-export function captureException(error: unknown, properties: TelemetryContext = {}): void {
-  if (!canEmit() || !distinctId) return
-  // Exceptions are reliability data; suppress them outside `'granted'`.
-  if (consentState !== 'granted') return
-  try {
-    // Same default merge as capture() so exception events stay filterable by
-    // the shared axes (app_version, client, ...) instead of arriving bare.
-    client!.captureException(error, distinctId, { ...defaultEventProperties, ...properties })
-  } catch {
-    // ignore
-  }
+export function captureException(error: unknown, properties: TelemetryContext = {}): boolean {
+  return captureExceptionWrite(error, properties, false)
 }
 
 /**
- * Issue a one-shot alias to merge a legacy distinct id into the current one.
- *
- * Used by the boot-time identity migration (random-UUID `device-id.txt` ->
- * SHA-256(machine_id + salt)) so PostHog reconciles historical events under
- * the new identity. Uses `aliasImmediate` so the promise resolves once
- * PostHog has accepted the call; failures are swallowed.
- *
- * Suppressed unless consent is `'granted'`. Aliases ship identifying data
- * (the legacy id), so we never even attempt the network call when consent
- * is `'denied'` or `'undecided'`.
+ * Capture an exception and, once the PostHog write actually ships, mirror it
+ * to the renderer-only Datadog SDK. During quarantine the mirror is deferred
+ * with the write (and dropped with it on a non-same-user resolution), so the
+ * two systems cannot diverge on which exceptions exist.
  */
-async function aliasImmediateInternal(distinctId: string, alias: string): Promise<boolean> {
-  if (!canEmit()) return false
+export function captureExceptionAndForward(
+  error: unknown,
+  properties: TelemetryContext = {}
+): boolean {
+  return captureExceptionWrite(error, properties, true)
+}
+
+function captureExceptionWrite(
+  error: unknown,
+  properties: TelemetryContext,
+  forward: boolean
+): boolean {
+  if (!canEmit() || !distinctId) return false
+  // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return false
+  if (!_checkRateLimit('comfy.desktop.exception.error')) return false
+  if (firebaseWritesQuarantined()) {
+    if (
+      !queueQuarantinedWrite({
+        kind: 'exception',
+        error,
+        properties,
+        forward,
+        timestamp: new Date()
+      })
+    )
+      return false
+    _recordCapturedEvent('comfy.desktop.exception.error')
+    return true
+  }
+  if (!deliverException(error, properties, forward)) return false
+  _recordCapturedEvent('comfy.desktop.exception.error')
+  return true
+}
+
+function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
   try {
-    await client!.aliasImmediate({ distinctId, alias })
+    // Same default merge as capture() so exception events stay filterable by
+    // the shared axes (app_version, client, ...) instead of arriving bare.
+    const source = error instanceof Error ? error : new Error(String(error))
+    const safeError = new Error(scrubAll(source.message || source.name).slice(0, ERROR_MESSAGE_MAX))
+    safeError.name = scrubAll(source.name || 'Error').slice(0, 128)
+    if (source.stack) safeError.stack = scrubAll(source.stack).slice(0, ERROR_STACK_MAX)
+    const safeErrorRecord = safeError as Error & Record<string, unknown>
+    for (const [key, value] of Object.entries(source).slice(0, 32)) {
+      if (typeof value === 'string' && !['message', 'name', 'stack'].includes(key)) {
+        safeErrorRecord[scrubAll(key).slice(0, 128)] = scrubAll(value).slice(0, ERROR_MESSAGE_MAX)
+      }
+    }
+    client!.captureException(
+      safeError,
+      distinctId!,
+      normalizeExceptionContext(
+        enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+      ) as TelemetryContext
+    )
+    if (forward) forwardExceptionToRenderer(properties)
     return true
   } catch {
+    // ignore
     return false
   }
 }
@@ -1033,7 +1428,7 @@ async function aliasImmediateInternal(distinctId: string, alias: string): Promis
  * Used by the experiments module's boot-time refresh. Returns `{}` on
  * timeout / failure so the caller can fall back to its cached values
  * without distinguishing failure modes. Suppressed unless consent is
- * `'granted'` — flag evaluation requests carry the distinct id and
+ * `'granted'` - flag evaluation requests carry the distinct id and
  * person properties to PostHog, so they must not ship pre-consent.
  *
  * The returned record's keys are PostHog flag/experiment names; values
@@ -1067,20 +1462,19 @@ export async function loadFeatureFlagsImmediate(
  * Fetch a single OPERATIONAL feature flag value with a hard timeout.
  *
  * Bypasses the telemetry consent gate by design: this entry point is
- * reserved for kill-switches and capacity-protection flags (e.g.
- * `desktop-cloud-capacity`), not A/B experiments or analytics. Those
+ * reserved for operational flags, not A/B experiments or analytics. Those
  * are server-config pushed *to* the client to protect service
- * availability for everyone — distinct from analytics data collected
+ * availability for everyone - distinct from analytics data collected
  * *from* the user, which `loadFeatureFlagsImmediate` correctly gates on
- * consent. The only data leaving the device is the anonymous distinct
- * id and the flag key; no person properties are sent.
+ * consent. The evaluation call supplies only the installation-stable
+ * evaluation key and flag key; no person properties are sent.
  *
  * Returns `undefined` when:
  *   - the PostHog client is not yet initialised
  *   - the network call times out or errors
  *   - the flag is missing on the server
- * Callers must default-fail-safe (e.g. `cloudCapacity.ts` defaults to
- * `'normal'`) so a fetch miss never accidentally degrades the product.
+ * Callers must choose a safe fallback so a fetch miss never accidentally
+ * degrades the product.
  */
 export async function getOpsFlag(
   key: string,
@@ -1090,8 +1484,13 @@ export async function getOpsFlag(
   if (!client) return undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    // No `personProperties` — ops flags are global, not user-keyed.
-    const flagPromise = client.getFeatureFlag(key, distinctId)
+    // No `personProperties` - ops flags are global, not user-keyed.
+    // We record explicit experiment exposures elsewhere. Disabling the SDK's
+    // implicit `$feature_flag_called` write also prevents this evaluation-only
+    // key from creating a PostHog person behind the capture policy.
+    const flagPromise = client.getFeatureFlag(key, distinctId, {
+      sendFeatureFlagEvents: false
+    })
     const timeoutPromise = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), timeoutMs)
     })
@@ -1110,28 +1509,51 @@ export async function getOpsFlag(
  * desktop's `@trackEvent` decorator. Errors are re-thrown so callers can
  * continue normal control flow.
  */
+interface TrackedStepScope {
+  failedStage?: string
+  failureContext?: TelemetryContext
+}
+
+const trackedStepScope = new AsyncLocalStorage<TrackedStepScope>()
+
 export async function trackedStep<T>(
   step: string,
   context: TelemetryContext,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  options: { emitError?: boolean; canonicalError?: boolean } = {}
 ): Promise<T> {
   capture(`${step}.start`, context)
   const t0 = Date.now()
+  const canonicalScope: TrackedStepScope | undefined = options.canonicalError ? {} : undefined
   try {
-    const result = await fn()
+    const result = options.canonicalError
+      ? await trackedStepScope.run(canonicalScope!, fn)
+      : await fn()
     capture(`${step}.end`, { ...context, duration_ms: Date.now() - t0 })
     return result
   } catch (err) {
+    const scope = canonicalScope ?? trackedStepScope.getStore()
+    if (scope && !options.canonicalError && !scope.failedStage) {
+      scope.failedStage = step
+      scope.failureContext = context
+    }
     // Standard error schema (class / message / bucket / signature) so every
     // `${step}.error` (adopt.register, migrate.*, snapshot.restore_*) is
     // diagnosable and groups by class regardless of locale or user paths.
     // `emit` (not `capture`) so allow-listed step errors also mirror to Datadog
     // for alerting; the `.start` / `.end` funnel events stay PostHog-only.
-    emit(`${step}.error`, {
-      ...context,
-      duration_ms: Date.now() - t0,
-      ...buildErrorFields(err)
-    })
+    const shouldEmitError =
+      options.emitError === true ||
+      (options.emitError !== false && (!scope || options.canonicalError))
+    if (shouldEmitError) {
+      emit(`${step}.error`, {
+        ...context,
+        ...(scope?.failureContext || {}),
+        ...(scope?.failedStage ? { failed_stage: scope.failedStage } : {}),
+        duration_ms: Date.now() - t0,
+        ...buildErrorFields(err)
+      })
+    }
     throw err
   }
 }
@@ -1145,13 +1567,13 @@ export const bucketError = sharedBucketError
 /**
  * Forward an event to renderer-side Datadog RUM via the registered
  * telemetry relay targets (title bars). PostHog is intentionally NOT
- * fanned out here — `capture()` already sent the event from PostHog Node,
+ * fanned out here - `capture()` already sent the event from PostHog Node,
  * and the `mainAlreadyCaptured: true` flag in the payload tells the
  * renderer-side bootstrap to skip its PostHog Browser mirror so events
  * aren't double-counted.
  *
  * If no relay target is currently registered (no host window open yet),
- * the broadcast is a silent no-op — PostHog Node still captures the event
+ * the broadcast is a silent no-op - PostHog Node still captures the event
  * via `capture()`, so the event isn't lost; only its Datadog RUM mirror
  * is dropped, which is acceptable for the brief window before the first
  * host window opens.
@@ -1169,18 +1591,55 @@ export function forwardToRenderer(event: string, context: TelemetryContext = {})
       try {
         wc.send('telemetry-action-from-main', payload)
       } catch {
-        // ignore – telemetry must never break the app
+        // ignore - telemetry must never break the app
+      }
+    }
+  }
+}
+
+/** Forward an accepted exception to the renderer-only Datadog SDK without diagnostics. */
+export function forwardExceptionToRenderer(context: TelemetryContext = {}): void {
+  const allowedKeys = [
+    'origin',
+    'source',
+    'forwarded_source',
+    'level',
+    'reason',
+    'exitCode',
+    'exit_code',
+    'type'
+  ]
+  const safeContext: TelemetryContext = {}
+  for (const key of allowedKeys) {
+    const value = context[key]
+    if (!Array.isArray(value)) safeContext[key] = value
+  }
+  const payload = {
+    source: String(
+      safeContext['source'] ?? safeContext['forwarded_source'] ?? 'captured-exception'
+    ),
+    message: 'Desktop application exception',
+    context: safeContext,
+    skipPostHog: true
+  }
+  for (const wc of _telemetryRelayTargets) {
+    if (!wc.isDestroyed()) {
+      try {
+        wc.send('dd-error', payload)
+      } catch {
+        // ignore - telemetry must never break the app
       }
     }
   }
 }
 
 /**
- * Capture an event and forward it to the renderer in one call.
+ * Capture an event and forward it to the renderer in one call. The forward
+ * rides the capture's disposition: quarantined writes mirror on replay, not
+ * at queue time, so a discarded PostHog write has no orphaned Datadog copy.
  */
 export function emit(event: string, context: TelemetryContext = {}): void {
-  capture(event, context)
-  forwardToRenderer(event, context)
+  captureEvent(event, context, true)
 }
 
 /**
@@ -1190,6 +1649,23 @@ export async function shutdown(reason: string): Promise<void> {
   if (!client) return
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
+    // A quit mid-navigation must not strand quarantined writes (or the
+    // session-ended capture below) — the pending document will never resolve.
+    if (firebaseConsensusPending) releaseFirebasePendingConsensus()
+    // A successful sign-in whose confirming re-report is outrun by the quit
+    // still deserves its attribution; no contrary resolution was observed.
+    // Unless a DIFFERENT user is still bound (a mid-switch quit): capture()
+    // would land the event under their distinct id, crediting the new
+    // sign-in to the previous account, so an unconfirmed switch discards.
+    // Unbound is safe - the event lands on the anonymous id, which only
+    // ever merges into the staged user if they are later confirmed.
+    if (pendingLoginAttribution) {
+      const { userId, context } = pendingLoginAttribution
+      pendingLoginAttribution = null
+      if (boundUserId === null || userId === boundUserId) {
+        capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+      }
+    }
     capture('comfy.desktop.session.ended', {
       reason,
       uptime_ms: uptimeMs,
@@ -1199,6 +1675,7 @@ export async function shutdown(reason: string): Promise<void> {
     // ignore
   }
   try {
+    await flushPendingIdentityMerges()
     await client.shutdown()
   } catch {
     // ignore
@@ -1225,7 +1702,7 @@ const SHUTDOWN_DRAIN_TIMEOUT_MS = 1500
  * shutdown, then re-issuing `app.exit()`. A one-shot guard prevents the
  * subsequent quit from re-entering this branch.
  *
- * Safe to call multiple times – the hook only attaches once.
+ * Safe to call multiple times - the hook only attaches once.
  */
 export function installAppHooks(): void {
   if (beforeQuitHooked) return

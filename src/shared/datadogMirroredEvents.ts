@@ -112,7 +112,9 @@ export const DATADOG_DROPPED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
   'error_message',
   'error_signature',
   'error_tail',
-  'last_stderr',
+  'error_traceback',
+  'error_stack',
+  'last_stderr'
 ])
 
 /**

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const devPlatformMocks = vi.hoisted(() => ({
   isSignedInToCloud: vi.fn(() => false),
@@ -18,21 +18,28 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 // The menu-click handler emits PostHog Node telemetry on every activation;
 // stub it so the dispatch tests stay pure and don't bootstrap the SDK.
 vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
 
+vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
+  ...(await vi.importActual('../lib/ipc/registerSettingsHandlers')),
+  applySettingSet: vi.fn()
+}))
+
 import {
+  _test_deleteTitlePopupEntry,
+  _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
   buildInstancePickerSnapshot,
   resolvePickerSelectedInstallId,
@@ -40,11 +47,15 @@ import {
   computePopupHeight,
   decideFlowMenuItemTarget,
   isFlowMenuItemId,
+  registerTitlePopupIpc,
+  requiresPerOpenConfigSync,
   type FlowMenuItemId,
   type InstancePickerInstall,
-  type TitlePopupHostBindings,
+  type TitlePopupEntry,
+  type TitlePopupHostBindings
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
+import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -64,24 +75,26 @@ interface FakeComfyWebContents {
   getZoomLevel: () => number
 }
 
-function makeEntry(opts: {
-  installationId?: string | null
-  activePanel?: ComfyWindowEntry['activePanel']
-  firstUseMode?: ComfyWindowEntry['firstUseMode']
-  comfyDestroyed?: boolean
-  zoomLevel?: number
-} = {}): ComfyWindowEntry {
+function makeEntry(
+  opts: {
+    installationId?: string | null
+    activePanel?: ComfyWindowEntry['activePanel']
+    firstUseMode?: ComfyWindowEntry['firstUseMode']
+    comfyDestroyed?: boolean
+    zoomLevel?: number
+  } = {}
+): ComfyWindowEntry {
   const wc: FakeComfyWebContents = {
     destroyed: opts.comfyDestroyed ?? false,
     zoomLevel: opts.zoomLevel ?? 0,
     isDestroyed: () => wc.destroyed,
-    getZoomLevel: () => wc.zoomLevel,
+    getZoomLevel: () => wc.zoomLevel
   }
   return {
     windowKey: nextWindowKey(),
     window: {} as ComfyWindowEntry['window'],
     comfyView: {
-      webContents: wc as unknown,
+      webContents: wc as unknown
     } as unknown as ComfyWindowEntry['comfyView'],
     titleBarView: { webContents: {} } as unknown as ComfyWindowEntry['titleBarView'],
     panelView: null,
@@ -97,7 +110,7 @@ function makeEntry(opts: {
     previewInstallationId: null,
     coldStartPendingReveal: false,
     _installCleanup: null,
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
 }
 
@@ -109,7 +122,7 @@ describe('computePopupHeight', () => {
       { kind: 'separator' },
       { id: 'b', label: 'B' },
       { kind: 'separator' },
-      { id: 'c', label: 'C' },
+      { id: 'c', label: 'C' }
     ])
     expect(h).toBe(112)
   })
@@ -176,7 +189,7 @@ describe('buildTitlePopupMenuItems', () => {
       'settings',
       'feedback',
       'exit-window',
-      'close-all-windows',
+      'close-all-windows'
     ])
     const signIn = items.find((i) => i.id === 'sign-in')
     expect(signIn?.label).toBe('Log in')
@@ -195,7 +208,7 @@ describe('buildTitlePopupMenuItems', () => {
       'settings',
       'feedback',
       'exit-window',
-      'close-all-windows',
+      'close-all-windows'
     ])
     const closeWindow = items.find((i) => i.id === 'exit-window')
     expect(closeWindow?.label).toBe('Close Window')
@@ -261,9 +274,7 @@ describe('buildTitlePopupMenuItems', () => {
   })
 
   it('exposes Reset Zoom on install host when comfy zoom is non-zero', () => {
-    const zoomed = buildTitlePopupMenuItems(
-      makeEntry({ installationId: 'inst-1', zoomLevel: 2 }),
-    )
+    const zoomed = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const resetZoom = zoomed.find((i) => i.id === 'reset-zoom')
     expect(resetZoom).toBeDefined()
     expect(resetZoom?.label).toBe('Reset Zoom (144%)')
@@ -271,7 +282,7 @@ describe('buildTitlePopupMenuItems', () => {
 
   it('omits Reset Zoom from the install host menu when the comfy webContents has been destroyed', () => {
     const items = buildTitlePopupMenuItems(
-      makeEntry({ installationId: 'inst-1', comfyDestroyed: true, zoomLevel: 2 }),
+      makeEntry({ installationId: 'inst-1', comfyDestroyed: true, zoomLevel: 2 })
     )
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
@@ -298,7 +309,7 @@ describe('buildTitlePopupMenuItems', () => {
     for (const installationId of [null, 'inst-1'] as const) {
       const normal = buildTitlePopupMenuItems(makeEntry({ installationId }))
       const locked = buildTitlePopupMenuItems(
-        makeEntry({ installationId, firstUseMode: 'loading-lockdown' }),
+        makeEntry({ installationId, firstUseMode: 'loading-lockdown' })
       )
       expect(locked.map((i) => i.id ?? null)).toEqual(normal.map((i) => i.id ?? null))
     }
@@ -314,7 +325,7 @@ describe('activateTitlePopupMenuItem', () => {
     return {
       kind: 'menu',
       parentEntryId,
-      view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() },
+      view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() }
     } as unknown as Parameters<typeof activateTitlePopupMenuItem>[0]
   }
 
@@ -397,6 +408,33 @@ describe('isFlowMenuItemId', () => {
   })
 })
 
+describe('requiresPerOpenConfigSync', () => {
+  // A deep-linked global-settings open (e.g. the instance pane's "Manage
+  // Shared Directories" -> Storage tab) must bypass the identical-config
+  // fast path: the cached popup may sit on another tab even though the
+  // config JSON is unchanged, so the snapshot must be re-pushed for the
+  // view's tab-retarget watch to fire.
+  it('forces a config re-send for a global-settings open with a requested tab', () => {
+    expect(
+      requiresPerOpenConfigSync({ kind: 'global-settings', snapshot: { initialTab: 'storage' } })
+    ).toBe(true)
+  })
+
+  it('keeps the fast path for a global-settings open without a requested tab', () => {
+    expect(
+      requiresPerOpenConfigSync({ kind: 'global-settings', snapshot: { initialTab: null } })
+    ).toBe(false)
+  })
+
+  it('keeps the fast path for non-global-settings kinds', () => {
+    expect(requiresPerOpenConfigSync({ kind: 'menu' })).toBe(false)
+    expect(requiresPerOpenConfigSync({ kind: 'downloads' })).toBe(false)
+    expect(
+      requiresPerOpenConfigSync({ kind: 'instance-picker', snapshot: { initialTab: 'storage' } })
+    ).toBe(false)
+  })
+})
+
 describe('resolvePickerSelectedInstallId', () => {
   function makeInstall(overrides: Partial<InstancePickerInstall>): InstancePickerInstall {
     return {
@@ -404,7 +442,7 @@ describe('resolvePickerSelectedInstallId', () => {
       name: 'X',
       sourceLabel: 'Standalone',
       sourceCategory: 'local',
-      ...overrides,
+      ...overrides
     } as InstancePickerInstall
   }
 
@@ -423,7 +461,7 @@ describe('resolvePickerSelectedInstallId', () => {
     const installs = [
       makeInstall({ id: 'a', lastLaunchedAt: 1000 }),
       makeInstall({ id: 'b', lastLaunchedAt: 5000 }),
-      makeInstall({ id: 'c', lastLaunchedAt: 2000 }),
+      makeInstall({ id: 'c', lastLaunchedAt: 2000 })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('b')
   })
@@ -438,7 +476,7 @@ describe('resolvePickerSelectedInstallId', () => {
     const installs = [
       makeInstall({ id: 'cloud', sourceCategory: 'cloud' }),
       makeInstall({ id: 'local-a', sourceCategory: 'local' }),
-      makeInstall({ id: 'local-b', sourceCategory: 'local' }),
+      makeInstall({ id: 'local-b', sourceCategory: 'local' })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('local-a')
   })
@@ -446,7 +484,7 @@ describe('resolvePickerSelectedInstallId', () => {
   it('still defaults to cloud when it was genuinely launched most-recently', () => {
     const installs = [
       makeInstall({ id: 'local-a', sourceCategory: 'local', lastLaunchedAt: 1000 }),
-      makeInstall({ id: 'cloud', sourceCategory: 'cloud', lastLaunchedAt: 5000 }),
+      makeInstall({ id: 'cloud', sourceCategory: 'cloud', lastLaunchedAt: 5000 })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('cloud')
   })
@@ -468,27 +506,24 @@ describe('buildInstancePickerSnapshot', () => {
       name: 'X',
       sourceLabel: 'Standalone',
       sourceCategory: 'local',
-      ...overrides,
+      ...overrides
     } as InstancePickerInstall
   }
 
   const EMPTY_STORAGE = {
     sharedDirectoriesFields: [],
     modelsDirs: [],
-    modelsSystemDefault: '',
+    modelsSystemDefault: ''
   }
 
   it('forwards the install array verbatim under `installs`', () => {
-    const installs = [
-      makeInstall({ id: 'a', name: 'A' }),
-      makeInstall({ id: 'b', name: 'B' }),
-    ]
+    const installs = [makeInstall({ id: 'a', name: 'A' }), makeInstall({ id: 'b', name: 'B' })]
     const snap = buildInstancePickerSnapshot({
       installs,
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.installs).toEqual(installs)
   })
@@ -499,7 +534,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: 'a',
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBe('a')
   })
@@ -510,7 +545,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBeNull()
   })
@@ -521,7 +556,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: ['b', 'a', 'c'],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.runningInstallationIds).toEqual(['b', 'a', 'c'])
   })
@@ -532,7 +567,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.runningInstallationIds).toEqual([])
   })
@@ -546,7 +581,7 @@ describe('buildInstancePickerSnapshot', () => {
       previewInstallationId: 'a',
       runningInstallationIds: [],
       launchingInstallationIds: ['a'],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBe('a')
   })
@@ -559,7 +594,7 @@ describe('buildInstancePickerSnapshot', () => {
       previewInstallationId: 'b',
       runningInstallationIds: ['a'],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.activeInstallationId).toBe('a')
   })
@@ -570,7 +605,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: ['a', 'b'],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.launchingInstallationIds).toEqual(['a', 'b'])
   })
@@ -583,7 +618,7 @@ describe('buildInstancePickerSnapshot', () => {
       hostInstallationId: null,
       runningInstallationIds: [],
       launchingInstallationIds: [],
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(0)
   })
@@ -595,8 +630,113 @@ describe('buildInstancePickerSnapshot', () => {
       runningInstallationIds: [],
       launchingInstallationIds: [],
       pickerSelectionEpoch: 7,
-      storage: EMPTY_STORAGE,
+      storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(7)
+  })
+})
+
+describe('global settings IPC handlers', () => {
+  type IpcHandler = (
+    event: Electron.IpcMainInvokeEvent,
+    payload?: Record<string, unknown>
+  ) => unknown
+
+  let updateField: IpcHandler
+  let setModelsDirs: IpcHandler
+
+  const eventFor = (id: number): Electron.IpcMainInvokeEvent =>
+    ({ sender: { id } }) as unknown as Electron.IpcMainInvokeEvent
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+    const handlerFor = (channel: string): IpcHandler => {
+      const call = vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === channel)
+      if (!call) throw new Error(`IPC handler not registered: ${channel}`)
+      return call[1] as IpcHandler
+    }
+    updateField = handlerFor('comfy-titlepopup:global-settings-update-field')
+    setModelsDirs = handlerFor('comfy-titlepopup:global-settings-set-models-dirs')
+    _test_setTitlePopupEntry(101, { kind: 'global-settings' } as TitlePopupEntry)
+    _test_setTitlePopupEntry(102, { kind: 'instance-picker' } as TitlePopupEntry)
+    _test_setTitlePopupEntry(103, { kind: 'downloads' } as TitlePopupEntry)
+  })
+
+  beforeEach(() => {
+    vi.mocked(applySettingSet).mockReset()
+  })
+
+  afterAll(() => {
+    _test_deleteTitlePopupEntry(101)
+    _test_deleteTitlePopupEntry(102)
+    _test_deleteTitlePopupEntry(103)
+  })
+
+  it('updates a field for a global-settings sender', () => {
+    expect(updateField(eventFor(101), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: true
+    })
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('inputDir', '/shared/in')
+  })
+
+  it('updates a field for an instance-picker sender', () => {
+    expect(updateField(eventFor(102), { fieldId: 'theme', value: 'dark' })).toEqual({ ok: true })
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('theme', 'dark')
+  })
+
+  it('rejects an unknown sender updating a field', () => {
+    expect(updateField(eventFor(999), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: false,
+      message: 'Global Settings popup not active.'
+    })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-settings popup updating a field', () => {
+    expect(updateField(eventFor(103), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: false,
+      message: 'Global Settings popup not active.'
+    })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, ''])('rejects invalid field id %j', (fieldId) => {
+    expect(updateField(eventFor(101), { fieldId })).toEqual({
+      ok: false,
+      message: 'Invalid field id.'
+    })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('returns an applySettingSet error when updating a field', () => {
+    vi.mocked(applySettingSet).mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    expect(updateField(eventFor(101), { fieldId: 'inputDir', value: '/shared/in' })).toEqual({
+      ok: false,
+      message: 'boom'
+    })
+  })
+
+  it('sets models directories for a settings sender', () => {
+    const dirs = ['/a', '/b']
+    expect(setModelsDirs(eventFor(101), { dirs })).toEqual({ ok: true })
+    expect(applySettingSet).toHaveBeenCalledExactlyOnceWith('modelsDirs', dirs)
+  })
+
+  it.each(['/a', undefined])('rejects non-array models directories %j', (dirs) => {
+    expect(setModelsDirs(eventFor(101), { dirs })).toEqual({ ok: false })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects models directories containing a non-string', () => {
+    expect(setModelsDirs(eventFor(101), { dirs: ['/a', 5] })).toEqual({ ok: false })
+    expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown sender setting models directories', () => {
+    expect(setModelsDirs(eventFor(999), { dirs: ['/a'] })).toEqual({ ok: false })
+    expect(applySettingSet).not.toHaveBeenCalled()
   })
 })

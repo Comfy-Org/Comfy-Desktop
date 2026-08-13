@@ -5,7 +5,7 @@ import {
   isChromeLockedMode,
   isFirstUseLockdownMode,
   isLoadingLockdownMode,
-  type FirstUseMode,
+  type FirstUseMode
 } from '../../../shared/firstUseMode'
 import { isColorLight } from '../lib/colorScheme'
 
@@ -78,13 +78,12 @@ export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIden
   const installTypeMeta = computed<InstallTypeMeta>(() => installTypeMetaFor(sourceCategory.value))
 
   const installTypeLabel = computed(() =>
-    t(installTypeMeta.value.labelKey, t('installType.unknown')),
+    t(installTypeMeta.value.labelKey, t('installType.unknown'))
   )
 
   /** Suppressed on install-less hosts unless an install-identity preview is active. */
   const showInstallTypeIcon = computed(
-    () =>
-      (!opts.isInstallLess.value || isPreviewMode.value) && sourceCategory.value !== null,
+    () => (!opts.isInstallLess.value || isPreviewMode.value) && sourceCategory.value !== null
   )
 
   const showBrandMark = computed(() => opts.isInstallLess.value && !isPreviewMode.value)
@@ -148,6 +147,6 @@ export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIden
     installTypeLabel,
     showInstallTypeIcon,
     showBrandMark,
-    isLight,
+    isLight
   }
 }

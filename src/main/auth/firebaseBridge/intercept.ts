@@ -5,7 +5,7 @@
  */
 const FIREBASE_AUTH_HANDLER_HOSTS = [
   'dreamboothy.firebaseapp.com',
-  'dreamboothy-dev.firebaseapp.com',
+  'dreamboothy-dev.firebaseapp.com'
 ] as const
 
 const FIREBASE_AUTH_HANDLER_PATH = '/__/auth/handler'
@@ -18,7 +18,11 @@ export function isFirebaseAuthHandlerUrl(url: string): boolean {
     return false
   }
   if (parsed.protocol !== 'https:') return false
-  if (!FIREBASE_AUTH_HANDLER_HOSTS.includes(parsed.host as (typeof FIREBASE_AUTH_HANDLER_HOSTS)[number])) {
+  if (
+    !FIREBASE_AUTH_HANDLER_HOSTS.includes(
+      parsed.host as (typeof FIREBASE_AUTH_HANDLER_HOSTS)[number]
+    )
+  ) {
     return false
   }
   return parsed.pathname === FIREBASE_AUTH_HANDLER_PATH

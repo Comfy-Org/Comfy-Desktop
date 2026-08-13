@@ -71,9 +71,9 @@ export function buildSettingsSections(
           options: [
             { value: AUTO_LAUNCH_NONE, label: i18n.t('settings.autoLaunchOnStartupNone') },
             { value: AUTO_LAUNCH_LAST, label: i18n.t('settings.autoLaunchOnStartupLast') },
-            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name })),
+            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name }))
           ],
-          tooltip: i18n.t('settings.autoLaunchOnStartupDescription'),
+          tooltip: i18n.t('settings.autoLaunchOnStartupDescription')
         },
 
         // Close confirmation, off by default. When on, closing a local-install
@@ -85,6 +85,13 @@ export function buildSettingsSections(
           type: 'boolean',
           value: s.confirmBeforeClosingWindow === true,
           tooltip: i18n.t('settings.confirmBeforeClosingWindowDescription')
+        },
+        {
+          id: 'warnBeforeRunningMultipleInstances',
+          label: i18n.t('settings.warnBeforeRunningMultipleInstances'),
+          type: 'boolean',
+          value: s.warnBeforeRunningMultipleInstances !== false,
+          tooltip: i18n.t('settings.warnBeforeRunningMultipleInstancesDescription')
         },
 
         // Cloud opt-out — pure visibility toggle, doesn't affect any

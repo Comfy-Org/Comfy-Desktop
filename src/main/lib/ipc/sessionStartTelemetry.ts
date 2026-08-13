@@ -135,9 +135,7 @@ export async function emitInstanceStartedTelemetry(info: InstanceStartedInfo): P
       // Top-level so they stay queryable and survive `latest_snapshot_json`
       // truncation (heavy installs are the most likely to truncate).
       custom_nodes_count: latest_snapshot?.customNodes.length ?? null,
-      pip_packages_count: latest_snapshot
-        ? Object.keys(latest_snapshot.pipPackages).length
-        : null,
+      pip_packages_count: latest_snapshot ? Object.keys(latest_snapshot.pipPackages).length : null,
       latest_snapshot_json: latestSnapshotJson.json,
       latest_snapshot_json_truncated: latestSnapshotJson.truncated
     }

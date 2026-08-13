@@ -17,14 +17,14 @@ const messages = {
     common: {
       copy: 'Copy',
       cancel: 'Cancel',
-      back: 'Back',
+      back: 'Back'
     },
     dashboard: {
       confirmStopLocal: {
         title: 'Return to Dashboard?',
         message: 'This will stop the current ComfyUI.',
-        confirmLabel: 'Return to Dashboard',
-      },
+        confirmLabel: 'Return to Dashboard'
+      }
     },
     progress: {
       working: 'Working…',
@@ -43,18 +43,18 @@ const messages = {
         securityScan: 'Running security scan...',
         source: 'Staging ComfyUI source code...',
         startingServer: 'Starting server...',
-        torchRepair: 'Restoring GPU PyTorch…',
-      },
+        torchRepair: 'Restoring GPU PyTorch…'
+      }
     },
     launch: {
-      viewLogs: 'View logs',
+      viewLogs: 'View logs'
     },
     errors: {
       portConflictTitle: 'Port already in use',
       portConflictUsePort: 'Use next available port',
-      portConflictKill: 'Stop process and retry',
-    },
-  },
+      portConflictKill: 'Stop process and retry'
+    }
+  }
 }
 
 function createTestI18n() {
@@ -88,7 +88,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
-    ...overrides,
+    ...overrides
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -121,7 +121,7 @@ function snapOp(installationId: string, patch: Partial<Operation> = {}): Operati
     unsubOutput: null,
     apiCall: null,
     _globalFloor: 0,
-    ...patch,
+    ...patch
   }
   store.operations.set(installationId, op)
   return op
@@ -132,7 +132,7 @@ function snapOp(installationId: string, patch: Partial<Operation> = {}): Operati
 function mountProgress() {
   return mount(ProgressModal, {
     props: { installationId: null },
-    global: { plugins: [createTestI18n()] },
+    global: { plugins: [createTestI18n()] }
   })
 }
 
@@ -141,7 +141,7 @@ function mountProgress() {
  *  `document.body`, where `wrapper.find()` can't see it. */
 async function mountWithOp(
   installationId: string,
-  patch: Partial<Operation> = {},
+  patch: Partial<Operation> = {}
 ): Promise<{
   wrapper: ReturnType<typeof mountProgress>
   body: BodyHelpers
@@ -166,8 +166,7 @@ function makeBodyHelpers(): BodyHelpers {
   return {
     exists: (selector) => document.body.querySelector(selector) !== null,
     text: () => document.body.textContent ?? '',
-    selectorText: (selector) =>
-      document.body.querySelector(selector)?.textContent ?? '',
+    selectorText: (selector) => document.body.querySelector(selector)?.textContent ?? '',
     classList: (selector) => {
       const el = document.body.querySelector(selector)
       return el ? Array.from(el.classList) : []
@@ -182,11 +181,10 @@ function makeBodyHelpers(): BodyHelpers {
     buttonByText: (snippet) => {
       const buttons = Array.from(document.body.querySelectorAll('button'))
       return (
-        (buttons.find((b) => b.textContent?.includes(snippet)) as
-          | HTMLButtonElement
-          | undefined) ?? null
+        (buttons.find((b) => b.textContent?.includes(snippet)) as HTMLButtonElement | undefined) ??
+        null
       )
-    },
+    }
   }
 }
 
@@ -210,7 +208,7 @@ describe('ProgressModal — brand branch state transitions', () => {
   it('renders in-flight state with a Return to Dashboard button and no banner', async () => {
     const { body } = await mountWithOp('inst-1', {
       flatStatus: 'Deleting installation…',
-      flatPercent: 42,
+      flatPercent: 42
     })
 
     expect(body.exists('.brand-progress__banner')).toBe(false)
@@ -226,7 +224,7 @@ describe('ProgressModal — brand branch state transitions', () => {
   it('renders the success banner on a finished+ok op and auto-closes after the grace delay', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,
-      result: { ok: true } as ActionResult,
+      result: { ok: true } as ActionResult
     })
 
     expect(body.exists('.brand-progress__banner')).toBe(true)
@@ -247,7 +245,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,
       cancelRequested: true,
-      result: { cancelled: true } as ActionResult,
+      result: { cancelled: true } as ActionResult
     })
 
     expect(body.exists('.brand-progress__banner')).toBe(true)
@@ -263,7 +261,7 @@ describe('ProgressModal — brand branch state transitions', () => {
   it('renders the error banner + error message + Back + Reboot, and does NOT auto-close', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,
-      error: 'Disk write failed: ENOSPC',
+      error: 'Disk write failed: ENOSPC'
     })
 
     expect(body.exists('.brand-progress__banner')).toBe(true)
@@ -272,7 +270,7 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(body.exists('.brand-progress__error-message')).toBe(true)
     expect(body.selectorText('.brand-progress__error-message')).toContain(
-      'Disk write failed: ENOSPC',
+      'Disk write failed: ENOSPC'
     )
     // Test-id exposes the element for e2e overflow assertions.
     expect(body.exists('[data-testid="progress-error-message"]')).toBe(true)
@@ -295,7 +293,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const portConflict: PortConflictInfo = {
       port: 8188,
       nextPort: 8189,
-      isComfy: true,
+      isComfy: true
     }
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,
@@ -303,8 +301,8 @@ describe('ProgressModal — brand branch state transitions', () => {
       result: {
         ok: false,
         message: 'Port 8188 is already in use by Comfy Desktop',
-        portConflict,
-      } as ActionResult,
+        portConflict
+      } as ActionResult
     })
 
     // Banner swaps to the port-specific copy instead of the generic
@@ -315,7 +313,7 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     // Detail line carries the server-side message (with port filled in).
     expect(body.selectorText('.brand-progress__error-message')).toContain(
-      'Port 8188 is already in use',
+      'Port 8188 is already in use'
     )
 
     // Footer carries Return-to-Dashboard alongside Use-Port + Kill-Process
@@ -336,15 +334,15 @@ describe('ProgressModal — brand branch state transitions', () => {
     const portConflict: PortConflictInfo = {
       port: 8188,
       nextPort: 8189,
-      isComfy: false,
+      isComfy: false
     }
     const { body } = await mountWithOp('inst-1', {
       finished: true,
       result: {
         ok: false,
         message: 'Port 8188 is already in use',
-        portConflict,
-      } as ActionResult,
+        portConflict
+      } as ActionResult
     })
 
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
@@ -361,15 +359,15 @@ describe('ProgressModal — brand branch state transitions', () => {
     // ComfyUI. Without the back button the user is stuck on the takeover.
     const portConflict: PortConflictInfo = {
       port: 8188,
-      isComfy: false,
+      isComfy: false
     }
     const { body } = await mountWithOp('inst-1', {
       finished: true,
       result: {
         ok: false,
         message: 'Port 8188 is already in use',
-        portConflict,
-      } as ActionResult,
+        portConflict
+      } as ActionResult
     })
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
@@ -386,7 +384,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const { body } = await mountWithOp('inst-1', {
       destroysInstance: true,
       flatStatus: 'Deleting installation…',
-      flatPercent: 30,
+      flatPercent: 30
     })
     expect(body.exists('.brand-progress__footer')).toBe(true)
     expect(body.selectorText('.brand-progress__footer')).toContain('Cancel')
@@ -397,7 +395,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const { body } = await mountWithOp('inst-1', {
       destroysInstance: true,
       finished: true,
-      error: 'Partial delete failed',
+      error: 'Partial delete failed'
     })
     // Destroy ops can't be rebooted, so only Back renders (as primary)
     // in the centered error-actions row.
@@ -410,7 +408,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       destroysInstance: true,
       flatStatus: 'Deleting installation…',
-      flatPercent: 30,
+      flatPercent: 30
     })
     const cancelBtn = body.buttonByText('Cancel')
     expect(cancelBtn).not.toBeNull()
@@ -426,7 +424,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const { wrapper } = await mountWithOp('inst-1', {
       destroysInstance: true,
       finished: true,
-      result: { ok: true, navigate: 'list' } as ActionResult,
+      result: { ok: true, navigate: 'list' } as ActionResult
     })
     vi.advanceTimersByTime(800)
     await flushPromises()
@@ -438,7 +436,7 @@ describe('ProgressModal — brand branch state transitions', () => {
   it('emits close, cancels the in-flight op, and calls returnToDashboard when the in-flight Return button is clicked', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       flatStatus: 'Deleting installation…',
-      flatPercent: 42,
+      flatPercent: 42
     })
 
     const returnBtn = body.buttonByText('Return to Dashboard')
@@ -462,11 +460,11 @@ describe('ProgressModal — brand branch state transitions', () => {
       opKind: 'destructive',
       steps: [
         { phase: 'download', label: 'Download' },
-        { phase: 'cleanup', label: 'Cleanup' },
+        { phase: 'cleanup', label: 'Cleanup' }
       ],
       activePhase: 'download',
       activePercent: 25,
-      lastStatus: { download: '312 / 2100 MB · 18 MB/s · ~2m remaining' },
+      lastStatus: { download: '312 / 2100 MB · 18 MB/s · ~2m remaining' }
     })
 
     expect(body.text()).toContain('Downloading ComfyUI…')
@@ -487,7 +485,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       activePercent: 10,
       // progressStore writes `data.status || data.phase`, so the raw id
       // is what lands here when main sends no status string.
-      lastStatus: { source: 'source' },
+      lastStatus: { source: 'source' }
     })
 
     expect(body.text()).toContain('Stage ComfyUI source')
@@ -500,7 +498,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       steps: [{ phase: 'download', label: 'Download' }],
       activePhase: 'download',
       activePercent: 50,
-      lastStatus: { download: '1050 / 2100 MB · 22 MB/s · ~1m remaining' },
+      lastStatus: { download: '1050 / 2100 MB · 22 MB/s · ~1m remaining' }
     })
 
     expect(body.text()).toContain('Downloading ComfyUI…')
@@ -546,7 +544,7 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
       priorSteps: [{ phase: 'download', label: 'Download' }],
       steps: [{ phase: 'launchStart', label: 'launchStart' }],
       activePhase: 'launchStart',
-      activePercent: -1,
+      activePercent: -1
     })
     await flushPromises()
     expect(barPercent()).toBeGreaterThanOrEqual(70)
@@ -558,7 +556,7 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
     // caption swaps to the rolling launchCaption.
     const { body } = await mountWithOp('inst-launch-bar', {
       opKind: 'launch',
-      chainSpan: 'launch',
+      chainSpan: 'launch'
     })
     expect(body.exists('.brand-progress__bar')).toBe(true)
     expect(body.exists('.brand-progress__bar-fill')).toBe(true)
@@ -571,10 +569,10 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
       opKind: 'launch',
       steps: [
         { phase: 'launchStart', label: 'launchStart', weight: 0.05 },
-        { phase: 'gpu', label: 'gpu', weight: 0.5 },
+        { phase: 'gpu', label: 'gpu', weight: 0.5 }
       ],
       activePhase: 'launchStart',
-      activePercent: -1,
+      activePercent: -1
     })
     await flushPromises()
     expect(barPercent()).toBeLessThan(20)
@@ -587,10 +585,10 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
       opKind: 'launch',
       steps: [
         { phase: 'securityScan', label: 'securityScan', weight: 0.05 },
-        { phase: 'gpu', label: 'gpu', weight: 0.5 },
+        { phase: 'gpu', label: 'gpu', weight: 0.5 }
       ],
       activePhase: 'gpu',
-      activePercent: -1,
+      activePercent: -1
     })
     // Stepped launch ops surface the active phase in the focus stepper, not the caption.
     expect(body.selectorText('.bpv__row.is-active .bpv__label')).toMatch(/GPU/i)
@@ -605,10 +603,10 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
       steps: [
         { phase: 'torchRepair', label: 'torchRepair', weight: 0.1 },
         { phase: 'launchStart', label: 'launchStart', weight: 0.05 },
-        { phase: 'gpu', label: 'gpu', weight: 0.5 },
+        { phase: 'gpu', label: 'gpu', weight: 0.5 }
       ],
       activePhase: 'torchRepair',
-      activePercent: -1,
+      activePercent: -1
     })
     expect(body.selectorText('.bpv__row.is-active .bpv__label')).toBe('Restoring GPU PyTorch…')
   })
@@ -622,7 +620,7 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
       steps: [{ phase: 'startingServer', label: 'startingServer' }],
       activePhase: 'startingServer',
       activePercent: 100,
-      _globalFloor: 0,
+      _globalFloor: 0
     })
     await flushPromises()
     expect(barPercent()).toBeLessThanOrEqual(99)
@@ -634,7 +632,7 @@ describe('ProgressModal — unified bar (install→launch chained 0→100)', () 
       opKind: 'install',
       steps: [{ phase: 'download', label: 'Download' }],
       activePhase: 'download',
-      activePercent: 40,
+      activePercent: 40
     })
     // Install op with `activePhase=download` shows the curated label in the
     // focus stepper, not the launch rolling caption.
@@ -650,10 +648,7 @@ describe('ProgressModal — error message styling (regression for #582)', () => 
   // `overflow-y` rules that stop long tracebacks stretching the takeover.
 
   // Resolved against cwd (not import.meta.url, which jsdom can mangle).
-  const vueSource = readFileSync(
-    path.resolve('src/renderer/src/views/ProgressModal.vue'),
-    'utf8',
-  )
+  const vueSource = readFileSync(path.resolve('src/renderer/src/views/ProgressModal.vue'), 'utf8')
 
   function extractRule(selector: string): string {
     // Anchor on a line start so we match the base rule, not a descendant override.

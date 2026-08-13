@@ -9,14 +9,14 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import {
@@ -24,7 +24,7 @@ import {
   installDirState,
   installDirStateAsync,
   isEffectivelyEmptyInstallDir,
-  isInstallDirUnavailable,
+  isInstallDirUnavailable
 } from './shared'
 
 let tmpRoot = ''

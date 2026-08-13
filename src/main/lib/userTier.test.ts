@@ -31,6 +31,7 @@ describe('userTier tier_changed telemetry', () => {
     captured = []
     vi.spyOn(telemetry, 'capture').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: (ctx ?? {}) as Record<string, unknown> })
+      return true
     })
   })
 

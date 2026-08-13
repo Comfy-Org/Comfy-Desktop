@@ -203,7 +203,9 @@ const displayedPercent = computed<number>(() => globalProgress.value.percent)
 
 // Resolve a step's display label without leaking dynamic phase slugs.
 function stepLabel(phase: string, fallback?: string): string {
-  return meaningfulStepLabel(phase, fallback) ?? localizedPhaseLabel(phase) ?? fallback?.trim() ?? phase
+  return (
+    meaningfulStepLabel(phase, fallback) ?? localizedPhaseLabel(phase) ?? fallback?.trim() ?? phase
+  )
 }
 
 // Two-level step rows for the swappable progress view, rendered as ONE
@@ -295,9 +297,13 @@ watch(displayId, () => {
 // the collapsed "View logs" toggle to find out why an update/restore/migrate failed.
 // `immediate` covers reopening an already-failed op; the logs accordion itself is
 // gated on `terminalOutput`, so expanding when there's nothing to show is harmless.
-watch(finishedErrorMessage, (msg) => {
-  if (msg) brandLogsExpanded.value = true
-}, { immediate: true })
+watch(
+  finishedErrorMessage,
+  (msg) => {
+    if (msg) brandLogsExpanded.value = true
+  },
+  { immediate: true }
+)
 
 // Render only a trailing window; the store keeps the full buffer for telemetry. Rendering megabytes into one text node re-layouts the whole takeover.
 const MAX_LOG_TAIL_CHARS = 256 * 1024

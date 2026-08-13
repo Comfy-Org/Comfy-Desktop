@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import { TID } from '../../../../shared/testIds'
-import type { CloudCapacityStatus, Installation } from '../../types/ipc'
+import type { Installation } from '../../types/ipc'
 
 // Compact list-row for the picker's left pane. Body click emits `select`
 // (updates the right detail pane only; doesn't launch).
@@ -19,9 +19,6 @@ interface Props {
   /** Background op in flight; spinner dot takes precedence over the other dots. */
   operating?: boolean
   lastLaunchedShortLabel: string
-  /** Cloud-only capacity status: `disabled` no-ops the launch (footer also
-   *  gates), `degraded` swaps the recency label for a "Heavy usage" chip. */
-  capacityStatus?: CloudCapacityStatus
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -29,13 +26,8 @@ const props = withDefaults(defineProps<Props>(), {
   running: false,
   isCurrent: false,
   updateAvailable: false,
-  operating: false,
-  capacityStatus: 'normal',
+  operating: false
 })
-
-const isCloud = computed(() => props.installation.sourceCategory === 'cloud')
-const isCloudDisabled = computed(() => isCloud.value && props.capacityStatus === 'disabled')
-const isCloudDegraded = computed(() => isCloud.value && props.capacityStatus === 'degraded')
 
 const { t } = useI18n()
 
@@ -46,8 +38,6 @@ const emit = defineEmits<{
 const typeMeta = computed(() => installTypeMetaForInstall(props.installation))
 
 function handleClick(): void {
-  // Always selects, even for a disabled cloud install, so the user can
-  // navigate to the cloud tab; the launch gate lives on the footer action.
   emit('select', props.installation)
 }
 </script>
@@ -67,39 +57,13 @@ function handleClick(): void {
     >
       <div class="picker-row-icon" :title="$t(typeMeta.labelKey)">
         <component :is="typeMeta.icon" :size="20" />
-        <span
-          v-if="operating"
-          class="picker-row-op-dot"
-          aria-hidden="true"
-        ></span>
-        <span
-          v-else-if="updateAvailable"
-          class="picker-row-update-dot"
-          aria-hidden="true"
-        ></span>
-        <span
-          v-else-if="running"
-          class="picker-row-running-dot"
-          aria-hidden="true"
-        ></span>
+        <span v-if="operating" class="picker-row-op-dot" aria-hidden="true"></span>
+        <span v-else-if="updateAvailable" class="picker-row-update-dot" aria-hidden="true"></span>
+        <span v-else-if="running" class="picker-row-running-dot" aria-hidden="true"></span>
       </div>
       <div class="picker-row-body">
         <span class="picker-row-name">{{ installation.name }}</span>
-        <span
-          v-if="isCloudDisabled"
-          class="picker-row-capacity-pill picker-row-capacity-pill--disabled"
-          :title="$t('cloud.capacityDisabledHint')"
-        >
-          {{ $t('cloud.capacityDisabled') }}
-        </span>
-        <span
-          v-else-if="isCloudDegraded"
-          class="picker-row-capacity-pill"
-          :title="$t('cloud.capacityDegradedHint')"
-        >
-          {{ $t('cloud.capacityDegraded') }}
-        </span>
-        <span v-else-if="isCurrent" class="picker-row-current-pill">
+        <span v-if="isCurrent" class="picker-row-current-pill">
           {{ t('snapshots.current') }}
         </span>
         <span v-else-if="lastLaunchedShortLabel" class="picker-row-recency">
@@ -216,7 +180,9 @@ function handleClick(): void {
   animation: op-dot-spin 0.8s linear infinite;
 }
 @keyframes op-dot-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .picker-row-current-pill {
@@ -233,23 +199,5 @@ function handleClick(): void {
 .picker-row.is-active .picker-row-current-pill {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 14%, transparent);
-}
-
-.picker-row-capacity-pill {
-  flex: 0 0 auto;
-  padding: 1px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.45;
-  color: var(--accent-warn, #d97706);
-  background: var(--accent-warn-soft, rgba(255, 193, 7, 0.15));
-  border: 1px solid var(--accent-warn, #d97706);
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.picker-row-capacity-pill--disabled {
-  color: var(--accent-danger, #d92d20);
-  background: var(--accent-danger-soft, rgba(217, 45, 32, 0.12));
-  border-color: var(--accent-danger, #d92d20);
 }
 </style>

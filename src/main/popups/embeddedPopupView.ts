@@ -57,8 +57,8 @@ export class EmbeddedPopupView {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, '../preload/', opts.preloadName),
-      },
+        preload: path.join(__dirname, '../preload/', opts.preloadName)
+      }
     })
     // Per-pixel transparency so only the popup's card paints; the rest alpha-blends to the body view.
     popup.setBackgroundColor('#00000000')
@@ -85,14 +85,14 @@ export class EmbeddedPopupView {
         },
         onMenuClose: () => {
           this.suppressBlurDismiss = priorSuppress
-        },
+        }
       })
     }
 
     const isDev = !!process.env['ELECTRON_RENDERER_URL']
     const loadPromise = isDev
       ? popup.webContents.loadURL(
-          `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/${opts.htmlName}.html`,
+          `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/${opts.htmlName}.html`
         )
       : popup.webContents.loadFile(path.join(__dirname, `../renderer/${opts.htmlName}.html`))
     void loadPromise.catch(() => {})
@@ -120,7 +120,9 @@ export class EmbeddedPopupView {
 
     const onParentClosed = (): void => {
       opts.onParentClosed?.()
-      try { parent.contentView.removeChildView(popup) } catch {}
+      try {
+        parent.contentView.removeChildView(popup)
+      } catch {}
       if (!popup.webContents.isDestroyed()) popup.webContents.close()
     }
     parent.once('closed', onParentClosed)
@@ -150,7 +152,9 @@ export class EmbeddedPopupView {
     }
     if (this.popup.webContents.isDestroyed()) return
     if (!this.parentWindow.isDestroyed()) {
-      try { this.parentWindow.contentView.removeChildView(this.popup) } catch {}
+      try {
+        this.parentWindow.contentView.removeChildView(this.popup)
+      } catch {}
       this.parentWindow.contentView.addChildView(this.popup)
     }
     this.popup.setVisible(true)

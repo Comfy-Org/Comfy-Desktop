@@ -9,6 +9,7 @@ import { useOverlay, type FlowComponent, type Overlay } from '../composables/use
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
+import type { FirstUseMode } from '../../../shared/firstUseMode'
 
 // Body modes the panel WebContentsView can render. Mirrors `BodyMode`
 // in main; `'comfy'` is admitted so the renderer can reflect main's
@@ -133,6 +134,38 @@ export interface UsePanelOverlaysApi {
   switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
 }
 
+const isProgressTakeover = (o: Overlay | null | undefined): boolean =>
+  o?.kind === 'takeover' && o.component === 'update'
+const isFirstUseTakeover = (o: Overlay | null | undefined): boolean =>
+  o?.kind === 'takeover' && o.component === 'first-use'
+
+/**
+ * First-use / lockdown mode to push for an overlay transition, or null
+ * to leave the current mode untouched.
+ *
+ * - ProgressModal takeover mounting → `'loading-lockdown'`.
+ * - First-use chain handoff (first-use takeover silently swapped for
+ *   another takeover while the chain is active): the chain handler
+ *   asserted `'post-consent'` so the file menu stays locked to Skip
+ *   Onboarding while the wizard loads — don't clobber it. Scoped to
+ *   the takeover → takeover swap so a stale chain flag can't suppress
+ *   the `'none'` push on ordinary overlay closes.
+ * - Any other transition away from progress/first-use → `'none'`.
+ */
+export function firstUseModeForOverlaySwap(
+  next: Overlay | null | undefined,
+  prev: Overlay | null | undefined,
+  chainActive: boolean
+): FirstUseMode | null {
+  const nextIsProgress = isProgressTakeover(next)
+  if (nextIsProgress && !isProgressTakeover(prev)) {
+    return 'loading-lockdown'
+  }
+  if (nextIsProgress || isFirstUseTakeover(next)) return null
+  const isChainHandoff = isFirstUseTakeover(prev) && next?.kind === 'takeover' && chainActive
+  return isChainHandoff ? null : 'none'
+}
+
 /**
  * Owns the panel host's overlay slot and the Tier 2 / Tier 3 helpers
  * that mount things into it. Composed by `PanelApp.vue` so the
@@ -170,19 +203,15 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
    * — unless a first-use takeover is up, in which case
    * FirstUseTakeover.vue's own step watcher is the source of truth.
    */
-  const isProgressTakeover = (o: Overlay | null | undefined): boolean =>
-    o?.kind === 'takeover' && o.component === 'update'
-  const isFirstUseTakeover = (o: Overlay | null | undefined): boolean =>
-    o?.kind === 'takeover' && o.component === 'first-use'
-
   watch(
     currentOverlay,
     (next, prev) => {
-      if (isProgressTakeover(next) && !isProgressTakeover(prev)) {
-        window.api.setFirstUseMode('loading-lockdown')
-      } else if (!isProgressTakeover(next) && !isFirstUseTakeover(next)) {
-        window.api.setFirstUseMode('none')
-      }
+      const mode = firstUseModeForOverlaySwap(
+        next,
+        prev,
+        opts.firstUseChain?.shouldForceTakeover() === true
+      )
+      if (mode) window.api.setFirstUseMode(mode)
     },
     { immediate: true }
   )
@@ -330,7 +359,10 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
-      await newInstallRef.value?.open({ entrypoint, ...(cameFromLocalBranch ? { cameFromLocalBranch } : {}) })
+      await newInstallRef.value?.open({
+        entrypoint,
+        ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
+      })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
     else if (component === 'quick-install') await quickInstallRef.value?.open()

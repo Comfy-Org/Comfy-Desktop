@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref, shallowRef, triggerRef } from 'vue'
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: (_key: string, fallback?: string) => fallback ?? _key }),
+  useI18n: () => ({ t: (_key: string, fallback?: string) => fallback ?? _key })
 }))
 
 const sessionState = vi.hoisted(() => ({
   running: new Set<string>(),
-  launching: new Set<string>(),
+  launching: new Set<string>()
 }))
 const sessionStoreVersion = shallowRef(0)
 function setRunning(running: Set<string>): void {
@@ -23,8 +23,8 @@ vi.mock('../stores/sessionStore', () => ({
     isLaunching: (id: string) => {
       void sessionStoreVersion.value
       return sessionState.launching.has(id)
-    },
-  }),
+    }
+  })
 }))
 
 import { useInstanceNavState } from './useInstanceNavState'
@@ -46,7 +46,7 @@ describe('useInstanceNavState — run-state derivation', () => {
     const navState = useInstanceNavState(ref(installation('A', 'local')), {
       currentView: 'instance' as ViewKind,
       currentCategory: 'local' as Category,
-      activeInstallationId: 'A',
+      activeInstallationId: 'A'
     })
     expect(navState.targetRun.value).toBe('self')
     expect(navState.isTargetCurrentHost.value).toBe(true)
@@ -56,7 +56,7 @@ describe('useInstanceNavState — run-state derivation', () => {
     const navState = useInstanceNavState(ref(installation('A', 'local')), {
       currentView: 'instance' as ViewKind,
       currentCategory: 'local' as Category,
-      activeInstallationId: 'A',
+      activeInstallationId: 'A'
     })
     expect(navState.targetRun.value).toBe('stopped')
   })
@@ -65,7 +65,7 @@ describe('useInstanceNavState — run-state derivation', () => {
     const navState = useInstanceNavState(ref(installation('B', 'local')), {
       currentView: 'instance' as ViewKind,
       currentCategory: 'local' as Category,
-      activeInstallationId: 'A',
+      activeInstallationId: 'A'
     })
     expect(navState.targetRun.value).toBe('stopped')
   })
@@ -75,7 +75,7 @@ describe('useInstanceNavState — run-state derivation', () => {
     const navState = useInstanceNavState(ref(installation('B', 'local')), {
       currentView: 'instance' as ViewKind,
       currentCategory: 'local' as Category,
-      activeInstallationId: 'A',
+      activeInstallationId: 'A'
     })
     expect(navState.targetRun.value).toBe('running-elsewhere')
   })
@@ -84,7 +84,7 @@ describe('useInstanceNavState — run-state derivation', () => {
     const navState = useInstanceNavState(ref(installation('R', 'remote')), {
       currentView: 'cloud' as ViewKind,
       currentCategory: 'remote' as Category,
-      activeInstallationId: null,
+      activeInstallationId: null
     })
     // A remote connection is a non-local URL backend exactly like Cloud — the
     // remote⇒cloud fold applies to the TARGET, so it lands the cloud rows.
@@ -97,7 +97,7 @@ describe('useInstanceNavState — run-state derivation', () => {
     const navState = useInstanceNavState(ref(installation('A', 'local')), {
       currentView: 'dashboard' as ViewKind,
       currentCategory: null,
-      activeInstallationId: null,
+      activeInstallationId: null
     })
     expect(navState.isCurrentChooser.value).toBe(true)
     expect(navState.currentClass.value).toBeNull()
@@ -109,7 +109,7 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
     const navState = useInstanceNavState(ref(installation('B', 'local')), {
       currentView: 'instance' as ViewKind,
       currentCategory: 'local' as Category,
-      activeInstallationId: 'A',
+      activeInstallationId: 'A'
     })
     const decision = decideNavigation(navState.navInput('primary'))
     expect(decision).toMatchObject({ window: 'same', verb: 'switch' })
@@ -119,19 +119,23 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
     const navState = useInstanceNavState(ref(installation('cloud', 'cloud')), {
       currentView: 'dashboard' as ViewKind,
       currentCategory: null,
-      activeInstallationId: null,
+      activeInstallationId: null
     })
     const primaryDecision = decideNavigation(navState.navInput('primary'))
     expect(primaryDecision).toMatchObject({ verb: 'switch', primaryLabel: NAV_LABEL.openCloud })
     const caretDecision = decideNavigation(navState.navInput('new-window'))
-    expect(caretDecision).toMatchObject({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openInNewWindow })
+    expect(caretDecision).toMatchObject({
+      window: 'new',
+      verb: 'open-new',
+      primaryLabel: NAV_LABEL.openInNewWindow
+    })
   })
 
   it('cloud host picking a stopped instance → opens in a new window', () => {
     const navState = useInstanceNavState(ref(installation('B', 'local')), {
       currentView: 'cloud' as ViewKind,
       currentCategory: 'cloud' as Category,
-      activeInstallationId: 'cloud',
+      activeInstallationId: 'cloud'
     })
     const decision = decideNavigation(navState.navInput('primary'))
     expect(decision).toMatchObject({ window: 'new', verb: 'open-new' })
@@ -141,16 +145,28 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
     const navState = useInstanceNavState(ref(installation('R', 'remote')), {
       currentView: 'cloud' as ViewKind,
       currentCategory: 'cloud' as Category,
-      activeInstallationId: 'cloud',
+      activeInstallationId: 'cloud'
     })
     const decision = decideNavigation(navState.navInput('primary'))
-    expect(decision).toMatchObject({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openInNewWindow })
+    expect(decision).toMatchObject({
+      window: 'new',
+      verb: 'open-new',
+      primaryLabel: NAV_LABEL.openInNewWindow
+    })
   })
 
   it('instance host → stopped REMOTE routes identically to stopped Cloud (no in-place 3-way)', () => {
-    const sources = { currentView: 'instance' as ViewKind, currentCategory: 'local' as Category, activeInstallationId: 'A' }
-    const remote = decideNavigation(useInstanceNavState(ref(installation('R', 'remote')), sources).navInput('primary'))
-    const cloud = decideNavigation(useInstanceNavState(ref(installation('C', 'cloud')), sources).navInput('primary'))
+    const sources = {
+      currentView: 'instance' as ViewKind,
+      currentCategory: 'local' as Category,
+      activeInstallationId: 'A'
+    }
+    const remote = decideNavigation(
+      useInstanceNavState(ref(installation('R', 'remote')), sources).navInput('primary')
+    )
+    const cloud = decideNavigation(
+      useInstanceNavState(ref(installation('C', 'cloud')), sources).navInput('primary')
+    )
     // Case-4 regression: a remote must NOT get the local→local in-place "Switch"
     // 3-way — it opens in a new window (A keeps running), exactly like cloud.
     expect(remote).toMatchObject({ window: 'new', verb: 'open-new' })

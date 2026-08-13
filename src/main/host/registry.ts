@@ -36,7 +36,7 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'track',
   'load-snapshot',
   'quick-install',
-  'progress',
+  'progress'
 ])
 
 /**
@@ -218,14 +218,14 @@ export function unregisterHostEntry(entry: ComfyWindowEntry): void {
 
 /** Predicate: install-less (chooser) host. Narrows `installationId` to `null`. */
 export function isChooserHost(
-  entry: ComfyWindowEntry,
+  entry: ComfyWindowEntry
 ): entry is ComfyWindowEntry & { installationId: null } {
   return entry.installationId === null
 }
 
 /** Predicate: this entry is an install-backed host. Inverse of `isChooserHost`. */
 export function isInstallHost(
-  entry: ComfyWindowEntry,
+  entry: ComfyWindowEntry
 ): entry is ComfyWindowEntry & { installationId: string } {
   return entry.installationId !== null
 }
@@ -237,7 +237,7 @@ export function isInstallHost(
  * an attached install).
  */
 export function shouldConfirmKillForEntry(
-  entry: ComfyWindowEntry | null | undefined,
+  entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
   return !!entry && isInstallHost(entry) && entry.sourceCategory === 'local'
 }
@@ -248,7 +248,7 @@ export function shouldConfirmKillForEntry(
  * the install is a healthy "last active surface" worth restoring on next boot.
  */
 export function hasRunningSessionForEntry(
-  entry: ComfyWindowEntry | null | undefined,
+  entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
   return !!entry && isInstallHost(entry) && _runningSessions.has(entry.installationId)
 }
@@ -288,7 +288,9 @@ export function computeViewKind(entry: ComfyWindowEntry): ViewKind {
  * comfy/panel views can't pop the file/install menu. Returning `null` makes
  * every consuming handler no-op. Prefer this over open-coding a sender match.
  */
-export function findEntryByTitleBarSender(wc: WebContents): { id: number; entry: ComfyWindowEntry } | null {
+export function findEntryByTitleBarSender(
+  wc: WebContents
+): { id: number; entry: ComfyWindowEntry } | null {
   for (const [id, entry] of comfyWindows) {
     if (entry.titleBarView.webContents === wc) return { id, entry }
   }
@@ -321,7 +323,7 @@ export function findEntryByHostWindow(window: BrowserWindow): ComfyWindowEntry |
  *  non-minimised over minimised. Within each visibility bucket, returns
  *  insertion order. Returns `null` when nothing matches. */
 export function findPreferredHostByVisibility(
-  pred: (entry: ComfyWindowEntry) => boolean,
+  pred: (entry: ComfyWindowEntry) => boolean
 ): ComfyWindowEntry | null {
   let minimisedFallback: ComfyWindowEntry | null = null
   for (const [, entry] of comfyWindows) {
@@ -442,8 +444,7 @@ export function openOrFocusAnyHostWindow(): BrowserWindow {
  * macOS-only; the `index.ts` caller guards on platform.
  */
 export function raiseAllHostWindows(): BrowserWindow {
-  const preferred =
-    findPreferredInstallHostWindow() ?? findPreferredChooserHostWindow()
+  const preferred = findPreferredInstallHostWindow() ?? findPreferredChooserHostWindow()
   if (!preferred) return requireChooserFactory()()
 
   // Raise every other live host first so the whole app comes forward,

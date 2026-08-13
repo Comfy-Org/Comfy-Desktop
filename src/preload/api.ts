@@ -84,7 +84,8 @@ export function buildElectronApi(): ElectronApi {
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
-    openGlobalSettings: () => ipcRenderer.send('comfy-titlepopup:open-global-settings'),
+    openGlobalSettings: (tab) =>
+      ipcRenderer.send('comfy-titlepopup:open-global-settings', tab ? { tab } : undefined),
     openInstancePicker: (opts) =>
       ipcRenderer.send('comfy-window:open-instance-picker-for-install', {
         installationId: opts?.installationId ?? null,
@@ -162,7 +163,6 @@ export function buildElectronApi(): ElectronApi {
     importSnapshotsConfirm: (installationId: string) =>
       ipcRenderer.invoke('import-snapshots-confirm', installationId),
     previewSnapshotFile: () => ipcRenderer.invoke('preview-snapshot-file'),
-    previewDesktopMigration: () => ipcRenderer.invoke('preview-desktop-migration'),
     previewLocalMigration: (installationId: string) =>
       ipcRenderer.invoke('preview-local-migration', installationId),
     previewSnapshotPath: (filePath: string) =>
@@ -189,9 +189,9 @@ export function buildElectronApi(): ElectronApi {
     // App
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
-    getCloudCapacity: () => ipcRenderer.invoke('get-cloud-capacity'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
     getDistributionsEnabled: () => ipcRenderer.invoke('get-distributions-enabled'),
+    getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),
@@ -437,20 +437,6 @@ export function buildElectronApi(): ElectronApi {
         // ignore
       }
     },
-    telemetryBindUserId: (payload) => {
-      try {
-        ipcRenderer.send('telemetry:bindUserId', payload)
-      } catch {
-        // ignore
-      }
-    },
-    telemetryUnbindUserId: () => {
-      try {
-        ipcRenderer.send('telemetry:unbindUserId')
-      } catch {
-        // ignore
-      }
-    },
     telemetryGetExperimentFlag: (key) => ipcRenderer.invoke('telemetry:getExperimentFlag', key),
     telemetryRecordExposure: (payload) => {
       try {
@@ -507,7 +493,7 @@ export function buildElectronApi(): ElectronApi {
             installationId?: string
             actionId?: string
             version?: string | null
-            settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global'
+            settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
             startupRestore?: boolean
           }
         )
