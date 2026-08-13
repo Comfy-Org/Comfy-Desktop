@@ -100,6 +100,7 @@ import {
 import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
+import { initDistributionsEnabled } from './lib/distributionsEnabled'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initUserTier } from './lib/userTier'
 
@@ -1464,6 +1465,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // experiments cache would never have a value to give it. See
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
+
+    // Boot the distributions-visibility switch. Same OPS-kill-switch shape as
+    // `initCloudFreeRuns` above (bypasses telemetry consent for the same reason);
+    // gates the Comfy Builder distributions UI on the `distributions_enabled`
+    // PostHog flag shared with the platform website. See `distributionsEnabled.ts`.
+    void initDistributionsEnabled({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud

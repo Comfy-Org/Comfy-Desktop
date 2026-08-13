@@ -190,6 +190,7 @@ export function buildElectronApi(): ElectronApi {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
+    getDistributionsEnabled: () => ipcRenderer.invoke('get-distributions-enabled'),
     getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),

@@ -1379,6 +1379,12 @@ export interface ElectronApi {
    *  the per-install ChannelPicker. */
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Distributions-visibility switch. Resolved at boot from the `distributions_enabled`
+   *  PostHog flag (shared with the platform website's flag of the same name); defaults
+   *  to `true` when the flag is unavailable, since the distributions UI shipped
+   *  unflagged before this switch existed. Renderers consume this via
+   *  `useDistributionsEnabled`. */
+  getDistributionsEnabled(): Promise<boolean>
   /** Whether the free tier is live, for the "5 free runs" trial pill.
    *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
    *  tracks the real rollout. False for everyone today; flips on its own

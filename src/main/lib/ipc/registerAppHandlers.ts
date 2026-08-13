@@ -32,6 +32,7 @@ import type { FieldOption } from './shared'
 import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
+import { getDistributionsEnabledAsync } from '../distributionsEnabled'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
@@ -45,6 +46,12 @@ export function registerAppHandlers(): void {
   // install-wizard and the per-install ChannelPicker version dropdown.
   // Returns `[]` (never throws) when the remote is unreachable.
   ipcMain.handle('get-stable-tags', () => getStableTags())
+
+  // Distributions-visibility switch. Resolved from the `distributions_enabled`
+  // PostHog flag via the same ops-flag path as cloud free-runs; safe default is
+  // `true` (the feature shipped unflagged before this switch existed). See
+  // `distributionsEnabled.ts`.
+  ipcMain.handle('get-distributions-enabled', () => getDistributionsEnabledAsync())
 
   // Signed-in user's Comfy Cloud subscription tier ('free' | 'paid' |
   // 'unknown'). Hydrated from a persisted file at boot and refreshed on
