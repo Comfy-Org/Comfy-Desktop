@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { isLoopbackHostname } from '../auth/desktopLoginCode/origins'
 import { configDir } from './paths'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { normalizePostHogUserId } from './opaqueIdentifier'
 import { writeFileSafe } from './safe-file'
 
 const VERIFIED_LOCAL_FIREBASE_AUTH_FILE = 'verified-local-firebase-auth.json'
@@ -29,11 +29,6 @@ function normalizeLoopbackOrigin(value: unknown): string | null {
   }
 }
 
-function normalizeUserId(value: unknown): string | null {
-  const normalized = normalizeOpaqueIdentifier(value, 256)
-  return normalized && !isIllegalPostHogDistinctId(normalized) ? normalized : null
-}
-
 function readBindings(): Record<string, string> {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(verifiedLocalFirebaseAuthPath(), 'utf-8'))
@@ -43,7 +38,7 @@ function readBindings(): Record<string, string> {
       -MAX_VERIFIED_LOCAL_ORIGINS
     )) {
       const origin = normalizeLoopbackOrigin(rawOrigin)
-      const userId = normalizeUserId(rawUserId)
+      const userId = normalizePostHogUserId(rawUserId)
       if (origin && userId) bindings[origin] = userId
     }
     return bindings
@@ -72,7 +67,7 @@ export function readVerifiedLocalFirebaseUser(origin: string): string | null {
 
 export function persistVerifiedLocalFirebaseUser(origin: string, userId: string): boolean {
   const normalizedOrigin = normalizeLoopbackOrigin(origin)
-  const normalizedUserId = normalizeUserId(userId)
+  const normalizedUserId = normalizePostHogUserId(userId)
   if (!normalizedOrigin || !normalizedUserId) return false
   const entries = Object.entries(readBindings()).filter(
     ([candidate]) => candidate !== normalizedOrigin
