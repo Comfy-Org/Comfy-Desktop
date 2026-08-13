@@ -9,9 +9,9 @@ const telemetry = vi.hoisted(() => ({
   bindUserId: vi.fn(),
   capture: vi.fn(),
   isFirebaseConsensusPending: vi.fn(() => true),
-  registerIdentityShutdownDrain: vi.fn(),
   registerPersonProperties: vi.fn(),
   releaseFirebasePendingConsensus: vi.fn(),
+  stageLoginAttribution: vi.fn(),
   discardUnmergeableAnonymousEpoch: vi.fn(() => true),
   hasUnmergeableAnonymousEpoch: vi.fn(() => false),
   markAnonymousEpochUnmergeable: vi.fn(() => true)
@@ -236,7 +236,7 @@ describe('firebaseAuthIdentity consensus', () => {
     reporter.navigate(cloudUrl)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
-    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' }, null)
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' })
   })
 
   it('holds a Cloud bind through the reload and identifies once a document re-reports the user', () => {
@@ -249,7 +249,11 @@ describe('firebaseAuthIdentity consensus', () => {
       via: 'desktop_login_code'
     })
 
-    // The stale pre-login report is superseded, not trusted: no identify yet.
+    // The attribution is staged with telemetry at bind time; the stale
+    // pre-login report is superseded, not trusted: no identify yet.
+    expect(telemetry.stageLoginAttribution).toHaveBeenCalledWith('F', {
+      via: 'desktop_login_code'
+    })
     expect(telemetry.bindUserId).not.toHaveBeenCalled()
 
     reporter.navigate('https://cloud.comfy.org/workspaces/final')
@@ -258,11 +262,7 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
-    expect(telemetry.bindUserId).toHaveBeenCalledWith(
-      'F',
-      { signed_in_via: 'desktop_2' },
-      { via: 'desktop_login_code' }
-    )
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' })
     expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
   })
 
@@ -339,7 +339,7 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
-    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' }, null)
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' })
     expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
   })
 
@@ -364,11 +364,10 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
-    expect(telemetry.bindUserId).toHaveBeenCalledWith(
-      'F',
-      { signed_in_via: 'desktop_2' },
-      { via: 'desktop_login_code' }
-    )
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' })
+    expect(telemetry.stageLoginAttribution).toHaveBeenCalledWith('F', {
+      via: 'desktop_login_code'
+    })
   })
 
   it('ignores identity side effects from a mismatched report on an unaccepted frame', () => {
@@ -428,7 +427,7 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
 
     expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
-    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' }, null)
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' })
   })
 
   describe('pending consensus deadline', () => {
@@ -556,7 +555,7 @@ describe('firebaseAuthIdentity consensus', () => {
 
     reporter.navigate(localUrl)
     reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
-    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' }, null)
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', { signed_in_via: 'desktop_2' })
 
     vi.clearAllMocks()
     reporter.navigate(localUrl)
@@ -617,7 +616,7 @@ describe('firebaseAuthIdentity consensus', () => {
     const reporter = new FakeWebContents(remoteUrl)
     activate(reporter)
     bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
-    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {}, null)
+    expect(telemetry.bindUserId).toHaveBeenCalledWith('F', {})
     vi.clearAllMocks()
 
     reportFirebaseAuthState(reporter.asWebContents(), {

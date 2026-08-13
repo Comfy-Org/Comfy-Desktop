@@ -1057,8 +1057,8 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(ended?.distinctId).toBe('user-123')
   })
 
-  it('captures identity-held login attributions during shutdown', async () => {
-    telemetry.registerIdentityShutdownDrain(() => [{ via: 'desktop_login_code' }])
+  it('captures a still-staged login attribution during shutdown', async () => {
+    telemetry.stageLoginAttribution('user-123', { via: 'desktop_login_code' })
     captured.length = 0
 
     await telemetry.shutdown('quit')
@@ -1161,7 +1161,8 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     captured.length = 0
 
     telemetry.applyFirebasePendingConsensus()
-    telemetry.bindUserId('user-123', {}, { via: 'desktop_login_code' })
+    telemetry.stageLoginAttribution('user-123', { via: 'desktop_login_code' })
+    telemetry.bindUserId('user-123', {})
 
     expect(identifies).toHaveLength(0)
     expect(
@@ -1180,7 +1181,8 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     captured.length = 0
 
     telemetry.applyFirebasePendingConsensus()
-    telemetry.bindUserId('user-b', {}, { via: 'desktop_login_code' })
+    telemetry.stageLoginAttribution('user-b', { via: 'desktop_login_code' })
+    telemetry.bindUserId('user-b', {})
 
     expect(identifies).toHaveLength(1)
     expect(identifies[0]).toMatchObject({
@@ -1197,12 +1199,25 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     ])
   })
 
-  it('discards a deferred login attribution when consensus resolves signed out first', () => {
+  it('discards a staged login attribution when consensus resolves signed out first', () => {
     telemetry.setConsentState('undecided')
-    telemetry.bindUserId('user-b', {}, { via: 'desktop_login_code' })
+    telemetry.stageLoginAttribution('user-b', { via: 'desktop_login_code' })
+    telemetry.bindUserId('user-b', {})
     telemetry.applyFirebaseAnonymousConsensus()
     telemetry.setConsentState('granted')
     telemetry.applyFirebaseUserConsensus('user-b')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toHaveLength(0)
+  })
+
+  it('discards a staged login attribution when a different user is confirmed', () => {
+    telemetry.stageLoginAttribution('user-a', { via: 'desktop_login_code' })
+    telemetry.applyFirebaseUserConsensus('user-b')
+    // Even a later confirmation of the original UID stays silent: the switch
+    // already contradicted the staged sign-in.
+    telemetry.applyFirebaseUserConsensus('user-a')
 
     expect(
       captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')

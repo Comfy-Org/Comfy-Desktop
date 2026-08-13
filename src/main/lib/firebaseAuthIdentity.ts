@@ -76,8 +76,6 @@ interface MainVerifiedAuthState {
   propertiesApplied: boolean
   reportedState?: ComfyDesktop2FirebaseAuthState
   rendererMayReaffirm: boolean
-  /** One-shot login-attribution event payload delivered with the bind. */
-  attribution: mainTelemetry.TelemetryContext | null
 }
 
 const reporters = new Map<WebContents, Reporter>()
@@ -167,11 +165,16 @@ function markExpiredPendingContributors(): void {
   }
 }
 
-function requestAnonymousIdentity(force = false): void {
-  if (requestedUserId === null && !force) return
+/** Unconditionally hand consensus back to the anonymous identity. */
+function detachToAnonymousIdentity(): void {
   clearPendingConsensusDeadline()
   requestedUserId = null
   mainTelemetry.applyFirebaseAnonymousConsensus()
+}
+
+function requestAnonymousIdentity(): void {
+  if (requestedUserId === null) return
+  detachToAnonymousIdentity()
 }
 
 function requestPendingIdentity(): void {
@@ -201,10 +204,8 @@ function requestPendingIdentity(): void {
 }
 
 function requestConflictedIdentity(): void {
-  clearPendingConsensusDeadline()
   const wasAlreadyTainted = anonymousEpochIsUnmergeable
-  requestedUserId = null
-  mainTelemetry.applyFirebaseAnonymousConsensus()
+  detachToAnonymousIdentity()
   anonymousEpochIsUnmergeable = true
   if (!wasAlreadyTainted || !epochTaintIsDurable) {
     epochTaintIsDurable = mainTelemetry.markAnonymousEpochUnmergeable()
@@ -237,29 +238,6 @@ function loadPersistedEpochState(): void {
   anonymousEpochIsUnmergeable = mainTelemetry.hasUnmergeableAnonymousEpoch()
 }
 
-let shutdownAttributionDrainRegistered = false
-
-/**
- * A quit can outrun the document re-report that would confirm a held bind;
- * hand any still-held one-shot attributions to telemetry's shutdown so a
- * successful sign-in is not silently uncounted. Registered on first bind
- * (not at module load) so telemetry test doubles without the hook stay valid.
- */
-function registerShutdownAttributionDrain(): void {
-  if (shutdownAttributionDrainRegistered) return
-  shutdownAttributionDrainRegistered = true
-  mainTelemetry.registerIdentityShutdownDrain(() => {
-    const held: mainTelemetry.TelemetryContext[] = []
-    for (const state of mainVerifiedStates.values()) {
-      if (state.attribution) {
-        held.push(state.attribution)
-        state.attribution = null
-      }
-    }
-    return held
-  })
-}
-
 /**
  * Bind a user verified by Desktop's auth flow while keeping the declarative
  * renderer consensus authoritative once hosted views begin reporting.
@@ -267,9 +245,11 @@ function registerShutdownAttributionDrain(): void {
  * Called after the session was installed in the view. The injected session
  * always reloads hosted Cloud views, so the view's current report predates
  * this sign-in: the bind marks it stale (pending) and the identify fires,
- * with `properties` and the one-shot `attribution` payload, once a document
- * re-reports this user — the same contract the loopback branch has always
- * used. A view already affirming this exact UID confirms immediately.
+ * with `properties`, once a document re-reports this user — the same
+ * contract the loopback branch has always used. A view already affirming
+ * this exact UID confirms immediately. The one-shot `attribution` payload is
+ * staged with telemetry, which owns its lifecycle: emitted when this UID is
+ * confirmed, discarded on any other resolution, drained at shutdown.
  */
 export function bindMainVerifiedFirebaseUser(
   userId: string,
@@ -279,7 +259,7 @@ export function bindMainVerifiedFirebaseUser(
 ): void {
   const normalizedUserId = normalizePostHogUserId(userId)
   if (!normalizedUserId) return
-  registerShutdownAttributionDrain()
+  if (attribution) mainTelemetry.stageLoginAttribution(normalizedUserId, attribution)
   loadPersistedEpochState()
   const origin = originOf(source.getURL())
   if (!origin) return
@@ -315,26 +295,24 @@ export function bindMainVerifiedFirebaseUser(
     origin,
     properties,
     propertiesApplied: false,
-    rendererMayReaffirm: true,
-    attribution
+    rendererMayReaffirm: true
   })
   reconcile()
 }
 
 function reconcile(): void {
   let expiredPendingContributors = 0
-  const activeReporterStates = [...reporters.entries()]
-    .filter(([webContents, reporter]) => !webContents.isDestroyed() && reporter.active)
-    .filter(([, reporter]) => {
-      if (reporter.state.status !== 'pending') {
-        reporter.pendingExpired = false
-        return true
-      }
-      if (!reporter.pendingExpired) return true
+  const activeReporterStates: ComfyDesktop2FirebaseAuthState[] = []
+  for (const [webContents, reporter] of reporters) {
+    if (webContents.isDestroyed() || !reporter.active) continue
+    if (reporter.state.status !== 'pending') {
+      reporter.pendingExpired = false
+    } else if (reporter.pendingExpired) {
       expiredPendingContributors += 1
-      return false
-    })
-    .map(([webContents, reporter]) => ({ webContents, state: reporter.state }))
+      continue
+    }
+    activeReporterStates.push(reporter.state)
+  }
   const mainCandidates: Array<{
     webContents: WebContents
     state: MainVerifiedAuthState
@@ -372,7 +350,7 @@ function reconcile(): void {
     })
   }
   const states: ComfyDesktop2FirebaseAuthState[] = [
-    ...activeReporterStates.map(({ state }) => state),
+    ...activeReporterStates,
     ...mainCandidates
       .filter(({ contributes }) => contributes)
       .map(({ contributionState }) => contributionState)
@@ -399,7 +377,7 @@ function reconcile(): void {
   if (signedIn.length === 0) {
     // A resolved all-signed-out state also clears any pending/deferred user
     // binding even when this process has not bound a UID yet.
-    requestAnonymousIdentity(true)
+    detachToAnonymousIdentity()
     clearUnmergeableEpoch()
     return
   }
@@ -428,13 +406,9 @@ function reconcile(): void {
       {},
       ...unappliedMainStates.map(({ state }) => state.properties)
     ) as Record<string, mainTelemetry.TelemetryValue>
-    const attribution =
-      unappliedMainStates.map(({ state }) => state.attribution).find((entry) => entry !== null) ??
-      null
-    mainTelemetry.bindUserId(userId, properties, attribution)
+    mainTelemetry.bindUserId(userId, properties)
     for (const { webContents, state, contributes } of unappliedMainStates) {
       state.propertiesApplied = true
-      state.attribution = null
       if (!contributes) mainVerifiedStates.delete(webContents)
     }
   } else {

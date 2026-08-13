@@ -196,7 +196,7 @@ export function _resetForTest(): void {
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
-  identityShutdownDrain = null
+  pendingLoginAttribution = null
 }
 
 /** @internal - exposed for tests. */
@@ -619,12 +619,36 @@ interface PendingUserBinding {
   userId: string
   emitLoginEvent: boolean
   properties: Record<string, TelemetryValue>
-  attribution: TelemetryContext | null
 }
 
 let pendingUserBinding: PendingUserBinding | null = null
 
 const FIREBASE_LOGIN_ATTRIBUTION_EVENT = 'comfy.desktop.identity.login_attributed'
+
+/**
+ * One-shot login-attribution payload for a Desktop-verified sign-in. Held
+ * here rather than riding the consensus layer's per-view state so view
+ * destruction or a cross-origin navigation cannot drop it. Emitted once
+ * consensus confirms `userId`, discarded when consensus resolves to anyone
+ * else or to anonymous, and drained at shutdown when the quit outruns the
+ * confirming re-report.
+ */
+let pendingLoginAttribution: { userId: string; context: TelemetryContext } | null = null
+
+export function stageLoginAttribution(userId: string, context: TelemetryContext): void {
+  // A 'denied' choice never defers a login conversion for later.
+  if (consentState === 'denied') return
+  pendingLoginAttribution = { userId, context }
+}
+
+/** A confirmation for any user settles the staged attribution: emitted for
+ *  the same UID, discarded as contradicted for any other. */
+function emitStagedLoginAttribution(confirmedUserId: string): void {
+  if (!pendingLoginAttribution) return
+  const { userId, context } = pendingLoginAttribution
+  pendingLoginAttribution = null
+  if (userId === confirmedUserId) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+}
 
 interface QuarantinedWrite {
   kind: 'event' | 'exception'
@@ -701,6 +725,7 @@ function discardDeferredTelemetry(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingUserBinding = null
+  pendingLoginAttribution = null
   quarantinedWrites = []
 }
 
@@ -809,9 +834,9 @@ function tryFlushDeferred(): void {
   // before the first bind ever lands (queued under undecided consent), and
   // the deferred UID must not identify until that pending window resolves.
   if (pendingUserBinding && !firebaseConsensusPending) {
-    const { userId, emitLoginEvent, properties, attribution } = pendingUserBinding
+    const { userId, emitLoginEvent, properties } = pendingUserBinding
     pendingUserBinding = null
-    applyFirebaseUserBinding(userId, emitLoginEvent, properties, attribution)
+    applyFirebaseUserBinding(userId, emitLoginEvent, properties)
   }
   void flushPendingIdentityMerges()
 }
@@ -862,34 +887,56 @@ function persistablePersonProperties(properties: TelemetryContext): PendingIdent
 function queuePendingUserBinding(
   userId: string,
   emitLoginEvent: boolean,
-  properties: Record<string, TelemetryValue>,
-  attribution: TelemetryContext | null
+  properties: Record<string, TelemetryValue>
 ): void {
   const existing = pendingUserBinding?.userId === userId ? pendingUserBinding : null
   pendingUserBinding = {
     userId,
     emitLoginEvent: emitLoginEvent || existing?.emitLoginEvent === true,
-    properties: { ...(existing?.properties ?? {}), ...properties },
-    attribution: attribution ?? existing?.attribution ?? null
+    properties: { ...(existing?.properties ?? {}), ...properties }
   }
+}
+
+/**
+ * The single exit from the write quarantine: the flag never goes false while
+ * the buffer still holds writes. Held writes belong to the user who was bound
+ * while they fired, so only a same-user confirmation (or a release that keeps
+ * the binding) replays them; any other resolution leaves their attribution
+ * ambiguous and discards.
+ */
+function endFirebaseWriteQuarantine(disposition: 'replay' | 'discard'): void {
+  firebaseConsensusPending = false
+  if (disposition === 'replay') flushQuarantinedWrites()
+  else quarantinedWrites = []
+}
+
+/**
+ * Apply deferred person updates to the still-bound person before a detach,
+ * then wipe the buffers. They were collected for that account: never carry
+ * them into another Firebase person, but under granted consent they were
+ * merely deferred (e.g. by the write quarantine) and wiping them unapplied
+ * would permanently lose burned-guard $set_once markers.
+ */
+function settlePendingPersonBuffersForDetach(): void {
+  if (canEmit() && consentState === 'granted' && (pendingPersonSet || pendingPersonSetOnce)) {
+    capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
+  }
+  pendingPersonSet = null
+  pendingPersonSetOnce = null
 }
 
 function applyFirebaseUserBinding(
   userId: string,
   emitLoginEvent: boolean,
-  properties: Record<string, TelemetryValue> = {},
-  attribution: TelemetryContext | null = null
+  properties: Record<string, TelemetryValue> = {}
 ): void {
   // Resolved consensus always ends the pending quarantine, even when this
   // binding cannot proceed (denied consent, unusable UID) — otherwise
   // bound-user telemetry stays dropped until an unrelated consensus replay.
-  firebaseConsensusPending = false
   const normalizedUserId = normalizePostHogUserId(userId)
-  // Writes quarantined during the pending window belong to the user who was
-  // bound while they fired; any other resolution leaves their attribution
-  // ambiguous, so only a same-user confirmation replays them.
-  if (normalizedUserId !== null && normalizedUserId === boundUserId) flushQuarantinedWrites()
-  else quarantinedWrites = []
+  endFirebaseWriteQuarantine(
+    normalizedUserId !== null && normalizedUserId === boundUserId ? 'replay' : 'discard'
+  )
   // Reject early rather than burn an anonymous rotation on an identify that
   // can never merge.
   if (!normalizedUserId) return
@@ -897,45 +944,33 @@ function applyFirebaseUserBinding(
     // The old binding must not survive a resolved account switch: once
     // consent returns, events would land on the previous user. Detach now
     // (silently — consent is denied) and let a later replay bind the new UID.
-    if (boundUserId && boundUserId !== normalizedUserId) applyFirebaseAnonymousConsensus()
+    if (boundUserId && boundUserId !== normalizedUserId) detachFromBoundUser()
     return
   }
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
   if (boundUserId === normalizedUserId) {
     if (Object.keys(properties).length > 0) registerPersonProperties(properties)
     if (emitLoginEvent) capture('app:user_logged_in', { user_id: normalizedUserId })
-    if (attribution) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, attribution)
+    emitStagedLoginAttribution(normalizedUserId)
     tryFlushDeferred()
     return
   }
-  if (boundUserId) {
-    // These buffers may contain updates collected for the current account
-    // while consent was not granted. Never carry them into another Firebase
-    // person; properties collected before the first login remain intact.
-    // Under granted consent they were merely deferred (e.g. by the write
-    // quarantine): apply them to the person they were collected for before
-    // detaching, or burned-guard $set_once markers are lost forever.
-    if (canEmit() && consentState === 'granted' && (pendingPersonSet || pendingPersonSetOnce)) {
-      capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
-    }
-    pendingPersonSet = null
-    pendingPersonSetOnce = null
-  }
+  if (boundUserId) settlePendingPersonBuffersForDetach()
   if (consentState !== 'granted') {
     if (boundUserId) {
-      applyFirebaseAnonymousConsensus()
+      detachFromBoundUser()
       if (!anonymousDistinctId) return
     }
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
 
   if (boundUserId) {
-    applyFirebaseAnonymousConsensus()
+    detachFromBoundUser()
     if (!anonymousDistinctId) return
   }
 
@@ -957,7 +992,7 @@ function applyFirebaseUserBinding(
     ...(personSetOnce ? { personSetOnce: persistablePersonProperties(personSetOnce) } : {})
   })
   if (!pendingMerge) {
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
   pendingIdentityMergeFileDirty = true
@@ -979,7 +1014,7 @@ function applyFirebaseUserBinding(
     anonymousDistinctId = reservedNextAnonymousId
     nextAnonymousDistinctId = null
     distinctId = reservedNextAnonymousId
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
   boundUserId = normalizedUserId
@@ -990,7 +1025,7 @@ function applyFirebaseUserBinding(
   if (emitLoginEvent) {
     capture('app:user_logged_in', { user_id: normalizedUserId })
   }
-  if (attribution) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, attribution)
+  emitStagedLoginAttribution(normalizedUserId)
   tryFlushDeferred()
 }
 
@@ -1003,16 +1038,11 @@ export function applyFirebaseUserConsensus(userId: string): void {
  * Bind a main-process-verified interactive sign-in (OAuth loopback bridge or
  * desktop login code). The verified flow owns the login-success conversion;
  * declarative Cloud and scoped-local restored-session consensus stays silent.
- * `attribution`, when present, is the one-shot login-attribution payload
- * emitted alongside the conversion — never before the UID is confirmed, and
- * never for a UID that fails to bind.
+ * A login-attribution payload staged via `stageLoginAttribution` is emitted
+ * alongside the conversion — never before the UID is confirmed.
  */
-export function bindUserId(
-  userId: string,
-  properties: Record<string, TelemetryValue> = {},
-  attribution: TelemetryContext | null = null
-): void {
-  applyFirebaseUserBinding(userId, true, properties, attribution)
+export function bindUserId(userId: string, properties: Record<string, TelemetryValue> = {}): void {
+  applyFirebaseUserBinding(userId, true, properties)
 }
 
 /**
@@ -1032,29 +1062,24 @@ export function applyFirebasePendingConsensus(): void {
  * writes fired while the current user was bound, so they replay under it.
  */
 export function releaseFirebasePendingConsensus(): void {
-  firebaseConsensusPending = false
-  flushQuarantinedWrites()
+  endFirebaseWriteQuarantine('replay')
   tryFlushDeferred()
 }
 
 /**
  * Detach from F and adopt the fresh D that was durably reserved before bind.
- * Quarantined writes are discarded — an anonymous or conflicted resolution
- * leaves their attribution ambiguous.
+ * Shared by the anonymous consensus outcome and the detach-before-rebind
+ * step of an account switch — which is why it does not touch the staged
+ * login attribution: during a switch that payload may belong to the
+ * incoming user, and its fate is settled at their confirmation instead.
  */
-export function applyFirebaseAnonymousConsensus(): void {
-  firebaseConsensusPending = false
-  quarantinedWrites = []
+function detachFromBoundUser(): void {
+  endFirebaseWriteQuarantine('discard')
   pendingUserBinding = null
   if (!boundUserId) return
-  // Wiping these while unbound would permanently lose burned-guard $set_once markers.
-  // Bound with granted consent, deferred markers (e.g. quarantined during the
-  // pending window) belong to the user they fired under: apply before detach.
-  if (canEmit() && consentState === 'granted' && (pendingPersonSet || pendingPersonSetOnce)) {
-    capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
-  }
-  pendingPersonSet = null
-  pendingPersonSetOnce = null
+  // Wiping the person buffers while unbound would permanently lose
+  // burned-guard $set_once markers; bound, they settle to the old person.
+  settlePendingPersonBuffersForDetach()
   if (canEmit() && consentState === 'granted') {
     capturePersonProperties({ is_authenticated: false }, null)
   }
@@ -1068,6 +1093,16 @@ export function applyFirebaseAnonymousConsensus(): void {
   }
   anonymousDistinctId = safeAnonymousId
   distinctId = safeAnonymousId
+}
+
+/**
+ * Detach from F as a resolved consensus outcome. Quarantined writes and any
+ * staged login attribution are discarded — an anonymous or conflicted
+ * resolution leaves their attribution ambiguous.
+ */
+export function applyFirebaseAnonymousConsensus(): void {
+  pendingLoginAttribution = null
+  detachFromBoundUser()
 }
 
 /**
@@ -1605,18 +1640,6 @@ export function emit(event: string, context: TelemetryContext = {}): void {
 }
 
 /**
- * One-shot payloads the identity-consensus layer is still holding for a
- * document re-report that will now never arrive. Registered lazily by
- * `firebaseAuthIdentity` to avoid an import cycle; each returned context is
- * captured as a login-attribution event during shutdown.
- */
-let identityShutdownDrain: (() => TelemetryContext[]) | null = null
-
-export function registerIdentityShutdownDrain(drain: () => TelemetryContext[]): void {
-  identityShutdownDrain = drain
-}
-
-/**
  * Drain queued events. Safe to await during `app.before-quit`.
  */
 export async function shutdown(reason: string): Promise<void> {
@@ -1628,8 +1651,9 @@ export async function shutdown(reason: string): Promise<void> {
     if (firebaseConsensusPending) releaseFirebasePendingConsensus()
     // A successful sign-in whose confirming re-report is outrun by the quit
     // still deserves its attribution; no contrary resolution was observed.
-    for (const attribution of identityShutdownDrain?.() ?? []) {
-      capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, attribution)
+    if (pendingLoginAttribution) {
+      capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, pendingLoginAttribution.context)
+      pendingLoginAttribution = null
     }
     capture('comfy.desktop.session.ended', {
       reason,
