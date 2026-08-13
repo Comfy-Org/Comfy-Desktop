@@ -47,6 +47,7 @@ interface CapturedCall {
   distinctId: string
   event: string
   properties?: Record<string, unknown>
+  timestamp?: Date
 }
 const captured: CapturedCall[] = []
 
@@ -1054,6 +1055,93 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.map((call) => call.event)).toContain('before.quit')
     const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
     expect(ended?.distinctId).toBe('user-123')
+  })
+
+  it('captures identity-held login attributions during shutdown', async () => {
+    telemetry.registerIdentityShutdownDrain(() => [{ via: 'desktop_login_code' }])
+    captured.length = 0
+
+    await telemetry.shutdown('quit')
+
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.identity.login_attributed')
+    ).toEqual([
+      expect.objectContaining({
+        properties: expect.objectContaining({ via: 'desktop_login_code' })
+      })
+    ])
+  })
+
+  it('rate-limits at queue time and replays without re-tripping the limiter', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    for (let i = 0; i < 60; i++) {
+      expect(telemetry.capture('burst.event', { i })).toBe(true)
+    }
+    // The 61st is refused up front instead of being buffered and then
+    // silently dropped at replay after having been acknowledged.
+    expect(telemetry.capture('burst.event', { i: 60 })).toBe(false)
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(captured.filter((call) => call.event === 'burst.event')).toHaveLength(60)
+    expect(
+      captured.filter((call) => call.event === 'comfy.desktop.telemetry.rate_limited')
+    ).toHaveLength(0)
+    expect(captured.find((call) => call.event === 'burst.event')?.timestamp).toBeInstanceOf(Date)
+  })
+
+  it('defers emit() renderer forwarding with the quarantined write until it ships', () => {
+    const { wc, sends } = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(wc)
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.emit('comfy.desktop.execution.error', { variant: 'standalone' })
+    expect(sends).toHaveLength(0)
+
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(captured.map((call) => call.event)).toContain('comfy.desktop.execution.error')
+    expect(sends).toHaveLength(1)
+  })
+
+  it('drops the deferred Datadog mirror when a quarantined exception is discarded', () => {
+    const { wc, sends } = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(wc)
+    telemetry.applyFirebaseUserConsensus('user-a')
+    captured.length = 0
+    exceptions.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.captureExceptionAndForward(new Error('boom'), { source: 'test' })).toBe(true)
+    expect(sends).toHaveLength(0)
+    expect(exceptions).toHaveLength(0)
+
+    telemetry.applyFirebaseUserConsensus('user-b')
+
+    expect(exceptions).toHaveLength(0)
+    expect(sends).toHaveLength(0)
+  })
+
+  it('applies $set_once markers deferred by the quarantine before a signed-out detach', () => {
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.registerPersonPropertiesOnce({ first_local_install_completed_at: 't1' })
+    expect(captured).toHaveLength(0)
+
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    const sets = captured.filter((call) => call.event === 'comfy.desktop.person.set')
+    expect(sets[0]).toMatchObject({
+      distinctId: 'user-123',
+      properties: { $set_once: { first_local_install_completed_at: 't1' } }
+    })
   })
 
   it('keeps anonymous events flowing while first-login consensus is pending', () => {

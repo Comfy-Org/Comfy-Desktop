@@ -204,8 +204,7 @@ export function registerTelemetryHandlers(): void {
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
     const properties = withPlatformAxes(asExceptionProps(payload?.properties), event?.sender)
-    const accepted = mainTelemetry.captureException(err, properties)
-    if (accepted) mainTelemetry.forwardExceptionToRenderer(properties)
+    mainTelemetry.captureExceptionAndForward(err, properties)
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {

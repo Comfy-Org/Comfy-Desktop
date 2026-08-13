@@ -8,6 +8,8 @@ const telemetry = vi.hoisted(() => ({
   applyFirebaseUserConsensus: vi.fn(),
   bindUserId: vi.fn(),
   capture: vi.fn(),
+  isFirebaseConsensusPending: vi.fn(() => true),
+  registerIdentityShutdownDrain: vi.fn(),
   registerPersonProperties: vi.fn(),
   releaseFirebasePendingConsensus: vi.fn(),
   discardUnmergeableAnonymousEpoch: vi.fn(() => true),
@@ -192,6 +194,7 @@ describe('firebaseAuthIdentity consensus', () => {
     vi.clearAllMocks()
     telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(true)
     telemetry.hasUnmergeableAnonymousEpoch.mockReturnValue(false)
+    telemetry.isFirebaseConsensusPending.mockReturnValue(true)
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
     verifiedLocalUsers.clear()
     verifiedLocalPersistence.succeeds = true
@@ -340,6 +343,34 @@ describe('firebaseAuthIdentity consensus', () => {
     expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
   })
 
+  it('holds the bind when the reload outraces it and then fails provisionally', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+    vi.clearAllMocks()
+
+    // The injected script reloads the document before executeJavaScript
+    // resolves, so the navigation can start before the bind runs and snapshot
+    // the stale pre-login signed_out report as the recoverable state.
+    const reloadUrl = 'https://cloud.comfy.org/workspaces/final'
+    reporter.startNavigation(reloadUrl)
+    bindMainVerifiedFirebaseUser('F', { signed_in_via: 'desktop_2' }, reporter.asWebContents(), {
+      via: 'desktop_login_code'
+    })
+    reporter.failProvisionalNavigation(reloadUrl)
+
+    expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(telemetry.bindUserId).toHaveBeenCalledTimes(1)
+    expect(telemetry.bindUserId).toHaveBeenCalledWith(
+      'F',
+      { signed_in_via: 'desktop_2' },
+      { via: 'desktop_login_code' }
+    )
+  })
+
   it('ignores identity side effects from a mismatched report on an unaccepted frame', () => {
     const localUrl = 'http://127.0.0.1:8188/'
     verifiedLocalUsers.set('http://127.0.0.1:8188', 'A')
@@ -453,6 +484,49 @@ describe('firebaseAuthIdentity consensus', () => {
       vi.clearAllMocks()
       reporter.startNavigation(cloudUrl)
       expect(telemetry.applyFirebasePendingConsensus).toHaveBeenCalled()
+    })
+
+    it('lets healthy reporters resolve consensus once a wedged reporter expires', () => {
+      const wedged = new FakeWebContents(cloudUrl)
+      const healthy = new FakeWebContents(cloudUrl)
+      activate(wedged)
+      activate(healthy)
+      reportFirebaseAuthState(wedged.asWebContents(), { status: 'signed_in', userId: 'F' })
+      reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_in', userId: 'F' })
+      vi.clearAllMocks()
+
+      wedged.startNavigation(cloudUrl)
+      vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
+      vi.clearAllMocks()
+
+      // The wedge no longer vetoes: a real logout and account switch in the
+      // healthy window detach and rebind instead of staying attributed to F.
+      reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_out' })
+      expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
+
+      reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_in', userId: 'B' })
+      expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('B')
+    })
+
+    it('applies a sign-out masked by a wedged reporter at the deadline instead of releasing', () => {
+      const wedged = new FakeWebContents(cloudUrl)
+      const healthy = new FakeWebContents(cloudUrl)
+      activate(wedged)
+      activate(healthy)
+      reportFirebaseAuthState(wedged.asWebContents(), { status: 'signed_in', userId: 'F' })
+      reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_in', userId: 'F' })
+      vi.clearAllMocks()
+
+      wedged.startNavigation(cloudUrl)
+      reportFirebaseAuthState(healthy.asWebContents(), { status: 'signed_out' })
+      expect(telemetry.applyFirebaseAnonymousConsensus).not.toHaveBeenCalled()
+
+      // Resolving detaches and discards held writes; releasing would replay
+      // them under the user who already logged out.
+      telemetry.isFirebaseConsensusPending.mockReturnValue(false)
+      vi.advanceTimersByTime(PENDING_CONSENSUS_DEADLINE_MS)
+      expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalledTimes(1)
+      expect(telemetry.releaseFirebasePendingConsensus).not.toHaveBeenCalled()
     })
 
     it('does not fire the deadline once consensus resolves in time', () => {

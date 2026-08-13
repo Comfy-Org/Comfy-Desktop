@@ -13,6 +13,9 @@ import {
 interface Reporter {
   eligible: boolean
   active: boolean
+  /** Stayed pending past the consensus deadline: excluded from consensus
+   *  (no veto, no quarantine) until it produces a resolved contribution. */
+  pendingExpired: boolean
   localReportingAuthorized: boolean
   localExpectedUserId: string | null
   awaitingCommittedFrame: boolean
@@ -86,8 +89,6 @@ let epochTaintIsDurable = true
 /** A document that never resolves auth must not quarantine telemetry forever. */
 export const PENDING_CONSENSUS_DEADLINE_MS = 60_000
 let pendingConsensusDeadline: ReturnType<typeof setTimeout> | null = null
-/** True after the deadline released a still-unresolved pending episode. */
-let pendingConsensusExpired = false
 
 function originOf(url: string): string | null {
   try {
@@ -148,10 +149,22 @@ function failureTerminalKey(
 }
 
 function clearPendingConsensusDeadline(): void {
-  pendingConsensusExpired = false
   if (pendingConsensusDeadline === null) return
   clearTimeout(pendingConsensusDeadline)
   pendingConsensusDeadline = null
+}
+
+/** Flag every contributor whose pending state has outlived the deadline. */
+function markExpiredPendingContributors(): void {
+  for (const [webContents, reporter] of reporters) {
+    if (webContents.isDestroyed()) continue
+    const navigationPending =
+      reporter.awaitingCommittedFrame || reporter.mainFrameNavigationsInFlight > 0
+    const contributesPending = reporter.active
+      ? reporter.state.status === 'pending'
+      : navigationPending && mainVerifiedStates.has(webContents)
+    if (contributesPending) reporter.pendingExpired = true
+  }
 }
 
 function requestAnonymousIdentity(force = false): void {
@@ -165,19 +178,23 @@ function requestPendingIdentity(): void {
   // Before the first agreed UID there is no authenticated identity to
   // quarantine; anonymous events should keep flowing into the eventual merge.
   if (requestedUserId === null) return
-  // Once the deadline released a stuck episode, do not re-quarantine until
-  // some report resolves consensus — the reporter is still the same wedge.
-  if (pendingConsensusExpired) return
   mainTelemetry.applyFirebasePendingConsensus()
   if (pendingConsensusDeadline === null) {
     pendingConsensusDeadline = setTimeout(() => {
       pendingConsensusDeadline = null
-      pendingConsensusExpired = true
-      // An unresolved reporter is no evidence of sign-out: release the
-      // quarantine and keep the bound identity. A real logout arrives as an
-      // actual signed_out report and detaches through reconcile as usual.
-      mainTelemetry.releaseFirebasePendingConsensus()
-      mainTelemetry.capture('comfy.desktop.identity.pending_consensus_expired')
+      // Contributors still pending after the full deadline are wedged: stop
+      // letting them veto consensus so healthy reporters can resolve it (a
+      // masked logout or account switch applies right here), and do not
+      // re-quarantine for them until they produce a real report.
+      markExpiredPendingContributors()
+      reconcile()
+      if (pendingConsensusDeadline === null && mainTelemetry.isFirebaseConsensusPending()) {
+        // Nothing left can resolve consensus: an unresolved reporter is no
+        // evidence of sign-out, so release the quarantine and keep the bound
+        // identity. A real report still resolves through reconcile as usual.
+        mainTelemetry.releaseFirebasePendingConsensus()
+        mainTelemetry.capture('comfy.desktop.identity.pending_consensus_expired')
+      }
     }, PENDING_CONSENSUS_DEADLINE_MS)
     pendingConsensusDeadline.unref()
   }
@@ -220,6 +237,29 @@ function loadPersistedEpochState(): void {
   anonymousEpochIsUnmergeable = mainTelemetry.hasUnmergeableAnonymousEpoch()
 }
 
+let shutdownAttributionDrainRegistered = false
+
+/**
+ * A quit can outrun the document re-report that would confirm a held bind;
+ * hand any still-held one-shot attributions to telemetry's shutdown so a
+ * successful sign-in is not silently uncounted. Registered on first bind
+ * (not at module load) so telemetry test doubles without the hook stay valid.
+ */
+function registerShutdownAttributionDrain(): void {
+  if (shutdownAttributionDrainRegistered) return
+  shutdownAttributionDrainRegistered = true
+  mainTelemetry.registerIdentityShutdownDrain(() => {
+    const held: mainTelemetry.TelemetryContext[] = []
+    for (const state of mainVerifiedStates.values()) {
+      if (state.attribution) {
+        held.push(state.attribution)
+        state.attribution = null
+      }
+    }
+    return held
+  })
+}
+
 /**
  * Bind a user verified by Desktop's auth flow while keeping the declarative
  * renderer consensus authoritative once hosted views begin reporting.
@@ -239,12 +279,20 @@ export function bindMainVerifiedFirebaseUser(
 ): void {
   const normalizedUserId = normalizePostHogUserId(userId)
   if (!normalizedUserId) return
+  registerShutdownAttributionDrain()
   loadPersistedEpochState()
   const origin = originOf(source.getURL())
   if (!origin) return
   trackFirebaseAuthReporter(source)
   const reporter = reporters.get(source)
   if (!reporter?.eligible) return
+  // Retained navigation snapshots predate this bind too: restoring one after
+  // a failed reload would resurrect a stale signed_out and discard the bind.
+  const staleSnapshotUnlessAffirming = (snapshot: ReporterFrameState | null): void => {
+    if (!snapshot) return
+    if (snapshot.state.status === 'signed_in' && snapshot.state.userId === normalizedUserId) return
+    snapshot.state = { status: 'pending' }
+  }
   if (isLoopbackOrigin(origin)) {
     if (!persistVerifiedLocalFirebaseUser(origin, normalizedUserId)) {
       return
@@ -253,11 +301,14 @@ export function bindMainVerifiedFirebaseUser(
     reporter.localExpectedUserId = normalizedUserId
     reporter.active = true
     reporter.state = { status: 'pending' }
-  } else if (
-    isTrustedCloudUrl(source.getURL()) &&
-    (reporter.state.status !== 'signed_in' || reporter.state.userId !== normalizedUserId)
-  ) {
-    reporter.state = { status: 'pending' }
+    staleSnapshotUnlessAffirming(reporter.recoverableState)
+    staleSnapshotUnlessAffirming(reporter.committedCandidate)
+  } else if (isTrustedCloudUrl(source.getURL())) {
+    if (reporter.state.status !== 'signed_in' || reporter.state.userId !== normalizedUserId) {
+      reporter.state = { status: 'pending' }
+    }
+    staleSnapshotUnlessAffirming(reporter.recoverableState)
+    staleSnapshotUnlessAffirming(reporter.committedCandidate)
   }
   mainVerifiedStates.set(source, {
     userId: normalizedUserId,
@@ -271,8 +322,18 @@ export function bindMainVerifiedFirebaseUser(
 }
 
 function reconcile(): void {
+  let expiredPendingContributors = 0
   const activeReporterStates = [...reporters.entries()]
     .filter(([webContents, reporter]) => !webContents.isDestroyed() && reporter.active)
+    .filter(([, reporter]) => {
+      if (reporter.state.status !== 'pending') {
+        reporter.pendingExpired = false
+        return true
+      }
+      if (!reporter.pendingExpired) return true
+      expiredPendingContributors += 1
+      return false
+    })
     .map(([webContents, reporter]) => ({ webContents, state: reporter.state }))
   const mainCandidates: Array<{
     webContents: WebContents
@@ -296,10 +357,15 @@ function reconcile(): void {
     }
     const navigationPending =
       reporter?.awaitingCommittedFrame || (reporter?.mainFrameNavigationsInFlight ?? 0) > 0
+    if (reporter && !reporter.active && reporter.pendingExpired && !navigationPending) {
+      reporter.pendingExpired = false
+    }
+    const expiredNavigation = navigationPending === true && reporter?.pendingExpired === true
+    if (expiredNavigation) expiredPendingContributors += 1
     mainCandidates.push({
       webContents,
       state,
-      contributes: !reporter?.active,
+      contributes: !reporter?.active && !expiredNavigation,
       contributionState: navigationPending
         ? { status: 'pending' }
         : (state.reportedState ?? { status: 'signed_in', userId: state.userId })
@@ -313,6 +379,9 @@ function reconcile(): void {
   ]
 
   if (states.length === 0) {
+    // Only expired wedges remain. An unresolved document is evidence of
+    // nothing: keep the current identity until a real report resolves it.
+    if (expiredPendingContributors > 0) return
     requestAnonymousIdentity()
     return
   }
@@ -433,6 +502,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
   const reporter: Reporter = {
     eligible: false,
     active: false,
+    pendingExpired: false,
     localReportingAuthorized: false,
     localExpectedUserId: null,
     awaitingCommittedFrame: true,
@@ -566,6 +636,7 @@ export function activateFirebaseAuthReporter(webContents: WebContents): void {
   const reporter = reporters.get(webContents)
   if (!reporter) return
   reporter.eligible = true
+  reporter.pendingExpired = false
   reporter.awaitingCommittedFrame = true
   reporter.committedFrame = null
   reporter.recoverableState = null

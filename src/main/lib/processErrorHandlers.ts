@@ -40,26 +40,19 @@ export function forwardDatadogError(payload: DatadogForwardedError): void {
     // only and we don't double-count in PostHog.
     skipPostHog: true
   }
-  // Capture via PostHog Node and only mirror accepted exceptions to Datadog.
+  // Capture via PostHog Node and mirror to Datadog only when the capture
+  // actually ships (quarantined captures defer or drop the mirror with the
+  // write). forwardExceptionToRenderer allow-lists context keys, so
+  // reason/exitCode/type survive for child/renderer crashes.
   try {
     const err = new Error(scrubbed.message)
     if (scrubbed.stack) err.stack = scrubbed.stack
-    const accepted = mainTelemetry.captureException(err, {
+    mainTelemetry.captureExceptionAndForward(err, {
       ...(scrubbed.context || {}),
       origin: 'main-process',
       source: scrubbed.source,
       level: scrubbed.level ?? null
     })
-    if (accepted) {
-      // Carry the context through so Datadog keeps reason/exitCode/type for
-      // child/renderer crashes; forwardExceptionToRenderer allow-lists keys.
-      mainTelemetry.forwardExceptionToRenderer({
-        ...(scrubbed.context || {}),
-        origin: 'main-process',
-        source: scrubbed.source,
-        level: scrubbed.level ?? null
-      })
-    }
   } catch {}
 }
 

@@ -196,6 +196,7 @@ export function _resetForTest(): void {
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
+  identityShutdownDrain = null
 }
 
 /** @internal - exposed for tests. */
@@ -235,6 +236,13 @@ let suppressEmit = false
  * the first bind, anonymous events can continue and will be merged normally.
  */
 let firebaseConsensusPending = false
+
+/** Whether writes are currently held for renderer auth consensus. Lets the
+ *  consensus module's deadline distinguish "still unresolved" from "already
+ *  resolved by the reconcile it just ran" without mirroring the flag. */
+export function isFirebaseConsensusPending(): boolean {
+  return firebaseConsensusPending
+}
 
 /** Short-circuit guard for all PostHog emission paths. Centralized so
  *  the dev-mode suppression and a missing client are checked
@@ -623,6 +631,12 @@ interface QuarantinedWrite {
   event?: string
   error?: unknown
   properties: TelemetryContext
+  /** Mirror to the renderer relay on delivery. Deferred with the write so the
+   *  Datadog copy exists only when the PostHog copy actually ships. */
+  forward: boolean
+  /** Original capture time, restored on replay (events only - the SDK's
+   *  captureException accepts no timestamp). */
+  timestamp: Date
 }
 
 /**
@@ -644,14 +658,23 @@ function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
   return true
 }
 
-/** Only call with the quarantine already lifted — replays re-enter capture(). */
+/**
+ * Only call with the quarantine already lifted. Replays deliver directly,
+ * bypassing the rate limiter — each write was already charged against it at
+ * queue time, so a released burst cannot retro-drop acknowledged writes.
+ * Consent is re-checked: it may have flipped during the pending window.
+ */
 function flushQuarantinedWrites(): void {
   if (quarantinedWrites.length === 0) return
   const writes = quarantinedWrites
   quarantinedWrites = []
+  if (!canEmit() || !distinctId) return
   for (const write of writes) {
-    if (write.kind === 'exception') captureException(write.error, write.properties)
-    else if (write.event) capture(write.event, write.properties)
+    if (write.kind === 'exception') {
+      if (consentState === 'granted') deliverException(write.error, write.properties, write.forward)
+    } else if (write.event && isAllowedToFire(write.event)) {
+      deliverEvent(write.event, write.properties, write.forward, write.timestamp)
+    }
   }
 }
 
@@ -665,8 +688,10 @@ let nextAnonymousDistinctId: string | null = null
 let boundUserId: string | null = null
 let installationIdProperty: string | null = null
 let pendingIdentityMergeFlush: Promise<void> | null = null
-/** Skips the merge file's synchronous read on flush triggers once it is
- *  known empty; starts true because a previous run may have left entries. */
+/** Skips the merge file's synchronous read (and the redundant retry flush)
+ *  on later triggers once every persisted entry has been handed to the SDK;
+ *  reservations re-dirty it. Starts true because a previous run may have
+ *  left entries. */
 let pendingIdentityMergeFileDirty = true
 const queuedPendingIdentityMergeIds = new Set<string>()
 
@@ -737,6 +762,13 @@ function flushPendingIdentityMerges(): Promise<void> {
       }
     }
   }
+  // Fully-queued entries need no further reads or flush retries from this
+  // path: delivery is the SDK's (and the ack handler's) job. Otherwise an
+  // offline stretch turns every consensus confirmation into sync file I/O
+  // plus a doomed network flush. Entries whose identify threw stay dirty.
+  pendingIdentityMergeFileDirty = pending.some(
+    (merge) => !queuedPendingIdentityMergeIds.has(merge.id)
+  )
   if (!admittedAny && queuedPendingIdentityMergeIds.size === 0) return Promise.resolve()
 
   const activeClient = client!
@@ -884,6 +916,12 @@ function applyFirebaseUserBinding(
     // These buffers may contain updates collected for the current account
     // while consent was not granted. Never carry them into another Firebase
     // person; properties collected before the first login remain intact.
+    // Under granted consent they were merely deferred (e.g. by the write
+    // quarantine): apply them to the person they were collected for before
+    // detaching, or burned-guard $set_once markers are lost forever.
+    if (canEmit() && consentState === 'granted' && (pendingPersonSet || pendingPersonSetOnce)) {
+      capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
+    }
     pendingPersonSet = null
     pendingPersonSetOnce = null
   }
@@ -1010,6 +1048,11 @@ export function applyFirebaseAnonymousConsensus(): void {
   pendingUserBinding = null
   if (!boundUserId) return
   // Wiping these while unbound would permanently lose burned-guard $set_once markers.
+  // Bound with granted consent, deferred markers (e.g. quarantined during the
+  // pending window) belong to the user they fired under: apply before detach.
+  if (canEmit() && consentState === 'granted' && (pendingPersonSet || pendingPersonSetOnce)) {
+    capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)
+  }
   pendingPersonSet = null
   pendingPersonSetOnce = null
   if (canEmit() && consentState === 'granted') {
@@ -1106,17 +1149,40 @@ function capturePersonProperties(
 }
 
 /**
- * Returns whether the event was admitted to the SDK. A `false` means it was
- * dropped (consent gate, volume guard, or SDK failure); one-shot callers use
- * this to keep their deferred payload instead of losing it.
+ * Returns whether the event was admitted. A `false` means it was dropped
+ * (consent gate, volume guard, or SDK failure); one-shot callers use this to
+ * keep their deferred payload instead of losing it. While consensus is
+ * quarantined, `true` means the write was buffered for the bound user's
+ * confirmation — it ships on a same-user resolution or release and is
+ * discarded when consensus resolves to anyone else.
  */
 export function capture(event: string, properties: TelemetryContext = {}): boolean {
+  return captureEvent(event, properties, false)
+}
+
+function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
-  if (firebaseWritesQuarantined()) {
-    return queueQuarantinedWrite({ kind: 'event', event, properties })
-  }
   if (!_checkRateLimit(event)) return false
+  if (firebaseWritesQuarantined()) {
+    if (
+      !queueQuarantinedWrite({ kind: 'event', event, properties, forward, timestamp: new Date() })
+    )
+      return false
+    _recordCapturedEvent(event)
+    return true
+  }
+  if (!deliverEvent(event, properties, forward, null)) return false
+  _recordCapturedEvent(event)
+  return true
+}
+
+function deliverEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  timestamp: Date | null
+): boolean {
   try {
     // Per-call properties override defaults on key collision - callers
     // that explicitly pass `app_version` (e.g. session-start payload,
@@ -1127,11 +1193,12 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
     // only the country code/name is retained. See the init comment.
     const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
     client!.capture({
-      distinctId,
+      distinctId: distinctId!,
       event,
-      properties: scrubProperties(merged)
+      properties: scrubProperties(merged),
+      ...(timestamp ? { timestamp } : {})
     })
-    _recordCapturedEvent(event)
+    if (forward) forwardToRenderer(event, properties)
     return true
   } catch {
     // swallow - telemetry must never break the app
@@ -1244,13 +1311,51 @@ export function captureInstallCompleted(opts: {
 }
 
 export function captureException(error: unknown, properties: TelemetryContext = {}): boolean {
+  return captureExceptionWrite(error, properties, false)
+}
+
+/**
+ * Capture an exception and, once the PostHog write actually ships, mirror it
+ * to the renderer-only Datadog SDK. During quarantine the mirror is deferred
+ * with the write (and dropped with it on a non-same-user resolution), so the
+ * two systems cannot diverge on which exceptions exist.
+ */
+export function captureExceptionAndForward(
+  error: unknown,
+  properties: TelemetryContext = {}
+): boolean {
+  return captureExceptionWrite(error, properties, true)
+}
+
+function captureExceptionWrite(
+  error: unknown,
+  properties: TelemetryContext,
+  forward: boolean
+): boolean {
   if (!canEmit() || !distinctId) return false
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return false
-  if (firebaseWritesQuarantined()) {
-    return queueQuarantinedWrite({ kind: 'exception', error, properties })
-  }
   if (!_checkRateLimit('comfy.desktop.exception.error')) return false
+  if (firebaseWritesQuarantined()) {
+    if (
+      !queueQuarantinedWrite({
+        kind: 'exception',
+        error,
+        properties,
+        forward,
+        timestamp: new Date()
+      })
+    )
+      return false
+    _recordCapturedEvent('comfy.desktop.exception.error')
+    return true
+  }
+  if (!deliverException(error, properties, forward)) return false
+  _recordCapturedEvent('comfy.desktop.exception.error')
+  return true
+}
+
+function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
   try {
     // Same default merge as capture() so exception events stay filterable by
     // the shared axes (app_version, client, ...) instead of arriving bare.
@@ -1266,12 +1371,12 @@ export function captureException(error: unknown, properties: TelemetryContext = 
     }
     client!.captureException(
       safeError,
-      distinctId,
+      distinctId!,
       normalizeExceptionContext(
         enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
       ) as TelemetryContext
     )
-    _recordCapturedEvent('comfy.desktop.exception.error')
+    if (forward) forwardExceptionToRenderer(properties)
     return true
   } catch {
     // ignore
@@ -1491,10 +1596,24 @@ export function forwardExceptionToRenderer(context: TelemetryContext = {}): void
 }
 
 /**
- * Capture an event and forward it to the renderer in one call.
+ * Capture an event and forward it to the renderer in one call. The forward
+ * rides the capture's disposition: quarantined writes mirror on replay, not
+ * at queue time, so a discarded PostHog write has no orphaned Datadog copy.
  */
 export function emit(event: string, context: TelemetryContext = {}): void {
-  if (capture(event, context)) forwardToRenderer(event, context)
+  captureEvent(event, context, true)
+}
+
+/**
+ * One-shot payloads the identity-consensus layer is still holding for a
+ * document re-report that will now never arrive. Registered lazily by
+ * `firebaseAuthIdentity` to avoid an import cycle; each returned context is
+ * captured as a login-attribution event during shutdown.
+ */
+let identityShutdownDrain: (() => TelemetryContext[]) | null = null
+
+export function registerIdentityShutdownDrain(drain: () => TelemetryContext[]): void {
+  identityShutdownDrain = drain
 }
 
 /**
@@ -1507,6 +1626,11 @@ export async function shutdown(reason: string): Promise<void> {
     // A quit mid-navigation must not strand quarantined writes (or the
     // session-ended capture below) — the pending document will never resolve.
     if (firebaseConsensusPending) releaseFirebasePendingConsensus()
+    // A successful sign-in whose confirming re-report is outrun by the quit
+    // still deserves its attribution; no contrary resolution was observed.
+    for (const attribution of identityShutdownDrain?.() ?? []) {
+      capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, attribution)
+    }
     capture('comfy.desktop.session.ended', {
       reason,
       uptime_ms: uptimeMs,
