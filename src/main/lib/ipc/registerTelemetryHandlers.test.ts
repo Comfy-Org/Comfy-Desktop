@@ -2,9 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
-  captureException: vi.fn((_error: unknown, _properties: unknown) => true),
+  captureExceptionAndForward: vi.fn((_error: unknown, _properties: unknown) => true),
   findEntryByComfySender: vi.fn(),
-  forwardExceptionToRenderer: vi.fn(),
   getFlag: vi.fn(),
   handle: vi.fn(),
   on: vi.fn(),
@@ -29,8 +28,7 @@ vi.mock('../telemetry', () => ({
   // pull in telemetry.ts's electron/posthog-node imports under the stub mock.
   asDeployment: (v: unknown) => (v === 'local' || v === 'cloud' || v === 'remote' ? v : null),
   emit: mocks.capture,
-  captureException: mocks.captureException,
-  forwardExceptionToRenderer: mocks.forwardExceptionToRenderer,
+  captureExceptionAndForward: mocks.captureExceptionAndForward,
   registerPersonProperties: mocks.registerPersonProperties
 }))
 
@@ -320,11 +318,13 @@ describe('registerTelemetryHandlers', () => {
       { message: 'boom', properties: { client: 'web', deployment: 'cloud' } }
     )
 
-    const [err, sent] = mocks.captureException.mock.calls[0]! as [Error, Record<string, unknown>]
+    const [err, sent] = mocks.captureExceptionAndForward.mock.calls[0]! as [
+      Error,
+      Record<string, unknown>
+    ]
     expect(err.message).toBe('boom')
     expect(sent.deployment).toBe('local')
     expect(sent.client).toBeUndefined()
-    expect(mocks.forwardExceptionToRenderer).toHaveBeenCalledWith(sent)
   })
 
   it('scrubs exception properties before applying string limits', () => {
@@ -334,7 +334,10 @@ describe('registerTelemetryHandlers', () => {
       { message: 'boom', properties: { detail: secret, nested: { secret } } }
     )
 
-    const [, sent] = mocks.captureException.mock.calls[0]! as [Error, Record<string, unknown>]
+    const [, sent] = mocks.captureExceptionAndForward.mock.calls[0]! as [
+      Error,
+      Record<string, unknown>
+    ]
     expect(sent.detail).toBe('password=[REDACTED]')
     expect(sent.nested).toBeUndefined()
   })

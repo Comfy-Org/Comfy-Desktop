@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as FlowSharedModule from './flowShared'
 
 import {
   closeActiveBridge,
@@ -10,7 +11,7 @@ import {
 
 const h = vi.hoisted(() => ({
   beginSessionInjection: vi.fn(() => ({ owner: 'test' })),
-  bindUserId: vi.fn(),
+  bindSignedInUser: vi.fn(),
   capture: vi.fn(),
   emit: vi.fn(),
   injectSession: vi.fn(() => Promise.resolve(true)),
@@ -35,12 +36,15 @@ vi.mock('./inject', () => ({
 }))
 vi.mock('./restoreParentWindow', () => ({ restoreParentWindow: h.restoreParentWindow }))
 vi.mock('./server', () => ({ startBridgeServer: h.startBridgeServer }))
+vi.mock('./flowShared', async (importOriginal) => ({
+  ...(await importOriginal<typeof FlowSharedModule>()),
+  bindSignedInUser: h.bindSignedInUser
+}))
 vi.mock('../desktopLoginCode', () => ({
   signInViaDesktopLoginCode: h.signInViaDesktopLoginCode
 }))
 vi.mock('../../lib/i18n', () => ({ t: (key: string) => key }))
 vi.mock('../../lib/telemetry', () => ({
-  bindUserId: h.bindUserId,
   bucketError: () => 'other',
   capture: h.capture,
   emit: h.emit
@@ -113,7 +117,7 @@ describe('handleFirebasePopup legacy flow', () => {
     await flow
 
     expect(h.injectSession).not.toHaveBeenCalled()
-    expect(h.bindUserId).not.toHaveBeenCalled()
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
   })
 
@@ -130,7 +134,7 @@ describe('handleFirebasePopup legacy flow', () => {
     await flow
 
     expect(h.injectSession).not.toHaveBeenCalled()
-    expect(h.bindUserId).not.toHaveBeenCalled()
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
   })
 
@@ -145,7 +149,7 @@ describe('handleFirebasePopup legacy flow', () => {
 
     const staleFlow = handleFirebasePopup(AUTH_URL, contents)
     await vi.advanceTimersByTimeAsync(0)
-    expect(h.bindUserId).not.toHaveBeenCalled()
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
     expect(h.capture).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_started', {
       provider: 'google.com',
       flow: 'loopback_bridge'
@@ -158,7 +162,7 @@ describe('handleFirebasePopup legacy flow', () => {
     await staleFlow
 
     expect(h.injectSession).not.toHaveBeenCalled()
-    expect(h.bindUserId).not.toHaveBeenCalled()
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
     expect(h.restoreParentWindow).not.toHaveBeenCalled()
     expect(contents.off).toHaveBeenCalledTimes(1)
     runBannerCleanup()
@@ -244,5 +248,43 @@ describe('handleFirebasePopup legacy flow', () => {
 
     await expect(flow).resolves.toBeUndefined()
     expect(h.emit).not.toHaveBeenCalled()
+  })
+
+  it('binds the verified user only after the legacy session injection succeeds', async () => {
+    const contents = fakeContents()
+    const user = { uid: 'user-1', email: 'user@example.com' }
+    h.startBridgeServer.mockResolvedValue({
+      url: 'http://localhost:9876/',
+      signInPromise: Promise.resolve({ user, apiKey: 'api-key' }),
+      close: vi.fn()
+    })
+
+    const flow = handleFirebasePopup(AUTH_URL, contents)
+    await vi.runAllTimersAsync()
+    await flow
+
+    expect(h.bindSignedInUser).toHaveBeenCalledWith(user, contents)
+    expect(h.bindSignedInUser.mock.invocationCallOrder[0]).toBeGreaterThan(
+      h.injectSession.mock.invocationCallOrder[0]!
+    )
+    expect(h.restoreParentWindow).toHaveBeenCalledOnce()
+  })
+
+  it('does not bind when legacy session injection fails', async () => {
+    const contents = fakeContents()
+    h.injectSession.mockResolvedValueOnce(false)
+    h.startBridgeServer.mockResolvedValue({
+      url: 'http://localhost:9876/',
+      signInPromise: Promise.resolve({ user: { uid: 'user-1' }, apiKey: 'api-key' }),
+      close: vi.fn()
+    })
+
+    const flow = handleFirebasePopup(AUTH_URL, contents)
+    await vi.runAllTimersAsync()
+    await flow
+
+    expect(h.injectSession).toHaveBeenCalledOnce()
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    expect(h.restoreParentWindow).not.toHaveBeenCalled()
   })
 })

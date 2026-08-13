@@ -12,7 +12,7 @@ import {
 import { normalizeExceptionContext } from '../../../shared/piiScrub'
 import { reportFirebaseAuthState } from '../firebaseAuthIdentity'
 import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from '../opaqueIdentifier'
+import { normalizePostHogUserId } from '../opaqueIdentifier'
 
 interface CapturePayload {
   event?: unknown
@@ -44,8 +44,8 @@ function asFirebaseAuthState(value: unknown): ComfyDesktop2FirebaseAuthState | n
     return { status: source.status }
   }
   if (source.status !== 'signed_in') return null
-  const userId = normalizeOpaqueIdentifier(source.userId, 256)
-  if (!userId || isIllegalPostHogDistinctId(userId)) return null
+  const userId = normalizePostHogUserId(source.userId)
+  if (!userId) return null
   return { status: 'signed_in', userId }
 }
 
@@ -204,8 +204,7 @@ export function registerTelemetryHandlers(): void {
     const err = new Error(message)
     if (stackStr) err.stack = stackStr
     const properties = withPlatformAxes(asExceptionProps(payload?.properties), event?.sender)
-    const accepted = mainTelemetry.captureException(err, properties)
-    if (accepted) mainTelemetry.forwardExceptionToRenderer(properties)
+    mainTelemetry.captureExceptionAndForward(err, properties)
   })
 
   ipcMain.on('telemetry:registerProperties', (_event, properties: unknown) => {
