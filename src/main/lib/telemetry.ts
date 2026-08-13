@@ -125,7 +125,7 @@ import {
   persistUnmergeableAnonymousEpoch,
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
-import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueIdentifier'
+import { normalizePostHogUserId } from './opaqueIdentifier'
 import {
   clearPendingIdentityMerges,
   type PendingIdentityProperties,
@@ -181,6 +181,7 @@ export function _resetForTest(): void {
   anonymousDistinctId = null
   nextAnonymousDistinctId = null
   boundUserId = null
+  firebaseConsensusPending = false
   installationIdProperty = null
   consentState = 'undecided'
   pendingSessionStart = null
@@ -188,10 +189,12 @@ export function _resetForTest(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingUserBinding = null
+  quarantinedWrites = []
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
   pendingIdentityMergeFlush = null
+  pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
 }
 
@@ -223,6 +226,15 @@ let initialized = false
  *  `loadFeatureFlagsImmediate`, `shutdown`) deliberately ignore this
  *  so devs can still resolve feature flags in `pnpm dev`. */
 let suppressEmit = false
+
+/**
+ * A trusted auth reporter is between authoritative documents. Keep the
+ * current identity intact so a same-user navigation does not manufacture a
+ * logout/login pair, but quarantine PostHog writes until the new document
+ * resolves. This matters only after a Firebase user has been bound; before
+ * the first bind, anonymous events can continue and will be merged normally.
+ */
+let firebaseConsensusPending = false
 
 /** Short-circuit guard for all PostHog emission paths. Centralized so
  *  the dev-mode suppression and a missing client are checked
@@ -383,7 +395,10 @@ function enforcePersonProcessingPolicy(properties: TelemetryContext): TelemetryC
 }
 
 function _emitWarning(event: string, properties: TelemetryContext): void {
-  if (!canEmit() || !distinctId) return
+  // Volume-guard warnings describe the moment they fire; dropping (not
+  // buffering) them during the quarantine keeps stale warnings from
+  // replaying after the state they warned about is gone.
+  if (!canEmit() || !distinctId || firebaseWritesQuarantined()) return
   try {
     client!.capture({
       distinctId,
@@ -596,9 +611,49 @@ interface PendingUserBinding {
   userId: string
   emitLoginEvent: boolean
   properties: Record<string, TelemetryValue>
+  attribution: TelemetryContext | null
 }
 
 let pendingUserBinding: PendingUserBinding | null = null
+
+const FIREBASE_LOGIN_ATTRIBUTION_EVENT = 'comfy.desktop.identity.login_attributed'
+
+interface QuarantinedWrite {
+  kind: 'event' | 'exception'
+  event?: string
+  error?: unknown
+  properties: TelemetryContext
+}
+
+/**
+ * Writes held while renderer consensus is pending. Bounded: a wedged
+ * document must not grow this forever; the deadline in firebaseAuthIdentity
+ * releases the quarantine long before the cap matters in practice.
+ */
+let quarantinedWrites: QuarantinedWrite[] = []
+const QUARANTINED_WRITES_CAP = 200
+
+/** True when writes for the bound user must be held for consensus. */
+function firebaseWritesQuarantined(): boolean {
+  return firebaseConsensusPending && boundUserId !== null
+}
+
+function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
+  if (quarantinedWrites.length >= QUARANTINED_WRITES_CAP) return false
+  quarantinedWrites.push(write)
+  return true
+}
+
+/** Only call with the quarantine already lifted — replays re-enter capture(). */
+function flushQuarantinedWrites(): void {
+  if (quarantinedWrites.length === 0) return
+  const writes = quarantinedWrites
+  quarantinedWrites = []
+  for (const write of writes) {
+    if (write.kind === 'exception') captureException(write.error, write.properties)
+    else if (write.event) capture(write.event, write.properties)
+  }
+}
 
 /**
  * `anonymousDistinctId` is the active W/D for the current anonymous period.
@@ -610,6 +665,9 @@ let nextAnonymousDistinctId: string | null = null
 let boundUserId: string | null = null
 let installationIdProperty: string | null = null
 let pendingIdentityMergeFlush: Promise<void> | null = null
+/** Skips the merge file's synchronous read on flush triggers once it is
+ *  known empty; starts true because a previous run may have left entries. */
+let pendingIdentityMergeFileDirty = true
 const queuedPendingIdentityMergeIds = new Set<string>()
 
 function discardDeferredTelemetry(): void {
@@ -618,6 +676,7 @@ function discardDeferredTelemetry(): void {
   pendingPersonSet = null
   pendingPersonSetOnce = null
   pendingUserBinding = null
+  quarantinedWrites = []
 }
 
 function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
@@ -648,8 +707,13 @@ function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
 function flushPendingIdentityMerges(): Promise<void> {
   if (pendingIdentityMergeFlush) return pendingIdentityMergeFlush
   if (!canEmit() || consentState !== 'granted') return Promise.resolve()
+  if (!pendingIdentityMergeFileDirty) return Promise.resolve()
 
   const pending = readPendingIdentityMerges()
+  if (pending.length === 0 && queuedPendingIdentityMergeIds.size === 0) {
+    pendingIdentityMergeFileDirty = false
+    return Promise.resolve()
+  }
   const pendingIds = new Set(pending.map((merge) => merge.id))
   for (const id of queuedPendingIdentityMergeIds) {
     if (!pendingIds.has(id)) queuedPendingIdentityMergeIds.delete(id)
@@ -693,6 +757,10 @@ function flushPendingIdentityMerges(): Promise<void> {
 function tryFlushDeferred(): void {
   if (!canEmit() || !distinctId) return
   if (consentState !== 'granted') return
+  // While quarantined, hold everything: flushing one-shots here would route
+  // them into the volatile quarantine buffer, which an account-switch
+  // resolution discards. Resolution paths re-trigger this flush.
+  if (firebaseWritesQuarantined()) return
   if (boundUserId && (pendingPersonSet || pendingPersonSetOnce)) {
     if (capturePersonProperties(pendingPersonSet, pendingPersonSetOnce)) {
       pendingPersonSet = null
@@ -705,10 +773,13 @@ function tryFlushDeferred(): void {
   if (pendingFirstLaunch && capture('comfy.desktop.app.first_launch', pendingFirstLaunch)) {
     pendingFirstLaunch = null
   }
-  if (pendingUserBinding) {
-    const { userId, emitLoginEvent, properties } = pendingUserBinding
+  // The binding flush also waits on the raw flag: consensus can be pending
+  // before the first bind ever lands (queued under undecided consent), and
+  // the deferred UID must not identify until that pending window resolves.
+  if (pendingUserBinding && !firebaseConsensusPending) {
+    const { userId, emitLoginEvent, properties, attribution } = pendingUserBinding
     pendingUserBinding = null
-    applyFirebaseUserBinding(userId, emitLoginEvent, properties)
+    applyFirebaseUserBinding(userId, emitLoginEvent, properties, attribution)
   }
   void flushPendingIdentityMerges()
 }
@@ -759,34 +830,54 @@ function persistablePersonProperties(properties: TelemetryContext): PendingIdent
 function queuePendingUserBinding(
   userId: string,
   emitLoginEvent: boolean,
-  properties: Record<string, TelemetryValue>
+  properties: Record<string, TelemetryValue>,
+  attribution: TelemetryContext | null
 ): void {
   const existing = pendingUserBinding?.userId === userId ? pendingUserBinding : null
   pendingUserBinding = {
     userId,
     emitLoginEvent: emitLoginEvent || existing?.emitLoginEvent === true,
-    properties: { ...(existing?.properties ?? {}), ...properties }
+    properties: { ...(existing?.properties ?? {}), ...properties },
+    attribution: attribution ?? existing?.attribution ?? null
   }
 }
 
 function applyFirebaseUserBinding(
   userId: string,
   emitLoginEvent: boolean,
-  properties: Record<string, TelemetryValue> = {}
+  properties: Record<string, TelemetryValue> = {},
+  attribution: TelemetryContext | null = null
 ): void {
-  const normalizedUserId = normalizeOpaqueIdentifier(userId, 256)
+  // Resolved consensus always ends the pending quarantine, even when this
+  // binding cannot proceed (denied consent, unusable UID) — otherwise
+  // bound-user telemetry stays dropped until an unrelated consensus replay.
+  firebaseConsensusPending = false
+  const normalizedUserId = normalizePostHogUserId(userId)
+  // Writes quarantined during the pending window belong to the user who was
+  // bound while they fired; any other resolution leaves their attribution
+  // ambiguous, so only a same-user confirmation replays them.
+  if (normalizedUserId !== null && normalizedUserId === boundUserId) flushQuarantinedWrites()
+  else quarantinedWrites = []
   // Reject early rather than burn an anonymous rotation on an identify that
   // can never merge.
-  if (!normalizedUserId || isIllegalPostHogDistinctId(normalizedUserId)) return
-  if (consentState === 'denied') return
+  if (!normalizedUserId) return
+  if (consentState === 'denied') {
+    // The old binding must not survive a resolved account switch: once
+    // consent returns, events would land on the previous user. Detach now
+    // (silently — consent is denied) and let a later replay bind the new UID.
+    if (boundUserId && boundUserId !== normalizedUserId) applyFirebaseAnonymousConsensus()
+    return
+  }
 
   if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
     return
   }
   if (boundUserId === normalizedUserId) {
     if (Object.keys(properties).length > 0) registerPersonProperties(properties)
     if (emitLoginEvent) capture('app:user_logged_in', { user_id: normalizedUserId })
+    if (attribution) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, attribution)
+    tryFlushDeferred()
     return
   }
   if (boundUserId) {
@@ -801,7 +892,7 @@ function applyFirebaseUserBinding(
       applyFirebaseAnonymousConsensus()
       if (!anonymousDistinctId) return
     }
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
     return
   }
 
@@ -828,9 +919,10 @@ function applyFirebaseUserBinding(
     ...(personSetOnce ? { personSetOnce: persistablePersonProperties(personSetOnce) } : {})
   })
   if (!pendingMerge) {
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
     return
   }
+  pendingIdentityMergeFileDirty = true
   const reservedNextAnonymousId = pendingMerge.nextAnonymousId
 
   distinctId = normalizedUserId
@@ -849,7 +941,7 @@ function applyFirebaseUserBinding(
     anonymousDistinctId = reservedNextAnonymousId
     nextAnonymousDistinctId = null
     distinctId = reservedNextAnonymousId
-    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
+    queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties, attribution)
     return
   }
   boundUserId = normalizedUserId
@@ -860,7 +952,8 @@ function applyFirebaseUserBinding(
   if (emitLoginEvent) {
     capture('app:user_logged_in', { user_id: normalizedUserId })
   }
-  void flushPendingIdentityMerges()
+  if (attribution) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, attribution)
+  tryFlushDeferred()
 }
 
 /** Apply declarative renderer consensus without emitting an interactive login conversion. */
@@ -872,15 +965,48 @@ export function applyFirebaseUserConsensus(userId: string): void {
  * Bind a main-process-verified interactive sign-in (OAuth loopback bridge or
  * desktop login code). The verified flow owns the login-success conversion;
  * declarative Cloud and scoped-local restored-session consensus stays silent.
+ * `attribution`, when present, is the one-shot login-attribution payload
+ * emitted alongside the conversion — never before the UID is confirmed, and
+ * never for a UID that fails to bind.
  */
-export function bindUserId(userId: string, properties: Record<string, TelemetryValue> = {}): void {
-  applyFirebaseUserBinding(userId, true, properties)
+export function bindUserId(
+  userId: string,
+  properties: Record<string, TelemetryValue> = {},
+  attribution: TelemetryContext | null = null
+): void {
+  applyFirebaseUserBinding(userId, true, properties, attribution)
+}
+
+/**
+ * Quarantine writes while an authoritative Firebase reporter is pending.
+ * Deliberately does not emit `is_authenticated: false`, rotate the anonymous
+ * identity, or clear the current Firebase binding. Held writes are replayed
+ * when the same user is confirmed and discarded on any other resolution.
+ */
+export function applyFirebasePendingConsensus(): void {
+  firebaseConsensusPending = true
+}
+
+/**
+ * End the pending quarantine without resolving consensus, keeping the bound
+ * identity. Used when a reporter exceeds its resolution deadline (and on
+ * shutdown): an unresolved document is no evidence of sign-out, and the held
+ * writes fired while the current user was bound, so they replay under it.
+ */
+export function releaseFirebasePendingConsensus(): void {
+  firebaseConsensusPending = false
+  flushQuarantinedWrites()
+  tryFlushDeferred()
 }
 
 /**
  * Detach from F and adopt the fresh D that was durably reserved before bind.
+ * Quarantined writes are discarded — an anonymous or conflicted resolution
+ * leaves their attribution ambiguous.
  */
 export function applyFirebaseAnonymousConsensus(): void {
+  firebaseConsensusPending = false
+  quarantinedWrites = []
   pendingUserBinding = null
   if (!boundUserId) return
   // Wiping these while unbound would permanently lose burned-guard $set_once markers.
@@ -987,6 +1113,9 @@ function capturePersonProperties(
 export function capture(event: string, properties: TelemetryContext = {}): boolean {
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
+  if (firebaseWritesQuarantined()) {
+    return queueQuarantinedWrite({ kind: 'event', event, properties })
+  }
   if (!_checkRateLimit(event)) return false
   try {
     // Per-call properties override defaults on key collision - callers
@@ -1047,7 +1176,7 @@ export function captureFirstLaunch(properties: TelemetryContext = {}): void {
  */
 export function registerPersonProperties(properties: Record<string, TelemetryValue>): void {
   if (!canEmit() || consentState === 'denied') return
-  if (consentState !== 'granted' || !distinctId || !boundUserId) {
+  if (consentState !== 'granted' || !distinctId || !boundUserId || firebaseWritesQuarantined()) {
     pendingPersonSet = { ...(pendingPersonSet || {}), ...properties }
     return
   }
@@ -1067,7 +1196,7 @@ export function registerPersonProperties(properties: Record<string, TelemetryVal
  */
 export function registerPersonPropertiesOnce(properties: Record<string, TelemetryValue>): void {
   if (!canEmit() || consentState === 'denied') return
-  if (consentState !== 'granted' || !distinctId || !boundUserId) {
+  if (consentState !== 'granted' || !distinctId || !boundUserId || firebaseWritesQuarantined()) {
     pendingPersonSetOnce = { ...properties, ...(pendingPersonSetOnce || {}) }
     return
   }
@@ -1118,6 +1247,9 @@ export function captureException(error: unknown, properties: TelemetryContext = 
   if (!canEmit() || !distinctId) return false
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return false
+  if (firebaseWritesQuarantined()) {
+    return queueQuarantinedWrite({ kind: 'exception', error, properties })
+  }
   if (!_checkRateLimit('comfy.desktop.exception.error')) return false
   try {
     // Same default merge as capture() so exception events stay filterable by
@@ -1372,6 +1504,9 @@ export async function shutdown(reason: string): Promise<void> {
   if (!client) return
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
+    // A quit mid-navigation must not strand quarantined writes (or the
+    // session-ended capture below) — the pending document will never resolve.
+    if (firebaseConsensusPending) releaseFirebasePendingConsensus()
     capture('comfy.desktop.session.ended', {
       reason,
       uptime_ms: uptimeMs,

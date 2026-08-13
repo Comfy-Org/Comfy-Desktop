@@ -41,3 +41,12 @@ export function normalizeOpaqueIdentifier(value: unknown, maxLength: number): st
   }
   return normalized
 }
+
+/**
+ * Normalize a Firebase UID for use as a PostHog distinct id, or null when it
+ * can never merge. The single gate for every layer that handles user ids.
+ */
+export function normalizePostHogUserId(value: unknown): string | null {
+  const normalized = normalizeOpaqueIdentifier(value, 256)
+  return normalized !== null && !isIllegalPostHogDistinctId(normalized) ? normalized : null
+}

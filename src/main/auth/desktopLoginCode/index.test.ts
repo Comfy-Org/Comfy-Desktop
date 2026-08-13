@@ -239,10 +239,13 @@ describe('signInViaDesktopLoginCode', () => {
     expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'custom-token-value', {
       signal: expect.any(AbortSignal)
     })
-    expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser, contents)
-    expect(h.capture).toHaveBeenCalledWith('comfy.desktop.identity.login_attributed', {
+    // The bind carries the attribution and runs only after injection succeeds.
+    expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser, contents, {
       via: 'desktop_login_code'
     })
+    expect(h.bindSignedInUser.mock.invocationCallOrder[0]).toBeGreaterThan(
+      contents.mainFrame.executeJavaScript.mock.invocationCallOrder[1]!
+    )
     expect(contents.mainFrame.executeJavaScript).toHaveBeenCalledWith(
       expect.stringContaining('location.reload()'),
       true
@@ -430,10 +433,6 @@ describe('signInViaDesktopLoginCode', () => {
       true
     )
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
-    expect(h.capture).not.toHaveBeenCalledWith(
-      'comfy.desktop.identity.login_attributed',
-      expect.anything()
-    )
     expect(h.emit).toHaveBeenCalledWith(
       'comfy.desktop.auth.sign_in_failed',
       expect.objectContaining({ flow: 'desktop_login_code' })
@@ -458,10 +457,6 @@ describe('signInViaDesktopLoginCode', () => {
 
     expect(await promise).toBe('handled')
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
-    expect(h.capture).not.toHaveBeenCalledWith(
-      'comfy.desktop.identity.login_attributed',
-      expect.anything()
-    )
     expect(h.emit).toHaveBeenCalledWith(
       'comfy.desktop.auth.sign_in_failed',
       expect.objectContaining({ flow: 'desktop_login_code' })
@@ -678,10 +673,6 @@ describe('signInViaDesktopLoginCode', () => {
     // bind/attribution, no inject, no focus steal...
     expect(h.lookupAccount).not.toHaveBeenCalled()
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
-    expect(h.capture).not.toHaveBeenCalledWith(
-      'comfy.desktop.identity.login_attributed',
-      expect.anything()
-    )
     expect(contents.mainFrame.executeJavaScript).not.toHaveBeenCalled()
     expect(parentWindow.focus).not.toHaveBeenCalled()
     // ...and did not tear down the newer flow's banner on the way out.
