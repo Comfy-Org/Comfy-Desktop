@@ -90,6 +90,7 @@
   --danger: #e05858;
   --danger-hover: #ef6b6b;
   --warning: #fd9903;
+  --upgrade: #e9c422;
   --success: #00cd72;
   --info: #58a6ff;
   --terminal-bg: #111112;
@@ -190,6 +191,7 @@
   --danger: #f75951;
   --danger-hover: #ff7a73;
   --warning: #fcbf64;
+  --upgrade: #e9c422;
   --success: #00cd72;
   --info: #2563eb;
   --terminal-bg: #f3f3f3;
@@ -2980,6 +2982,14 @@ input[type='checkbox']:checked::after {
   font-size: 14px;
   color: var(--danger);
   padding: 12px 0;
+}
+/* Non-blocking hardware warning under the detected-GPU field (e.g. Linux
+ * AMD /dev/kfd inaccessible): install may proceed, so warning, not danger. */
+.config-gpu-warning {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warning);
+  margin-top: 6px;
 }
 .track-probing {
   font-size: 14px;

@@ -253,7 +253,9 @@ defineExpose({ open })
                   :title="$t('actions.openDirectory', 'Open Directory')"
                   :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${trackPath}`"
                   @click="handleOpenTrackPath"
-                >{{ trackPath }}</button>
+                >
+                  {{ trackPath }}
+                </button>
                 <span v-else class="open-folder-link track-path-open track-path-placeholder">{{
                   $t('track.selectDir')
                 }}</span>

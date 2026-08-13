@@ -28,7 +28,7 @@ function formatBytes(bytes: number): string {
 export async function runFieldSelectsChain(
   action: ActionDef,
   driver: Modal | Dialogs,
-  t: Translate,
+  t: Translate
 ): Promise<ActionDef | null> {
   if (!action.fieldSelects) return action
   const showAlert = pickAlert(driver)
@@ -46,19 +46,19 @@ export async function runFieldSelectsChain(
     if (!items || items.length === 0) {
       await showAlert({
         title: next.label,
-        message: fs.emptyMessage || t('common.noItems'),
+        message: fs.emptyMessage || t('common.noItems')
       })
       return null
     }
     const selectItems = items.map((item) => ({
       value: item.value,
       label: (item.recommended ? '★ ' : '') + item.label,
-      description: item.description,
+      description: item.description
     }))
     const selected = await showPick({
       title: fs.title || next.label,
       message: fs.message || '',
-      items: selectItems,
+      items: selectItems
     })
     if (!selected) return null
     const selectedItem = items.find((i) => i.value === selected)
@@ -77,8 +77,11 @@ function pickAlert(driver: Modal | Dialogs) {
   return (opts: { title: string; message: string }): Promise<unknown> => driver.alert(opts)
 }
 function pickPicker(driver: Modal | Dialogs) {
-  return (opts: { title: string; message: string; items: { value: string; label: string; description?: string }[] }): Promise<string | null> =>
-    isDialogs(driver) ? driver.actionSheet(opts) : driver.select(opts)
+  return (opts: {
+    title: string
+    message: string
+    items: { value: string; label: string; description?: string }[]
+  }): Promise<string | null> => (isDialogs(driver) ? driver.actionSheet(opts) : driver.select(opts))
 }
 function pickPrompt(driver: Modal | Dialogs) {
   return (opts: Parameters<Modal['prompt']>[0]): Promise<string | null> => driver.prompt(opts)
@@ -90,7 +93,7 @@ export async function runSelectChain(
   action: ActionDef,
   ownerInstallationId: string,
   driver: Modal | Dialogs,
-  t: Translate,
+  t: Translate
 ): Promise<ActionDef | null> {
   if (!action.select) return action
   const showAlert = pickAlert(driver)
@@ -111,14 +114,14 @@ export async function runSelectChain(
   if (!items || items.length === 0) {
     await showAlert({
       title: action.label,
-      message: action.select.emptyMessage || t('common.noItems'),
+      message: action.select.emptyMessage || t('common.noItems')
     })
     return null
   }
   const selected = await showPick({
     title: action.select.title || action.label,
     message: action.select.message || '',
-    items,
+    items
   })
   if (!selected) return null
   return { ...action, data: { ...action.data, [action.select.field]: selected } }
@@ -127,7 +130,7 @@ export async function runSelectChain(
 // Drive `action.prompt`: free-form text onto `action.data[action.prompt.field]`.
 export async function runPromptChain(
   action: ActionDef,
-  driver: Modal | Dialogs,
+  driver: Modal | Dialogs
 ): Promise<ActionDef | null> {
   if (!action.prompt) return action
   const showPrompt = pickPrompt(driver)
@@ -149,7 +152,7 @@ export async function runPromptChain(
     defaultValue,
     confirmLabel: action.prompt.confirmLabel || action.label,
     required: action.prompt.required,
-    messageDetails: action.prompt.messageDetails,
+    messageDetails: action.prompt.messageDetails
   })
   if (!value) return null
   return { ...action, data: { ...action.data, [action.prompt.field]: value } }
@@ -161,7 +164,7 @@ export async function runPromptChain(
 export async function runConfirmChain(
   action: ActionDef,
   modal: Modal,
-  dialogs?: Dialogs,
+  dialogs?: Dialogs
 ): Promise<ActionDef | null> {
   if (!action.confirm) return action
   if (action.confirm.options) {
@@ -170,7 +173,7 @@ export async function runConfirmChain(
       message: action.confirm.message || 'Are you sure?',
       options: action.confirm.options,
       confirmLabel: action.confirm.confirmLabel || action.label,
-      confirmStyle: action.style || 'danger',
+      confirmStyle: action.style || 'danger'
     })
     if (!result) return null
     return { ...action, data: { ...action.data, ...result } }
@@ -182,7 +185,7 @@ export async function runConfirmChain(
       messageDetails: action.confirm.messageDetails,
       restoreDiff: action.confirm.restoreDiff,
       confirmLabel: action.confirm.confirmLabel || action.label,
-      tone: action.style === 'primary' || action.style === 'accent' ? 'primary' : 'danger',
+      tone: action.style === 'primary' || action.style === 'accent' ? 'primary' : 'danger'
     })
     return result === 'primary' ? action : null
   }
@@ -191,7 +194,7 @@ export async function runConfirmChain(
     message: action.confirm.message || 'Are you sure?',
     messageDetails: action.confirm.messageDetails,
     confirmLabel: action.label,
-    confirmStyle: action.style || 'danger',
+    confirmStyle: action.style || 'danger'
   })
   return confirmed ? action : null
 }
@@ -204,14 +207,14 @@ export async function runDiskSpaceCheck(
   modal: Modal,
   t: Translate,
   installationSizeBytes?: number | null,
-  dialogs?: Dialogs,
+  dialogs?: Dialogs
 ): Promise<boolean> {
-  const diskCheckActions = new Set(['copy', 'copy-update', 'release-update'])
+  const diskCheckActions = new Set(['copy', 'copy-update', 'copy-pytorch', 'release-update'])
   if (!diskCheckActions.has(action.id) || !installation.installPath) return true
   try {
     const space: DiskSpaceInfo = await window.api.getDiskSpace(installation.installPath)
     let estimatedRequired = 0
-    if (action.id === 'copy' || action.id === 'copy-update') {
+    if (action.id === 'copy' || action.id === 'copy-update' || action.id === 'copy-pytorch') {
       if (installationSizeBytes != null) {
         estimatedRequired = installationSizeBytes
       } else {
@@ -226,15 +229,19 @@ export async function runDiskSpaceCheck(
     const threshold = estimatedRequired > 0 ? Math.ceil(estimatedRequired * 1.1) : 1073741824
     if (space.free < threshold) {
       const freeStr = formatBytes(space.free)
-      const message = estimatedRequired > 0
-        ? t('diskSpace.warningMessage', { free: freeStr, required: formatBytes(estimatedRequired) })
-        : t('diskSpace.warningMessageGeneric', { free: freeStr })
+      const message =
+        estimatedRequired > 0
+          ? t('diskSpace.warningMessage', {
+              free: freeStr,
+              required: formatBytes(estimatedRequired)
+            })
+          : t('diskSpace.warningMessageGeneric', { free: freeStr })
       if (dialogs) {
         const result = await dialogs.confirm({
           title: t('diskSpace.warningTitle'),
           message,
           confirmLabel: t('diskSpace.continueAnyway'),
-          tone: 'primary',
+          tone: 'primary'
         })
         if (result !== 'primary') return false
       } else {
@@ -242,7 +249,7 @@ export async function runDiskSpaceCheck(
           title: t('diskSpace.warningTitle'),
           message,
           confirmLabel: t('diskSpace.continueAnyway'),
-          confirmStyle: 'primary',
+          confirmStyle: 'primary'
         })
         if (!ok) return false
       }

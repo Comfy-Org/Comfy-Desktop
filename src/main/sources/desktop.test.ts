@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   BrowserWindow: { fromWebContents: vi.fn() },
   dialog: {},
-  shell: { openPath: vi.fn().mockResolvedValue('') },
+  shell: { openPath: vi.fn().mockResolvedValue('') }
 }))
 
 import { desktop } from './desktop'
@@ -30,7 +30,9 @@ describe('desktop.getLaunchCommand', () => {
     const appPath = '/Applications/ComfyUI.app'
     existsSyncSpy.mockReturnValue(true)
 
-    const cmd = desktop.getLaunchCommand({ desktopExePath: appPath } as unknown as Parameters<typeof desktop.getLaunchCommand>[0])
+    const cmd = desktop.getLaunchCommand({ desktopExePath: appPath } as unknown as Parameters<
+      typeof desktop.getLaunchCommand
+    >[0])
     expect(cmd).not.toBeNull()
     expect(cmd!.cmd).toBe('/usr/bin/open')
     expect(cmd!.args).toEqual([appPath])
@@ -42,7 +44,9 @@ describe('desktop.getLaunchCommand', () => {
     const exePath = 'C:\\Programs\\ComfyUI\\ComfyUI.exe'
     existsSyncSpy.mockReturnValue(true)
 
-    const cmd = desktop.getLaunchCommand({ desktopExePath: exePath } as unknown as Parameters<typeof desktop.getLaunchCommand>[0])
+    const cmd = desktop.getLaunchCommand({ desktopExePath: exePath } as unknown as Parameters<
+      typeof desktop.getLaunchCommand
+    >[0])
     expect(cmd).not.toBeNull()
     expect(cmd!.cmd).toBe(exePath)
     expect(cmd!.args).toEqual([])
@@ -51,7 +55,9 @@ describe('desktop.getLaunchCommand', () => {
   it('returns null when executable does not exist', () => {
     existsSyncSpy.mockReturnValue(false)
 
-    const cmd = desktop.getLaunchCommand({ desktopExePath: '/missing/ComfyUI.app' } as unknown as Parameters<typeof desktop.getLaunchCommand>[0])
+    const cmd = desktop.getLaunchCommand({
+      desktopExePath: '/missing/ComfyUI.app'
+    } as unknown as Parameters<typeof desktop.getLaunchCommand>[0])
     expect(cmd).toBeNull()
   })
 })

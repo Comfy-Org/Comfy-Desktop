@@ -22,7 +22,7 @@ const PROD_CONFIG: FirebaseProjectConfig = {
   projectId: 'dreamboothy',
   storageBucket: 'dreamboothy.appspot.com',
   messagingSenderId: '357148958219',
-  appId: '1:357148958219:web:f5917f72e5f36a2015310e',
+  appId: '1:357148958219:web:f5917f72e5f36a2015310e'
 }
 
 const DEV_CONFIG: FirebaseProjectConfig = {
@@ -32,7 +32,7 @@ const DEV_CONFIG: FirebaseProjectConfig = {
   projectId: 'dreamboothy-dev',
   storageBucket: 'dreamboothy-dev.appspot.com',
   messagingSenderId: '313257147182',
-  appId: '1:313257147182:web:be38f6ebf74345fc7618bf',
+  appId: '1:313257147182:web:be38f6ebf74345fc7618bf'
 }
 
 export function getFirebaseConfig(env: FirebaseEnv): FirebaseProjectConfig {

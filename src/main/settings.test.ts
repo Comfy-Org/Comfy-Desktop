@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-settings-'))
 const homePath = path.join(tmpRoot, 'home')
@@ -37,15 +37,18 @@ let settings: {
   ) => Record<string, boolean | number | string | null>
 }
 
-const settingsPath = process.platform === 'linux'
-  ? path.join(xdgConfigHome, 'comfyui-desktop-2', 'settings.json')
-  : path.join(userDataPath, 'settings.json')
-const expectedCacheDir = process.platform === 'linux'
-  ? path.join(xdgCacheHome, 'comfyui-desktop-2', 'download-cache')
-  : path.join(userDataPath, 'download-cache')
-const copiedAdminCacheDir = process.platform === 'linux'
-  ? path.join(adminXdgCacheHome, 'comfyui-desktop-2', 'download-cache')
-  : path.join(adminUserDataPath, 'download-cache')
+const settingsPath =
+  process.platform === 'linux'
+    ? path.join(xdgConfigHome, 'comfyui-desktop-2', 'settings.json')
+    : path.join(userDataPath, 'settings.json')
+const expectedCacheDir =
+  process.platform === 'linux'
+    ? path.join(xdgCacheHome, 'comfyui-desktop-2', 'download-cache')
+    : path.join(userDataPath, 'download-cache')
+const copiedAdminCacheDir =
+  process.platform === 'linux'
+    ? path.join(adminXdgCacheHome, 'comfyui-desktop-2', 'download-cache')
+    : path.join(adminUserDataPath, 'download-cache')
 const shouldRewriteCopiedDefaults = process.platform === 'win32'
 
 function readPersistedSettings(): Record<string, unknown> {
@@ -61,8 +64,8 @@ beforeEach(async () => {
       getPath: (name: string) => {
         if (name === 'home') return homePath
         return userDataPath
-      },
-    },
+      }
+    }
   }))
   settings = await import('./settings')
 })
@@ -100,11 +103,7 @@ describe('settings unset/default semantics', () => {
 
   it('normalizes legacy null values to unset on write', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ autoUpdate: null }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ autoUpdate: null }, null, 2), 'utf-8')
 
     expect(settings.get('autoUpdate')).toBeUndefined()
 
@@ -123,7 +122,7 @@ describe('settings unset/default semantics', () => {
         {
           primaryInstallId: 'inst-1',
           pinnedInstallIds: ['inst-2', 'inst-3'],
-          theme: 'dark',
+          theme: 'dark'
         },
         null,
         2
@@ -160,11 +159,7 @@ describe('settings unset/default semantics', () => {
 
   it('preserves a manual maxCachedDownloads edit', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ maxCachedDownloads: 9 }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ maxCachedDownloads: 9 }, null, 2), 'utf-8')
 
     expect(settings.get('maxCachedDownloads')).toBe(9)
     expect(readPersistedSettings()['maxCachedDownloads']).toBe(9)
@@ -281,10 +276,7 @@ describe('settings path sanitization', () => {
     // sanitization doesn't run.
     const expectedModelsDirs = shouldRewriteCopiedDefaults
       ? [customModelsDir]
-      : [
-          path.join(adminHomePath, 'ComfyUI-Shared', 'models'),
-          customModelsDir,
-        ]
+      : [path.join(adminHomePath, 'ComfyUI-Shared', 'models'), customModelsDir]
     const expectedInputDir = shouldRewriteCopiedDefaults
       ? path.join(homePath, 'ComfyUI-Shared', 'input')
       : path.join(adminHomePath, 'ComfyUI-Shared', 'input')
@@ -296,15 +288,16 @@ describe('settings path sanitization', () => {
       : copiedAdminCacheDir
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({
-        cacheDir: copiedAdminCacheDir,
-        modelsDirs: [
-          path.join(adminHomePath, 'ComfyUI-Shared', 'models'),
-          customModelsDir,
-        ],
-        inputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'input'),
-        outputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'output'),
-      }, null, 2),
+      JSON.stringify(
+        {
+          cacheDir: copiedAdminCacheDir,
+          modelsDirs: [path.join(adminHomePath, 'ComfyUI-Shared', 'models'), customModelsDir],
+          inputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'input'),
+          outputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'output')
+        },
+        null,
+        2
+      ),
       'utf-8'
     )
 
@@ -406,7 +399,11 @@ describe('modelsDirs user ordering', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({ modelsDirs: [userModels], inputDir: userInput, outputDir: userOutput }, null, 2),
+      JSON.stringify(
+        { modelsDirs: [userModels], inputDir: userInput, outputDir: userOutput },
+        null,
+        2
+      ),
       'utf-8'
     )
 
@@ -428,11 +425,7 @@ describe('modelsDirs user ordering', () => {
     const missing = path.join(tmpRoot, 'gone-models') // deliberately not created
 
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ modelsDirs: [missing] }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ modelsDirs: [missing] }, null, 2), 'utf-8')
 
     const dirs = settings.get('modelsDirs') as string[]
     expect(dirs[0]).toBe(systemDefault) // restored as primary (non-deletable)
@@ -478,11 +471,7 @@ describe('modelsDirs user ordering', () => {
 
   it('injects system default when modelsDirs is empty', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ modelsDirs: [] }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ modelsDirs: [] }, null, 2), 'utf-8')
 
     const dirs = settings.get('modelsDirs') as string[]
     expect(dirs.length).toBe(1)
@@ -506,36 +495,38 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     // Unset => default-on and not explicit.
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: true,
-      auto_install_updates_explicit: false,
+      auto_install_updates_explicit: false
     })
     // Explicit false => off and explicit.
     settings.set('autoInstallUpdates', false)
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: false,
-      auto_install_updates_explicit: true,
+      auto_install_updates_explicit: true
     })
     // Explicit true => on and explicit (distinct from the default-on majority).
     settings.set('autoInstallUpdates', true)
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: true,
-      auto_install_updates_explicit: true,
+      auto_install_updates_explicit: true
     })
   })
 
   it('language: emits only the selected value (null when following the OS default)', () => {
     // Effective locale lives on the app.language_resolved event, not here.
     expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
-      setting_language_selected: null,
+      setting_language_selected: null
     })
     settings.set('language', 'zh')
     expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
-      setting_language_selected: 'zh',
+      setting_language_selected: 'zh'
     })
   })
 
   it('omits the legacy autoUpdate setting entirely', () => {
     settings.set('autoUpdate', false)
-    expect(settings.getTrackedSettingsTelemetryProperties()).not.toHaveProperty('setting_auto_update')
+    expect(settings.getTrackedSettingsTelemetryProperties()).not.toHaveProperty(
+      'setting_auto_update'
+    )
   })
 
   it('scalar value settings emit their typed value, never a hand-edited string', () => {
@@ -546,7 +537,7 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
       settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
     ).toEqual({
       setting_on_app_close: 'quit',
-      setting_max_cached_downloads: 5,
+      setting_max_cached_downloads: 5
     })
     // A corrupt/hand-edited settings.json can't leak a free-form string.
     fs.writeFileSync(
@@ -558,7 +549,7 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
       settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
     ).toEqual({
       setting_on_app_close: null,
-      setting_max_cached_downloads: null,
+      setting_max_cached_downloads: null
     })
   })
 
@@ -571,24 +562,24 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
 
   it('default-off useChineseMirrors: unset reports false, explicit true reports true', () => {
     expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
-      setting_use_chinese_mirrors: false,
+      setting_use_chinese_mirrors: false
     })
     settings.set('useChineseMirrors', true)
     expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
-      setting_use_chinese_mirrors: true,
+      setting_use_chinese_mirrors: true
     })
   })
 
   it('Windows-only installUpdatesOnStartup: default-on true on win32, false when opted out', () => {
     withPlatform('win32', () => {
       expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
-        install_updates_on_startup: true,
+        install_updates_on_startup: true
       })
     })
     settings.set('installUpdatesOnStartup', false)
     withPlatform('win32', () => {
       expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
-        install_updates_on_startup: false,
+        install_updates_on_startup: false
       })
     })
   })
@@ -598,11 +589,11 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
       expect(
         settings.getTrackedSettingsTelemetryProperties([
           'installUpdatesOnStartup',
-          'showInstallerUI',
+          'showInstallerUI'
         ])
       ).toEqual({
         install_updates_on_startup: null,
-        setting_show_installer_ui: null,
+        setting_show_installer_ui: null
       })
     })
   })
@@ -611,12 +602,12 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     const before = settings.getTrackedSettingsTelemetryProperties([
       'installDir',
       'modelsDirs',
-      'cacheDir',
+      'cacheDir'
     ])
     expect(before).toEqual({
       setting_install_dir: false,
       setting_models_dirs: false,
-      setting_cache_dir: false,
+      setting_cache_dir: false
     })
     settings.set('installDir', path.join(homePath, 'Custom', 'Installs'))
     const after = settings.getTrackedSettingsTelemetryProperties(['installDir'])
@@ -626,11 +617,11 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
 
   it('autoLaunchOnStartup emits presence (bool-ified), never the install id', () => {
     expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
-      setting_auto_launch_on_startup: false,
+      setting_auto_launch_on_startup: false
     })
     settings.set('autoLaunchOnStartup', 'some-install-id')
     expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
-      setting_auto_launch_on_startup: true,
+      setting_auto_launch_on_startup: true
     })
   })
 
@@ -645,15 +636,45 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
   })
 
   it('full snapshot includes both #1220 exact names and never emits arrays/objects', () => {
-    const props = withPlatform('win32', () =>
-      settings.getTrackedSettingsTelemetryProperties()
-    )
+    const props = withPlatform('win32', () => settings.getTrackedSettingsTelemetryProperties())
     expect(props).toHaveProperty('auto_install_updates')
     expect(props).toHaveProperty('install_updates_on_startup')
     for (const value of Object.values(props)) {
-      expect(['boolean', 'number', 'string']).toContain(
-        value === null ? 'boolean' : typeof value
-      )
+      expect(['boolean', 'number', 'string']).toContain(value === null ? 'boolean' : typeof value)
     }
+  })
+})
+
+describe('locked settings.json served from .bak (issue #1367)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('serves the stale .bak for reads but refuses to persist over the locked primary', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: 'https://newer.example' }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ pypiMirror: 'https://stale.example' }))
+
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM' // lock never clears
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+
+    // Reads degrade to the backup content...
+    expect(settings.get('pypiMirror')).toBe('https://stale.example')
+    // ...but a write is dropped: persisting state derived from the stale
+    // backup would overwrite the newer primary once the lock clears.
+    settings.set('confirmBeforeClosingWindow', true)
+
+    vi.restoreAllMocks()
+    expect(readPersistedSettings()).toEqual({ pypiMirror: 'https://newer.example' })
   })
 })

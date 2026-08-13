@@ -28,7 +28,7 @@ beforeEach(() => {
     updateInstallation: vi.fn().mockResolvedValue({}),
     runAction: vi.fn().mockResolvedValue({ navigate: undefined }),
     openPath: vi.fn().mockResolvedValue(undefined),
-    browseFolder: vi.fn().mockResolvedValue('/picked/dir'),
+    browseFolder: vi.fn().mockResolvedValue('/picked/dir')
   } as unknown as typeof window.api
 })
 
@@ -81,9 +81,9 @@ describe('DetailSection', () => {
           value: '/home/user/input',
           editable: true,
           editType: 'path',
-          browseOnly: true,
-        },
-      ],
+          browseOnly: true
+        }
+      ]
     })
     const pathBtn = wrapper.find('.detail-path-open')
     expect(pathBtn.exists()).toBe(true)
@@ -100,9 +100,9 @@ describe('DetailSection', () => {
           label: 'Input Directory',
           value: '/home/user/input',
           editable: true,
-          editType: 'path',
-        },
-      ],
+          editType: 'path'
+        }
+      ]
     })
     expect(wrapper.find('.detail-path-open').exists()).toBe(false)
     expect(wrapper.find('input.detail-field-input').exists()).toBe(true)
@@ -110,7 +110,7 @@ describe('DetailSection', () => {
 
   it('makes a non-editable path value clickable to open', async () => {
     const wrapper = mountComponent({
-      fields: [{ id: 'location', label: 'Location', value: '/opt/ComfyUI' }],
+      fields: [{ id: 'location', label: 'Location', value: '/opt/ComfyUI' }]
     })
     const btn = wrapper.find('.detail-field-value-open')
     expect(btn.exists()).toBe(true)
@@ -120,7 +120,7 @@ describe('DetailSection', () => {
 
   it('does not make a non-editable URL value clickable', () => {
     const wrapper = mountComponent({
-      fields: [{ id: 'repo', label: 'Repository', value: 'https://github.com/x/y' }],
+      fields: [{ id: 'repo', label: 'Repository', value: 'https://github.com/x/y' }]
     })
     expect(wrapper.find('.detail-field-value-open').exists()).toBe(false)
   })

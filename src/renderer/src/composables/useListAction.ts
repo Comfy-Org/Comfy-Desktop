@@ -23,6 +23,8 @@ export interface ListActionCallbacks {
 // launch will really proceed (staking earlier would clobber a sibling's claim).
 export interface ListActionInvocationHooks {
   onGuardsPassed?: () => Promise<void> | void
+  /** This launch resumes the same installation after a restart stop. */
+  isRestart?: boolean
 }
 
 export function useListAction(uiSurface: string, callbacks: ListActionCallbacks) {
@@ -80,7 +82,9 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
     }
 
     if (action.id === 'launch') {
-      const canLaunch = await localInstanceGuard.checkBeforeLaunch(inst.id)
+      const canLaunch = await localInstanceGuard.checkBeforeLaunch(inst.id, {
+        isRestart: hooks?.isRestart === true
+      })
       if (!canLaunch) {
         emitTelemetryAction('comfy.desktop.action.result', {
           action_id: action.id,

@@ -6,7 +6,6 @@
 import { execFile } from 'child_process'
 import * as path from 'path'
 
-
 export interface ComfyArgDef {
   /** CLI flag without leading dashes, e.g. "port" */
   name: string
@@ -34,8 +33,8 @@ export interface ComfyArgsSchema {
  * so category headers can be localized without changing this file.
  */
 const CATEGORY_MAP: Record<string, string> = {
-  'listen': 'network',
-  'port': 'network',
+  listen: 'network',
+  port: 'network',
   'tls-keyfile': 'network',
   'tls-certfile': 'network',
   'enable-cors-header': 'network',
@@ -60,16 +59,16 @@ const CATEGORY_MAP: Record<string, string> = {
   'default-device': 'gpuVram',
   'cuda-malloc': 'gpuVram',
   'disable-cuda-malloc': 'gpuVram',
-  'directml': 'gpuVram',
+  directml: 'gpuVram',
   'oneapi-device-selector': 'gpuVram',
   'disable-ipex-optimize': 'gpuVram',
   'supports-fp8-compute': 'gpuVram',
   'gpu-only': 'gpuVram',
-  'highvram': 'gpuVram',
-  'normalvram': 'gpuVram',
-  'lowvram': 'gpuVram',
-  'novram': 'gpuVram',
-  'cpu': 'gpuVram',
+  highvram: 'gpuVram',
+  normalvram: 'gpuVram',
+  lowvram: 'gpuVram',
+  novram: 'gpuVram',
+  cpu: 'gpuVram',
   'reserve-vram': 'gpuVram',
   'vram-headroom': 'gpuVram',
   'async-offload': 'gpuVram',
@@ -112,8 +111,8 @@ const CATEGORY_MAP: Record<string, string> = {
   'disable-xformers': 'performance',
   'force-upcast-attention': 'performance',
   'dont-upcast-attention': 'performance',
-  'deterministic': 'performance',
-  'fast': 'performance',
+  deterministic: 'performance',
+  fast: 'performance',
   'mmap-torch-files': 'performance',
   'disable-mmap': 'performance',
 
@@ -139,7 +138,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'enable-assets': 'features',
   'enable-asset-hashing': 'features',
 
-  'verbose': 'logging',
+  verbose: 'logging',
   'log-stdout': 'logging',
   'dont-print-server': 'logging',
   'debug-hang': 'logging',
@@ -147,13 +146,24 @@ const CATEGORY_MAP: Record<string, string> = {
   'default-hashing-function': 'advanced',
   'quick-test-for-ci': 'advanced',
   'comfy-api-base': 'advanced',
-  'database-url': 'advanced',
+  'database-url': 'advanced'
 }
 
 const CATEGORY_ORDER = [
-  'network', 'launch', 'gpuVram', 'precision', 'performance',
-  'cache', 'preview', 'manager', 'frontend', 'features',
-  'paths', 'logging', 'advanced', 'other',
+  'network',
+  'launch',
+  'gpuVram',
+  'precision',
+  'performance',
+  'cache',
+  'preview',
+  'manager',
+  'frontend',
+  'features',
+  'paths',
+  'logging',
+  'advanced',
+  'other'
 ]
 
 /**
@@ -280,9 +290,12 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
     // Brackets [] mean optional (usable without a value)
     const isOptional = afterFlag.startsWith('[')
     return {
-      name, flag, help: helpText, choices,
+      name,
+      flag,
+      help: helpText,
+      choices,
       type: isMulti ? 'multi-value' : isOptional ? 'optional-value' : 'value',
-      metavar: undefined,
+      metavar: undefined
     }
   }
 
@@ -291,9 +304,11 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
   if (metaMatch) {
     const isOptional = afterFlag.startsWith('[')
     return {
-      name, flag, help: helpText,
+      name,
+      flag,
+      help: helpText,
       type: isMulti ? 'multi-value' : isOptional ? 'optional-value' : 'value',
-      metavar: metaMatch[1]!.replace(/\s+\.\.\./, ''),
+      metavar: metaMatch[1]!.replace(/\s+\.\.\./, '')
     }
   }
 
@@ -330,7 +345,7 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
       metavar: opt.metavar,
       choices: opt.choices,
       exclusiveGroup: exclusiveGroups.get(opt.name),
-      category: getCategory(opt.name),
+      category: getCategory(opt.name)
     })
   }
 
@@ -372,19 +387,24 @@ export async function getComfyArgsSchema(
 function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const mainPyRel = path.relative(cwd, mainPyPath)
-    execFile(pythonPath, ['-s', mainPyRel, '--help'], { cwd, timeout: 15000 }, (err, stdout, stderr) => {
-      if (stdout && stdout.includes('usage:')) {
-        resolve(stdout)
-      } else if (stderr && stderr.includes('usage:')) {
-        // Some configurations print help to stderr
-        resolve(stderr)
-      } else if (err) {
-        const detail = stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ''
-        reject(new Error(`Failed to get ComfyUI --help: ${err.message}${detail}`))
-      } else {
-        reject(new Error('No help output from ComfyUI'))
+    execFile(
+      pythonPath,
+      ['-s', mainPyRel, '--help'],
+      { cwd, timeout: 15000 },
+      (err, stdout, stderr) => {
+        if (stdout && stdout.includes('usage:')) {
+          resolve(stdout)
+        } else if (stderr && stderr.includes('usage:')) {
+          // Some configurations print help to stderr
+          resolve(stderr)
+        } else if (err) {
+          const detail = stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ''
+          reject(new Error(`Failed to get ComfyUI --help: ${err.message}${detail}`))
+        } else {
+          reject(new Error('No help output from ComfyUI'))
+        }
       }
-    })
+    )
   })
 }
 
@@ -413,7 +433,11 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
       const name = arg.slice(2).replace(/=.*$/, '')
       const hasInlineValue = arg.includes('=')
       const isBoolean = argTypes.get(name) === 'boolean'
-      const hasTrailingValue = !hasInlineValue && !isBoolean && i + 1 < userArgs.length && !userArgs[i + 1]!.startsWith('--')
+      const hasTrailingValue =
+        !hasInlineValue &&
+        !isBoolean &&
+        i + 1 < userArgs.length &&
+        !userArgs[i + 1]!.startsWith('--')
       if (schema.knownFlags.has(name)) {
         result.push(arg)
         if (hasTrailingValue) result.push(userArgs[i + 1]!)

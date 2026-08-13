@@ -9,7 +9,8 @@ import {
   sourceMap,
   uniqueName,
   makeSendProgress,
-  makeSendOutput
+  makeSendOutput,
+  snapshotRestoreFailureResult
 } from '../shared'
 import type { InstallationRecord } from '../shared'
 import { adoptDesktopInstall, type AdoptPromptKind, type UserChoice } from '../../desktopAdopt'
@@ -140,10 +141,7 @@ function isPromptCapableSender(sender: Electron.WebContents): boolean {
 // Best-effort listener removal that can never throw — a destroyed or stale
 // wrapper may have lost its EventEmitter methods, and prompt cleanup must not
 // surface an uncaught exception on the main-process event loop.
-function removeDestroyedListenerSafe(
-  sender: Electron.WebContents,
-  listener: () => void
-): void {
+function removeDestroyedListenerSafe(sender: Electron.WebContents, listener: () => void): void {
   type ListenerRemover = (event: string, listener: (...args: unknown[]) => void) => void
   const maybe = sender as unknown as {
     removeListener?: ListenerRemover
@@ -194,8 +192,7 @@ function requestAdoptPromptButton(
       fn()
     }
     const onAbort = (): void => settle(() => reject(new Error('adopt-prompt-aborted')))
-    const onDestroyed = (): void =>
-      settle(() => reject(new Error('adopt-prompt-window-destroyed')))
+    const onDestroyed = (): void => settle(() => reject(new Error('adopt-prompt-window-destroyed')))
 
     if (signal.aborted) {
       reject(new Error('adopt-prompt-aborted'))
@@ -306,16 +303,21 @@ export async function handleMigrateToStandalone({
   if (inst.sourceId === 'desktop') {
     let adopted: InstallationRecord | null = null
     try {
-      adopted = await telemetry.trackedStep('comfy.desktop.migrate.flow', flowContext, async () => {
-        return adoptDesktopInstall({
-          tools: {
-            sendProgress,
-            sendOutput,
-            signal: abort.signal,
-            promptUser: (kind, ctx) => showAdoptPrompt(sender, abort.signal, kind, ctx)
-          }
-        })
-      })
+      adopted = await telemetry.trackedStep(
+        'comfy.desktop.migrate.flow',
+        flowContext,
+        async () => {
+          return adoptDesktopInstall({
+            tools: {
+              sendProgress,
+              sendOutput,
+              signal: abort.signal,
+              promptUser: (kind, ctx) => showAdoptPrompt(sender, abort.signal, kind, ctx)
+            }
+          })
+        },
+        { canonicalError: true }
+      )
       _operationAborts.delete(installationId)
       sendProgress('done', { percent: 100, status: i18n.t('common.done') })
       return { ok: true, navigate: 'list', newInstallationId: adopted.id }
@@ -357,12 +359,18 @@ export async function handleMigrateToStandalone({
       flowContext,
       async () => {
         return performLocalMigration(inst, actionData, migrationTools)
-      }
+      },
+      { canonicalError: true }
     )
     entry = result.entry
     destPath = result.destPath
 
     _operationAborts.delete(installationId)
+    if (result.restoreError) {
+      // The new install exists and is bootable; only the snapshot could not be
+      // fully applied. Report the failure without deleting the install.
+      return snapshotRestoreFailureResult(installationId, result.restoreError)
+    }
     sendProgress('done', { percent: 100, status: 'Complete' })
     return { ok: true, navigate: 'list' }
   } catch (err) {

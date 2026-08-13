@@ -15,7 +15,7 @@ export function useReturnToDashboardConfirm() {
 
   async function confirmReturnToDashboard(
     installation: Installation | null | undefined,
-    reason: ReturnToDashboardReason,
+    reason: ReturnToDashboardReason
   ): Promise<boolean> {
     if (!installation || installation.sourceCategory !== 'local') return true
     // Idle states have nothing to stop, so skip the prompt.
@@ -24,7 +24,7 @@ export function useReturnToDashboardConfirm() {
       title: t('dashboard.confirmStopLocal.title'),
       message: t('dashboard.confirmStopLocal.message'),
       confirmLabel: t('dashboard.confirmStopLocal.confirmLabel'),
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
   }
 

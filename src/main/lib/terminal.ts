@@ -126,7 +126,7 @@ function defaultTerminalEnv(inst: InstallationRecord): TerminalEnv {
     cwd: path.join(inst.installPath, 'ComfyUI'),
     venvDir,
     promptName: path.basename(venvDir),
-    pip: { exe: getActiveUvPath(inst), args: ['pip'] },
+    pip: { exe: getActiveUvPath(inst), args: ['pip'] }
   }
 }
 
@@ -150,18 +150,18 @@ function initCommands(env: TerminalEnv): string[] {
         `$env:VIRTUAL_ENV = "${env.venvDir}"`,
         `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
         `$env:PATH = "${env.venvDir}\\Scripts;$env:PATH"`,
-        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }',
+        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }'
       )
     } else if (env.pathPrepends?.length) {
       cmds.push(
         `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
         `$env:PATH = "${env.pathPrepends.join(';')};$env:PATH"`,
-        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }',
+        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }'
       )
     }
     if (hasActivation) {
       cmds.push(
-        'function global:prompt { Write-Host -NoNewline -ForegroundColor Green "($env:VIRTUAL_ENV_PROMPT) "; "PS $($executionContext.SessionState.Path.CurrentLocation)$(\'>\' * ($nestedPromptLevel + 1)) " }',
+        'function global:prompt { Write-Host -NoNewline -ForegroundColor Green "($env:VIRTUAL_ENV_PROMPT) "; "PS $($executionContext.SessionState.Path.CurrentLocation)$(\'>\' * ($nestedPromptLevel + 1)) " }'
       )
     }
     if (env.pip) {
@@ -242,7 +242,7 @@ class InstallTerminal {
     return {
       buffer: [...this.sessionBuffer],
       size: { ...this.size },
-      exited: this.exited,
+      exited: this.exited
     }
   }
 
@@ -280,7 +280,7 @@ class InstallTerminal {
       cols: this.size.cols,
       rows: this.size.rows,
       cwd,
-      env: process.env as Record<string, string>,
+      env: process.env as Record<string, string>
     })
 
     this.#pty = instance
@@ -346,7 +346,7 @@ function getOrCreate(installationId: string): InstallTerminal {
  *  return the scrollback/size/exited state so the caller can repaint. */
 export async function subscribeTerminal(
   installationId: string,
-  wc: WebContents,
+  wc: WebContents
 ): Promise<TerminalRestore> {
   const term = getOrCreate(installationId)
   await term.ensureAlive()

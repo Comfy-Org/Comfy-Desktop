@@ -71,13 +71,18 @@ async function loadExistingDirs(root: string, values: string[]): Promise<string[
 }
 
 function applyManagedModelDirs(managedModelDirs: string[]): void {
-  const current = (settings.get('modelsDirs') as string[] | undefined) || [...settings.defaults.modelsDirs]
+  const current = (settings.get('modelsDirs') as string[] | undefined) || [
+    ...settings.defaults.modelsDirs
+  ]
   const previousManaged = (settings.get('oemManagedModelDirs') as string[] | undefined) || []
   const previousKeys = new Set(previousManaged.map(pathKey))
   const retained = current.filter((dirPath) => !previousKeys.has(pathKey(dirPath)))
   const next = uniquePaths([...retained, ...managedModelDirs])
 
-  if (next.length !== current.length || next.some((dirPath, index) => pathKey(dirPath) !== pathKey(current[index]!))) {
+  if (
+    next.length !== current.length ||
+    next.some((dirPath, index) => pathKey(dirPath) !== pathKey(current[index]!))
+  ) {
     settings.set('modelsDirs', next)
   }
   settings.set('oemManagedModelDirs', managedModelDirs.length > 0 ? managedModelDirs : undefined)
@@ -98,7 +103,8 @@ async function importWorkflowsForInstalls(manifest: ResolvedOemManifest | null):
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   if (candidates.length === 0) return
 
-  const target = candidates.find((installation) => !!findComfyUIDir(installation.installPath)) || null
+  const target =
+    candidates.find((installation) => !!findComfyUIDir(installation.installPath)) || null
   if (!target) return
 
   const comfyDir = findComfyUIDir(target.installPath)

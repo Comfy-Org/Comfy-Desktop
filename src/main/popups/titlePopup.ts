@@ -41,6 +41,7 @@ import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
+  findEntryByComfySender,
   findEntryByTitleBarSender,
   getEntryByInstallationId,
   hostInstallEvents,
@@ -195,12 +196,19 @@ export interface GlobalSettingsModelsDir {
   isPrimary: boolean
 }
 
+/** Tabs of the Global Settings popup a caller can deep-link into. */
+export type GlobalSettingsTab = 'general' | 'updates' | 'storage' | 'advanced'
+
 /** Snapshot pushed to the global-settings popup on open and on every
  *  settings-changed / app-update-state / app-update-progress /
  *  installations-changed broadcast. Field shapes use the loose
  *  `Record<string, unknown>` to keep the preload boundary type-safe
  *  without dragging renderer types into main. */
 export interface GlobalSettingsSnapshot {
+  /** Tab the popup should land on. Non-null only on the snapshot pushed
+   *  at open; live rebroadcasts carry null so a data refresh can never
+   *  retarget a tab the user has since navigated away from. */
+  initialTab: GlobalSettingsTab | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -408,7 +416,7 @@ type TitlePopupConfig =
  * `comfy-titlebar:menu-closed` for the reopen-suppression guard)
  * can route without their own per-open context.
  */
-interface TitlePopupEntry {
+export interface TitlePopupEntry {
   view: EmbeddedPopupView
   /** Numeric `windowKey` of the parent host entry, updated on every
    *  open. `0` is a sentinel for "no popup has been opened yet" since
@@ -484,6 +492,10 @@ interface TitlePopupEntry {
  *  `event.sender`. */
 const titlePopupsByParent = new Map<number, TitlePopupEntry>()
 const titlePopupsByWebContents = new Map<number, TitlePopupEntry>()
+
+export function isTitlePopupSender(sender: Electron.WebContents): boolean {
+  return titlePopupsByWebContents.has(sender.id)
+}
 
 /** Timestamp of the most recent downloads-popup dismiss per parent
  *  window. The downloads tray relies on blur-dismiss (no backdrop),
@@ -1258,13 +1270,19 @@ function computeCenteredCardBounds(
 ): { x: number; y: number; width: number; height: number } {
   const clamp = CENTERED_CARD_CLAMPS[kind]
   const { width: cw, height: ch } = parent.getContentBounds()
-  const width = Math.min(clamp.maxWidth, Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio)))
+  const width = Math.min(
+    clamp.maxWidth,
+    Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio))
+  )
   const height = Math.min(
     clamp.maxHeight,
     Math.max(clamp.minHeight, Math.round(ch * clamp.heightRatio))
   )
   const x = Math.max(0, Math.round((cw - width) / 2))
-  const y = Math.max(TITLEBAR_HEIGHT, Math.round(TITLEBAR_HEIGHT + (ch - TITLEBAR_HEIGHT - height) / 2))
+  const y = Math.max(
+    TITLEBAR_HEIGHT,
+    Math.round(TITLEBAR_HEIGHT + (ch - TITLEBAR_HEIGHT - height) / 2)
+  )
   return { x, y, width, height }
 }
 
@@ -1370,6 +1388,18 @@ type OpenTitlePopupOpts = {
   | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot }
   | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot }
 )
+
+/** Whether an open must re-send its config even when it matches the last
+ *  synced one, bypassing `openTitlePopup`'s identical-config fast path.
+ *  A non-null global-settings `initialTab` is a per-open command, not
+ *  state: the renderer may have navigated off that tab since the last
+ *  identical push, so the snapshot must be re-sent for the view's
+ *  tab-retarget watch to fire. */
+export function requiresPerOpenConfigSync(
+  opts: Pick<OpenTitlePopupOpts, 'kind'> & { snapshot?: { initialTab?: unknown } }
+): boolean {
+  return opts.kind === POPUP_KIND.globalSettings && opts.snapshot?.initialTab != null
+}
 
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // Dismiss any in-flight title-bar tooltip — the popup will obscure
@@ -1487,7 +1517,11 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   // changes). Skip the set-config IPC + render-ack roundtrip and show
   // immediately — eliminates ~1 frame + 2 IPC hops of perceived
   // open latency on the common case.
-  if (entry.lastSyncedConfigJson === configJson && !entry.view.popup.webContents.isDestroyed()) {
+  if (
+    !requiresPerOpenConfigSync(opts) &&
+    entry.lastSyncedConfigJson === configJson &&
+    !entry.view.popup.webContents.isDestroyed()
+  ) {
     showTitlePopupNow(entry)
     return
   }
@@ -1605,7 +1639,10 @@ export interface TitlePopupHostBindings {
    *  the picker's host untouched so the current instance keeps running.
    *  `allowDuplicate` opens a second window for an install that already owns one
    *  (cloud-self; no local process to collide). */
-  openInstallInNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => Promise<void> | void
+  openInstallInNewWindow: (
+    installationId: string,
+    opts?: { allowDuplicate?: boolean }
+  ) => Promise<void> | void
   /** Picker → Restart on a running install. Gracefully stops the running
    *  session and re-launches via the same focus-or-launch path the picker
    *  normally uses. `parentEntryId` threads the picker's host through so
@@ -1688,7 +1725,8 @@ function openGlobalSettingsForHost(
   parentEntry: ComfyWindowEntry,
   parentEntryId: number,
   bindings: TitlePopupHostBindings,
-  titleBarSender: Electron.WebContents
+  titleBarSender: Electron.WebContents,
+  initialTab: GlobalSettingsTab | null = null
 ): void {
   if (parentEntry.window.isDestroyed()) return
   // Open instantly off the cached snapshot — like the instance picker — so the
@@ -1698,7 +1736,7 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(),
+    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
@@ -2084,7 +2122,8 @@ function findSettingsFields(
 }
 
 function buildGlobalSettingsSnapshot(
-  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[]
+  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[],
+  initialTab: GlobalSettingsTab | null = null
 ): GlobalSettingsSnapshot {
   const settingsSections = buildSettingsSections(installs)
   const mediaSections = buildMediaSections()
@@ -2110,6 +2149,7 @@ function buildGlobalSettingsSnapshot(
   const githubStars = getCachedGithubStarCount('comfy-org/ComfyUI')
   const githubStarsLoading = githubStars == null && !githubStarsFetchAttempted
   return {
+    initialTab,
     languageFields,
     generalFields,
     telemetryFields,
@@ -2187,6 +2227,21 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // Stash for `prewarmTitlePopup` (host-construction site doesn't have
   // bindings). Last writer wins; only called once at `whenReady`.
   activeBindings = bindings
+
+  ipcMain.handle('desktop2-open-terminal', (event): boolean => {
+    const parentEntry = findEntryByComfySender(event.sender)
+    if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
+    openInstancePickerForHost(
+      parentEntry,
+      parentEntry.windowKey,
+      bindings,
+      parentEntry.titleBarView.webContents,
+      { x: 0, y: TITLEBAR_HEIGHT },
+      parentEntry.installationId,
+      'console'
+    )
+    return true
+  })
 
   ipcMain.on('comfy-titlepopup:ready', (event) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)
@@ -2333,7 +2388,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const popupEntry = titlePopupsByWebContents.get(event.sender.id)
     if (!popupEntry) return
     const tab = payload?.tab
-    if (tab !== 'comfy' && tab !== 'directories' && tab !== 'downloads' && tab !== 'global') return
+    if (
+      tab !== 'comfy' &&
+      tab !== 'directories' &&
+      tab !== 'downloads' &&
+      tab !== 'global' &&
+      tab !== 'global-storage'
+    ) {
+      return
+    }
     const parentEntry = comfyWindows.get(popupEntry.parentEntryId)
     if (!parentEntry) return
     hideTitlePopup(popupEntry, { releaseFocusToParent: false })
@@ -2645,7 +2708,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const confirmed = payload?.confirmed === true
       hideTitlePopup(entry, { releaseFocusToParent: false })
       Promise.resolve(
-        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed }),
+        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
       ).catch((err) => console.error('pickInstallFromPicker failed:', err))
     }
   )
@@ -2661,7 +2724,9 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       if (typeof installationId !== 'string' || installationId.length === 0) return
       hideTitlePopup(entry, { releaseFocusToParent: false })
       Promise.resolve(
-        bindings.openInstallInNewWindow(installationId, { allowDuplicate: payload?.allowDuplicate === true }),
+        bindings.openInstallInNewWindow(installationId, {
+          allowDuplicate: payload?.allowDuplicate === true
+        })
       ).catch((err) => console.error('openInstallInNewWindow failed:', err))
     }
   )
@@ -2684,7 +2749,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const confirmed = payload?.confirmed === true
       hideTitlePopup(entry, { releaseFocusToParent: false })
       Promise.resolve(
-        bindings.restartInstallFromPicker(installationId, entry.parentEntryId, { confirmed }),
+        bindings.restartInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
       ).catch((err) => console.error('restartInstallFromPicker failed:', err))
     }
   )
@@ -2884,7 +2949,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // Panel renderer → open the Global Settings popup for the sender's
   // host window. Used by the panel-side file-menu "Settings" item and
   // the `comfy://open-settings?tab=global` deep link.
-  ipcMain.on('comfy-titlepopup:open-global-settings', (event) => {
+  ipcMain.on('comfy-titlepopup:open-global-settings', (event, payload?: { tab?: unknown }) => {
     recordIpcInvocation('comfy-titlepopup:open-global-settings')
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
@@ -2898,11 +2963,17 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       }
     }
     if (parentEntryId === undefined || !parentEntry) return
+    const rawTab = payload?.tab
+    const initialTab: GlobalSettingsTab | null =
+      rawTab === 'general' || rawTab === 'updates' || rawTab === 'storage' || rawTab === 'advanced'
+        ? rawTab
+        : null
     openGlobalSettingsForHost(
       parentEntry,
       parentEntryId,
       bindings,
-      parentEntry.titleBarView.webContents
+      parentEntry.titleBarView.webContents,
+      initialTab
     )
   })
 
@@ -2993,12 +3064,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   // Reveal a file in the OS file manager (highlights it in its parent folder),
   // e.g. extra_model_paths.yaml, which shouldn't open in its default app.
-  ipcMain.on('comfy-titlepopup:global-settings-reveal-path', (event, payload: { path?: unknown }) => {
-    if (!settingsEntryFor(event.sender.id)) return
-    const targetPath = payload?.path
-    if (typeof targetPath !== 'string' || targetPath.length === 0) return
-    shell.showItemInFolder(targetPath)
-  })
+  ipcMain.on(
+    'comfy-titlepopup:global-settings-reveal-path',
+    (event, payload: { path?: unknown }) => {
+      if (!settingsEntryFor(event.sender.id)) return
+      const targetPath = payload?.path
+      if (typeof targetPath !== 'string' || targetPath.length === 0) return
+      shell.showItemInFolder(targetPath)
+    }
+  )
 
   // External URL — restricted to http/https.
   ipcMain.on(
@@ -3112,6 +3186,15 @@ export function notifyGlobalSettingsDownloadProgress(progress: Record<string, un
   lastAppUpdateProgress = progress
   if (!activeBindings) return
   void broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
+}
+
+/** Test seam: register/remove a popup entry for IPC sender gating. */
+export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopupEntry): void {
+  titlePopupsByWebContents.set(webContentsId, entry)
+}
+
+export function _test_deleteTitlePopupEntry(webContentsId: number): void {
+  titlePopupsByWebContents.delete(webContentsId)
 }
 
 /**

@@ -13,7 +13,7 @@ function mountTooltip(props: Record<string, unknown> = {}) {
   const wrapper = mount(Tooltip, {
     props: { text: 'Hello tooltip', delayMs: 0, ...props },
     slots: { default: '<button data-testid="trigger">trigger</button>' },
-    attachTo: document.body,
+    attachTo: document.body
   })
   wrappers.push(wrapper)
   return wrapper
@@ -39,7 +39,7 @@ function stubTriggerRect(rect: Partial<DOMRect>) {
         left: 0,
         right: 20,
         toJSON: () => ({}),
-        ...rect,
+        ...rect
       } as DOMRect
     }
     if (this.matches('.tooltip-bubble')) {
@@ -52,7 +52,7 @@ function stubTriggerRect(rect: Partial<DOMRect>) {
         bottom: 40,
         left: 0,
         right: 120,
-        toJSON: () => ({}),
+        toJSON: () => ({})
       } as DOMRect
     }
     return original.call(this)
@@ -115,7 +115,7 @@ describe('Tooltip (ui primitive)', () => {
       top: 0,
       bottom: 20,
       left: 100,
-      right: 120,
+      right: 120
     })
     try {
       const wrapper = mountTooltip({ side: 'top' })
@@ -135,7 +135,7 @@ describe('Tooltip (ui primitive)', () => {
       bottom: 320,
       left: 790,
       right: 800,
-      width: 10,
+      width: 10
     })
     try {
       const wrapper = mountTooltip({ side: 'top' })

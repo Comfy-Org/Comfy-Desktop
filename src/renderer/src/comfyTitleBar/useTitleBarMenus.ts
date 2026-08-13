@@ -1,4 +1,13 @@
-import { computed, onMounted, onUnmounted, reactive, ref, type ComputedRef, type Ref, type ShallowRef } from 'vue'
+import {
+  computed,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  type ComputedRef,
+  type Ref,
+  type ShallowRef
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 
 interface MenuAnchor {
@@ -85,7 +94,7 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
   const menuClosedAt: Record<TitleMenuKind, number> = {
     menu: 0,
     downloads: 0,
-    'instance-picker': 0,
+    'instance-picker': 0
   }
 
   const isMenuOpen = ref(false)
@@ -100,13 +109,14 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
   const downloadsStartedAt = ref(0)
 
   const downloadsActiveCount = computed(() => downloadsState.value.active.length)
-  const unseenFinishedCount = computed(() =>
-    downloadsState.value.recent.filter((d) => !seenUrls.has(d.url)).length,
+  const unseenFinishedCount = computed(
+    () => downloadsState.value.recent.filter((d) => !seenUrls.has(d.url)).length
   )
   /** Unseen failures only (not user-`cancelled`); the red badge takes
    *  precedence over green so a failure never reads as success. */
-  const unseenErrorCount = computed(() =>
-    downloadsState.value.recent.filter((d) => d.status === 'error' && !seenUrls.has(d.url)).length,
+  const unseenErrorCount = computed(
+    () =>
+      downloadsState.value.recent.filter((d) => d.status === 'error' && !seenUrls.has(d.url)).length
   )
   const downloadsTrayLabel = computed<string>(() => {
     const active = downloadsActiveCount.value
@@ -146,7 +156,7 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
   /** True only when the FILE menu (not the picker / downloads) is the open
    *  popup — `isMenuOpen` is set for every kind, so it can't gate the toggle. */
   const isFileMenuOpen = computed(
-    () => isMenuOpen.value && !isDownloadsOpen.value && !isInstancePickerOpen.value,
+    () => isMenuOpen.value && !isDownloadsOpen.value && !isInstancePickerOpen.value
   )
 
   function handleFileMenu(): void {
@@ -251,6 +261,6 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     downloadsStartedAt,
     handleFileMenu,
     handleDownloadsTray,
-    handleInstallPill,
+    handleInstallPill
   }
 }

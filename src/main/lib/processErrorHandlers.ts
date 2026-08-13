@@ -1,6 +1,5 @@
 import { app } from 'electron'
 import * as mainTelemetry from './telemetry'
-import { _broadcastToRenderer } from './ipc/shared'
 import type { DatadogForwardedError } from '../../types/ipc'
 import { scrubAll } from '../../shared/piiScrub'
 import { writeAppLogSync, flushOperationOutput } from './appLog'
@@ -16,7 +15,7 @@ function serializeUnknownError(error: unknown): { message: string; stack?: strin
   if (error instanceof Error) {
     return {
       message: error.message || error.name || 'Error',
-      stack: error.stack,
+      stack: error.stack
     }
   }
   if (typeof error === 'string') {
@@ -39,20 +38,20 @@ export function forwardDatadogError(payload: DatadogForwardedError): void {
     stack: payload.stack ? scrubAll(payload.stack) : undefined,
     // Mark as already captured by main-process PostHog so the renderer routes it to Datadog
     // only and we don't double-count in PostHog.
-    skipPostHog: true,
+    skipPostHog: true
   }
-  // Broadcast to any open panel renderer to forward to Datadog RUM; no-op when none is open.
-  try {
-    _broadcastToRenderer('dd-error', scrubbed)
-  } catch {}
-  // Also capture via PostHog Node so the error isn't lost when no renderer is listening.
+  // Capture via PostHog Node and mirror to Datadog only when the capture
+  // actually ships (quarantined captures defer or drop the mirror with the
+  // write). forwardExceptionToRenderer allow-lists context keys, so
+  // reason/exitCode/type survive for child/renderer crashes.
   try {
     const err = new Error(scrubbed.message)
     if (scrubbed.stack) err.stack = scrubbed.stack
-    mainTelemetry.captureException(err, {
+    mainTelemetry.captureExceptionAndForward(err, {
+      ...(scrubbed.context || {}),
       origin: 'main-process',
       source: scrubbed.source,
-      level: scrubbed.level ?? null,
+      level: scrubbed.level ?? null
     })
   } catch {}
 }
@@ -78,7 +77,7 @@ export function registerProcessErrorHandlers(): void {
       message: serialized.message,
       stack: serialized.stack,
       level: 'critical',
-      context: { origin: 'main-process' },
+      context: { origin: 'main-process' }
     })
   })
 
@@ -93,7 +92,7 @@ export function registerProcessErrorHandlers(): void {
       message: serialized.message,
       stack: serialized.stack,
       level: 'error',
-      context: { origin: 'main-process' },
+      context: { origin: 'main-process' }
     })
   })
 
@@ -118,8 +117,8 @@ export function registerProcessErrorHandlers(): void {
         reason: details.reason,
         exitCode: details.exitCode,
         name: extra['name'],
-        serviceName: extra['serviceName'],
-      },
+        serviceName: extra['serviceName']
+      }
     })
   })
 
@@ -139,8 +138,8 @@ export function registerProcessErrorHandlers(): void {
       context: {
         origin: 'main-process',
         reason: details.reason,
-        exitCode: details.exitCode,
-      },
+        exitCode: details.exitCode
+      }
     })
   })
 }

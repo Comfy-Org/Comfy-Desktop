@@ -16,10 +16,7 @@ export interface ComfyVersion {
  * @param style  `'short'` for cards (`v0.14.2+21`), `'detail'` for the
  *               Manage view (`v0.14.2 + 21 commits (a1b2c3d)`).
  */
-export function formatComfyVersion(
-  v: ComfyVersion | undefined,
-  style: 'short' | 'detail',
-): string {
+export function formatComfyVersion(v: ComfyVersion | undefined, style: 'short' | 'detail'): string {
   if (!v) return 'unknown'
 
   const { commit, baseTag, commitsAhead } = v

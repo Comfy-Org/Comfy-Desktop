@@ -23,8 +23,8 @@ const props = withDefaults(
   }>(),
   {
     placeholder: '',
-    ariaLabel: undefined,
-  },
+    ariaLabel: undefined
+  }
 )
 
 const emit = defineEmits<{
@@ -39,7 +39,7 @@ watch(
   () => props.modelValue,
   (next) => {
     if (next !== localValue.value) localValue.value = next
-  },
+  }
 )
 
 const focused = ref(false)
@@ -52,7 +52,7 @@ const autocomplete = useArgsAutocomplete({
     localValue.value = next
     emit('update:modelValue', next)
     emit('change', next)
-  },
+  }
 })
 
 // Inline validation: colored tokens + per-issue messages so unsupported flags,
@@ -61,7 +61,7 @@ const autocomplete = useArgsAutocomplete({
 const validation = computed(() =>
   props.schema.length
     ? validateArgs(localValue.value, props.schema, { suppressTrailingPartial: focused.value })
-    : null,
+    : null
 )
 const hasIssues = computed(() => validation.value?.hasIssues ?? false)
 const showTokenDisplay = computed(() => hasIssues.value || validation.value?.awaiting != null)
@@ -87,12 +87,7 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div
-    class="args-raw-input"
-    @focusin="onFocus"
-    @focusout="onBlur"
-    @keydown="onKeydown"
-  >
+  <div class="args-raw-input" @focusin="onFocus" @focusout="onBlur" @keydown="onKeydown">
     <BaseInput
       mono
       :spellcheck="false"
@@ -130,7 +125,9 @@ function onKeydown(e: KeyboardEvent): void {
         <span class="args-raw-input-ac-help">{{ m.help }}</span>
       </li>
       <li class="args-raw-input-ac-hint" aria-hidden="true">
-        {{ t('comfyUISettings.argsAutocompleteHint', '↑↓ navigate · Tab/Enter select · Esc dismiss') }}
+        {{
+          t('comfyUISettings.argsAutocompleteHint', '↑↓ navigate · Tab/Enter select · Esc dismiss')
+        }}
       </li>
     </ul>
 
@@ -147,7 +144,7 @@ function onKeydown(e: KeyboardEvent): void {
           'token-bad': tok.status === 'unsupported' || tok.status === 'orphaned',
           'token-missing': tok.status === 'missing-value',
           'token-awaiting': tok.status === 'awaiting-value',
-          'token-partial': tok.status === 'partial',
+          'token-partial': tok.status === 'partial'
         }"
         :title="tok.tooltip || ''"
         >{{ tok.text }}</span
@@ -155,7 +152,11 @@ function onKeydown(e: KeyboardEvent): void {
     </div>
 
     <template v-if="validation">
-      <p v-if="validation.awaiting" class="args-raw-validation args-raw-validation-info" role="status">
+      <p
+        v-if="validation.awaiting"
+        class="args-raw-validation args-raw-validation-info"
+        role="status"
+      >
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
           {{ validation.awaiting.text }}
@@ -183,9 +184,12 @@ function onKeydown(e: KeyboardEvent): void {
         <AlertCircle :size="12" aria-hidden="true" />
         <span>
           {{ t('comfyUISettings.argsMissingValue', 'Missing value for:') }}
-          <code v-for="flag in validation.missingValueFlags" :key="flag" class="args-raw-bad-flag">{{
-            flag
-          }}</code>
+          <code
+            v-for="flag in validation.missingValueFlags"
+            :key="flag"
+            class="args-raw-bad-flag"
+            >{{ flag }}</code
+          >
         </span>
       </p>
       <p

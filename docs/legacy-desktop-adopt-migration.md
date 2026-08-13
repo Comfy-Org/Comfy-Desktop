@@ -119,7 +119,7 @@ Reads `Comfy.Server.LaunchArgs` (a flat dotted-key map) from
 - **Promoted** out of the string into per-install record fields:
   `input-directory` → `inputDir`, `output-directory` → `outputDir`.
   The new fields drive the v2 Storage tab's per-install folder pickers
-  and feed `launch.ts` when `useSharedInputOutput` is off.
+  and feed `launch.ts` when `useSharedInput` / `useSharedOutput` are off.
 - **Preserved** verbatim: every other key, including explicit
   `base-directory`, `user-directory`, and `listen`. Adopters who pinned
   `--listen 0.0.0.0` for LAN access keep that.
@@ -153,7 +153,8 @@ portConflict:  'auto'
 autoUpdateComfyUI: false
 
 useSharedModels:      true            # legacy models/ are in global modelsDirs
-useSharedInputOutput: false           # workspace pinned to legacy basePath
+useSharedInput:       false           # workspace pinned to legacy basePath
+useSharedOutput:      false
 inputDir:  <legacyBasePath>/input     # (or promoted --input-directory override)
 outputDir: <legacyBasePath>/output    # (or promoted --output-directory override)
 ```
@@ -187,9 +188,9 @@ The `standalone` source's `getLaunchCommand` detects
   fields and `launch.ts`'s shared-input-output branch instead.
 
 `launch.ts` injects `--input-directory` / `--output-directory` from
-either the global shared paths (when `useSharedInputOutput` is on) or
-the per-install fields (when off — the adopted case). Same end result;
-no duplicate args.
+either the global shared paths (when `useSharedInput` / `useSharedOutput`
+are on) or the per-install fields (when off - the adopted case, for both).
+Same end result; no duplicate args.
 
 ## Telemetry
 

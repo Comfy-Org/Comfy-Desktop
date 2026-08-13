@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   decideTerminalKeyAction,
   type TerminalKeyEventLike,
-  type TerminalPlatform,
+  type TerminalPlatform
 } from './terminalShortcuts'
 
 function ev(overrides: Partial<TerminalKeyEventLike>): TerminalKeyEventLike {
@@ -13,14 +13,14 @@ function ev(overrides: Partial<TerminalKeyEventLike>): TerminalKeyEventLike {
     shiftKey: false,
     altKey: false,
     metaKey: false,
-    ...overrides,
+    ...overrides
   }
 }
 
 const decide = (
   e: Partial<TerminalKeyEventLike>,
   platform: TerminalPlatform,
-  hasSelection: boolean,
+  hasSelection: boolean
 ): ReturnType<typeof decideTerminalKeyAction> =>
   decideTerminalKeyAction(ev(e), platform, hasSelection)
 

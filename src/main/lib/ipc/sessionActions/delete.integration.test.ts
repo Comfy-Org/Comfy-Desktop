@@ -24,14 +24,14 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: (name: string) => (name === 'userData' ? h.userDataDir.value : os.tmpdir()),
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   session: { fromPartition: h.fromPartition },
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 vi.mock('../../i18n', () => ({
@@ -40,7 +40,7 @@ vi.mock('../../i18n', () => ({
   init: vi.fn(async () => {}),
   getMessages: () => ({}),
   getLocale: () => 'en',
-  getAvailableLocales: () => [],
+  getAvailableLocales: () => []
 }))
 
 vi.mock('../../../settings', () => ({
@@ -48,7 +48,7 @@ vi.mock('../../../settings', () => ({
   set: vi.fn(async () => {}),
   getAll: vi.fn(() => ({})),
   getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
-  defaults: { modelsDirs: ['/unused'], inputDir: '/unused', outputDir: '/unused' },
+  defaults: { modelsDirs: ['/unused'], inputDir: '/unused', outputDir: '/unused' }
 }))
 
 vi.mock('../../../installations', () => ({
@@ -62,16 +62,18 @@ vi.mock('../../../installations', () => ({
     installationsStore.set(id, next)
     return next
   }),
-  remove: vi.fn(async (id: string) => { installationsStore.delete(id) }),
+  remove: vi.fn(async (id: string) => {
+    installationsStore.delete(id)
+  })
 }))
 
 vi.mock('../../snapshots', () => ({
   saveSnapshot: vi.fn(async () => 'noop.json'),
   getSnapshotCount: vi.fn(async () => 0),
-  deduplicatePreUpdateSnapshot: vi.fn(async () => false),
+  deduplicatePreUpdateSnapshot: vi.fn(async () => false)
 }))
 vi.mock('../../../lib/pip', () => ({
-  installFilteredRequirements: vi.fn(async () => 0),
+  installFilteredRequirements: vi.fn(async () => 0)
 }))
 
 import { handleDelete } from './delete'
@@ -85,7 +87,7 @@ function invokeDelete(id: string, inst: InstallationRecord) {
   return handleDelete({
     event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
     installationId: id,
-    inst,
+    inst
   })
 }
 
@@ -124,7 +126,15 @@ describe('handleDelete browser-partition cleanup', () => {
     fs.mkdirSync(partitionDir(id), { recursive: true })
     fs.writeFileSync(path.join(partitionDir(id), 'cookies.db'), 'x')
 
-    const inst = { id, name: 'unique', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'unique', createdAt: new Date(0).toISOString() } as InstallationRecord
+    const inst = {
+      id,
+      name: 'unique',
+      sourceId: 'standalone',
+      installPath,
+      status: 'installed',
+      browserPartition: 'unique',
+      createdAt: new Date(0).toISOString()
+    } as InstallationRecord
     installationsStore.set(id, inst)
 
     const result = await invokeDelete(id, inst)
@@ -145,7 +155,15 @@ describe('handleDelete browser-partition cleanup', () => {
     fs.mkdirSync(sharedDir, { recursive: true })
     fs.writeFileSync(path.join(sharedDir, 'cookies.db'), 'x')
 
-    const inst = { id, name: 'shared', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'shared', createdAt: new Date(0).toISOString() } as InstallationRecord
+    const inst = {
+      id,
+      name: 'shared',
+      sourceId: 'standalone',
+      installPath,
+      status: 'installed',
+      browserPartition: 'shared',
+      createdAt: new Date(0).toISOString()
+    } as InstallationRecord
     installationsStore.set(id, inst)
 
     const result = await invokeDelete(id, inst)
@@ -170,7 +188,15 @@ describe('handleDelete browser-partition cleanup', () => {
     const sharedDir = partitionDir('shared')
     fs.mkdirSync(sharedDir, { recursive: true })
 
-    const inst = { id, name: 'toggled', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'shared', createdAt: new Date(0).toISOString() } as InstallationRecord
+    const inst = {
+      id,
+      name: 'toggled',
+      sourceId: 'standalone',
+      installPath,
+      status: 'installed',
+      browserPartition: 'shared',
+      createdAt: new Date(0).toISOString()
+    } as InstallationRecord
     installationsStore.set(id, inst)
 
     const result = await invokeDelete(id, inst)
@@ -189,7 +215,15 @@ describe('handleDelete browser-partition cleanup', () => {
     seedInstall(installPath, id)
     fs.mkdirSync(partitionDir(id), { recursive: true })
 
-    const inst = { id, name: 'clear-fail', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'unique', createdAt: new Date(0).toISOString() } as InstallationRecord
+    const inst = {
+      id,
+      name: 'clear-fail',
+      sourceId: 'standalone',
+      installPath,
+      status: 'installed',
+      browserPartition: 'unique',
+      createdAt: new Date(0).toISOString()
+    } as InstallationRecord
     installationsStore.set(id, inst)
 
     const result = await invokeDelete(id, inst)
@@ -207,7 +241,15 @@ describe('handleDelete browser-partition cleanup', () => {
     const installPath = path.join(tmpRoot, 'missing-install')
     fs.mkdirSync(partitionDir(id), { recursive: true })
 
-    const inst = { id, name: 'gone', sourceId: 'standalone', installPath, status: 'installed', browserPartition: 'unique', createdAt: new Date(0).toISOString() } as InstallationRecord
+    const inst = {
+      id,
+      name: 'gone',
+      sourceId: 'standalone',
+      installPath,
+      status: 'installed',
+      browserPartition: 'unique',
+      createdAt: new Date(0).toISOString()
+    } as InstallationRecord
     installationsStore.set(id, inst)
 
     const result = await invokeDelete(id, inst)

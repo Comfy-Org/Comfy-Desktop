@@ -29,7 +29,7 @@ const props = withDefaults(defineProps<Props>(), {
   triggerAriaLabel: undefined,
   minWidth: undefined,
   align: 'start',
-  offset: 4,
+  offset: 4
 })
 
 const emit = defineEmits<{
@@ -68,14 +68,13 @@ function updatePosition(): void {
 
   const spaceBelow = vh - rect.bottom - props.offset
   const spaceAbove = rect.top - props.offset
-  const openUp =
-    menuHeight + VIEWPORT_PAD_PX > spaceBelow && spaceAbove > spaceBelow
+  const openUp = menuHeight + VIEWPORT_PAD_PX > spaceBelow && spaceAbove > spaceBelow
   const top = openUp ? rect.top - props.offset - menuHeight : rect.bottom + props.offset
 
   const anchorLeft = props.align === 'end' ? rect.right - menuWidth : rect.left
   const clampedLeft = Math.min(
     Math.max(anchorLeft, VIEWPORT_PAD_PX),
-    Math.max(VIEWPORT_PAD_PX, vw - menuWidth - VIEWPORT_PAD_PX),
+    Math.max(VIEWPORT_PAD_PX, vw - menuWidth - VIEWPORT_PAD_PX)
   )
 
   popoverStyle.value = {
@@ -85,7 +84,7 @@ function updatePosition(): void {
     minWidth: `${minWidth}px`,
     maxWidth: `${vw - VIEWPORT_PAD_PX * 2}px`,
     maxHeight: `${(openUp ? spaceAbove : spaceBelow) - VIEWPORT_PAD_PX}px`,
-    zIndex: '9999',
+    zIndex: '9999'
   }
 }
 

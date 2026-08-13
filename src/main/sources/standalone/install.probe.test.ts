@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 import { probeInstallation } from './install'
@@ -17,7 +17,12 @@ function makeStandalone(root: string): void {
   fs.writeFileSync(path.join(root, 'ComfyUI', 'main.py'), '')
   fs.writeFileSync(
     path.join(root, 'manifest.json'),
-    JSON.stringify({ comfyui_ref: 'v0.1.0', version: 'win-nvidia-1', id: 'win-nvidia', python_version: '3.12' }),
+    JSON.stringify({
+      comfyui_ref: 'v0.1.0',
+      version: 'win-nvidia-1',
+      id: 'win-nvidia',
+      python_version: '3.12'
+    })
   )
 }
 

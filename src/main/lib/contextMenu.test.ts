@@ -4,21 +4,25 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: vi.fn() },
   clipboard: { writeText: vi.fn() },
-  shell: { openExternal: vi.fn() },
+  shell: { openExternal: vi.fn() }
 }))
 
 // i18n reads locale files off disk; keep labels deterministic and side-effect free.
 vi.mock('./i18n', () => ({
-  t: (key: string) => key,
+  t: (key: string) => key
 }))
 
-import { buildContextMenuItems, type ContextMenuActions, type ContextMenuParams } from './contextMenu'
+import {
+  buildContextMenuItems,
+  type ContextMenuActions,
+  type ContextMenuParams
+} from './contextMenu'
 
 const noopActions: ContextMenuActions = {
   saveImage: vi.fn(),
   copyImage: vi.fn(),
   openLink: vi.fn(),
-  copyLink: vi.fn(),
+  copyLink: vi.fn()
 }
 
 function makeParams(overrides: Partial<ContextMenuParams> = {}): ContextMenuParams {
@@ -27,7 +31,7 @@ function makeParams(overrides: Partial<ContextMenuParams> = {}): ContextMenuPara
       canCut: false,
       canCopy: false,
       canPaste: false,
-      canSelectAll: false,
+      canSelectAll: false
     } as Electron.ContextMenuParams['editFlags'],
     isEditable: false,
     selectionText: '',
@@ -35,7 +39,7 @@ function makeParams(overrides: Partial<ContextMenuParams> = {}): ContextMenuPara
     mediaType: 'none',
     srcURL: '',
     hasImageContents: false,
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -50,17 +54,23 @@ describe('buildContextMenuItems', () => {
   it('adds Save/Copy image entries for an image with contents', () => {
     const items = buildContextMenuItems(
       makeParams({ mediaType: 'image', hasImageContents: true, srcURL: 'http://x/y.png' }),
-      noopActions,
+      noopActions
     )
     expect(ids(items)).toEqual(['saveImage', 'copyImage'])
   })
 
   it('ignores images without contents or src', () => {
     expect(
-      buildContextMenuItems(makeParams({ mediaType: 'image', hasImageContents: false, srcURL: 'http://x/y.png' }), noopActions),
+      buildContextMenuItems(
+        makeParams({ mediaType: 'image', hasImageContents: false, srcURL: 'http://x/y.png' }),
+        noopActions
+      )
     ).toEqual([])
     expect(
-      buildContextMenuItems(makeParams({ mediaType: 'image', hasImageContents: true, srcURL: '' }), noopActions),
+      buildContextMenuItems(
+        makeParams({ mediaType: 'image', hasImageContents: true, srcURL: '' }),
+        noopActions
+      )
     ).toEqual([])
   })
 
@@ -68,7 +78,7 @@ describe('buildContextMenuItems', () => {
     const actions: ContextMenuActions = { ...noopActions, saveImage: vi.fn() }
     const items = buildContextMenuItems(
       makeParams({ mediaType: 'image', hasImageContents: true, srcURL: 'http://x/y.png' }),
-      actions,
+      actions
     )
     const save = items.find((i) => i.id === 'saveImage')
     ;(save?.click as () => void)?.()
@@ -77,8 +87,13 @@ describe('buildContextMenuItems', () => {
 
   it('separates link and image blocks', () => {
     const items = buildContextMenuItems(
-      makeParams({ linkURL: 'http://x', mediaType: 'image', hasImageContents: true, srcURL: 'http://x/y.png' }),
-      noopActions,
+      makeParams({
+        linkURL: 'http://x',
+        mediaType: 'image',
+        hasImageContents: true,
+        srcURL: 'http://x/y.png'
+      }),
+      noopActions
     )
     expect(ids(items)).toEqual(['openLink', 'copyLink', 'separator', 'saveImage', 'copyImage'])
   })
@@ -89,9 +104,9 @@ describe('buildContextMenuItems', () => {
         mediaType: 'image',
         hasImageContents: true,
         srcURL: 'http://x/y.png',
-        isEditable: true,
+        isEditable: true
       }),
-      noopActions,
+      noopActions
     )
     expect(ids(items)).toEqual([
       'saveImage',
@@ -101,7 +116,7 @@ describe('buildContextMenuItems', () => {
       'copy',
       'paste',
       'separator',
-      'selectAll',
+      'selectAll'
     ])
   })
 

@@ -35,7 +35,11 @@ function parseColor(input: string): [number, number, number] | null {
   if (hex?.[1]) {
     const h = hex[1]
     const full = h.length === 3 ? h.replace(/./g, (c) => c + c) : h
-    return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)]
+    return [
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16)
+    ]
   }
   const rgb = s.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/)
   if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])]

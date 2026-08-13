@@ -20,9 +20,7 @@ export interface InstallTypeIconMeta {
 
 /** Map a raw `sourceCategory` to its install-type icon metadata. Shared by
  *  the chooser tile and the title bar so the icon vocabulary can't diverge. */
-export function installTypeMetaFor(
-  category: string | undefined | null,
-): InstallTypeIconMeta {
+export function installTypeMetaFor(category: string | undefined | null): InstallTypeIconMeta {
   switch (category) {
     case 'cloud':
       return { key: 'cloud', icon: Cloud, labelKey: 'installType.cloud' }

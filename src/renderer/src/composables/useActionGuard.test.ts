@@ -3,42 +3,43 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key,
-  }),
+      params ? `${key}:${JSON.stringify(params)}` : key
+  })
 }))
 
 const mockConfirm = vi.hoisted(() => vi.fn())
 vi.mock('./useModal', () => ({
-  useModal: () => ({ confirm: mockConfirm }),
+  useModal: () => ({ confirm: mockConfirm })
 }))
 
 const sessionState = vi.hoisted(() => ({
   activeSessions: new Map<string, { label: string }>(),
   launching: new Set<string>(),
   stopping: new Set<string>(),
-  running: new Set<string>(),
+  running: new Set<string>()
 }))
 vi.mock('../stores/sessionStore', () => ({
   useSessionStore: () => ({
     activeSessions: sessionState.activeSessions,
     isLaunching: (id: string) => sessionState.launching.has(id),
     isStopping: (id: string) => sessionState.stopping.has(id),
-    isRunning: (id: string) => sessionState.running.has(id),
-  }),
+    isRunning: (id: string) => sessionState.running.has(id)
+  })
 }))
 
 const progressState = vi.hoisted(() => ({
-  info: new Map<string, { status: string; percent: number } | null>(),
+  info: new Map<string, { status: string; percent: number } | null>()
 }))
 vi.mock('../stores/progressStore', () => ({
   useProgressStore: () => ({
-    getProgressInfo: (id: string) => progressState.info.get(id) ?? null,
-  }),
+    getProgressInfo: (id: string) => progressState.info.get(id) ?? null
+  })
 }))
 
 const mockCancelOperation = vi.hoisted(() => vi.fn())
-;(globalThis as unknown as { window: { api: { cancelOperation: typeof mockCancelOperation } } })
-  .window = { api: { cancelOperation: mockCancelOperation } }
+;(
+  globalThis as unknown as { window: { api: { cancelOperation: typeof mockCancelOperation } } }
+).window = { api: { cancelOperation: mockCancelOperation } }
 
 import { useActionGuard } from './useActionGuard'
 

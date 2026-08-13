@@ -6,16 +6,22 @@ import path from 'path'
 
 vi.mock('./git', () => ({
   readGitHead: vi.fn(),
-  rollbackComfySource: vi.fn(),
+  rollbackComfySource: vi.fn()
 }))
 
 vi.mock('./telemetry', () => ({
-  emit: vi.fn(),
+  emit: vi.fn()
 }))
 
 import { readGitHead, rollbackComfySource } from './git'
 import * as telemetry from './telemetry'
-import { writeOpMarker, readOpMarker, clearOpMarker, completeOpMarker, recoverInterruptedComfyOp } from './opMarker'
+import {
+  writeOpMarker,
+  readOpMarker,
+  clearOpMarker,
+  completeOpMarker,
+  recoverInterruptedComfyOp
+} from './opMarker'
 
 const mockedReadGitHead = vi.mocked(readGitHead)
 const mockedRollback = vi.mocked(rollbackComfySource)
@@ -52,7 +58,11 @@ describe('marker read/write/clear', () => {
     fs.writeFileSync(path.join(installPath, MARKER_NAME), JSON.stringify({ op: 'update' }), 'utf-8')
     expect(readOpMarker(installPath)).toBeNull()
 
-    fs.writeFileSync(path.join(installPath, MARKER_NAME), JSON.stringify({ op: 'bogus', preHead: 'x' }), 'utf-8')
+    fs.writeFileSync(
+      path.join(installPath, MARKER_NAME),
+      JSON.stringify({ op: 'bogus', preHead: 'x' }),
+      'utf-8'
+    )
     expect(readOpMarker(installPath)).toBeNull()
   })
 
@@ -81,7 +91,9 @@ describe('recoverInterruptedComfyOp', () => {
 
     expect(recovered).toBe(true)
     expect(mockedRollback).toHaveBeenCalledWith(
-      path.join(installPath, 'ComfyUI'), 'OLDHEAD', undefined,
+      path.join(installPath, 'ComfyUI'),
+      'OLDHEAD',
+      undefined
     )
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
     expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.rolled_back', { op: 'update' })
@@ -117,7 +129,12 @@ describe('recoverInterruptedComfyOp', () => {
 
   it('never rolls back a completed marker (success whose unlink failed)', async () => {
     // postHead present => the op reached consistency; HEAD legitimately moved.
-    await writeOpMarker(installPath, { op: 'update', preHead: 'OLD', startedAt: 1, postHead: 'NEW' })
+    await writeOpMarker(installPath, {
+      op: 'update',
+      preHead: 'OLD',
+      startedAt: 1,
+      postHead: 'NEW'
+    })
     mockedReadGitHead.mockReturnValue('NEW')
 
     const recovered = await recoverInterruptedComfyOp(installPath)
@@ -132,26 +149,44 @@ describe('recoverInterruptedComfyOp', () => {
     mockedReadGitHead.mockReturnValue('NEW') // never reaches OLD
     mockedRollback.mockResolvedValue(false)
 
-    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(/roll ComfyUI source back/i)
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+      /roll ComfyUI source back/i
+    )
     const marker = readOpMarker(installPath)
     expect(marker).not.toBeNull()
     expect(marker!.recoveryAttempts).toBe(1)
-    expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', { op: 'update', attempts: 1, gave_up: false })
+    expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', {
+      op: 'update',
+      attempts: 1,
+      gave_up: false
+    })
   })
 
   it('names the local backup branch in the failure message when one was recorded', async () => {
-    await writeOpMarker(installPath, { op: 'update', preHead: 'OLD', startedAt: 1, backupBranch: 'backup_branch_2026-07-06_19_11_34' })
+    await writeOpMarker(installPath, {
+      op: 'update',
+      preHead: 'OLD',
+      startedAt: 1,
+      backupBranch: 'backup_branch_2026-07-06_19_11_34'
+    })
     mockedReadGitHead.mockReturnValue('NEW') // never reaches OLD
     mockedRollback.mockResolvedValue(false)
 
-    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(/backup_branch_2026-07-06_19_11_34/)
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+      /backup_branch_2026-07-06_19_11_34/
+    )
     // The recorded branch survives a round-trip so the next launch can name it too.
     expect(readOpMarker(installPath)!.backupBranch).toBe('backup_branch_2026-07-06_19_11_34')
   })
 
   it('gives up and drops the marker after MAX_RECOVERY_ATTEMPTS so launch is never bricked', async () => {
     // Pre-seed the marker as if two prior launches already failed to roll back.
-    await writeOpMarker(installPath, { op: 'update', preHead: 'OLD', startedAt: 1, recoveryAttempts: 2 })
+    await writeOpMarker(installPath, {
+      op: 'update',
+      preHead: 'OLD',
+      startedAt: 1,
+      recoveryAttempts: 2
+    })
     mockedReadGitHead.mockReturnValue('NEW') // rollback can never reach OLD
     mockedRollback.mockResolvedValue(false)
 
@@ -159,7 +194,11 @@ describe('recoverInterruptedComfyOp', () => {
     const recovered = await recoverInterruptedComfyOp(installPath)
     expect(recovered).toBe(true)
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
-    expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', { op: 'update', attempts: 3, gave_up: true })
+    expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', {
+      op: 'update',
+      attempts: 3,
+      gave_up: true
+    })
   })
 })
 

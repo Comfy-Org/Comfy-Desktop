@@ -8,7 +8,7 @@ import { TITLEBAR_HEIGHT, titleBarOverlayForTheme } from '../lib/titleBarOverlay
 import {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
-  _activeOperationStatus,
+  _activeOperationStatus
 } from '../lib/ipc/shared'
 import {
   comfyWindows,
@@ -16,7 +16,7 @@ import {
   findEntryByTitleBarSender,
   getEntryByInstallationId,
   revealColdStartHostIfPending,
-  VALID_PANELS,
+  VALID_PANELS
 } from './registry'
 import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
 
@@ -44,7 +44,7 @@ function isOpaqueBodyMode(mode: BodyMode): boolean {
 export function ensurePanelView(
   windowKey: number,
   entry: ComfyWindowEntry,
-  initialPanel: BodyMode,
+  initialPanel: BodyMode
 ): WebContentsView {
   if (entry.panelView) return entry.panelView
 
@@ -55,9 +55,9 @@ export function ensurePanelView(
       // preload/index.js imports the shared window.api chunk; a sandboxed preload can't
       // require() relative chunks, which would break window.api in the panel.
       sandbox: false,
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.js')
       // Default session (no partition) keeps the panel isolated from ComfyUI's storage.
-    },
+    }
   })
   panelView.setBackgroundColor(isOpaqueBodyMode(initialPanel) ? opaquePanelBg() : '#00000000')
   entry.window.contentView.addChildView(panelView)
@@ -76,7 +76,10 @@ export function ensurePanelView(
     revealColdStartHostIfPending(windowKey)
     const mode = computeBodyMode(latest)
     if (mode !== 'comfy') {
-      panelView.webContents.send('panel-switch', { panel: mode, installationId: latest.installationId ?? '' })
+      panelView.webContents.send('panel-switch', {
+        panel: mode,
+        installationId: latest.installationId ?? ''
+      })
       if (latest.window.isFocused()) panelView.webContents.focus()
     }
   })
@@ -87,7 +90,7 @@ export function ensurePanelView(
   const panelQuery: Record<string, string> = {
     installationId: panelInstallationId,
     panel: initialPanel,
-    firstUseCompleted: String(firstUseCompleted),
+    firstUseCompleted: String(firstUseCompleted)
   }
   // Propagate the E2E flag via the URL query (the renderer can't read process.env) so the
   // renderer-side test hooks only register when the runner opted in.
@@ -97,12 +100,11 @@ export function ensurePanelView(
   const isDev = !!process.env['ELECTRON_RENDERER_URL']
   const loadPromise = isDev
     ? panelView.webContents.loadURL(
-        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/panel.html?${new URLSearchParams(panelQuery).toString()}`,
+        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/panel.html?${new URLSearchParams(panelQuery).toString()}`
       )
-    : panelView.webContents.loadFile(
-        path.join(__dirname, '../renderer/panel.html'),
-        { query: panelQuery },
-      )
+    : panelView.webContents.loadFile(path.join(__dirname, '../renderer/panel.html'), {
+        query: panelQuery
+      })
   // Loads can reject if the window closes mid-load; swallow to avoid noisy forwarding.
   void loadPromise.catch(() => {})
 
@@ -126,7 +128,9 @@ export function destroyPanelView(entry: ComfyWindowEntry): void {
     oldPanel.webContents.close()
   }
   if (!entry.window.isDestroyed()) {
-    try { entry.window.contentView.removeChildView(oldPanel) } catch {}
+    try {
+      entry.window.contentView.removeChildView(oldPanel)
+    } catch {}
   }
   // The rebuilt panel starts with no overlay, so any `firstUseMode` the old renderer pushed
   // is stale. Reset to `'none'` and broadcast so the title bar paints full chrome; the new
@@ -145,7 +149,11 @@ export function focusActiveBody(entry: ComfyWindowEntry): void {
   const mode = computeBodyMode(entry)
   if (mode === 'comfy') {
     if (!entry.comfyView.webContents.isDestroyed()) entry.comfyView.webContents.focus()
-  } else if (entry.panelView && !entry.panelView.webContents.isDestroyed() && !entry.panelView.webContents.isLoadingMainFrame()) {
+  } else if (
+    entry.panelView &&
+    !entry.panelView.webContents.isDestroyed() &&
+    !entry.panelView.webContents.isLoadingMainFrame()
+  ) {
     // If still loading, ensurePanelView's did-finish-load handler focuses it instead.
     entry.panelView.webContents.focus()
   }
@@ -163,7 +171,10 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
-  forwardToPanelRenderer(entry, 'panel-switch', { panel: mode, installationId: entry.installationId ?? '' })
+  forwardToPanelRenderer(entry, 'panel-switch', {
+    panel: mode,
+    installationId: entry.installationId ?? ''
+  })
   entry.layoutViews()
   if (!entry.titleBarView.webContents.isDestroyed()) {
     // Pill stays on the user-visible key, not 'comfy-lifecycle'.
@@ -207,7 +218,7 @@ export function refreshComfyTabBody(installationId: string): void {
 export function sendToPanelDeferred(
   panelView: WebContentsView,
   channel: string,
-  payload: unknown,
+  payload: unknown
 ): void {
   if (panelView.webContents.isDestroyed()) return
   const send = (): void => {
@@ -222,11 +233,7 @@ export function sendToPanelDeferred(
 }
 
 /** Forward an IPC to the entry's panel renderer, no-op if absent. */
-function forwardToPanelRenderer(
-  entry: ComfyWindowEntry,
-  channel: string,
-  payload?: unknown,
-): void {
+function forwardToPanelRenderer(entry: ComfyWindowEntry, channel: string, payload?: unknown): void {
   const pv = entry.panelView
   if (!pv || pv.webContents.isDestroyed()) return
   sendToPanelDeferred(pv, channel, payload)
@@ -252,5 +259,4 @@ export function registerPanelViewIpc(): void {
       }
     }
   })
-
 }

@@ -1,7 +1,9 @@
 import path from 'path'
+import fs from 'fs'
 import { EventEmitter } from 'events'
+import { app } from 'electron'
 import { dataDir } from './lib/paths'
-import { readFileSafeAsync, writeFileSafeAsync } from './lib/safe-file'
+import { readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './lib/safe-file'
 import type { ComfyVersion } from './lib/version'
 
 /** Event bus for installation lifecycle changes. `'updated'`(record) fires on
@@ -29,23 +31,31 @@ export interface InstallationRecord {
   /** Most-recent launch ms keyed by source category; written together with
    *  `lastLaunchedAt` via `markLaunched()` so the two stay consistent. */
   lastLaunchedAtByCategory?: Record<string, number>
-  /** When true (default), launch injects `--extra-model-paths-config` from the
-   *  global `modelsDirs` so this install sees the shared model library. */
+  /** When true (default), the global `modelsDirs` are included in the
+   *  `--extra-model-paths-config` YAML so this install sees the shared model
+   *  library. Per-install `modelDirs` apply regardless of this flag. */
   useSharedModels?: boolean
-  /** When true (default), launch injects `--input-directory` /
-   *  `--output-directory` from the global settings; else uses the per-install
-   *  dirs below or ComfyUI's `<installPath>/{input,output}` defaults. */
-  useSharedInputOutput?: boolean
-  /** Per-install extra (external) model directories, used only when
-   *  `useSharedModels === false`. Never includes the install's own models dir.
-   *  Written to a per-install `--extra-model-paths-config` YAML at launch. */
+  /** When true (default), launch injects `--input-directory` from the global
+   *  settings; else uses the per-install `inputDir` below or ComfyUI's
+   *  `<installPath>/input` default. */
+  useSharedInput?: boolean
+  /** When true (default), launch injects `--output-directory` from the global
+   *  settings; else uses the per-install `outputDir` below or ComfyUI's
+   *  `<installPath>/output` default. */
+  useSharedOutput?: boolean
+  /** Per-install extra (external) model directories, always applied in
+   *  addition to the shared dirs (when those are enabled). Never includes the
+   *  install's own models dir. Written to the per-install
+   *  `--extra-model-paths-config` YAML at launch. */
   modelDirs?: string[]
-  /** External `modelDirs` entry promoted to primary (`is_default`). Null/absent
-   *  means the install's own models dir is primary (ComfyUI's built-in default). */
+  /** Effective dir promoted to primary (`is_default`); may point at a shared
+   *  or per-install dir. Null/absent means the first shared dir when shared
+   *  models is on, else the install's own models dir (ComfyUI's built-in
+   *  default). */
   modelDirsPrimary?: string | null
-  /** Per-install input dir, used only when `useSharedInputOutput === false`. */
+  /** Per-install input dir, used only when `useSharedInput === false`. */
   inputDir?: string
-  /** Per-install output dir, used only when `useSharedInputOutput === false`. */
+  /** Per-install output dir, used only when `useSharedOutput === false`. */
   outputDir?: string
   /** POC: starter template id the user picked in the install wizard. Durable
    *  record of intent; survives relaunches. */
@@ -66,24 +76,45 @@ export interface InstallationRecord {
 }
 
 /**
- * In-memory migration of legacy `useSharedPaths` → `useSharedModels` +
- * `useSharedInputOutput`. `useSharedModels` is forced true (users who isolated
- * paths almost certainly meant input/output, not their model library);
- * `useSharedInputOutput` copies the legacy value; the legacy key is stripped.
- * Applied on every `load()`; disk is cleaned on the next write.
+ * In-memory migrations of legacy shared-storage flags, applied on every
+ * `load()`; disk is cleaned on the next write.
+ *
+ * 1. `useSharedPaths` -> `useSharedModels` + `useSharedInputOutput`.
+ *    `useSharedModels` is forced true (users who isolated paths almost
+ *    certainly meant input/output, not their model library).
+ * 2. `useSharedInputOutput` -> `useSharedInput` + `useSharedOutput`
+ *    (per-folder granularity); both copy the legacy value.
+ *
+ * The steps chain, so a `useSharedPaths`-era record lands directly on the
+ * current per-folder schema.
  */
 function migrateRecord(record: InstallationRecord): InstallationRecord {
-  if (!('useSharedPaths' in record)) return record
-  const legacy = record.useSharedPaths as boolean | undefined
-  const { useSharedPaths: _drop, ...rest } = record
-  return {
-    ...rest,
-    useSharedModels: true,
-    useSharedInputOutput: typeof legacy === 'boolean' ? legacy : true,
-  } as InstallationRecord
+  let rec = record
+  if ('useSharedPaths' in rec) {
+    const legacy = rec.useSharedPaths as boolean | undefined
+    const { useSharedPaths: _drop, ...rest } = rec
+    rec = {
+      ...rest,
+      useSharedModels: true,
+      useSharedInputOutput: typeof legacy === 'boolean' ? legacy : true
+    } as InstallationRecord
+  }
+  if ('useSharedInputOutput' in rec) {
+    const legacy = rec.useSharedInputOutput as boolean | undefined
+    const value = typeof legacy === 'boolean' ? legacy : true
+    const { useSharedInputOutput: _drop, ...rest } = rec
+    // A mixed-schema record (downgrade/upgrade cycle) may already carry the
+    // per-folder flags; those are newer, so they win over the legacy value.
+    rec = {
+      ...rest,
+      useSharedInput: typeof rest.useSharedInput === 'boolean' ? rest.useSharedInput : value,
+      useSharedOutput: typeof rest.useSharedOutput === 'boolean' ? rest.useSharedOutput : value
+    } as InstallationRecord
+  }
+  return rec
 }
 
-const dataPath = path.join(dataDir(), "installations.json")
+const dataPath = path.join(dataDir(), 'installations.json')
 
 /**
  * Monotonic install-id generator. A naive `inst-${Date.now()}` collides when
@@ -108,25 +139,88 @@ function nextInstallId(): string {
 let _queue: Promise<void> = Promise.resolve()
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   const p = _queue.then(fn)
-  _queue = p.then(() => {}, () => {})
+  _queue = p.then(
+    () => {},
+    () => {}
+  )
   return p
 }
 
-async function load(): Promise<InstallationRecord[]> {
-  const raw = await readFileSafeAsync(dataPath)
-  if (raw) {
-    try {
-      const parsed: unknown = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return (parsed as InstallationRecord[]).map(migrateRecord)
-      }
-    } catch {}
+/** E2E-only: write `E2E_INSTALLATIONS_SEED` to installations.json before the
+ *  first read, so the harness needn't guess the platform-specific data dir
+ *  (XDG on Linux, userData elsewhere). Seeding before the first `load()` also
+ *  guarantees the boot-time cloud-entry `ensureExists` merges on top of the
+ *  seed and the renderer's one-shot store hydration sees it — a post-launch
+ *  file write raced both. Runs at most once per process. */
+let e2eSeedApplied = false
+function maybeSeedFromEnv(): void {
+  if (e2eSeedApplied) return
+  e2eSeedApplied = true
+  // Hard guard: never run in production builds.
+  if (app.isPackaged) return
+  if (process.env['E2E'] !== '1') return
+  const seed = process.env['E2E_INSTALLATIONS_SEED']
+  if (!seed) return
+  // Drop the env var so the payload doesn't leak into child processes.
+  delete process.env['E2E_INSTALLATIONS_SEED']
+  try {
+    JSON.parse(seed) // validate before writing
+    fs.mkdirSync(path.dirname(dataPath), { recursive: true })
+    writeFileSafe(dataPath, seed, { backup: true })
+  } catch (err) {
+    console.warn('Installations: failed to apply E2E_INSTALLATIONS_SEED:', (err as Error).message)
   }
-  return []
+}
+
+async function load(): Promise<InstallationRecord[]> {
+  return (await loadOutcome()).records
+}
+
+async function loadOutcome(): Promise<{ records: InstallationRecord[]; unreadable: boolean }> {
+  maybeSeedFromEnv()
+  const read = await readFileSafeAsync(dataPath)
+  if (read.kind === 'unreadable') return { records: [], unreadable: true }
+  if (read.kind === 'data') {
+    // Stale .bak content standing in for a locked primary is fine to READ,
+    // but flags the outcome unreadable so mutations fail closed instead of
+    // saving it over the newer primary.
+    const unreadable = read.primaryUnreadable === true
+    try {
+      const parsed: unknown = JSON.parse(read.data)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return { records: (parsed as InstallationRecord[]).map(migrateRecord), unreadable }
+      }
+      // Readable and parseable but not a populated array (e.g. `[]`): nothing
+      // to lose, so a mutation may proceed.
+    } catch (err) {
+      // Readable but corrupt: the real records are unknown, so a mutation
+      // must not replace them with a list built from nothing.
+      console.warn('Installations: failed to parse installations JSON:', (err as Error).message)
+      return { records: [], unreadable: true }
+    }
+    return { records: [], unreadable }
+  }
+  return { records: [], unreadable: false }
+}
+
+/** Load for a read-modify-write cycle. Throws when installations.json EXISTS
+ *  but its records cannot be recovered right now - unreadable (e.g. an AV lock
+ *  outlasting the retry budget), standing in as stale .bak content, or
+ *  readable but corrupt: the follow-up save() would replace the intact records,
+ *  so the mutation must fail closed instead. Read-only callers use `load()`,
+ *  which degrades gracefully. */
+async function loadForWrite(): Promise<InstallationRecord[]> {
+  const { records, unreadable } = await loadOutcome()
+  if (unreadable) {
+    throw new Error(
+      'installations.json exists but its records cannot be recovered right now; refusing to modify it'
+    )
+  }
+  return records
 }
 
 async function save(installations: InstallationRecord[]): Promise<void> {
-  await writeFileSafeAsync(dataPath, JSON.stringify(installations, null, 2), true)
+  await writeFileSafeAsync(dataPath, JSON.stringify(installations, null, 2), { backup: true })
 }
 
 export async function list(): Promise<InstallationRecord[]> {
@@ -140,7 +234,11 @@ export async function hasNameConflict(id: string, name: string): Promise<boolean
   return all.some((i) => i.id !== id && i.name === name)
 }
 
-export function uniqueName(baseName: string, existing: InstallationRecord[], excludeId?: string): string {
+export function uniqueName(
+  baseName: string,
+  existing: InstallationRecord[],
+  excludeId?: string
+): string {
   const names = new Set(existing.filter((i) => i.id !== excludeId).map((i) => i.name))
   if (!names.has(baseName)) return baseName
   // On conflict, strip a trailing " (N)" so an already-suffixed name renumbers
@@ -155,12 +253,12 @@ export function uniqueName(baseName: string, existing: InstallationRecord[], exc
 
 export async function add(installation: Record<string, unknown>): Promise<InstallationRecord> {
   const entry = await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     installation.name = uniqueName(installation.name as string, installations)
     const entry = {
       id: nextInstallId(),
       createdAt: new Date().toISOString(),
-      ...installation,
+      ...installation
     } as InstallationRecord
     installations.unshift(entry)
     await save(installations)
@@ -172,15 +270,18 @@ export async function add(installation: Record<string, unknown>): Promise<Instal
 
 export async function remove(id: string): Promise<void> {
   await enqueue(async () => {
-    const installations = (await load()).filter((i) => i.id !== id)
+    const installations = (await loadForWrite()).filter((i) => i.id !== id)
     await save(installations)
   })
   installationEvents.emit('changed')
 }
 
-export async function update(id: string, data: Record<string, unknown>): Promise<InstallationRecord | null> {
+export async function update(
+  id: string,
+  data: Record<string, unknown>
+): Promise<InstallationRecord | null> {
   const updated = await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     const index = installations.findIndex((i) => i.id === id)
     if (index === -1) return null
     const existing = installations[index]!
@@ -201,8 +302,10 @@ export async function get(id: string): Promise<InstallationRecord | null> {
 
 export async function reorder(orderedIds: string[]): Promise<void> {
   await enqueue(async () => {
-    const installations = await load()
-    const byId: Record<string, InstallationRecord> = Object.fromEntries(installations.map((i) => [i.id, i]))
+    const installations = await loadForWrite()
+    const byId: Record<string, InstallationRecord> = Object.fromEntries(
+      installations.map((i) => [i.id, i])
+    )
     const reordered: InstallationRecord[] = orderedIds
       .map((id) => byId[id])
       .filter((inst): inst is InstallationRecord => inst != null)
@@ -217,12 +320,12 @@ export async function reorder(orderedIds: string[]): Promise<void> {
 
 export async function ensureExists(sourceId: string, data: Record<string, unknown>): Promise<void> {
   const added = await enqueue(async () => {
-    const existing = await load()
+    const existing = await loadForWrite()
     if (existing.some((i) => i.sourceId === sourceId)) return false
     existing.push({
       id: nextInstallId(),
       createdAt: new Date().toISOString(),
-      ...data,
+      ...data
     } as InstallationRecord)
     await save(existing)
     return true
@@ -236,7 +339,7 @@ export async function ensureExists(sourceId: string, data: Record<string, unknow
  *  entry exists. */
 export async function enforceCloudName(): Promise<void> {
   const updated = await enqueue(async () => {
-    const all = await load()
+    const all = await loadForWrite()
     const index = all.findIndex((i) => i.sourceId === CLOUD_SOURCE_ID)
     if (index === -1) return null
     const existing = all[index]!
@@ -260,10 +363,10 @@ export async function enforceCloudName(): Promise<void> {
  */
 export async function markLaunched(
   installationId: string,
-  resolveCategory?: (inst: InstallationRecord) => string | undefined,
+  resolveCategory?: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
   const updated = await enqueue(async () => {
-    const list = await load()
+    const list = await loadForWrite()
     const index = list.findIndex((i) => i.id === installationId)
     if (index === -1) return null
     const existing = list[index]!
@@ -274,9 +377,7 @@ export async function markLaunched(
     const merged: InstallationRecord = {
       ...existing,
       lastLaunchedAt: now,
-      ...(category
-        ? { lastLaunchedAtByCategory: { ...existingByCategory, [category]: now } }
-        : {}),
+      ...(category ? { lastLaunchedAtByCategory: { ...existingByCategory, [category]: now } } : {})
     }
     list[index] = merged
     await save(list)
@@ -298,7 +399,7 @@ export async function markLaunched(
  */
 export async function clearPendingTemplateOpen(installationId: string): Promise<boolean> {
   return enqueue(async () => {
-    const list = await load()
+    const list = await loadForWrite()
     const index = list.findIndex((i) => i.id === installationId)
     if (index === -1) return false
     const existing = list[index]!
@@ -334,7 +435,7 @@ export async function getRecent(): Promise<InstallationRecord | null> {
  */
 export async function getRecentByCategory(
   category: string,
-  resolveCategory: (inst: InstallationRecord) => string | undefined,
+  resolveCategory: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
   const list = await load()
   let best: InstallationRecord | null = null
@@ -367,7 +468,7 @@ export async function getRecentByCategory(
  *  - any other string → look up by id; null when the id is gone (caller
  *    treats that as "stale selection, fall back to dashboard silently"). */
 export async function resolveAutoLaunchInstall(
-  autoLaunchValue: string | undefined | null,
+  autoLaunchValue: string | undefined | null
 ): Promise<InstallationRecord | null> {
   if (autoLaunchValue == null || autoLaunchValue === '' || autoLaunchValue === 'none') {
     return null
@@ -380,14 +481,14 @@ export async function resolveAutoLaunchInstall(
 
 export async function seedDefaults(defaults: Record<string, unknown>[]): Promise<void> {
   const seeded = await enqueue(async () => {
-    const installations = await load()
+    const installations = await loadForWrite()
     if (installations.length > 0) return false
     for (const entry of defaults) {
       installations.push({
         id: nextInstallId(),
         createdAt: new Date().toISOString(),
-        status: "installed",
-        ...entry,
+        status: 'installed',
+        ...entry
       } as InstallationRecord)
     }
     if (installations.length > 0) {

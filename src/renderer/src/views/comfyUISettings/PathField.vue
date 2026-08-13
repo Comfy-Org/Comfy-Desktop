@@ -56,11 +56,7 @@ function handleOpen(): void {
     @change="handleChange"
   >
     <template #trailing>
-      <button
-        type="button"
-        :aria-label="t('common.browse', 'Browse')"
-        @click="handleBrowse"
-      >
+      <button type="button" :aria-label="t('common.browse', 'Browse')" @click="handleBrowse">
         <FolderOpen :size="14" />
       </button>
     </template>

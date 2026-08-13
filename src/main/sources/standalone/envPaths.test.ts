@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' },
+  app: { getPath: () => '' }
 }))
 
 import { writeComfyEnvironment, getTorchVersion } from './envPaths'
@@ -16,9 +16,10 @@ const EXPECTED_CONTENT = 'local-desktop2-standalone\n'
 /** Build the platform-appropriate site-packages dir under a managed venv and return it. */
 function makeSitePackages(installPath: string): string {
   const venv = path.join(installPath, 'ComfyUI', '.venv')
-  const sitePackages = process.platform === 'win32'
-    ? path.join(venv, 'Lib', 'site-packages')
-    : path.join(venv, 'lib', 'python3.12', 'site-packages')
+  const sitePackages =
+    process.platform === 'win32'
+      ? path.join(venv, 'Lib', 'site-packages')
+      : path.join(venv, 'lib', 'python3.12', 'site-packages')
   fs.mkdirSync(sitePackages, { recursive: true })
   return sitePackages
 }
@@ -31,7 +32,9 @@ describe('writeComfyEnvironment', () => {
   })
 
   afterEach(() => {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    } catch {}
   })
 
   it('writes the marker file with local-desktop2-standalone content + trailing newline', async () => {
@@ -82,7 +85,9 @@ describe('getTorchVersion', () => {
   })
 
   afterEach(() => {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    } catch {}
   })
 
   function install(): InstallationRecord {

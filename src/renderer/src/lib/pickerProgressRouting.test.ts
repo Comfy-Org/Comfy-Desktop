@@ -9,7 +9,7 @@ function opts(overrides: Partial<ShowProgressOpts> = {}): ShowProgressOpts {
     apiCall: async () => ({ ok: true }),
     actionId: 'update-comfyui',
     opKind: 'update',
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -31,16 +31,26 @@ describe('resolveProgressRouting — same vs inline vs target', () => {
 
   it('routes target-host for launch (intentional navigation to the target window)', () => {
     const r = resolveProgressRouting(
-      opts({ actionId: 'launch', opKind: 'launch', triggersInstanceStart: true, installationId: 'inst-B' }),
-      'inst-A',
+      opts({
+        actionId: 'launch',
+        opKind: 'launch',
+        triggersInstanceStart: true,
+        installationId: 'inst-B'
+      }),
+      'inst-A'
     )
     expect(r.routing).toBe('target-host')
   })
 
   it('routes target-host for restart (intentional navigation)', () => {
     const r = resolveProgressRouting(
-      opts({ actionId: 'restart', opKind: 'launch', triggersInstanceStart: true, installationId: 'inst-B' }),
-      'inst-A',
+      opts({
+        actionId: 'restart',
+        opKind: 'launch',
+        triggersInstanceStart: true,
+        installationId: 'inst-B'
+      }),
+      'inst-A'
     )
     expect(r.routing).toBe('target-host')
   })
@@ -51,7 +61,7 @@ describe('resolveProgressRouting — same vs inline vs target', () => {
   it('routes same-host for migrate-to-standalone (panel owns the adopt prompts)', () => {
     const r = resolveProgressRouting(
       opts({ actionId: 'migrate-to-standalone', opKind: 'migrate', installationId: 'inst-B' }),
-      'inst-A',
+      'inst-A'
     )
     expect(r.routing).toBe('same-host')
     expect(r.successChoice).toBe(false)
@@ -62,7 +72,7 @@ describe('resolveProgressRouting — successChoice gating', () => {
   it('offers successChoice for plain Update on a stopped install', () => {
     const r = resolveProgressRouting(
       opts({ actionId: 'update-comfyui', triggersInstanceStart: false }),
-      'inst-target',
+      'inst-target'
     )
     expect(r.successChoice).toBe(true)
   })
@@ -73,29 +83,34 @@ describe('resolveProgressRouting — successChoice gating', () => {
     const r = resolveProgressRouting(
       opts({
         actionId: 'update-comfyui',
-        triggersInstanceStart: true,
+        triggersInstanceStart: true
       }),
-      'inst-target',
+      'inst-target'
     )
     expect(r.successChoice).toBe(true)
   })
 
   it('keeps successChoice for copy-update and switch-channel', () => {
-    expect(resolveProgressRouting(opts({ actionId: 'copy-update' }), 'inst-target').successChoice)
-      .toBe(true)
-    expect(resolveProgressRouting(opts({ actionId: 'switch-channel' }), 'inst-target').successChoice)
-      .toBe(true)
+    expect(
+      resolveProgressRouting(opts({ actionId: 'copy-update' }), 'inst-target').successChoice
+    ).toBe(true)
+    expect(
+      resolveProgressRouting(opts({ actionId: 'switch-channel' }), 'inst-target').successChoice
+    ).toBe(true)
   })
 
   it('keeps successChoice for snapshot-save', () => {
-    const r = resolveProgressRouting(opts({ actionId: 'snapshot-save', opKind: 'snapshot' }), 'inst-target')
+    const r = resolveProgressRouting(
+      opts({ actionId: 'snapshot-save', opKind: 'snapshot' }),
+      'inst-target'
+    )
     expect(r.successChoice).toBe(true)
   })
 
   it('keeps successChoice for cross-instance Update (inline-picker path)', () => {
     const r = resolveProgressRouting(
       opts({ actionId: 'update-comfyui', installationId: 'inst-B' }),
-      'inst-A',
+      'inst-A'
     )
     expect(r.routing).toBe('inline-picker')
     expect(r.successChoice).toBe(true)
@@ -104,7 +119,7 @@ describe('resolveProgressRouting — successChoice gating', () => {
   it('suppresses successChoice for actionId launch (user is going to land in Comfy regardless)', () => {
     const r = resolveProgressRouting(
       opts({ actionId: 'launch', opKind: 'launch', triggersInstanceStart: true }),
-      'inst-target',
+      'inst-target'
     )
     expect(r.successChoice).toBe(false)
   })
@@ -112,7 +127,7 @@ describe('resolveProgressRouting — successChoice gating', () => {
   it('suppresses successChoice for actionId restart', () => {
     const r = resolveProgressRouting(
       opts({ actionId: 'restart', opKind: 'launch', triggersInstanceStart: true }),
-      'inst-target',
+      'inst-target'
     )
     expect(r.successChoice).toBe(false)
   })
@@ -125,9 +140,9 @@ describe('resolveProgressRouting — destructive ops', () => {
         installationId: 'inst-B',
         actionId: 'delete',
         opKind: 'destructive',
-        destroysInstance: true,
+        destroysInstance: true
       }),
-      'inst-A',
+      'inst-A'
     )
     expect(r.routing).toBe('same-host')
   })
@@ -137,9 +152,9 @@ describe('resolveProgressRouting — destructive ops', () => {
       opts({
         actionId: 'delete',
         opKind: 'destructive',
-        destroysInstance: true,
+        destroysInstance: true
       }),
-      'inst-target',
+      'inst-target'
     )
     expect(r.successChoice).toBe(false)
   })

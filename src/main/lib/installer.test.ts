@@ -13,8 +13,8 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
-  },
+    getLocale: () => 'en'
+  }
 }))
 
 import { downloadAndExtract, downloadAndExtractMulti } from './installer'
@@ -23,7 +23,7 @@ import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
 
 vi.mock('./i18n', () => ({
-  t: (key: string) => key,
+  t: (key: string) => key
 }))
 
 function tmpDir(): string {
@@ -35,7 +35,7 @@ function makeCache(dir: string): Cache {
     getCachePath: (folder: string) => path.join(dir, folder),
     evict: vi.fn(),
     touch: vi.fn(),
-    cleanPartials: vi.fn(),
+    cleanPartials: vi.fn()
   }
 }
 
@@ -64,7 +64,7 @@ function makeCtx(overrides: {
       onProgress?: ((p: ExtractProgress) => void) | null,
       options?: { signal?: AbortSignal }
     ) => Promise<void>,
-    ...(overrides.signal !== undefined ? { signal: overrides.signal } : {}),
+    ...(overrides.signal !== undefined ? { signal: overrides.signal } : {})
   }
 }
 
@@ -86,12 +86,22 @@ describe('downloadAndExtract', () => {
     const sendProgressA = vi.fn<SendProgress>()
     const sendProgressB = vi.fn<SendProgress>()
 
-    const ctxA = makeCtx({ sendProgress: sendProgressA, download: mockDownload, cache, extract: mockExtract })
-    const ctxB = makeCtx({ sendProgress: sendProgressB, download: mockDownload, cache, extract: mockExtract })
+    const ctxA = makeCtx({
+      sendProgress: sendProgressA,
+      download: mockDownload,
+      cache,
+      extract: mockExtract
+    })
+    const ctxB = makeCtx({
+      sendProgress: sendProgressB,
+      download: mockDownload,
+      cache,
+      extract: mockExtract
+    })
 
     const [resultA, resultB] = await Promise.all([
       downloadAndExtract('https://example.com/env.7z', destA, 'v1_nvidia', ctxA),
-      downloadAndExtract('https://example.com/env.7z', destB, 'v1_nvidia', ctxB),
+      downloadAndExtract('https://example.com/env.7z', destB, 'v1_nvidia', ctxB)
     ])
 
     expect(resultA).toBeUndefined()
@@ -101,9 +111,7 @@ describe('downloadAndExtract', () => {
     expect(mockDownload).toHaveBeenCalledTimes(1)
     expect(mockExtract).toHaveBeenCalledTimes(2)
 
-    const bDownloadCalls = sendProgressB.mock.calls.filter(
-      (args) => args[0] === 'download'
-    )
+    const bDownloadCalls = sendProgressB.mock.calls.filter((args) => args[0] === 'download')
     const bStatuses = bDownloadCalls.map((args) => args[1].status)
     expect(bStatuses).toContain('installer.waitingForDownload')
     expect(bStatuses).toContain('installer.cachedDownload')
@@ -132,8 +140,18 @@ describe('downloadAndExtract', () => {
 
     // Different cache keys → different lock paths → should run concurrently
     await Promise.all([
-      downloadAndExtract('https://example.com/a.7z', destA, 'v1_nvidia', makeCtx({ download: mockDownload, cache, extract: mockExtract })),
-      downloadAndExtract('https://example.com/b.7z', destB, 'v2_amd', makeCtx({ download: mockDownload, cache, extract: mockExtract })),
+      downloadAndExtract(
+        'https://example.com/a.7z',
+        destA,
+        'v1_nvidia',
+        makeCtx({ download: mockDownload, cache, extract: mockExtract })
+      ),
+      downloadAndExtract(
+        'https://example.com/b.7z',
+        destB,
+        'v2_amd',
+        makeCtx({ download: mockDownload, cache, extract: mockExtract })
+      )
     ])
 
     expect(mockDownload).toHaveBeenCalledTimes(2)
@@ -168,7 +186,12 @@ describe('downloadAndExtract', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     // B starts second — will wait on the lock, but has an abort signal
-    const ctxB = makeCtx({ download: mockDownload, cache, extract: mockExtract, signal: abortController.signal })
+    const ctxB = makeCtx({
+      download: mockDownload,
+      cache,
+      extract: mockExtract,
+      signal: abortController.signal
+    })
     const resultB = downloadAndExtract('https://example.com/env.7z', destB, 'v1_nvidia', ctxB)
     // Suppress unhandled rejection warning — we assert on it below
     resultB.catch(() => {})
@@ -195,10 +218,14 @@ describe('downloadAndExtract', () => {
           fs.writeFileSync(dest, 'fake-data')
           resolve()
         }, 50)
-        opts?.signal?.addEventListener('abort', () => {
-          clearTimeout(timer)
-          reject(new Error('Download cancelled'))
-        }, { once: true })
+        opts?.signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer)
+            reject(new Error('Download cancelled'))
+          },
+          { once: true }
+        )
       })
       return dest
     })
@@ -207,7 +234,12 @@ describe('downloadAndExtract', () => {
     const cache = makeCache(cacheDir)
 
     // A starts first, acquires lock
-    const ctxA = makeCtx({ download: mockDownload, cache, extract: mockExtract, signal: abortA.signal })
+    const ctxA = makeCtx({
+      download: mockDownload,
+      cache,
+      extract: mockExtract,
+      signal: abortA.signal
+    })
     const resultA = downloadAndExtract('https://example.com/env.7z', destA, 'v1_nvidia', ctxA)
     resultA.catch(() => {})
 
@@ -254,8 +286,10 @@ describe('downloadAndExtract', () => {
 
     // A starts, acquires lock, download throws
     const resultA = downloadAndExtract(
-      'https://example.com/env.7z', destA, 'v1_nvidia',
-      makeCtx({ download: mockDownload, cache, extract: mockExtract }),
+      'https://example.com/env.7z',
+      destA,
+      'v1_nvidia',
+      makeCtx({ download: mockDownload, cache, extract: mockExtract })
     )
     resultA.catch(() => {})
 
@@ -263,8 +297,10 @@ describe('downloadAndExtract', () => {
 
     // B starts, waits on lock
     const resultB = downloadAndExtract(
-      'https://example.com/env.7z', destB, 'v1_nvidia',
-      makeCtx({ download: mockDownload, cache, extract: mockExtract }),
+      'https://example.com/env.7z',
+      destB,
+      'v1_nvidia',
+      makeCtx({ download: mockDownload, cache, extract: mockExtract })
     )
 
     await expect(resultA).rejects.toThrow('Network error')
@@ -285,12 +321,20 @@ describe('downloadAndExtract', () => {
     const cache = makeCache(cacheDir)
 
     // First download
-    await downloadAndExtract('https://example.com/env.7z', tmpDir(), 'v1_nvidia',
-      makeCtx({ download: mockDownload, cache, extract: mockExtract }))
+    await downloadAndExtract(
+      'https://example.com/env.7z',
+      tmpDir(),
+      'v1_nvidia',
+      makeCtx({ download: mockDownload, cache, extract: mockExtract })
+    )
 
     // Second download to same cache key — should work (lock fully released)
-    await downloadAndExtract('https://example.com/env.7z', tmpDir(), 'v1_nvidia',
-      makeCtx({ download: mockDownload, cache, extract: mockExtract }))
+    await downloadAndExtract(
+      'https://example.com/env.7z',
+      tmpDir(),
+      'v1_nvidia',
+      makeCtx({ download: mockDownload, cache, extract: mockExtract })
+    )
 
     // First was downloaded, second was a cache hit — no deadlock
     expect(mockDownload).toHaveBeenCalledTimes(1)
@@ -314,13 +358,21 @@ describe('downloadAndExtractMulti', () => {
     const mockExtract = vi.fn(async () => {})
     const cache = makeCache(cacheDir)
 
-    const files = [
-      { url: 'https://example.com/part.7z.001', filename: 'part.7z.001', size: 100 },
-    ]
+    const files = [{ url: 'https://example.com/part.7z.001', filename: 'part.7z.001', size: 100 }]
 
     await Promise.all([
-      downloadAndExtractMulti(files, destA, 'v1_nvidia', makeCtx({ download: mockDownload, cache, extract: mockExtract })),
-      downloadAndExtractMulti(files, destB, 'v1_nvidia', makeCtx({ download: mockDownload, cache, extract: mockExtract })),
+      downloadAndExtractMulti(
+        files,
+        destA,
+        'v1_nvidia',
+        makeCtx({ download: mockDownload, cache, extract: mockExtract })
+      ),
+      downloadAndExtractMulti(
+        files,
+        destB,
+        'v1_nvidia',
+        makeCtx({ download: mockDownload, cache, extract: mockExtract })
+      )
     ])
 
     // Only one download — second caller sees cache hit

@@ -13,14 +13,14 @@ function makeI18n() {
 function mountField(field: DetailField) {
   return mount(PathField, {
     props: { field },
-    global: { plugins: [makeI18n()] },
+    global: { plugins: [makeI18n()] }
   })
 }
 
 beforeEach(() => {
   window.api = {
     openPath: vi.fn().mockResolvedValue(undefined),
-    browseFolder: vi.fn().mockResolvedValue('/picked/dir'),
+    browseFolder: vi.fn().mockResolvedValue('/picked/dir')
   } as unknown as typeof window.api
 })
 
@@ -32,7 +32,7 @@ describe('PathField', () => {
       value: '/home/user/.cache/comfy',
       editType: 'path',
       editable: true,
-      browseOnly: true,
+      browseOnly: true
     })
     const pathBtn = wrapper.find('.storage-dir-name')
     expect(pathBtn.exists()).toBe(true)
@@ -49,7 +49,7 @@ describe('PathField', () => {
       value: '',
       editType: 'path',
       editable: true,
-      browseOnly: true,
+      browseOnly: true
     })
     await wrapper.find('.storage-dir-name').trigger('click')
     expect(window.api.openPath).not.toHaveBeenCalled()
@@ -61,7 +61,7 @@ describe('PathField', () => {
       label: 'PyPI Mirror',
       value: '/some/dir',
       editType: 'path',
-      editable: true,
+      editable: true
     })
     expect(wrapper.find('.storage-dir-name').exists()).toBe(false)
     expect(wrapper.find('input').exists()).toBe(true)

@@ -3,33 +3,38 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { InstallationRecord } from '../../../installations'
 
 vi.mock('electron', () => ({
-  app: { isPackaged: false, getPath: () => '', getVersion: () => '0.0.0-test', getLocale: () => 'en' },
+  app: {
+    isPackaged: false,
+    getPath: () => '',
+    getVersion: () => '0.0.0-test',
+    getLocale: () => 'en'
+  },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   shell: {},
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 vi.mock('../../i18n', () => ({
   t: (key: string) => key,
   init: vi.fn(async () => {}),
   getMessages: () => ({}),
-  getLocale: () => 'en',
+  getLocale: () => 'en'
 }))
 
 vi.mock('../../telemetry', () => ({
   capture: vi.fn(),
   bucketError: vi.fn(() => 'other'),
-  trackedStep: vi.fn(async (_step: string, _ctx: unknown, fn: () => Promise<unknown>) => fn()),
+  trackedStep: vi.fn(async (_step: string, _ctx: unknown, fn: () => Promise<unknown>) => fn())
 }))
 
 const { performLocalMigrationMock, adoptDesktopInstallMock, ipcMainHandlers } = vi.hoisted(() => ({
   performLocalMigrationMock: vi.fn(),
   adoptDesktopInstallMock: vi.fn(),
-  ipcMainHandlers: new Map<string, (event: unknown, payload: unknown) => void>(),
+  ipcMainHandlers: new Map<string, (event: unknown, payload: unknown) => void>()
 }))
 
 vi.mock('../../desktopAdopt', () => ({
-  adoptDesktopInstall: adoptDesktopInstallMock,
+  adoptDesktopInstall: adoptDesktopInstallMock
 }))
 
 vi.mock('../shared', () => ({
@@ -37,7 +42,7 @@ vi.mock('../shared', () => ({
   ipcMain: {
     on: vi.fn((channel: string, handler: (event: unknown, payload: unknown) => void) => {
       ipcMainHandlers.set(channel, handler)
-    }),
+    })
   },
   installations: { remove: vi.fn(async () => {}) },
   i18n: { t: (k: string) => k },
@@ -46,7 +51,7 @@ vi.mock('../shared', () => ({
   sourceMap: {},
   uniqueName: vi.fn(async (s: string) => s),
   makeSendProgress: vi.fn(() => vi.fn()),
-  makeSendOutput: vi.fn(() => vi.fn()),
+  makeSendOutput: vi.fn(() => vi.fn())
 }))
 
 import { handleMigrateToStandalone } from './migrate'
@@ -61,15 +66,15 @@ function makeContext(
     createdAt: '2026-01-01T00:00:00.000Z',
     installPath: '/legacy',
     sourceId: 'desktop',
-    ...inst,
+    ...inst
   } as InstallationRecord
   return {
     event: {
-      sender: sender ?? { send: vi.fn() },
+      sender: sender ?? { send: vi.fn() }
     } as unknown as Electron.IpcMainInvokeEvent,
     installationId: installation.id,
     inst: installation,
-    actionData: {},
+    actionData: {}
   }
 }
 
@@ -81,7 +86,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
   it('routes desktop source to adoptDesktopInstall and returns the newly-adopted id', async () => {
     adoptDesktopInstallMock.mockResolvedValueOnce({
       id: 'inst-adopted-1',
-      installPath: '/adopted',
+      installPath: '/adopted'
     } as InstallationRecord)
 
     const result = await handleMigrateToStandalone(makeContext({ sourceId: 'desktop' }))
@@ -91,14 +96,12 @@ describe('handleMigrateToStandalone — desktop branch', () => {
     expect(result).toEqual({
       ok: true,
       navigate: 'list',
-      newInstallationId: 'inst-adopted-1',
+      newInstallationId: 'inst-adopted-1'
     })
   })
 
   it('fails clearly when adoption cannot source ComfyUI (no fake-success fallback)', async () => {
-    adoptDesktopInstallMock.mockRejectedValueOnce(
-      new Error('source-missing: git clone failed')
-    )
+    adoptDesktopInstallMock.mockRejectedValueOnce(new Error('source-missing: git clone failed'))
     const result = await handleMigrateToStandalone(makeContext({ sourceId: 'desktop' }))
     expect(result).toEqual({ ok: false, message: 'desktop.adoptSourceMissingFailed' })
   })
@@ -119,7 +122,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
       ),
       isDestroyed: () => false,
       once: vi.fn(),
-      removeListener: vi.fn(),
+      removeListener: vi.fn()
     }
 
     // Simulate the adoption backend asking the user a question mid-operation,
@@ -134,7 +137,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
         ipcMainHandlers.get('adopt-prompt-ack')!(event, { promptId: req.promptId })
         ipcMainHandlers.get('adopt-prompt-response')!(event, {
           promptId: req.promptId,
-          buttonIndex: req.defaultId,
+          buttonIndex: req.defaultId
         })
         const choice = await choicePromise
         expect(choice).toEqual({ kind: 'source-missing', choice: 'retry' })
@@ -148,7 +151,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
     expect(result).toEqual({
       ok: true,
       navigate: 'list',
-      newInstallationId: 'inst-adopted-1',
+      newInstallationId: 'inst-adopted-1'
     })
   })
 
@@ -162,7 +165,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
       ),
       isDestroyed: () => false,
       once: vi.fn(),
-      removeListener: vi.fn(),
+      removeListener: vi.fn()
     }
 
     adoptDesktopInstallMock.mockImplementationOnce(
@@ -200,7 +203,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
       ),
       isDestroyed: () => false,
       once: vi.fn(),
-      removeListener: vi.fn(),
+      removeListener: vi.fn()
     }
 
     adoptDesktopInstallMock.mockImplementationOnce(
@@ -234,7 +237,7 @@ describe('handleMigrateToStandalone — desktop branch', () => {
       send: vi.fn((channel: string, payload: SentMessage['payload']) =>
         sent.push({ channel, payload })
       ),
-      isDestroyed: () => false,
+      isDestroyed: () => false
     }
 
     adoptDesktopInstallMock.mockImplementationOnce(
@@ -256,7 +259,7 @@ describe('handleMigrateToStandalone — non-desktop branch', () => {
   it('routes non-desktop source to performLocalMigration', async () => {
     performLocalMigrationMock.mockResolvedValueOnce({
       entry: { id: 'inst-mig-1' },
-      destPath: '/dest',
+      destPath: '/dest'
     })
     const result = await handleMigrateToStandalone(makeContext({ sourceId: 'standalone' }))
 

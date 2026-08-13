@@ -51,7 +51,9 @@ export function createCache(dir: string, max: number): Cache {
     ensureDir()
     const cutoff = Date.now() - maxAgeMs
     try {
-      const folders = (await fs.promises.readdir(dir, { withFileTypes: true })).filter((d) => d.isDirectory())
+      const folders = (await fs.promises.readdir(dir, { withFileTypes: true })).filter((d) =>
+        d.isDirectory()
+      )
       for (const folder of folders) {
         const folderPath = path.join(dir, folder.name)
         try {
@@ -65,7 +67,9 @@ export function createCache(dir: string, max: number): Cache {
               if (stat.mtimeMs < cutoff) {
                 // Remove both the meta file and the associated incomplete data file
                 const dataFilePath = metaFilePath.slice(0, -META_SUFFIX.length)
-                try { await fs.promises.unlink(dataFilePath) } catch {}
+                try {
+                  await fs.promises.unlink(dataFilePath)
+                } catch {}
                 await fs.promises.unlink(metaFilePath)
               }
             } catch {}

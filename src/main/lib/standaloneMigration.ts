@@ -15,8 +15,18 @@ import {
   restorePipPackages,
   restoreComfyUIVersion,
   buildPostRestoreState,
-  frozenSnapshotInstallOverrides
+  frozenSnapshotInstallOverrides,
+  repairNodeRequirements,
+  protectedPackageDrift
 } from './snapshots'
+import type { Snapshot, RequirementsRepairResult } from './snapshots'
+import { getInstalledTorchTuple } from '../sources/standalone/envPaths'
+import {
+  torchTupleMatches,
+  stackVersionMatches,
+  observedTuple,
+  hasFullObservedTuple
+} from '../sources/standalone/torchStackTypes'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -26,6 +36,7 @@ import type { SourcePlugin, FieldOption } from '../types/sources'
 import type { ComfyVersion } from './version'
 import { assertReadable } from './desktopDetect'
 import * as telemetry from './telemetry'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 const MARKER_FILE = '.comfyui-desktop-2'
 
@@ -105,7 +116,11 @@ async function resolveStandaloneInstallData(
     // (see `standalone/index.ts:328`). Without it the source returns an
     // empty array and the legacy-desktop migration silently bails with
     // "No releases available." instead of progressing.
-    const releaseOptions = await standaloneSource.getFieldOptions!('release', {}, { includeLatestStable: true })
+    const releaseOptions = await standaloneSource.getFieldOptions!(
+      'release',
+      {},
+      { includeLatestStable: true }
+    )
     if (releaseOptions.length === 0) {
       cleanupOnError()
       throw new Error('No releases available.')
@@ -140,8 +155,45 @@ async function resolveStandaloneInstallData(
 }
 
 /**
+ * Fresh installs get their PyTorch from the install bundle (pinned to the
+ * snapshot's stack when it is available for this machine), never from a
+ * post-install swap. When the resulting stack differs from what the snapshot
+ * recorded, the substitution is disclosed instead of failing the restore —
+ * but the imported envelope must then not be committed to history, since the
+ * install was never in exactly the recorded state.
+ */
+function torchSubstitutionNote(
+  installation: InstallationRecord,
+  targetSnapshot: Snapshot
+): string | null {
+  const snapTorch = targetSnapshot.torchStack
+  if (!snapTorch) return null
+  const installed = getInstalledTorchTuple(installation)
+  if (snapTorch.kind === 'managed') {
+    if (torchTupleMatches(snapTorch.ref.packages, installed)) return null
+    return i18n.t('standalone.pytorchSnapshotStackKeptLocal', {
+      version: snapTorch.ref.packages.torch
+    })
+  }
+  if (snapTorch.torchVersion) {
+    // Full-tuple observed records compare as a stack: matching torch alone is
+    // not "reached" when torchvision/torchaudio differ. Partial (legacy)
+    // records can only compare torch - tag-aware, so 2.4.1+cu121 and
+    // 2.4.1+cpu are different stacks, not a match.
+    const matches = hasFullObservedTuple(snapTorch)
+      ? torchTupleMatches(observedTuple(snapTorch), installed)
+      : Boolean(installed.torch && stackVersionMatches(installed.torch, snapTorch.torchVersion))
+    if (matches) return null
+    return i18n.t('standalone.pytorchSnapshotObservedSkip', { version: snapTorch.torchVersion })
+  }
+  return null
+}
+
+/**
  * Restore a snapshot (custom nodes + pip packages) into a freshly installed
- * standalone installation.
+ * standalone installation. Always applies the snapshot in compatible mode:
+ * a fresh install adapts to this machine (torch substitution disclosure,
+ * requirements repair) rather than failing on states it cannot reproduce.
  */
 export async function restoreSnapshotIntoInstallation(
   entry: InstallationRecord,
@@ -221,6 +273,76 @@ export async function restoreSnapshotIntoInstallation(
       )
     }
 
+    // Additive repair pass after the exact sync: the snapshot's freeze may not
+    // record packages this machine resolves differently, and the sync's
+    // remove-extras step must never leave core or nodes missing dependencies.
+    let repairResult: RequirementsRepairResult = { changed: [], errors: [] }
+    if (
+      coreOk &&
+      !signal.aborted &&
+      !targetSnapshot.skipPipSync &&
+      pipResult &&
+      pipResult.failed.length === 0
+    ) {
+      sendOutput('\n── Repair Requirements ──\n')
+      sendProgress('restore-pip', { percent: -1, status: i18n.t('standalone.snapshotRepairPhase') })
+      try {
+        repairResult = await repairNodeRequirements(
+          freshInst.installPath,
+          freshInst,
+          sendOutput,
+          signal,
+          settings.getMirrorConfig()
+        )
+      } catch (err) {
+        // A rejected repair pass (freeze/constraints IO failure) leaves the
+        // drift unknown; record it as a repair error so the envelope is not
+        // committed, instead of failing the whole restore.
+        repairResult = {
+          changed: [],
+          errors: [`Requirements repair failed: ${(err as Error).message}`]
+        }
+      }
+      if (repairResult.changed.length > 0) {
+        sendOutput(`Requirements repair adjusted ${repairResult.changed.length} package(s)\n`)
+      }
+    }
+
+    // Fresh installs never swap torch after install — the bundle choice was
+    // already pinned to the snapshot's stack when available. Disclose when the
+    // resulting stack differs from what the snapshot recorded.
+    const torchNote = coreOk ? torchSubstitutionNote(freshInst, targetSnapshot) : null
+    if (torchNote) sendOutput(`\n${torchNote}\n`)
+
+    // The pip sync never mutates protected packages (torch/CUDA family, core
+    // tooling), and a fresh bundle can share the snapshot's torch tuple while
+    // differing in nvidia-*/triton/tooling versions — so measure the drift:
+    // an envelope must not be committed as reached when protected packages
+    // still differ ("can't measure" counts as unknown, not zero). Measured
+    // whenever the sync ran — even with nothing protected-skipped, the
+    // unconstrained bulk install can pull a protected package along as a
+    // dependency, so "no skips" does not prove no drift.
+    let protectedDriftCount = 0
+    let protectedDriftUnknown = false
+    if (coreOk && !signal.aborted && !targetSnapshot.skipPipSync && pipResult) {
+      try {
+        const drift = await protectedPackageDrift(freshInst, targetSnapshot.pipPackages)
+        protectedDriftCount = drift.length
+        if (drift.length > 0) {
+          const note = i18n.t('standalone.snapshotProtectedDrift', { count: drift.length })
+          sendOutput(
+            `\n${note}\n${drift.map((d) => `  ${d.name}: ${d.live ?? '(absent)'} (snapshot: ${d.target ?? '(absent)'})`).join('\n')}\n`
+          )
+        }
+      } catch (err) {
+        // Unknown drift blocks the envelope commit below; disclose WHY the
+        // imported history was not kept instead of staying silent.
+        protectedDriftUnknown = true
+        console.warn('Protected package drift check failed:', err)
+        sendOutput(`\n${i18n.t('standalone.snapshotProtectedDriftUnknown')}\n`)
+      }
+    }
+
     // Update installation state with restored version/channel metadata
     const restoreState = buildPostRestoreState(
       targetSnapshot,
@@ -243,20 +365,52 @@ export async function restoreSnapshotIntoInstallation(
       nodeResult.unreportable.length === 0 &&
       (pipResult?.failed.length ?? 0) === 0
 
+    // Compatible-mode adaptations (torch substitution, requirements repair
+    // drift or repair errors) don't fail the restore, but they do mean the
+    // install never reached exactly the recorded state — the envelope must not
+    // be committed.
+    const reachedTarget =
+      restoreSucceeded &&
+      !torchNote &&
+      repairResult.changed.length === 0 &&
+      repairResult.errors.length === 0 &&
+      protectedDriftCount === 0 &&
+      !protectedDriftUnknown
+
     const updatedInst = { ...freshInst, ...restoreState }
     currentForSnapshot = updatedInst
 
     // Only commit the imported envelope to history once the install has
-    // actually been in that state (#1137).
+    // actually been in that state (#1137), and commit only the restored
+    // snapshot: the envelope may carry the source install's older history,
+    // states this install has never been in.
+    if (reachedTarget) {
+      await importSnapshots(
+        freshInst.installPath,
+        { ...importEnvelope, snapshots: [targetSnapshot] },
+        entry.id
+      )
+    }
     if (restoreSucceeded) {
-      await importSnapshots(freshInst.installPath, importEnvelope, entry.id)
       try {
-        // Make the newest snapshot reflect the real current state — normally a
-        // no-op since the just-committed target already matches and stays Latest.
+        // Make the newest snapshot reflect the real current state — a no-op
+        // when the just-committed target already matches and stays Latest;
+        // with compatible-mode adaptations (nothing committed) a fresh
+        // snapshot of the actual state is written instead.
         const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, updatedInst)
         const snapshotCount = await getSnapshotCount(freshInst.installPath)
         await update({ lastSnapshot: filename ?? freshInst.lastSnapshot, snapshotCount })
       } catch (err) {
+        if (!reachedTarget) {
+          // Adapted restore: nothing was committed, so this snapshot is the
+          // ONLY record of the state this restore produced. Failing to write
+          // it must fail the restore rather than report success with a stale
+          // "Latest".
+          throw new Error(
+            `Snapshot restore applied, but the resulting state could not be saved: ${(err as Error).message}`,
+            { cause: err }
+          )
+        }
         console.warn('Failed to record restored snapshot state:', err)
       }
     }
@@ -265,25 +419,30 @@ export async function restoreSnapshotIntoInstallation(
       const failures = [
         comfyResult.error ? `ComfyUI: ${comfyResult.error}` : '',
         ...(nodeResult?.failed.map((failure) => `Node ${failure.id}: ${failure.error}`) ?? []),
-        ...(nodeResult?.unreportable.map((id) => `Standalone node ${id}: source file is unavailable`) ?? []),
-        ...(pipResult?.errors ?? []),
+        ...(nodeResult?.unreportable.map(
+          (id) => `Standalone node ${id}: source file is unavailable`
+        ) ?? []),
+        ...(pipResult?.errors ?? [])
       ].filter(Boolean)
-      throw new Error(signal.aborted
-        ? 'Snapshot restore cancelled.'
-        : `Snapshot restore did not reach the target state.${failures.length > 0 ? ` ${failures.join('; ')}` : ''}`)
+      throw new Error(
+        signal.aborted
+          ? 'Snapshot restore cancelled.'
+          : `Snapshot restore did not reach the target state.${failures.length > 0 ? ` ${failures.join('; ')}` : ''}`
+      )
     }
 
     completed = true
   } catch (restoreErr) {
-    sendOutput(
-      `\n⚠ Snapshot restore failed: ${(restoreErr as Error).message}\n`
-    )
+    sendOutput(`\nWarning: Snapshot restore failed: ${(restoreErr as Error).message}\n`)
     // The target was never committed to history (restore failed), but this
     // fresh-install migration has no source rollback, so the on-disk state can
     // be a novel partial-restore state that no existing snapshot matches.
     // Capture it so the newest snapshot still reflects the real current state.
     try {
-      const { filename } = await ensureCurrentSnapshotOnTop(freshInst.installPath, currentForSnapshot)
+      const { filename } = await ensureCurrentSnapshotOnTop(
+        freshInst.installPath,
+        currentForSnapshot
+      )
       if (filename) {
         const snapshotCount = await getSnapshotCount(freshInst.installPath)
         await update({ lastSnapshot: filename, snapshotCount })
@@ -309,21 +468,24 @@ async function copyMigrationData(
   sourcePaths: SharedMigrationInput['sourcePaths'],
   destComfyUIDir: string,
   labels: SharedMigrationInput['labels'],
-  sendProgress: MigrationTools['sendProgress']
+  sendProgress: MigrationTools['sendProgress'],
+  context: telemetry.TelemetryContext
 ): Promise<void> {
   // Verify read access to source directories before copying (macOS TCC may block)
-  for (const dir of [
-    sourcePaths.userDir,
-    sourcePaths.inputDir,
-    sourcePaths.outputDir,
-    sourcePaths.modelsDir
-  ]) {
-    if (dir && fs.existsSync(dir)) assertReadable(dir)
-  }
+  await telemetry.trackedStep('comfy.desktop.migrate.source_preflight', context, async () => {
+    for (const dir of [
+      sourcePaths.userDir,
+      sourcePaths.inputDir,
+      sourcePaths.outputDir,
+      sourcePaths.modelsDir
+    ]) {
+      if (dir && fs.existsSync(dir)) assertReadable(dir)
+    }
+  })
 
   // User data
   if (sourcePaths.userDir && fs.existsSync(sourcePaths.userDir)) {
-    await telemetry.trackedStep('comfy.desktop.migrate.user_files', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.user_files', context, async () => {
       sendProgress('migrate', { percent: 0, status: labels.userData })
       const dstUserDir = path.join(destComfyUIDir, 'user')
       await mergeDirFlat(sourcePaths.userDir!, dstUserDir, (copied, skipped, fileTotal) => {
@@ -335,7 +497,7 @@ async function copyMigrationData(
 
   // Input
   if (sourcePaths.inputDir && fs.existsSync(sourcePaths.inputDir)) {
-    await telemetry.trackedStep('comfy.desktop.migrate.input', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.input', context, async () => {
       const dstInput =
         (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
       sendProgress('migrate', { percent: 40, status: labels.input })
@@ -345,7 +507,7 @@ async function copyMigrationData(
 
   // Output
   if (sourcePaths.outputDir && fs.existsSync(sourcePaths.outputDir)) {
-    await telemetry.trackedStep('comfy.desktop.migrate.output', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.output', context, async () => {
       const dstOutput =
         (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
       sendProgress('migrate', { percent: 60, status: labels.output })
@@ -355,7 +517,7 @@ async function copyMigrationData(
 
   // Models — add to shared paths, no copy
   if (sourcePaths.modelsDir) {
-    await telemetry.trackedStep('comfy.desktop.migrate.models', {}, async () => {
+    await telemetry.trackedStep('comfy.desktop.migrate.models', context, async () => {
       sendProgress('migrate', { percent: 90, status: labels.models })
       const resolved = path.resolve(sourcePaths.modelsDir!)
       const currentModelsDirs = (settings.get('modelsDirs') as string[] | undefined) || [
@@ -379,7 +541,7 @@ async function copyMigrationData(
 export async function migrateToStandaloneFromSnapshot(
   input: SharedMigrationInput,
   tools: MigrationTools
-): Promise<{ entry: InstallationRecord; destPath: string }> {
+): Promise<{ entry: InstallationRecord; destPath: string; restoreError?: string }> {
   const { sendProgress, signal, uniqueName } = tools
   const { stagedSnapshot, sourcePaths, labels, target } = input
 
@@ -388,45 +550,43 @@ export async function migrateToStandaloneFromSnapshot(
   }
 
   // 1. Resolve release/variant
-  const { instData, standaloneSource } = await resolveStandaloneInstallData(
-    target,
-    tools.sourceMap,
-    cleanupStagedFile
+  const { instData, standaloneSource } = await telemetry.trackedStep(
+    'comfy.desktop.migrate.resolve_target',
+    {},
+    async () => resolveStandaloneInstallData(target, tools.sourceMap, cleanupStagedFile)
   )
 
   // 2. Create new standalone installation record
-  const name = await uniqueName(input.installNameBase)
-  const dirName = sanitizeDirName(name)
-  const installDir = defaultInstallDir()
-  const destPath = allocateUniqueDir(installDir, dirName)
-
-  const entry = await installations.add({
-    name,
-    installPath: destPath,
-    pendingSnapshotRestore: stagedSnapshot.path,
-    ...instData,
-    status: 'installing',
-    seen: false,
-    ...(input.sourceInstallationId
-      ? {
-          copiedFrom: input.sourceInstallationId,
-          copiedFromName: input.sourceInstallationName,
-          copiedAt: new Date().toISOString(),
-          copyReason: 'standalone-migration'
-        }
-      : {})
-  })
+  const { entry, destPath } = await telemetry.trackedStep(
+    'comfy.desktop.migrate.allocate',
+    {},
+    async () => {
+      const name = await uniqueName(input.installNameBase)
+      const dirName = sanitizeDirName(name)
+      const installDir = defaultInstallDir()
+      const allocatedPath = allocateUniqueDir(installDir, dirName)
+      const createdEntry = await installations.add({
+        name,
+        installPath: allocatedPath,
+        pendingSnapshotRestore: stagedSnapshot.path,
+        ...instData,
+        status: 'installing',
+        seen: false,
+        ...(input.sourceInstallationId
+          ? {
+              copiedFrom: input.sourceInstallationId,
+              copiedFromName: input.sourceInstallationName,
+              copiedAt: new Date().toISOString(),
+              copyReason: 'standalone-migration'
+            }
+          : {})
+      })
+      return { entry: createdEntry, destPath: allocatedPath }
+    }
+  )
 
   try {
     // 3. Install standalone (download + extract + setup env)
-    await fs.promises.mkdir(destPath, { recursive: true })
-    await fs.promises.writeFile(path.join(destPath, MARKER_FILE), entry.id)
-    const cache = createCache(
-      settings.get('cacheDir') as string,
-      settings.get('maxCachedDownloads') as number
-    )
-    const installRecord = { ...instData, installPath: destPath } as unknown as InstallationRecord
-
     const releaseTag = (instData['releaseTag'] as string | undefined) ?? null
     const variantId = (instData['variantId'] as string | undefined) ?? null
     const installContext = {
@@ -434,6 +594,20 @@ export async function migrateToStandaloneFromSnapshot(
       release_tag: releaseTag,
       variant_id: variantId
     }
+
+    await telemetry.trackedStep(
+      'comfy.desktop.migrate.prepare_target',
+      installContext,
+      async () => {
+        await fs.promises.mkdir(destPath, { recursive: true })
+        await fs.promises.writeFile(path.join(destPath, MARKER_FILE), entry.id)
+      }
+    )
+    const cache = createCache(
+      settings.get('cacheDir') as string,
+      settings.get('maxCachedDownloads') as number
+    )
+    const installRecord = { ...instData, installPath: destPath } as unknown as InstallationRecord
 
     await telemetry.trackedStep('comfy.desktop.install.standalone', installContext, async () => {
       await standaloneSource.install!(installRecord, {
@@ -451,20 +625,54 @@ export async function migrateToStandaloneFromSnapshot(
       await standaloneSource.postInstall!(installRecord, { sendProgress, update })
     })
 
-    // 4. Restore snapshot (custom nodes + pip packages)
-    await restoreSnapshotIntoInstallation(
-      entry,
-      stagedSnapshot.path,
-      stagedSnapshot.owned,
-      tools,
-      update
-    )
+    // 4. Restore snapshot (custom nodes + pip packages). A restore failure
+    // after the successful env install must not condemn the new install - it
+    // is bootable, and its newest snapshot already records the actual state
+    // (#1255). Finish the migration and report the failure to the caller.
+    // `canonicalError` + `emitError: false` isolate the step: a tolerated
+    // failure must not poison the canonical flow scope's `failed_stage` (a
+    // later step's failure would be misattributed), and a cancellation must
+    // not emit an error event on top of the flow-level one. The catch below
+    // emits the step error itself for the tolerated (non-cancel) case, since
+    // the swallowed error never reaches the canonical flow step.
+    let restoreError: string | undefined
+    const restoreStartedAt = Date.now()
+    try {
+      await telemetry.trackedStep(
+        'comfy.desktop.migrate.restore_snapshot',
+        installContext,
+        async () => {
+          await restoreSnapshotIntoInstallation(
+            entry,
+            stagedSnapshot.path,
+            stagedSnapshot.owned,
+            tools,
+            update
+          )
+        },
+        { canonicalError: true, emitError: false }
+      )
+    } catch (err) {
+      if (signal.aborted) throw err
+      restoreError = buildErrorFields(err).error_message
+      telemetry.emit('comfy.desktop.migrate.restore_snapshot.error', {
+        ...installContext,
+        duration_ms: Date.now() - restoreStartedAt,
+        ...buildErrorFields(err)
+      })
+      // Drop the retry pointer so a later re-install can't replay the failed
+      // restore, and release the staged file if this migration owns it.
+      await update({ pendingSnapshotRestore: undefined })
+      if (stagedSnapshot.owned) await fs.promises.unlink(stagedSnapshot.path).catch(() => {})
+    }
 
     // 5. Copy user data, input, output, models
     const dstComfyUI = path.join(destPath, 'ComfyUI')
-    await copyMigrationData(sourcePaths, dstComfyUI, labels, sendProgress)
+    await copyMigrationData(sourcePaths, dstComfyUI, labels, sendProgress, installContext)
 
-    await installations.update(entry.id, { status: 'installed' })
+    await telemetry.trackedStep('comfy.desktop.migrate.finalize', installContext, async () => {
+      await installations.update(entry.id, { status: 'installed' })
+    })
 
     // Fire the once-per-install funnel event for the snapshot-based migrate-to-
     // standalone path (portable/git → standalone, and Desktop-1 snapshot
@@ -478,9 +686,18 @@ export async function migrateToStandaloneFromSnapshot(
       express: false
     })
 
-    return { entry, destPath }
+    return { entry, destPath, restoreError }
   } catch (err) {
-    await installations.update(entry.id, { status: 'failed' }).catch(() => {})
+    if (signal.aborted) {
+      // Cancelled: the caller never received entry/destPath, so it cannot
+      // clean up — remove the partial install record, its directory, and the
+      // owned staged file here.
+      await installations.remove(entry.id).catch(() => {})
+      await fs.promises.rm(destPath, { recursive: true, force: true }).catch(() => {})
+      cleanupStagedFile()
+    } else {
+      await installations.update(entry.id, { status: 'failed' }).catch(() => {})
+    }
     throw err
   }
 }

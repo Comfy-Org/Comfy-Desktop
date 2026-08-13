@@ -1,16 +1,8 @@
 /**
  * E2E: instance/window navigation matrix — cloud-target deltas (issue #926).
  *
- * Pins `openInstallInNewWindow`'s behavior for cloud targets via recorded IPC +
- * window counts: a new window for a cloud install with no window, plus the
- * `allowDuplicate` carve-out (currently DORMANT — no decision cell sets it; the
- * primitive is kept wired for a future "second window" feature), with a control
- * proving `allowDuplicate` is the only thing lifting the focus-existing guard.
- *
- * Driven from the chooser host (no real cloud attach / network needed): the
- * primitive depends on the TARGET install + `allowDuplicate`, not on the calling
- * view. The decision that *selects* this primitive per current-view is unit
- * tested in `navDecision.test.ts` (cloud-self now resolves to Restart).
+ * Pins the dashboard cloud target's "Open in new window" picker action via
+ * recorded IPC + window count. No real cloud attach or network is needed.
  */
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
@@ -26,6 +18,7 @@ import {
   resetIpcInvocations,
 } from './support/devHooks'
 import { liveWindowCount, openPicker } from './support/navMatrixHelpers'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 
@@ -34,17 +27,21 @@ const CLOUD_NAME = 'Nav Cloud Target'
 
 test.describe.configure({ mode: 'serial' })
 
-async function newWindowCalls(): Promise<{ installationId?: string; allowDuplicate?: boolean; focusedExisting?: boolean }[]> {
+async function newWindowCalls(): Promise<{ installationId?: string; focusedExisting?: boolean }[]> {
   return (await getIpcInvocations(ctx.app, 'open-install-new-window')) as never
 }
 
-/** Open the picker and fire one `openInstallNewWindow` call, returning once the
- *  popup has dismissed (so the IPC has reached main). */
-async function openInNewWindow(installationId: string, opts?: { allowDuplicate?: boolean }): Promise<void> {
+async function openCloudInNewWindow(): Promise<void> {
   await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
   const popup = titlePopupPage(ctx.app)
-  const optsArg = opts ? `, ${JSON.stringify(opts)}` : ''
-  await popup.evaluate<void>(`window.__comfyTitlePopup.openInstallNewWindow(${JSON.stringify(installationId)}${optsArg})`)
+  const cloudRow = byTestId(TID.pickerRow(CLOUD_ID))
+  await popup.waitForVisible(cloudRow)
+  expect(await popup.click(cloudRow), 'Cloud instance selected').toBe(true)
+  await popup.waitForVisible(byTestId(TID.pickerNewWindow))
+  expect(await popup.click(byTestId(TID.pickerNewWindow)), 'Window options clicked').toBe(true)
+  const openNewItem = byTestId(TID.pinBottomAction('nav:0'))
+  await popup.waitForVisible(openNewItem)
+  expect(await popup.click(openNewItem), 'Open in new window clicked').toBe(true)
   await expect.poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), { timeout: 5_000, intervals: [100, 200] }).toBe(false)
 }
 
@@ -70,42 +67,17 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('cloud target with no window: opens a new window @lifecycle', async () => {
+// Tagged platform, not @lifecycle: the cloud install is a seeded record,
+// sessions are cleared via a dev hook, and the assertion is IPC + window
+// count - synthetic navigation coverage, not a real cloud attach flow
+// (that is lifecycle-cloud.test.ts).
+test('cloud target with no window: opens a new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
-  await openInNewWindow(CLOUD_ID)
+  await openCloudInNewWindow()
 
   await expect.poll(
     async () => (await newWindowCalls()).some((c) => c.installationId === CLOUD_ID && c.focusedExisting === false),
     { timeout: 5_000, intervals: [100, 250] },
   ).toBe(true)
   await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
-})
-
-test('cloud self with allowDuplicate: always spawns a window (matrix row 16) @lifecycle', async () => {
-  // allowDuplicate bypasses the focus-existing guard unconditionally, so it
-  // spawns regardless of whether a window already exists for the install.
-  const before = await liveWindowCount(ctx.app)
-  await openInNewWindow(CLOUD_ID, { allowDuplicate: true })
-
-  await expect.poll(
-    async () => (await newWindowCalls()).some(
-      (c) => c.installationId === CLOUD_ID && c.allowDuplicate === true && c.focusedExisting === false,
-    ),
-    { timeout: 5_000, intervals: [100, 250] },
-  ).toBe(true)
-  await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
-})
-
-test('allowDuplicate flag is threaded through to main intact @lifecycle', async () => {
-  // The focus-vs-spawn outcome of a plain (no-allowDuplicate) call hinges on the
-  // install having a REAL attached window, which e2e can't produce without a
-  // live cloud session. So here we pin the plumbing that drives that branch: a
-  // plain call records `allowDuplicate: false`, distinct from the carve-out call
-  // above. The focus-existing behavior itself is unit tested in the dispatcher.
-  await openInNewWindow(CLOUD_ID)
-
-  await expect.poll(
-    async () => (await newWindowCalls()).some((c) => c.installationId === CLOUD_ID && c.allowDuplicate === false),
-    { timeout: 5_000, intervals: [100, 250] },
-  ).toBe(true)
 })

@@ -6,7 +6,6 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
-import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useModal } from '../composables/useModal'
 import { Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
@@ -20,7 +19,7 @@ import { isDistributionInstall } from '../devplatform/distributionState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Distribution } from '../devplatform/types'
-import type { Installation, ShowProgressOpts } from '../types/ipc'
+import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
  * Chooser view — recents grid.
@@ -105,13 +104,9 @@ watch(
 // flow through `visibleInstalls` like every other source — there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const {
-  searchQuery,
-  activeFilter,
-  visibleInstalls,
-  showEmptyHint,
-  matchesQuery
-} = useInstallList({ installations: installationsRef })
+const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, matchesQuery } = useInstallList({
+  installations: installationsRef
+})
 
 // Explicitly expose `activeFilter` so the brand-redesign tests can
 // drive the underlying filter state without the chip UI mounted.
@@ -164,7 +159,8 @@ const distributionLoadFailed = computed(
 /** The no-matches hint may only fire when NOTHING in the grid matches. A failed
  *  fetch shows its own retry line instead, so the two never co-render. */
 const showNoMatches = computed(
-  () => showEmptyHint.value && visibleDistributions.value.length === 0 && !distributionLoadFailed.value
+  () =>
+    showEmptyHint.value && visibleDistributions.value.length === 0 && !distributionLoadFailed.value
 )
 
 /** One quiet line under the grid when the signed-in workspace has nothing
@@ -230,10 +226,12 @@ async function handleDistributionActivate(dist: Distribution): Promise<void> {
   if (activatingDist.value) return
   activatingDist.value = dist.id
   try {
-    const result = await window.api.comfybuilder.installDistribution(dist.id).catch((err: unknown) => ({
-      ok: false as const,
-      message: (err as Error)?.message || String(err)
-    }))
+    const result = await window.api.comfybuilder
+      .installDistribution(dist.id)
+      .catch((err: unknown) => ({
+        ok: false as const,
+        message: (err as Error)?.message || String(err)
+      }))
     if (!result || !result.ok || !result.entry) {
       await modal.alert({
         title: t('errors.installFailed'),
@@ -373,10 +371,6 @@ async function pickInstall(inst: Installation): Promise<void> {
     // launch normally in that case.
     if (focused) return
   }
-  // Cloud capacity gate — catches the case where a cloud install
-  // already exists and the user clicks its per-install tile (the
-  // generic "Try Cloud" tile gates separately in `handleCloudClick`).
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry('picker'))) return
   emit('pick', inst)
 }
 
@@ -415,11 +409,23 @@ function viewDanger(inst: Installation): void {
   void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
-// Capacity-protection switch (PostHog flag `desktop-cloud-capacity`).
-// When `disabled`, the tile is greyed out and the click is a no-op so
-// users can't enter cloud during an outage. When `degraded`, the tile
-// surfaces a "Heavy usage" meta pill but the click still proceeds.
-const cloudCapacity = useCloudCapacity()
+const cloudFreeRunsEnabled = ref(false)
+const cloudUserTier = ref<CloudUserTier>('unknown')
+const showCloudFreeRunsPill = computed(
+  () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
+)
+onMounted(async () => {
+  const [freeRunsResult, userTierResult] = await Promise.allSettled([
+    window.api.getCloudFreeRunsEnabled(),
+    window.api.getCloudUserTier()
+  ])
+  if (freeRunsResult.status === 'fulfilled') {
+    cloudFreeRunsEnabled.value = freeRunsResult.value
+  }
+  if (userTierResult.status === 'fulfilled') {
+    cloudUserTier.value = userTierResult.value
+  }
+})
 function handleNewInstallClick(): void {
   emit('show-new-install')
 }
@@ -480,6 +486,7 @@ const gridHandlers = {
             show-new
             :centered="!showWorkspaceShelf"
             :entries="ownEntries"
+            :show-free-runs-pill="showCloudFreeRunsPill"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -503,12 +510,14 @@ const gridHandlers = {
           <ChooserFamilyGrid
             v-if="workspaceInstalledEntries.length"
             :entries="workspaceInstalledEntries"
+            :show-free-runs-pill="showCloudFreeRunsPill"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
           <ChooserFamilyGrid
             v-if="workspaceAvailableEntries.length"
             :entries="workspaceAvailableEntries"
+            :show-free-runs-pill="showCloudFreeRunsPill"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -758,5 +767,4 @@ const gridHandlers = {
   font-size: 11px;
   color: var(--text-faint);
 }
-
 </style>

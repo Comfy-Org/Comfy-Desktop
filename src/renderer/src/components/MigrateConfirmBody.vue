@@ -60,11 +60,7 @@ function onCheckboxToggle(id: string, event: Event): void {
 
     <div v-if="checkboxes.length" class="mig-options">
       <label v-for="cb in checkboxes" :key="cb.id" class="mig-option">
-        <input
-          type="checkbox"
-          :checked="cb.checked"
-          @change="onCheckboxToggle(cb.id, $event)"
-        />
+        <input type="checkbox" :checked="cb.checked" @change="onCheckboxToggle(cb.id, $event)" />
         <span>{{ cb.label }}</span>
       </label>
     </div>

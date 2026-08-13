@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest'
 import {
   humanizeOpStatus,
   operationInflightLabel,
-  operationSuccessLabel,
+  operationSuccessLabel
 } from './progressStatusLabel'
 
-const t = ((key: string, fb?: string) => fb ?? key) as unknown as Parameters<typeof humanizeOpStatus>[1]
+const t = ((key: string, fb?: string) => fb ?? key) as unknown as Parameters<
+  typeof humanizeOpStatus
+>[1]
 
 describe('humanizeOpStatus', () => {
   it.each([
@@ -16,7 +18,7 @@ describe('humanizeOpStatus', () => {
     ['Up to date', 'Already up to date'],
     ['Stopping…', 'Stopping instance…'],
     ['Creating Python environment…', 'Setting up environment…'],
-    ['Complete', 'Finishing up…'],
+    ['Complete', 'Finishing up…']
   ])('maps %s → %s', (raw, expected) => {
     expect(humanizeOpStatus(raw, t)).toBe(expected)
   })
@@ -25,32 +27,44 @@ describe('humanizeOpStatus', () => {
     expect(humanizeOpStatus('Custom phase X', t)).toBe('Custom phase X')
   })
 
-  it.each([['', ''], [null, 'null'], [undefined, 'undefined']])(
-    'falls back to Working… for empty/null/undefined (%s)',
-    (raw) => {
-      expect(humanizeOpStatus(raw as string | null | undefined, t)).toBe('Working…')
-    }
-  )
+  it('resolves launch.activity.* sub-status keys through i18n', () => {
+    const translating = ((key: string) =>
+      key === 'launch.activity.database' ? 'Preparing database' : key) as Parameters<
+      typeof humanizeOpStatus
+    >[1]
+    expect(humanizeOpStatus('launch.activity.database', translating)).toBe('Preparing database')
+  })
+
+  it.each([
+    ['', ''],
+    [null, 'null'],
+    [undefined, 'undefined']
+  ])('falls back to Working… for empty/null/undefined (%s)', (raw) => {
+    expect(humanizeOpStatus(raw as string | null | undefined, t)).toBe('Working…')
+  })
 })
 
 describe('operationInflightLabel', () => {
   it.each([
-    [{ actionId: 'update-comfyui',        actionData: {} },                       'Updating…'],
-    [{ actionId: 'update-comfyui',        actionData: { isDowngrade: true } },    'Downgrading…'],
-    [{ actionId: 'release-update' },                                              'Updating…'],
-    [{ actionId: 'copy' },                                                        'Copying…'],
-    [{ actionId: 'copy-update' },                                                 'Copying & updating…'],
-    [{ actionId: 'delete' },                                                      'Deleting…'],
-    [{ actionId: 'snapshot-restore' },                                            'Restoring snapshot…'],
-    [{ actionId: 'snapshot-save' },                                               'Saving snapshot…'],
-    [{ actionId: 'snapshot-delete' },                                             'Deleting snapshot…'],
-    [{ actionId: 'migrate-to-standalone' },                                       'Migrating…'],
+    [{ actionId: 'update-comfyui', actionData: {} }, 'Updating…'],
+    [{ actionId: 'update-comfyui', actionData: { isDowngrade: true } }, 'Downgrading…'],
+    [{ actionId: 'release-update' }, 'Updating…'],
+    [{ actionId: 'copy' }, 'Copying…'],
+    [{ actionId: 'copy-update' }, 'Copying & updating…'],
+    [{ actionId: 'copy-pytorch' }, 'Copying & changing PyTorch…'],
+    [{ actionId: 'delete' }, 'Deleting…'],
+    [{ actionId: 'snapshot-restore' }, 'Restoring snapshot…'],
+    [{ actionId: 'snapshot-save' }, 'Saving snapshot…'],
+    [{ actionId: 'snapshot-delete' }, 'Deleting snapshot…'],
+    [{ actionId: 'migrate-to-standalone' }, 'Migrating…']
   ])('actionId=%j → %s', (op, expected) => {
     expect(operationInflightLabel(op, t)).toBe(expected)
   })
 
   it('falls back to op.title for unknown actionIds', () => {
-    expect(operationInflightLabel({ actionId: 'mystery', title: 'Doing the thing…' }, t)).toBe('Doing the thing…')
+    expect(operationInflightLabel({ actionId: 'mystery', title: 'Doing the thing…' }, t)).toBe(
+      'Doing the thing…'
+    )
   })
 
   it('falls back to Working… when op.title is also empty', () => {
@@ -60,16 +74,17 @@ describe('operationInflightLabel', () => {
 
 describe('operationSuccessLabel', () => {
   it.each([
-    [{ actionId: 'update-comfyui',        actionData: {} },                       'Update complete'],
-    [{ actionId: 'update-comfyui',        actionData: { isDowngrade: true } },    'Downgrade complete'],
-    [{ actionId: 'release-update' },                                              'Update complete'],
-    [{ actionId: 'copy' },                                                        'Copy complete'],
-    [{ actionId: 'copy-update' },                                                 'Copy complete'],
-    [{ actionId: 'delete' },                                                      'Deleted'],
-    [{ actionId: 'snapshot-restore' },                                            'Snapshot restored'],
-    [{ actionId: 'snapshot-save' },                                               'Snapshot saved'],
-    [{ actionId: 'snapshot-delete' },                                             'Snapshot deleted'],
-    [{ actionId: 'migrate-to-standalone' },                                       'Migration complete'],
+    [{ actionId: 'update-comfyui', actionData: {} }, 'Update complete'],
+    [{ actionId: 'update-comfyui', actionData: { isDowngrade: true } }, 'Downgrade complete'],
+    [{ actionId: 'release-update' }, 'Update complete'],
+    [{ actionId: 'copy' }, 'Copy complete'],
+    [{ actionId: 'copy-update' }, 'Copy complete'],
+    [{ actionId: 'copy-pytorch' }, 'Copy complete'],
+    [{ actionId: 'delete' }, 'Deleted'],
+    [{ actionId: 'snapshot-restore' }, 'Snapshot restored'],
+    [{ actionId: 'snapshot-save' }, 'Snapshot saved'],
+    [{ actionId: 'snapshot-delete' }, 'Snapshot deleted'],
+    [{ actionId: 'migrate-to-standalone' }, 'Migration complete']
   ])('actionId=%j → %s', (op, expected) => {
     expect(operationSuccessLabel(op, t)).toBe(expected)
   })

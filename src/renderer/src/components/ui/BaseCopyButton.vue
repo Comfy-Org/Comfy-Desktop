@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
   value: undefined,
   getValue: undefined,
   size: 14,
-  ariaLabel: 'Copy to clipboard',
+  ariaLabel: 'Copy to clipboard'
 })
 
 const copied = ref(false)
@@ -76,7 +76,10 @@ const Icon = computed(() => (copied.value ? Check : Copy))
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
 }
 .base-copy-button:hover,
 .base-copy-button:focus-visible {

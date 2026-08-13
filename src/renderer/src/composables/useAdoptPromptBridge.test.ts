@@ -5,11 +5,11 @@ import type { AdoptPromptRequest } from '../types/ipc'
 
 const { alertMock, confirmMock } = vi.hoisted(() => ({
   alertMock: vi.fn(),
-  confirmMock: vi.fn(),
+  confirmMock: vi.fn()
 }))
 
 vi.mock('./useDialogs', () => ({
-  useDialogs: () => ({ alert: alertMock, confirm: confirmMock }),
+  useDialogs: () => ({ alert: alertMock, confirm: confirmMock })
 }))
 
 import { useAdoptPromptBridge } from './useAdoptPromptBridge'
@@ -18,7 +18,7 @@ const Host = defineComponent({
   setup() {
     useAdoptPromptBridge()
     return () => h('div')
-  },
+  }
 })
 
 function makeRequest(overrides: Partial<AdoptPromptRequest> = {}): AdoptPromptRequest {
@@ -32,7 +32,7 @@ function makeRequest(overrides: Partial<AdoptPromptRequest> = {}): AdoptPromptRe
     buttons: ['Retry', 'Cancel'],
     defaultId: 0,
     cancelId: 1,
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -51,7 +51,7 @@ beforeEach(() => {
       return () => {}
     },
     ackAdoptPrompt: ackMock,
-    respondAdoptPrompt: respondMock,
+    respondAdoptPrompt: respondMock
   } as unknown as typeof window.api
 })
 
@@ -71,7 +71,7 @@ describe('useAdoptPromptBridge', () => {
         cancelLabel: 'Cancel',
         tone: 'primary',
         showCancel: true,
-        messageDetails: [{ label: 'Details', items: ['git clone failed'] }],
+        messageDetails: [{ label: 'Details', items: ['git clone failed'] }]
       })
     )
     expect(respondMock).toHaveBeenCalledWith({ promptId: 'p-1', buttonIndex: 0 })
@@ -93,14 +93,10 @@ describe('useAdoptPromptBridge', () => {
     alertMock.mockResolvedValue(undefined)
     const wrapper = mount(Host)
 
-    capturedCallback!(
-      makeRequest({ buttons: ['Cancel'], defaultId: 0, cancelId: 0, type: 'info' })
-    )
+    capturedCallback!(makeRequest({ buttons: ['Cancel'], defaultId: 0, cancelId: 0, type: 'info' }))
     await flushPromises()
 
-    expect(alertMock).toHaveBeenCalledWith(
-      expect.objectContaining({ buttonLabel: 'Cancel' })
-    )
+    expect(alertMock).toHaveBeenCalledWith(expect.objectContaining({ buttonLabel: 'Cancel' }))
     expect(confirmMock).not.toHaveBeenCalled()
     expect(respondMock).toHaveBeenCalledWith({ promptId: 'p-1', buttonIndex: 0 })
     wrapper.unmount()
@@ -121,7 +117,10 @@ describe('useAdoptPromptBridge', () => {
     // First prompt's dialog never resolves, so its respond is pending.
     let resolveFirst: ((v: 'primary' | 'secondary' | false) => void) | undefined
     confirmMock.mockImplementationOnce(
-      () => new Promise((r) => { resolveFirst = r })
+      () =>
+        new Promise((r) => {
+          resolveFirst = r
+        })
     )
     const wrapper = mount(Host)
 

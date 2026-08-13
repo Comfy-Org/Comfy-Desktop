@@ -19,9 +19,10 @@ const props = withDefaults(
     showNew?: boolean
     /** Center the rows instead of left-aligning them under a shelf header. */
     centered?: boolean
+    showFreeRunsPill?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
   }>(),
-  { showNew: false, centered: false }
+  { showNew: false, centered: false, showFreeRunsPill: false }
 )
 
 const emit = defineEmits<{
@@ -77,6 +78,7 @@ function lockLeavingTileSize(el: Element): void {
       <ChooserInstallTile
         v-if="entry.kind === 'install'"
         :installation="entry.inst"
+        :show-free-runs-pill="props.showFreeRunsPill && entry.inst.sourceCategory === 'cloud'"
         :is-stopped-action-gated="props.isStoppedActionGated(entry.inst)"
         @pick="emit('pick', $event)"
         @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"

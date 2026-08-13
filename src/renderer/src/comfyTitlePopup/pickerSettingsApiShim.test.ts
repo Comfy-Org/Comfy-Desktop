@@ -72,13 +72,15 @@ describe('installPickerSettingsApiShim — terminal forwarding', () => {
     const bridge = installBridge()
     installPickerSettingsApiShim()
 
-    const api = (window as unknown as {
-      api: {
-        terminalSubscribe: (id: string) => Promise<unknown>
-        terminalWrite: (id: string, data: string) => Promise<void>
-        onTerminalOutput: (cb: () => void) => () => void
+    const api = (
+      window as unknown as {
+        api: {
+          terminalSubscribe: (id: string) => Promise<unknown>
+          terminalWrite: (id: string, data: string) => Promise<void>
+          onTerminalOutput: (cb: () => void) => () => void
+        }
       }
-    }).api
+    ).api
 
     await api.terminalSubscribe('install-A')
     expect(bridge.terminalSubscribe).toHaveBeenCalledWith('install-A')

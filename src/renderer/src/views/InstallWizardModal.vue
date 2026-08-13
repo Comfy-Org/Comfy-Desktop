@@ -22,7 +22,9 @@ import {
   checkDiskSpaceOrWarn,
   checkTemplateDiskOrBlock,
   isTemplateDiskBlocked,
-  minTemplateModelBytes
+  minTemplateModelBytes,
+  isApiNodeTemplate,
+  templateSizeBytes
 } from '../lib/installHelpers'
 import TakeoverBack from '../components/TakeoverBack.vue'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
@@ -60,6 +62,10 @@ const suggestedName = ref('')
 const instPath = ref('')
 const defaultInstPath = ref('')
 const detectedGpu = ref('')
+/** Non-blocking hardware warning from `validateHardware()` (e.g. Linux AMD
+ *  /dev/kfd inaccessible): install may proceed, but the user should know GPU
+ *  acceleration will not work until they act. Plain-English text from main. */
+const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
@@ -130,6 +136,8 @@ const templateHasModels = computed(() => {
   return typeof size === 'number' && size > 0
 })
 
+const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
+
 /** Proactive disk guard — shares `isTemplateDiskBlocked` with TemplatePickerStep
  *  so the alert, the disabled Install button, and the save-time hard block can't
  *  drift. */
@@ -178,9 +186,8 @@ const templateOptions = computed<FieldOption[]>(
  *  while disk space is unknown/loading — we only skip on a confirmed shortfall. */
 const diskTooSmallForAnyTemplate = computed(() => {
   if (diskSpaceLoading.value || !diskSpace.value) return false
-  const cheapest = minTemplateModelBytes(
-    templateOptions.value.map((o) => (o.data?.sizeBytes as number | undefined) ?? 0)
-  )
+  if (templateOptions.value.some(isApiNodeTemplate)) return false
+  const cheapest = minTemplateModelBytes(templateOptions.value.map(templateSizeBytes))
   return isTemplateDiskBlocked(diskSpace.value, cheapest)
 })
 
@@ -205,7 +212,8 @@ function selectTemplate(option: FieldOption): void {
     const sizeBytes = (option.data?.sizeBytes as number | undefined) ?? 0
     emitTelemetryAction('comfy.desktop.template.selected', {
       template_id: option.value,
-      size_bucket: toSizeBucket(sizeBytes)
+      size_bucket: toSizeBucket(sizeBytes),
+      is_api_node: isApiNodeTemplate(option)
     })
   }
 }
@@ -249,6 +257,7 @@ async function handleTemplateInstall(): Promise<void> {
     template_id: tpl?.value ?? NO_TEMPLATE_VALUE,
     size_bucket: toSizeBucket((tpl?.data?.sizeBytes as number | undefined) ?? 0),
     has_models: templateHasModels.value,
+    is_api_node: templateIsApiNode.value,
     dont_show_again: dontShowTemplatePicker.value
   })
   await persistDontShowAgain()
@@ -444,6 +453,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   textFieldValues.value.clear()
 
   detectedGpu.value = t('newInstall.detectingGpu')
+  hardwareWarning.value = ''
   resetDiskSpace()
   sourceError.value = ''
   initializing.value = true
@@ -480,6 +490,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
 
     // Pre-select Standalone (the recommended method); other sources are reachable via the Advanced method-picker chips.
     hardwareValidation = await window.api.validateHardware()
+    // A newer open() may have started while awaiting; don't let a stale
+    // result overwrite its (cleared) warning state.
+    if (gen !== loadGeneration) return
+    hardwareWarning.value = hardwareValidation.warning ?? ''
     const standalone = sources.value.find((s) => s.id === 'standalone')
     if (standalone && hardwareValidation.supported) {
       await selectSourceCard(standalone)
@@ -954,6 +968,14 @@ defineExpose({ open })
               >
                 <span class="config-select__value">{{ detectedGpu }}</span>
               </div>
+              <div
+                v-if="hardwareWarning && !currentSource?.skipInstall"
+                class="config-gpu-warning"
+                role="alert"
+                data-testid="wizard-hardware-warning"
+              >
+                {{ hardwareWarning }}
+              </div>
             </div>
           </TooltipWrap>
 
@@ -977,7 +999,9 @@ defineExpose({ open })
                     :title="$t('actions.openDirectory', 'Open Directory')"
                     :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
                     @click="handleOpenInstPath"
-                  >{{ instPath }}</button>
+                  >
+                    {{ instPath }}
+                  </button>
                   <span v-else class="open-folder-link config-path-open config-path-open--static">{{
                     instPath
                   }}</span>
@@ -1025,10 +1049,7 @@ defineExpose({ open })
                     type="button"
                     role="radio"
                     :aria-checked="currentSource?.id === s.id"
-                    :class="[
-                      'brand-pill',
-                      { 'brand-pill--selected': currentSource?.id === s.id }
-                    ]"
+                    :class="['brand-pill', { 'brand-pill--selected': currentSource?.id === s.id }]"
                     @click="selectSourceCard(s)"
                   >
                     <span>{{ s.label }}</span>

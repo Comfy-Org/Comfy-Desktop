@@ -8,7 +8,7 @@ const i18n = createI18n({
   locale: 'en',
   messages: { en: { common: { close: 'Close' } } },
   missingWarn: false,
-  fallbackWarn: false,
+  fallbackWarn: false
 })
 
 // Tracked so `afterEach` can tear them down — otherwise a leaked
@@ -21,14 +21,14 @@ function mountModal(props: Record<string, unknown> = {}) {
     props: {
       open: true,
       ariaLabel: 'Test dialog',
-      ...props,
+      ...props
     },
     slots: { default: '<p class="body-content">Hello</p>' },
     global: {
       plugins: [i18n],
       // Stub `<Teleport>` so the panel renders inside the wrapper for assertions.
-      stubs: { Teleport: { template: '<div><slot /></div>' } },
-    },
+      stubs: { Teleport: { template: '<div><slot /></div>' } }
+    }
   })
   wrappers.push(wrapper)
   return wrapper

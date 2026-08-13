@@ -87,24 +87,40 @@ interface DownloadLockOptions {
   onWait?: () => void
 }
 
-async function withDownloadLock<T>(cachePath: string, opts: DownloadLockOptions, fn: () => Promise<T>): Promise<T> {
+async function withDownloadLock<T>(
+  cachePath: string,
+  opts: DownloadLockOptions,
+  fn: () => Promise<T>
+): Promise<T> {
   const { signal, onWait } = opts
   let notified = false
   while (_downloadLocks.has(cachePath)) {
     if (signal?.aborted) throw new Error('Download cancelled')
-    if (!notified) { onWait?.(); notified = true }
+    if (!notified) {
+      onWait?.()
+      notified = true
+    }
     if (signal) {
       let aborted = false
       await new Promise<void>((resolve) => {
-        const onAbort = (): void => { aborted = true; resolve() }
+        const onAbort = (): void => {
+          aborted = true
+          resolve()
+        }
         signal.addEventListener('abort', onAbort, { once: true })
-        _downloadLocks.get(cachePath)!.catch(() => {}).then(
-          () => { signal.removeEventListener('abort', onAbort); resolve() },
-        )
+        _downloadLocks
+          .get(cachePath)!
+          .catch(() => {})
+          .then(() => {
+            signal.removeEventListener('abort', onAbort)
+            resolve()
+          })
       })
       if (aborted) throw new Error('Download cancelled')
     } else {
-      try { await _downloadLocks.get(cachePath) } catch {}
+      try {
+        await _downloadLocks.get(cachePath)
+      } catch {}
     }
   }
   if (signal?.aborted) throw new Error('Download cancelled')
@@ -145,37 +161,45 @@ export async function downloadAndExtract(
   const cachePath = path.join(cacheBase, filename)
 
   await withInstallPhase(onPhase, 'download', () =>
-    withDownloadLock(cachePath, {
-      signal,
-      onWait: () => sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') }),
-    }, async () => {
-      if (isCacheValid(cachePath, expectedSize)) {
-        sendProgress('download', { percent: 100, status: t('installer.cachedDownload') })
-      } else {
-        sendProgress('download', { percent: 0, status: t('installer.startingDownload') })
-        await download(
-          url,
-          cachePath,
-          (p) => {
-            const speed = `${p.speedMBs.toFixed(1)} MB/s`
-            const elapsed = formatTime(p.elapsedSecs)
-            const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
-            sendProgress('download', {
-              percent: p.percent,
-              status: t('installer.downloading', {
-                progress: `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-              }),
-            })
-          },
-          { signal, expectedSize }
-        )
-        cache.evict()
+    withDownloadLock(
+      cachePath,
+      {
+        signal,
+        onWait: () =>
+          sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') })
+      },
+      async () => {
+        if (isCacheValid(cachePath, expectedSize)) {
+          sendProgress('download', { percent: 100, status: t('installer.cachedDownload') })
+        } else {
+          sendProgress('download', { percent: 0, status: t('installer.startingDownload') })
+          await download(
+            url,
+            cachePath,
+            (p) => {
+              const speed = `${p.speedMBs.toFixed(1)} MB/s`
+              const elapsed = formatTime(p.elapsedSecs)
+              const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
+              sendProgress('download', {
+                percent: p.percent,
+                status: t('installer.downloading', {
+                  progress: `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+                })
+              })
+            },
+            { signal, expectedSize }
+          )
+          cache.evict()
+        }
+        cache.touch(cacheKey)
       }
-      cache.touch(cacheKey)
-    })
+    )
   )
 
-  sendProgress('extract', { percent: 0, status: t('installer.extracting', { progress: '' }).trim() })
+  sendProgress('extract', {
+    percent: 0,
+    status: t('installer.extracting', { progress: '' }).trim()
+  })
   await withInstallPhase(onPhase, 'extract', () =>
     extract(
       cachePath,
@@ -186,8 +210,8 @@ export async function downloadAndExtract(
         sendProgress('extract', {
           percent: p.percent,
           status: t('installer.extracting', {
-            progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-          }),
+            progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+          })
         })
       },
       { signal }
@@ -213,66 +237,75 @@ export async function downloadAndExtractMulti(
   const overallStart = Date.now()
 
   await withInstallPhase(onPhase, 'download', async () => {
-  for (let i = 0; i < count; i++) {
-    const file = files[i]!
-    const fileCachePath = path.join(cacheBase, file.filename)
-    const fileLabel = count > 1 ? ` (${i + 1}/${count})` : ''
+    for (let i = 0; i < count; i++) {
+      const file = files[i]!
+      const fileCachePath = path.join(cacheBase, file.filename)
+      const fileLabel = count > 1 ? ` (${i + 1}/${count})` : ''
 
-    await withDownloadLock(fileCachePath, {
-      signal,
-      onWait: () => sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') }),
-    }, async () => {
-      if (isCacheValid(fileCachePath, file.size)) {
-        completedBytes += file.size || 0
-        const percent =
-          totalBytes > 0
-            ? Math.round((completedBytes / totalBytes) * 100)
-            : Math.round(((i + 1) / count) * 100)
-        sendProgress('download', { percent, status: `${t('installer.cachedDownload')}${fileLabel}` })
-      } else {
-        allCached = false
-        const basePercent =
-          totalBytes > 0
-            ? Math.round((completedBytes / totalBytes) * 100)
-            : Math.round((i / count) * 100)
-        sendProgress('download', {
-          percent: basePercent,
-          status: `${t('installer.startingDownload')}${fileLabel}`,
-        })
-        await download(
-          file.url,
-          fileCachePath,
-          (p) => {
-            const speed = `${p.speedMBs.toFixed(1)} MB/s`
-            const overallElapsed = (Date.now() - overallStart) / 1000
-            const elapsed = formatTime(overallElapsed)
-            const receivedTotal = completedBytes + p.receivedBytes
-            const overallSpeed = overallElapsed > 0 ? receivedTotal / 1048576 / overallElapsed : 0
-            const remainingBytes = totalBytes - receivedTotal
-            const eta =
-              overallSpeed > 0 && totalBytes > 0
-                ? formatTime(remainingBytes / 1048576 / overallSpeed)
-                : '—'
-            const sizeDisplay = totalMB
-              ? `${(receivedTotal / 1048576).toFixed(0)} / ${totalMB} MB`
-              : `${p.receivedMB} / ${p.totalMB} MB`
+      await withDownloadLock(
+        fileCachePath,
+        {
+          signal,
+          onWait: () =>
+            sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') })
+        },
+        async () => {
+          if (isCacheValid(fileCachePath, file.size)) {
+            completedBytes += file.size || 0
             const percent =
               totalBytes > 0
-                ? Math.round((receivedTotal / totalBytes) * 100)
-                : Math.round(((i + p.percent / 100) / count) * 100)
+                ? Math.round((completedBytes / totalBytes) * 100)
+                : Math.round(((i + 1) / count) * 100)
             sendProgress('download', {
               percent,
-              status: t('installer.downloading', {
-                progress: `${fileLabel} ${sizeDisplay}  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-              }),
+              status: `${t('installer.cachedDownload')}${fileLabel}`
             })
-          },
-          { signal, expectedSize: file.size || undefined }
-        )
-        completedBytes += file.size || 0
-      }
-    })
-  }
+          } else {
+            allCached = false
+            const basePercent =
+              totalBytes > 0
+                ? Math.round((completedBytes / totalBytes) * 100)
+                : Math.round((i / count) * 100)
+            sendProgress('download', {
+              percent: basePercent,
+              status: `${t('installer.startingDownload')}${fileLabel}`
+            })
+            await download(
+              file.url,
+              fileCachePath,
+              (p) => {
+                const speed = `${p.speedMBs.toFixed(1)} MB/s`
+                const overallElapsed = (Date.now() - overallStart) / 1000
+                const elapsed = formatTime(overallElapsed)
+                const receivedTotal = completedBytes + p.receivedBytes
+                const overallSpeed =
+                  overallElapsed > 0 ? receivedTotal / 1048576 / overallElapsed : 0
+                const remainingBytes = totalBytes - receivedTotal
+                const eta =
+                  overallSpeed > 0 && totalBytes > 0
+                    ? formatTime(remainingBytes / 1048576 / overallSpeed)
+                    : '—'
+                const sizeDisplay = totalMB
+                  ? `${(receivedTotal / 1048576).toFixed(0)} / ${totalMB} MB`
+                  : `${p.receivedMB} / ${p.totalMB} MB`
+                const percent =
+                  totalBytes > 0
+                    ? Math.round((receivedTotal / totalBytes) * 100)
+                    : Math.round(((i + p.percent / 100) / count) * 100)
+                sendProgress('download', {
+                  percent,
+                  status: t('installer.downloading', {
+                    progress: `${fileLabel} ${sizeDisplay}  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+                  })
+                })
+              },
+              { signal, expectedSize: file.size || undefined }
+            )
+            completedBytes += file.size || 0
+          }
+        }
+      )
+    }
   })
 
   cache.touch(cacheDir)
@@ -284,11 +317,15 @@ export async function downloadAndExtractMulti(
   const extractFile =
     files.length === 1
       ? firstFile!.filename
-      : [...files].sort((a, b) => a.filename.localeCompare(b.filename)).find((f) => /\.001$/.test(f.filename))
-            ?.filename ?? firstFile!.filename
+      : ([...files]
+          .sort((a, b) => a.filename.localeCompare(b.filename))
+          .find((f) => /\.001$/.test(f.filename))?.filename ?? firstFile!.filename)
   const extractPath = path.join(cacheBase, extractFile)
 
-  sendProgress('extract', { percent: 0, status: t('installer.extracting', { progress: '' }).trim() })
+  sendProgress('extract', {
+    percent: 0,
+    status: t('installer.extracting', { progress: '' }).trim()
+  })
   await withInstallPhase(onPhase, 'extract', () =>
     extract(
       extractPath,
@@ -299,8 +336,8 @@ export async function downloadAndExtractMulti(
         sendProgress('extract', {
           percent: p.percent,
           status: t('installer.extracting', {
-            progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-          }),
+            progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+          })
         })
       },
       { signal }

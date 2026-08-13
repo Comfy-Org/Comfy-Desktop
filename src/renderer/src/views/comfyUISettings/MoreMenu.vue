@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch, type Component } from 'vue'
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  useTemplateRef,
+  watch,
+  type Component
+} from 'vue'
 import { TID } from '../../../../shared/testIds'
 import type { ActionDef } from '../../types/ipc'
 
@@ -40,7 +49,7 @@ watch(
     focusedIndex.value = 0
     await nextTick()
     menuRef.value?.querySelectorAll<HTMLButtonElement>('.more-menu-item')[0]?.focus()
-  },
+  }
 )
 
 function handlePick(action: MenuAction): void {
@@ -64,8 +73,8 @@ function handleKeydown(event: KeyboardEvent): void {
   focusedIndex.value = (focusedIndex.value + delta + total) % total
   nextTick(() => {
     menuRef.value
-      ?.querySelectorAll<HTMLButtonElement>('.more-menu-item')[focusedIndex.value]
-      ?.focus()
+      ?.querySelectorAll<HTMLButtonElement>('.more-menu-item')
+      [focusedIndex.value]?.focus()
   })
 }
 
@@ -106,11 +115,7 @@ const hasIcons = computed(() => props.actions.some((a) => !!a.icon))
       aria-orientation="vertical"
     >
       <li v-if="heading" class="more-menu-heading" role="presentation">{{ heading }}</li>
-      <li
-        v-for="(action, i) in visibleActions"
-        :key="action.id"
-        role="none"
-      >
+      <li v-for="(action, i) in visibleActions" :key="action.id" role="none">
         <button
           type="button"
           role="menuitem"
@@ -118,7 +123,7 @@ const hasIcons = computed(() => props.actions.some((a) => !!a.icon))
           :class="{
             'is-danger': action.style === 'danger',
             'is-accent': action.style === 'accent',
-            'is-disabled': action.enabled === false,
+            'is-disabled': action.enabled === false
           }"
           :disabled="action.enabled === false"
           :tabindex="focusedIndex === i ? 0 : -1"
@@ -187,7 +192,9 @@ const hasIcons = computed(() => props.actions.some((a) => !!a.icon))
   color: var(--neutral-100);
   font-size: 13px;
   text-align: left;
-  transition: background-color 100ms ease, color 100ms ease;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
 }
 
 /* Fixed icon column so labels align whether or not a row carries an icon. */
@@ -239,7 +246,9 @@ const hasIcons = computed(() => props.actions.some((a) => !!a.icon))
 
 .more-menu-fade-enter-active,
 .more-menu-fade-leave-active {
-  transition: opacity 120ms ease, transform 120ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition:
+    opacity 120ms ease,
+    transform 120ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .more-menu-fade-enter-from,
 .more-menu-fade-leave-to {

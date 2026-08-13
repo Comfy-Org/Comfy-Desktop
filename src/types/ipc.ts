@@ -2,6 +2,7 @@
 // This file is the single source of truth — do not duplicate these types elsewhere.
 
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
 // Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
@@ -62,11 +63,6 @@ export type Unsubscribe = () => void
 export type Theme = 'system' | 'dark' | 'light'
 export type ResolvedTheme = Exclude<Theme, 'system'>
 
-/** Capacity-protection status for Cloud entry points (see
- *  `getCloudCapacity` and `useCloudCapacity`). `normal` = no UI changes;
- *  `degraded` = show heavy-usage warning; `disabled` = block entry. */
-export type CloudCapacityStatus = 'normal' | 'degraded' | 'disabled'
-
 /** One row of a `version-stats` field's table. */
 export interface VersionStatRow {
   id: string
@@ -85,10 +81,8 @@ export interface VersionStatsValue {
   rows: VersionStatRow[]
 }
 
-/** Signed-in user's Comfy Cloud subscription tier, normalized to the
- *  two values the capacity gate cares about. `'unknown'` = signed out
- *  or no fetch has succeeded yet this lifetime; treated as `'free'`
- *  downstream (fail-closed). See `userTier.ts`. */
+/** Signed-in user's Comfy Cloud subscription tier. `'unknown'` means signed
+ *  out or no fetch has succeeded yet this lifetime. See `userTier.ts`. */
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
 // --- Installation types ---
@@ -180,11 +174,25 @@ export interface DetailItem {
   actions?: ActionDef[]
 }
 
+/** One level of a cascading picker path (id is stable, label is display). */
+export interface DetailOptionGroup {
+  id: string
+  label: string
+  /** Shown under the label in the group dropdown (e.g. what a CUDA series
+   *  is for, or a too-old-driver warning). */
+  description?: string
+}
+
 export interface DetailFieldOption {
   value: string
   label: string
   description?: string
   recommended?: boolean
+  /** Cascading picker path for `channel-cards`: options sharing a path
+   *  prefix sit behind one dropdown per level (e.g. PyTorch backend series
+   *  -> version). The field builder emits it only when it distinguishes
+   *  (two or more groups); absent = today's flat single dropdown. */
+  groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
 }
 
@@ -204,30 +212,26 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value:
-    | string
-    | boolean
-    | number
-    | string[]
-    | Record<string, string>
-    | VersionStatsValue
-    | null
+  value: string | boolean | number | string[] | Record<string, string> | VersionStatsValue | null
   editable?: boolean
   editType?:
-  | 'select'
-  | 'boolean'
-  | 'text'
-  | 'number'
-  | 'path'
-  | 'channel-cards'
-  /** Read-only version summary: headline + badge over a table of facts. The
-   *  source supplies the wording; the renderer only lays it out. */
-  | 'version-stats'
-  | 'args-builder'
-  | 'env-vars'
-  | 'model-dirs'
-  | 'hidden'
+    | 'select'
+    | 'boolean'
+    | 'text'
+    | 'number'
+    | 'path'
+    | 'channel-cards'
+    /** Read-only version summary: headline + badge over a table of facts. The
+     *  source supplies the wording; the renderer only lays it out. */
+    | 'version-stats'
+    | 'args-builder'
+    | 'env-vars'
+    | 'model-dirs'
+    | 'hidden'
   options?: DetailFieldOption[]
+  /** Display names for each `groupPath` level of a cascading `channel-cards`
+   *  picker (e.g. ["Backend"]); indexes match `groupPath` depth. */
+  groupLabels?: string[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
    *  (e.g. switching update channel triggers `check-update`). */
@@ -240,6 +244,11 @@ export interface DetailField {
    *  nesting from the field id, since ids like `outputDir` are reused
    *  for equal-weight rows in the Shared Directories section. */
   nested?: boolean
+  /** Consecutive fields sharing the same rowGroup render side-by-side in one
+   *  row (equal widths, stacking again on narrow layouts) instead of each
+   *  taking the full width. Set by the field builder; the renderer only
+   *  groups adjacent fields so unrelated fields never merge. */
+  rowGroup?: string
   tooltip?: string
   /** Marks fields that only take effect on next process start.
    *  Renderer shows a per-field tag + promotes the footer Restart
@@ -638,6 +647,11 @@ export interface GPUInfo {
 export interface HardwareValidation {
   supported: boolean
   error?: string
+  /** Non-blocking, user-actionable problem on otherwise supported hardware
+   *  (e.g. a Linux AMD GPU whose /dev/kfd compute node the user cannot
+   *  access). Install may proceed, but GPU acceleration will not work until
+   *  the user resolves it. */
+  warning?: string
 }
 
 export interface NvidiaDriverCheck {
@@ -704,6 +718,9 @@ export interface SystemInfo {
   gpu_model: string | null
   /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
   gpu_vram_mb: number | null
+  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  gpu_vram_gb: number | null
+  gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
@@ -883,7 +900,7 @@ export interface CopyEvent {
   installationId: string
   installationName: string
   copiedAt: string
-  copyReason: 'copy' | 'copy-update' | 'release-update'
+  copyReason: 'copy' | 'copy-update' | 'copy-pytorch' | 'release-update'
   exists: boolean
   /** `out` = another install was copied FROM the install whose rail this is
    *  shown on (installationName is the destination's name).
@@ -1166,8 +1183,9 @@ export interface ElectronApi {
   /** Open the Global Settings popup for the panel's host window. Used
    *  by the panel-side file-menu "Settings" item and the
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
-   *  same helper the hamburger Settings entry calls. */
-  openGlobalSettings(): void
+   *  same helper the hamburger Settings entry calls. `tab` lands the
+   *  popup on that tab instead of its remembered one. */
+  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced'): void
   /** Open the instance-picker popup for the panel's host window with
    *  `installationId` seeded as the picker's right-pane selection.
    *  Used by chooser-card "Manage…" (and future per-install entry
@@ -1316,16 +1334,16 @@ export interface ElectronApi {
   importSnapshotsDiff(
     installationId: string
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
-  importSnapshotsConfirm(
-    installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreToken?: string; message?: string }>
-  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
-  previewDesktopMigration(): Promise<{
+  importSnapshotsConfirm(installationId: string): Promise<{
     ok: boolean
+    imported?: number
+    restoreToken?: string
+    /** Kept-local disclosure: set when the snapshot's managed PyTorch stack
+     *  cannot be applied here, so the restore will keep the local stack. */
+    torchStackNotice?: string | null
     message?: string
-    preview?: SnapshotFilePreview
-    snapshotPath?: string
   }>
+  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string
@@ -1360,12 +1378,13 @@ export interface ElectronApi {
    *  remote is unreachable. Used by the install-wizard version dropdown and
    *  the per-install ChannelPicker. */
   getStableTags(): Promise<string[]>
-  /** Capacity-protection switch for Cloud entry points. Resolved at boot
-   *  from the `desktop-cloud-capacity` PostHog flag (variants `normal` |
-   *  `degraded` | `disabled`); defaults to `'normal'` when the flag is
-   *  unavailable. Renderers consume this via `useCloudCapacity`. */
-  getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Whether the free tier is live, for the "5 free runs" trial pill.
+   *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
+   *  tracks the real rollout. False for everyone today; flips on its own
+   *  when the ramp lands. Fails CLOSED — the pill asserts a live
+   *  entitlement, so an unresolvable flag means we don't claim it. */
+  getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
@@ -1445,9 +1464,7 @@ export interface ElectronApi {
    *  reaches the launching window). Lets any open dashboard show the red
    *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
-  onTerminalOutput(
-    callback: (data: { installationId: string; data: string }) => void
-  ): Unsubscribe
+  onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): Unsubscribe
   onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
   onComfyBootLog(callback: (data: ComfyBootLogData) => void): Unsubscribe
   onInstanceLaunching(
@@ -1533,23 +1550,9 @@ export interface ElectronApi {
   }): void
   /**
    * Update person-level cohort properties on the current PostHog person.
-   * Replaces the renderer's previous `registerPostHog(properties)` calls.
-   * Main routes this to `posthog.identify({ distinctId, properties: { $set: ... } })`.
+   * Main holds pre-auth properties until a verified Firebase user is bound.
    */
   registerTelemetryProperties(properties: Record<string, unknown>): void
-  /**
-   * Bind a user_id on the current PostHog identity after a successful login.
-   * Main aliases the anonymous installation_id into user_id (PostHog merges
-   * histories), sets `is_authenticated: true`, and fires `app:user_logged_in`.
-   * The renderer remains responsible for Datadog `setUser` on its own SDK.
-   */
-  telemetryBindUserId(payload: { userId: string; properties?: Record<string, unknown> }): void
-  /**
-   * Unbind user_id on logout. Switches distinct_id back to the anonymous
-   * installation_id (NOT posthog.reset, which would clobber installation_id
-   * and download_token). Renderer also clears Datadog setUser.
-   */
-  telemetryUnbindUserId(): void
   /**
    * Look up an A/B experiment / feature-flag variant for this user.
    * Returns the cached value (string for multivariate, boolean for a
@@ -1617,18 +1620,18 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-      | 'install-update'
-      | 'app-update-restart-prompt'
-      | 'app-update-download-prompt'
-      | 'open-settings'
-      | 'picker-pick-install'
-      | 'picker-install-action'
-      | 'picker-show-progress'
+        | 'install-update'
+        | 'app-update-restart-prompt'
+        | 'app-update-download-prompt'
+        | 'open-settings'
+        | 'picker-pick-install'
+        | 'picker-install-action'
+        | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>
       version?: string | null
-      settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global'
+      settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
       /** Picker-only (`picker-pick-install`): set on boot-time restore. The
@@ -1650,7 +1653,7 @@ export interface ElectronApi {
 
 /** Action IDs that auto-relaunch ComfyUI after completing (stop→op→launch).
  *  Shared between main and renderer so both sides agree on the relaunch contract. */
-export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore'])
+export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
 /** Action IDs that require the installation to be stopped before running.
  *  Shared between main and renderer processes. */
@@ -1658,14 +1661,16 @@ export const REQUIRES_STOPPED = new Set([
   'delete',
   'copy',
   'copy-update',
+  'copy-pytorch',
   'release-update',
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
   'migrate-from',
-  // Re-installs the distribution's environment in place — the venv can't be
+  // Re-installs the distribution's environment in place - the venv can't be
   // rewritten under a running process.
-  'update-distribution'
+  'update-distribution',
+  'change-pytorch'
 ])
 
 /** Title-popup kind tags — the discriminant for popup config/opts across main,
@@ -1709,7 +1714,6 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
-  previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',

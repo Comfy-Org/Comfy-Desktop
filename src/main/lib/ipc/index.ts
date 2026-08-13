@@ -40,6 +40,7 @@ import { reconcileAdoptedSettings } from '../desktopAdopt'
 export {
   getAppVersion,
   stopRunning,
+  cancelLaunching,
   hasRunningSessions,
   getSessionProcess,
   hasActiveOperations,
@@ -62,40 +63,52 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   setCallbacks(callbacks)
   wireReleaseCacheBroadcast()
 
-  installations.seedDefaults([
-    {
+  // These startup writes go through loadForWrite(), which rejects when
+  // installations.json cannot be safely modified right now (locked or corrupt,
+  // issue #1367) - log and continue instead of an unhandled rejection.
+  const warnStartupWrite = (op: string) => (err: unknown) => {
+    console.warn(`[ipc] Skipped startup installations ${op}:`, err)
+  }
+  installations
+    .seedDefaults([
+      {
+        name: installations.CLOUD_INSTALL_NAME,
+        sourceId: installations.CLOUD_SOURCE_ID,
+        remoteUrl: 'https://cloud.comfy.org/',
+        launchMode: 'window',
+        browserPartition: 'shared'
+      }
+    ])
+    .catch(warnStartupWrite('seedDefaults'))
+  installations
+    .ensureExists(installations.CLOUD_SOURCE_ID, {
       name: installations.CLOUD_INSTALL_NAME,
       sourceId: installations.CLOUD_SOURCE_ID,
       remoteUrl: 'https://cloud.comfy.org/',
       launchMode: 'window',
-      browserPartition: 'shared'
-    }
-  ])
-  installations.ensureExists(installations.CLOUD_SOURCE_ID, {
-    name: installations.CLOUD_INSTALL_NAME,
-    sourceId: installations.CLOUD_SOURCE_ID,
-    remoteUrl: 'https://cloud.comfy.org/',
-    launchMode: 'window',
-    browserPartition: 'shared',
-    status: 'installed'
-  })
+      browserPartition: 'shared',
+      status: 'installed'
+    })
+    .catch(warnStartupWrite('ensureExists(cloud)'))
   // The Cloud entry is not user-renamable; reset any entry a prior build
   // let the user rename back to the canonical name (issue #922). Runs after
   // ensureExists via the shared FIFO write queue.
-  void installations.enforceCloudName()
+  installations.enforceCloudName().catch(warnStartupWrite('enforceCloudName'))
 
   // Auto-track a detected Legacy Desktop install.
   {
     const desktopInfo = detectDesktopInstall()
     if (desktopInfo) {
-      installations.ensureExists('desktop', {
-        name: 'ComfyUI Legacy Desktop',
-        sourceId: 'desktop',
-        installPath: desktopInfo.basePath,
-        launchMode: 'external',
-        desktopExePath: desktopInfo.executablePath || undefined,
-        status: 'installed'
-      })
+      installations
+        .ensureExists('desktop', {
+          name: 'ComfyUI Legacy Desktop',
+          sourceId: 'desktop',
+          installPath: desktopInfo.basePath,
+          launchMode: 'external',
+          desktopExePath: desktopInfo.executablePath || undefined,
+          status: 'installed'
+        })
+        .catch(warnStartupWrite('ensureExists(desktop)'))
     }
   }
 
@@ -122,7 +135,10 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
       // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
       const states = await Promise.all(
-        sweepable.map(async (inst) => ({ inst, state: await installDirStateAsync(inst.installPath) }))
+        sweepable.map(async (inst) => ({
+          inst,
+          state: await installDirStateAsync(inst.installPath)
+        }))
       )
       let swept = false
       for (const { inst, state } of states) {

@@ -30,7 +30,7 @@ const props = withDefaults(defineProps<Props>(), {
   logs: undefined,
   logsLabel: undefined,
   ariaLabel: undefined,
-  tone: 'error',
+  tone: 'error'
 })
 
 const { t } = useI18n()

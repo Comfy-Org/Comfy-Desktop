@@ -19,10 +19,13 @@ defineEmits<{
       :key="opt.value"
       role="button"
       tabindex="0"
-      :class="['variant-card', {
-        selected: selectedValue === opt.value,
-        recommended: opt.recommended,
-      }]"
+      :class="[
+        'variant-card',
+        {
+          selected: selectedValue === opt.value,
+          recommended: opt.recommended
+        }
+      ]"
       @click="$emit('select', opt)"
       @keydown.enter.prevent="$emit('select', opt)"
       @keydown.space.prevent="$emit('select', opt)"

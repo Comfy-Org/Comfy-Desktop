@@ -4,6 +4,7 @@
 import type { InstallationRecord } from '../installations'
 import * as releaseCache from './release-cache'
 import { fetchLatestRelease } from './comfyui-releases'
+import { refreshTorchStackCatalogs } from '../sources/standalone/torchStackCatalog'
 
 /** Skip the startup check if any cache entry was refreshed within this window. */
 const STARTUP_RECHECK_MS = 60 * 60 * 1000
@@ -12,6 +13,37 @@ const COMFYUI_REPO = 'Comfy-Org/ComfyUI'
 
 /** Source IDs that read from the shared ComfyUI release cache. */
 const COMFYUI_SOURCE_IDS = new Set(['standalone', 'portable'])
+
+/** Last successful torch-stack-catalog refresh. In-memory on purpose:
+ *  catalog freshness is independent of the persisted release cache, and
+ *  every app start must refresh the catalog at least once. */
+let _torchCatalogCheckedAt = 0
+/** In-flight catalog refresh; concurrent checks join it instead of refetching. */
+let _torchCatalogRefresh: Promise<void> | null = null
+
+/** Test-only: reset the in-memory torch-catalog floor to cold start. */
+export function _resetTorchCatalogFloorForTest(): void {
+  _torchCatalogCheckedAt = 0
+  _torchCatalogRefresh = null
+}
+
+/** Refresh the torch stack catalog, deduplicating concurrent calls. The
+ *  floor advances only on full success so a failed fetch retries on the
+ *  next check instead of being suppressed for the floor window. */
+function _refreshTorchCatalog(
+  installations: InstallationRecord[],
+  now: () => number
+): Promise<void> {
+  _torchCatalogRefresh ??= refreshTorchStackCatalogs(installations)
+    .then((ok) => {
+      if (ok) _torchCatalogCheckedAt = now()
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      _torchCatalogRefresh = null
+    })
+  return _torchCatalogRefresh
+}
 
 function _isComfyUIInstall(inst: InstallationRecord): boolean {
   if (inst.status !== 'installed') return false
@@ -35,7 +67,7 @@ export async function runStartupReleaseChecks(
     now?: () => number
     /** Ignore the `STARTUP_RECHECK_MS` floor; used by the periodic poll. */
     bypassFloor?: boolean
-  } = {},
+  } = {}
 ): Promise<void> {
   const now = options.now ?? (() => Date.now())
 
@@ -54,18 +86,30 @@ export async function runStartupReleaseChecks(
     }
 
     tasks.push(
-      releaseCache.getOrFetch(
-        COMFYUI_REPO,
-        channel,
-        async () => {
-          const release = await fetchLatestRelease(channel)
-          if (!release) return null
-          return releaseCache.buildCacheEntry(release)
-        },
-        /* force */ true,
-      ).catch(() => null),
+      releaseCache
+        .getOrFetch(
+          COMFYUI_REPO,
+          channel,
+          async () => {
+            const release = await fetchLatestRelease(channel)
+            if (!release) return null
+            return releaseCache.buildCacheEntry(release)
+          },
+          /* force */ true
+        )
+        .catch(() => null)
     )
   }
+  // Refresh the switchable-PyTorch-stack catalog alongside the release fetch
+  // so the Update tab's PyTorch picker stays current without a manual
+  // "Check for Update". Best-effort: a catalog failure never blocks the
+  // release check. The catalog has its own floor: its freshness is
+  // independent of the persisted release cache, so the refresh must not
+  // depend on release fetch tasks being scheduled.
+  if (options.bypassFloor || now() - _torchCatalogCheckedAt >= STARTUP_RECHECK_MS) {
+    tasks.push(_refreshTorchCatalog(installations, now))
+  }
+
   if (tasks.length === 0) return
 
   await Promise.allSettled(tasks)
@@ -81,7 +125,7 @@ const PERIODIC_RECHECK_INTERVAL_MS = 15 * 60 * 1000
  */
 export function startPeriodicReleaseChecks(
   getInstallations: () => Promise<InstallationRecord[]>,
-  options: { onRefreshed?: () => void; intervalMs?: number } = {},
+  options: { onRefreshed?: () => void; intervalMs?: number } = {}
 ): () => void {
   const intervalMs = options.intervalMs ?? PERIODIC_RECHECK_INTERVAL_MS
   const timer = setInterval(() => {
@@ -90,7 +134,7 @@ export function startPeriodicReleaseChecks(
         const installs = await getInstallations()
         await runStartupReleaseChecks(installs, {
           onRefreshed: options.onRefreshed,
-          bypassFloor: true,
+          bypassFloor: true
         })
       } catch {
         // never let the periodic poll crash the timer

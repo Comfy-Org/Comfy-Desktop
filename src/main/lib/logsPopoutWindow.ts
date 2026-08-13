@@ -139,8 +139,8 @@ export async function openLogsPopout(installationId: string): Promise<void> {
     webPreferences: {
       preload: path.join(__dirname, '../preload/comfyPreload.js'),
       contextIsolation: true,
-      sandbox: false,
-    },
+      sandbox: false
+    }
   })
 
   popoutsByInstallation.set(installationId, win)

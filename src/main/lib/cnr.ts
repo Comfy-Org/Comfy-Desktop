@@ -37,7 +37,7 @@ function walkDir(dir: string, base: string = ''): string[] {
 
 export async function getCnrInstallInfo(
   nodeId: string,
-  version?: string,
+  version?: string
 ): Promise<CnrInstallInfo | null> {
   try {
     let url = `https://api.comfy.org/nodes/${encodeURIComponent(nodeId)}/install`
@@ -58,7 +58,7 @@ export async function installCnrNode(
   nodeId: string,
   version: string,
   customNodesDir: string,
-  sendOutput: (text: string) => void,
+  sendOutput: (text: string) => void
 ): Promise<string[]> {
   const startedAt = Date.now()
   // Resolved version is unknown until the registry call returns; fall
@@ -127,7 +127,7 @@ export async function switchCnrVersion(
   nodeId: string,
   newVersion: string,
   nodePath: string,
-  sendOutput: (text: string) => void,
+  sendOutput: (text: string) => void
 ): Promise<string[]> {
   const startedAt = Date.now()
   let resolvedVersion = newVersion
@@ -210,8 +210,12 @@ export async function switchCnrVersion(
       })
       return newFiles
     } finally {
-      try { await fs.promises.unlink(tmpZip) } catch {}
-      try { await fs.promises.rm(tmpExtract, { recursive: true, force: true }) } catch {}
+      try {
+        await fs.promises.unlink(tmpZip)
+      } catch {}
+      try {
+        await fs.promises.rm(tmpExtract, { recursive: true, force: true })
+      } catch {}
     }
   } catch (err) {
     telemetry.capture('comfy.desktop.node.installed', {

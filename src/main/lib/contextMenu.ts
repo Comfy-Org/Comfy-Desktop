@@ -21,7 +21,13 @@ export interface ContextMenuActions {
 /** Subset of Electron's context-menu params the builder reads. */
 export type ContextMenuParams = Pick<
   Electron.ContextMenuParams,
-  'editFlags' | 'isEditable' | 'selectionText' | 'linkURL' | 'mediaType' | 'srcURL' | 'hasImageContents'
+  | 'editFlags'
+  | 'isEditable'
+  | 'selectionText'
+  | 'linkURL'
+  | 'mediaType'
+  | 'srcURL'
+  | 'hasImageContents'
 >
 
 /**
@@ -35,9 +41,10 @@ export type ContextMenuParams = Pick<
  */
 export function buildContextMenuItems(
   params: ContextMenuParams,
-  actions: ContextMenuActions,
+  actions: ContextMenuActions
 ): Electron.MenuItemConstructorOptions[] {
-  const { editFlags, isEditable, selectionText, linkURL, mediaType, srcURL, hasImageContents } = params
+  const { editFlags, isEditable, selectionText, linkURL, mediaType, srcURL, hasImageContents } =
+    params
   const hasSelection = selectionText.trim().length > 0
   const hasLink = linkURL.length > 0
   const hasImage = mediaType === 'image' && hasImageContents && srcURL.length > 0
@@ -46,16 +53,28 @@ export function buildContextMenuItems(
 
   if (hasLink) {
     menuItems.push(
-      { id: 'openLink', label: i18n.t('contextMenu.openLinkInBrowser'), click: () => actions.openLink(linkURL) },
-      { id: 'copyLink', label: i18n.t('contextMenu.copyLinkAddress'), click: () => actions.copyLink(linkURL) },
+      {
+        id: 'openLink',
+        label: i18n.t('contextMenu.openLinkInBrowser'),
+        click: () => actions.openLink(linkURL)
+      },
+      {
+        id: 'copyLink',
+        label: i18n.t('contextMenu.copyLinkAddress'),
+        click: () => actions.copyLink(linkURL)
+      }
     )
   }
 
   if (hasImage) {
     if (menuItems.length > 0) menuItems.push({ type: 'separator' })
     menuItems.push(
-      { id: 'saveImage', label: i18n.t('contextMenu.saveImage'), click: () => actions.saveImage(srcURL) },
-      { id: 'copyImage', label: i18n.t('contextMenu.copyImage'), click: () => actions.copyImage() },
+      {
+        id: 'saveImage',
+        label: i18n.t('contextMenu.saveImage'),
+        click: () => actions.saveImage(srcURL)
+      },
+      { id: 'copyImage', label: i18n.t('contextMenu.copyImage'), click: () => actions.copyImage() }
     )
   }
 
@@ -69,12 +88,12 @@ export function buildContextMenuItems(
       { label: i18n.t('contextMenu.copy'), role: 'copy', enabled: editFlags.canCopy },
       { label: i18n.t('contextMenu.paste'), role: 'paste', enabled: editFlags.canPaste },
       { type: 'separator' },
-      { label: i18n.t('contextMenu.selectAll'), role: 'selectAll', enabled: editFlags.canSelectAll },
+      { label: i18n.t('contextMenu.selectAll'), role: 'selectAll', enabled: editFlags.canSelectAll }
     )
   } else if (hasSelection) {
     menuItems.push(
       { label: i18n.t('contextMenu.copy'), role: 'copy', enabled: editFlags.canCopy },
-      { label: i18n.t('contextMenu.selectAll'), role: 'selectAll', enabled: editFlags.canSelectAll },
+      { label: i18n.t('contextMenu.selectAll'), role: 'selectAll', enabled: editFlags.canSelectAll }
     )
   }
 
@@ -84,7 +103,7 @@ export function buildContextMenuItems(
 export function attachContextMenu(
   comfyWindow: BrowserWindow,
   webContents?: Electron.WebContents,
-  hooks?: ContextMenuHooks,
+  hooks?: ContextMenuHooks
 ): void {
   const wc = webContents || comfyWindow.webContents
   wc.on('context-menu', (_event, params) => {
@@ -94,7 +113,7 @@ export function attachContextMenu(
       saveImage: (srcURL) => wc.session.downloadURL(srcURL),
       copyImage: () => wc.copyImageAt(params.x, params.y),
       openLink: (linkURL) => shell.openExternal(linkURL),
-      copyLink: (linkURL) => clipboard.writeText(linkURL),
+      copyLink: (linkURL) => clipboard.writeText(linkURL)
     })
 
     if (menuItems.length === 0) return
@@ -102,7 +121,7 @@ export function attachContextMenu(
     hooks?.onMenuOpen?.()
     Menu.buildFromTemplate(menuItems).popup({
       window: comfyWindow,
-      callback: () => hooks?.onMenuClose?.(),
+      callback: () => hooks?.onMenuClose?.()
     })
   })
 }

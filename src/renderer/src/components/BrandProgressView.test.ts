@@ -36,7 +36,9 @@ describe('BrandProgressView', () => {
 
   it('centres the active row', () => {
     const wrapper = mount(BrandProgressView, {
-      props: { steps: [step('a', 'done'), step('b', 'done'), step('c', 'active'), step('d', 'pending')] }
+      props: {
+        steps: [step('a', 'done'), step('b', 'done'), step('c', 'active'), step('d', 'pending')]
+      }
     })
     expect(centeredIndex(wrapper)).toBe(2)
   })
@@ -60,7 +62,11 @@ describe('BrandProgressView', () => {
   it('shows detail only on the active row', () => {
     const wrapper = mount(BrandProgressView, {
       props: {
-        steps: [step('a', 'done', 'old'), step('b', 'active', '3 / 7 · node'), step('c', 'pending', 'next')]
+        steps: [
+          step('a', 'done', 'old'),
+          step('b', 'active', '3 / 7 · node'),
+          step('c', 'pending', 'next')
+        ]
       }
     })
     const details = wrapper.findAll('.bpv__detail')

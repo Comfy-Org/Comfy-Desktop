@@ -41,9 +41,19 @@ export interface LaunchCommand {
 
 export interface InstallTools {
   sendProgress: (step: string, data: { percent: number; status: string }) => void
-  download: (url: string, dest: string, onProgress: ((p: DownloadProgress) => void) | null, options?: { signal?: AbortSignal; expectedSize?: number }) => Promise<string>
+  download: (
+    url: string,
+    dest: string,
+    onProgress: ((p: DownloadProgress) => void) | null,
+    options?: { signal?: AbortSignal; expectedSize?: number }
+  ) => Promise<string>
   cache: Cache
-  extract: (archivePath: string, dest: string, onProgress?: ((p: ExtractProgress) => void) | null, options?: { signal?: AbortSignal }) => Promise<void>
+  extract: (
+    archivePath: string,
+    dest: string,
+    onProgress?: ((p: ExtractProgress) => void) | null,
+    options?: { signal?: AbortSignal }
+  ) => Promise<void>
   signal?: AbortSignal
 }
 
@@ -144,7 +154,9 @@ export interface SourcePlugin {
   getDetailSections(installation: InstallationRecord): Record<string, unknown>[]
   install?(installation: InstallationRecord, tools: InstallTools): Promise<void>
   postInstall?(installation: InstallationRecord, tools: PostInstallTools): Promise<void>
-  probeInstallation(dirPath: string): Record<string, unknown> | null | Promise<Record<string, unknown> | null>
+  probeInstallation(
+    dirPath: string
+  ): Record<string, unknown> | null | Promise<Record<string, unknown> | null>
   handleAction(
     actionId: string,
     installation: InstallationRecord,
@@ -165,6 +177,6 @@ export interface SourcePlugin {
     inst: InstallationRecord,
     destPath: string,
     sendProgress: (phase: string, detail: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<void>
 }

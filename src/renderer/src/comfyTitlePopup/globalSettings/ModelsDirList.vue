@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, FileText, Folder, FolderLock, FolderOpen, MoreHorizontal, Plus } from 'lucide-vue-next'
+import {
+  ChevronRight,
+  FileText,
+  Folder,
+  FolderLock,
+  FolderOpen,
+  MoreHorizontal,
+  Plus
+} from 'lucide-vue-next'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 
@@ -11,6 +19,10 @@ interface ModelsDir {
   /** Locked rows (e.g. the install's own models dir) can't be removed or
    *  browsed/replaced; they show a lock icon. */
   locked?: boolean
+  /** Read-only rows (e.g. global shared dirs shown in a per-instance list)
+   *  can't be removed or browsed/replaced here, but keep the normal folder
+   *  icon (no lock) and stay promotable unless `promotable` is false. */
+  readonly?: boolean
   /** Set false to also forbid promoting the row to primary (e.g. the
    *  install's own models dir while shared models is on — the primary is a
    *  global shared dir there). Defaults to true. */
@@ -24,6 +36,9 @@ interface ModelsDir {
 
 interface Props {
   dirs: ModelsDir[]
+  /** Add-button label; defaults to the shared-directory wording used by
+   *  Desktop Settings. The per-instance pane passes plain "Add Directory". */
+  addLabel?: string
 }
 
 const props = defineProps<Props>()
@@ -58,7 +73,7 @@ function canPromote(dir: ModelsDir): boolean {
 }
 
 function canRemove(dir: ModelsDir): boolean {
-  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked
+  return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked && !dir.readonly
 }
 
 function hasMenuActions(dir: ModelsDir): boolean {
@@ -159,23 +174,39 @@ const rows = computed(() =>
       <StorageItemIcon
         :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
         :shared="row.shared"
-        :title="row.locked ? t('models.lockedDir', 'This directory is always used and cannot be removed.') : undefined"
+        :title="
+          row.locked
+            ? t('models.lockedDir', 'This directory is always used and cannot be removed.')
+            : undefined
+        "
       />
       <div class="models-dir-main">
         <button
           type="button"
           class="models-dir-name"
-          :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details') : t('models.openDir', 'Open folder')"
+          :title="
+            row.isExtra
+              ? t('comfyUISettings.viewCustomPathDetails', 'View custom path details')
+              : t('models.openDir', 'Open folder')
+          "
           @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
-        >{{ row.path }}</button>
+        >
+          {{ row.path }}
+        </button>
       </div>
       <span v-if="row.isPrimary" class="models-dir-tag tag-primary">
         {{ t('models.primary', 'Downloads') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
       </span>
       <span v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
-        {{ row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance') }}
-        <InfoTooltip :text="row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')" />
+        {{
+          row.isExtra ? t('comfyUISettings.yamlTag', 'YAML') : t('models.instanceOnly', 'Instance')
+        }}
+        <InfoTooltip
+          :text="
+            row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
+          "
+        />
       </span>
       <div class="models-dir-actions">
         <button
@@ -189,7 +220,7 @@ const rows = computed(() =>
           <ChevronRight :size="14" aria-hidden="true" />
         </button>
         <button
-          v-if="!row.locked && !row.isExtra"
+          v-if="!row.locked && !row.isExtra && !row.readonly"
           type="button"
           class="models-dir-action"
           :aria-label="t('common.browse', 'Browse')"
@@ -245,7 +276,7 @@ const rows = computed(() =>
 
     <button type="button" class="models-dir-add" @click="emit('add')">
       <Plus :size="14" aria-hidden="true" />
-      <span>{{ t('models.addDir', 'Add directory') }}</span>
+      <span>{{ props.addLabel ?? t('models.addDir', 'Add Shared Directory') }}</span>
     </button>
   </div>
 </template>

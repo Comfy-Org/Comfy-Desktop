@@ -16,14 +16,14 @@ function copyAction(overrides: Partial<ActionDef['prompt']> = {}): ActionDef {
       field: 'name',
       title: 'Copy',
       defaultValue: 'ComfyUI (2)',
-      ...overrides,
-    },
+      ...overrides
+    }
   } as ActionDef
 }
 
 beforeEach(() => {
   window.api = {
-    getUniqueName: vi.fn().mockResolvedValue('ComfyUI (8)'),
+    getUniqueName: vi.fn().mockResolvedValue('ComfyUI (8)')
   } as unknown as typeof window.api
 })
 

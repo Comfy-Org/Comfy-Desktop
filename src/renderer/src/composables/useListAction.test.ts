@@ -3,47 +3,47 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key,
-  }),
+      params ? `${key}:${JSON.stringify(params)}` : key
+  })
 }))
 
 const mockModalConfirm = vi.hoisted(() => vi.fn())
 const mockModalAlert = vi.hoisted(() => vi.fn())
 vi.mock('./useModal', () => ({
-  useModal: () => ({ confirm: mockModalConfirm, alert: mockModalAlert }),
+  useModal: () => ({ confirm: mockModalConfirm, alert: mockModalAlert })
 }))
 
 const mockCheckBeforeAction = vi.hoisted(() => vi.fn())
 vi.mock('./useActionGuard', () => ({
-  useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction }),
+  useActionGuard: () => ({ checkBeforeAction: mockCheckBeforeAction })
 }))
 
 const mockCheckBeforeLaunch = vi.hoisted(() => vi.fn())
 vi.mock('./useLocalInstanceGuard', () => ({
-  useLocalInstanceGuard: () => ({ checkBeforeLaunch: mockCheckBeforeLaunch }),
+  useLocalInstanceGuard: () => ({ checkBeforeLaunch: mockCheckBeforeLaunch })
 }))
 
 const sessionState = vi.hoisted(() => ({
   running: new Set<string>(),
-  errorCleared: [] as string[],
+  errorCleared: [] as string[]
 }))
 vi.mock('../stores/sessionStore', () => ({
   useSessionStore: () => ({
     isRunning: (id: string) => sessionState.running.has(id),
     clearErrorInstance: (id: string) => {
       sessionState.errorCleared.push(id)
-    },
-  }),
+    }
+  })
 }))
 
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
-  toErrorBucket: () => 'unknown',
+  toErrorBucket: () => 'unknown'
 }))
 
 const mockRunAction = vi.hoisted(() => vi.fn())
 ;(globalThis as unknown as { window: { api: { runAction: typeof mockRunAction } } }).window = {
-  api: { runAction: mockRunAction },
+  api: { runAction: mockRunAction }
 }
 
 import { useListAction } from './useListAction'
@@ -58,7 +58,7 @@ function makeInstall(overrides: Partial<Installation> = {}): Installation {
     sourceCategory: 'local',
     sourceId: 'desktop',
     status: 'installed',
-    ...overrides,
+    ...overrides
   } as Installation
 }
 
@@ -66,7 +66,7 @@ const launchAction: ListAction = {
   id: 'launch',
   label: 'Launch',
   style: 'primary',
-  enabled: true,
+  enabled: true
 }
 
 describe('useListAction — desktop launch interceptor', () => {
@@ -91,9 +91,11 @@ describe('useListAction — desktop launch interceptor', () => {
 
     await executeAction(makeInstall({ adopted: false }), launchAction)
 
-    expect(mockModalConfirm).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'desktop.migrateBeforeLaunchTitle',
-    }))
+    expect(mockModalConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'desktop.migrateBeforeLaunchTitle'
+      })
+    )
     expect(showProgress).toHaveBeenCalledOnce()
     const opts = showProgress.mock.calls[0]![0] as { apiCall: () => Promise<unknown> }
     const apiResult = await opts.apiCall()
@@ -117,7 +119,11 @@ describe('useListAction — desktop launch interceptor', () => {
     const showProgress = vi.fn()
     const { executeAction } = useListAction('chooser', { showProgress })
 
-    await executeAction(makeInstall({ adopted: true }), { ...launchAction, showProgress: true, progressTitle: 'Launch' })
+    await executeAction(makeInstall({ adopted: true }), {
+      ...launchAction,
+      showProgress: true,
+      progressTitle: 'Launch'
+    })
 
     expect(mockModalConfirm).not.toHaveBeenCalled()
     expect(showProgress).toHaveBeenCalledOnce()
@@ -130,7 +136,10 @@ describe('useListAction — desktop launch interceptor', () => {
     const showProgress = vi.fn()
     const { executeAction } = useListAction('chooser', { showProgress })
 
-    await executeAction(makeInstall({ sourceId: 'standalone', sourceCategory: 'local' }), { ...launchAction, showProgress: true })
+    await executeAction(makeInstall({ sourceId: 'standalone', sourceCategory: 'local' }), {
+      ...launchAction,
+      showProgress: true
+    })
 
     expect(mockModalConfirm).not.toHaveBeenCalled()
     expect(showProgress).toHaveBeenCalledOnce()
@@ -155,14 +164,14 @@ const INSTALL: Installation = {
   id: 'inst-launch',
   name: 'Test Install',
   sourceLabel: 'standalone',
-  sourceCategory: 'local',
+  sourceCategory: 'local'
 }
 
 const LAUNCH_ACTION: ListAction = {
   id: 'launch',
   label: 'Launch',
   style: 'primary',
-  showProgress: true,
+  showProgress: true
 }
 
 describe('useListAction.executeAction onGuardsPassed hook', () => {
@@ -188,8 +197,18 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
     // Hook must fire BEFORE showProgress so the chooser claim is in place
     // by the time the launch op is dispatched.
     expect(onGuardsPassed.mock.invocationCallOrder[0]).toBeLessThan(
-      showProgress.mock.invocationCallOrder[0],
+      showProgress.mock.invocationCallOrder[0]
     )
+  })
+
+  it('forwards restart intent to the local-instance launch guard', async () => {
+    const showProgress = vi.fn()
+    const { executeAction } = useListAction('chooser', { showProgress })
+
+    await executeAction(INSTALL, LAUNCH_ACTION, { isRestart: true })
+
+    expect(mockCheckBeforeLaunch).toHaveBeenCalledWith('inst-launch', { isRestart: true })
+    expect(showProgress).toHaveBeenCalledOnce()
   })
 
   it('does NOT fire onGuardsPassed when the action is disabled', async () => {
@@ -198,7 +217,7 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
     const disabledAction: ListAction = {
       ...LAUNCH_ACTION,
       enabled: false,
-      disabledMessage: 'Cannot launch right now',
+      disabledMessage: 'Cannot launch right now'
     }
     const { executeAction } = useListAction('chooser', { showProgress })
 
@@ -227,7 +246,7 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
     const showProgress = vi.fn()
     const confirmedAction: ListAction = {
       ...LAUNCH_ACTION,
-      confirm: { title: 'Sure?', message: 'Really?' },
+      confirm: { title: 'Sure?', message: 'Really?' }
     }
     const { executeAction } = useListAction('chooser', { showProgress })
 

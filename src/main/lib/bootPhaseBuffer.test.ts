@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('./telemetry', () => ({
-  emit: vi.fn(),
+  emit: vi.fn()
 }))
 
 import * as telemetry from './telemetry'
@@ -12,7 +12,7 @@ import {
   clearBootPhases,
   flushBootPhasesOnFailure,
   _peekBootPhases,
-  _resetForTest,
+  _resetForTest
 } from './bootPhaseBuffer'
 
 const mockedEmit = vi.mocked(telemetry.emit)
@@ -60,7 +60,7 @@ describe('startBootPhases', () => {
       installation_id: 'inst-1',
       variant: 'nightly',
       phase: 'spawn',
-      ms_since_boot_started: 120,
+      ms_since_boot_started: 120
     })
   })
 })
@@ -77,7 +77,7 @@ describe('recordBootPhase', () => {
 
     expect(_peekBootPhases('inst-1')).toEqual([
       { phase: 'spawn', msSinceBootStarted: 100 },
-      { phase: 'gpu', msSinceBootStarted: 500 },
+      { phase: 'gpu', msSinceBootStarted: 500 }
     ])
   })
 
@@ -150,19 +150,19 @@ describe('flushBootPhasesOnFailure', () => {
       installation_id: 'inst-1',
       variant: 'nightly',
       phase: 'spawn',
-      ms_since_boot_started: 200,
+      ms_since_boot_started: 200
     })
     expect(mockedEmit).toHaveBeenNthCalledWith(2, BOOT_PHASE_EVENT, {
       installation_id: 'inst-1',
       variant: 'nightly',
       phase: 'gpu',
-      ms_since_boot_started: 500,
+      ms_since_boot_started: 500
     })
     expect(mockedEmit).toHaveBeenNthCalledWith(3, BOOT_PHASE_EVENT, {
       installation_id: 'inst-1',
       variant: 'nightly',
       phase: 'ready',
-      ms_since_boot_started: 1500,
+      ms_since_boot_started: 1500
     })
   })
 
@@ -177,7 +177,7 @@ describe('flushBootPhasesOnFailure', () => {
       installation_id: 'inst-1',
       variant: null,
       phase: 'spawn',
-      ms_since_boot_started: 50,
+      ms_since_boot_started: 50
     })
   })
 
@@ -233,7 +233,7 @@ describe('flushBootPhasesOnFailure', () => {
       installation_id: 'inst-b',
       variant: 'nightly',
       phase: 'spawn',
-      ms_since_boot_started: 10,
+      ms_since_boot_started: 10
     })
   })
 })

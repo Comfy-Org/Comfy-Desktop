@@ -160,3 +160,94 @@ describe('missing-model error group interception (behavioral)', () => {
     )
   })
 })
+
+describe('remote output auto-download intercept (behavioral)', () => {
+  const origWebSocket = (window as unknown as Record<string, unknown>).WebSocket
+
+  class FakeWebSocket {
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSING = 2
+    static CLOSED = 3
+    static instances: FakeWebSocket[] = []
+    url: string
+    private listeners: Array<(ev: { data: string }) => void> = []
+    constructor(url: string) {
+      this.url = url
+      FakeWebSocket.instances.push(this)
+    }
+    addEventListener(type: string, fn: (ev: { data: string }) => void) {
+      if (type === 'message') this.listeners.push(fn)
+    }
+    emit(msg: unknown) {
+      for (const fn of [...this.listeners]) fn({ data: JSON.stringify(msg) })
+    }
+  }
+
+  afterEach(() => {
+    ;(window as unknown as Record<string, unknown>).WebSocket = origWebSocket
+    FakeWebSocket.instances = []
+    delete (window as unknown as Record<string, unknown>).__comfyDesktop2Injected
+    delete (window as unknown as Record<string, unknown>).__comfyDesktop2
+  })
+
+  function setup() {
+    const downloadAsset = vi.fn().mockResolvedValue(true)
+    ;(window as unknown as Record<string, unknown>).WebSocket = FakeWebSocket
+    ;(window as unknown as Record<string, unknown>).__comfyDesktop2 = {
+      isRemote: () => true,
+      downloadModel: vi.fn(),
+      downloadAsset
+    }
+    new Function(getModelDownloadContentScript())()
+    return { downloadAsset }
+  }
+
+  function connect(url: string): FakeWebSocket {
+    const Ws = (window as unknown as { WebSocket: new (url: string) => unknown }).WebSocket
+    new Ws(url)
+    return FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!
+  }
+
+  function executedMsg(promptId: string, filename: string) {
+    return {
+      type: 'executed',
+      data: {
+        node: '9',
+        prompt_id: promptId,
+        output: { images: [{ filename, subfolder: '', type: 'output' }] }
+      }
+    }
+  }
+
+  it('downloads a delivered output exactly once even if the event repeats', () => {
+    const { downloadAsset } = setup()
+    const ws = connect('ws://remote.example/ws?token=abc')
+    // Same executed event delivered twice (e.g. a replay after a reconnect).
+    ws.emit(executedMsg('p1', 'img.png'))
+    ws.emit(executedMsg('p1', 'img.png'))
+    expect(downloadAsset).toHaveBeenCalledTimes(1)
+    expect(downloadAsset).toHaveBeenCalledWith(
+      'http://remote.example/api/view?filename=img.png&type=output',
+      'img.png',
+      'abc'
+    )
+  })
+
+  it('dedupes one event observed by two sockets', () => {
+    const { downloadAsset } = setup()
+    const a = connect('ws://remote.example/ws')
+    const b = connect('ws://remote.example/ws')
+    a.emit(executedMsg('p1', 'img.png'))
+    b.emit(executedMsg('p1', 'img.png'))
+    expect(downloadAsset).toHaveBeenCalledTimes(1)
+  })
+
+  it('still downloads outputs of a new prompt with the same filename', () => {
+    const { downloadAsset } = setup()
+    const ws = connect('ws://remote.example/ws')
+    ws.emit(executedMsg('p1', 'img.png'))
+    ws.emit(executedMsg('p2', 'img.png'))
+    expect(downloadAsset).toHaveBeenCalledTimes(2)
+  })
+})

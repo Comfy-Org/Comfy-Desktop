@@ -15,7 +15,7 @@ const LAUNCH_ACTION_IDS = new Set(['launch', 'restart'])
 /** Pure policy for where a picker-initiated progress op renders and whether it ends on a choice screen. */
 export function resolveProgressRouting(
   opts: ShowProgressOpts,
-  _hostInstallId: string | null,
+  _hostInstallId: string | null
 ): ProgressRoutingDecision {
   // Destructive ops stay in the current host — routing to a window about to be torn down would leave a ghost.
   if (opts.destroysInstance) {

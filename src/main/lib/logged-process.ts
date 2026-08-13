@@ -24,7 +24,7 @@ export function runLoggedProcess(
       cwd: options.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      env: options.env,
+      env: options.env
     })
     proc.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
@@ -68,9 +68,13 @@ export function formatProcessError(
     return `${prefix}\n\n${detail}`
   }
   if (result.signal) {
-    const extra = context ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}` : ''
+    const extra = context
+      ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}`
+      : ''
     return `${prefix}\n\nProcess was killed by signal ${result.signal}.${extra}`
   }
-  const extra = context ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}` : ''
+  const extra = context
+    ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}`
+    : ''
   return `${prefix}\n\nProcess produced no output.${extra}`
 }

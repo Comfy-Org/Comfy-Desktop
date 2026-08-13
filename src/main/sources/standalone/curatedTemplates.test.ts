@@ -6,7 +6,7 @@ import {
   CURATED_TEMPLATES,
   NO_TEMPLATE_VALUE,
   TEMPLATE_MODALITY_ORDER,
-  RAW_TEMPLATES_BASE,
+  RAW_TEMPLATES_BASE
 } from './curatedTemplates'
 
 describe('isPersistableTemplateId', () => {
@@ -61,7 +61,9 @@ describe('buildTemplateDeeplink', () => {
 
 describe('thumbnailUrlFor', () => {
   it('builds the <id>-1.<sub> preview URL for image subtypes', () => {
-    expect(thumbnailUrlFor('flux_schnell', 'webp')).toBe(`${RAW_TEMPLATES_BASE}/flux_schnell-1.webp`)
+    expect(thumbnailUrlFor('flux_schnell', 'webp')).toBe(
+      `${RAW_TEMPLATES_BASE}/flux_schnell-1.webp`
+    )
     expect(thumbnailUrlFor('foo', 'PNG')).toBe(`${RAW_TEMPLATES_BASE}/foo-1.png`)
   })
 
@@ -103,8 +105,27 @@ describe('CURATED_TEMPLATES manifest', () => {
     for (const t of CURATED_TEMPLATES) {
       expect(t.snapshot.title, t.id).toBeTruthy()
       expect(t.snapshot.description, t.id).toBeTruthy()
-      expect(t.snapshot.sizeBytes, t.id).toBeGreaterThan(0)
       expect(t.snapshot.mediaSubtype, t.id).toBeTruthy()
+    }
+  })
+
+  it('sizes every local template and no API-node one', () => {
+    for (const t of CURATED_TEMPLATES) {
+      if (t.apiNode) expect(t.snapshot.sizeBytes, t.id).toBe(0)
+      else expect(t.snapshot.sizeBytes, t.id).toBeGreaterThan(0)
+    }
+  })
+
+  it('offers exactly one API-node template per modality', () => {
+    for (const modality of TEMPLATE_MODALITY_ORDER) {
+      const apiTemplate = CURATED_TEMPLATES.filter((t) => t.modality === modality && t.apiNode)
+      expect(apiTemplate.length, modality).toBe(1)
+    }
+  })
+
+  it('never auto-selects a template that spends credits', () => {
+    for (const t of CURATED_TEMPLATES) {
+      if (t.apiNode) expect(t.recommended, t.id).toBeFalsy()
     }
   })
 

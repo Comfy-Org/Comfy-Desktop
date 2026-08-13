@@ -125,10 +125,13 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 | `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
 | `pnpm run test:integration`      | Integration suite                                                     |
 | `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
+| `pnpm run test:e2e:lifecycle`    | Lifecycle Playwright project (real installs/downloads; see `e2e/README.md`) |
 | `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
 | `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
 | `pnpm run format`                | Format (Prettier)                                                     |
 | `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
+
+For the test categories, how to run each, and which one a new test belongs in, see [`TESTING.md`](TESTING.md).
 
 ### Project structure
 
@@ -250,4 +253,11 @@ Issues and pull requests are welcome. Before opening a PR, please run `pnpm run 
 
 ## License
 
-Released under the [MIT License](LICENSE). © Comfy Org.
+Comfy Desktop is dual-licensed:
+
+- **[GNU Affero General Public License v3.0 or later](LICENSE)** - free for use under the AGPL's terms (including the network-use source-disclosure obligation).
+- **Commercial license** - for use in proprietary products or hosted services without AGPL obligations. Contact **[licensing@comfy.org](mailto:licensing@comfy.org)**.
+
+Exception: the [`@comfyorg/comfyui-desktop-bridge-types`](packages/comfyui-desktop-bridge-types) package (the TypeScript interface for the hosted frontend bridge) remains licensed under the [MIT License](packages/comfyui-desktop-bridge-types/LICENSE). This exception applies only to that package and does not determine the licensing obligations of other repository components or combined distributions.
+
+© Comfy Org.
