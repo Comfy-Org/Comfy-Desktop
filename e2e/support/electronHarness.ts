@@ -283,12 +283,18 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
 
   // Suppress the native uncaught-exception dialog and exit fast so tests don't
   // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
-  // Retried: re-assigning the stub and re-registering the exit handler are
-  // both harmless if the first attempt actually ran.
+  // Retried: re-assigning the stub is harmless, and the exit handler guards
+  // itself with a flag so a retry after a lost result can't register it twice.
   await evalWithRetry(() =>
     application.evaluate(({ app: electronApp, dialog }) => {
       dialog.showErrorBox = () => {}
-      electronApp.on('render-process-gone', () => electronApp.exit(1))
+      const marked = electronApp as typeof electronApp & {
+        __e2eRenderProcessGoneInstalled?: boolean
+      }
+      if (!marked.__e2eRenderProcessGoneInstalled) {
+        marked.__e2eRenderProcessGoneInstalled = true
+        electronApp.on('render-process-gone', () => electronApp.exit(1))
+      }
     })
   )
 

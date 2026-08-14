@@ -60,4 +60,9 @@ describe('listWorkspaces', () => {
     stub(200, null)
     expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
   })
+
+  it.each(['nope', {}])('returns [] when workspaces is not an array', async (workspaces) => {
+    stub(200, { workspaces })
+    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
+  })
 })

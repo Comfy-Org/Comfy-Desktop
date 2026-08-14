@@ -33,7 +33,7 @@ describe('selectArtifactForHost', () => {
   it.each<[string, Host, string | null]>([
     ['exact os+gpu (windows/nvidia)', { os: 'windows', gpu: 'nvidia' }, 'windows-nvidia'],
     ['cpu fallback (windows host, cpu gpu)', { os: 'windows', gpu: 'cpu' }, 'windows-cpu'],
-    ['nvidia host falls back to cpu when no nvidia', { os: 'mac', gpu: 'nvidia' }, null],
+    ['os filter rejects a mac nvidia host', { os: 'mac', gpu: 'nvidia' }, null],
     ['no artifact for the host os (mac)', { os: 'mac', gpu: 'mps' }, null],
     ['linux nvidia', { os: 'linux', gpu: 'nvidia' }, 'linux-nvidia']
   ])('%s', (_name, host, expectedId) => {
@@ -69,6 +69,7 @@ describe('selectArtifactForHost', () => {
     const a = art('linux', 'nvidia', { id: 'cu118', accelVariant: 'cu118' })
     const b = art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })
     const host = { os: 'linux', gpu: 'nvidia' } as const
-    expect(selectArtifactForHost([a, b], host)?.id).toBe(selectArtifactForHost([b, a], host)?.id)
+    expect(selectArtifactForHost([a, b], host)?.id).toBe('cu128')
+    expect(selectArtifactForHost([b, a], host)?.id).toBe('cu128')
   })
 })

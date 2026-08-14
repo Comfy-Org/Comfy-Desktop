@@ -230,12 +230,23 @@ export async function recoverComfyBuilderInstallation(
     : recoveryResult(installation)
 }
 
-/** Reconstruct the library Artifact from the fields the install record carries. */
+/** Reconstruct the library Artifact from the fields the install record carries.
+ *  Every ComfyBuilder record is written with these fields, so a missing one
+ *  means a corrupt record: reject it here with a clear message rather than
+ *  defaulting to a build target the record never chose. */
 function artifactFromRecord(inst: InstallationRecord): Artifact {
+  const id = inst.artifactId as string | undefined
+  const os = inst.artifactOs as ArtifactOs | undefined
+  const gpu = inst.artifactGpu as ArtifactGpu | undefined
+  if (!id || !os || !gpu) {
+    throw new Error(
+      'This installation record is missing its build identity (artifact id, OS, or GPU) and cannot be installed. Remove it and install the distribution again.'
+    )
+  }
   return {
-    id: (inst.artifactId as string) ?? '',
-    os: (inst.artifactOs as ArtifactOs) ?? 'linux',
-    gpu: (inst.artifactGpu as ArtifactGpu) ?? 'cpu',
+    id,
+    os,
+    gpu,
     accelVariant: (inst.artifactAccelVariant as string) ?? '',
     status: 'ready',
     ...(inst.artifactSha256 ? { archiveSha256: inst.artifactSha256 as string } : {})

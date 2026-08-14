@@ -15,7 +15,15 @@ const AUTH_FILENAME = 'comfy-cloud-auth.bin'
 
 let cachedTokens: AuthTokens | null = null
 let authFilePath: string | null = null
-export let secureStorageUnavailable = false
+let secureStorageUnavailable = false
+
+/** True when the last save/load found no OS secure-storage backend, so tokens
+ *  live only in memory for this process. False before any check has run. A
+ *  getter rather than an exported binding: a re-exported `let` can be captured
+ *  stale after CJS transpilation. */
+export function isSecureStorageUnavailable(): boolean {
+  return secureStorageUnavailable
+}
 
 function filePath(): string {
   if (!authFilePath) authFilePath = path.join(app.getPath('userData'), AUTH_FILENAME)

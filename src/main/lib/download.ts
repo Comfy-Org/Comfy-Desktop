@@ -112,6 +112,7 @@ export function download(
       return await download(mirror, destPath, onProgress, {
         signal,
         expectedSize,
+        idleTimeoutMs,
         validateUrl,
         _maxRedirects,
         _skipMirror: true
@@ -254,6 +255,7 @@ export function download(
         download(redirectUrl, destPath, onProgress, {
           signal,
           expectedSize,
+          idleTimeoutMs,
           validateUrl,
           _maxRedirects: _maxRedirects - 1
         }).then(safeResolve, safeReject)

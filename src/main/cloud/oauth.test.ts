@@ -21,6 +21,29 @@ function stub(status: number, body: unknown): void {
 describe('oauth.refresh', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('sends a form-encoded refresh_token grant with client_id and resource', async () => {
+    stub(200, { access_token: 'a2', expires_in: 3600 })
+    await refresh('the-refresh', {
+      tokenUrl: 'https://c/oauth/token',
+      clientId: 'cid',
+      resource: 'https://c/api'
+    })
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://c/oauth/token')
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(
+      'application/x-www-form-urlencoded'
+    )
+    const body = new URLSearchParams(init.body as string)
+    expect(body.get('grant_type')).toBe('refresh_token')
+    expect(body.get('refresh_token')).toBe('the-refresh')
+    expect(body.get('client_id')).toBe('cid')
+    expect(body.get('resource')).toBe('https://c/api')
+  })
+
   it('keeps the prior refresh token when the server omits one', async () => {
     stub(200, { access_token: 'a2', expires_in: 3600 }) // no refresh_token
     const t = await refresh('old-refresh', { tokenUrl: 'https://c/oauth/token' })

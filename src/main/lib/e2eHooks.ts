@@ -16,7 +16,7 @@ import {
   _test_ageEntries as _test_ageReleaseCacheEntries
 } from './release-cache'
 import { _test_getOpenTitlePopupBounds } from '../popups/titlePopup'
-import { stageModels, resolveModelManifest } from '../comfybuilder'
+import { stageModels, resolveModelManifest, installModelsRoot } from '../comfybuilder'
 import { getBuilderClient } from '../devplatform/session'
 import { returnToDashboard } from '../host/detach'
 import { comfyWindows, getEntryByInstallationId, isInstallHost } from '../host/registry'
@@ -180,12 +180,22 @@ export function registerE2EHooks(): void {
     async stageDistributionModels({ installPath, distributionId, version }) {
       const manifest = await resolveModelManifest(getBuilderClient(), distributionId, version)
       try {
-        const { startManagedModelJob, cancelModelDownload } = await import('./comfyDownloadManager')
-        await stageModels({
-          models: manifest.models,
-          installPath,
-          jobs: { start: startManagedModelJob, cancel: cancelModelDownload }
-        })
+        const dm = await import('./comfyDownloadManager')
+        // Same root-lock discipline as the production install path: staging
+        // must not run concurrently with another writer of this model root.
+        const releaseModelRoot = dm.acquireModelDownloadRootLock(installModelsRoot(installPath))
+        if (!releaseModelRoot) {
+          return { error: 'The model directory is busy.', kind: 'busy' }
+        }
+        try {
+          await stageModels({
+            models: manifest.models,
+            installPath,
+            jobs: { start: dm.startManagedModelJob, cancel: dm.cancelModelDownload }
+          })
+        } finally {
+          releaseModelRoot()
+        }
         return { staged: manifest.models.map((m) => `${m.type}/${m.filename}`) }
       } catch (e) {
         const err = e as { message?: string; kind?: string }

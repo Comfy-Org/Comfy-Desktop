@@ -30,7 +30,7 @@ import { test, expect } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext, type SeedInstallation } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
-import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import { getIpcInvocations, hasActiveLaunch, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
 /** Both steps of the new-install wizard: the surface a missing launch action
@@ -79,7 +79,7 @@ function distributionRecord(dist: DistributionCase): SeedInstallation {
     distributionName: dist.name,
     version: '1',
     artifactId: 'a-1',
-    artifactOs: 'macos',
+    artifactOs: process.platform === 'win32' ? 'windows' : 'mac',
     artifactGpu: 'cpu',
     artifactAccelVariant: 'cpu',
     launchArgs: '--enable-manager',
@@ -147,6 +147,22 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
 
   await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
+
+  // The seeded interpreter dies at the boot wait, so the launch is still in
+  // flight when the assertions above pass. Wait for the launch handler to
+  // settle and dismiss its failure surface, so the serial next test starts
+  // from an idle chooser instead of racing this launch's terminal UI.
+  await expect
+    .poll(() => hasActiveLaunch(ctx.app, INSTALLED.id), {
+      timeout: 30_000,
+      intervals: [250, 500]
+    })
+    .toBe(false)
+  await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
+  // Back (the ghost button; Reboot is the primary) returns to the chooser
+  // without a confirm for a finished op.
+  expect(await ctx.panel.click('.brand-progress__error-actions .brand-ghost')).toBe(true)
+  await expectChooserVisible(ctx.panel)
 })
 
 test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos', async () => {

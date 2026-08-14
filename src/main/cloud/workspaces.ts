@@ -49,7 +49,8 @@ export async function listWorkspaces(
     body && typeof body === 'object'
       ? (body as { workspaces?: WorkspaceRow[] }).workspaces
       : undefined
-  return (rows ?? []).map((w) => ({
+  // A malformed payload (workspaces as an object/string) must not throw.
+  return (Array.isArray(rows) ? rows : []).map((w) => ({
     id: w.id,
     name: w.name,
     type: w.type,

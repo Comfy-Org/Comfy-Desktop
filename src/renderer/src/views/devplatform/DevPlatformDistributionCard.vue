@@ -78,12 +78,14 @@ function onActivate(): void {
 </script>
 
 <template>
+  <!-- A blocked tile is not activatable, so it is a plain group rather than a
+       disabled button: a disabled button role would also announce the nested
+       (still active) kebab as disabled. -->
   <div
     class="chooser-tile chooser-tile--install dist-tile dist-tile--chooser"
     :class="{ 'dist-tile--blocked': isBlocked, 'dist-tile--available': !isBlocked }"
-    role="button"
-    tabindex="0"
-    :aria-disabled="isBlocked ? true : undefined"
+    :role="isBlocked ? undefined : 'button'"
+    :tabindex="isBlocked ? undefined : 0"
     :title="blockedReason || undefined"
     :data-testid="`chooser-dist-tile-${distribution.id}`"
     @click="onActivate"

@@ -259,14 +259,26 @@ export function quarantineOrphanStagedBytes(finalPath: string): boolean {
 
 /** Streaming lowercase-hex sha256 of a file. Resolves on 'close' (not 'end')
  *  so the fd is released before any following rm/rename, avoiding EBUSY on
- *  Windows. Shared by the model transport and ComfyBuilder archive install. */
+ *  Windows - but only when 'end' fired first, so an early destroy can never
+ *  yield a digest of a partial read. Shared by the model transport and
+ *  ComfyBuilder archive install. */
 export function sha256File(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256')
     const stream = fs.createReadStream(filePath)
+    let ended = false
     stream.on('error', reject)
+    stream.on('end', () => {
+      ended = true
+    })
     stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('close', () => resolve(hash.digest('hex')))
+    stream.on('close', () => {
+      if (!ended) {
+        reject(new Error(`sha256 read stream closed before end of file: ${filePath}`))
+        return
+      }
+      resolve(hash.digest('hex'))
+    })
   })
 }
 

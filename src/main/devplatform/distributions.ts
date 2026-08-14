@@ -21,6 +21,7 @@ import { hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Distribution, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPU } from '../lib/gpu'
+import { runPool } from '../sources/standalone/templateDownloadCore'
 import { setCachedVersions } from './versionCache'
 
 /**
@@ -114,7 +115,17 @@ async function buildRow(
   )
 
   const latest = latestCompleteVersion(allVersions)
-  if (!latest) return { ...base, state: 'no-build', blockedReason: 'buildFailed' }
+  if (!latest) {
+    // A version still queued/building is "in progress", not "failed" - the
+    // builder's status enum has no failed state, so any non-complete version
+    // is pending work.
+    const pending = allVersions.some((v) => v.status === 'queued' || v.status === 'building')
+    return {
+      ...base,
+      state: 'no-build',
+      blockedReason: pending ? 'buildInProgress' : 'buildFailed'
+    }
+  }
 
   const installedVersion = installed?.get(dist.id)
   const withVersion: DistributionRow = {
@@ -148,8 +159,12 @@ async function buildRow(
 /**
  * Every distribution the signed-in workspace can see, as display rows. A
  * distribution whose version lookup fails is dropped for THIS list rather than
- * failing the whole grid.
+ * failing the whole grid. Rows resolve through a bounded pool: each one costs
+ * two gateway requests (listVersions + getVersion), so an unbounded map over a
+ * large catalog would fire 2N concurrent requests and trip rate limits.
  */
+const ROW_CONCURRENCY = 6
+
 export async function listDistributionRows(
   client: ComfyBuilderClient,
   host: Host,
@@ -157,16 +172,15 @@ export async function listDistributionRows(
   cacheGeneration?: number
 ): Promise<DistributionRow[]> {
   const dists = await client.listDistributions()
-  const results = await Promise.allSettled(
-    dists.map((d) => buildRow(client, host, d, installed, cacheGeneration))
-  )
-  return results
-    .filter((r): r is PromiseFulfilledResult<DistributionRow> => {
-      if (r.status === 'rejected')
-        console.error('[devplatform] failed to resolve distribution row:', r.reason)
-      return r.status === 'fulfilled'
-    })
-    .map((r) => r.value)
+  const rows: (DistributionRow | undefined)[] = new Array<DistributionRow | undefined>(dists.length)
+  await runPool(dists, ROW_CONCURRENCY, async (d, i) => {
+    try {
+      rows[i] = await buildRow(client, host, d, installed, cacheGeneration)
+    } catch (err) {
+      console.error('[devplatform] failed to resolve distribution row:', err)
+    }
+  })
+  return rows.filter((r): r is DistributionRow => r !== undefined)
 }
 
 /**

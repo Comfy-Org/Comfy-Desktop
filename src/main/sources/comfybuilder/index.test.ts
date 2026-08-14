@@ -66,6 +66,14 @@ import {
 import type { InstallationRecord } from '../../installations'
 import type { InstallTools } from '../../types/sources'
 
+const realFsp = {
+  access: fsp.access.bind(fsp),
+  mkdir: fsp.mkdir.bind(fsp),
+  rename: fsp.rename.bind(fsp),
+  rm: fsp.rm.bind(fsp),
+  writeFile: fsp.writeFile.bind(fsp)
+}
+
 const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
   ({
     id: 'i1',
@@ -77,6 +85,11 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     distributionId: 'd1',
     distributionName: 'desktop-4target-stg-v0190',
     version: '1',
+    // Every real record carries its build identity (written by installDistribution).
+    artifactId: 'art-default',
+    artifactOs: 'linux',
+    artifactGpu: 'nvidia',
+    artifactAccelVariant: 'cu128',
     ...overrides
   }) as unknown as InstallationRecord
 
@@ -95,12 +108,28 @@ function fakeTools(
 }
 
 describe('comfybuilder.install wiring', () => {
+  let access: ReturnType<typeof vi.spyOn>
+  let mkdir: ReturnType<typeof vi.spyOn>
+  let rename: ReturnType<typeof vi.spyOn>
+  let rm: ReturnType<typeof vi.spyOn>
   let writeFile: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     vi.clearAllMocks()
+    access = vi
+      .spyOn(fsp, 'access')
+      .mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+    mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined)
+    rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
+    rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
     writeFile = vi.spyOn(fsp, 'writeFile').mockResolvedValue(undefined)
   })
-  afterEach(() => writeFile.mockRestore())
+  afterEach(() => {
+    access.mockRestore()
+    mkdir.mockRestore()
+    rename.mockRestore()
+    rm.mockRestore()
+    writeFile.mockRestore()
+  })
 
   it('moves both executable trees aside while preserving models', async () => {
     const releaseModelRoot = vi.fn()
@@ -168,6 +197,26 @@ describe('comfybuilder.install wiring', () => {
       rename.mockRestore()
       rm.mockRestore()
       mkdir.mockRestore()
+    }
+  })
+
+  // A record without its build identity is corrupt: reject it with a clear
+  // message before touching the environment, instead of silently installing
+  // a target the record never chose.
+  it('rejects a record missing its artifact identity before mutating anything', async () => {
+    acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
+    const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
+    try {
+      await expect(
+        comfybuilder.install!(
+          record({ artifactOs: undefined, artifactGpu: undefined }),
+          fakeTools()
+        )
+      ).rejects.toThrow(/build identity/)
+      expect(installArtifact).not.toHaveBeenCalled()
+      expect(rename).not.toHaveBeenCalled()
+    } finally {
+      rename.mockRestore()
     }
   })
 
@@ -470,12 +519,28 @@ describe('comfybuilder update status', () => {
 })
 
 describe('comfybuilder update-comfyui', () => {
+  let access: ReturnType<typeof vi.spyOn>
+  let mkdir: ReturnType<typeof vi.spyOn>
+  let rename: ReturnType<typeof vi.spyOn>
+  let rm: ReturnType<typeof vi.spyOn>
   let writeFile: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     vi.clearAllMocks()
+    access = vi
+      .spyOn(fsp, 'access')
+      .mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+    mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined)
+    rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
+    rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
     writeFile = vi.spyOn(fsp, 'writeFile').mockResolvedValue(undefined)
   })
-  afterEach(() => writeFile.mockRestore())
+  afterEach(() => {
+    access.mockRestore()
+    mkdir.mockRestore()
+    rename.mockRestore()
+    rm.mockRestore()
+    writeFile.mockRestore()
+  })
 
   const artifact = {
     id: 'art-9',
@@ -575,6 +640,10 @@ describe('comfybuilder update-comfyui', () => {
   })
 
   it('keeps rollback metadata when filesystem restoration stops partway', async () => {
+    access.mockImplementation(realFsp.access)
+    mkdir.mockImplementation(realFsp.mkdir)
+    rename.mockImplementation(realFsp.rename)
+    writeFile.mockImplementation(realFsp.writeFile)
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-restore-failure-'))
     fs.mkdirSync(path.join(root, 'venv'), { recursive: true })
     fs.mkdirSync(path.join(root, 'ComfyUI', 'models'), { recursive: true })
@@ -589,12 +658,11 @@ describe('comfybuilder update-comfyui', () => {
     })
     const previousVenv = path.join(root, 'venv.previous')
     const activeVenv = path.join(root, 'venv')
-    const originalRm = fsp.rm.bind(fsp)
-    const rm = vi.spyOn(fsp, 'rm').mockImplementation(async (target, options) => {
+    rm.mockImplementation(async (target: fs.PathLike, options?: fs.RmOptions) => {
       if (String(target) === activeVenv) {
         throw new Error('venv restore failed')
       }
-      return originalRm(target, options)
+      return realFsp.rm(target, options)
     })
     const tools = actionTools()
 
@@ -614,7 +682,6 @@ describe('comfybuilder update-comfyui', () => {
       })
       await expect(fsp.access(previousVenv)).resolves.toBeUndefined()
     } finally {
-      rm.mockRestore()
       await fsp.rm(root, { recursive: true, force: true })
     }
   })

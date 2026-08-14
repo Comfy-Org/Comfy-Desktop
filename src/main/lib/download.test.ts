@@ -170,6 +170,17 @@ describe('download — no-progress watchdog', () => {
     expect(requests[0]!.abort).toHaveBeenCalled()
   })
 
+  it('preserves idleTimeoutMs across redirects', async () => {
+    const dest = path.join(tmpDir, 'redirected.safetensors')
+    const p = download(URL, dest, null, { idleTimeoutMs: 150 })
+    requests[0]!.emit('response', makeResponse(302, '', { location: `${URL}?redirected=1` }))
+    await vi.advanceTimersByTimeAsync(0)
+    openStreaming(requests[1]!, 100)
+    await vi.advanceTimersByTimeAsync(150)
+    await expect(p).rejects.toThrow('Download stalled: no data for 0s')
+    expect(requests[1]!.abort).toHaveBeenCalled()
+  })
+
   it('does not fire while bytes keep arriving (timer rearms per chunk)', async () => {
     const dest = path.join(tmpDir, 'model.safetensors')
     const body = Buffer.from('hello world bytes!!!')

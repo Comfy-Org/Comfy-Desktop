@@ -272,7 +272,10 @@ const distMenuItems = computed<ContextMenuItem[]>(() => {
     {
       id: 'install',
       label: t('devPlatform.distribution.menuInstall'),
-      disabled: dist.state !== 'installable' && dist.state !== 'update-available'
+      // Only a never-installed distribution installs from here. An
+      // `update-available` row never renders in the chooser (updates live on
+      // the existing install), and installing one anew would duplicate it.
+      disabled: dist.state !== 'installable'
     }
   ]
 })
@@ -495,13 +498,11 @@ const gridHandlers = {
 
         <!-- The workspace shelf: what it already put on this machine, then what
              it still offers on a fresh row. -->
-        <section
-          v-if="
-            showWorkspaceShelf &&
-            (workspaceInstalledEntries.length || workspaceAvailableEntries.length)
-          "
-          class="chooser-shelf"
-        >
+        <!-- Gated on the same pre-search predicate as the grid's centering:
+             if the shelf ducked out when a query filtered its entries, the
+             own-installs grid above would sit left-aligned under no header.
+             With every entry filtered, the header stays with a 0 count. -->
+        <section v-if="showWorkspaceShelf" class="chooser-shelf">
           <header class="chooser-shelf-head">
             <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
             <span class="chooser-shelf-count">{{

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   listCompleteVersions,
   listDistributionRows,
@@ -10,6 +10,8 @@ import { clearVersionCache, getCachedVersions } from './versionCache'
 import type { Artifact, Distribution, DistributionVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
+
+beforeEach(() => clearVersionCache())
 
 function artifact(overrides: Partial<Artifact> = {}): Artifact {
   return {
@@ -67,12 +69,36 @@ describe('listDistributionRows', () => {
   it('marks no-build when no version has a completed status', async () => {
     const client = stubClient({
       distributions: [{ id: 'd1', name: 'Pending' }],
-      versionsByDist: { d1: [version(1, 'building'), version(2, 'failed')] }
+      versionsByDist: { d1: [version(1, 'building'), version(2, 'queued')] }
     })
     const rows = await listDistributionRows(client as never, HOST)
     const row = rows[0]!
-    expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildFailed' })
+    expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildInProgress' })
     expect(row.version).toBeUndefined()
+  })
+
+  it('marks an empty version list as build failed', async () => {
+    const client = stubClient({ distributions: [{ id: 'd1', name: 'Empty' }] })
+    const rows = await listDistributionRows(client as never, HOST)
+    expect(rows[0]).toMatchObject({ state: 'no-build', blockedReason: 'buildFailed' })
+  })
+
+  it('limits row resolution concurrency and preserves distribution order', async () => {
+    const distributions = Array.from({ length: 15 }, (_, i) => ({ id: `d${i}`, name: `Dist ${i}` }))
+    const client = stubClient({ distributions })
+    let current = 0
+    let maximum = 0
+    client.listVersions.mockImplementation(async () => {
+      current++
+      maximum = Math.max(maximum, current)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      current--
+      return []
+    })
+
+    const rows = await listDistributionRows(client as never, HOST)
+    expect(maximum).toBe(6)
+    expect(rows.map((row) => row.id)).toEqual(distributions.map((distribution) => distribution.id))
   })
 
   it('marks platform-mismatch when the latest complete version has no host artifact', async () => {
@@ -155,8 +181,9 @@ describe('listDistributionRows', () => {
   it('drops a distribution whose version lookup fails without failing the whole grid', async () => {
     const client = stubClient({
       distributions: [
-        { id: 'ok', name: 'Ok' },
-        { id: 'bad', name: 'Bad' }
+        { id: 'first', name: 'First' },
+        { id: 'bad', name: 'Bad' },
+        { id: 'last', name: 'Last' }
       ],
       versionsByDist: { ok: [version(1, 'complete')] },
       artifactsByVersion: { v1: [artifact()] }
@@ -166,7 +193,7 @@ describe('listDistributionRows', () => {
       return [version(1, 'complete')]
     })
     const rows = await listDistributionRows(client as never, HOST)
-    expect(rows.map((r) => r.id)).toEqual(['ok'])
+    expect(rows.map((r) => r.id)).toEqual(['first', 'last'])
   })
 })
 
@@ -190,7 +217,6 @@ describe('version cache warming', () => {
   it("caches a distribution's complete versions as a side effect of listing rows", async () => {
     // The manage view builds its Update tab synchronously and cannot fetch, so
     // the catalog read the chooser already does is what fills it.
-    clearVersionCache()
     const client = stubClient({
       distributions: [{ id: 'd1', name: 'Image' }],
       versionsByDist: {

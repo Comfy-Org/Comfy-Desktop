@@ -18,7 +18,7 @@
  * installed. It does not: the confirm body says exactly that. Tone stays
  * primary, never danger.
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, Loader2, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
@@ -76,16 +76,32 @@ function closeMenu(): void {
 function toggleMenu(): void {
   menuOpen.value = !menuOpen.value
   // Opening the menu is when the switcher needs its list: pull it lazily so a
-  // signed-in user who never opens the menu never makes the call.
-  if (menuOpen.value && store.workspaces.length === 0) {
+  // signed-in personal user who never opens the menu never makes the call.
+  // (A team user's list was already pulled by the face-name watcher below.)
+  if (menuOpen.value && store.workspaces.length === 0 && !store.loadingWorkspaces) {
     void store.fetchWorkspaces().catch(() => {})
   }
 }
 
+// A team chip face falls back to the raw workspace id until the list resolves
+// the human name, so pull the list as soon as a team workspace is the active
+// claim rather than only on menu open.
+watch(
+  () =>
+    store.status.signedIn && store.status.workspaceType === 'team'
+      ? (store.status.workspaceId ?? null)
+      : null,
+  (workspaceId) => {
+    if (workspaceId && store.workspaces.length === 0 && !store.loadingWorkspaces) {
+      void store.fetchWorkspaces().catch(() => {})
+    }
+  },
+  { immediate: true }
+)
+
 /** Escape closes the menu wherever focus is: the menu is never a trap.
- *  Focus returns to the trigger (APG menu pattern); pointer dismissal
- *  deliberately doesn't refocus: that would steal focus from wherever
- *  the user just clicked. */
+ *  Focus returns to the trigger; pointer dismissal deliberately doesn't
+ *  refocus: that would steal focus from wherever the user just clicked. */
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape' && menuOpen.value) {
     e.stopPropagation()
@@ -155,7 +171,6 @@ async function onSignOut(): Promise<void> {
         class="account-chip__face"
         data-testid="devplatform-account-chip"
         :aria-expanded="menuOpen"
-        aria-haspopup="menu"
         @click="toggleMenu"
       >
         <!-- Seeded from the workspace, not the account: the avatar reads as
@@ -175,10 +190,13 @@ async function onSignOut(): Promise<void> {
         />
       </button>
 
+      <!-- Deliberately NOT role="menu": that contract promises arrow-key
+           navigation this dropdown does not implement. The rows are plain
+           buttons, so Tab reaches them and a group role tells no lies. -->
       <div
         v-if="menuOpen"
         class="account-chip__menu"
-        role="menu"
+        role="group"
         :aria-label="$t('devPlatform.account.signedInAs', { email })"
         data-testid="devplatform-account-menu"
       >
@@ -195,7 +213,6 @@ async function onSignOut(): Promise<void> {
           v-else-if="store.workspacesError && store.workspaces.length === 0"
           type="button"
           class="account-chip__item account-chip__retry"
-          role="menuitem"
           data-testid="devplatform-workspace-retry"
           @click="store.fetchWorkspaces()"
         >
@@ -207,8 +224,7 @@ async function onSignOut(): Promise<void> {
           :key="ws.id"
           type="button"
           class="account-chip__item account-chip__workspace-item"
-          role="menuitemradio"
-          :aria-checked="ws.id === currentWorkspaceId"
+          :aria-pressed="ws.id === currentWorkspaceId"
           :disabled="switchingTo !== null"
           :data-testid="`devplatform-workspace-${ws.id}`"
           @click="onSelectWorkspace(ws.id)"
@@ -239,7 +255,6 @@ async function onSignOut(): Promise<void> {
         <button
           type="button"
           class="account-chip__item"
-          role="menuitem"
           data-testid="devplatform-account-signout"
           @click="onSignOut"
         >

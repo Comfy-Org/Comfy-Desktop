@@ -1260,6 +1260,7 @@
       },
       "blockedReason": {
         "buildFailed": "This distribution has no successful build yet.",
+        "buildInProgress": "The latest build is still in progress.",
         "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
       }
     }

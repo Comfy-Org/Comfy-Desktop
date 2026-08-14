@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { PassThrough } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   LEGACY_META_SUFFIX,
@@ -13,6 +14,7 @@ import {
   readStagedMeta,
   removeStagedArtifacts,
   scanForStagedDownloads,
+  sha256File,
   stagingMetaPathFor,
   stagingPathFor,
   writeStagedMeta,
@@ -40,6 +42,31 @@ function validMeta(overrides: Partial<StagedDownloadMeta> = {}): StagedDownloadM
     ...overrides
   }
 }
+
+describe('sha256File', () => {
+  it('hashes a complete file', async () => {
+    const filePath = path.join(tmpDir, 'small.bin')
+    fs.writeFileSync(filePath, 'abc')
+    await expect(sha256File(filePath)).resolves.toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    )
+  })
+
+  it('rejects when the read stream closes before end', async () => {
+    const stream = new PassThrough()
+    const createReadStreamSpy = vi
+      .spyOn(fs, 'createReadStream')
+      .mockReturnValue(stream as unknown as ReturnType<typeof fs.createReadStream>)
+    try {
+      const result = sha256File(path.join(tmpDir, 'partial.bin'))
+      stream.write('partial')
+      stream.destroy()
+      await expect(result).rejects.toThrow('sha256 read stream closed before end of file')
+    } finally {
+      createReadStreamSpy.mockRestore()
+    }
+  })
+})
 
 describe('staging path scheme', () => {
   it('derives the .part and .part.dl-meta paths from the final path', () => {

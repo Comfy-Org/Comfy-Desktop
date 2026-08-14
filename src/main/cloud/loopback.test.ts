@@ -13,7 +13,9 @@ function get(url: string): Promise<{ status: number }> {
       .on('error', reject)
   })
 }
-const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 30))
+/** Drain queued IO callbacks and microtasks so any already-settled promise
+ *  has run its handlers; no wall-clock wait. */
+const drain = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 describe('loopback listener', () => {
   let listener: LoopbackListener | undefined
@@ -40,7 +42,10 @@ describe('loopback listener', () => {
     )
 
     expect((await get(`${listener.redirectUri}?state=WRONG&code=x`)).status).toBe(400)
-    await tick()
+    // Any settlement happens in the same synchronous handler that sends the
+    // response, so once the 400 has arrived a drain is enough for a (wrong)
+    // settlement's then-handlers to run.
+    await drain()
     expect(settled).toBe(false) // an outsider could not abort our sign-in
 
     await get(`${listener.redirectUri}?state=st&code=real`)

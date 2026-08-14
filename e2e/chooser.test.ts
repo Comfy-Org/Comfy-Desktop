@@ -121,7 +121,9 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
   // doesn't reach the popup (separate WebContentsView with its own DOM).
   await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
-    if (!wc) throw new Error('title popup webContents missing')
+    // The cached popup can be torn down between the visibility poll and this
+    // call; an absent webContents means it is already closed.
+    if (!wc) return
     return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
   }))
   await expect.poll(
@@ -151,11 +153,13 @@ test('title popup reopens after a blur dismiss (menu-closed IPC clears the reope
   // `isMenuOpen` flag stayed stuck true and every subsequent click was
   // routed to `dismissFileMenu` (a no-op since the popup is already
   // hidden) instead of reopening.
-  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
+  // Deliberately not retried: a retry could emit 'blur' twice, and one blur
+  // must map to exactly one hide for the reopen-guard assertion below.
+  await ctx.app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) throw new Error('title popup webContents missing')
     ;(wc as unknown as { emit: (event: string) => void }).emit('blur')
-  }))
+  })
   await expect.poll(
     () => isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
     { timeout: 5_000, intervals: [100, 200] },

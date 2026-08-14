@@ -56,9 +56,11 @@ export function selectArtifactForHost(artifacts: readonly Artifact[], host: Host
     if (a.status !== 'ready' || a.os !== host.os) continue
     const s = score(a, host)
     if (s <= 0) continue
-    // Strictly greater wins; on an exact tie, the lexicographically smaller
-    // accelVariant wins so selection is deterministic across input orderings.
-    if (s > bestScore || (s === bestScore && best !== null && a.accelVariant < best.accelVariant)) {
+    // Strictly greater wins; on an exact tie, the lexicographically larger
+    // accelVariant wins (the newer accelerator build, e.g. cu128 over cu118)
+    // so selection is deterministic across input orderings and never
+    // regresses to an older build.
+    if (s > bestScore || (s === bestScore && best !== null && a.accelVariant > best.accelVariant)) {
       best = a
       bestScore = s
     }

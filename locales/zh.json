@@ -1260,6 +1260,7 @@
       },
       "blockedReason": {
         "buildFailed": "此分发版本尚无成功的构建。",
+        "buildInProgress": "最新构建仍在进行中。",
         "noArtifactForMachine": "最新构建没有适用于此操作系统和 GPU 的制品。"
       }
     }

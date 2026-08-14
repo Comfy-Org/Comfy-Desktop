@@ -271,6 +271,39 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
+  // The in-flight set clears when the handler returns, so without the record
+  // check a repeat IPC call would create a second record for one distribution.
+  it('installDistribution refuses a second record for an already-tracked distribution', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.list.mockResolvedValue([
+      {
+        id: 'i1',
+        sourceId: 'comfybuilder',
+        distributionId: 'd1',
+        name: 'Image Baseline',
+        status: 'installing'
+      }
+    ])
+    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    expect(result).toEqual({
+      ok: false,
+      message: '"Image Baseline" already installs this distribution.'
+    })
+    expect(mocks.add).not.toHaveBeenCalled()
+  })
+
+  it('installDistribution proceeds when the only prior record for the distribution failed', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.list.mockResolvedValue([
+      { id: 'i1', sourceId: 'comfybuilder', distributionId: 'd1', name: 'Broken', status: 'failed' }
+    ])
+    mocks.resolveHostArtifact.mockResolvedValue(null)
+    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    // Past the duplicate guard: it failed only because no artifact resolved.
+    expect(mocks.resolveHostArtifact).toHaveBeenCalled()
+    expect(result).toMatchObject({ ok: false, message: 'No installable build for this machine.' })
+  })
+
   it('installDistribution refuses when signed out', async () => {
     mocks.isSignedIn.mockReturnValue(false)
     const result = await handler('comfybuilder:installDistribution')({}, 'd1')

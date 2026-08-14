@@ -644,7 +644,17 @@ describe('ChooserView', () => {
     expect(blocked.find('.dist-tile-state-tag').text()).toBe('Linux')
     expect(blocked.find('.chooser-tile-pill-update').exists()).toBe(false)
     expect(blocked.attributes('title')).toContain('operating system')
-    expect(blocked.attributes('aria-disabled')).toBe('true')
+    // Not activatable, so not a (disabled) button - that would also announce
+    // the nested, still-active kebab as disabled.
+    expect(blocked.attributes('role')).toBeUndefined()
+    expect(blocked.attributes('tabindex')).toBeUndefined()
+    const blockedKebab = blocked.find('[data-testid="chooser-dist-tile-kebab-pm"]')
+    expect(blockedKebab.exists()).toBe(true)
+    expect(blockedKebab.attributes('disabled')).toBeUndefined()
+    // An installable tile keeps the button semantics.
+    const installable = wrapper.find('[data-testid="chooser-dist-tile-ok"]')
+    expect(installable.attributes('role')).toBe('button')
+    expect(installable.attributes('tabindex')).toBe('0')
   })
 
   it('falls back to the generic label when the build targets are unknown', async () => {
@@ -857,11 +867,29 @@ describe('ChooserView', () => {
 
     await wrapper.find('input').setValue('zzz-matches-nothing')
     await flushPromises()
-    // Either the no-matches hint took over, or the shelf is still a shelf —
+    // Nothing matches at all, so the no-matches hint takes over the grid area;
     // what must never happen is a silent fall back to the centered grid.
-    const stillShelved = wrapper.find('.chooser-shelf-head').exists()
-    const noMatches = wrapper.find('.chooser-empty').exists()
-    expect(stillShelved || noMatches).toBe(true)
+    expect(wrapper.find('.chooser-empty').exists()).toBe(true)
+    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(false)
+    expect(wrapper.find('.chooser-family-grid--centered').exists()).toBe(false)
+  })
+
+  it('keeps the shelf header when a query matches only an own install', async () => {
+    // The shelf is judged pre-search: if it unmounted while its entries were
+    // filtered out, the own-installs grid would sit left-aligned, headerless.
+    installMockApiSignedIn(
+      [makeInstall({ id: 'local', name: 'LocalThing' })],
+      [makeDist({ id: 'd1', name: 'Alpha Dist' })],
+      { id: 'w1', name: 'Comfy Design Team' }
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    await wrapper.find('input').setValue('LocalThing')
+    await flushPromises()
+    expect(wrapper.find('.chooser-shelf-head').exists()).toBe(true)
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('0')
+    expect(wrapper.text()).toContain('LocalThing')
     expect(wrapper.find('.chooser-family-grid--centered').exists()).toBe(false)
   })
 
