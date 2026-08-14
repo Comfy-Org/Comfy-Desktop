@@ -1376,7 +1376,8 @@
     "cut": "Cut",
     "copy": "Copy",
     "paste": "Paste",
-    "selectAll": "Select All"
+    "selectAll": "Select All",
+    "addToDictionary": "Add to Dictionary"
   },
   "statusFactPanel": {
     "editName": "Edit instance name",

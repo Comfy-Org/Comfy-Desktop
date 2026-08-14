@@ -1376,7 +1376,8 @@
     "cut": "剪切",
     "copy": "复制",
     "paste": "粘贴",
-    "selectAll": "全选"
+    "selectAll": "全选",
+    "addToDictionary": "添加到词典"
   },
   "statusFactPanel": {
     "editName": "编辑实例名称",
