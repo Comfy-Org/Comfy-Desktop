@@ -4,6 +4,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 
+import { evalWithRetry } from './evalRetry'
+
 export interface LauncherAppHandle {
   application: ElectronApplication
   homeDir: string
@@ -265,6 +267,18 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     args,
     env
   })
+
+  // The main-process evaluation channel intermittently fails with
+  // "Execution context was destroyed" on loaded runners when child
+  // WebContentsViews churn (see evalRetry.ts). The WebContentsPage facades
+  // already retry; route direct `application.evaluate(...)` calls from specs
+  // through the same shared retry so they get identical resilience.
+  const rawEvaluate = application.evaluate.bind(application) as (
+    fn: unknown,
+    arg?: unknown
+  ) => Promise<unknown>
+  application.evaluate = ((fn: unknown, arg?: unknown) =>
+    evalWithRetry(() => rawEvaluate(fn, arg))) as ElectronApplication['evaluate']
 
   // Under Playwright the ready-to-show event may fire but isVisible() can lag,
   // so force-show once a BrowserWindow exists.
