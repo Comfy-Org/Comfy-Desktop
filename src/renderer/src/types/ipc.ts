@@ -32,6 +32,7 @@ export type {
   ModelsSection,
   ModelsField,
   ProbeResult,
+  InstallPayloadItem,
   ProgressData,
   ProgressStep,
   AdoptPromptRequest,

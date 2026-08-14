@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 }))
 
 import { downloadAndExtract, downloadAndExtractMulti } from './installer'
+import type { SendProgress } from '../../types/ipc'
 import type { Cache } from './cache'
 import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
@@ -39,7 +40,6 @@ function makeCache(dir: string): Cache {
   }
 }
 
-type SendProgress = (step: string, data: { percent: number; status: string }) => void
 type DownloadFn = (
   url: string,
   dest: string,

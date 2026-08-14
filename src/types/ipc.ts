@@ -37,6 +37,11 @@ export interface Installation {
    *  main side; consumed by recency-aware UI surfaces such as the
    *  startup picker. */
   lastLaunchedAtByCategory?: Record<string, number>
+  /** Starter template chosen in the install wizard. Declared here (rather than
+   *  left to the index signature) so renderer surfaces read them typed; both
+   *  are absent on installs created without a template. */
+  bundledTemplateId?: string
+  bundledTemplateSizeBytes?: number
   [key: string]: unknown // allow extra fields from sources
 }
 
@@ -452,6 +457,21 @@ export interface ProbeResult {
 }
 
 // --- Progress types ---
+
+/** One line item of an install's payload — a downloaded archive, a wheel, a
+ *  model file. Producers emit only what they can measure: `totalBytes` stays
+ *  undefined until a real size is known, and consumers must render an item
+ *  with no byte figures rather than assuming zero. */
+export interface InstallPayloadItem {
+  /** Stable across ticks so the renderer can diff rather than re-key rows. */
+  id: string
+  /** Resolved display label, or an i18n key the renderer translates. */
+  label: string
+  totalBytes?: number
+  receivedBytes?: number
+  state: 'pending' | 'active' | 'done' | 'error'
+}
+
 export interface ProgressData {
   installationId: string
   phase: string
@@ -459,7 +479,25 @@ export interface ProgressData {
   percent?: number
   steps?: ProgressStep[]
   error?: boolean
+  /** Itemised payload for the active phase. Display-only: never gates control
+   *  flow, and any producer may omit it. */
+  payload?: InstallPayloadItem[]
+  /** Measured throughput/projection for the active phase. Absent until a
+   *  sample stabilises; negative values are never emitted. */
+  speedBytesPerSec?: number
+  etaSeconds?: number
 }
+
+/**
+ * The producer half of `install-progress`. `makeSendProgress` supplies
+ * `installationId` and `phase`, so producers pass the remainder — deriving it
+ * from `ProgressData` keeps every emitter in step with the payload the
+ * renderer actually parses.
+ */
+export type SendProgress = (
+  phase: string,
+  detail: Omit<ProgressData, 'installationId' | 'phase'>
+) => void
 
 export interface ProgressStep {
   phase: string

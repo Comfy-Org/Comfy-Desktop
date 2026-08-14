@@ -110,7 +110,7 @@ import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
-import type { Theme, ResolvedTheme, QuitActiveItem } from '../../../types/ipc'
+import type { Theme, ResolvedTheme, QuitActiveItem, SendProgress } from '../../../types/ipc'
 import { findLockingProcesses } from '../file-lock-info'
 import type { LaunchCmd } from '../process'
 import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
@@ -1446,8 +1446,8 @@ async function _enrichLatestCommitsAhead(): Promise<void> {
 export function makeSendProgress(
   sender: Electron.WebContents,
   installationId: string
-): (phase: string, detail: Record<string, unknown>) => void {
-  return (phase: string, detail: Record<string, unknown>): void => {
+): SendProgress {
+  return (phase, detail): void => {
     if (!sender.isDestroyed()) {
       sender.send('install-progress', { installationId, phase, ...detail })
     }

@@ -3,6 +3,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { getActiveVenvDir } from '../../lib/pythonEnv'
 import type { InstallationRecord } from '../../installations'
+import type { SendProgress } from '../../../types/ipc'
 
 export async function removeQuarantine(dir: string, log?: (text: string) => void): Promise<void> {
   if (process.platform !== 'darwin') return
@@ -22,10 +23,7 @@ export async function removeQuarantine(dir: string, log?: (text: string) => void
  */
 export async function repairMacBinaries(
   installPath: string,
-  sendProgress: (
-    step: string,
-    data: { percent: number; status: string; [key: string]: unknown }
-  ) => void,
+  sendProgress: SendProgress,
   sendOutput?: (text: string) => void,
   installation?: InstallationRecord
 ): Promise<void> {

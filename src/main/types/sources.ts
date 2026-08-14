@@ -2,6 +2,7 @@ import type { InstallationRecord } from '../installations'
 import type { Cache } from '../lib/cache'
 import type { DownloadProgress } from '../lib/download'
 import type { ExtractProgress } from '../lib/extract'
+import type { SendProgress } from '../../types/ipc'
 
 export interface SourceField {
   id: string
@@ -40,7 +41,7 @@ export interface LaunchCommand {
 }
 
 export interface InstallTools {
-  sendProgress: (step: string, data: { percent: number; status: string }) => void
+  sendProgress: SendProgress
   download: (
     url: string,
     dest: string,
@@ -59,13 +60,13 @@ export interface InstallTools {
 
 export interface ActionTools {
   update: (data: Record<string, unknown>) => Promise<void>
-  sendProgress: (step: string, data: Record<string, unknown>) => void
+  sendProgress: SendProgress
   sendOutput: (text: string) => void
   signal?: AbortSignal
 }
 
 export interface PostInstallTools {
-  sendProgress: (step: string, data: { percent: number; status: string }) => void
+  sendProgress: SendProgress
   update: (data: Record<string, unknown>) => Promise<void>
   signal?: AbortSignal
 }
