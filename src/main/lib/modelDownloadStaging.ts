@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
@@ -48,6 +49,10 @@ export interface StagedDownloadMeta {
   filename: string
   /** Install that initiated the download, when known. */
   installationId?: string | null
+  /** Expected lowercase-hex sha256 of the complete file. When present, the
+   *  transport verifies the staged bytes against it before finalizing, and a
+   *  restart-hydrated job keeps verifying without the original caller. */
+  sha256?: string
 }
 
 export function stagingPathFor(finalPath: string): string {
@@ -250,6 +255,19 @@ export function quarantineOrphanStagedBytes(finalPath: string): boolean {
       n === 0 ? stagingPath + '.orphan' : stagingPath + `.orphan-${n}`
     ) !== null
   )
+}
+
+/** Streaming lowercase-hex sha256 of a file. Resolves on 'close' (not 'end')
+ *  so the fd is released before any following rm/rename, avoiding EBUSY on
+ *  Windows. Shared by the model transport and ComfyBuilder archive install. */
+export function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    stream.on('error', reject)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('close', () => resolve(hash.digest('hex')))
+  })
 }
 
 /** Byte-for-byte comparison in 1 MiB chunks, async so a multi-gigabyte model

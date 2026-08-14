@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const acquireModelDownloadRootLock = vi.hoisted(() =>
   vi.fn<(modelsRoot: string) => (() => void) | null>(() => vi.fn())
 )
+const releaseParkedModelJobsUnder = vi.hoisted(() => vi.fn<(modelsRoot: string) => void>())
+const startManagedModelJob = vi.hoisted(() => vi.fn())
+const cancelModelDownload = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
@@ -28,7 +31,12 @@ vi.mock('../../comfybuilder', () => ({
   }))
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
-vi.mock('../../lib/comfyDownloadManager', () => ({ acquireModelDownloadRootLock }))
+vi.mock('../../lib/comfyDownloadManager', () => ({
+  acquireModelDownloadRootLock,
+  releaseParkedModelJobsUnder,
+  startManagedModelJob,
+  cancelModelDownload
+}))
 vi.mock('../../devplatform/distributions', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
@@ -120,6 +128,12 @@ describe('comfybuilder.install wiring', () => {
       ).mock.invocationCallOrder[0]!
       expect(renameOrder).toBeLessThan(installOrder)
       expect(acquireModelDownloadRootLock).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+      // Stale parked rows must be retired before the lock is taken, or they
+      // would keep the root busy forever.
+      expect(releaseParkedModelJobsUnder).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+      expect(releaseParkedModelJobsUnder.mock.invocationCallOrder[0]!).toBeLessThan(
+        acquireModelDownloadRootLock.mock.invocationCallOrder[0]!
+      )
       expect(releaseModelRoot).toHaveBeenCalledOnce()
     } finally {
       rename.mockRestore()
@@ -183,6 +197,12 @@ describe('comfybuilder.install wiring', () => {
 
     // The manifest is keyed by the record's distribution + version number.
     expect(resolveModelManifest).toHaveBeenCalledWith(expect.anything(), 'd1', '1')
+    // Staging runs on the managed download surface, not an ad-hoc downloader.
+    expect(stageModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobs: { start: startManagedModelJob, cancel: cancelModelDownload }
+      })
+    )
     // A terminal models progress event fires so the step completes.
     expect(tools.sent.some((s) => s.phase === 'models')).toBe(true)
   })

@@ -24,7 +24,7 @@ export { installArtifact, ComfyBuilderInstallError, sha256File } from './install
 export type { InstallArtifactOptions, ComfyBuilderInstallErrorKind } from './install'
 export { normalizeSha256 } from './integrity'
 export { stageModels, installModelsRoot, StageModelsError } from './models'
-export type { StageModelsOptions, StageModelsErrorKind } from './models'
+export type { StageModelsOptions, StageModelsErrorKind, ModelJobSurface } from './models'
 export { resolveModelManifest } from './modelManifest'
 export { buildLaunchSpec, venvPython } from './launch'
 export type { LaunchOptions } from './launch'

@@ -11,19 +11,24 @@
  * built-in model root. That root is always on ComfyUI's model search path, so a
  * staged model is found whether or not the user shares a global model library.
  *
- * Integrity mirrors archive install: every model requires a sha256 and is
- * verified byte-for-byte before installation. Each model downloads to a
- * `.partial` sibling that is renamed into place only after it verifies, so an
- * interrupted install never leaves a truncated model looking complete, and a
- * re-run resumes or re-fetches rather than trusting bad bytes.
+ * Every model transfer is a REAL managed job in `comfyDownloadManager` - the
+ * same job type as in-Comfy and starter-template model downloads. Jobs appear
+ * in the Downloads tray, download to a staged `.part` + sidecar pair (never
+ * partial bytes under a model extension), and their staged bytes survive
+ * failures and app restarts, so a re-run resumes rather than re-fetching.
+ * The job surface is INJECTED by the caller: the download manager imports the
+ * source registry, which includes the ComfyBuilder plugin, so importing it
+ * here at runtime would be a cycle.
+ *
+ * Integrity mirrors archive install: every model requires a sha256, verified
+ * byte-for-byte by the managed transport before the file appears under its
+ * final name. A file already at the destination must match the hash to be
+ * kept; a mismatch is a conflict, never silently overwritten.
  */
 import fs from 'fs'
 import path from 'path'
 
-import { download } from '../lib/download'
-import type { DownloadProgress } from '../lib/download'
-import { installStagedAtFinal } from '../lib/modelDownloadStaging'
-import { sha256File } from './install'
+import type { ModelJobHandle, ModelJobOptions, ModelJobOutcome } from '../lib/comfyDownloadManager'
 import { isSecureDownloadUrl, isValidSha256, normalizeSha256 } from './integrity'
 import type { ModelDescriptor, StageProgress } from './types'
 
@@ -38,23 +43,34 @@ export class StageModelsError extends Error {
   }
 }
 
-/** The download surface used, narrowed so a test can inject a fake. */
-type DownloadFn = (
-  url: string,
-  destPath: string,
-  onProgress: ((p: DownloadProgress) => void) | null,
-  options?: { signal?: AbortSignal; validateUrl?: (url: string) => boolean }
-) => Promise<string>
+/** The managed model-download surface, narrowed to what staging needs and
+ *  injected by the caller (import-cycle firewall; also lets tests fake it). */
+export interface ModelJobSurface {
+  start: (opts: ModelJobOptions) => Promise<ModelJobHandle>
+  /** Destructive cancel by job id; used on abort so rollback never races a
+   *  still-open download stream inside the install's model tree. */
+  cancel: (id: string) => boolean
+}
 
 export interface StageModelsOptions {
   models: readonly ModelDescriptor[]
   /** The install root (the dir that contains `ComfyUI/`). */
   installPath: string
+  /** Install record id, so jobs are attributed to this install. */
+  installationId?: string | null
+  jobs: ModelJobSurface
   onProgress?: (p: StageProgress) => void
   signal?: AbortSignal
-  /** Injectable download for tests; defaults to the real primitive. */
-  download?: DownloadFn
 }
+
+/** Transient-failure retry budget per model. The managed job keeps its staged
+ *  bytes on error, so a retry RESUMES from the prior byte count. Integrity
+ *  failures (checksum/conflict) are deterministic and never retried. */
+const MODEL_DOWNLOAD_RETRIES = 2
+
+/** Progress is forwarded to the install stepper over IPC; the managed job's
+ *  onProgress fires per chunk, so sample it down. */
+const PROGRESS_REPORT_MS = 500
 
 /** A single path segment that cannot escape its parent: no separators, no `..`,
  *  no drive/absolute markers. Guards `models/<type>/<filename>` against a
@@ -83,6 +99,44 @@ export function installModelsRoot(installPath: string): string {
   return path.join(installPath, 'ComfyUI', 'models')
 }
 
+/** Run one managed job to completion, translating its outcome. Abort cancels
+ *  the job destructively and waits for its teardown to settle, so the staged
+ *  files inside the install tree are gone before rollback renames it. */
+async function runModelJob(
+  jobs: ModelJobSurface,
+  opts: ModelJobOptions,
+  model: ModelDescriptor,
+  signal: AbortSignal | undefined
+): Promise<ModelJobOutcome> {
+  const handle = await jobs.start(opts)
+  const onAbort = (): void => {
+    jobs.cancel(handle.id)
+  }
+  if (signal?.aborted) onAbort()
+  else signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    const outcome = await handle.completion
+    if (outcome.status === 'error') {
+      if (outcome.code === 'checksum-mismatch') {
+        throw new StageModelsError(
+          'model-checksum-mismatch',
+          `Model ${model.type}/${model.filename} checksum mismatch: ${outcome.error}`
+        )
+      }
+      if (outcome.code === 'existing-file-mismatch') {
+        throw new StageModelsError(
+          'model-conflict',
+          `Model ${model.type}/${model.filename} conflicts with a different existing file.`
+        )
+      }
+    }
+    return outcome
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+    handle.release()
+  }
+}
+
 /**
  * Download + verify + place each model under `<installPath>/ComfyUI/models`.
  * Throws {@link StageModelsError} on an unsafe path or a checksum mismatch. A
@@ -90,8 +144,7 @@ export function installModelsRoot(installPath: string): string {
  * repeated install does not re-download what is already staged.
  */
 export async function stageModels(opts: StageModelsOptions): Promise<void> {
-  const { models, installPath, onProgress, signal } = opts
-  const doDownload = opts.download ?? download
+  const { models, installPath, installationId, jobs, onProgress, signal } = opts
   const total = models.length
   const modelsRoot = installModelsRoot(installPath)
 
@@ -132,54 +185,47 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     }
 
     const dest = path.join(destDir, model.filename)
-    const expected = normalizeSha256(model.sha256)
+    // Legacy leftover from the pre-managed-job staging flow, which downloaded
+    // to a bare `.partial` sibling; it can never be resumed or finalized now.
+    await fs.promises.rm(`${dest}.partial`, { force: true }).catch(() => {})
 
-    // Already staged: a byte-verified file is left as-is so a re-run is cheap
-    // and idempotent.
-    if (fs.existsSync(dest)) {
-      if ((await sha256File(dest)) === expected) {
-        onProgress?.({ index, total, filename: model.filename, percent: 100 })
-        continue
-      }
-      throw new StageModelsError(
-        'model-conflict',
-        `Model ${model.type}/${model.filename} conflicts with a different existing file.`
-      )
-    }
-
-    // Download to a sibling, verify, then rename into place: an interrupted
-    // transfer never leaves a truncated model at the real name, and the rename
-    // is atomic on the same filesystem. Drop a symlinked leftover partial so a
-    // pre-planted link can't redirect the write; a plain partial resumes.
-    const partial = `${dest}.partial`
-    if (fs.existsSync(partial) && fs.lstatSync(partial).isSymbolicLink()) {
-      await fs.promises.rm(partial, { force: true }).catch(() => {})
-    }
     onProgress?.({ index, total, filename: model.filename, percent: 0 })
-    await doDownload(
-      model.downloadUrl,
-      partial,
-      (p: DownloadProgress) =>
-        onProgress?.({ index, total, filename: model.filename, percent: p.percent }),
-      { ...(signal ? { signal } : {}), validateUrl: isSecureDownloadUrl }
-    )
-
-    const actual = await sha256File(partial)
-    if (actual !== expected) {
-      await fs.promises.rm(partial, { force: true }).catch(() => {})
-      throw new StageModelsError(
-        'model-checksum-mismatch',
-        `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`
-      )
+    let lastReport = 0
+    const jobOptions: ModelJobOptions = {
+      url: model.downloadUrl,
+      filename: model.filename,
+      directory: model.type,
+      installationId,
+      sha256: normalizeSha256(model.sha256),
+      // Always the install's own model tree, even when the install's model
+      // settings would route interactive downloads to a shared root - and the
+      // caller holds this root's download lock for the whole transaction.
+      destinationBaseDir: modelsRoot,
+      bypassRootLockFor: modelsRoot,
+      onProgress: (receivedBytes, totalBytes) => {
+        const now = Date.now()
+        if (now - lastReport < PROGRESS_REPORT_MS) return
+        lastReport = now
+        onProgress?.({
+          index,
+          total,
+          filename: model.filename,
+          percent: totalBytes > 0 ? Math.min(100, (receivedBytes / totalBytes) * 100) : 0
+        })
+      }
     }
-    const finalBytes = (await fs.promises.stat(partial)).size
-    try {
-      await installStagedAtFinal(partial, dest, finalBytes)
-    } catch (err) {
-      throw new StageModelsError(
-        'model-conflict',
-        `Model ${model.type}/${model.filename} could not be installed: ${err instanceof Error ? err.message : String(err)}`
-      )
+
+    let outcome: ModelJobOutcome | undefined
+    for (let attempt = 0; ; attempt++) {
+      if (signal?.aborted) throw new Error('Cancelled')
+      outcome = await runModelJob(jobs, jobOptions, model, signal)
+      if (outcome.status !== 'error' || attempt >= MODEL_DOWNLOAD_RETRIES) break
+    }
+    if (signal?.aborted || outcome.status === 'cancelled') throw new Error('Cancelled')
+    if (outcome.status === 'error') {
+      // Integrity failures were already thrown as StageModelsError inside
+      // runModelJob; whatever reaches here is a transport/filesystem failure.
+      throw new Error(`Model ${model.type}/${model.filename} download failed: ${outcome.error}`)
     }
     onProgress?.({ index, total, filename: model.filename, percent: 100 })
   }

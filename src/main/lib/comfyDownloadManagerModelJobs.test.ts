@@ -41,6 +41,7 @@ interface FakeTransfer {
     directory: string
     filename: string
     session?: unknown
+    sha256?: string
     onProgress?: (p: { receivedBytes: number; totalBytes: number }) => void
   }
   resolve: (outcome: Record<string, unknown>) => void
@@ -1979,6 +1980,260 @@ describe('recent-row eviction (issue #1322)', () => {
       }
     } finally {
       _unregisterExtraBroadcastTarget(target as unknown as Electron.WebContents)
+    }
+  })
+})
+
+describe('sha-256 expectations and install-local roots', () => {
+  const SHA_A = 'a'.repeat(64)
+  const SHA_B = 'b'.repeat(64)
+
+  function installLocalRoot(prefix: string): { installRoot: string; modelsRoot: string } {
+    const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+    return { installRoot, modelsRoot: path.join(installRoot, 'ComfyUI', 'models') }
+  }
+
+  it('passes the expected hash to the transport and keeps it across a retry', async () => {
+    const name = uniqueName()
+    const url = `https://host.example/${name}`
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      sha256: SHA_A
+    })
+    await waitForTransfers(before + 1)
+    expect(transfers[before]!.opts.sha256).toBe(SHA_A)
+    transfers[before]!.resolve({ outcome: 'error', error: 'network gone' })
+    await expect(h.completion).resolves.toMatchObject({ status: 'error' })
+    await flush()
+
+    expect(mod.retryDownload(h.id)).toBe(true)
+    await waitForTransfers(before + 2)
+    // The retry is a fresh job, but the integrity expectation must survive it.
+    expect(transfers[before + 1]!.opts.sha256).toBe(SHA_A)
+    expect(mod.cancelModelDownload(transfers[before + 1]!.opts.jobId as string)).toBe(true)
+    await flush()
+  })
+
+  it('refuses a same-destination caller declaring a different hash; a matching one joins', async () => {
+    const name = uniqueName()
+    const url = `https://host.example/${name}`
+    const before = transfers.length
+    const h1 = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      sha256: SHA_A
+    })
+    await waitForTransfers(before + 1)
+
+    // Same final file, different expected bytes: a join would hand one of the
+    // callers a file that fails its own verification.
+    const conflict = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      sha256: SHA_B
+    })
+    await expect(conflict.completion).resolves.toMatchObject({ status: 'error' })
+    expect(transfers).toHaveLength(before + 1)
+
+    const joined = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      sha256: SHA_A
+    })
+    expect(joined.id).toBe(h1.id)
+
+    expect(mod.cancelModelDownload(h1.id)).toBe(true)
+    await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+  })
+
+  it('an explicit destination root overrides the shared models directory', async () => {
+    const { installRoot, modelsRoot } = installLocalRoot('cdm-dest-root-')
+    try {
+      const name = uniqueName()
+      const before = transfers.length
+      const h = await mod.startManagedModelJob({
+        url: `https://host.example/${name}`,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: modelsRoot
+      })
+      await waitForTransfers(before + 1)
+      expect(transfers[before]!.opts.finalPath).toBe(path.join(modelsRoot, 'checkpoints', name))
+      transfers[before]!.resolve({ outcome: 'cancelled' })
+      await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
+      await flush()
+    } finally {
+      fs.rmSync(installRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('admits a job into a locked root only when the bypass names that exact root', async () => {
+    const { installRoot, modelsRoot } = installLocalRoot('cdm-lock-bypass-')
+    const otherRoot = path.join(installRoot, 'elsewhere', 'models')
+    const release = mod.acquireModelDownloadRootLock(modelsRoot)
+    expect(release).not.toBeNull()
+    try {
+      const before = transfers.length
+      const blocked = await mod.startManagedModelJob({
+        url: `https://host.example/${uniqueName()}`,
+        filename: uniqueName(),
+        directory: 'checkpoints',
+        destinationBaseDir: modelsRoot
+      })
+      await expect(blocked.completion).resolves.toMatchObject({ status: 'error' })
+
+      // A bypass naming a DIFFERENT root exempts nothing.
+      const wrongBypass = await mod.startManagedModelJob({
+        url: `https://host.example/${uniqueName()}`,
+        filename: uniqueName(),
+        directory: 'checkpoints',
+        destinationBaseDir: modelsRoot,
+        bypassRootLockFor: otherRoot
+      })
+      await expect(wrongBypass.completion).resolves.toMatchObject({ status: 'error' })
+      expect(transfers).toHaveLength(before)
+
+      // The transaction holding the lock runs its own jobs inside it.
+      const name = uniqueName()
+      const admitted = await mod.startManagedModelJob({
+        url: `https://host.example/${name}`,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: modelsRoot,
+        bypassRootLockFor: modelsRoot
+      })
+      await waitForTransfers(before + 1)
+      expect(transfers[before]!.opts.finalPath).toBe(path.join(modelsRoot, 'checkpoints', name))
+      transfers[before]!.resolve({ outcome: 'cancelled' })
+      await expect(admitted.completion).resolves.toEqual({ status: 'cancelled' })
+      await flush()
+    } finally {
+      release?.()
+      fs.rmSync(installRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('releaseParkedModelJobsUnder retires parked rows, keeps staged bytes, and unblocks the lock', async () => {
+    mod._test_resetModelDownloadsInit()
+    const { installRoot, modelsRoot } = installLocalRoot('cdm-release-parked-')
+    const dest = path.join(modelsRoot, 'checkpoints', 'parked.safetensors')
+    scanForStagedDownloads.mockResolvedValueOnce({
+      unsafeFinalPaths: [],
+      downloads: [
+        {
+          meta: {
+            version: 2,
+            url: 'https://host.example/parked.safetensors',
+            expectedSize: 1000,
+            directory: 'checkpoints',
+            filename: 'parked.safetensors',
+            installationId: null
+          },
+          finalPath: dest,
+          stagedBytes: 100
+        }
+      ]
+    })
+    try {
+      await mod.initializeModelDownloads()
+      const row = activeRows().find((r) => r.filename === 'parked.safetensors')
+      expect(row?.status).toBe('paused')
+      // The parked row owns a destination inside the root: lock refused.
+      expect(mod.acquireModelDownloadRootLock(modelsRoot)).toBeNull()
+
+      removeStagedArtifacts.mockClear()
+      mod.releaseParkedModelJobsUnder(modelsRoot)
+      expect(activeRows().find((r) => r.id === row!.id)).toBeUndefined()
+      // The staged pair stays on disk so a re-staged download resumes it.
+      expect(removeStagedArtifacts).not.toHaveBeenCalled()
+
+      const release = mod.acquireModelDownloadRootLock(modelsRoot)
+      expect(release).not.toBeNull()
+      release!()
+    } finally {
+      fs.rmSync(installRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('releaseParkedModelJobsUnder leaves actively transferring jobs alone', async () => {
+    const { installRoot, modelsRoot } = installLocalRoot('cdm-release-active-')
+    try {
+      const name = uniqueName()
+      const before = transfers.length
+      const h = await mod.startManagedModelJob({
+        url: `https://host.example/${name}`,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: modelsRoot
+      })
+      await waitForTransfers(before + 1)
+
+      mod.releaseParkedModelJobsUnder(modelsRoot)
+      // Still registered and still blocking the lock: only PARKED rows retire.
+      expect(activeRows().find((r) => r.id === h.id)).toBeDefined()
+      expect(mod.acquireModelDownloadRootLock(modelsRoot)).toBeNull()
+
+      expect(mod.cancelModelDownload(h.id)).toBe(true)
+      await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
+      await flush()
+    } finally {
+      fs.rmSync(installRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('retrying a hydrated job stays in its original root and keeps its hash', async () => {
+    mod._test_resetModelDownloadsInit()
+    const { installRoot, modelsRoot } = installLocalRoot('cdm-hydrated-retry-')
+    const dest = path.join(modelsRoot, 'checkpoints', 'pinned.safetensors')
+    const url = 'https://host.example/pinned.safetensors'
+    scanForStagedDownloads.mockResolvedValueOnce({
+      unsafeFinalPaths: [],
+      downloads: [
+        {
+          meta: {
+            version: 2,
+            url,
+            expectedSize: 1000,
+            directory: 'checkpoints',
+            filename: 'pinned.safetensors',
+            installationId: null,
+            sha256: SHA_A
+          },
+          finalPath: dest,
+          stagedBytes: 100
+        }
+      ]
+    })
+    try {
+      await mod.initializeModelDownloads()
+      const row = activeRows().find((r) => r.filename === 'pinned.safetensors')!
+      let before = transfers.length
+      expect(mod.resumeModelDownload(row.id!)).toBe(true)
+      await waitForTransfers(before + 1)
+      expect(transfers[before]!.opts.finalPath).toBe(dest)
+      expect(transfers[before]!.opts.sha256).toBe(SHA_A)
+      transfers[before]!.resolve({ outcome: 'error', error: 'presigned url expired' })
+      await flush()
+
+      // The retry must re-target the root the pair was staged under - NOT the
+      // current shared models directory, which is a different location here.
+      before = transfers.length
+      expect(mod.retryDownload(row.id!)).toBe(true)
+      await waitForTransfers(before + 1)
+      expect(transfers[before]!.opts.finalPath).toBe(dest)
+      expect(transfers[before]!.opts.sha256).toBe(SHA_A)
+
+      expect(mod.cancelModelDownload(transfers[before]!.opts.jobId as string)).toBe(true)
+      await flush()
+    } finally {
+      fs.rmSync(installRoot, { recursive: true, force: true })
     }
   })
 })

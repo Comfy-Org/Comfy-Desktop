@@ -23,6 +23,7 @@ import {
   removeStagedArtifacts,
   revalidateStagedPair,
   scanForStagedDownloads,
+  sha256File,
   type DiscoveredStagedDownload
 } from './modelDownloadStaging'
 import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
@@ -164,6 +165,9 @@ interface PendingDownload {
   leases?: Set<string>
   installationId?: string | null
   expectedSize?: number
+  /** Expected lowercase-hex sha256 of the complete file; the transport
+   *  verifies staged bytes against it before finalizing. */
+  sha256?: string
   /** Explicit session for headless callers (template task). Falls back to
    *  senderContents.session, then the install's partition, then default. */
   explicitSession?: Electron.Session
@@ -228,13 +232,20 @@ function findActiveByRef(ref: string): PendingDownload | undefined {
   return byUrl.length === 1 ? byUrl[0] : undefined
 }
 
+/** Machine-readable cause for callers that must distinguish integrity
+ *  failures from transport failures (e.g. ComfyBuilder model staging):
+ *  `checksum-mismatch` means the downloaded bytes failed sha256 verification;
+ *  `existing-file-mismatch` means a file already at the destination does not
+ *  match the expected sha256. */
+export type ModelJobErrorCode = 'checksum-mismatch' | 'existing-file-mismatch'
+
 /** Terminal outcome of a managed model job. `paused` is deliberately absent:
  *  a paused job's completion promise stays pending until it is resumed and
  *  finishes, or is cancelled. */
 export type ModelJobOutcome =
   | { status: 'completed'; savePath: string; alreadyPresent?: boolean }
   | { status: 'cancelled' }
-  | { status: 'error'; error: string }
+  | { status: 'error'; error: string; code?: ModelJobErrorCode }
 
 /** Active model job ids indexed by canonical final destination, so concurrent
  *  installs/templates requesting the same model join one transfer instead of
@@ -277,8 +288,12 @@ function pathIsInModelRoot(filePath: string, root: string): boolean {
   return isPathContained(canonicalDestKey(filePath), canonicalDestKey(root))
 }
 
-function isModelPathLocked(filePath: string): boolean {
+/** `exemptRootKey` (a canonical dest key) admits paths locked ONLY by that
+ *  root: the transaction holding that lock may run its own managed jobs
+ *  inside it while everyone else stays locked out. */
+function isModelPathLocked(filePath: string, exemptRootKey?: string): boolean {
   for (const root of lockedModelRoots.keys()) {
+    if (root === exemptRootKey) continue
     if (pathIsInModelRoot(filePath, root)) return true
   }
   return false
@@ -315,6 +330,37 @@ export function acquireModelDownloadRootLock(modelsRoot: string): (() => void) |
 
   return () => {
     if (lockedModelRoots.get(rootKey) === token) lockedModelRoots.delete(rootKey)
+  }
+}
+
+/**
+ * Retire every PARKED managed model job under `modelsRoot`: suspended jobs
+ * with no live transport, no lease holders, and no pending teardown - i.e.
+ * rows hydrated from a previous run or left parked by a released caller.
+ * Their rows leave the Downloads surfaces and their completion settles as
+ * cancelled, but the staged bytes + sidecar STAY on disk, so a new job for
+ * the same content (matched by persisted sha256 or URL) resumes them.
+ *
+ * For ComfyBuilder installs/updates: a parked row inside the install's model
+ * root would otherwise permanently block `acquireModelDownloadRootLock`, and
+ * its stale presigned URL could never finish anyway - the re-staged download
+ * adopts the bytes instead. Jobs that are actively downloading are left
+ * alone (the lock acquisition then fails, correctly reporting a busy root).
+ */
+export function releaseParkedModelJobsUnder(modelsRoot: string): void {
+  const rootKey = canonicalDestKey(modelsRoot)
+  for (const pending of [...pendingDownloads.values()]) {
+    if (pending.kind !== 'model') continue
+    if (!pathIsInModelRoot(pending.savePath, rootKey)) continue
+    if (!pending.suspended || pending.transport || pending.starting || pending.cancelling) continue
+    if (pending.leases && pending.leases.size > 0) continue
+    if (closingStreamsByDest.has(canonicalDestKey(pending.savePath))) continue
+    unregisterModelJob(pending)
+    createdAtById.delete(pending.id)
+    retryParamsById.delete(pending.id)
+    _broadcastToRenderer('model-download-removed', { url: pending.url, id: pending.id })
+    downloadEvents.emit('tray-state-changed')
+    pending.settleJob?.({ status: 'cancelled' })
   }
 }
 
@@ -377,6 +423,11 @@ interface RetryParams {
    *  Retry dedupe compares canonical destinations, never URL + directory -
    *  two installs can share both while writing different files. */
   savePath?: string
+  /** Model jobs: expected sha256, so a retry keeps verifying integrity. */
+  sha256?: string
+  /** Model jobs: explicit destination root of the original attempt, so a
+   *  retry resolves the same final path. */
+  destinationBaseDir?: string
 }
 const retryParamsById = new Map<string, RetryParams>()
 
@@ -772,6 +823,20 @@ export interface ModelJobOptions {
   session?: Electron.Session
   /** Caller-known expected byte count, validated against the server. */
   expectedSize?: number
+  /** Expected lowercase-hex sha256 of the complete file. When set, the staged
+   *  bytes are verified before finalization (mismatch -> error with code
+   *  'checksum-mismatch'), and a file already at the destination must match
+   *  it to count as already present (mismatch -> 'existing-file-mismatch'). */
+  sha256?: string
+  /** Explicit models root the file must land under, bypassing the install's
+   *  model-settings resolution (ComfyBuilder staging always targets the
+   *  install-local `ComfyUI/models`). Also narrows the already-present check
+   *  to the exact destination. */
+  destinationBaseDir?: string
+  /** Models root the CALLER itself holds the download root lock on (via
+   *  `acquireModelDownloadRootLock`), admitting this job inside it while the
+   *  lock keeps every other caller out. */
+  bypassRootLockFor?: string
   /** Hot-path per-chunk byte counter (O(1) work only - no IPC/allocation). */
   onProgress?: (receivedBytes: number, totalBytes: number) => void
 }
@@ -979,6 +1044,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     installationId: pending.installationId,
     session: sess,
     expectedSize: pending.expectedSize,
+    sha256: pending.sha256,
     onProgress: ({ receivedBytes, totalBytes }) => {
       if (gen !== pending.attemptGen) return
       if (pending.progressSubscribers) {
@@ -1052,7 +1118,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
         error: outcome.error
       })
       unregisterModelJob(pending)
-      pending.settleJob?.({ status: 'error', error: outcome.error })
+      pending.settleJob?.({ status: 'error', error: outcome.error, code: outcome.code })
       break
     case 'paused':
       if (pending.cancelRequested) {
@@ -1081,13 +1147,14 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const url = opts.url
   const filename = stripQueryParams(opts.filename)
   const directory = opts.directory
+  const sha256 = opts.sha256?.trim().toLowerCase()
   // Resolve the initiating install so destination + existence check follow its
   // model settings. An explicit `installationId` (from retries / templates)
   // wins over the live sender so a retry still targets the right install
-  // after its view is gone.
+  // after its view is gone. An explicit destination root wins over both.
   const resolvedInstallId = opts.installationId ?? resolveSenderInstallationId(opts.senderContents)
   const ctx = await resolveDownloadContextById(resolvedInstallId)
-  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
+  const baseDir = opts.destinationBaseDir ?? (ctx ? ctx.downloadBaseDir : getModelsBaseDir())
   const savePath = path.join(baseDir, directory, filename)
 
   // Candidate identity for this request. Discarded (with its bookkeeping) if
@@ -1104,7 +1171,9 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     window: opts.window,
     senderContents: opts.senderContents,
     installationId: resolvedInstallId,
-    savePath
+    savePath,
+    sha256,
+    destinationBaseDir: opts.destinationBaseDir
   })
 
   const makeProgress = (
@@ -1119,8 +1188,11 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     ...overrides
   })
 
+  const lockExemptKey = opts.bypassRootLockFor
+    ? canonicalDestKey(opts.bypassRootLockFor)
+    : undefined
   const rejectLockedRoot = (candidatePath = savePath): ModelJobHandle | null => {
-    if (!isModelPathLocked(candidatePath)) return null
+    if (!isModelPathLocked(candidatePath, lockExemptKey)) return null
     const error = 'The model directory is busy while the installation is being updated'
     reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, { status: 'error', error })
@@ -1175,12 +1247,38 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   // Report completed without downloading only when the file already exists
   // somewhere the install's ComfyUI actually searches. A known-incomplete
   // file must never satisfy this check - it is exactly the truncated model
-  // #1322 is about.
-  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+  // #1322 is about. With an explicit destination root, only the exact
+  // destination counts (ComfyBuilder staging must place the file there).
+  const existenceCandidates = opts.destinationBaseDir
+    ? [savePath]
+    : buildExistenceCandidates(ctx, baseDir, directory, filename)
+  for (const candidate of existenceCandidates) {
     if (unsafeDestKeys.has(canonicalDestKey(candidate))) continue
     if (await regularFileExists(candidate)) {
       const lockedBeforeExistingResult = rejectLockedRoot(candidate)
       if (lockedBeforeExistingResult) return lockedBeforeExistingResult
+      if (sha256) {
+        // An integrity-checked caller can only accept an existing file that
+        // IS the expected content; anything else at the destination is a
+        // conflict the caller must resolve, not a completed download.
+        let actual: string
+        try {
+          actual = await sha256File(candidate)
+        } catch (err) {
+          const error = `Cannot verify existing file: ${(err as Error).message}`
+          reportProgress(makeProgress({ status: 'error', error }))
+          return settledJobHandle(id, url, savePath, { status: 'error', error })
+        }
+        if (actual !== sha256) {
+          const error = `Existing file ${filename} does not match the expected checksum`
+          reportProgress(makeProgress({ status: 'error', error }))
+          return settledJobHandle(id, url, savePath, {
+            status: 'error',
+            error,
+            code: 'existing-file-mismatch'
+          })
+        }
+      }
       reportProgress(makeProgress({ progress: 1, status: 'completed', savePath: candidate }))
       return settledJobHandle(id, url, candidate, {
         status: 'completed',
@@ -1218,14 +1316,18 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     const active = pendingDownloads.get(idAtDest)
     if (active) {
       // Joining is only safe when the caller wants the same bytes: the same
-      // source URL and (when both sides declare one) the same expected size.
-      // A different source aimed at the same final file is a conflict, not a
-      // join - silently attaching would hand the caller another URL's file.
+      // source URL and (when both sides declare one) the same expected size
+      // and hash. A caller that REQUIRES integrity verification can also
+      // never join a job that does not verify - the guarantee would silently
+      // vanish. A different source aimed at the same final file is a
+      // conflict, not a join - silently attaching would hand the caller
+      // another URL's file.
       if (
         active.url !== url ||
         (opts.expectedSize !== undefined &&
           active.expectedSize !== undefined &&
-          opts.expectedSize !== active.expectedSize)
+          opts.expectedSize !== active.expectedSize) ||
+        (sha256 !== undefined && active.sha256 !== sha256)
       ) {
         const error = `Another download is already writing ${filename} from a different source`
         reportProgress(makeProgress({ status: 'error', error }))
@@ -1260,6 +1362,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     suspended: false,
     installationId: resolvedInstallId,
     expectedSize: opts.expectedSize,
+    sha256,
     explicitSession: opts.session,
     progressSubscribers: opts.onProgress ? new Set([opts.onProgress]) : undefined,
     settleJob,
@@ -1323,7 +1426,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       expectedSize: opts.expectedSize && opts.expectedSize > 0 ? opts.expectedSize : 0,
       directory,
       filename,
-      installationId: resolvedInstallId ?? undefined
+      installationId: resolvedInstallId ?? undefined,
+      sha256
     })
     pending.starting = false
     if (!staged) {
@@ -2006,7 +2110,9 @@ export function retryDownload(ref: string): boolean {
       directory: params.directory ?? '',
       window: win ?? undefined,
       senderContents: sender,
-      installationId: params.installationId
+      installationId: params.installationId,
+      sha256: params.sha256,
+      destinationBaseDir: params.destinationBaseDir
     })
   }
   return true
@@ -2264,6 +2370,23 @@ const UNSAFE_MODEL_MESSAGES: Record<'migration' | 'scan', string> = {
  *  the path everywhere dismisses its stale warning. */
 const unsafeModelWarnings = new Map<string, { id: string; path: string }>()
 
+/** Rebuild the destination root a staged job was created under by walking up
+ *  from its final path: one dirname for the filename, one per `directory`
+ *  segment. Retrying a hydrated job must reuse this root - resolving the
+ *  CURRENT shared models root instead would move the file (and orphan the
+ *  staged bytes) for jobs staged under an install-local root. */
+function deriveDestinationBaseDir(finalPath: string, directory: string): string {
+  let base = path.dirname(finalPath)
+  const segments = directory
+    ? path
+        .normalize(directory)
+        .split(path.sep)
+        .filter((s) => s && s !== '.')
+    : []
+  for (let i = 0; i < segments.length; i++) base = path.dirname(base)
+  return base
+}
+
 /** Whether a Downloads row id belongs to an unsafe-model warning row (these
  *  have no retry params; their Retry re-runs the quarantine pass). */
 function isUnsafeModelWarningRow(id: string): boolean {
@@ -2436,6 +2559,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       suspended: true,
       installationId: meta.installationId ?? null,
       expectedSize: meta.expectedSize > 0 ? meta.expectedSize : undefined,
+      sha256: meta.sha256,
       settleJob,
       completion,
       lastProgress: progress,
@@ -2450,7 +2574,11 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       filename: meta.filename,
       directory: meta.directory,
       installationId: meta.installationId ?? null,
-      savePath: finalPath
+      savePath: finalPath,
+      sha256: meta.sha256,
+      // Pin the retry to the root this pair was staged under; resolving the
+      // current install/shared settings could pick a different root.
+      destinationBaseDir: deriveDestinationBaseDir(finalPath, meta.directory)
     })
     reportProgress(progress)
   }

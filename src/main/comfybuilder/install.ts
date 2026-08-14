@@ -13,15 +13,15 @@
  * any failure only files THIS run created are cleaned up: a failed re-install
  * never destroys a previously-working environment.
  */
-import { createHash, randomBytes } from 'crypto'
+import { randomBytes } from 'crypto'
 import fs from 'fs'
-import { createReadStream } from 'fs'
 import path from 'path'
 
 import { download } from '../lib/download'
 import type { DownloadProgress } from '../lib/download'
 import { extractNested } from '../lib/extract'
 import type { ExtractProgress } from '../lib/extract'
+import { sha256File } from '../lib/modelDownloadStaging'
 import type { ComfyBuilderClient } from './client'
 import { isSecureDownloadUrl, normalizeSha256 } from './integrity'
 import type { Artifact, InstallProgress } from './types'
@@ -70,18 +70,9 @@ function cacheSlug(artifactId: string): string {
   return artifactId.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
-/** Streaming lowercase-hex sha256 of a file. Exported so model staging verifies
- *  downloads the same way archive install does. Resolves on 'close' (not 'end')
- *  so the fd is released before a following rmSync, avoiding EBUSY on Windows. */
-export function sha256File(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256')
-    const stream = createReadStream(filePath)
-    stream.on('error', reject)
-    stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('close', () => resolve(hash.digest('hex')))
-  })
-}
+// Re-exported so callers keep one import site; the implementation is shared
+// with the managed model transport, which verifies downloads the same way.
+export { sha256File }
 
 function assertLayout(installPath: string): void {
   for (const dir of ARTIFACT_DIRS) {

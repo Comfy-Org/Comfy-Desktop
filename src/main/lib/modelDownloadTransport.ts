@@ -8,6 +8,7 @@ import {
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
+  sha256File,
   stagingMetaPathFor,
   stagingPathFor,
   writeStagedMeta,
@@ -51,7 +52,7 @@ export type ModelTransferOutcome =
   | { outcome: 'completed'; savePath: string; finalBytes: number }
   | { outcome: 'paused' }
   | { outcome: 'cancelled' }
-  | { outcome: 'error'; error: string }
+  | { outcome: 'error'; error: string; code?: 'checksum-mismatch' }
 
 export interface ModelTransferOptions {
   /** ORIGINAL source url - the job's stable identity across redirects. */
@@ -68,6 +69,10 @@ export interface ModelTransferOptions {
   session?: Electron.Session
   /** Caller-known total size; conflicts with the server's length fail fast. */
   expectedSize?: number
+  /** Expected lowercase-hex sha256 of the complete file. When present, the
+   *  staged bytes are verified against it before finalization; a mismatch
+   *  discards the staged state and fails with code 'checksum-mismatch'. */
+  sha256?: string
   /** Abort when no bytes arrive for this long (ms). */
   idleTimeoutMs?: number
   onProgress?: (p: ModelTransferProgress) => void
@@ -130,6 +135,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     installationId,
     session,
     expectedSize,
+    sha256,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     onProgress
   } = opts
@@ -247,7 +253,22 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
-    if (existingMeta && existingMeta.url === url && fs.existsSync(stagingPath)) {
+    if (existingMeta && sha256 && existingMeta.sha256 && existingMeta.sha256 !== sha256) {
+      // The staged pair was written for DIFFERENT expected content (e.g. a
+      // superseded distribution version re-using the destination). Splicing
+      // onto those bytes could only ever fail verification - restart clean.
+      removeStagedArtifacts(finalPath)
+      existingMeta = null
+    }
+    // Staged bytes are resumable when they are provably for the same content:
+    // the same source URL, or a matching persisted sha256 (presigned URLs
+    // rotate between attempts while addressing the same object; the recorded
+    // etag/last-modified validators still guard the actual splice, and the
+    // final hash verification catches anything they miss).
+    const stagedContentMatches =
+      existingMeta !== null &&
+      (existingMeta.url === url || (sha256 !== undefined && existingMeta.sha256 === sha256))
+    if (existingMeta && stagedContentMatches && fs.existsSync(stagingPath)) {
       resumeValidator = resumeValidatorFor(existingMeta)
       if (resumeValidator) {
         try {
@@ -319,7 +340,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         expectedSize: expectedSize && expectedSize > 0 ? expectedSize : 0,
         directory,
         filename,
-        installationId: installationId ?? undefined
+        installationId: installationId ?? undefined,
+        sha256: sha256 ?? undefined
       })
       if (!durable) {
         failRetaining('Download failed: cannot write staging metadata')
@@ -550,7 +572,10 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
             : headerString(response.headers['last-modified']),
           directory,
           filename,
-          installationId: installationId ?? undefined
+          installationId: installationId ?? undefined,
+          // Keep a persisted expectation alive across attempts even when a
+          // hydrated resume no longer knows the caller's hash.
+          sha256: sha256 ?? existingMeta?.sha256
         }
         if (!writeStagedMeta(metaPath, meta)) {
           // Accepting body bytes without a durable resume identity would
@@ -664,6 +689,33 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
    *  has closed the stream (the end/verify path). */
   const finalizeClaimed = (finalBytes: number): void => {
     void (async () => {
+      // Content verification before the bytes can appear under the final
+      // name. The expectation comes from the caller or, for a hydrated job
+      // whose caller is gone, from the persisted sidecar. A mismatch is not
+      // resumable - the bytes are wrong, not short - so discard the staged
+      // state; a retry re-fetches from scratch.
+      const expectedSha256 = sha256 ?? readStagedMeta(metaPath)?.sha256
+      if (expectedSha256) {
+        let actualSha256: string
+        try {
+          actualSha256 = await sha256File(stagingPath)
+        } catch (err) {
+          settle({
+            outcome: 'error',
+            error: `Download failed: cannot verify checksum: ${(err as Error).message}`
+          })
+          return
+        }
+        if (actualSha256 !== expectedSha256) {
+          removeStagedArtifacts(finalPath)
+          settle({
+            outcome: 'error',
+            error: `Download corrupt: checksum mismatch: expected ${expectedSha256}, got ${actualSha256}`,
+            code: 'checksum-mismatch'
+          })
+          return
+        }
+      }
       try {
         await installStagedAtFinal(stagingPath, finalPath, finalBytes)
       } catch (err) {

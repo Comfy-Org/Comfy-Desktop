@@ -180,7 +180,12 @@ export function registerE2EHooks(): void {
     async stageDistributionModels({ installPath, distributionId, version }) {
       const manifest = await resolveModelManifest(getBuilderClient(), distributionId, version)
       try {
-        await stageModels({ models: manifest.models, installPath })
+        const { startManagedModelJob, cancelModelDownload } = await import('./comfyDownloadManager')
+        await stageModels({
+          models: manifest.models,
+          installPath,
+          jobs: { start: startManagedModelJob, cancel: cancelModelDownload }
+        })
         return { staged: manifest.models.map((m) => `${m.type}/${m.filename}`) }
       } catch (e) {
         const err = e as { message?: string; kind?: string }

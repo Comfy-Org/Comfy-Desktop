@@ -649,6 +649,108 @@ describe('resume', () => {
   })
 })
 
+describe('sha-256 integrity', () => {
+  const SHA_0123456789 = '84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882'
+  const SHA_AAAAABBBBB = '59158e9f11434e40f5af83230f07877ecf9acd90b9fbeb6002a5e836b6edecee'
+
+  function preStage(bytes: string, meta: StagedDownloadMeta): void {
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+    fs.writeFileSync(stagingPathFor(finalPath), bytes)
+    writeStagedMeta(stagingMetaPathFor(finalPath), meta)
+  }
+
+  it('persists the expected hash in the sidecar and finalizes when the bytes match', async () => {
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_0123456789 }))
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('01234'))
+    await flush()
+    // The expectation survives a crash: a hydrated resume can still verify.
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_0123456789)
+
+    res.emit('data', Buffer.from('56789'))
+    res.emit('end')
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+
+  it('discards staged bytes and reports checksum-mismatch when the download is corrupt', async () => {
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('0123456789'))
+    res.emit('end')
+    const outcome = await handle.done
+    expect(outcome.outcome).toBe('error')
+    expect((outcome as { code?: string }).code).toBe('checksum-mismatch')
+    // Wrong bytes are not short bytes: nothing to resume, so nothing stays.
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+    expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+  })
+
+  it('resumes staged bytes across a rotated presigned URL when the persisted hash matches', async () => {
+    preStage(
+      'AAAAA',
+      stagedMeta({
+        url: 'https://example.com/models/model.safetensors?sig=expired',
+        sha256: SHA_AAAAABBBBB,
+        expectedSize: 10,
+        etag: '"v1"'
+      })
+    )
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const req = requests[0]!
+    const headers = headerCalls(req)
+    expect(headers['Range']).toBe('bytes=5-')
+    expect(headers['If-Range']).toBe('"v1"')
+
+    const res = makeResponse(206, { 'content-length': '5', 'content-range': 'bytes 5-9/10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('BBBBB'))
+    res.emit('end')
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('AAAAABBBBB')
+  })
+
+  it('restarts clean when the staged pair was written for different expected content', async () => {
+    preStage('AAAAA', stagedMeta({ sha256: SHA_0123456789, expectedSize: 10, etag: '"v1"' }))
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const headers = headerCalls(requests[0]!)
+    // Splicing onto bytes for other content could only fail verification.
+    expect(headers['Range']).toBeUndefined()
+    expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(0)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_AAAAABBBBB)
+    handle.cancel()
+    await handle.done
+  })
+
+  it('verifies a complete staged file against the sidecar hash when the caller sends none', async () => {
+    preStage('0123456789', stagedMeta({ sha256: SHA_AAAAABBBBB, expectedSize: 10 }))
+    const handle = startModelTransfer(baseOpts())
+    const outcome = await handle.done
+    // Hydrated finalize without a network attempt still runs verification.
+    expect(requests).toHaveLength(0)
+    expect(outcome.outcome).toBe('error')
+    expect((outcome as { code?: string }).code).toBe('checksum-mismatch')
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+  })
+
+  it('finalizes a complete staged file without network when the sidecar hash matches', async () => {
+    preStage('0123456789', stagedMeta({ sha256: SHA_0123456789, expectedSize: 10 }))
+    const handle = startModelTransfer(baseOpts())
+    const outcome = await handle.done
+    expect(requests).toHaveLength(0)
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+})
+
 describe('redirects', () => {
   it('follows redirects while the sidecar keeps the ORIGINAL url as resume identity', async () => {
     const handle = startModelTransfer(baseOpts())

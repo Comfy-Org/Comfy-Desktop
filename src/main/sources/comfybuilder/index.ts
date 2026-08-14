@@ -31,6 +31,7 @@ import type {
   ArtifactGpu,
   ArtifactOs,
   InstallProgress,
+  ModelJobSurface,
   StageProgress
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
@@ -276,15 +277,24 @@ async function installEnvironment(
 ): Promise<void> {
   // Load this lazily: the download manager imports the source registry, which
   // includes this plugin.
-  const { acquireModelDownloadRootLock } = await import('../../lib/comfyDownloadManager')
-  const releaseModelRoot = acquireModelDownloadRootLock(installModelsRoot(installation.installPath))
+  const downloadManager = await import('../../lib/comfyDownloadManager')
+  const modelsRoot = installModelsRoot(installation.installPath)
+  // Parked rows inside this root (hydrated from a previous interrupted run,
+  // or left by a cancelled install) would block the lock forever, and their
+  // presigned URLs are stale anyway. Retire the rows; their staged bytes stay
+  // on disk and the re-staged downloads below resume them by sha256.
+  downloadManager.releaseParkedModelJobsUnder(modelsRoot)
+  const releaseModelRoot = downloadManager.acquireModelDownloadRootLock(modelsRoot)
   if (!releaseModelRoot) {
     throw new Error(
       'The model directory is busy. Finish or cancel its downloads before installing or updating.'
     )
   }
   try {
-    await installEnvironmentLocked(installation, tools, onTransactionStarted)
+    await installEnvironmentLocked(installation, tools, onTransactionStarted, {
+      start: downloadManager.startManagedModelJob,
+      cancel: downloadManager.cancelModelDownload
+    })
   } finally {
     releaseModelRoot()
   }
@@ -296,7 +306,8 @@ async function installEnvironmentLocked(
     sendProgress: (step: string, data: { percent: number; status: string }) => void
     signal?: AbortSignal
   },
-  onTransactionStarted?: () => Promise<void>
+  onTransactionStarted: (() => Promise<void>) | undefined,
+  modelJobs: ModelJobSurface
 ): Promise<void> {
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
@@ -375,6 +386,8 @@ async function installEnvironmentLocked(
     await stageModels({
       models: manifest.models,
       installPath: installation.installPath,
+      installationId: installation.id,
+      jobs: modelJobs,
       onProgress: (p: StageProgress) =>
         tools.sendProgress('models', {
           percent: p.percent,

@@ -1,16 +1,12 @@
 // @vitest-environment node
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// Stub the heavy libs so importing `./models` (via `./install`) does not pull
-// Electron. Every test injects its own `download`, so the real one is unused.
-vi.mock('../lib/download', () => ({ download: vi.fn() }))
-vi.mock('../lib/extract', () => ({ extractNested: vi.fn() }))
-
-import { stageModels, installModelsRoot } from './models'
+import { stageModels, installModelsRoot, type ModelJobSurface } from './models'
+import type { ModelJobOptions, ModelJobOutcome } from '../lib/comfyDownloadManager'
 import type { ModelDescriptor } from './types'
 
 const sha = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex')
@@ -25,13 +21,31 @@ afterEach(() => {
   for (const d of tmpRoots.splice(0)) fs.rmSync(d, { recursive: true, force: true })
 })
 
-/** A download stub that writes `bytes` to the requested path (the `.partial`). */
-function fakeDownload(bytes: Buffer) {
-  return vi.fn(async (_url: string, dest: string) => {
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, bytes)
-    return dest
+/** Fake managed-job surface. `behave` decides each started job's outcome;
+ *  the default writes `bytes` at the resolved destination and completes,
+ *  mimicking a successful verified transfer. */
+function fakeJobs(
+  behave?: (opts: ModelJobOptions, dest: string) => ModelJobOutcome | Promise<ModelJobOutcome>
+) {
+  const start = vi.fn(async (opts: ModelJobOptions) => {
+    const dest = path.join(opts.destinationBaseDir!, opts.directory, opts.filename)
+    const outcome = await (behave
+      ? behave(opts, dest)
+      : ((): ModelJobOutcome => {
+          fs.mkdirSync(path.dirname(dest), { recursive: true })
+          fs.writeFileSync(dest, Buffer.from('weights'))
+          return { status: 'completed', savePath: dest }
+        })())
+    return {
+      id: randomUUID(),
+      url: opts.url,
+      savePath: dest,
+      completion: Promise.resolve(outcome),
+      release: vi.fn()
+    }
   })
+  const cancel = vi.fn(() => true)
+  return { start, cancel } satisfies ModelJobSurface
 }
 
 const model = (o: Partial<ModelDescriptor> = {}): ModelDescriptor => ({
@@ -43,62 +57,119 @@ const model = (o: Partial<ModelDescriptor> = {}): ModelDescriptor => ({
 })
 
 describe('stageModels', () => {
-  it('downloads, verifies, and places each model at models/<type>/<filename>', async () => {
+  it('runs one managed job per model, targeted at the install-local models root', async () => {
     const install = freshInstall()
     const bytes = Buffer.from('weights-A')
-    const dl = fakeDownload(bytes)
+    const jobs = fakeJobs((_opts, dest) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, bytes)
+      return { status: 'completed', savePath: dest }
+    })
     await stageModels({
       models: [
         model({ type: 'vae', filename: 'v.pt', sha256: sha(bytes), downloadUrl: 'https://x/v.pt' })
       ],
       installPath: install,
-      download: dl
+      installationId: 'inst-1',
+      jobs
     })
     const dest = path.join(installModelsRoot(install), 'vae', 'v.pt')
-    expect(fs.existsSync(dest)).toBe(true)
     expect(fs.readFileSync(dest)).toEqual(bytes)
-    expect(fs.existsSync(`${dest}.partial`)).toBe(false)
+    expect(jobs.start).toHaveBeenCalledTimes(1)
+    const opts = jobs.start.mock.calls[0]![0]
+    expect(opts).toMatchObject({
+      url: 'https://x/v.pt',
+      filename: 'v.pt',
+      directory: 'vae',
+      installationId: 'inst-1',
+      sha256: sha(bytes),
+      destinationBaseDir: installModelsRoot(install),
+      bypassRootLockFor: installModelsRoot(install)
+    })
   })
 
-  it('fails with checksum-mismatch and leaves no file when bytes do not match the hash', async () => {
+  it('normalizes a sha256-prefixed integrity value before handing it to the job', async () => {
     const install = freshInstall()
-    const dl = fakeDownload(Buffer.from('corrupt'))
+    const bytes = Buffer.from('verified')
+    const jobs = fakeJobs()
+    await stageModels({
+      models: [model({ filename: 'n.pt', sha256: `sha256:${sha(bytes)}` })],
+      installPath: install,
+      jobs
+    })
+    expect(jobs.start.mock.calls[0]![0].sha256).toBe(sha(bytes))
+  })
+
+  it('maps a checksum-mismatch outcome to model-checksum-mismatch without retrying', async () => {
+    const install = freshInstall()
+    const jobs = fakeJobs(() => ({
+      status: 'error',
+      error: 'checksum mismatch',
+      code: 'checksum-mismatch'
+    }))
     await expect(
-      stageModels({
-        models: [model({ sha256: sha(Buffer.from('expected')) })],
-        installPath: install,
-        download: dl
-      })
+      stageModels({ models: [model()], installPath: install, jobs })
     ).rejects.toMatchObject({ kind: 'model-checksum-mismatch' })
-    const dest = path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors')
-    expect(fs.existsSync(dest)).toBe(false)
-    expect(fs.existsSync(`${dest}.partial`)).toBe(false)
+    expect(jobs.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps an existing-file-mismatch outcome to model-conflict without retrying', async () => {
+    const install = freshInstall()
+    const jobs = fakeJobs(() => ({
+      status: 'error',
+      error: 'existing file differs',
+      code: 'existing-file-mismatch'
+    }))
+    await expect(
+      stageModels({ models: [model()], installPath: install, jobs })
+    ).rejects.toMatchObject({ kind: 'model-conflict' })
+    expect(jobs.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a transient failure and succeeds when a later attempt completes', async () => {
+    const install = freshInstall()
+    let attempts = 0
+    const jobs = fakeJobs((_opts, dest) => {
+      attempts++
+      if (attempts < 3) return { status: 'error', error: 'ECONNRESET' }
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, Buffer.from('late'))
+      return { status: 'completed', savePath: dest }
+    })
+    await stageModels({ models: [model()], installPath: install, jobs })
+    expect(attempts).toBe(3)
+  })
+
+  it('fails with the transport error once the retry budget is exhausted', async () => {
+    const install = freshInstall()
+    const jobs = fakeJobs(() => ({ status: 'error', error: 'HTTP 503' }))
+    await expect(stageModels({ models: [model()], installPath: install, jobs })).rejects.toThrow(
+      /HTTP 503/
+    )
+    expect(jobs.start).toHaveBeenCalledTimes(3)
+  })
+
+  it('treats a cancelled job as staging cancellation', async () => {
+    const install = freshInstall()
+    const jobs = fakeJobs(() => ({ status: 'cancelled' }))
+    await expect(stageModels({ models: [model()], installPath: install, jobs })).rejects.toThrow(
+      /cancel/i
+    )
+    expect(jobs.start).toHaveBeenCalledTimes(1)
   })
 
   it.each([undefined, '', 'not-a-sha256'])(
     'rejects a model without a valid SHA-256 before any download',
     async (sha256) => {
       const install = freshInstall()
-      const dl = fakeDownload(Buffer.from('unverified'))
+      const jobs = fakeJobs()
       const untrusted = { ...model(), sha256 } as unknown as ModelDescriptor
       await expect(
-        stageModels({ models: [untrusted], installPath: install, download: dl })
+        stageModels({ models: [untrusted], installPath: install, jobs })
       ).rejects.toMatchObject({ kind: 'invalid-model' })
-      expect(dl).not.toHaveBeenCalled()
+      expect(jobs.start).not.toHaveBeenCalled()
     }
   )
-
-  it('accepts a sha256-prefixed integrity value', async () => {
-    const install = freshInstall()
-    const bytes = Buffer.from('verified')
-    const dl = fakeDownload(bytes)
-    await stageModels({
-      models: [model({ filename: 'n.pt', sha256: `sha256:${sha(bytes)}` })],
-      installPath: install,
-      download: dl
-    })
-    expect(fs.existsSync(path.join(installModelsRoot(install), 'checkpoints', 'n.pt'))).toBe(true)
-  })
 
   it.each([
     ['type', { type: '../evil' }],
@@ -107,26 +178,24 @@ describe('stageModels', () => {
     ['filename sep', { filename: 'a/b.pt' }]
   ])('rejects an unsafe %s before any download', async (_name, bad) => {
     const install = freshInstall()
-    const dl = fakeDownload(Buffer.from('x'))
+    const jobs = fakeJobs()
     await expect(
-      stageModels({ models: [model(bad)], installPath: install, download: dl })
-    ).rejects.toMatchObject({
-      kind: 'invalid-model'
-    })
-    expect(dl).not.toHaveBeenCalled()
+      stageModels({ models: [model(bad)], installPath: install, jobs })
+    ).rejects.toMatchObject({ kind: 'invalid-model' })
+    expect(jobs.start).not.toHaveBeenCalled()
   })
 
   it('rejects a non-https download URL before any download', async () => {
     const install = freshInstall()
-    const dl = fakeDownload(Buffer.from('x'))
+    const jobs = fakeJobs()
     await expect(
       stageModels({
         models: [model({ downloadUrl: 'http://insecure/m.safetensors' })],
         installPath: install,
-        download: dl
+        jobs
       })
     ).rejects.toMatchObject({ kind: 'invalid-model' })
-    expect(dl).not.toHaveBeenCalled()
+    expect(jobs.start).not.toHaveBeenCalled()
   })
 
   it('refuses to write through a model dir that symlinks outside the install', async () => {
@@ -137,74 +206,25 @@ describe('stageModels', () => {
     const modelsRoot = installModelsRoot(install)
     fs.mkdirSync(modelsRoot, { recursive: true })
     fs.symlinkSync(outside, path.join(modelsRoot, 'evil'))
-    const dl = fakeDownload(Buffer.from('payload'))
+    const jobs = fakeJobs()
     await expect(
       stageModels({
         models: [model({ type: 'evil', filename: 'x.pth' })],
         installPath: install,
-        download: dl
+        jobs
       })
     ).rejects.toMatchObject({ kind: 'invalid-model' })
-    // Nothing was written into the escape target.
+    expect(jobs.start).not.toHaveBeenCalled()
     expect(fs.existsSync(path.join(outside, 'x.pth'))).toBe(false)
-    expect(fs.existsSync(path.join(outside, 'x.pth.partial'))).toBe(false)
   })
 
-  it('skips a model already present with a matching hash (idempotent re-run)', async () => {
+  it('removes a legacy .partial leftover before starting the job', async () => {
     const install = freshInstall()
-    const bytes = Buffer.from('already-here')
-    const dest = path.join(installModelsRoot(install), 'loras', 'l.safetensors')
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, bytes)
-    const dl = fakeDownload(Buffer.from('should-not-run'))
-    await stageModels({
-      models: [model({ type: 'loras', filename: 'l.safetensors', sha256: sha(bytes) })],
-      installPath: install,
-      download: dl
-    })
-    expect(dl).not.toHaveBeenCalled()
-    expect(fs.readFileSync(dest)).toEqual(bytes)
-  })
-
-  it('preserves and reports a present file with different content', async () => {
-    const install = freshInstall()
-    const good = Buffer.from('good-bytes')
     const dest = path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors')
     fs.mkdirSync(path.dirname(dest), { recursive: true })
-    const existing = Buffer.from('different-user-file')
-    fs.writeFileSync(dest, existing)
-    const dl = fakeDownload(good)
-    await expect(
-      stageModels({
-        models: [model({ sha256: sha(good) })],
-        installPath: install,
-        download: dl
-      })
-    ).rejects.toMatchObject({ kind: 'model-conflict' })
-    expect(dl).not.toHaveBeenCalled()
-    expect(fs.readFileSync(dest)).toEqual(existing)
-  })
-
-  it('does not clobber a different final file that appears during download', async () => {
-    const install = freshInstall()
-    const downloaded = Buffer.from('distribution-model')
-    const external = Buffer.from('concurrent-model')
-    const dest = path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors')
-    const dl = vi.fn(async (_url: string, partial: string) => {
-      fs.writeFileSync(partial, downloaded)
-      fs.writeFileSync(dest, external)
-      return partial
-    })
-
-    await expect(
-      stageModels({
-        models: [model({ sha256: sha(downloaded) })],
-        installPath: install,
-        download: dl
-      })
-    ).rejects.toMatchObject({ kind: 'model-conflict' })
-    expect(fs.readFileSync(dest)).toEqual(external)
-    expect(fs.readFileSync(`${dest}.partial`)).toEqual(downloaded)
+    fs.writeFileSync(`${dest}.partial`, Buffer.from('stale'))
+    await stageModels({ models: [model()], installPath: install, jobs: fakeJobs() })
+    expect(fs.existsSync(`${dest}.partial`)).toBe(false)
   })
 
   it('reports per-model progress with a 1-based index and total', async () => {
@@ -216,24 +236,55 @@ describe('stageModels', () => {
         model({ filename: 'b.pt', sha256: sha(Buffer.from('z')) })
       ],
       installPath: install,
-      download: fakeDownload(Buffer.from('z')),
+      jobs: fakeJobs(),
       onProgress: (p) => seen.push({ index: p.index, total: p.total, percent: p.percent })
     })
     expect(seen.some((s) => s.index === 1 && s.total === 2)).toBe(true)
     expect(seen.some((s) => s.index === 2 && s.total === 2 && s.percent === 100)).toBe(true)
   })
 
-  it('honors an already-aborted signal', async () => {
+  it('honors an already-aborted signal before starting any job', async () => {
     const install = freshInstall()
-    const dl = fakeDownload(Buffer.from('x'))
+    const jobs = fakeJobs()
     await expect(
       stageModels({
         models: [model()],
         installPath: install,
-        download: dl,
+        jobs,
         signal: AbortSignal.abort()
       })
     ).rejects.toThrow(/cancel/i)
-    expect(dl).not.toHaveBeenCalled()
+    expect(jobs.start).not.toHaveBeenCalled()
+  })
+
+  it('cancels the in-flight job destructively when the signal aborts mid-transfer', async () => {
+    const install = freshInstall()
+    const controller = new AbortController()
+    let settle!: (o: ModelJobOutcome) => void
+    const completion = new Promise<ModelJobOutcome>((resolve) => {
+      settle = resolve
+    })
+    const cancel = vi.fn((_id: string) => {
+      settle({ status: 'cancelled' })
+      return true
+    })
+    const start = vi.fn(async (opts: ModelJobOptions) => ({
+      id: 'job-1',
+      url: opts.url,
+      savePath: path.join(opts.destinationBaseDir!, opts.directory, opts.filename),
+      completion,
+      release: vi.fn()
+    }))
+    const staging = stageModels({
+      models: [model()],
+      installPath: install,
+      jobs: { start, cancel },
+      signal: controller.signal
+    })
+    // Let the job start, then abort the install.
+    await vi.waitFor(() => expect(start).toHaveBeenCalled())
+    controller.abort()
+    await expect(staging).rejects.toThrow(/cancel/i)
+    expect(cancel).toHaveBeenCalledWith('job-1')
   })
 })
