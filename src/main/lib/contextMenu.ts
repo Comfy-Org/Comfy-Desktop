@@ -70,12 +70,13 @@ export function buildContextMenuItems(
       ...dictionarySuggestions.map((suggestion) => ({
         label: suggestion,
         click: () => actions.replaceMisspelling(suggestion)
-      })),
-      {
-        label: i18n.t('contextMenu.addToDictionary'),
-        click: () => actions.addWordToDictionary(misspelledWord)
-      }
+      }))
     )
+    if (dictionarySuggestions.length > 0) menuItems.push({ type: 'separator' })
+    menuItems.push({
+      label: i18n.t('contextMenu.addToDictionary'),
+      click: () => actions.addWordToDictionary(misspelledWord)
+    })
   }
 
   if (hasLink) {

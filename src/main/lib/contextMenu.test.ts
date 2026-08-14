@@ -68,6 +68,7 @@ describe('buildContextMenuItems', () => {
     expect(items.map((item) => item.label ?? item.type ?? item.role)).toEqual([
       'really',
       'relay',
+      'separator',
       'contextMenu.addToDictionary',
       'separator',
       'contextMenu.cut',
@@ -90,7 +91,7 @@ describe('buildContextMenuItems', () => {
     )
 
     ;(items[0]!.click as () => void)()
-    ;(items[1]!.click as () => void)()
+    ;(items[2]!.click as () => void)()
 
     expect(actions.replaceMisspelling).toHaveBeenCalledWith('really')
     expect(actions.addWordToDictionary).toHaveBeenCalledWith('relaly')
