@@ -12,22 +12,28 @@ import type { ProgressStep } from '../types/ipc'
  * The launch flow is NOT here: it sends weights inline on its steps (see
  * `launchPhases.ts` / `launchProgress.ts`), so main is the single source.
  */
-const TABLES: Record<string, Record<string, number>> = {
-  // Standalone install — common case (no pending snapshot)
+export const CURATED_PHASE_WEIGHTS: Record<string, Record<string, number>> = {
+  // Standalone install — common case (no pending snapshot).
+  //
+  // Calibrated against `comfy.desktop.install.phase` p50s (30d): download 77s,
+  // extract 51s, env_create 2s + package_copy 15s (both inside `setup`), and
+  // torch_deps_sync 82s (inside `update`). `update` previously held 0.05 while
+  // owning the phase with the longest tail — p90 15min, p99 110min — which
+  // parked the bar in its final sliver for the entire slow stretch.
   'cleanup|download|extract|setup|update': {
-    download: 0.4,
+    download: 0.35,
     extract: 0.2,
-    setup: 0.3,
+    setup: 0.1,
     cleanup: 0.05,
-    update: 0.05
+    update: 0.3
   },
   // Standalone install + snapshot restore
   'cleanup|download|extract|restore-nodes|restore-pip|setup|update': {
-    download: 0.3,
+    download: 0.25,
     extract: 0.15,
-    setup: 0.2,
-    cleanup: 0.05,
-    update: 0.05,
+    setup: 0.08,
+    cleanup: 0.02,
+    update: 0.25,
     'restore-nodes': 0.15,
     'restore-pip': 0.1
   },
@@ -82,8 +88,8 @@ export function fingerprintSteps(steps: readonly ProgressStep[]): string {
 }
 
 /** Phase → weight for an op's bar. Prefers weights the producer sent inline on
- *  the steps (normalized to sum 1.0); else a curated `TABLES` entry; else an
- *  equal split. */
+ *  the steps (normalized to sum 1.0); else a curated entry; else an equal
+ *  split. */
 export function getPhaseWeights(steps: readonly ProgressStep[]): Record<string, number> {
   const n = steps.length
   if (n === 0) return {}
@@ -97,7 +103,7 @@ export function getPhaseWeights(steps: readonly ProgressStep[]): Record<string, 
     return out
   }
 
-  const known = TABLES[fingerprintSteps(steps)]
+  const known = CURATED_PHASE_WEIGHTS[fingerprintSteps(steps)]
   if (known) return known
   const w = 1 / n
   const out: Record<string, number> = {}

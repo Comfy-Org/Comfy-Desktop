@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fingerprintSteps, getPhaseWeights } from './progressWeights'
+import { CURATED_PHASE_WEIGHTS, fingerprintSteps, getPhaseWeights } from './progressWeights'
 import type { ProgressStep } from '../types/ipc'
 
 const steps = (...phases: string[]): ProgressStep[] =>
@@ -73,5 +73,23 @@ describe('getPhaseWeights', () => {
 
   it('returns an empty map for no steps', () => {
     expect(getPhaseWeights([])).toEqual({})
+  })
+})
+
+describe('curated tables', () => {
+  it.each(Object.keys(CURATED_PHASE_WEIGHTS))('%s sums to 1.0', (fingerprint) => {
+    expect(sum(CURATED_PHASE_WEIGHTS[fingerprint]!)).toBeCloseTo(1.0, 5)
+  })
+
+  it.each(Object.entries(CURATED_PHASE_WEIGHTS))('%s is keyed by its own fingerprint', (fp, w) => {
+    expect(fingerprintSteps(steps(...Object.keys(w)))).toBe(fp)
+  })
+
+  it('gives the standalone install more of the bar to `update` than `setup`', () => {
+    // `update` hosts torch_deps_sync (p90 15min, p99 110min); `setup` hosts
+    // env_create + package_copy (p50 17s combined). An `update` weight below
+    // `setup` puts the longest stretch of a slow install in the bar's tail.
+    const w = CURATED_PHASE_WEIGHTS['cleanup|download|extract|setup|update']!
+    expect(w.update).toBeGreaterThan(w.setup!)
   })
 })
