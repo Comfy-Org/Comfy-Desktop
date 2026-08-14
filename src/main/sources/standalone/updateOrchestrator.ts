@@ -23,6 +23,8 @@ import {
 import { withOutputTail } from '../../lib/logged-process'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
+import type { SendProgress } from '../../../types/ipc'
+import { createUvProgressParser, type UvProgress } from '../../lib/uvProgress'
 import { t } from '../../lib/i18n'
 import { getBundledScriptPath } from '../../lib/bundledScript'
 import * as settings from '../../settings'
@@ -50,7 +52,7 @@ export interface UpdateOrchestrationOptions {
   installation: InstallationRecord
   channel: 'stable' | 'latest'
   update: (data: Record<string, unknown>) => Promise<void>
-  sendProgress: (step: string, data: Record<string, unknown>) => void
+  sendProgress: SendProgress
   sendOutput?: (text: string) => void
   signal?: AbortSignal
   dryRunConflictCheck?: boolean
@@ -188,6 +190,47 @@ function spawnUpdateScript(
   })
 }
 
+/**
+ * Log sink for uv invocations: forwards to the caller's sink (or the console,
+ * matching the previous fallback) and tees the same text into the milestone
+ * parser so the phase can report what uv is actually doing.
+ */
+function withUvProgress(
+  sendOutput: ((text: string) => void) | undefined,
+  sendProgress: SendProgress
+): (text: string) => void {
+  const log = sendOutput ?? console.log
+  const feed = createUvProgressParser((p) => {
+    const status = describeUvProgress(p)
+    if (status) sendProgress('update', { percent: -1, status })
+  })
+  return (text: string): void => {
+    log(text)
+    feed(text)
+  }
+}
+
+/** Plain-language line for a uv milestone. Names the artifact and its size,
+ *  because "downloading torch (2.7GiB)" explains a long wait in a way a
+ *  spinner cannot. Returns null for states not worth interrupting for. */
+function describeUvProgress(p: UvProgress): string | null {
+  switch (p.stage) {
+    case 'resolving':
+      return p.resolvedCount === undefined
+        ? null
+        : t('standalone.uvResolved', { count: p.resolvedCount })
+    case 'preparing':
+      if (!p.currentPackage) return null
+      return p.currentSize
+        ? t('standalone.uvDownloadingSized', { name: p.currentPackage, size: p.currentSize })
+        : t('standalone.uvDownloading', { name: p.currentPackage })
+    case 'installing':
+      return t('standalone.uvInstalling')
+    case 'done':
+      return null
+  }
+}
+
 export async function runComfyUIUpdate(
   opts: UpdateOrchestrationOptions
 ): Promise<UpdateOrchestrationResult> {
@@ -203,6 +246,11 @@ export async function runComfyUIUpdate(
   } = opts
   let { installation } = opts
   const sendOutput = opts.sendOutput
+  // Log sink for the uv invocations, teeing their output into the milestone
+  // parser on the way through. This phase owns the install's longest silence
+  // and uv exposes no machine-readable progress, so a parsed line is the only
+  // proof of life available. Purely additive — the sink still gets every byte.
+  const uvLog = withUvProgress(sendOutput, sendProgress)
   const comfyuiDir = path.join(installPath, 'ComfyUI')
   // Adopted installs run the updater against the legacy `.venv` Python (it has
   // pygit2 from adoption); `update_comfyui.py` only needs pygit2 + stdlib.
@@ -410,7 +458,7 @@ export async function runComfyUIUpdate(
               uvPath,
               ['pip', 'install', '-r', filteredReqPath, '--python', activeEnvPython, ...indexArgs],
               installPath,
-              sendOutput ?? (() => {}),
+              uvLog,
               signal
             )
             if (pipResult.code !== 0) {
@@ -429,7 +477,6 @@ export async function runComfyUIUpdate(
         }
       } else {
         sendProgress('update', { percent: -1, status: 'Installing updated dependencies' })
-        const logFn = sendOutput ?? console.log
         try {
           const installResult = await installFilteredRequirementsDetailed(
             reqPath,
@@ -437,7 +484,7 @@ export async function runComfyUIUpdate(
             activeEnvPython,
             installPath,
             '.post-install-reqs.txt',
-            logFn,
+            uvLog,
             signal,
             settings.getMirrorConfig()
           )
@@ -473,7 +520,6 @@ export async function runComfyUIUpdate(
         sendProgress('deps', { percent: -1, status: t('standalone.updateDepsInstalling') })
         sendOutput?.('\nInstalling manager requirements…\n')
       }
-      const logFn = sendOutput ?? console.log
       try {
         const mgrResult = await installFilteredRequirementsDetailed(
           mgrReqPath,
@@ -481,7 +527,7 @@ export async function runComfyUIUpdate(
           activeEnvPython,
           installPath,
           dryRunConflictCheck ? '.manager-reqs-filtered.txt' : '.post-install-mgr-reqs.txt',
-          logFn,
+          uvLog,
           signal,
           settings.getMirrorConfig()
         )
