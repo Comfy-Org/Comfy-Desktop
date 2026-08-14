@@ -529,6 +529,7 @@ describe('comfybuilder update-comfyui', () => {
     vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
     vi.mocked(installArtifact).mockImplementationOnce(async ({ installPath }) => {
       fs.mkdirSync(path.join(installPath, 'venv'), { recursive: true })
+      fs.writeFileSync(path.join(installPath, 'venv', 'new.txt'), 'partial venv')
       throw new Error('disk full')
     })
     const previousVenv = path.join(root, 'venv.previous')
