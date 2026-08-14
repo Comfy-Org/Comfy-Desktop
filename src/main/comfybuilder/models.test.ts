@@ -205,7 +205,13 @@ describe('stageModels', () => {
     // A malicious archive ships ComfyUI/models/<type> as a symlink escaping the install.
     const modelsRoot = installModelsRoot(install)
     fs.mkdirSync(modelsRoot, { recursive: true })
-    fs.symlinkSync(outside, path.join(modelsRoot, 'evil'))
+    // A junction on Windows needs no privilege/Developer Mode, unlike a real
+    // directory symlink; realpath resolves both, so the escape check still fires.
+    fs.symlinkSync(
+      outside,
+      path.join(modelsRoot, 'evil'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    )
     const jobs = fakeJobs()
     await expect(
       stageModels({

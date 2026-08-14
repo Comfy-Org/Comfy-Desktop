@@ -15,7 +15,13 @@ import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import TooltipWrap from '../../components/TooltipWrap.vue'
 import { isOpenablePathString } from '../../lib/openablePath'
-import type { ActionDef, DetailField, DetailSection, VersionStatsValue } from '../../types/ipc'
+import type {
+  ActionDef,
+  DetailField,
+  DetailSection,
+  VersionStatRow,
+  VersionStatsValue
+} from '../../types/ipc'
 
 /**
  * Shared section + field renderer for both the Settings drawer and the instance-picker's Settings accordion.
@@ -84,8 +90,18 @@ function versionStats(field: DetailField): Required<VersionStatsValue> {
     headlineHighlight: v.headlineHighlight === true,
     badge: typeof v.badge === 'string' ? v.badge : null,
     badgeTone: v.badgeTone === 'update' ? 'update' : 'current',
-    rows: Array.isArray(v.rows) ? v.rows : []
+    rows: Array.isArray(v.rows) ? v.rows.filter(isVersionStatRow) : []
   }
+}
+
+/** Guards each row before VersionStatPanel dereferences `id`/`label`/`value`:
+ *  a malformed IPC payload (e.g. a null entry) must not break the render. */
+function isVersionStatRow(r: unknown): r is VersionStatRow {
+  if (r === null || typeof r !== 'object') return false
+  const row = r as Partial<VersionStatRow>
+  return (
+    typeof row.id === 'string' && typeof row.label === 'string' && typeof row.value === 'string'
+  )
 }
 
 // Per-title collapse state; only titled sections (with a `section.collapsed` seed) are collapsible.

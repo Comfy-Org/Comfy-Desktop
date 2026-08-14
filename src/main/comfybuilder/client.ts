@@ -39,6 +39,26 @@ export class ComfyBuilderApiError extends Error {
   }
 }
 
+/** Best-effort `: reason` suffix from an error response body, so a gateway's
+ *  `{ message: '...' }` reaches logs and the UI instead of being discarded.
+ *  Never throws; a missing/non-JSON/shapeless body yields an empty string. */
+async function errorReason(res: Response): Promise<string> {
+  try {
+    const text = (await res.text()).slice(0, 300)
+    if (!text) return ''
+    const body = JSON.parse(text) as { message?: unknown; error?: unknown }
+    const msg =
+      typeof body.message === 'string'
+        ? body.message
+        : typeof body.error === 'string'
+          ? body.error
+          : ''
+    return msg ? `: ${msg}` : ''
+  } catch {
+    return ''
+  }
+}
+
 export interface ComfyBuilderClientOptions {
   /** Gateway base URL including the `/builder` mount. Defaults to prod. */
   baseUrl?: string
@@ -152,26 +172,36 @@ export class ComfyBuilderClient {
         signal: AbortSignal.timeout(this.timeoutMs)
       })
     } catch (err) {
-      throw new ComfyBuilderApiError(
-        'network',
-        `Request to ${path} failed: ${(err as Error).message}`
-      )
+      // `AbortSignal.timeout` rejects with a TimeoutError DOMException; name
+      // the timeout budget so a slow gateway reads differently from a dead
+      // socket. Both remain kind 'network' - callers branch the same way.
+      const e = err as Error
+      const detail = e.name === 'TimeoutError' ? `timed out after ${this.timeoutMs}ms` : e.message
+      throw new ComfyBuilderApiError('network', `Request to ${path} failed: ${detail}`)
     }
 
     // 401 = dead token: prompt re-auth. 403 = authenticated but lacks access to
     // this resource; a single forbidden item must NOT sign the user out.
-    if (res.status === 401) {
-      try {
-        this.auth.onUnauthorized?.(token)
-      } catch {
-        /* an injected callback must not mask the typed error */
+    if (!res.ok) {
+      const reason = await errorReason(res)
+      if (res.status === 401) {
+        try {
+          this.auth.onUnauthorized?.(token)
+        } catch {
+          /* an injected callback must not mask the typed error */
+        }
+        throw new ComfyBuilderApiError('unauthorized', `Not authorized for ${path}${reason}`, 401)
       }
-      throw new ComfyBuilderApiError('unauthorized', `Not authorized for ${path}`, 401)
+      if (res.status === 403)
+        throw new ComfyBuilderApiError('forbidden', `Forbidden: ${path}${reason}`, 403)
+      if (res.status === 404)
+        throw new ComfyBuilderApiError('not-found', `${path} not found${reason}`, 404)
+      throw new ComfyBuilderApiError(
+        'server',
+        `${path} failed: HTTP ${res.status}${reason}`,
+        res.status
+      )
     }
-    if (res.status === 403) throw new ComfyBuilderApiError('forbidden', `Forbidden: ${path}`, 403)
-    if (res.status === 404) throw new ComfyBuilderApiError('not-found', `${path} not found`, 404)
-    if (!res.ok)
-      throw new ComfyBuilderApiError('server', `${path} failed: HTTP ${res.status}`, res.status)
 
     // A 2xx with an empty / non-JSON / null body must surface as a typed error,
     // never a raw SyntaxError or a downstream `body.foo` TypeError.

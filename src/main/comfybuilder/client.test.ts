@@ -146,6 +146,33 @@ describe('ComfyBuilderClient', () => {
     ).rejects.toMatchObject({ kind: 'server' })
   })
 
+  it('surfaces the server-provided reason in the error message', async () => {
+    vi.stubGlobal('fetch', mockFetch(502, { message: 'upstream exploded' }))
+    await expect(
+      new ComfyBuilderClient({ auth: auth('t') }).getVersion('v1')
+    ).rejects.toMatchObject({
+      kind: 'server',
+      message: expect.stringContaining('upstream exploded')
+    })
+  })
+
+  it('names the timeout budget when the request times out', async () => {
+    const timeoutErr = new Error('The operation was aborted due to timeout')
+    timeoutErr.name = 'TimeoutError'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw timeoutErr
+      }) as unknown as typeof fetch
+    )
+    await expect(
+      new ComfyBuilderClient({ auth: auth('t'), timeoutMs: 1234 }).getVersion('v1')
+    ).rejects.toMatchObject({
+      kind: 'network',
+      message: expect.stringContaining('timed out after 1234ms')
+    })
+  })
+
   it('maps 403 to forbidden WITHOUT signing the user out', async () => {
     const onUnauthorized = vi.fn()
     vi.stubGlobal('fetch', mockFetch(403, {}))

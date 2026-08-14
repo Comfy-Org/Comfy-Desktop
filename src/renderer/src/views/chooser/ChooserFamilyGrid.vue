@@ -52,6 +52,17 @@ function lockLeavingTileSize(el: Element): void {
   node.style.left = `${rect.left - gridRect.left + grid.scrollLeft}px`
   node.style.top = `${rect.top - gridRect.top + grid.scrollTop}px`
 }
+
+/** Drop the locked box when a leaving tile is reinserted (leave cancelled):
+ *  Vue reuses the DOM node, and `.tile-leave-active` no longer applies, so a
+ *  stale inline width/height would otherwise freeze the revived tile's size. */
+function unlockTileSize(el: Element): void {
+  const node = el as HTMLElement
+  node.style.removeProperty('width')
+  node.style.removeProperty('height')
+  node.style.removeProperty('left')
+  node.style.removeProperty('top')
+}
 </script>
 
 <template>
@@ -61,6 +72,7 @@ function lockLeavingTileSize(el: Element): void {
     class="chooser-family-grid"
     :class="{ 'chooser-family-grid--centered': props.centered }"
     @before-leave="lockLeavingTileSize"
+    @leave-cancelled="unlockTileSize"
   >
     <button
       v-if="props.showNew"
