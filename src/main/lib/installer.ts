@@ -6,6 +6,8 @@ import type { Cache } from './cache'
 import { isDownloadComplete } from './download'
 import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
+import type { InstallPayloadItem, SendProgress } from '../../types/ipc'
+import { BYTES_PER_MB, measuredProgress } from '../../shared/progressMeasurement'
 
 /** Per-phase boundary signal for `comfy.desktop.install.phase` telemetry. The
  *  installer owns the genuine download↔extract seam (the two are one call from
@@ -17,7 +19,7 @@ import type { ExtractProgress } from './extract'
 export type InstallPhaseName = 'download' | 'extract'
 export type InstallPhaseStatus = 'start' | 'end' | 'error'
 export interface InstallerContext {
-  sendProgress: (step: string, data: { percent: number; status: string }) => void
+  sendProgress: SendProgress
   download: (
     url: string,
     dest: string,
@@ -184,7 +186,17 @@ export async function downloadAndExtract(
                 percent: p.percent,
                 status: t('installer.downloading', {
                   progress: `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-                })
+                }),
+                ...measuredProgress(p.speedMBs, p.etaSecs),
+                payload: [
+                  {
+                    id: filename,
+                    label: filename,
+                    totalBytes: expectedSize,
+                    receivedBytes: p.receivedBytes,
+                    state: 'active'
+                  }
+                ]
               })
             },
             { signal, expectedSize }
@@ -211,7 +223,8 @@ export async function downloadAndExtract(
           percent: p.percent,
           status: t('installer.extracting', {
             progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-          })
+          }),
+          ...measuredProgress(0, p.etaSecs)
         })
       },
       { signal }
@@ -236,6 +249,17 @@ export async function downloadAndExtractMulti(
   let allCached = true
   const overallStart = Date.now()
 
+  /** Snapshot every file as a payload row: settled ones before `activeIndex`
+   *  are done, the active one carries its live byte count, the rest pend. */
+  const payloadAt = (activeIndex: number, activeReceived: number): InstallPayloadItem[] =>
+    files.map((f, i) => ({
+      id: f.filename,
+      label: f.filename,
+      ...(f.size > 0 ? { totalBytes: f.size } : {}),
+      receivedBytes: i < activeIndex ? f.size : i === activeIndex ? activeReceived : 0,
+      state: i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'pending'
+    }))
+
   await withInstallPhase(onPhase, 'download', async () => {
     for (let i = 0; i < count; i++) {
       const file = files[i]!
@@ -258,7 +282,8 @@ export async function downloadAndExtractMulti(
                 : Math.round(((i + 1) / count) * 100)
             sendProgress('download', {
               percent,
-              status: `${t('installer.cachedDownload')}${fileLabel}`
+              status: `${t('installer.cachedDownload')}${fileLabel}`,
+              payload: payloadAt(i + 1, 0)
             })
           } else {
             allCached = false
@@ -268,7 +293,8 @@ export async function downloadAndExtractMulti(
                 : Math.round((i / count) * 100)
             sendProgress('download', {
               percent: basePercent,
-              status: `${t('installer.startingDownload')}${fileLabel}`
+              status: `${t('installer.startingDownload')}${fileLabel}`,
+              payload: payloadAt(i, 0)
             })
             await download(
               file.url,
@@ -281,10 +307,13 @@ export async function downloadAndExtractMulti(
                 const overallSpeed =
                   overallElapsed > 0 ? receivedTotal / 1048576 / overallElapsed : 0
                 const remainingBytes = totalBytes - receivedTotal
-                const eta =
+                // Whole-set projection, not this file's: the user is waiting on
+                // every part, so a per-file ETA would understate the wait.
+                const etaSecs =
                   overallSpeed > 0 && totalBytes > 0
-                    ? formatTime(remainingBytes / 1048576 / overallSpeed)
-                    : '—'
+                    ? remainingBytes / BYTES_PER_MB / overallSpeed
+                    : -1
+                const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
                 const sizeDisplay = totalMB
                   ? `${(receivedTotal / 1048576).toFixed(0)} / ${totalMB} MB`
                   : `${p.receivedMB} / ${p.totalMB} MB`
@@ -296,7 +325,9 @@ export async function downloadAndExtractMulti(
                   percent,
                   status: t('installer.downloading', {
                     progress: `${fileLabel} ${sizeDisplay}  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-                  })
+                  }),
+                  ...measuredProgress(overallSpeed, etaSecs),
+                  payload: payloadAt(i, p.receivedBytes)
                 })
               },
               { signal, expectedSize: file.size || undefined }
@@ -337,7 +368,8 @@ export async function downloadAndExtractMulti(
           percent: p.percent,
           status: t('installer.extracting', {
             progress: `${p.percent}%  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-          })
+          }),
+          ...measuredProgress(0, p.etaSecs)
         })
       },
       { signal }

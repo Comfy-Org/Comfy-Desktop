@@ -1,5 +1,6 @@
 import { formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
+import type { InstallPayloadItem } from '../../../types/ipc'
 
 /**
  * Pure core of the template-download feature: state shape, the read-side
@@ -87,6 +88,54 @@ export interface TemplateTrayEntry {
   etaSeconds: number
 }
 
+type FileOutcome = 'error' | 'done' | 'cancelled' | 'running'
+
+/**
+ * Settle one file against the task's own status. When the task terminated
+ * (cancel / error) before every file finished — an abort mid-pool, or a
+ * disk-space pre-flight that errors with files listed but none downloaded —
+ * the unfinished files inherit that outcome. Otherwise they'd read as running
+ * forever, and `getDownloadsTrayState` would count them as active.
+ */
+function fileOutcome(file: FileProgress, taskStatus: TemplateDownloadStatus): FileOutcome {
+  if (file.failed) return 'error'
+  if (file.done) return 'done'
+  if (taskStatus === 'cancelled') return 'cancelled'
+  if (taskStatus === 'error') return 'error'
+  return 'running'
+}
+
+const TRAY_STATUS: Record<FileOutcome, TemplateTrayEntry['status']> = {
+  error: 'error',
+  done: 'completed',
+  cancelled: 'cancelled',
+  running: 'downloading'
+}
+
+/** A cancelled file is simply not finished — the receipt shows it pending
+ *  rather than inventing a "cancelled" row the payload vocabulary lacks. */
+const PAYLOAD_STATE: Record<FileOutcome, InstallPayloadItem['state']> = {
+  error: 'error',
+  done: 'done',
+  cancelled: 'pending',
+  running: 'active'
+}
+
+/**
+ * Map the task's per-file state into `install-progress` payload rows. Pure, and
+ * deliberately sharing `fileOutcome` with the tray mapper so the two surfaces
+ * can never disagree about whether a file failed.
+ */
+export function templateStateToPayload(state: TemplateDownloadState): InstallPayloadItem[] {
+  return state.files.map((file) => ({
+    id: `${file.directory}/${file.name}`,
+    label: file.name,
+    ...(file.total > 0 ? { totalBytes: file.total } : {}),
+    receivedBytes: file.received,
+    state: PAYLOAD_STATE[fileOutcome(file, state.status)]
+  }))
+}
+
 /**
  * Map the task's per-file state into downloads-tray rows so the title-bar tray
  * can continue showing the SAME download after the user skips ahead to ComfyUI
@@ -109,15 +158,8 @@ export function templateStateToTrayEntries(
   // with files already listed but none downloaded — the still-unfinished files
   // must inherit that terminal status. Otherwise they'd map to 'downloading'
   // and `getDownloadsTrayState` would count them as active forever.
-  const unfinishedStatus: TemplateTrayEntry['status'] | null =
-    state.status === 'cancelled' ? 'cancelled' : state.status === 'error' ? 'error' : null
-
   return state.files.map((file) => {
-    const status: TemplateTrayEntry['status'] = file.failed
-      ? 'error'
-      : file.done
-        ? 'completed'
-        : (unfinishedStatus ?? 'downloading')
+    const status = TRAY_STATUS[fileOutcome(file, state.status)]
     const progress = file.total > 0 ? Math.min(1, file.received / file.total) : 0
     const isLiveRow = status === 'downloading' && !liveRowAssigned
     if (isLiveRow) liveRowAssigned = true

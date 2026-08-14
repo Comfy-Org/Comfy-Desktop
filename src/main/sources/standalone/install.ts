@@ -30,6 +30,7 @@ import {
   writeComfyEnvironment
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
+import type { SendProgress } from '../../../types/ipc'
 import { tagsEqual, type ComfyVersion } from '../../lib/version'
 import { resolveNestedComfyUIParent } from '../common/nestedRoot'
 import type { InstallTools, PostInstallTools } from '../../types/sources'
@@ -317,7 +318,7 @@ export async function postInstall(
             channel,
             ...(pickedTag ? { targetTag: pickedTag } : {}),
             update,
-            sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
+            sendProgress,
             signal,
             // The standalone bundle ships a pre-extracted venv whose pinned
             // versions can lag ComfyUI's own `requirements.txt` (most visibly
@@ -414,7 +415,7 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
 export async function migrateEnvLayout(
   installPath: string,
   update: (data: Record<string, unknown>) => Promise<unknown>,
-  sendProgress?: (step: string, data: { percent: number; status: string }) => void
+  sendProgress?: SendProgress
 ): Promise<boolean> {
   const venvDir = getVenvDir(installPath)
   if (fs.existsSync(venvDir)) return false

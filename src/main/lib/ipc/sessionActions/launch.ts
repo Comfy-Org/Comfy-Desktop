@@ -70,7 +70,11 @@ import {
   formatTemplateSubStatus,
   awaitTemplateDownloadSettled
 } from '../../../sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
+import {
+  isTerminal as isTemplateDownloadTerminal,
+  templateStateToPayload
+} from '../../../sources/standalone/templateDownloadCore'
+import { measuredProgress } from '../../../../shared/progressMeasurement'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
@@ -745,7 +749,9 @@ async function runLaunch(
         sendProgress('template-models', {
           percent,
           status: formatTemplateSubStatus(summary),
-          error: summary.status === 'error'
+          error: summary.status === 'error',
+          payload: templateStateToPayload(state),
+          ...measuredProgress(summary.speedMBs, summary.etaSecs)
         })
         return terminal
       }
