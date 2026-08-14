@@ -1000,14 +1000,14 @@ describe('final destination conflicts', () => {
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
 
-  it('installs via the exclusive-claim fallback when hard links are unsupported', async () => {
-    // exFAT/FAT32/network shares reject linkSync with a non-EEXIST error; the
-    // install must fall back to claim-marker + rename and still finalize.
+  it('fails closed when hard links are unsupported', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
       throw err
     })
+    const openSpy = vi.spyOn(fs, 'openSync')
+    const renameSpy = vi.spyOn(fs, 'renameSync')
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1016,19 +1016,23 @@ describe('final destination conflicts', () => {
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
-      expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
-      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
-      expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
-      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+      expect(outcome.outcome).toBe('error')
+      expect((outcome as { error: string }).error).toMatch(/atomic no-replace/)
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
+      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
+      expect(renameSpy).not.toHaveBeenCalledWith(stagingPathFor(finalPath), finalPath)
     } finally {
+      renameSpy.mockRestore()
+      openSpy.mockRestore()
       linkSpy.mockRestore()
     }
   })
 
   it('fails closed on a real link error instead of degrading to claim+rename', async () => {
-    // Only capability-gap errno values (exFAT/FAT32-style) may use the
-    // claim-marker fallback; a genuine I/O failure must surface as the
-    // transfer error it is, keeping the staged bytes for retry.
+    // A genuine I/O failure must surface as the transfer error it is, keeping
+    // the staged bytes for retry.
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EIO: i/o error') as NodeJS.ErrnoException
       err.code = 'EIO'
@@ -1054,7 +1058,7 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('link-less fallback still refuses to clobber a file at the final name', async () => {
+  it('a link-less filesystem still refuses to clobber a file at the final name', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
@@ -1079,27 +1083,13 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('link-less fallback removes its empty claim marker when the rename fails', async () => {
-    // A rename failure after the claim was taken must not leave a zero-byte
-    // fake model at the final name; the staged bytes stay for retry.
+  it('a link-less filesystem never creates a final-name claim marker', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
       throw err
     })
-    const realRename = fs.renameSync.bind(fs)
-    const renameSpy = vi
-      .spyOn(fs, 'renameSync')
-      .mockImplementation((oldPath: fs.PathLike, newPath: fs.PathLike) => {
-        // Fail only the final install rename; sidecar atomic writes keep
-        // working so the transfer reaches the finalize step normally.
-        if (String(newPath) === finalPath) {
-          const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException
-          err.code = 'EACCES'
-          throw err
-        }
-        realRename(oldPath, newPath)
-      })
+    const openSpy = vi.spyOn(fs, 'openSync')
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1111,8 +1101,9 @@ describe('final destination conflicts', () => {
       expect(outcome.outcome).toBe('error')
       expect(fs.existsSync(finalPath)).toBe(false)
       expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
+      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
     } finally {
-      renameSpy.mockRestore()
+      openSpy.mockRestore()
       linkSpy.mockRestore()
     }
   })

@@ -291,7 +291,8 @@ export async function filesHaveSameBytes(a: string, b: string): Promise<boolean>
  * Install verified staged bytes at the final name without overwriting a file
  * that appeared there independently. An identical final is accepted and the
  * staged copy is removed; a different final is preserved and reported as a
- * conflict.
+ * conflict. Filesystems without atomic hard-link support fail closed and keep
+ * the staged bytes for retry.
  */
 export async function installStagedAtFinal(
   stagingPath: string,
@@ -321,24 +322,11 @@ export async function installStagedAtFinal(
       return
     }
     if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
-    try {
-      fs.closeSync(fs.openSync(finalPath, 'wx'))
-    } catch (claimErr) {
-      if ((claimErr as NodeJS.ErrnoException).code === 'EEXIST') {
-        await conflictOrAccept()
-        return
-      }
-      throw claimErr
+    if (fs.existsSync(finalPath)) {
+      await conflictOrAccept()
+      return
     }
-    try {
-      fs.renameSync(stagingPath, finalPath)
-    } catch (renameErr) {
-      try {
-        fs.unlinkSync(finalPath)
-      } catch {}
-      throw renameErr
-    }
-    return
+    throw new Error('atomic no-replace install is not supported by this filesystem', { cause: err })
   }
   try {
     fs.unlinkSync(stagingPath)

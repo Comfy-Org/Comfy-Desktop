@@ -124,11 +124,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       console.warn('[ipc] Failed to migrate startup defaults or adopted settings:', err)
     })
 
-  // Sweep leftover empty local install dirs (aborted installs) on startup.
-  // Only reclaim dirs that exist but are effectively empty — never a missing
-  // or unreadable dir, which would silently forget a tracked instance whose
-  // drive is merely offline/renamed (issue #1155).
-  void (async () => {
+  const startupRecovery = startupMaintenance.then(async () => {
     try {
       let all = await installations.list()
       let recovered = false
@@ -148,7 +144,22 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
         }
       }
       if (recovered) all = await installations.list()
+      if (recovered) _broadcastToRenderer('installations-changed', {})
+      return { all, recoveredInstallationIds }
+    } catch (err) {
+      console.warn('[ipc] Failed to recover ComfyBuilder installations:', err)
+      return null
+    }
+  })
 
+  // Sweep leftover empty local install dirs (aborted installs) after recovery.
+  // Only reclaim dirs that exist but are effectively empty - never a missing
+  // or unreadable dir, which would silently forget a tracked instance whose
+  // drive is merely offline/renamed (issue #1155).
+  void startupRecovery.then(async (recovery) => {
+    if (!recovery) return
+    try {
+      const { all, recoveredInstallationIds } = recovery
       const sweepable = all.filter((inst) => {
         const source = sourceMap[inst.sourceId]
         return (
@@ -177,7 +188,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
         swept = true
       }
 
-      if (recovered || swept) _broadcastToRenderer('installations-changed', {})
+      if (swept) _broadcastToRenderer('installations-changed', {})
 
       // Reclaim per-install browser partitions left behind by deletes (the
       // inline cleanup can't remove them on Windows while their session is
@@ -185,7 +196,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       const remaining = await installations.list()
       sweepOrphanPartitions(new Set(remaining.map((i) => i.id)))
     } catch {}
-  })()
+  })
 
   // Default to bundled bootstrap pygit2 so the pygit2 path is always exercised
   // (system git would otherwise mask bugs real users hit). Falls back to
@@ -312,5 +323,5 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCrashHandlers()
   registerTelemetryHandlers()
   registerDevPlatformHandlers()
-  return startupMaintenance
+  return startupRecovery.then(() => undefined)
 }

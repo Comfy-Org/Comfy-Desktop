@@ -1379,17 +1379,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     migrateXdgPaths()
     persistWinDataRootChoice()
 
-    // Kick off the managed model-download startup pass (migrate legacy
-    // final-path partials, hydrate interrupted downloads as paused rows) as
-    // soon as settings/installation records are readable. Fire-and-forget so
-    // it never delays first paint; `handleLaunch` awaits the same memoized
-    // promise before any ComfyUI process can scan the model dirs (#1322).
-    // A failed pass is not memoized, so launch retries it; here it only
-    // needs logging (an unhandled rejection would surface as a crash).
-    initializeModelDownloads().catch((err) => {
-      console.warn('Model download startup pass failed at app startup:', err)
-    })
-
     // Strip Electron's default menu before any BrowserWindow opens so
     // OAuth / cloud-login popups (and every other window) can't reach
     // destructive items like "Close All Windows" that bypass our
@@ -2167,6 +2156,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // theme observer (see `applyComfyTheme` in openComfyWindow), so
       // they don't need this hook.
       onThemeChanged: applyChooserHostThemeToAll
+    })
+    // Recovery above can move ComfyBuilder model trees and migrate their
+    // storage mode. Scan only after it settles so the memoized startup pass
+    // sees the final roots and filesystem state.
+    initializeModelDownloads().catch((err) => {
+      console.warn('Model download startup pass failed at app startup:', err)
     })
     updater.register()
     // Forward updater state transitions to every host window's
