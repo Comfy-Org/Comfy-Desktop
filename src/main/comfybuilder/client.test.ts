@@ -49,7 +49,14 @@ describe('ComfyBuilderClient', () => {
 
   it('fetchModelManifest hits the version manifest path and normalizes absent fields', async () => {
     const f = mockFetch(200, {
-      models: [{ type: 'checkpoints', filename: 'sd.safetensors', downloadUrl: 'https://x/sd' }]
+      models: [
+        {
+          type: 'checkpoints',
+          filename: 'sd.safetensors',
+          sha256: 'a'.repeat(64),
+          downloadUrl: 'https://x/sd'
+        }
+      ]
     })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
@@ -66,6 +73,22 @@ describe('ComfyBuilderClient', () => {
     const client = new ComfyBuilderClient({ auth: auth('t') })
     await expect(client.fetchModelManifest('ver-9')).rejects.toMatchObject({ kind: 'server' })
   })
+
+  it.each([undefined, '', 'not-a-sha256'])(
+    'rejects a model without a valid SHA-256 before returning the manifest',
+    async (sha256) => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetch(200, {
+          models: [
+            { type: 'checkpoints', filename: 'sd.safetensors', sha256, downloadUrl: 'https://x/sd' }
+          ]
+        })
+      )
+      const client = new ComfyBuilderClient({ auth: auth('t') })
+      await expect(client.fetchModelManifest('ver-9')).rejects.toMatchObject({ kind: 'server' })
+    }
+  )
 
   it('getVersion surfaces the wire archiveSha256/archiveRef so the archive can be verified', async () => {
     vi.stubGlobal(

@@ -9,6 +9,10 @@ export function normalizeSha256(raw: string | undefined): string {
   )
 }
 
+export function isValidSha256(raw: string | undefined): boolean {
+  return /^[a-f0-9]{64}$/.test(normalizeSha256(raw))
+}
+
 export function isSecureDownloadUrl(raw: string): boolean {
   try {
     const url = new URL(raw)

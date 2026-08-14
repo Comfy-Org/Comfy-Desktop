@@ -7,8 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveModelManifest } from './modelManifest'
 import type { ModelManifest } from './types'
 
+const MODEL_SHA = 'a'.repeat(64)
 const MANIFEST: ModelManifest = {
-  models: [{ type: 'loras', filename: 'l.safetensors', downloadUrl: 'https://signed/l' }],
+  models: [
+    { type: 'loras', filename: 'l.safetensors', sha256: MODEL_SHA, downloadUrl: 'https://signed/l' }
+  ],
   modelPolicy: null,
   partnerNodePolicy: null
 }
@@ -77,7 +80,14 @@ describe('resolveModelManifest', () => {
 
   it('honors an inline-JSON override only under E2E (the test seam)', async () => {
     const override: ModelManifest = {
-      models: [{ type: 'checkpoints', filename: 'x.safetensors', downloadUrl: 'https://h/x' }],
+      models: [
+        {
+          type: 'checkpoints',
+          filename: 'x.safetensors',
+          sha256: MODEL_SHA,
+          downloadUrl: 'https://h/x'
+        }
+      ],
       modelPolicy: null,
       partnerNodePolicy: null
     }
@@ -93,7 +103,7 @@ describe('resolveModelManifest', () => {
 
   it('ignores the override in a non-E2E build (falls through to the endpoint)', async () => {
     process.env.COMFY_BUILDER_MODELS_MANIFEST = JSON.stringify({
-      models: [{ type: 'x', filename: 'evil', downloadUrl: 'https://evil/x' }]
+      models: [{ type: 'x', filename: 'evil', sha256: MODEL_SHA, downloadUrl: 'https://evil/x' }]
     })
     const m = await resolveModelManifest(client(), 'd1', '1')
     expect(m.models).toEqual(MANIFEST.models) // the fetched manifest, not the injected one
@@ -104,7 +114,9 @@ describe('resolveModelManifest', () => {
     const file = path.join(dir, 'manifest.json')
     fs.writeFileSync(
       file,
-      JSON.stringify({ models: [{ type: 'vae', filename: 'v.pt', downloadUrl: 'https://h/v' }] })
+      JSON.stringify({
+        models: [{ type: 'vae', filename: 'v.pt', sha256: MODEL_SHA, downloadUrl: 'https://h/v' }]
+      })
     )
     process.env.COMFY_BUILDER_MODELS_MANIFEST = file
     process.env.E2E = '1'

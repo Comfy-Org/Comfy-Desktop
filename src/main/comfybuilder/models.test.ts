@@ -37,6 +37,7 @@ function fakeDownload(bytes: Buffer) {
 const model = (o: Partial<ModelDescriptor> = {}): ModelDescriptor => ({
   type: 'checkpoints',
   filename: 'm.safetensors',
+  sha256: '0'.repeat(64),
   downloadUrl: 'https://models.test/m.safetensors',
   ...o
 })
@@ -74,10 +75,28 @@ describe('stageModels', () => {
     expect(fs.existsSync(`${dest}.partial`)).toBe(false)
   })
 
-  it('installs without verification when the model has no sha256', async () => {
+  it.each([undefined, '', 'not-a-sha256'])(
+    'rejects a model without a valid SHA-256 before any download',
+    async (sha256) => {
+      const install = freshInstall()
+      const dl = fakeDownload(Buffer.from('unverified'))
+      const untrusted = { ...model(), sha256 } as unknown as ModelDescriptor
+      await expect(
+        stageModels({ models: [untrusted], installPath: install, download: dl })
+      ).rejects.toMatchObject({ kind: 'invalid-model' })
+      expect(dl).not.toHaveBeenCalled()
+    }
+  )
+
+  it('accepts a sha256-prefixed integrity value', async () => {
     const install = freshInstall()
-    const dl = fakeDownload(Buffer.from('unverified'))
-    await stageModels({ models: [model({ filename: 'n.pt' })], installPath: install, download: dl })
+    const bytes = Buffer.from('verified')
+    const dl = fakeDownload(bytes)
+    await stageModels({
+      models: [model({ filename: 'n.pt', sha256: `sha256:${sha(bytes)}` })],
+      installPath: install,
+      download: dl
+    })
     expect(fs.existsSync(path.join(installModelsRoot(install), 'checkpoints', 'n.pt'))).toBe(true)
   })
 
@@ -167,7 +186,10 @@ describe('stageModels', () => {
     const install = freshInstall()
     const seen: Array<{ index: number; total: number; percent: number }> = []
     await stageModels({
-      models: [model({ filename: 'a.pt' }), model({ filename: 'b.pt' })],
+      models: [
+        model({ filename: 'a.pt', sha256: sha(Buffer.from('z')) }),
+        model({ filename: 'b.pt', sha256: sha(Buffer.from('z')) })
+      ],
       installPath: install,
       download: fakeDownload(Buffer.from('z')),
       onProgress: (p) => seen.push({ index: p.index, total: p.total, percent: p.percent })

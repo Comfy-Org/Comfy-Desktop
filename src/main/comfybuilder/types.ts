@@ -89,9 +89,8 @@ export interface InstallProgress {
 export interface ModelDescriptor {
   type: string
   filename: string
-  /** Hex sha256 of the content, when known. Absent for a public model whose
-   *  author supplied none, in which case it installs without verification. */
-  sha256?: string
+  /** Hex sha256 of the content. Model installation requires and verifies it. */
+  sha256: string
   downloadUrl: string
   /** When `downloadUrl` expires (presigned URLs only). Advisory. */
   expiresAt?: string

@@ -14,7 +14,7 @@ import type {
   ModelManifest,
   TokenProvider
 } from './types'
-import { isSecureDownloadUrl } from './integrity'
+import { isSecureDownloadUrl, isValidSha256 } from './integrity'
 
 /** Prod builder gateway. Pass `baseUrl` to target staging or a mock. */
 export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
@@ -112,6 +112,12 @@ export class ComfyBuilderClient {
       throw new ComfyBuilderApiError(
         'server',
         `Manifest for version ${versionId} has no model list`
+      )
+    }
+    if (body.models.some((model) => !isValidSha256(model.sha256))) {
+      throw new ComfyBuilderApiError(
+        'server',
+        `Manifest for version ${versionId} contains a model without a valid SHA-256`
       )
     }
     return {

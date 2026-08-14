@@ -11,12 +11,11 @@
  * built-in model root. That root is always on ComfyUI's model search path, so a
  * staged model is found whether or not the user shares a global model library.
  *
- * Integrity mirrors archive install: a model whose manifest carries a sha256 is
- * verified byte-for-byte and a mismatch fails the install; a model with no hash
- * installs unverified (the source, typically a public URL, supplied none). Each
- * model downloads to a `.partial` sibling that is renamed into place only after
- * it verifies, so an interrupted install never leaves a truncated model looking
- * complete, and a re-run resumes or re-fetches rather than trusting bad bytes.
+ * Integrity mirrors archive install: every model requires a sha256 and is
+ * verified byte-for-byte before installation. Each model downloads to a
+ * `.partial` sibling that is renamed into place only after it verifies, so an
+ * interrupted install never leaves a truncated model looking complete, and a
+ * re-run resumes or re-fetches rather than trusting bad bytes.
  */
 import fs from 'fs'
 import path from 'path'
@@ -24,7 +23,7 @@ import path from 'path'
 import { download } from '../lib/download'
 import type { DownloadProgress } from '../lib/download'
 import { sha256File } from './install'
-import { isSecureDownloadUrl, normalizeSha256 } from './integrity'
+import { isSecureDownloadUrl, isValidSha256, normalizeSha256 } from './integrity'
 import type { ModelDescriptor, StageProgress } from './types'
 
 export type StageModelsErrorKind = 'invalid-model' | 'model-checksum-mismatch'
@@ -112,6 +111,12 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
         `Model ${model.type}/${model.filename} download URL must be https.`
       )
     }
+    if (!isValidSha256(model.sha256)) {
+      throw new StageModelsError(
+        'invalid-model',
+        `Model ${model.type}/${model.filename} has no valid SHA-256 integrity value.`
+      )
+    }
 
     const destDir = path.join(modelsRoot, model.type)
     // Create the target dir first, then confirm it really resolves inside the
@@ -128,10 +133,10 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     const dest = path.join(destDir, model.filename)
     const expected = normalizeSha256(model.sha256)
 
-    // Already staged: a byte-verified file (or, when the manifest gave no hash,
-    // any existing file) is left as-is so a re-run is cheap and idempotent.
+    // Already staged: a byte-verified file is left as-is so a re-run is cheap
+    // and idempotent.
     if (fs.existsSync(dest)) {
-      if (!expected || (await sha256File(dest)) === expected) {
+      if ((await sha256File(dest)) === expected) {
         onProgress?.({ index, total, filename: model.filename, percent: 100 })
         continue
       }
@@ -156,15 +161,13 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
       { ...(signal ? { signal } : {}), validateUrl: isSecureDownloadUrl }
     )
 
-    if (expected) {
-      const actual = await sha256File(partial)
-      if (actual !== expected) {
-        await fs.promises.rm(partial, { force: true }).catch(() => {})
-        throw new StageModelsError(
-          'model-checksum-mismatch',
-          `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`
-        )
-      }
+    const actual = await sha256File(partial)
+    if (actual !== expected) {
+      await fs.promises.rm(partial, { force: true }).catch(() => {})
+      throw new StageModelsError(
+        'model-checksum-mismatch',
+        `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`
+      )
     }
     await fs.promises.rename(partial, dest)
     onProgress?.({ index, total, filename: model.filename, percent: 100 })
