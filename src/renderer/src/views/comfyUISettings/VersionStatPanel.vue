@@ -3,13 +3,13 @@
  * The Update tab's version summary: a headline with a status badge, over a
  * bordered table of version facts.
  *
- * Extracted from `ChannelPicker` so a distribution install — which has versions
- * but no release channel — gets the SAME table rather than a stacked list that
+ * Extracted from `ChannelPicker` so a distribution install - which has versions
+ * but no release channel - gets the SAME table rather than a stacked list that
  * merely says the same words. Purely presentational: callers decide what the
  * rows mean.
  */
-import { Loader2 } from 'lucide-vue-next'
 import type { ActionDef, VersionStatRow } from '../../types/ipc'
+import SectionActionButton from './SectionActionButton.vue'
 
 export type { VersionStatRow }
 
@@ -22,7 +22,7 @@ const props = withDefaults(
     badge?: string | null
     badgeTone?: 'current' | 'update'
     rows?: VersionStatRow[]
-    /** Rendered inside the table's bottom edge, right-aligned — they act on
+    /** Rendered inside the table's bottom edge, right-aligned - they act on
      *  what the table states, so they belong to it rather than the page. */
     actions?: ActionDef[]
     runningActionIds?: Set<string>
@@ -75,19 +75,18 @@ function isRunning(id: string): boolean {
       </div>
 
       <div v-if="actions.length > 0" class="version-stat-actions">
-        <button
+        <SectionActionButton
           v-for="action in actions"
           :key="action.id"
-          type="button"
-          class="version-stat-action"
-          :class="[action.style, { 'is-running': isRunning(action.id) }]"
-          :title="action.enabled === false ? action.disabledMessage : action.tooltip"
-          :disabled="action.enabled === false || isRunning(action.id)"
-          @click="emit('action', action)"
-        >
-          <Loader2 v-if="isRunning(action.id)" :size="14" class="version-stat-action-spinner" />
-          {{ action.label }}
-        </button>
+          :action="action"
+          :running="isRunning(action.id)"
+          button-class="version-stat-action"
+          tooltip-class="version-stat-action-tooltip"
+          spinner-class="version-stat-action-spinner"
+          disable-with-message
+          direct-style-class
+          @action="emit('action', action)"
+        />
       </div>
     </dl>
   </div>
@@ -201,7 +200,11 @@ function isRunning(id: string): boolean {
   border-top: none;
 }
 
-.version-stat-action {
+.version-stat-action-tooltip {
+  flex: 0 0 auto;
+}
+
+:deep(.version-stat-action) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -224,29 +227,29 @@ function isRunning(id: string): boolean {
     filter 100ms ease;
 }
 
-.version-stat-action:hover:not(:disabled),
-.version-stat-action:focus-visible:not(:disabled) {
+:deep(.version-stat-action:hover:not(:disabled)),
+:deep(.version-stat-action:focus-visible:not(:disabled)) {
   background: var(--brand-surface-bg-hover);
   outline: none;
 }
 
-.version-stat-action.primary {
+:deep(.version-stat-action.primary) {
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
 }
 
-.version-stat-action:disabled {
+:deep(.version-stat-action:disabled) {
   opacity: 0.5;
   cursor: default;
 }
 
-.version-stat-action.is-running {
+:deep(.version-stat-action.is-running) {
   cursor: progress;
   opacity: 0.85;
 }
 
-.version-stat-action-spinner {
+:deep(.version-stat-action-spinner) {
   flex: 0 0 auto;
   animation: version-stat-action-spin 0.9s linear infinite;
 }

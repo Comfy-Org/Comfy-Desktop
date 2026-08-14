@@ -77,9 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (revision === seen) workspacesError.value = true
       return workspaces.value
     } finally {
-      // A fetch always clears the flag it set — an auth-revision bump mid-flight
-      // must not leave the spinner stuck on.
-      loadingWorkspaces.value = false
+      if (revision === seen) loadingWorkspaces.value = false
     }
   }
 
@@ -129,7 +127,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (revision === seen) distributionsError.value = true
       return distributions.value
     } finally {
-      loadingDistributions.value = false
+      if (revision === seen) loadingDistributions.value = false
     }
   }
 

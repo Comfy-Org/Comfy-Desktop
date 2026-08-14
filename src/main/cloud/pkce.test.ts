@@ -1,22 +1,10 @@
 // @vitest-environment node
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import {
-  buildAuthorizeUrl,
-  codeChallengeFromVerifier,
-  generateCodeVerifier,
-  generateState
-} from './pkce'
+import { buildAuthorizeUrl, generateState } from './pkce'
 
 describe('pkce', () => {
-  it('code verifier + state are distinct base64url secrets', () => {
-    expect(generateCodeVerifier()).not.toBe(generateCodeVerifier())
+  it('state is a base64url secret', () => {
     expect(generateState()).toMatch(/^[A-Za-z0-9_-]+$/)
-  })
-
-  it('code challenge is S256(verifier) in base64url', () => {
-    const v = 'test-verifier'
-    expect(codeChallengeFromVerifier(v)).toBe(createHash('sha256').update(v).digest('base64url'))
   })
 
   it('buildAuthorizeUrl sets the PKCE params', () => {

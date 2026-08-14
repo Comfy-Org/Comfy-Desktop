@@ -204,9 +204,17 @@ describe('SettingsSectionList', () => {
       expect(wrapper.emitted('run-action')).toBeTruthy()
     })
 
-    it('disables the update button when the action is not ready', () => {
-      const wrapper = mountSection(false)
+    it('disables the update button and makes its explanation focusable', () => {
+      const section = vsSection(false)
+      section.actions![0]!.disabledMessage = 'Finish the current update first.'
+      const wrapper = mount(SettingsSectionList, {
+        props: { sections: [section] },
+        global: { plugins: [makeI18n()] }
+      })
       expect(wrapper.find('.version-stat-action').attributes('disabled')).toBeDefined()
+      const tooltip = wrapper.find('.version-stat-action-tooltip')
+      expect(tooltip.attributes('tabindex')).toBe('0')
+      expect(tooltip.attributes('title')).toBeUndefined()
     })
   })
 })

@@ -1,12 +1,9 @@
-import { createHash, randomBytes } from 'crypto'
+import { randomBytes } from 'node:crypto'
 
-export function generateCodeVerifier(): string {
-  return randomBytes(32).toString('base64url')
-}
-
-export function codeChallengeFromVerifier(verifier: string): string {
-  return createHash('sha256').update(verifier).digest('base64url')
-}
+export {
+  codeChallengeS256 as codeChallengeFromVerifier,
+  createCodeVerifier as generateCodeVerifier
+} from '../lib/pkce'
 
 export function generateState(): string {
   return randomBytes(32).toString('base64url')

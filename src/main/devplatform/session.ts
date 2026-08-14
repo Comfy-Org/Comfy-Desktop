@@ -23,7 +23,7 @@ export function getCloudSession(): CloudSession {
 
 /**
  * The catalog client, bound to the shared session's token provider and the
- * staging builder gateway. Cached: the session is the mutable part, and the
+ * configured builder gateway. Cached: the session is the mutable part, and the
  * provider it hands out always reads the current tokens.
  */
 export function getBuilderClient(): ComfyBuilderClient {

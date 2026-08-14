@@ -1286,15 +1286,43 @@ function findInstallationIdForWindow(win: BrowserWindow): string | undefined {
   return undefined
 }
 
+/**
+ * Startup barrier for OS-driven window reentry (`second-instance`, `activate`).
+ *
+ * Both events can fire while startup recovery (awaited inside `ipc.register()`)
+ * is still moving ComfyBuilder model trees. Opening a host window that early
+ * lets the user launch an install, which calls `initializeModelDownloads()`
+ * mid-recovery and can memoize a stale startup pass against transient roots.
+ * Until `enableHostReentry()` runs, only the LATEST reentry request is queued;
+ * once enabled, requests execute immediately.
+ */
+let hostReentryEnabled = false
+let pendingHostReentry: (() => void) | null = null
+
+function openOrQueueHostReentry(open: () => void): void {
+  if (hostReentryEnabled) {
+    open()
+    return
+  }
+  pendingHostReentry = open
+}
+
+function enableHostReentry(): void {
+  hostReentryEnabled = true
+  const pending = pendingHostReentry
+  pendingHostReentry = null
+  pending?.()
+}
+
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   if (app.isPackaged) {
     app.on('second-instance', () => {
-      // OS-level "open another instance" attempt — focus an existing
+      // OS-level "open another instance" attempt - focus an existing
       // host window (chooser or install-backed) instead of stacking
-      // a duplicate.
-      openOrFocusAnyHostWindow()
+      // a duplicate. Queued until startup recovery settles.
+      openOrQueueHostReentry(() => openOrFocusAnyHostWindow())
     })
   }
 
@@ -2215,6 +2243,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
         mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
         void openStartupSurface()
+        enableHostReentry()
       }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
     } else {
       app.removeListener('before-quit', onUpdateInstallQuit)
@@ -2226,6 +2255,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // window (and the reopen setting is on), restore that instance
       // in-place on top of the freshly-opened chooser host.
       void openStartupSurface()
+      // Startup recovery (awaited inside `ipc.register()` above) has settled
+      // and we've committed to opening the normal UI, so OS-driven reentry
+      // (second-instance / dock activate) can open windows directly again.
+      enableHostReentry()
     }
 
     // Single subscription rebroadcasts every install-list mutation
@@ -2273,17 +2306,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('activate', () => {
-    // macOS dock click — raise ALL open host windows to the front
+    // macOS dock click - raise ALL open host windows to the front
     // (standard macOS behaviour: clicking the dock icon brings every
     // window of the app forward, not just one). The preferred host is
     // left frontmost. Falls back to spawning a fresh chooser host when
     // none are open. The single-window `openOrFocusAnyHostWindow` path
     // remains for non-darwin platforms / the `second-instance` hook.
-    if (process.platform === 'darwin') {
-      raiseAllHostWindows()
-    } else {
-      openOrFocusAnyHostWindow()
-    }
+    // Queued until startup recovery settles.
+    openOrQueueHostReentry(() => {
+      if (process.platform === 'darwin') {
+        raiseAllHostWindows()
+      } else {
+        openOrFocusAnyHostWindow()
+      }
+    })
   })
 
   app.on('before-quit', (event) => {

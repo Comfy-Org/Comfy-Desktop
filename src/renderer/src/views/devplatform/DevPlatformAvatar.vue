@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
- * Square gradient avatar: ported verbatim from the ComfyUI frontend's
- * `WorkspaceProfilePic.vue` so the same subject renders the SAME colour here as
- * in the web frontend. The PRNG and hue/sat/light maths are a wire format: any
- * change silently breaks that cross-surface identity.
+ * Square gradient avatar adapted from the ComfyUI frontend's
+ * `WorkspaceProfilePic.vue`. It uses the same PRNG, saturation, and lightness
+ * calculations with a narrower second-hue offset for a cohesive color pair.
  *
  * Used for both the account-chip face (seeded from the active workspace name,
  * falling back to the email) and the switcher rows (seeded from each workspace
@@ -31,9 +30,8 @@ function mulberry32(a: number): () => number {
 /** Two-stop gradient seeded from the letter. The rand() call ORDER and COUNT are
  *  part of the contract: reordering or adding a call changes every colour.
  *
- *  The second stop's hue spread is narrowed against the frontend's 40-120°: at
- *  that width the two stops read as two separate colours rather than one shaded
- *  one. hue1/sat/light are untouched, so the colour family still matches. */
+ * The second stop uses an 18-41 degree hue offset so the stops read as shades
+ * of one color family. */
 const gradient = computed(() => {
   const rand = mulberry32(letter.value.charCodeAt(0))
   const hue1 = Math.floor(rand() * 360)
