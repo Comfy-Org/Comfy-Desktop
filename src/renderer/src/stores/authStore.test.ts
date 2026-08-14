@@ -157,6 +157,37 @@ describe('useAuthStore', () => {
     expect(store.distributions).toEqual([])
   })
 
+  it('the duplicate switch status (push, then invoke result) keeps the sole distribution fetch alive', async () => {
+    api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    const store = useAuthStore()
+    await store.signIn()
+
+    // Main broadcasts the switched status BEFORE the switchWorkspace invoke
+    // resolves; the watcher keyed on workspace identity fires exactly once,
+    // off this push.
+    const invoke = deferred<unknown>()
+    api.switchWorkspace.mockReturnValueOnce(invoke.promise)
+    const switching = store.switchWorkspace('w2')
+    authChangedCb?.({ signedIn: true, workspaceId: 'w2' })
+
+    const rows = deferred<unknown[]>()
+    api.listDistributions.mockReturnValueOnce(rows.promise)
+    const fetching = store.fetchDistributions()
+    expect(store.loadingDistributions).toBe(true)
+
+    // The invoke result carries the identical identity; it must not advance
+    // the revision - that would discard the only fetch for w2 and leave the
+    // UI reporting a false empty workspace with no re-fire.
+    invoke.resolve({ signedIn: true, workspaceId: 'w2' })
+    await switching
+    expect(store.loadingDistributions).toBe(true)
+
+    rows.resolve([{ id: 'd2', name: 'New', state: 'installable' }])
+    await fetching
+    expect(store.loadingDistributions).toBe(false)
+    expect(store.distributions).toEqual([{ id: 'd2', name: 'New', state: 'installable' }])
+  })
+
   it('a pushed sign-out with no follow-up fetch clears stuck loading and error flags', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     const store = useAuthStore()

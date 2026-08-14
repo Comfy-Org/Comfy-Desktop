@@ -41,6 +41,29 @@ export const useAuthStore = defineStore('auth', () => {
     distributionsError.value = false
   }
 
+  /** The session identity the scoped caches are keyed on. */
+  function sameIdentity(a: AuthStatus, b: AuthStatus): boolean {
+    return a.signedIn === b.signedIn && a.workspaceId === b.workspaceId
+  }
+
+  /** Apply an authoritative status (push, sign-in, switch, sign-out result).
+   *  A sign-in/switch lands twice - main pushes `onAuthChanged` AND the invoke
+   *  resolves with the same status - so only an identity CHANGE invalidates
+   *  in-flight fetches and scoped caches. The duplicate arrival (either order)
+   *  must not advance the revision: it would discard the sole fetch the first
+   *  arrival triggered, and no watcher re-fires for an unchanged identity,
+   *  leaving the UI showing a false empty workspace. */
+  function applyAuthoritativeStatus(next: AuthStatus): void {
+    if (sameIdentity(status.value, next)) {
+      status.value = next
+      return
+    }
+    advanceRevision()
+    status.value = next
+    if (!next.signedIn) resetScopedState()
+    else distributions.value = []
+  }
+
   /** Drop workspace-scoped caches: the list and the distributions both belong
    *  to the token's single workspace, so a switch/sign-out invalidates them. */
   function resetScopedState(): void {
@@ -59,16 +82,13 @@ export const useAuthStore = defineStore('auth', () => {
    *  feedback; a completed sign-in also lands via `onAuthChanged`. */
   async function signIn(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signIn()
-    advanceRevision()
-    status.value = next
+    applyAuthoritativeStatus(next)
     return next
   }
 
   async function signOut(): Promise<AuthStatus> {
     await comfybuilderApi.signOut()
-    advanceRevision()
-    status.value = { signedIn: false }
-    resetScopedState()
+    applyAuthoritativeStatus({ signedIn: false })
     return status.value
   }
 
@@ -98,17 +118,12 @@ export const useAuthStore = defineStore('auth', () => {
    *  dropped so the distribution grid re-fetches for the new workspace. */
   async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     const next = await comfybuilderApi.switchWorkspace(workspaceId)
-    advanceRevision()
-    status.value = next
-    distributions.value = []
+    applyAuthoritativeStatus(next)
     return next
   }
 
   const unsubscribe = comfybuilderApi.onAuthChanged((nextStatus) => {
-    advanceRevision()
-    status.value = nextStatus
-    if (!nextStatus.signedIn) resetScopedState()
-    else distributions.value = []
+    applyAuthoritativeStatus(nextStatus)
   })
 
   // Hydrate from the persisted session once at creation: main only pushes
