@@ -1,6 +1,10 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const acquireModelDownloadRootLock = vi.hoisted(() =>
+  vi.fn<(modelsRoot: string) => (() => void) | null>(() => vi.fn())
+)
+
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
   ipcMain: { handle: vi.fn() },
@@ -15,6 +19,7 @@ vi.mock('../../comfybuilder', () => ({
   installArtifact: vi.fn(async () => {}),
   buildLaunchSpec: vi.fn(() => null),
   stageModels: vi.fn(async () => {}),
+  installModelsRoot: vi.fn((installPath: string) => `${installPath}/ComfyUI/models`),
   normalizeSha256: vi.fn((value: string | undefined) => value?.trim() ?? ''),
   resolveModelManifest: vi.fn(async () => ({
     models: [],
@@ -23,6 +28,7 @@ vi.mock('../../comfybuilder', () => ({
   }))
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
+vi.mock('../../lib/comfyDownloadManager', () => ({ acquireModelDownloadRootLock }))
 vi.mock('../../devplatform/distributions', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
@@ -59,6 +65,7 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     sourceId: 'comfybuilder',
     installPath: '/installs/dist',
     status: 'installed',
+    useSharedModels: false,
     distributionId: 'd1',
     distributionName: 'desktop-4target-stg-v0190',
     version: '1',
@@ -88,6 +95,8 @@ describe('comfybuilder.install wiring', () => {
   afterEach(() => writeFile.mockRestore())
 
   it('moves both executable trees aside while preserving models', async () => {
+    const releaseModelRoot = vi.fn()
+    acquireModelDownloadRootLock.mockReturnValueOnce(releaseModelRoot)
     const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
     const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
     const mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined)
@@ -110,6 +119,8 @@ describe('comfybuilder.install wiring', () => {
         installArtifact as unknown as { mock: { invocationCallOrder: number[] } }
       ).mock.invocationCallOrder[0]!
       expect(renameOrder).toBeLessThan(installOrder)
+      expect(acquireModelDownloadRootLock).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+      expect(releaseModelRoot).toHaveBeenCalledOnce()
     } finally {
       rename.mockRestore()
       rm.mockRestore()
@@ -118,6 +129,8 @@ describe('comfybuilder.install wiring', () => {
   })
 
   it('puts the previous code, venv, and preserved models back when install fails', async () => {
+    const releaseModelRoot = vi.fn()
+    acquireModelDownloadRootLock.mockReturnValueOnce(releaseModelRoot)
     const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
     const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
     const mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined)
@@ -136,11 +149,22 @@ describe('comfybuilder.install wiring', () => {
         expect.stringContaining('venv.previous'),
         expect.stringMatching(/[\\/]venv$/)
       )
+      expect(releaseModelRoot).toHaveBeenCalledOnce()
     } finally {
       rename.mockRestore()
       rm.mockRestore()
       mkdir.mockRestore()
     }
+  })
+
+  it('refuses to mutate the environment while its model root is busy', async () => {
+    acquireModelDownloadRootLock.mockReturnValueOnce(null)
+
+    await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow(
+      /model directory is busy/i
+    )
+    expect(installArtifact).not.toHaveBeenCalled()
+    expect(stageModels).not.toHaveBeenCalled()
   })
 
   it('installs the archive, then resolves the manifest, then stages models', async () => {
@@ -191,6 +215,17 @@ describe('comfybuilder.install wiring', () => {
 })
 
 describe('comfybuilder interrupted-install recovery', () => {
+  it('migrates existing distribution records to isolated model storage', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-isolation-'))
+    try {
+      await expect(
+        recoverComfyBuilderInstallation(record({ installPath: root, useSharedModels: undefined }))
+      ).resolves.toEqual({ action: 'update', data: { useSharedModels: false } })
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('restores record metadata when shutdown happens before the filesystem swap', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-pending-'))
     try {

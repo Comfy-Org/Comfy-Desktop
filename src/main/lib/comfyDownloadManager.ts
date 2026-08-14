@@ -241,6 +241,11 @@ export type ModelJobOutcome =
  *  writing the same file twice. */
 const modelJobIdByDest = new Map<string, string>()
 
+/** Model roots undergoing an external filesystem transaction. Managed jobs
+ * must not read or write inside a locked root. */
+const lockedModelRoots = new Map<string, symbol>()
+let modelDownloadsInitRunning = 0
+
 /** Streams of superseded or cancelled transports that are still flushing to
  *  a destination's staging file, keyed by canonical destination. A new
  *  transport must not open that staging file until the previous stream there
@@ -266,6 +271,51 @@ function trackClosingStream(destKey: string, done: Promise<unknown>): void {
 function canonicalDestKey(savePath: string): string {
   const resolved = path.resolve(savePath)
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+function pathIsInModelRoot(filePath: string, root: string): boolean {
+  return isPathContained(canonicalDestKey(filePath), canonicalDestKey(root))
+}
+
+function isModelPathLocked(filePath: string): boolean {
+  for (const root of lockedModelRoots.keys()) {
+    if (pathIsInModelRoot(filePath, root)) return true
+  }
+  return false
+}
+
+/**
+ * Reserve a complete model root for a filesystem transaction. Returns null if
+ * another transaction overlaps the root or a managed job/closing stream still
+ * owns a destination inside it. The release callback is idempotent.
+ */
+export function acquireModelDownloadRootLock(modelsRoot: string): (() => void) | null {
+  if (modelDownloadsInitRunning > 0) return null
+  const rootKey = canonicalDestKey(modelsRoot)
+  for (const existing of lockedModelRoots.keys()) {
+    if (
+      existing === rootKey ||
+      pathIsInModelRoot(existing, rootKey) ||
+      pathIsInModelRoot(rootKey, existing)
+    ) {
+      return null
+    }
+  }
+
+  const token = Symbol('model-root-lock')
+  lockedModelRoots.set(rootKey, token)
+  const busy =
+    [...pendingDownloads.values()].some(
+      (pending) => pending.kind === 'model' && pathIsInModelRoot(pending.savePath, rootKey)
+    ) || [...closingStreamsByDest.keys()].some((dest) => pathIsInModelRoot(dest, rootKey))
+  if (busy) {
+    lockedModelRoots.delete(rootKey)
+    return null
+  }
+
+  return () => {
+    if (lockedModelRoots.get(rootKey) === token) lockedModelRoots.delete(rootKey)
+  }
 }
 
 /** Chunked synchronous byte comparison. Bounded memory so it is safe for
@@ -1069,6 +1119,13 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     ...overrides
   })
 
+  const rejectLockedRoot = (candidatePath = savePath): ModelJobHandle | null => {
+    if (!isModelPathLocked(candidatePath)) return null
+    const error = 'The model directory is busy while the installation is being updated'
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, { status: 'error', error })
+  }
+
   if (!isPathContained(savePath, baseDir)) {
     const error = 'Save path is outside models directory'
     reportProgress(makeProgress({ status: 'error', error }))
@@ -1099,6 +1156,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   } catch {
     startupSafety = { safe: false, unsafePaths: [] }
   }
+  const lockedAfterStartup = rejectLockedRoot()
+  if (lockedAfterStartup) return lockedAfterStartup
   const unsafeDestKeys = new Set(startupSafety.unsafePaths.map((p) => canonicalDestKey(p)))
   if (unsafeDestKeys.has(canonicalDestKey(savePath))) {
     // The quarantine was re-attempted by the awaited pass just above (unsafe
@@ -1120,6 +1179,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
     if (unsafeDestKeys.has(canonicalDestKey(candidate))) continue
     if (await regularFileExists(candidate)) {
+      const lockedBeforeExistingResult = rejectLockedRoot(candidate)
+      if (lockedBeforeExistingResult) return lockedBeforeExistingResult
       reportProgress(makeProgress({ progress: 1, status: 'completed', savePath: candidate }))
       return settledJobHandle(id, url, candidate, {
         status: 'completed',
@@ -1128,6 +1189,11 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       })
     }
   }
+
+  // Atomic with registration below: a lock acquired before this check is seen
+  // here; one acquired afterwards sees the registered pending job and refuses.
+  const lockedBeforeAdmission = rejectLockedRoot()
+  if (lockedBeforeAdmission) return lockedBeforeAdmission
 
   // Shutdown admission gate, checked in the same synchronous block that
   // registers the job: quit parking snapshots the active jobs once and waits
@@ -2119,7 +2185,15 @@ export function initializeModelDownloads(): Promise<ModelDownloadStartupSafety> 
   const prior: Promise<unknown> = _modelDownloadsInit ?? Promise.resolve()
   const run = prior
     .catch(() => undefined)
-    .then(() => doInitializeModelDownloads())
+    .then(async () => {
+      if (lockedModelRoots.size > 0) return { safe: false, unsafePaths: [] }
+      modelDownloadsInitRunning++
+      try {
+        return await doInitializeModelDownloads()
+      } finally {
+        modelDownloadsInitRunning--
+      }
+    })
     .then(
       (safety) => {
         if (!safety.safe && _modelDownloadsInit === run) _modelDownloadsInit = null

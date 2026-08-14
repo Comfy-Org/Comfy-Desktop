@@ -22,11 +22,12 @@ import path from 'path'
 
 import { download } from '../lib/download'
 import type { DownloadProgress } from '../lib/download'
+import { installStagedAtFinal } from '../lib/modelDownloadStaging'
 import { sha256File } from './install'
 import { isSecureDownloadUrl, isValidSha256, normalizeSha256 } from './integrity'
 import type { ModelDescriptor, StageProgress } from './types'
 
-export type StageModelsErrorKind = 'invalid-model' | 'model-checksum-mismatch'
+export type StageModelsErrorKind = 'invalid-model' | 'model-checksum-mismatch' | 'model-conflict'
 
 export class StageModelsError extends Error {
   override name = 'StageModelsError'
@@ -140,8 +141,10 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
         onProgress?.({ index, total, filename: model.filename, percent: 100 })
         continue
       }
-      // Present but wrong: drop it and re-fetch rather than trust bad bytes.
-      await fs.promises.rm(dest, { force: true }).catch(() => {})
+      throw new StageModelsError(
+        'model-conflict',
+        `Model ${model.type}/${model.filename} conflicts with a different existing file.`
+      )
     }
 
     // Download to a sibling, verify, then rename into place: an interrupted
@@ -169,7 +172,15 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
         `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`
       )
     }
-    await fs.promises.rename(partial, dest)
+    const finalBytes = (await fs.promises.stat(partial)).size
+    try {
+      await installStagedAtFinal(partial, dest, finalBytes)
+    } catch (err) {
+      throw new StageModelsError(
+        'model-conflict',
+        `Model ${model.type}/${model.filename} could not be installed: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
     onProgress?.({ index, total, filename: model.filename, percent: 100 })
   }
 }

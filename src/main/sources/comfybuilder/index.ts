@@ -22,6 +22,7 @@ import {
   installArtifact,
   buildLaunchSpec,
   stageModels,
+  installModelsRoot,
   resolveModelManifest,
   normalizeSha256
 } from '../../comfybuilder'
@@ -75,6 +76,18 @@ interface EnvironmentRollback {
 export type ComfyBuilderRecovery =
   | { action: 'none' }
   | { action: 'update'; data: Record<string, unknown> }
+
+function recoveryResult(
+  installation: InstallationRecord,
+  data: Record<string, unknown> = {}
+): ComfyBuilderRecovery {
+  const needsModelIsolation = installation.useSharedModels !== false
+  if (!needsModelIsolation && Object.keys(data).length === 0) return { action: 'none' }
+  return {
+    action: 'update',
+    data: { ...data, ...(needsModelIsolation ? { useSharedModels: false } : {}) }
+  }
+}
 
 function environmentPaths(installPath: string) {
   const venv = path.join(installPath, 'venv')
@@ -178,45 +191,42 @@ export async function recoverComfyBuilderInstallation(
 
   if (ready) {
     if (installation.status === 'installing' || rollback) {
-      return { action: 'update', data: { status: 'installed', [ROLLBACK_FIELD]: undefined } }
+      return recoveryResult(installation, {
+        status: 'installed',
+        [ROLLBACK_FIELD]: undefined
+      })
     }
     await finalizeEnvironmentTransaction(installation.installPath)
-    return { action: 'none' }
+    return recoveryResult(installation)
   }
 
   if (hasBackups) {
     await restoreEnvironmentBackups(installation.installPath)
     if (rollback) {
       const runnable = await isRunnableEnvironment(installation.installPath)
-      return {
-        action: 'update',
-        data: {
-          ...rollback,
-          status: runnable ? (rollback.status ?? 'installed') : 'failed',
-          [ROLLBACK_FIELD]: undefined
-        }
-      }
+      return recoveryResult(installation, {
+        ...rollback,
+        status: runnable ? (rollback.status ?? 'installed') : 'failed',
+        [ROLLBACK_FIELD]: undefined
+      })
     }
     return installation.status === 'installing'
-      ? { action: 'update', data: { status: 'failed' } }
-      : { action: 'none' }
+      ? recoveryResult(installation, { status: 'failed' })
+      : recoveryResult(installation)
   }
 
   if (rollback) {
     const runnable = await isRunnableEnvironment(installation.installPath)
-    return {
-      action: 'update',
-      data: {
-        ...rollback,
-        status: runnable ? (rollback.status ?? 'installed') : 'failed',
-        [ROLLBACK_FIELD]: undefined
-      }
-    }
+    return recoveryResult(installation, {
+      ...rollback,
+      status: runnable ? (rollback.status ?? 'installed') : 'failed',
+      [ROLLBACK_FIELD]: undefined
+    })
   }
 
   return installation.status === 'installing'
-    ? { action: 'update', data: { status: 'failed' } }
-    : { action: 'none' }
+    ? recoveryResult(installation, { status: 'failed' })
+    : recoveryResult(installation)
 }
 
 /** Reconstruct the library Artifact from the fields the install record carries. */
@@ -258,6 +268,30 @@ async function installEnvironment(
   installation: InstallationRecord,
   // Narrower than `ActionTools.sendProgress` on purpose: a handler that accepts
   // `Record<string, unknown>` satisfies this, but not the reverse.
+  tools: {
+    sendProgress: (step: string, data: { percent: number; status: string }) => void
+    signal?: AbortSignal
+  },
+  onTransactionStarted?: () => Promise<void>
+): Promise<void> {
+  // Load this lazily: the download manager imports the source registry, which
+  // includes this plugin.
+  const { acquireModelDownloadRootLock } = await import('../../lib/comfyDownloadManager')
+  const releaseModelRoot = acquireModelDownloadRootLock(installModelsRoot(installation.installPath))
+  if (!releaseModelRoot) {
+    throw new Error(
+      'The model directory is busy. Finish or cancel its downloads before installing or updating.'
+    )
+  }
+  try {
+    await installEnvironmentLocked(installation, tools, onTransactionStarted)
+  } finally {
+    releaseModelRoot()
+  }
+}
+
+async function installEnvironmentLocked(
+  installation: InstallationRecord,
   tools: {
     sendProgress: (step: string, data: { percent: number; status: string }) => void
     signal?: AbortSignal

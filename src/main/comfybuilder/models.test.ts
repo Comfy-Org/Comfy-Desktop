@@ -166,20 +166,45 @@ describe('stageModels', () => {
     expect(fs.readFileSync(dest)).toEqual(bytes)
   })
 
-  it('re-fetches a present-but-wrong file instead of trusting bad bytes', async () => {
+  it('preserves and reports a present file with different content', async () => {
     const install = freshInstall()
     const good = Buffer.from('good-bytes')
     const dest = path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors')
     fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, Buffer.from('stale-wrong'))
+    const existing = Buffer.from('different-user-file')
+    fs.writeFileSync(dest, existing)
     const dl = fakeDownload(good)
-    await stageModels({
-      models: [model({ sha256: sha(good) })],
-      installPath: install,
-      download: dl
+    await expect(
+      stageModels({
+        models: [model({ sha256: sha(good) })],
+        installPath: install,
+        download: dl
+      })
+    ).rejects.toMatchObject({ kind: 'model-conflict' })
+    expect(dl).not.toHaveBeenCalled()
+    expect(fs.readFileSync(dest)).toEqual(existing)
+  })
+
+  it('does not clobber a different final file that appears during download', async () => {
+    const install = freshInstall()
+    const downloaded = Buffer.from('distribution-model')
+    const external = Buffer.from('concurrent-model')
+    const dest = path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors')
+    const dl = vi.fn(async (_url: string, partial: string) => {
+      fs.writeFileSync(partial, downloaded)
+      fs.writeFileSync(dest, external)
+      return partial
     })
-    expect(dl).toHaveBeenCalledTimes(1)
-    expect(fs.readFileSync(dest)).toEqual(good)
+
+    await expect(
+      stageModels({
+        models: [model({ sha256: sha(downloaded) })],
+        installPath: install,
+        download: dl
+      })
+    ).rejects.toMatchObject({ kind: 'model-conflict' })
+    expect(fs.readFileSync(dest)).toEqual(external)
+    expect(fs.readFileSync(`${dest}.partial`)).toEqual(downloaded)
   })
 
   it('reports per-model progress with a 1-based index and total', async () => {

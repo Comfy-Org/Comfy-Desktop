@@ -287,6 +287,64 @@ export async function filesHaveSameBytes(a: string, b: string): Promise<boolean>
   }
 }
 
+/**
+ * Install verified staged bytes at the final name without overwriting a file
+ * that appeared there independently. An identical final is accepted and the
+ * staged copy is removed; a different final is preserved and reported as a
+ * conflict.
+ */
+export async function installStagedAtFinal(
+  stagingPath: string,
+  finalPath: string,
+  finalBytes: number
+): Promise<void> {
+  const conflictOrAccept = async (): Promise<void> => {
+    let existingSize = -1
+    try {
+      existingSize = fs.statSync(finalPath).size
+    } catch {}
+    if (existingSize === finalBytes && (await filesHaveSameBytes(stagingPath, finalPath))) {
+      try {
+        fs.unlinkSync(stagingPath)
+      } catch {}
+      return
+    }
+    throw new Error('a different file already exists at the destination')
+  }
+
+  try {
+    fs.linkSync(stagingPath, finalPath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'EEXIST') {
+      await conflictOrAccept()
+      return
+    }
+    if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
+    try {
+      fs.closeSync(fs.openSync(finalPath, 'wx'))
+    } catch (claimErr) {
+      if ((claimErr as NodeJS.ErrnoException).code === 'EEXIST') {
+        await conflictOrAccept()
+        return
+      }
+      throw claimErr
+    }
+    try {
+      fs.renameSync(stagingPath, finalPath)
+    } catch (renameErr) {
+      try {
+        fs.unlinkSync(finalPath)
+      } catch {}
+      throw renameErr
+    }
+    return
+  }
+  try {
+    fs.unlinkSync(stagingPath)
+  } catch {}
+}
+
 /** Ensure a job admitted to the in-memory registry has a COMPLETE hydratable
  *  staging pair on disk (`.part` plus v2 sidecar) before its first transfer
  *  starts, so a quit/crash in that window cannot lose the job. An existing

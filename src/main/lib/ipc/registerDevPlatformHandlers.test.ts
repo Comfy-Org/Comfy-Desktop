@@ -240,6 +240,7 @@ describe('registerDevPlatformHandlers', () => {
         version: '7',
         artifactId: 'art-9',
         artifactSha256: 'deadbeef',
+        useSharedModels: false,
         status: 'installing'
       })
     )

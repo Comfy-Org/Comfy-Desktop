@@ -221,6 +221,93 @@ function activeRows(): ComfyDownloadManager.DownloadProgress[] {
   return mod.getDownloadsTrayState().active
 }
 
+describe('managed model root locks', () => {
+  it('blocks admission inside a locked root until it is released', async () => {
+    const root = getModelsBaseDir()
+    const release = mod.acquireModelDownloadRootLock(root)
+    expect(release).not.toBeNull()
+    const before = transfers.length
+    const name = uniqueName()
+
+    const blocked = await mod.startManagedModelJob({
+      url: `https://models.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await expect(blocked.completion).resolves.toMatchObject({ status: 'error' })
+    expect(transfers).toHaveLength(before)
+
+    release!()
+    release!()
+    const admitted = await mod.startManagedModelJob({
+      url: `https://models.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+    transfers[before]!.resolve({ outcome: 'cancelled' })
+    await expect(admitted.completion).resolves.toEqual({ status: 'cancelled' })
+  })
+
+  it('refuses a root lock while a managed job owns a destination inside it', async () => {
+    const before = transfers.length
+    const name = uniqueName()
+    const active = await mod.startManagedModelJob({
+      url: `https://models.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+
+    expect(mod.acquireModelDownloadRootLock(getModelsBaseDir())).toBeNull()
+
+    transfers[before]!.resolve({ outcome: 'cancelled' })
+    await expect(active.completion).resolves.toEqual({ status: 'cancelled' })
+  })
+
+  it('rejects an admission that began resolving before the root was locked', async () => {
+    const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cdm-root-lock-'))
+    const modelsRoot = path.join(installRoot, 'ComfyUI', 'models')
+    let resolveInstallation!: (installation: unknown) => void
+    let lookupStarted = false
+    let release: (() => void) | null = null
+    overrides.installationsGet = async () => {
+      lookupStarted = true
+      return new Promise((resolve) => {
+        resolveInstallation = resolve
+      })
+    }
+
+    try {
+      const before = transfers.length
+      const name = uniqueName()
+      const admission = mod.startManagedModelJob({
+        url: `https://models.example/${name}`,
+        filename: name,
+        directory: 'checkpoints',
+        installationId: 'root-lock-install'
+      })
+      await vi.waitFor(() => expect(lookupStarted).toBe(true))
+      release = mod.acquireModelDownloadRootLock(modelsRoot)
+      expect(release).not.toBeNull()
+      resolveInstallation({
+        id: 'root-lock-install',
+        sourceId: 'standalone',
+        installPath: installRoot,
+        useSharedModels: false
+      })
+
+      const blocked = await admission
+      await expect(blocked.completion).resolves.toMatchObject({ status: 'error' })
+      expect(transfers).toHaveLength(before)
+    } finally {
+      release?.()
+      overrides.installationsGet = null
+      fs.rmSync(installRoot, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('managed model-job identity (issue #1322)', () => {
   it('joins concurrent requests for the same canonical destination into one transfer', async () => {
     const name = uniqueName()

@@ -4,8 +4,7 @@ import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
 import {
-  filesHaveSameBytes,
-  LINK_UNSUPPORTED_CODES,
+  installStagedAtFinal,
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
@@ -710,78 +709,4 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     pause: () => stop('pause'),
     cancel: () => stop('cancel')
   }
-}
-
-/**
- * Install verified staged bytes at the final name WITHOUT overwriting a file
- * that appeared there independently (e.g. the user dropped the model in
- * manually). POSIX `rename` silently clobbers, so prefer a same-volume hard
- * link (fails EEXIST); where links are unsupported (exFAT/FAT32/network
- * shares), claim the final name with an atomic exclusive create and rename
- * onto our own claim marker. An existing final that is byte-for-byte
- * IDENTICAL to the verified download is accepted as already-completed
- * content; anything else is a destination conflict that keeps the staged
- * bytes.
- */
-async function installStagedAtFinal(
-  stagingPath: string,
-  finalPath: string,
-  finalBytes: number
-): Promise<void> {
-  const conflictOrAccept = async (): Promise<void> => {
-    let existingSize = -1
-    try {
-      existingSize = fs.statSync(finalPath).size
-    } catch {}
-    if (existingSize === finalBytes && (await filesHaveSameBytes(stagingPath, finalPath))) {
-      // Identical to the verified download - keep the existing file as
-      // authoritative; the staged copy is redundant.
-      try {
-        fs.unlinkSync(stagingPath)
-      } catch {}
-      return
-    }
-    throw new Error('a different file already exists at the destination')
-  }
-  try {
-    fs.linkSync(stagingPath, finalPath)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'EEXIST') {
-      await conflictOrAccept()
-      return
-    }
-    // Only a genuine link-capability gap justifies the claim-close-rename
-    // window below (same policy as `parkFileNoClobber`). A real I/O or
-    // permission failure must surface as the transfer error it is.
-    if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
-    // Filesystem without hard links (exFAT/FAT32/network shares): claim the
-    // final name with an exclusive create (atomically fails EEXIST if a file
-    // appeared there), then rename onto our OWN empty claim marker. A bare
-    // existsSync+rename would silently replace a final that appears between
-    // the check and the rename.
-    try {
-      fs.closeSync(fs.openSync(finalPath, 'wx'))
-    } catch (claimErr) {
-      if ((claimErr as NodeJS.ErrnoException).code === 'EEXIST') {
-        await conflictOrAccept()
-        return
-      }
-      throw claimErr
-    }
-    try {
-      fs.renameSync(stagingPath, finalPath)
-    } catch (renameErr) {
-      // Keep the staged bytes; remove only our empty claim marker so the
-      // final name is not left as a zero-byte fake model.
-      try {
-        fs.unlinkSync(finalPath)
-      } catch {}
-      throw renameErr
-    }
-    return
-  }
-  try {
-    fs.unlinkSync(stagingPath)
-  } catch {}
 }

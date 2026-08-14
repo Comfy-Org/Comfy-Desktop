@@ -223,6 +223,7 @@ export function registerDevPlatformHandlers(): void {
           launchArgs: COMFYBUILDER_LAUNCH_ARGS,
           launchMode: 'window',
           browserPartition: 'unique',
+          useSharedModels: false,
           status: 'installing',
           seen: false
         })
