@@ -16,6 +16,8 @@ export interface ContextMenuActions {
   copyImage: () => void
   openLink: (linkURL: string) => void
   copyLink: (linkURL: string) => void
+  replaceMisspelling: (suggestion: string) => void
+  addWordToDictionary: (word: string) => void
 }
 
 /** Subset of Electron's context-menu params the builder reads. */
@@ -28,6 +30,8 @@ export type ContextMenuParams = Pick<
   | 'mediaType'
   | 'srcURL'
   | 'hasImageContents'
+  | 'misspelledWord'
+  | 'dictionarySuggestions'
 >
 
 /**
@@ -35,7 +39,7 @@ export type ContextMenuParams = Pick<
  * when nothing is actionable so callers can skip popping an empty menu.
  *
  * Images get Save/Copy entries so right-clicking an output image (including
- * the fullscreen viewer) matches the browser's native "Save image" — the
+ * the fullscreen viewer) matches the browser's native "Save image" - the
  * launcher overrides Chromium's default menu, so without this there is no
  * way to save an image in-app.
  */
@@ -43,15 +47,39 @@ export function buildContextMenuItems(
   params: ContextMenuParams,
   actions: ContextMenuActions
 ): Electron.MenuItemConstructorOptions[] {
-  const { editFlags, isEditable, selectionText, linkURL, mediaType, srcURL, hasImageContents } =
-    params
+  const {
+    editFlags,
+    isEditable,
+    selectionText,
+    linkURL,
+    mediaType,
+    srcURL,
+    hasImageContents,
+    misspelledWord,
+    dictionarySuggestions
+  } = params
   const hasSelection = selectionText.trim().length > 0
   const hasLink = linkURL.length > 0
   const hasImage = mediaType === 'image' && hasImageContents && srcURL.length > 0
+  const hasMisspelling = misspelledWord.length > 0
 
   const menuItems: Electron.MenuItemConstructorOptions[] = []
 
+  if (hasMisspelling) {
+    menuItems.push(
+      ...dictionarySuggestions.map((suggestion) => ({
+        label: suggestion,
+        click: () => actions.replaceMisspelling(suggestion)
+      })),
+      {
+        label: i18n.t('contextMenu.addToDictionary'),
+        click: () => actions.addWordToDictionary(misspelledWord)
+      }
+    )
+  }
+
   if (hasLink) {
+    if (menuItems.length > 0) menuItems.push({ type: 'separator' })
     menuItems.push(
       {
         id: 'openLink',
@@ -78,7 +106,7 @@ export function buildContextMenuItems(
     )
   }
 
-  if ((hasLink || hasImage) && (isEditable || hasSelection)) {
+  if (menuItems.length > 0 && (isEditable || hasSelection)) {
     menuItems.push({ type: 'separator' })
   }
 
@@ -113,7 +141,9 @@ export function attachContextMenu(
       saveImage: (srcURL) => wc.session.downloadURL(srcURL),
       copyImage: () => wc.copyImageAt(params.x, params.y),
       openLink: (linkURL) => shell.openExternal(linkURL),
-      copyLink: (linkURL) => clipboard.writeText(linkURL)
+      copyLink: (linkURL) => clipboard.writeText(linkURL),
+      replaceMisspelling: (suggestion) => wc.replaceMisspelling(suggestion),
+      addWordToDictionary: (word) => wc.session.addWordToSpellCheckerDictionary(word)
     })
 
     if (menuItems.length === 0) return

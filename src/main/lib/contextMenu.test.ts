@@ -22,7 +22,9 @@ const noopActions: ContextMenuActions = {
   saveImage: vi.fn(),
   copyImage: vi.fn(),
   openLink: vi.fn(),
-  copyLink: vi.fn()
+  copyLink: vi.fn(),
+  replaceMisspelling: vi.fn(),
+  addWordToDictionary: vi.fn()
 }
 
 function makeParams(overrides: Partial<ContextMenuParams> = {}): ContextMenuParams {
@@ -39,6 +41,8 @@ function makeParams(overrides: Partial<ContextMenuParams> = {}): ContextMenuPara
     mediaType: 'none',
     srcURL: '',
     hasImageContents: false,
+    misspelledWord: '',
+    dictionarySuggestions: [],
     ...overrides
   }
 }
@@ -49,6 +53,56 @@ const ids = (items: Electron.MenuItemConstructorOptions[]): string[] =>
 describe('buildContextMenuItems', () => {
   it('returns no items when nothing is actionable', () => {
     expect(buildContextMenuItems(makeParams(), noopActions)).toEqual([])
+  })
+
+  it('adds spelling suggestions before editable actions', () => {
+    const items = buildContextMenuItems(
+      makeParams({
+        isEditable: true,
+        misspelledWord: 'relaly',
+        dictionarySuggestions: ['really', 'relay']
+      }),
+      noopActions
+    )
+
+    expect(items.map((item) => item.label ?? item.type ?? item.role)).toEqual([
+      'really',
+      'relay',
+      'contextMenu.addToDictionary',
+      'separator',
+      'contextMenu.cut',
+      'contextMenu.copy',
+      'contextMenu.paste',
+      'separator',
+      'contextMenu.selectAll'
+    ])
+  })
+
+  it('wires spelling suggestions and dictionary additions to their actions', () => {
+    const actions: ContextMenuActions = {
+      ...noopActions,
+      replaceMisspelling: vi.fn(),
+      addWordToDictionary: vi.fn()
+    }
+    const items = buildContextMenuItems(
+      makeParams({ misspelledWord: 'relaly', dictionarySuggestions: ['really'] }),
+      actions
+    )
+
+    ;(items[0]!.click as () => void)()
+    ;(items[1]!.click as () => void)()
+
+    expect(actions.replaceMisspelling).toHaveBeenCalledWith('really')
+    expect(actions.addWordToDictionary).toHaveBeenCalledWith('relaly')
+  })
+
+  it('offers adding a misspelling when there are no suggestions', () => {
+    const items = buildContextMenuItems(
+      makeParams({ misspelledWord: 'qzqx', dictionarySuggestions: [] }),
+      noopActions
+    )
+
+    expect(items.map((item) => item.label ?? item.type)).toEqual(['contextMenu.addToDictionary'])
   })
 
   it('adds Save/Copy image entries for an image with contents', () => {
