@@ -147,6 +147,6 @@ export const useAuthStore = defineStore('auth', () => {
     signOut,
     fetchWorkspaces,
     switchWorkspace,
-    fetchDistributions,
+    fetchDistributions
   }
 })

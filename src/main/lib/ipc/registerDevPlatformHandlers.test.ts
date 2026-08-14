@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   isSignedIn: vi.fn(),
   listWorkspaces: vi.fn(),
   switchWorkspace: vi.fn(),
+  setUnauthorizedHandler: vi.fn(),
+  clearVersionCache: vi.fn(),
+  getVersionCacheGeneration: vi.fn(() => 3),
   // client + policy
   getBuilderClient: vi.fn(() => ({ listDistributions: mocks.listDistributions })),
   listDistributions: vi.fn(),
@@ -19,12 +22,12 @@ const mocks = vi.hoisted(() => ({
   // installations + shared helpers
   add: vi.fn(),
   list: vi.fn(async () => [] as Record<string, unknown>[]),
-  update: vi.fn(),
   uniqueName: vi.fn(async (n: string) => n),
   sanitizeDirName: vi.fn((n: string) => n),
   allocateUniqueDir: vi.fn((parent: string, dir: string) => `${parent}/${dir}`),
   findDuplicatePath: vi.fn(async () => null),
-  defaultInstallDir: vi.fn(() => '/installs')
+  defaultInstallDir: vi.fn(() => '/installs'),
+  broadcastToRenderer: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -41,7 +44,8 @@ vi.mock('../../devplatform/session', () => ({
     listWorkspaces: mocks.listWorkspaces,
     switchWorkspace: mocks.switchWorkspace
   }),
-  getBuilderClient: mocks.getBuilderClient
+  getBuilderClient: mocks.getBuilderClient,
+  setUnauthorizedHandler: mocks.setUnauthorizedHandler
 }))
 
 vi.mock('../../devplatform/distributions', () => ({
@@ -50,13 +54,19 @@ vi.mock('../../devplatform/distributions', () => ({
   resolveHostArtifact: mocks.resolveHostArtifact
 }))
 
+vi.mock('../../devplatform/versionCache', () => ({
+  clearVersionCache: mocks.clearVersionCache,
+  getVersionCacheGeneration: mocks.getVersionCacheGeneration
+}))
+
 vi.mock('./shared', () => ({
-  installations: { add: mocks.add, list: mocks.list, update: mocks.update },
+  installations: { add: mocks.add, list: mocks.list },
   uniqueName: mocks.uniqueName,
   sanitizeDirName: mocks.sanitizeDirName,
   allocateUniqueDir: mocks.allocateUniqueDir,
   findDuplicatePath: mocks.findDuplicatePath,
-  defaultInstallDir: mocks.defaultInstallDir
+  defaultInstallDir: mocks.defaultInstallDir,
+  _broadcastToRenderer: mocks.broadcastToRenderer
 }))
 
 import { registerDevPlatformHandlers, signInToCloud } from './registerDevPlatformHandlers'
@@ -99,6 +109,7 @@ describe('registerDevPlatformHandlers', () => {
 
     const status = await handler('comfybuilder:signIn')({})
     expect(status).toMatchObject({ signedIn: true, email: 'a@b.c' })
+    expect(mocks.clearVersionCache).toHaveBeenCalled()
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
@@ -136,6 +147,16 @@ describe('registerDevPlatformHandlers', () => {
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
   })
 
+  it('broadcasts when the builder API invalidates the active token', () => {
+    mocks.getAllWindows.mockReturnValue([])
+    const panel = registerHostWithPanel(1)
+    const onUnauthorized = mocks.setUnauthorizedHandler.mock.calls[0]![0] as () => void
+
+    onUnauthorized()
+
+    expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+  })
+
   it('skips hosts whose panelView is torn down or absent', async () => {
     mocks.getAllWindows.mockReturnValue([])
     const destroyed = registerHostWithPanel(1, { destroyed: true })
@@ -156,7 +177,9 @@ describe('registerDevPlatformHandlers', () => {
     const status = handler('comfybuilder:signOut')({})
     expect(status).toEqual({ signedIn: false })
     expect(mocks.logout).toHaveBeenCalledOnce()
-    expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+    expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', {
+      signedIn: false
+    })
   })
 
   it('listDistributions is empty (no network) when signed out', async () => {
@@ -168,15 +191,22 @@ describe('registerDevPlatformHandlers', () => {
 
   it('listDistributions returns rows for the signed-in workspace', async () => {
     mocks.isSignedIn.mockReturnValue(true)
-    mocks.listDistributionRows.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
+    mocks.listDistributionRows.mockResolvedValue([
+      { id: 'd1', name: 'Image', state: 'installable' }
+    ])
     const rows = await handler('comfybuilder:listDistributions')({})
     expect(rows).toEqual([{ id: 'd1', name: 'Image', state: 'installable' }])
+    expect(mocks.broadcastToRenderer).toHaveBeenCalledWith('installations-changed', {})
   })
 
   it('switchWorkspace re-scopes and broadcasts the new status', async () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
-    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+    mocks.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w2',
+      workspaceType: 'team'
+    })
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
     expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2')
@@ -188,7 +218,14 @@ describe('registerDevPlatformHandlers', () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 7,
-      artifact: { id: 'art-9', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveSha256: 'deadbeef' }
+      artifact: {
+        id: 'art-9',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
     })
     mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
@@ -208,18 +245,21 @@ describe('registerDevPlatformHandlers', () => {
     )
   })
 
-  it('installDistribution omits the sha field when the artifact has none (fails closed later)', async () => {
+  it('installDistribution refuses an artifact with no integrity value', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 1,
-      artifact: { id: 'art-nohash', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready' }
+      artifact: {
+        id: 'art-nohash',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready'
+      }
     })
-    mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'NoHash' }])
-    mocks.add.mockResolvedValue({ id: 'inst-2', name: 'NoHash' })
-
     const result = await handler('comfybuilder:installDistribution')({}, 'd1')
-    expect(result).toMatchObject({ ok: true })
-    expect(mocks.add.mock.calls[0]![0]).not.toHaveProperty('artifactSha256')
+    expect(result).toEqual({ ok: false, message: 'This build has no SHA-256 integrity value.' })
+    expect(mocks.add).not.toHaveBeenCalled()
   })
 
   it('installDistribution refuses when no host artifact resolves', async () => {
@@ -248,52 +288,6 @@ describe('registerDevPlatformHandlers', () => {
     const installed = mocks.listDistributionRows.mock.calls[0]![2] as Map<string, number>
     expect(installed.get('d1')).toBe(3)
     expect(installed.has('ignored')).toBe(false)
-  })
-
-  it('updateDistribution re-points the existing install at the new version + artifact', async () => {
-    mocks.isSignedIn.mockReturnValue(true)
-    mocks.resolveHostArtifact.mockResolvedValue({
-      version: 9,
-      artifact: { id: 'art-new', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready', archiveSha256: 'newhash' }
-    })
-    mocks.list.mockResolvedValue([
-      { id: 'inst-1', name: 'Image', sourceId: 'comfybuilder', distributionId: 'd1', version: '7' }
-    ])
-    mocks.update.mockResolvedValue({ id: 'inst-1', name: 'Image' })
-
-    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
-    expect(result).toEqual({ ok: true, entry: { id: 'inst-1', name: 'Image' } })
-    expect(mocks.update).toHaveBeenCalledWith(
-      'inst-1',
-      expect.objectContaining({ version: '9', artifactId: 'art-new', artifactSha256: 'newhash', status: 'installing' })
-    )
-    expect(mocks.add).not.toHaveBeenCalled() // updates in place, never a new record
-  })
-
-  it('updateDistribution refuses when the distribution is not installed', async () => {
-    mocks.isSignedIn.mockReturnValue(true)
-    mocks.resolveHostArtifact.mockResolvedValue({
-      version: 9,
-      artifact: { id: 'a', os: 'linux', gpu: 'nvidia', accelVariant: 'cu128', status: 'ready' }
-    })
-    mocks.list.mockResolvedValue([]) // nothing installed
-    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
-    expect(result).toMatchObject({ ok: false })
-    expect(mocks.update).not.toHaveBeenCalled()
-  })
-
-  it('updateDistribution refuses when no host artifact resolves', async () => {
-    mocks.isSignedIn.mockReturnValue(true)
-    mocks.resolveHostArtifact.mockResolvedValue(null)
-    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
-    expect(result).toMatchObject({ ok: false })
-    expect(mocks.list).not.toHaveBeenCalled()
-  })
-
-  it('updateDistribution refuses when signed out', async () => {
-    mocks.isSignedIn.mockReturnValue(false)
-    const result = await handler('comfybuilder:updateDistribution')({}, 'd1')
-    expect(result).toMatchObject({ ok: false })
-    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
+    expect(mocks.listDistributionRows.mock.calls[0]![3]).toBe(3)
   })
 })

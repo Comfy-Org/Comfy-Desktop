@@ -15,13 +15,19 @@
 import { BrowserWindow, ipcMain } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
-import { getBuilderClient, getCloudSession } from '../../devplatform/session'
+import { normalizeSha256 } from '../../comfybuilder/integrity'
+import {
+  getBuilderClient,
+  getCloudSession,
+  setUnauthorizedHandler
+} from '../../devplatform/session'
 import {
   listDistributionRows,
   resolveHost,
-  resolveHostArtifact,
+  resolveHostArtifact
 } from '../../devplatform/distributions'
 import type { DistributionRow } from '../../devplatform/distributions'
+import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
 import type { AuthStatus, Workspace } from '../../cloud'
 import {
   installations,
@@ -30,6 +36,7 @@ import {
   allocateUniqueDir,
   findDuplicatePath,
   defaultInstallDir,
+  _broadcastToRenderer
 } from './shared'
 
 /** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
@@ -41,8 +48,7 @@ export const DEVPLATFORM_CHANNELS = {
   listWorkspaces: 'comfybuilder:listWorkspaces',
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listDistributions: 'comfybuilder:listDistributions',
-  installDistribution: 'comfybuilder:installDistribution',
-  updateDistribution: 'comfybuilder:updateDistribution',
+  installDistribution: 'comfybuilder:installDistribution'
 } as const
 
 const SIGNED_OUT: AuthStatus = { signedIn: false }
@@ -72,7 +78,8 @@ export interface InstallDistributionResult {
  */
 export function broadcastAuthChanged(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.webContents.isDestroyed()) win.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
+    if (!win.webContents.isDestroyed())
+      win.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
   for (const entry of comfyWindows.values()) {
     const panel = entry.panelView
@@ -88,7 +95,9 @@ export function broadcastAuthChanged(status: AuthStatus): void {
  */
 export async function signInToCloud(): Promise<AuthStatus> {
   const session = getCloudSession()
+  clearVersionCache()
   const status = await session.login()
+  clearVersionCache()
   broadcastAuthChanged(status)
   return status
 }
@@ -108,6 +117,10 @@ export function isSignedInToCloud(): boolean {
  */
 export function registerDevPlatformHandlers(): void {
   const session = getCloudSession()
+  setUnauthorizedHandler(() => {
+    clearVersionCache()
+    broadcastAuthChanged(SIGNED_OUT)
+  })
 
   // Distribution ids whose install-kickoff is mid-flight, so a double-click
   // cannot create two records for the same distribution.
@@ -117,30 +130,49 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, (): AuthStatus => {
     session.logout()
+    clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
     return SIGNED_OUT
   })
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.getAuthStatus, (): AuthStatus => session.status())
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.listWorkspaces, (): Promise<Workspace[]> => session.listWorkspaces())
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.listWorkspaces,
+    (): Promise<Workspace[]> => session.listWorkspaces()
+  )
 
   // A workspace switch re-runs sign-in pre-selecting the workspace (a PKCE token
   // is scoped at consent time), so it can open the browser and change identity:
   // broadcast the new status so every surface re-scopes together.
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, async (_event, workspaceId: string): Promise<AuthStatus> => {
-    const status = await session.switchWorkspace(workspaceId)
-    broadcastAuthChanged(status)
-    return status
-  })
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.switchWorkspace,
+    async (_event, workspaceId: string): Promise<AuthStatus> => {
+      clearVersionCache()
+      const status = await session.switchWorkspace(workspaceId)
+      clearVersionCache()
+      broadcastAuthChanged(status)
+      return status
+    }
+  )
 
   // Display rows for the current workspace. Signed out -> empty (no network
   // calls); the renderer already gates the grid on sign-in. The installed-version
   // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listDistributions, async (): Promise<DistributionRow[]> => {
     if (!session.isSignedIn()) return []
+    const cacheGeneration = getVersionCacheGeneration()
     const host = await resolveHost()
-    return listDistributionRows(getBuilderClient(), host, await installedDistributionVersions())
+    const rows = await listDistributionRows(
+      getBuilderClient(),
+      host,
+      await installedDistributionVersions(),
+      cacheGeneration
+    )
+    // Catalog reads warm the synchronous source update cache. Re-pull
+    // installations so existing distribution tiles gain their Update action.
+    _broadcastToRenderer('installations-changed', {})
+    return rows
   })
 
   // Resolve the host artifact for one distribution and create an `installing`
@@ -159,6 +191,11 @@ export function registerDevPlatformHandlers(): void {
         const resolved = await resolveHostArtifact(client, host, distributionId)
         if (!resolved) return { ok: false, message: 'No installable build for this machine.' }
 
+        const { artifact } = resolved
+        if (!normalizeSha256(artifact.archiveSha256)) {
+          return { ok: false, message: 'This build has no SHA-256 integrity value.' }
+        }
+
         // Name the install after the distribution. One extra list call keeps the
         // renderer from having to pass a (spoofable) display name back to main.
         const dists = await client.listDistributions()
@@ -167,9 +204,9 @@ export function registerDevPlatformHandlers(): void {
 
         const installPath = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(displayName))
         const duplicate = await findDuplicatePath(installPath)
-        if (duplicate) return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
+        if (duplicate)
+          return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
 
-        const { artifact } = resolved
         const entry = await installations.add({
           name: displayName,
           sourceId: COMFYBUILDER_SOURCE_ID,
@@ -182,61 +219,19 @@ export function registerDevPlatformHandlers(): void {
           artifactOs: artifact.os,
           artifactGpu: artifact.gpu,
           artifactAccelVariant: artifact.accelVariant,
-          // May be absent until the builder populates it: carried through
-          // verbatim so `installArtifact` verifies whenever a hash is present.
-          ...(artifact.archiveSha256 ? { artifactSha256: artifact.archiveSha256 } : {}),
+          artifactSha256: artifact.archiveSha256,
           launchArgs: COMFYBUILDER_LAUNCH_ARGS,
           launchMode: 'window',
           browserPartition: 'unique',
           status: 'installing',
-          seen: false,
+          seen: false
         })
 
         return { ok: true, entry: { id: entry.id, name: entry.name } }
       } finally {
         installing.delete(distributionId)
       }
-    },
-  )
-
-  // Update an installed distribution to its latest host-compatible version:
-  // re-point the EXISTING record at the new artifact + version and hand the id
-  // back so the renderer drives the same `installInstance` + progress flow. The
-  // plugin lays down a clean venv on re-install; staged models are preserved.
-  ipcMain.handle(
-    DEVPLATFORM_CHANNELS.updateDistribution,
-    async (_event, distributionId: string): Promise<InstallDistributionResult> => {
-      if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
-      if (installing.has(distributionId)) return { ok: false, message: 'Update already starting.' }
-      installing.add(distributionId)
-      try {
-        const client = getBuilderClient()
-        const host = await resolveHost()
-        const resolved = await resolveHostArtifact(client, host, distributionId)
-        if (!resolved) return { ok: false, message: 'No installable build for this machine.' }
-
-        const existing = (await installations.list()).find(
-          (i) => i.sourceId === COMFYBUILDER_SOURCE_ID && i.distributionId === distributionId,
-        )
-        if (!existing) return { ok: false, message: 'This distribution is not installed.' }
-
-        const { artifact } = resolved
-        const updated = await installations.update(existing.id, {
-          version: String(resolved.version),
-          artifactId: artifact.id,
-          artifactOs: artifact.os,
-          artifactGpu: artifact.gpu,
-          artifactAccelVariant: artifact.accelVariant,
-          ...(artifact.archiveSha256 ? { artifactSha256: artifact.archiveSha256 } : {}),
-          status: 'installing',
-        })
-        if (!updated) return { ok: false, message: 'This distribution is not installed.' }
-
-        return { ok: true, entry: { id: updated.id, name: updated.name } }
-      } finally {
-        installing.delete(distributionId)
-      }
-    },
+    }
   )
 }
 

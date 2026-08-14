@@ -18,11 +18,31 @@
  */
 import { promises as fs } from 'fs'
 import path from 'path'
-import { installArtifact, buildLaunchSpec, stageModels, resolveModelManifest } from '../../comfybuilder'
-import type { Artifact, ArtifactGpu, ArtifactOs, InstallProgress, StageProgress } from '../../comfybuilder'
+import {
+  installArtifact,
+  buildLaunchSpec,
+  stageModels,
+  resolveModelManifest,
+  normalizeSha256
+} from '../../comfybuilder'
+import type {
+  Artifact,
+  ArtifactGpu,
+  ArtifactOs,
+  InstallProgress,
+  StageProgress
+} from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
-import { listCompleteVersions, resolveHost, resolveHostArtifactForVersion } from '../../devplatform/distributions'
-import { setCachedVersions } from '../../devplatform/versionCache'
+import {
+  listCompleteVersions,
+  resolveHost,
+  resolveHostArtifactForVersion
+} from '../../devplatform/distributions'
+import {
+  getAvailableUpdate,
+  getVersionCacheGeneration,
+  setCachedVersions
+} from '../../devplatform/versionCache'
 import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { t } from '../../lib/i18n'
@@ -33,10 +53,171 @@ import type {
   ActionResult,
   ActionTools,
   InstallTools,
+  StatusTag
 } from '../../types/sources'
 
 import { DEFAULT_LAUNCH_ARGS } from './constants'
 import { getDetailSections } from './detailSections'
+
+const READY_MARKER = '.comfybuilder-environment-ready'
+const ROLLBACK_FIELD = 'comfybuilderRollback'
+
+interface EnvironmentRollback {
+  version?: string
+  artifactId?: string
+  artifactOs?: string
+  artifactGpu?: string
+  artifactAccelVariant?: string
+  artifactSha256?: string
+  status?: string
+}
+
+export type ComfyBuilderRecovery =
+  | { action: 'none' }
+  | { action: 'update'; data: Record<string, unknown> }
+
+function environmentPaths(installPath: string) {
+  const venv = path.join(installPath, 'venv')
+  const comfy = path.join(installPath, 'ComfyUI')
+  return {
+    venv,
+    comfy,
+    previousVenv: `${venv}.previous`,
+    previousComfy: `${comfy}.previous`,
+    models: path.join(comfy, 'models'),
+    preservedModels: path.join(installPath, '.comfybuilder-models-preserved'),
+    readyMarker: path.join(installPath, READY_MARKER)
+  }
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fs.access(target)
+    return true
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+}
+
+async function renameIfExists(from: string, to: string): Promise<boolean> {
+  try {
+    await fs.rename(from, to)
+    return true
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+}
+
+async function isRunnableEnvironment(installPath: string): Promise<boolean> {
+  return Promise.all([
+    fs.stat(path.join(installPath, 'venv')),
+    fs.stat(path.join(installPath, 'ComfyUI', 'main.py'))
+  ]).then(
+    () => true,
+    () => false
+  )
+}
+
+async function hasEnvironmentBackups(installPath: string): Promise<boolean> {
+  const paths = environmentPaths(installPath)
+  return (
+    (await pathExists(paths.previousVenv)) ||
+    (await pathExists(paths.previousComfy)) ||
+    (await pathExists(paths.preservedModels))
+  )
+}
+
+async function restoreEnvironmentBackups(installPath: string): Promise<void> {
+  const paths = environmentPaths(installPath)
+  const hasPreviousComfy = await pathExists(paths.previousComfy)
+  let hasPreservedModels = await pathExists(paths.preservedModels)
+
+  if (hasPreviousComfy && !hasPreservedModels) {
+    hasPreservedModels = await renameIfExists(paths.models, paths.preservedModels)
+  }
+  if (hasPreviousComfy) {
+    await fs.rm(paths.comfy, { recursive: true, force: true })
+    await fs.rename(paths.previousComfy, paths.comfy)
+  }
+  if (hasPreservedModels) {
+    await fs.mkdir(paths.comfy, { recursive: true })
+    await fs.rm(paths.models, { recursive: true, force: true })
+    await fs.rename(paths.preservedModels, paths.models)
+  }
+  if (await pathExists(paths.previousVenv)) {
+    await fs.rm(paths.venv, { recursive: true, force: true })
+    await fs.rename(paths.previousVenv, paths.venv)
+  }
+}
+
+/** Remove committed transaction debris, deleting the marker last so startup
+ * recovery still knows the active environment is authoritative on failure. */
+async function finalizeEnvironmentTransaction(installPath: string): Promise<void> {
+  const paths = environmentPaths(installPath)
+  await fs.rm(paths.previousVenv, { recursive: true, force: true })
+  await fs.rm(paths.previousComfy, { recursive: true, force: true })
+  await fs.rm(paths.preservedModels, { recursive: true, force: true })
+  await fs.rm(paths.readyMarker, { force: true })
+}
+
+export async function finalizeComfyBuilderRecovery(installPath: string): Promise<void> {
+  await finalizeEnvironmentTransaction(installPath)
+}
+
+/** Recover or finish a ComfyBuilder filesystem transaction interrupted by an
+ * app or machine shutdown. The caller applies the returned record mutation. */
+export async function recoverComfyBuilderInstallation(
+  installation: InstallationRecord
+): Promise<ComfyBuilderRecovery> {
+  const paths = environmentPaths(installation.installPath)
+  const ready = await pathExists(paths.readyMarker)
+  const hasBackups = await hasEnvironmentBackups(installation.installPath)
+  const rollback = installation[ROLLBACK_FIELD] as EnvironmentRollback | undefined
+
+  if (ready) {
+    if (installation.status === 'installing' || rollback) {
+      return { action: 'update', data: { status: 'installed', [ROLLBACK_FIELD]: undefined } }
+    }
+    await finalizeEnvironmentTransaction(installation.installPath)
+    return { action: 'none' }
+  }
+
+  if (hasBackups) {
+    await restoreEnvironmentBackups(installation.installPath)
+    if (rollback) {
+      const runnable = await isRunnableEnvironment(installation.installPath)
+      return {
+        action: 'update',
+        data: {
+          ...rollback,
+          status: runnable ? (rollback.status ?? 'installed') : 'failed',
+          [ROLLBACK_FIELD]: undefined
+        }
+      }
+    }
+    return installation.status === 'installing'
+      ? { action: 'update', data: { status: 'failed' } }
+      : { action: 'none' }
+  }
+
+  if (rollback) {
+    const runnable = await isRunnableEnvironment(installation.installPath)
+    return {
+      action: 'update',
+      data: {
+        ...rollback,
+        status: runnable ? (rollback.status ?? 'installed') : 'failed',
+        [ROLLBACK_FIELD]: undefined
+      }
+    }
+  }
+
+  return installation.status === 'installing'
+    ? { action: 'update', data: { status: 'failed' } }
+    : { action: 'none' }
+}
 
 /** Reconstruct the library Artifact from the fields the install record carries. */
 function artifactFromRecord(inst: InstallationRecord): Artifact {
@@ -46,7 +227,7 @@ function artifactFromRecord(inst: InstallationRecord): Artifact {
     gpu: (inst.artifactGpu as ArtifactGpu) ?? 'cpu',
     accelVariant: (inst.artifactAccelVariant as string) ?? '',
     status: 'ready',
-    ...(inst.artifactSha256 ? { archiveSha256: inst.artifactSha256 as string } : {}),
+    ...(inst.artifactSha256 ? { archiveSha256: inst.artifactSha256 as string } : {})
   }
 }
 
@@ -81,28 +262,59 @@ async function installEnvironment(
     sendProgress: (step: string, data: { percent: number; status: string }) => void
     signal?: AbortSignal
   },
+  onTransactionStarted?: () => Promise<void>
 ): Promise<void> {
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
-  const venvPath = path.join(installation.installPath, 'venv')
-  const previousVenvPath = `${venvPath}.previous`
+  const paths = environmentPaths(installation.installPath)
 
-  // A venv can't be overlaid (leftover site-packages from the old version break
-  // Python), so the old one moves aside before extracting. MOVED, not deleted:
-  // `installArtifact` downloads to a temp and verifies the checksum before it
-  // touches `installPath`, precisely so a failed run never destroys a working
-  // environment. Deleting up front would throw that guarantee away and leave a
-  // failed update on a version it can no longer launch.
-  await fs.rm(previousVenvPath, { recursive: true, force: true }).catch(() => {})
-  const hadPreviousVenv = await fs
-    .rename(venvPath, previousVenvPath)
-    .then(() => true)
-    .catch(() => false)
+  let hadPreviousVenv = false
+  let hadPreviousComfy = false
+  let modelsDetached = false
+
+  /** Restore both executable halves of the previous distribution. Models are
+   *  moved out and back rather than copied because they can be hundreds of GB. */
+  async function restorePreviousEnvironment(): Promise<void> {
+    if (hadPreviousComfy && !modelsDetached) {
+      modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
+    }
+    if (hadPreviousComfy) {
+      await fs.rm(paths.comfy, { recursive: true, force: true }).catch(() => {})
+      await fs.rename(paths.previousComfy, paths.comfy)
+    }
+    if (modelsDetached) {
+      await fs.mkdir(paths.comfy, { recursive: true })
+      await fs.rename(paths.preservedModels, paths.models)
+      modelsDetached = false
+    }
+    if (hadPreviousVenv) {
+      await fs.rm(paths.venv, { recursive: true, force: true }).catch(() => {})
+      await fs.rename(paths.previousVenv, paths.venv)
+    }
+  }
+
+  // Neither executable tree can be overlaid: stale packages or source files can
+  // make the resulting version incoherent. Move both aside until archive and
+  // model staging finish. Keep models in the active tree so updates preserve
+  // existing weights and stage only what the new manifest adds.
+  const interrupted = await hasEnvironmentBackups(installation.installPath)
+  if (interrupted) throw new Error('An interrupted ComfyBuilder update must be recovered first.')
+  await fs.rm(paths.readyMarker, { force: true }).catch(() => {})
 
   try {
+    // Persist the non-runnable status and rollback metadata before moving either
+    // executable tree, so another window cannot launch through the swap.
+    await onTransactionStarted?.()
+    hadPreviousVenv = await renameIfExists(paths.venv, paths.previousVenv)
+    modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
+    hadPreviousComfy = await renameIfExists(paths.comfy, paths.previousComfy)
+    if (modelsDetached) {
+      await fs.mkdir(paths.comfy, { recursive: true })
+      await fs.rename(paths.preservedModels, paths.models)
+      modelsDetached = false
+    }
     // Phase 1: archive (code + environment). `installArtifact` verifies the
-    // sha256 when the artifact carries one and fails on a byte mismatch. A
-    // missing hash is skipped for the initial rollout (see the TODO there).
+    // sha256 and fails on a missing hash or byte mismatch.
     await installArtifact({
       artifact,
       client,
@@ -114,7 +326,7 @@ async function installEnvironment(
         const phase = p.phase === 'resolve' ? 'download' : p.phase
         tools.sendProgress(phase, { percent: p.percent, status: p.detail ?? '' })
       },
-      ...(tools.signal ? { signal: tools.signal } : {}),
+      ...(tools.signal ? { signal: tools.signal } : {})
     })
 
     // Phase 2: models. The archive carries no weights, so stage the
@@ -124,26 +336,29 @@ async function installEnvironment(
     const manifest = await resolveModelManifest(
       client,
       installation.distributionId as string,
-      installation.version as string,
+      installation.version as string
     )
     await stageModels({
       models: manifest.models,
       installPath: installation.installPath,
       onProgress: (p: StageProgress) =>
-        tools.sendProgress('models', { percent: p.percent, status: `${p.filename} (${p.index}/${p.total})` }),
-      ...(tools.signal ? { signal: tools.signal } : {}),
+        tools.sendProgress('models', {
+          percent: p.percent,
+          status: `${p.filename} (${p.index}/${p.total})`
+        }),
+      ...(tools.signal ? { signal: tools.signal } : {})
     })
     tools.sendProgress('models', { percent: 100, status: '' })
+    await fs.writeFile(paths.readyMarker, '')
   } catch (err) {
-    // Put the working environment back before surfacing the failure.
-    if (hadPreviousVenv) {
-      await fs.rm(venvPath, { recursive: true, force: true }).catch(() => {})
-      await fs.rename(previousVenvPath, venvPath).catch(() => {})
-    }
+    // Put the complete working environment back before surfacing the failure.
+    await restorePreviousEnvironment().catch(() => {})
+    await fs.rm(paths.readyMarker, { force: true }).catch(() => {})
     throw err
   }
 
-  await fs.rm(previousVenvPath, { recursive: true, force: true }).catch(() => {})
+  await fs.rm(paths.previousVenv, { recursive: true, force: true }).catch(() => {})
+  await fs.rm(paths.previousComfy, { recursive: true, force: true }).catch(() => {})
 }
 
 export const comfybuilder: SourcePlugin = {
@@ -161,7 +376,7 @@ export const comfybuilder: SourcePlugin = {
     return [
       { phase: 'download', label: t('common.download') },
       { phase: 'extract', label: t('common.extract') },
-      { phase: 'models', label: t('comfybuilder.stageModels') },
+      { phase: 'models', label: t('comfybuilder.stageModels') }
     ]
   },
 
@@ -184,9 +399,26 @@ export const comfybuilder: SourcePlugin = {
     return distributionName && distributionName !== installation.name ? distributionName : null
   },
 
+  getStatusTag(installation: InstallationRecord): StatusTag | undefined {
+    const distributionId = installation.distributionId as string | undefined
+    const currentVersion = (installation.version as string | undefined) ?? ''
+    if (!distributionId) return undefined
+    const latest = getAvailableUpdate(distributionId, currentVersion)
+    if (latest === undefined) return undefined
+    const version = `v${latest}`
+    return {
+      style: 'update',
+      version,
+      label: t('comfybuilder.updateToVersion', { version: latest })
+    }
+  },
+
   getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {
     const spec = buildLaunchSpec(installation.installPath, {
-      launchArgs: withAccelArgs(installation, (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS),
+      launchArgs: withAccelArgs(
+        installation,
+        (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS
+      )
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
@@ -220,16 +452,18 @@ export const comfybuilder: SourcePlugin = {
     actionId: string,
     installation: InstallationRecord,
     actionData: Record<string, unknown> | undefined,
-    tools: ActionTools,
+    tools: ActionTools
   ): Promise<ActionResult> {
     const distributionId = installation.distributionId as string | undefined
     if (!distributionId) return { ok: false, message: t('comfybuilder.errorNoDistribution') }
 
     if (actionId === 'check-update') {
       try {
+        const cacheGeneration = getVersionCacheGeneration()
         setCachedVersions(
           distributionId,
           await listCompleteVersions(getBuilderClient(), distributionId),
+          cacheGeneration
         )
         return { ok: true }
       } catch (err) {
@@ -237,12 +471,12 @@ export const comfybuilder: SourcePlugin = {
       }
     }
 
-    if (actionId === 'update-distribution') {
+    if (actionId === 'update-comfyui') {
       return updateDistributionVersion(installation, distributionId, actionData, tools)
     }
 
     return { ok: false, message: `Action "${actionId}" not yet implemented.` }
-  },
+  }
 }
 
 /**
@@ -262,7 +496,7 @@ async function updateDistributionVersion(
   installation: InstallationRecord,
   distributionId: string,
   actionData: Record<string, unknown> | undefined,
-  tools: ActionTools,
+  tools: ActionTools
 ): Promise<ActionResult> {
   const target = Number(actionData?.version)
   if (!Number.isFinite(target)) return { ok: false, message: t('comfybuilder.errorNoVersion') }
@@ -279,47 +513,65 @@ async function updateDistributionVersion(
     artifactOs: installation.artifactOs as string | undefined,
     artifactGpu: installation.artifactGpu as string | undefined,
     artifactAccelVariant: installation.artifactAccelVariant as string | undefined,
-    artifactSha256: installation.artifactSha256 as string | undefined,
+    artifactSha256: installation.artifactSha256 as string | undefined
   }
+  let environmentReady = false
 
   try {
     const resolved = await resolveHostArtifactForVersion(
       getBuilderClient(),
       await resolveHost(),
       distributionId,
-      target,
+      target
     )
     if (!resolved) {
       return { ok: false, message: t('comfybuilder.errorVersionUnavailable', { version: target }) }
     }
 
     const { artifact } = resolved
+    if (!normalizeSha256(artifact.archiveSha256)) {
+      return { ok: false, message: 'This build has no SHA-256 integrity value.' }
+    }
     const next: Record<string, unknown> = {
       version: String(resolved.version),
       artifactId: artifact.id,
       artifactOs: artifact.os,
       artifactGpu: artifact.gpu,
       artifactAccelVariant: artifact.accelVariant,
-      ...(artifact.archiveSha256 ? { artifactSha256: artifact.archiveSha256 } : {}),
+      artifactSha256: artifact.archiveSha256
     }
-    await tools.update({ ...next, status: 'installing' })
 
-    await installEnvironment({ ...installation, ...next } as InstallationRecord, tools)
+    await installEnvironment({ ...installation, ...next } as InstallationRecord, tools, () =>
+      tools.update({ ...next, status: 'installing', [ROLLBACK_FIELD]: previous })
+    )
+    environmentReady = true
 
-    await tools.update({ status: 'installed' })
+    await tools.update({ status: 'installed', [ROLLBACK_FIELD]: undefined })
+    await finalizeEnvironmentTransaction(installation.installPath).catch(() => {})
     return { ok: true, navigate: 'detail' }
   } catch (err) {
     // Put the record back where it was. Leaving it pointed at a version whose
     // environment never landed would report a version the install doesn't have.
     //
-    // `installEnvironment` restores the previous venv on failure, but if that
-    // did not survive the install can no longer launch: report it failed rather
-    // than advertise a working install that isn't one.
-    const runnable = await fs
-      .stat(path.join(installation.installPath, 'venv'))
-      .then(() => true)
-      .catch(() => false)
-    await tools.update({ ...previous, status: runnable ? previousStatus : 'failed' }).catch(() => {})
+    // `installEnvironment` restores the previous environment on failure. If it
+    // did not survive, report the install failed rather than advertise it as working.
+    if (environmentReady) {
+      if (tools.signal?.aborted) return { ok: false, cancelled: true }
+      return { ok: false, message: err instanceof Error ? err.message : String(err) }
+    }
+
+    // Any remaining backup means the rollback did not complete. Even if both
+    // active paths exist, they may belong to different distribution versions.
+    const runnable =
+      !(await hasEnvironmentBackups(installation.installPath)) &&
+      (await isRunnableEnvironment(installation.installPath))
+    await tools
+      .update({
+        ...previous,
+        status: runnable ? previousStatus : 'failed',
+        [ROLLBACK_FIELD]: runnable ? undefined : previous
+      })
+      .catch(() => {})
     if (tools.signal?.aborted) return { ok: false, cancelled: true }
     return { ok: false, message: err instanceof Error ? err.message : String(err) }
   }

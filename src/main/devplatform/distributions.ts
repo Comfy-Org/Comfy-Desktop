@@ -69,14 +69,15 @@ export async function resolveHost(): Promise<Host> {
   const gpu = await detectGPU().catch(() => null)
   // The library targets nvidia/amd/cpu/mps; an Intel dGPU (or none) maps to the
   // universal CPU build, which `selectArtifactForHost` treats as the fallback.
-  const mapped =
-    gpu?.id === 'nvidia' || gpu?.id === 'amd' || gpu?.id === 'mps' ? gpu.id : 'cpu'
+  const mapped = gpu?.id === 'nvidia' || gpu?.id === 'amd' || gpu?.id === 'mps' ? gpu.id : 'cpu'
   return { os: hostOs(), gpu: mapped }
 }
 
 /** Latest complete version, or null. `complete` is the only terminal status in
  *  the builder's closed enum (queued | building | complete). */
-function latestCompleteVersion<T extends { version: number; status: string }>(versions: T[]): T | null {
+function latestCompleteVersion<T extends { version: number; status: string }>(
+  versions: T[]
+): T | null {
   const complete = versions
     .filter((v) => v.status === 'complete')
     .sort((a, b) => b.version - a.version)
@@ -93,13 +94,14 @@ async function buildRow(
   host: Host,
   dist: Distribution,
   installed?: ReadonlyMap<string, number>,
+  cacheGeneration?: number
 ): Promise<DistributionRow> {
   const base: DistributionRow = {
     id: dist.id,
     name: dist.name,
     ...(dist.description ? { description: dist.description } : {}),
     ...(typeof dist.numCustomNodes === 'number' ? { numCustomNodes: dist.numCustomNodes } : {}),
-    state: 'no-build',
+    state: 'no-build'
   }
 
   const allVersions = await client.listVersions(dist.id)
@@ -108,6 +110,7 @@ async function buildRow(
   setCachedVersions(
     dist.id,
     allVersions.filter((v) => v.status === 'complete').map((v) => v.version),
+    cacheGeneration
   )
 
   const latest = latestCompleteVersion(allVersions)
@@ -118,19 +121,21 @@ async function buildRow(
     ...base,
     version: String(latest.version),
     ...(latest.createdAt ? { finishedAt: latest.createdAt } : {}),
-    ...(installedVersion !== undefined ? { installedVersion } : {}),
+    ...(installedVersion !== undefined ? { installedVersion } : {})
   }
 
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
   if (!artifact) {
     // Sorted so the label is stable across artifact orderings.
-    const targetOs = [...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))].sort()
+    const targetOs = [
+      ...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))
+    ].sort()
     return {
       ...withVersion,
       state: 'platform-mismatch',
       blockedReason: 'noArtifactForMachine',
-      ...(targetOs.length ? { targetOs } : {}),
+      ...(targetOs.length ? { targetOs } : {})
     }
   }
   // Installed at an older version, and the newer one runs here: offer the update.
@@ -149,12 +154,16 @@ export async function listDistributionRows(
   client: ComfyBuilderClient,
   host: Host,
   installed?: ReadonlyMap<string, number>,
+  cacheGeneration?: number
 ): Promise<DistributionRow[]> {
   const dists = await client.listDistributions()
-  const results = await Promise.allSettled(dists.map((d) => buildRow(client, host, d, installed)))
+  const results = await Promise.allSettled(
+    dists.map((d) => buildRow(client, host, d, installed, cacheGeneration))
+  )
   return results
     .filter((r): r is PromiseFulfilledResult<DistributionRow> => {
-      if (r.status === 'rejected') console.error('[devplatform] failed to resolve distribution row:', r.reason)
+      if (r.status === 'rejected')
+        console.error('[devplatform] failed to resolve distribution row:', r.reason)
       return r.status === 'fulfilled'
     })
     .map((r) => r.value)
@@ -169,7 +178,7 @@ export async function listDistributionRows(
 export async function resolveHostArtifact(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
-  distributionId: string,
+  distributionId: string
 ): Promise<ResolvedHostArtifact | null> {
   const latest = latestCompleteVersion(await client.listVersions(distributionId))
   if (!latest) return null
@@ -190,10 +199,10 @@ export async function resolveHostArtifactForVersion(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
   distributionId: string,
-  version: number,
+  version: number
 ): Promise<ResolvedHostArtifact | null> {
   const target = (await client.listVersions(distributionId)).find(
-    (v) => v.version === version && v.status === 'complete',
+    (v) => v.version === version && v.status === 'complete'
   )
   if (!target) return null
   const { artifacts } = await client.getVersion(target.id)
@@ -205,7 +214,7 @@ export async function resolveHostArtifactForVersion(
  *  published, and the basis for a future version picker. */
 export async function listCompleteVersions(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
-  distributionId: string,
+  distributionId: string
 ): Promise<number[]> {
   const versions = await client.listVersions(distributionId)
   return versions

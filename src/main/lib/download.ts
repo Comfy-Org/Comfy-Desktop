@@ -22,13 +22,16 @@ export interface DownloadMeta {
   lastModified?: string
 }
 
-interface DownloadOptions {
+export interface DownloadOptions {
   signal?: AbortSignal
   expectedSize?: number
   /** Abort the request when no bytes arrive for this long (ms), turning a
    *  silently stalled connection into a fast, retryable error instead of a hang.
    *  Defaults to `DEFAULT_IDLE_TIMEOUT_MS`. */
   idleTimeoutMs?: number
+  /** Reject the initial URL and every redirect when the caller has stricter
+   * transport requirements than the generic downloader. */
+  validateUrl?: (url: string) => boolean
   // Internal: suppresses the auto-derived R2 mirror retry. Set by the
   // mirror-retry branch itself to avoid bouncing back to primary indefinitely.
   _skipMirror?: boolean
@@ -82,9 +85,14 @@ export function download(
     signal,
     expectedSize,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    validateUrl,
     _maxRedirects = 5,
     _skipMirror = false
   } = opts
+
+  if (validateUrl && !validateUrl(url)) {
+    return Promise.reject(new Error(`Download URL is not allowed: ${url}`))
+  }
 
   // Mirror retry is gated on useChineseMirrors to avoid a thundering-herd
   // tens-of-TB GCS egress event if R2 ever hiccups for the global user base.
@@ -104,6 +112,7 @@ export function download(
       return await download(mirror, destPath, onProgress, {
         signal,
         expectedSize,
+        validateUrl,
         _maxRedirects,
         _skipMirror: true
       })
@@ -235,9 +244,17 @@ export function download(
           safeReject(new Error('Download failed: empty redirect location'))
           return
         }
-        download(loc, destPath, onProgress, {
+        let redirectUrl: string
+        try {
+          redirectUrl = new URL(loc, url).toString()
+        } catch {
+          safeReject(new Error(`Download failed: invalid redirect location ${loc}`))
+          return
+        }
+        download(redirectUrl, destPath, onProgress, {
           signal,
           expectedSize,
+          validateUrl,
           _maxRedirects: _maxRedirects - 1
         }).then(safeResolve, safeReject)
         return

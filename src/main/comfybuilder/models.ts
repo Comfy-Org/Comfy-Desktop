@@ -23,7 +23,8 @@ import path from 'path'
 
 import { download } from '../lib/download'
 import type { DownloadProgress } from '../lib/download'
-import { sha256File, normalizeSha256 } from './install'
+import { sha256File } from './install'
+import { isSecureDownloadUrl, normalizeSha256 } from './integrity'
 import type { ModelDescriptor, StageProgress } from './types'
 
 export type StageModelsErrorKind = 'invalid-model' | 'model-checksum-mismatch'
@@ -42,7 +43,7 @@ type DownloadFn = (
   url: string,
   destPath: string,
   onProgress: ((p: DownloadProgress) => void) | null,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; validateUrl?: (url: string) => boolean }
 ) => Promise<string>
 
 export interface StageModelsOptions {
@@ -63,21 +64,6 @@ function isSafeSegment(seg: string): boolean {
   if (seg.includes('/') || seg.includes('\\') || seg.includes('\0')) return false
   if (path.isAbsolute(seg) || /^[a-zA-Z]:/.test(seg)) return false
   return true
-}
-
-/** A model URL must be https, or http to loopback. A remote plaintext (or
- *  downgradeable) source is MITM-substitutable, and a substituted `.pth`/`.ckpt`
- *  is arbitrary-code on load, so it is enforced independently of the sha256.
- *  Loopback http carries no network and never leaves the machine, so it is
- *  allowed (a local model cache or the test server). */
-function isAllowedUrl(url: string): boolean {
-  try {
-    const u = new URL(url)
-    if (u.protocol === 'https:') return true
-    return u.protocol === 'http:' && ['127.0.0.1', '::1', 'localhost'].includes(u.hostname)
-  } catch {
-    return false
-  }
 }
 
 /** The real path of `dir` is inside `root` (defends against a symlinked model
@@ -115,10 +101,16 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     const index = i + 1
 
     if (!isSafeSegment(model.type) || !isSafeSegment(model.filename)) {
-      throw new StageModelsError('invalid-model', `Model ${model.type}/${model.filename} has an unsafe path.`)
+      throw new StageModelsError(
+        'invalid-model',
+        `Model ${model.type}/${model.filename} has an unsafe path.`
+      )
     }
-    if (!isAllowedUrl(model.downloadUrl)) {
-      throw new StageModelsError('invalid-model', `Model ${model.type}/${model.filename} download URL must be https.`)
+    if (!isSecureDownloadUrl(model.downloadUrl)) {
+      throw new StageModelsError(
+        'invalid-model',
+        `Model ${model.type}/${model.filename} download URL must be https.`
+      )
     }
 
     const destDir = path.join(modelsRoot, model.type)
@@ -127,7 +119,10 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     // pointing outside, and writing through it would escape the install.
     fs.mkdirSync(destDir, { recursive: true })
     if (!isContained(installPath, destDir)) {
-      throw new StageModelsError('invalid-model', `Model directory ${model.type} escapes the install.`)
+      throw new StageModelsError(
+        'invalid-model',
+        `Model directory ${model.type} escapes the install.`
+      )
     }
 
     const dest = path.join(destDir, model.filename)
@@ -156,8 +151,9 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     await doDownload(
       model.downloadUrl,
       partial,
-      (p: DownloadProgress) => onProgress?.({ index, total, filename: model.filename, percent: p.percent }),
-      signal ? { signal } : {},
+      (p: DownloadProgress) =>
+        onProgress?.({ index, total, filename: model.filename, percent: p.percent }),
+      { ...(signal ? { signal } : {}), validateUrl: isSecureDownloadUrl }
     )
 
     if (expected) {
@@ -166,7 +162,7 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
         await fs.promises.rm(partial, { force: true }).catch(() => {})
         throw new StageModelsError(
           'model-checksum-mismatch',
-          `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`,
+          `Model ${model.type}/${model.filename} checksum mismatch: expected ${expected}, got ${actual}`
         )
       }
     }

@@ -9,12 +9,26 @@ function jwt(payload: Record<string, unknown>): string {
 
 describe('claims', () => {
   it('decodes identity + workspace from an access token', () => {
-    const s = statusFromAccessToken(jwt({ email: 'a@b.co', workspace_id: 'w-9', workspace_type: 'team', role: 'owner' }))
-    expect(s).toEqual({ signedIn: true, email: 'a@b.co', workspaceId: 'w-9', workspaceType: 'team', role: 'owner' })
+    const s = statusFromAccessToken(
+      jwt({ email: 'a@b.co', workspace_id: 'w-9', workspace_type: 'team', role: 'owner' })
+    )
+    expect(s).toEqual({
+      signedIn: true,
+      email: 'a@b.co',
+      workspaceId: 'w-9',
+      workspaceType: 'team',
+      role: 'owner'
+    })
   })
 
   it('a malformed token is still signed in, identity unset', () => {
-    expect(statusFromAccessToken('not-a-jwt')).toEqual({ signedIn: true, email: undefined, workspaceId: undefined, workspaceType: undefined, role: undefined })
+    expect(statusFromAccessToken('not-a-jwt')).toEqual({
+      signedIn: true,
+      email: undefined,
+      workspaceId: undefined,
+      workspaceType: undefined,
+      role: undefined
+    })
   })
 
   it('workspaceIdOf reads the scope', () => {

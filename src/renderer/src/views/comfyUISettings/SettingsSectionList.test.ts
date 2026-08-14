@@ -179,16 +179,16 @@ describe('SettingsSectionList', () => {
           label: 'Distribution version',
           editType: 'version-stats',
           editable: false,
-          value: { headline: 'v1', rows: [{ id: 'installed', label: 'Installed', value: 'v1' }] },
-        },
+          value: { headline: 'v1', rows: [{ id: 'installed', label: 'Installed', value: 'v1' }] }
+        }
       ],
-      actions: [{ id: 'update-distribution', label: 'Update', enabled }],
+      actions: [{ id: 'update-distribution', label: 'Update', enabled }]
     })
 
     function mountSection(enabled: boolean) {
       return mount(SettingsSectionList, {
         props: { sections: [vsSection(enabled)] },
-        global: { plugins: [makeI18n()] },
+        global: { plugins: [makeI18n()] }
       })
     }
 

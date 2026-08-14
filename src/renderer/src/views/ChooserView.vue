@@ -141,6 +141,7 @@ const chooserDistributions = computed<Distribution[]>(() => {
   if (!authStore.isSignedIn) return []
   return authStore.distributions.filter(
     (dist) =>
+      dist.state !== 'update-available' &&
       !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
   )
 })

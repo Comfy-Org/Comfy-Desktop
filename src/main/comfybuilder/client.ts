@@ -12,15 +12,21 @@ import type {
   Distribution,
   DistributionVersion,
   ModelManifest,
-  TokenProvider,
+  TokenProvider
 } from './types'
+import { isSecureDownloadUrl } from './integrity'
 
 /** Prod builder gateway. Pass `baseUrl` to target staging or a mock. */
 export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
-export type ComfyBuilderErrorKind = 'unauthorized' | 'forbidden' | 'not-found' | 'network' | 'server'
+export type ComfyBuilderErrorKind =
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not-found'
+  | 'network'
+  | 'server'
 
 export class ComfyBuilderApiError extends Error {
   override name = 'ComfyBuilderApiError'
@@ -42,10 +48,19 @@ export interface ComfyBuilderClientOptions {
   timeoutMs?: number
 }
 
-interface DistributionsResponse { distributions?: Distribution[] }
-interface VersionsResponse { versions?: DistributionVersion[] }
-interface VersionDetailResponse { version?: number; artifacts?: Artifact[] }
-interface SignedDownloadResponse { downloadUrl?: string }
+interface DistributionsResponse {
+  distributions?: Distribution[]
+}
+interface VersionsResponse {
+  versions?: DistributionVersion[]
+}
+interface VersionDetailResponse {
+  version?: number
+  artifacts?: Artifact[]
+}
+interface SignedDownloadResponse {
+  downloadUrl?: string
+}
 
 /** The catalog + download-resolve surface the UI calls to populate its tiles. */
 export class ComfyBuilderClient {
@@ -67,13 +82,19 @@ export class ComfyBuilderClient {
 
   /** Versions (build history) of one distribution. */
   async listVersions(distributionId: string): Promise<DistributionVersion[]> {
-    const body = await this.get<VersionsResponse>(`/v1/distributions/${encodeURIComponent(distributionId)}/versions`)
+    const body = await this.get<VersionsResponse>(
+      `/v1/distributions/${encodeURIComponent(distributionId)}/versions`
+    )
     return body.versions ?? []
   }
 
   /** One version's per-target artifacts (plus its version number). */
-  async getVersion(versionId: string): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
-    const body = await this.get<VersionDetailResponse>(`/v1/distribution-versions/${encodeURIComponent(versionId)}`)
+  async getVersion(
+    versionId: string
+  ): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
+    const body = await this.get<VersionDetailResponse>(
+      `/v1/distribution-versions/${encodeURIComponent(versionId)}`
+    )
     return { version: body.version, artifacts: body.artifacts ?? [] }
   }
 
@@ -85,20 +106,31 @@ export class ComfyBuilderClient {
    */
   async fetchModelManifest(versionId: string): Promise<ModelManifest> {
     const body = await this.get<Partial<ModelManifest>>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}/manifest`,
+      `/v1/distribution-versions/${encodeURIComponent(versionId)}/manifest`
     )
+    if (!Array.isArray(body.models)) {
+      throw new ComfyBuilderApiError(
+        'server',
+        `Manifest for version ${versionId} has no model list`
+      )
+    }
     return {
-      models: body.models ?? [],
+      models: body.models,
       modelPolicy: body.modelPolicy ?? null,
-      partnerNodePolicy: body.partnerNodePolicy ?? null,
+      partnerNodePolicy: body.partnerNodePolicy ?? null
     }
   }
 
   /** Resolve an artifact's short-lived presigned archive URL. */
   async resolveDownloadUrl(artifactId: string): Promise<string> {
-    const body = await this.get<SignedDownloadResponse>(`/v1/build-artifacts/${encodeURIComponent(artifactId)}/download`)
+    const body = await this.get<SignedDownloadResponse>(
+      `/v1/build-artifacts/${encodeURIComponent(artifactId)}/download`
+    )
     if (typeof body.downloadUrl !== 'string' || body.downloadUrl.length === 0) {
       throw new ComfyBuilderApiError('server', `No downloadUrl for artifact ${artifactId}`)
+    }
+    if (!isSecureDownloadUrl(body.downloadUrl)) {
+      throw new ComfyBuilderApiError('server', `Unsafe downloadUrl for artifact ${artifactId}`)
     }
     return body.downloadUrl
   }
@@ -111,21 +143,29 @@ export class ComfyBuilderClient {
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(this.timeoutMs)
       })
     } catch (err) {
-      throw new ComfyBuilderApiError('network', `Request to ${path} failed: ${(err as Error).message}`)
+      throw new ComfyBuilderApiError(
+        'network',
+        `Request to ${path} failed: ${(err as Error).message}`
+      )
     }
 
     // 401 = dead token: prompt re-auth. 403 = authenticated but lacks access to
     // this resource; a single forbidden item must NOT sign the user out.
     if (res.status === 401) {
-      try { this.auth.onUnauthorized?.() } catch { /* an injected callback must not mask the typed error */ }
+      try {
+        this.auth.onUnauthorized?.(token)
+      } catch {
+        /* an injected callback must not mask the typed error */
+      }
       throw new ComfyBuilderApiError('unauthorized', `Not authorized for ${path}`, 401)
     }
     if (res.status === 403) throw new ComfyBuilderApiError('forbidden', `Forbidden: ${path}`, 403)
     if (res.status === 404) throw new ComfyBuilderApiError('not-found', `${path} not found`, 404)
-    if (!res.ok) throw new ComfyBuilderApiError('server', `${path} failed: HTTP ${res.status}`, res.status)
+    if (!res.ok)
+      throw new ComfyBuilderApiError('server', `${path} failed: HTTP ${res.status}`, res.status)
 
     // A 2xx with an empty / non-JSON / null body must surface as a typed error,
     // never a raw SyntaxError or a downstream `body.foo` TypeError.

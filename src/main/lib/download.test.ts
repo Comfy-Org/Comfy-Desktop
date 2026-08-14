@@ -186,3 +186,30 @@ describe('download — no-progress watchdog', () => {
     expect(requests[0]!.abort).not.toHaveBeenCalled()
   })
 })
+
+describe('download URL policy', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    requests.length = 0
+    for (const k of Object.keys(settingsState)) delete settingsState[k]
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-policy-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('rejects a redirect that violates the caller URL policy', async () => {
+    const dest = path.join(tmpDir, 'artifact.tar.gz')
+    const validateUrl = (url: string): boolean => new URL(url).protocol === 'https:'
+    const result = download('https://storage.example/artifact', dest, null, { validateUrl })
+    requests[0]!.emit(
+      'response',
+      makeResponse(302, '', { location: 'http://storage.example/artifact' })
+    )
+
+    await expect(result).rejects.toThrow(/not allowed/i)
+    expect(requests).toHaveLength(1)
+  })
+})

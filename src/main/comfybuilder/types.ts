@@ -40,7 +40,7 @@ export interface Artifact {
   /** Storage ref of the built archive (the API's `archiveRef`). Absent until the target is ready. */
   archiveRef?: string
   /** Hex sha256 of the archive (the API's `archiveSha256`, optionally `sha256:`-prefixed).
-   *  Absent until the signer computes it; verified post-download when present. */
+   *  Installation requires and verifies this value. */
   archiveSha256?: string
 }
 
@@ -59,8 +59,9 @@ export interface Host {
 export interface TokenProvider {
   /** Current access token, or null when signed out. */
   getAccessToken(): Promise<string | null>
-  /** Optional: called when the API rejects the token so the UI can re-auth. */
-  onUnauthorized?(): void
+  /** Optional: called when the API rejects the token so the UI can re-auth. The
+   *  rejected token lets the owner avoid signing out a newer concurrent login. */
+  onUnauthorized?(rejectedAccessToken: string): void
 }
 
 /** A launch command spec (interpreter + args + cwd), free of Electron types. */

@@ -7,7 +7,10 @@ import { buildLaunchSpec, venvPython } from './launch'
 
 const isWin = process.platform === 'win32'
 
-function layout(installPath: string, opts: { python?: boolean; main?: boolean } = { python: true, main: true }): void {
+function layout(
+  installPath: string,
+  opts: { python?: boolean; main?: boolean } = { python: true, main: true }
+): void {
   if (opts.python !== false) {
     fs.mkdirSync(path.dirname(venvPython(installPath)), { recursive: true })
     fs.writeFileSync(venvPython(installPath), '')
@@ -20,11 +23,17 @@ function layout(installPath: string, opts: { python?: boolean; main?: boolean } 
 
 describe('launch', () => {
   let dir: string
-  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-launch-')) })
-  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }) })
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-launch-'))
+  })
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
 
   it('venvPython points at the archive venv per platform', () => {
-    expect(venvPython(dir)).toBe(isWin ? path.join(dir, 'venv', 'python.exe') : path.join(dir, 'venv', 'bin', 'python3'))
+    expect(venvPython(dir)).toBe(
+      isWin ? path.join(dir, 'venv', 'python.exe') : path.join(dir, 'venv', 'bin', 'python3')
+    )
   })
 
   it.runIf(isWin)('venvPython prefers the staged windows interpreter at venv/base', () => {
@@ -44,13 +53,13 @@ describe('launch', () => {
       cmd: venvPython(p),
       args: ['-s', path.join('ComfyUI', 'main.py'), '--cpu', '--port', '9001'],
       cwd: p,
-      port: 9001,
+      port: 9001
     })
   })
 
   it.each([
     ['python missing', { python: false }],
-    ['main.py missing', { main: false }],
+    ['main.py missing', { main: false }]
   ])('returns null when %s', (_name, opts) => {
     const p = path.join(dir, 'install')
     layout(p, opts)

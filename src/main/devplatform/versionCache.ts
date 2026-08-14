@@ -18,10 +18,22 @@ export interface CachedVersions {
 }
 
 const cache = new Map<string, CachedVersions>()
+let generation = 0
 
-export function setCachedVersions(distributionId: string, versions: number[]): void {
+export function setCachedVersions(
+  distributionId: string,
+  versions: number[],
+  expectedGeneration: number = generation
+): void {
+  if (expectedGeneration !== generation) return
   const sorted = [...new Set(versions)].sort((a, b) => b - a)
   cache.set(distributionId, { versions: sorted, fetchedAt: Date.now() })
+}
+
+/** Capture before an async catalog read so stale responses cannot repopulate
+ * the cache after logout, login, or a workspace switch. */
+export function getVersionCacheGeneration(): number {
+  return generation
 }
 
 /** Cached versions, or null when nothing has read the catalog yet. Callers
@@ -30,7 +42,20 @@ export function getCachedVersions(distributionId: string): CachedVersions | null
   return cache.get(distributionId) ?? null
 }
 
+/** Latest published version when it is newer than the installed version. */
+export function getAvailableUpdate(
+  distributionId: string,
+  installedVersion: string
+): number | undefined {
+  if (installedVersion === '') return undefined
+  const current = Number(installedVersion)
+  if (!Number.isFinite(current)) return undefined
+  const latest = getCachedVersions(distributionId)?.versions[0]
+  return latest !== undefined && latest > current ? latest : undefined
+}
+
 /** Test seam. */
 export function clearVersionCache(): void {
+  generation += 1
   cache.clear()
 }

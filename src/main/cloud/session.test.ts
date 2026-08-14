@@ -2,7 +2,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./oauth', () => ({ signIn: vi.fn(), refresh: vi.fn() }))
-vi.mock('./tokenStore', () => ({ loadTokens: vi.fn(), saveTokens: vi.fn(), clearTokens: vi.fn(), getAuthStatus: vi.fn(() => ({ signedIn: false })) }))
+vi.mock('./tokenStore', () => ({
+  loadTokens: vi.fn(),
+  saveTokens: vi.fn(),
+  clearTokens: vi.fn(),
+  getAuthStatus: vi.fn(() => ({ signedIn: false }))
+}))
 vi.mock('./workspaces', () => ({ listWorkspaces: vi.fn(async () => [{ id: 'w-1' }]) }))
 
 import { CloudSession } from './session'
@@ -23,16 +28,28 @@ describe('CloudSession.getAccessToken', () => {
   })
 
   it('returns the token without refreshing when it is still valid', async () => {
-    mocked(loadTokens).mockReturnValue({ accessToken: 'good', refreshToken: 'r', expiresAt: future })
+    mocked(loadTokens).mockReturnValue({
+      accessToken: 'good',
+      refreshToken: 'r',
+      expiresAt: future
+    })
     expect(await new CloudSession().getAccessToken()).toBe('good')
     expect(refresh).not.toHaveBeenCalled()
   })
 
   it('refreshes + persists when expired and a refresh token exists', async () => {
     mocked(loadTokens).mockReturnValue({ accessToken: 'stale', refreshToken: 'r', expiresAt: past })
-    mocked(refresh).mockResolvedValue({ accessToken: 'fresh', refreshToken: 'r2', expiresAt: future })
+    mocked(refresh).mockResolvedValue({
+      accessToken: 'fresh',
+      refreshToken: 'r2',
+      expiresAt: future
+    })
     expect(await new CloudSession().getAccessToken()).toBe('fresh')
-    expect(saveTokens).toHaveBeenCalledWith({ accessToken: 'fresh', refreshToken: 'r2', expiresAt: future })
+    expect(saveTokens).toHaveBeenCalledWith({
+      accessToken: 'fresh',
+      refreshToken: 'r2',
+      expiresAt: future
+    })
   })
 
   it('falls back to the stale token when refresh fails', async () => {
@@ -49,13 +66,77 @@ describe('CloudSession.getAccessToken', () => {
 
   it('single-flights concurrent refreshes (one rotation, no token-family race)', async () => {
     mocked(loadTokens).mockReturnValue({ accessToken: 'stale', refreshToken: 'r', expiresAt: past })
-    let resolveRefresh!: (t: { accessToken: string; refreshToken: string; expiresAt: number }) => void
-    mocked(refresh).mockReturnValue(new Promise((r) => { resolveRefresh = r }))
+    let resolveRefresh!: (t: {
+      accessToken: string
+      refreshToken: string
+      expiresAt: number
+    }) => void
+    mocked(refresh).mockReturnValue(
+      new Promise((r) => {
+        resolveRefresh = r
+      })
+    )
     const s = new CloudSession()
     const [p1, p2, p3] = [s.getAccessToken(), s.getAccessToken(), s.getAccessToken()]
     resolveRefresh({ accessToken: 'fresh', refreshToken: 'r2', expiresAt: future })
     expect(await Promise.all([p1, p2, p3])).toEqual(['fresh', 'fresh', 'fresh'])
     expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let a refresh completion resurrect a logged-out session', async () => {
+    const oldTokens = { accessToken: 'stale', refreshToken: 'r', expiresAt: past }
+    let current: typeof oldTokens | null = oldTokens
+    mocked(loadTokens).mockImplementation(() => current)
+    let resolveRefresh!: (t: {
+      accessToken: string
+      refreshToken: string
+      expiresAt: number
+    }) => void
+    mocked(refresh).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRefresh = resolve
+      })
+    )
+    const session = new CloudSession()
+
+    const accessToken = session.getAccessToken()
+    session.logout()
+    current = null
+    resolveRefresh({ accessToken: 'resurrected', refreshToken: 'r2', expiresAt: future })
+
+    await expect(accessToken).resolves.toBeNull()
+    expect(saveTokens).not.toHaveBeenCalled()
+  })
+
+  it('does not let an old refresh overwrite a newer browser login', async () => {
+    type Tokens = { accessToken: string; refreshToken?: string; expiresAt: number }
+    let current: Tokens | null = { accessToken: 'old', refreshToken: 'old-r', expiresAt: past }
+    mocked(loadTokens).mockImplementation(() => current)
+    mocked(saveTokens).mockImplementation((tokens) => {
+      current = tokens
+    })
+    let resolveRefresh!: (t: Tokens) => void
+    mocked(refresh).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRefresh = resolve
+      })
+    )
+    mocked(signIn).mockResolvedValue({
+      tokens: { accessToken: 'new', refreshToken: 'new-r', expiresAt: future },
+      status: { signedIn: true, email: 'new@comfy.org' }
+    })
+    const session = new CloudSession()
+
+    const accessToken = session.getAccessToken()
+    await session.login()
+    resolveRefresh({ accessToken: 'old-refreshed', refreshToken: 'old-r2', expiresAt: future })
+
+    await expect(accessToken).resolves.toBe('new')
+    expect(saveTokens).toHaveBeenCalledExactlyOnceWith({
+      accessToken: 'new',
+      refreshToken: 'new-r',
+      expiresAt: future
+    })
   })
 })
 
@@ -106,11 +187,12 @@ describe('CloudSession browser auth', () => {
   it('does not let an older workspace switch overwrite a newer login', async () => {
     let resolveSwitch!: (value: Awaited<ReturnType<typeof signIn>>) => void
     let resolveLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
-    mocked(signIn).mockImplementation((options) =>
-      new Promise((resolve) => {
-        if (options?.workspaceId) resolveSwitch = resolve
-        else resolveLogin = resolve
-      })
+    mocked(signIn).mockImplementation(
+      (options) =>
+        new Promise((resolve) => {
+          if (options?.workspaceId) resolveSwitch = resolve
+          else resolveLogin = resolve
+        })
     )
     const session = new CloudSession()
 
@@ -137,7 +219,10 @@ describe('CloudSession workspace + provider', () => {
   afterEach(() => vi.clearAllMocks())
 
   it('switchWorkspace re-auths pre-selecting the workspace', async () => {
-    mocked(signIn).mockResolvedValue({ tokens: { accessToken: 't', expiresAt: future }, status: { signedIn: true, workspaceId: 'w-2' } })
+    mocked(signIn).mockResolvedValue({
+      tokens: { accessToken: 't', expiresAt: future },
+      status: { signedIn: true, workspaceId: 'w-2' }
+    })
     const status = await new CloudSession().switchWorkspace('w-2')
     expect(signIn).toHaveBeenCalledWith({ workspaceId: 'w-2' })
     expect(status.workspaceId).toBe('w-2')
@@ -150,11 +235,24 @@ describe('CloudSession workspace + provider', () => {
     expect(listWorkspaces).toHaveBeenCalledWith('good')
   })
 
-  it('asTokenProvider delegates getAccessToken and clears on unauthorized', async () => {
+  it('asTokenProvider delegates getAccessToken and clears the rejected current token', async () => {
     mocked(loadTokens).mockReturnValue({ accessToken: 'good', expiresAt: future })
-    const tp = new CloudSession().asTokenProvider()
+    const onSignedOut = vi.fn()
+    const tp = new CloudSession().asTokenProvider(onSignedOut)
     expect(await tp.getAccessToken()).toBe('good')
-    tp.onUnauthorized?.()
+    tp.onUnauthorized?.('good')
     expect(clearTokens).toHaveBeenCalled()
+    expect(onSignedOut).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a late 401 for a token replaced by a newer login', () => {
+    mocked(loadTokens).mockReturnValue({ accessToken: 'new', expiresAt: future })
+    const onSignedOut = vi.fn()
+    const tp = new CloudSession().asTokenProvider(onSignedOut)
+
+    tp.onUnauthorized?.('old')
+
+    expect(clearTokens).not.toHaveBeenCalled()
+    expect(onSignedOut).not.toHaveBeenCalled()
   })
 })

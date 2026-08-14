@@ -36,6 +36,10 @@ import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
+import {
+  finalizeComfyBuilderRecovery,
+  recoverComfyBuilderInstallation
+} from '../../sources/comfybuilder'
 
 export {
   getAppVersion,
@@ -126,10 +130,33 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   // drive is merely offline/renamed (issue #1155).
   void (async () => {
     try {
-      const all = await installations.list()
+      let all = await installations.list()
+      let recovered = false
+      const recoveredInstallationIds = new Set<string>()
+      for (const inst of all.filter((item) => item.sourceId === 'comfybuilder')) {
+        try {
+          const result = await recoverComfyBuilderInstallation(inst)
+          if (result.action === 'update') {
+            const updated = await installations.update(inst.id, result.data)
+            if (!updated) continue
+            recovered = true
+            recoveredInstallationIds.add(inst.id)
+            await finalizeComfyBuilderRecovery(inst.installPath)
+          }
+        } catch (err) {
+          console.warn(`[ipc] Failed to recover ComfyBuilder install ${inst.id}:`, err)
+        }
+      }
+      if (recovered) all = await installations.list()
+
       const sweepable = all.filter((inst) => {
         const source = sourceMap[inst.sourceId]
-        return source && !source.skipInstall && inst.installPath
+        return (
+          source &&
+          !source.skipInstall &&
+          inst.installPath &&
+          !recoveredInstallationIds.has(inst.id)
+        )
       })
       // Probe in parallel so a few offline paths don't serialize their timeouts.
       // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
@@ -150,7 +177,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
         swept = true
       }
 
-      if (swept) _broadcastToRenderer('installations-changed', {})
+      if (recovered || swept) _broadcastToRenderer('installations-changed', {})
 
       // Reclaim per-install browser partitions left behind by deletes (the
       // inline cleanup can't remove them on Windows while their session is

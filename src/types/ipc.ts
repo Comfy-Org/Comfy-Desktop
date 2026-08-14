@@ -1410,7 +1410,6 @@ export interface ElectronApi {
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listDistributions(): Promise<DevPlatformDistribution[]>
     installDistribution(distributionId: string): Promise<InstallDistributionResult>
-    updateDistribution(distributionId: string): Promise<InstallDistributionResult>
   }
 
   // Updates
@@ -1667,9 +1666,6 @@ export const REQUIRES_STOPPED = new Set([
   'snapshot-restore',
   'update-comfyui',
   'migrate-from',
-  // Re-installs the distribution's environment in place - the venv can't be
-  // rewritten under a running process.
-  'update-distribution',
   'change-pytorch'
 ])
 

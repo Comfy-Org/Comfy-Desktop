@@ -64,17 +64,31 @@ export class CloudSession {
   async getAccessToken(): Promise<string | null> {
     const tokens = loadTokens()
     if (!tokens) return null
-    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken) return tokens.accessToken
+    if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken)
+      return tokens.accessToken
     // Single-flight: the first caller runs the refresh, the rest await it.
     if (!this.refreshing) {
-      this.refreshing = this.doRefresh(tokens.refreshToken).finally(() => { this.refreshing = null })
+      this.refreshing = this.doRefresh(tokens.accessToken, tokens.refreshToken).finally(() => {
+        this.refreshing = null
+      })
     }
     return this.refreshing
   }
 
-  private async doRefresh(refreshToken: string): Promise<string | null> {
+  private async doRefresh(accessToken: string, refreshToken: string): Promise<string | null> {
     try {
       const rotated = await refresh(refreshToken)
+      // Refresh is a compare-and-swap against the token pair that started it.
+      // Logout or a newer browser auth may complete while the request is in
+      // flight; that newer intent must never be overwritten by this response.
+      const current = loadTokens()
+      if (
+        !current ||
+        current.accessToken !== accessToken ||
+        current.refreshToken !== refreshToken
+      ) {
+        return current?.accessToken ?? null
+      }
       saveTokens(rotated)
       return rotated.accessToken
     } catch {
@@ -109,10 +123,16 @@ export class CloudSession {
   }
 
   /** Adapter for the comfy-builder client's auth seam. */
-  asTokenProvider(): TokenProvider {
+  asTokenProvider(onSignedOut?: () => void): TokenProvider {
     return {
       getAccessToken: () => this.getAccessToken(),
-      onUnauthorized: () => this.logout(),
+      onUnauthorized: (rejectedAccessToken) => {
+        // A request issued before a newer login may return 401 afterward. Only
+        // invalidate the exact token the server rejected, never the new session.
+        if (loadTokens()?.accessToken !== rejectedAccessToken) return
+        this.logout()
+        onSignedOut?.()
+      }
     }
   }
 }

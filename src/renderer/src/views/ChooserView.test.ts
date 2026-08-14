@@ -604,21 +604,13 @@ describe('ChooserView', () => {
     expect(meta).not.toContain('Standalone')
   })
 
-  it('gives every card exactly one blue action pill', async () => {
-    installMockApiSignedIn(
-      [],
-      [
-        makeDist({ id: 'a', name: 'Available', state: 'installable' }),
-        makeDist({ id: 'b', name: 'Updatable', state: 'update-available' })
-      ]
-    )
+  it('gives an installable distribution one blue action pill', async () => {
+    installMockApiSignedIn([], [makeDist({ id: 'a', name: 'Available', state: 'installable' })])
     const wrapper = mountChooser()
     await flushPromises()
-    for (const id of ['a', 'b']) {
-      const card = wrapper.find(`[data-testid="chooser-dist-tile-${id}"]`)
-      expect(card.findAll('.chooser-tile-pill-action').length).toBe(1)
-      expect(card.find('.chooser-tile-pill-update').exists()).toBe(true)
-    }
+    const card = wrapper.find('[data-testid="chooser-dist-tile-a"]')
+    expect(card.findAll('.chooser-tile-pill-action').length).toBe(1)
+    expect(card.find('.chooser-tile-pill-update').exists()).toBe(true)
   })
 
   it('shows builds this machine cannot install, receded and inert', async () => {
@@ -728,10 +720,7 @@ describe('ChooserView', () => {
     expect(wrapper.find('[data-testid="chooser-dist-tile-d1"]').exists()).toBe(true)
   })
 
-  it('de-dups an update-available distribution out until the update-wiring lands', async () => {
-    // An update-available row is by definition backed by an install, so the grid
-    // hides it today (the update pill is wired in a follow-up). This guards that
-    // the update-available render path is not yet reachable in the grid.
+  it('routes an available update through its installed tile instead of a duplicate card', async () => {
     installMockApiSignedIn(
       [
         makeInstall({

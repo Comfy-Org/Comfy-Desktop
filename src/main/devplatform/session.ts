@@ -13,6 +13,7 @@ import { ComfyBuilderClient } from '../comfybuilder'
 
 let session: CloudSession | null = null
 let client: ComfyBuilderClient | null = null
+let unauthorizedHandler: (() => void) | null = null
 
 /** The process-wide CloudSession (auth + workspace), created on first use. */
 export function getCloudSession(): CloudSession {
@@ -29,14 +30,20 @@ export function getBuilderClient(): ComfyBuilderClient {
   if (!client) {
     client = new ComfyBuilderClient({
       baseUrl: BUILDER_BASE_URL,
-      auth: getCloudSession().asTokenProvider(),
+      auth: getCloudSession().asTokenProvider(() => unauthorizedHandler?.())
     })
   }
   return client
+}
+
+/** Announce an API-driven token invalidation to renderer auth stores. */
+export function setUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler
 }
 
 /** @internal: reset the singletons between tests. */
 export function _resetForTest(): void {
   session = null
   client = null
+  unauthorizedHandler = null
 }

@@ -20,8 +20,9 @@
 export { ComfyBuilderClient, ComfyBuilderApiError, DEFAULT_BASE_URL } from './client'
 export type { ComfyBuilderClientOptions, ComfyBuilderErrorKind } from './client'
 export { hostOs, selectArtifactForHost } from './targets'
-export { installArtifact, ComfyBuilderInstallError, sha256File, normalizeSha256 } from './install'
+export { installArtifact, ComfyBuilderInstallError, sha256File } from './install'
 export type { InstallArtifactOptions, ComfyBuilderInstallErrorKind } from './install'
+export { normalizeSha256 } from './integrity'
 export { stageModels, installModelsRoot, StageModelsError } from './models'
 export type { StageModelsOptions, StageModelsErrorKind } from './models'
 export { resolveModelManifest } from './modelManifest'
@@ -40,5 +41,5 @@ export type {
   ModelManifest,
   ModelPolicy,
   StageProgress,
-  TokenProvider,
+  TokenProvider
 } from './types'

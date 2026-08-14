@@ -38,7 +38,7 @@ export function statusFromAccessToken(accessToken: string): AuthStatus {
     email: claims?.email,
     workspaceId: claims?.workspace_id,
     workspaceType: claims?.workspace_type,
-    role: claims?.role,
+    role: claims?.role
   }
 }
 
