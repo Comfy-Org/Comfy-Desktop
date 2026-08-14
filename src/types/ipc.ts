@@ -677,6 +677,9 @@ export type ModelDownloadStatus =
   | 'cancelled'
 
 export interface ModelDownloadProgress {
+  /** Stable per-job identifier assigned by main. Control APIs accept it in
+   *  place of the URL; optional only for snapshots predating the field. */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -1426,23 +1429,24 @@ export interface ElectronApi {
    */
   getAppUpdateState(): Promise<AppUpdateState>
 
-  // Model downloads
+  // Model downloads. Every control accepts a download ref: the row's stable
+  // job `id` or its source URL (kept for compatibility).
   listModelDownloads(): Promise<ModelDownloadProgress[]>
-  pauseModelDownload(url: string): Promise<boolean>
-  resumeModelDownload(url: string): Promise<boolean>
-  cancelModelDownload(url: string): Promise<boolean>
+  pauseModelDownload(ref: string): Promise<boolean>
+  resumeModelDownload(ref: string): Promise<boolean>
+  cancelModelDownload(ref: string): Promise<boolean>
   /** Drop a single terminal (completed / error / cancelled) entry
    *  from main's recent-downloads buffer; broadcasts a
    *  `model-download-removed` event so every renderer surface drops
    *  the entry from its store in lockstep. */
-  dismissModelDownload(url: string): Promise<boolean>
+  dismissModelDownload(ref: string): Promise<boolean>
   /** Bulk-dismiss every terminal entry from main's recent buffer.
    *  Returns the number of entries removed. */
   clearFinishedModelDownloads(): Promise<number>
   /** Re-dispatch a terminal (error) download from main's captured
    *  original params. Returns false if it's still in flight or the
    *  params were evicted from the recent buffer. */
-  retryModelDownload(url: string): Promise<boolean>
+  retryModelDownload(ref: string): Promise<boolean>
   showDownloadInFolder(savePath: string): Promise<void>
   /** Downscaled `data:` URL preview of a completed image download, or null for
    *  non-images / unreadable files. */
@@ -1523,11 +1527,13 @@ export interface ElectronApi {
   onModelDownloadProgress(callback: (progress: ModelDownloadProgress) => void): Unsubscribe
   /** Fires when main drops a single terminal entry from its recent
    *  buffer (via `dismissModelDownload`). */
-  onModelDownloadRemoved(callback: (data: { url: string }) => void): Unsubscribe
+  onModelDownloadRemoved(callback: (data: { url: string; id?: string }) => void): Unsubscribe
   /** Fires when main bulk-dismisses every terminal entry. The payload
-   *  carries the URLs that were removed so listeners can drop them in
-   *  one pass instead of re-listing. */
-  onModelDownloadsClearedFinished(callback: (data: { urls: string[] }) => void): Unsubscribe
+   *  carries the removed rows' URLs plus `refs` (stable job id when the row
+   *  had one, else its URL) so listeners can drop them in one pass. */
+  onModelDownloadsClearedFinished(
+    callback: (data: { urls: string[]; refs?: string[] }) => void
+  ): Unsubscribe
   /**
    * Forward a renderer-originated telemetry event to main, which captures it
    * via PostHog Node under the current distinct_id and consent state.

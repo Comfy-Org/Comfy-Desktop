@@ -17,12 +17,29 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+// Override only the model-download startup gate; everything else in the
+// download manager stays real (it is already part of launch.ts's graph).
+const modelStartup = vi.hoisted(() => ({
+  impl: null as null | (() => Promise<{ safe: boolean; unsafePaths: string[] }>)
+}))
+vi.mock('../../comfyDownloadManager', async (importOriginal) => {
+  const actual = await importOriginal<typeof ComfyDownloadManagerModule>()
+  return {
+    ...actual,
+    initializeModelDownloads: () =>
+      modelStartup.impl ? modelStartup.impl() : actual.initializeModelDownloads()
+  }
+})
+
 import {
   desktopFeatureFlags,
+  handleLaunch,
   isCrashedExit,
   onProcessTerminated,
   _cleanupFailedLaunchSetup
 } from './launch'
+import type { ActionContext } from './types'
+import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import {
   _getLaunchingInstallationIds,
   _markLaunching,
@@ -178,5 +195,64 @@ describe('_cleanupFailedLaunchSetup', () => {
 
   it('is safe when nothing was acquired yet', () => {
     expect(() => _cleanupFailedLaunchSetup(INSTALL, new AbortController())).not.toThrow()
+  })
+})
+
+describe('handleLaunch model-download startup await (#1322)', () => {
+  const ctxFor = (installationId: string): ActionContext => ({
+    event: { sender: { send: vi.fn() } } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    // An unknown source makes runLaunch fail at the FIRST check after the
+    // gate, proving how far a safe pass proceeded without spawning anything.
+    inst: installOf('not-a-real-source'),
+    actionData: {}
+  })
+
+  afterEach(() => {
+    modelStartup.impl = null
+  })
+
+  it('never blocks the launch while incomplete files are visible under final model names', async () => {
+    modelStartup.impl = async () => ({
+      safe: false,
+      unsafePaths: ['C:\\models\\checkpoints\\broken.safetensors']
+    })
+    const res = await handleLaunch(ctxFor('gate-unsafe-paths'))
+    expect(res.ok).toBe(false)
+    // Failure comes from the NEXT check (unknown source): the unsafe pass
+    // warned and the launch proceeded past the model-download startup await.
+    // A truncated file that fails to load in ComfyUI is strictly better than
+    // refusing to start; the Downloads warning rows carry the details.
+    expect(res.message).toMatch(/unknownSource|unrecognized source/)
+  })
+
+  it('never blocks the launch when the startup pass itself could not certify safety', async () => {
+    modelStartup.impl = async () => ({ safe: false, unsafePaths: [] })
+    const res = await handleLaunch(ctxFor('gate-unsafe-nopaths'))
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/unknownSource|unrecognized source/)
+  })
+
+  it('never blocks the launch when the startup pass throws outright', async () => {
+    modelStartup.impl = async () => {
+      throw new Error('startup pass exploded')
+    }
+    const res = await handleLaunch(ctxFor('gate-throw'))
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/unknownSource|unrecognized source/)
+  })
+
+  it('lets a safe pass proceed beyond the startup await', async () => {
+    modelStartup.impl = async () => ({ safe: true, unsafePaths: [] })
+    const res = await handleLaunch(ctxFor('gate-safe'))
+    expect(res.ok).toBe(false)
+    // Failure comes from the NEXT check (unknown source), not the gate.
+    expect(res.message).toMatch(/unknownSource|unrecognized source/)
+  })
+
+  it('releases the operation slot after a launch that failed past the startup await', async () => {
+    modelStartup.impl = async () => ({ safe: false, unsafePaths: [] })
+    await handleLaunch(ctxFor('gate-slot-release'))
+    expect(_operationAborts.has('gate-slot-release')).toBe(false)
   })
 })

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 
 // Back `t()` with the real en.json (vitest `__dirname` doesn't line up with the
 // i18n module's relative `locales/` lookup), so the formatter is asserted
@@ -26,7 +27,6 @@ import {
   runPool,
   withRetry,
   truncateForMaxPath,
-  templateStateToTrayEntries,
   describeDownloadFailure,
   summarizeTemplateState,
   formatTemplateSubStatus,
@@ -272,6 +272,32 @@ describe('truncateForMaxPath', () => {
     const dir = 'C:\\' + 'd'.repeat(260)
     expect(truncateForMaxPath(dir, 'model.safetensors', 'win32')).toBeNull()
   })
+
+  it('reserves room for the staging sidecar suffix', () => {
+    // Build a path that fits MAX_PATH exactly on its own, so any positive
+    // reserve forces a truncation. The reserve is the same one the template
+    // task passes in production: sidecar suffix plus its atomic-write
+    // scratch suffix.
+    const dir = 'C:\\models\\checkpoints'
+    const ext = '.safetensors'
+    const stemLen = 259 - dir.length - 1 - ext.length
+    const name = 'x'.repeat(stemLen) + ext
+    expect(truncateForMaxPath(dir, name, 'win32', 0)).toBe(name)
+
+    const reserve = STAGING_META_SUFFIX.length + STAGING_META_TMP_SUFFIX.length
+    const out = truncateForMaxPath(dir, name, 'win32', reserve)!
+    expect(out.endsWith(ext)).toBe(true)
+    expect((dir + '\\' + out).length + reserve).toBeLessThanOrEqual(259)
+  })
+
+  it('returns null when the reserve leaves no room for a stem', () => {
+    const ext = '.safetensors'
+    const reserve = STAGING_META_SUFFIX.length + STAGING_META_TMP_SUFFIX.length
+    // Directory sized so exactly zero stem characters fit once the reserve
+    // and extension are accounted for.
+    const dir = 'C:\\' + 'd'.repeat(259 - 3 - 1 - ext.length - reserve)
+    expect(truncateForMaxPath(dir, 'm' + ext, 'win32', reserve)).toBeNull()
+  })
 })
 
 describe('describeDownloadFailure', () => {
@@ -294,82 +320,6 @@ describe('describeDownloadFailure', () => {
     expect(describeDownloadFailure('m.safetensors', 'wrote 4012 bytes then reset')).toMatch(
       /fall back to in-app/i
     )
-  })
-})
-
-describe('templateStateToTrayEntries', () => {
-  it('maps one row per file with the right status', () => {
-    const rows = templateStateToTrayEntries(
-      state({
-        files: [
-          file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
-          file({ name: 'b', received: 1 * GB, total: 4 * GB }),
-          file({ name: 'c', failed: true })
-        ]
-      })
-    )
-    expect(rows.map((r) => r.status)).toEqual(['completed', 'downloading', 'error'])
-    expect(rows[1]!.progress).toBeCloseTo(0.25)
-  })
-
-  it('marks unfinished files cancelled/errored when the task itself settled', () => {
-    // A cancelled or errored task must not leave unfinished files as
-    // 'downloading' — `getDownloadsTrayState` would count them active forever.
-    const cancelled = templateStateToTrayEntries(
-      state({
-        status: 'cancelled',
-        files: [
-          file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true }),
-          file({ name: 'b', received: 1 * GB, total: 4 * GB })
-        ]
-      })
-    )
-    expect(cancelled.map((r) => r.status)).toEqual(['completed', 'cancelled'])
-
-    const errored = templateStateToTrayEntries(
-      state({
-        status: 'error',
-        files: [file({ name: 'b', received: 0, total: 4 * GB })]
-      })
-    )
-    expect(errored[0]!.status).toBe('error')
-  })
-
-  it('keys each row by a stable synthetic url so the tray updates in place', () => {
-    const [row] = templateStateToTrayEntries(
-      state({
-        files: [file({ name: 'model.safetensors', directory: 'checkpoints' })]
-      })
-    )
-    expect(row!.url).toBe('template-model://checkpoints/model.safetensors')
-  })
-
-  it('puts speed/ETA only on the first still-running row', () => {
-    const rows = templateStateToTrayEntries(
-      state({
-        speedMBs: 8,
-        etaSecs: 30,
-        files: [
-          file({ name: 'a', received: 1 * GB, total: 2 * GB }),
-          file({ name: 'b', received: 0, total: 4 * GB })
-        ]
-      })
-    )
-    expect(rows[0]!.speedBytesPerSec).toBeGreaterThan(0)
-    expect(rows[0]!.etaSeconds).toBe(30)
-    expect(rows[1]!.speedBytesPerSec).toBe(0)
-    expect(rows[1]!.etaSeconds).toBe(0)
-  })
-
-  it('reports no live speed when nothing is downloading', () => {
-    const rows = templateStateToTrayEntries(
-      state({
-        status: 'done',
-        speedMBs: 5,
-        files: [file({ name: 'a', received: 2 * GB, total: 2 * GB, done: true })]
-      })
-    )
-    expect(rows[0]!.speedBytesPerSec).toBe(0)
   })
 })
 

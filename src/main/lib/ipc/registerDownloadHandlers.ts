@@ -33,25 +33,40 @@ export function registerDownloadHandlers(): void {
     }
   )
 
-  ipcMain.handle('model-download-pause', (_event, { url }: { url: string }) =>
-    pauseModelDownload(url)
-  )
+  // Control payloads accept a stable job id (`ref`) or, for compatibility with
+  // older renderer bundles / the in-Comfy bridge, the download URL (`url`).
+  const controlRef = (payload?: { ref?: unknown; url?: unknown }): string | null => {
+    if (typeof payload?.ref === 'string' && payload.ref) return payload.ref
+    if (typeof payload?.url === 'string' && payload.url) return payload.url
+    return null
+  }
 
-  ipcMain.handle('model-download-resume', (_event, { url }: { url: string }) =>
-    resumeModelDownload(url)
-  )
+  ipcMain.handle('model-download-pause', (_event, payload?: { ref?: string; url?: string }) => {
+    const ref = controlRef(payload)
+    return ref !== null && pauseModelDownload(ref)
+  })
 
-  ipcMain.handle('model-download-cancel', (_event, { url }: { url: string }) =>
-    cancelModelDownload(url)
-  )
+  ipcMain.handle('model-download-resume', (_event, payload?: { ref?: string; url?: string }) => {
+    const ref = controlRef(payload)
+    return ref !== null && resumeModelDownload(ref)
+  })
 
-  ipcMain.handle('model-download-dismiss', (_event, { url }: { url: string }) =>
-    dismissRecentDownload(url)
-  )
+  ipcMain.handle('model-download-cancel', (_event, payload?: { ref?: string; url?: string }) => {
+    const ref = controlRef(payload)
+    return ref !== null && cancelModelDownload(ref)
+  })
+
+  ipcMain.handle('model-download-dismiss', (_event, payload?: { ref?: string; url?: string }) => {
+    const ref = controlRef(payload)
+    return ref !== null && dismissRecentDownload(ref)
+  })
 
   ipcMain.handle('model-download-clear-finished', () => clearFinishedDownloads())
 
-  ipcMain.handle('model-download-retry', (_event, { url }: { url: string }) => retryDownload(url))
+  ipcMain.handle('model-download-retry', (_event, payload?: { ref?: string; url?: string }) => {
+    const ref = controlRef(payload)
+    return ref !== null && retryDownload(ref)
+  })
 
   // Seed the renderer store with active + recent downloads on first paint.
   ipcMain.handle('model-download-list', () => getAllDownloads())

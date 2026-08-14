@@ -72,6 +72,7 @@ import {
   awaitTemplateDownloadSettled
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
+import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
@@ -364,6 +365,30 @@ async function runLaunch(
   _operationAborts.set(installationId, abort)
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
   clearCrash(installationId)
+  // The startup model-download pass (migrate legacy final-path partials,
+  // hydrate staged `.part` downloads) runs to completion before ComfyUI can
+  // scan the model dirs, so a truncated file cannot masquerade as a loadable
+  // model (#1322). Memoized - normally already done long before the first
+  // launch. An UNSAFE result (a known-incomplete file is still visible under
+  // a final model name, or the pass could not certify the roots) NEVER blocks
+  // the launch: at worst ComfyUI sees a file that fails to load, which is
+  // strictly better than refusing to start. The per-file warning rows in
+  // Downloads carry the details, and an unsafe pass is not memoized, so the
+  // next launch retries the quarantine.
+  try {
+    const modelStartup = await initializeModelDownloads()
+    if (!modelStartup.safe) {
+      console.warn(
+        'Model download startup pass could not certify all model roots; launching anyway.' +
+          (modelStartup.unsafePaths.length > 0
+            ? ` Still-visible incomplete files: ${modelStartup.unsafePaths.join(', ')}`
+            : '')
+      )
+    }
+  } catch (err) {
+    console.warn('Model download startup pass failed; launching anyway:', err)
+  }
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   if (!source.skipInstall) {

@@ -14,7 +14,7 @@ export function getModelsBaseDir(): string {
   return modelsDirs?.[0] || settings.defaults.modelsDirs[0]!
 }
 
-function getSharedModelsDirs(): string[] {
+export function getSharedModelsDirs(): string[] {
   const modelsDirs = settings.get('modelsDirs') as string[] | undefined
   return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
 }
@@ -23,6 +23,31 @@ function getSharedModelsDirs(): string[] {
  *  record (e.g. the template-model task). Sync: no store lookup needed. */
 export function resolveDownloadContext(inst: installations.InstallationRecord): InstallModelSearch {
   return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
+}
+
+/**
+ * Every launcher-managed model root where staged model downloads (or legacy
+ * final-path partials) may live: the shared models dirs plus each known
+ * installation's model roots and extra model paths. Used by startup
+ * migration/hydration of interrupted downloads (issue #1322). NOT
+ * best-effort: a failure to list installations or resolve an install's
+ * model paths propagates, because a root silently dropped from the scan
+ * would let the legacy migration certify directories it never looked at.
+ * The caller treats the failure as an unsafe (non-memoized) startup pass:
+ * it warns, refuses jobs for known-unsafe destinations, and retries the
+ * pass later - launch itself is never blocked.
+ */
+export async function collectModelScanRoots(): Promise<string[]> {
+  const roots = new Set<string>()
+  const shared = getSharedModelsDirs()
+  for (const dir of shared) roots.add(dir)
+  for (const inst of await installations.list()) {
+    if (!inst.installPath) continue
+    const search = resolveDownloadContext(inst)
+    for (const root of search.modelRoots) roots.add(root)
+    for (const extra of search.extraPaths) roots.add(extra.dir)
+  }
+  return [...roots]
 }
 
 export async function resolveDownloadContextById(

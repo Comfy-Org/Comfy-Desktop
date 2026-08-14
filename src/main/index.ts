@@ -1,4 +1,4 @@
-import { app, Menu, ipcMain, net, dialog, crashReporter, nativeTheme } from 'electron'
+import { app, Menu, ipcMain, net, dialog, crashReporter, nativeTheme, powerMonitor } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
@@ -49,7 +49,12 @@ import type { InstallationRecord } from './installations'
 import {
   cleanupTempDownloads,
   downloadEvents,
-  getDownloadsTrayState
+  getDownloadsTrayState,
+  hasActiveModelTransfers,
+  initializeModelDownloads,
+  resumeModelDownloadsAfterWake,
+  suspendActiveModelDownloadsForQuit,
+  suspendActiveModelDownloadsForSleep
 } from './lib/comfyDownloadManager'
 import {
   hasActiveTemplateDownloads,
@@ -1374,6 +1379,17 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     migrateXdgPaths()
     persistWinDataRootChoice()
 
+    // Kick off the managed model-download startup pass (migrate legacy
+    // final-path partials, hydrate interrupted downloads as paused rows) as
+    // soon as settings/installation records are readable. Fire-and-forget so
+    // it never delays first paint; `handleLaunch` awaits the same memoized
+    // promise before any ComfyUI process can scan the model dirs (#1322).
+    // A failed pass is not memoized, so launch retries it; here it only
+    // needs logging (an unhandled rejection would surface as a crash).
+    initializeModelDownloads().catch((err) => {
+      console.warn('Model download startup pass failed at app startup:', err)
+    })
+
     // Strip Electron's default menu before any BrowserWindow opens so
     // OAuth / cloud-login popups (and every other window) can't reach
     // destructive items like "Close All Windows" that bypass our
@@ -2131,7 +2147,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // lazily on each invoke, but registering this side first wouldn't
     // change behaviour, only ordering. Place it next to the existing
     // popup IPC registration for grouping.
-    registerPickerSettingsIpc()
+    registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     cleanupTempDownloads()
@@ -2276,10 +2292,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', (event) => {
-    // Template models are still downloading in the background: quitting drops
-    // them (no resume). Warn once and let the user back out. Synchronous dialog
-    // fits before-quit's sync teardown; only gate a real user quit (not an
-    // in-progress relaunch/update quit) and skip once already confirmed.
+    // Template models are still downloading in the background: quitting pauses
+    // them (they restore as resumable rows in Downloads next launch), but the
+    // template setup itself stops until the user resumes them. Confirm once and
+    // let the user back out. Synchronous dialog fits before-quit's sync
+    // teardown; only gate a real user quit (not an in-progress relaunch/update
+    // quit) and skip once already confirmed.
     if (!isQuitInProgress() && hasActiveTemplateDownloads()) {
       const choice = dialog.showMessageBoxSync({
         type: 'warning',
@@ -2320,6 +2338,33 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     flushLastSessionSync()
     flushOperationOutput()
     cleanupTempDownloads()
+  })
+
+  // Deferred-quit suspension for managed model downloads: stop each active
+  // transfer's network request and let its stream flush the staged `.part` +
+  // sidecar, then continue quitting. The staged state hydrates back into
+  // paused Downloads rows on the next launch (`initializeModelDownloads`).
+  // `will-quit` (after every window closed) is the Electron-sanctioned spot
+  // for async teardown; a bounded timeout inside the suspend call keeps a
+  // wedged stream from hanging shutdown. Applies to every quit reason -
+  // user quit, relaunch, and updates all preserve resumable state.
+  let modelDownloadsSuspended = false
+  app.on('will-quit', (event) => {
+    if (modelDownloadsSuspended || !hasActiveModelTransfers()) return
+    modelDownloadsSuspended = true
+    event.preventDefault()
+    void suspendActiveModelDownloadsForQuit().finally(() => app.quit())
+  })
+
+  // System sleep can kill a download socket without emitting anything on
+  // wake, leaving an in-flight transfer waiting on its idle timeout. Park
+  // active model jobs before sleep and auto-resume (Range continuation) once
+  // the network is back; user-paused jobs stay paused.
+  powerMonitor.on('suspend', () => {
+    suspendActiveModelDownloadsForSleep()
+  })
+  powerMonitor.on('resume', () => {
+    void resumeModelDownloadsAfterWake()
   })
 
   app.on('window-all-closed', () => {

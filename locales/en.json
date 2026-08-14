@@ -373,7 +373,7 @@
   },
   "templateQuit": {
     "title": "Template models are still downloading",
-    "message": "Quitting now will stop the download — it won't resume. You can let it finish, then quit.",
+    "message": "Quitting now will pause the download. It will appear as a paused item in Downloads next time, where you can resume or cancel it.",
     "quit": "Quit Anyway",
     "cancel": "Keep Downloading"
   },

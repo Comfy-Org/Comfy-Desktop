@@ -72,69 +72,6 @@ export function describeDownloadFailure(filename: string, message: string): stri
   return `[templates] Failed ${filename}: ${message} — will fall back to in-app download.\n`
 }
 
-/** One downloads-tray row mirrored from our task. Structurally a subset of
- *  `comfyDownloadManager`'s `DownloadProgress`, declared here so the mapper
- *  stays Electron-free and unit-testable. */
-export interface TemplateTrayEntry {
-  url: string
-  filename: string
-  directory: string
-  progress: number
-  status: 'downloading' | 'completed' | 'error' | 'cancelled'
-  receivedBytes: number
-  totalBytes: number
-  speedBytesPerSec: number
-  etaSeconds: number
-}
-
-/**
- * Map the task's per-file state into downloads-tray rows so the title-bar tray
- * can continue showing the SAME download after the user skips ahead to ComfyUI
- * — no restart (our resume-capable task keeps running; the tray only mirrors
- * it). One row per file, keyed by a stable synthetic url so the tray dedupes /
- * updates in place across ticks. Pure — no Electron, so the mapping is
- * unit-testable. Speed/ETA come from the shared snapshot and ride on the first
- * still-running row (the tray shows one active row at a time).
- */
-export function templateStateToTrayEntries(
-  state: TemplateDownloadState,
-  urlPrefix = 'template-model://'
-): TemplateTrayEntry[] {
-  const speedBytesPerSec = state.speedMBs > 0 ? Math.round(state.speedMBs * 1048576) : 0
-  const etaSeconds = state.etaSecs >= 0 ? state.etaSecs : 0
-  let liveRowAssigned = false
-
-  // When the task itself has settled (cancel / error) before every file
-  // finished — e.g. an abort mid-pool or a disk-space pre-flight that errors
-  // with files already listed but none downloaded — the still-unfinished files
-  // must inherit that terminal status. Otherwise they'd map to 'downloading'
-  // and `getDownloadsTrayState` would count them as active forever.
-  const unfinishedStatus: TemplateTrayEntry['status'] | null =
-    state.status === 'cancelled' ? 'cancelled' : state.status === 'error' ? 'error' : null
-
-  return state.files.map((file) => {
-    const status: TemplateTrayEntry['status'] = file.failed
-      ? 'error'
-      : file.done
-        ? 'completed'
-        : (unfinishedStatus ?? 'downloading')
-    const progress = file.total > 0 ? Math.min(1, file.received / file.total) : 0
-    const isLiveRow = status === 'downloading' && !liveRowAssigned
-    if (isLiveRow) liveRowAssigned = true
-    return {
-      url: `${urlPrefix}${file.directory}/${file.name}`,
-      filename: file.name,
-      directory: file.directory,
-      progress,
-      status,
-      receivedBytes: file.received,
-      totalBytes: file.total,
-      speedBytesPerSec: isLiveRow ? speedBytesPerSec : 0,
-      etaSeconds: isLiveRow ? etaSeconds : 0
-    }
-  })
-}
-
 /**
  * Run `attempt` up to `1 + retries` times, returning the first success. Rethrows
  * the last error once all tries are exhausted. Stops early (no retry) when
@@ -168,25 +105,28 @@ const WIN_MAX_PATH = 259
 
 /**
  * Defensively shorten a model filename so `<dir>/<stem><ext>` stays within the
- * Windows MAX_PATH limit (no-op on other platforms / short paths). Mirrors the
- * truncation `startModelDownload` applies, so our `download()` write can't fail
- * on a long upstream filename. Returns the (possibly shortened) filename, or
- * null when even an empty stem wouldn't fit. Pure — `platform` is injected so it
- * can be unit-tested off Windows.
+ * Windows MAX_PATH limit (no-op on other platforms / short paths). Returns the
+ * (possibly shortened) filename, or null when even an empty stem wouldn't fit.
+ * `reserveSuffixLen` reserves extra room after the full path - used for the
+ * managed download's staging sidecar plus its atomic-write scratch file
+ * (`<name>.part.dl-meta.tmp`) so the staged artifacts fit MAX_PATH too, not
+ * just the final name. Pure - `platform` is injected so it can be
+ * unit-tested off Windows.
  */
 export function truncateForMaxPath(
   destDir: string,
   filename: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  reserveSuffixLen = 0
 ): string | null {
   if (platform !== 'win32') return filename
   const sep = '\\'
-  const fullLen = destDir.length + sep.length + filename.length
+  const fullLen = destDir.length + sep.length + filename.length + reserveSuffixLen
   if (fullLen <= WIN_MAX_PATH) return filename
   const dot = filename.lastIndexOf('.')
   const ext = dot > 0 ? filename.slice(dot) : ''
   const stem = dot > 0 ? filename.slice(0, dot) : filename
-  const available = WIN_MAX_PATH - destDir.length - sep.length - ext.length
+  const available = WIN_MAX_PATH - destDir.length - sep.length - ext.length - reserveSuffixLen
   if (available <= 0) return null
   return stem.slice(0, available) + ext
 }

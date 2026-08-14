@@ -1699,8 +1699,13 @@ const SHUTDOWN_DRAIN_TIMEOUT_MS = 1500
  *
  * Electron does NOT await async listeners on `before-quit`, so we use the
  * standard pattern of calling `event.preventDefault()`, awaiting the
- * shutdown, then re-issuing `app.exit()`. A one-shot guard prevents the
+ * shutdown, then re-issuing `app.quit()`. A one-shot guard prevents the
  * subsequent quit from re-entering this branch.
+ *
+ * The re-issue MUST be `app.quit()`, not `app.exit()`: exit() skips
+ * `will-quit`, where active managed model downloads park their staged bytes
+ * and sidecars for resume on the next launch. Killing the process there would
+ * strand in-flight transfers with unflushed streams.
  *
  * Safe to call multiple times - the hook only attaches once.
  */
@@ -1717,7 +1722,7 @@ export function installAppHooks(): void {
       setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)
     )
     void Promise.race([drainPromise, timeoutPromise]).finally(() => {
-      app.exit(0)
+      app.quit()
     })
   })
 }

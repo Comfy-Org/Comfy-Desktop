@@ -1080,6 +1080,9 @@ async function selectPytorchOption(popup: WebContentsPage, option: PytorchPicker
 }
 
 async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
+  // Pre-op session identity: the relaunch-leg wait below needs the
+  // startedAt watermark of the session the op is about to stop.
+  const beforeSession = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
   await selectPytorchOption(popup, option)
   const action = byTestId(TID.updateActionButton('change-pytorch'))
@@ -1093,8 +1096,15 @@ async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
   // the venv python, whose torch import holds .pyd files open exactly
   // while uv tries to delete them - on Windows that races the
   // transaction into "Access is denied" and fails the real product
-  // operation. Wait for the app-side operation to drain first; only
-  // then is the venv safe to touch.
+  // operation. Wait for the in-place relaunch (proof the op completed;
+  // see waitForInPlaceOpRelaunch on why a bare drain can pass during the
+  // pre-op stop leg), then for the operation slot to drain; only then is
+  // the venv safe to touch.
+  await waitForInPlaceOpRelaunch(
+    _updateInstallId,
+    beforeSession?.startedAt ?? 0,
+    GPU_VARIANT ? 2_400_000 : 900_000,
+  )
   await waitForOperationDrain(
     _updateInstallId,
     GPU_VARIANT ? 2_400_000 : 900_000,
@@ -1121,6 +1131,16 @@ async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
 
 test('captures the baseline pytorch stack @sec-pytorch @lifecycle', async () => {
   test.setTimeout(300_000)
+  // Harness observability, not part of the flow under test: the re-launch
+  // in the previous test triggers `onLaunch`'s chooser-pick attach which
+  // calls `destroyPanelView(claimed)` (index.ts) without remounting -
+  // production lazily mounts a fresh install-backed panel on the next
+  // Settings click / comfy-lifecycle body, so `panel.html` doesn't exist
+  // while ComfyUI is the active body. This section reads state via
+  // `ctx.panel.evaluate`; do the lazy mount ourselves once here. Same
+  // dance the snapshot-capture test and the hydration path already do.
+  expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
+  await waitForWebContents(ctx.app, 'panel.html')
   // The torch stack catalog is only populated by check-update; fire one
   // deterministically (the Update tab's auto-check is silent and may have
   // raced or failed earlier in the run) before reading the picker.
@@ -1256,6 +1276,28 @@ async function waitForOperationDrain(installationId: string, timeout = 300_000):
     .toBe(false)
 }
 
+/** In-place ops fired against a RUNNING install (change-pytorch,
+ *  snapshot-restore) self-stop comfy first, run the op, then relaunch in
+ *  place. Main registers the `_operationAborts` slot only at dispatch -
+ *  AFTER the multi-second stop leg - so `hasActiveOperation` is still false
+ *  while the op UI already shows "Stopping instance". A bare
+ *  `waitForOperationDrain` right after the confirm click can therefore pass
+ *  before the op even starts, and the caller probes a venv the transaction
+ *  still owns. The relaunched session (startedAt advances past the pre-op
+ *  session) is the observable proof the op itself completed; only then is
+ *  the drain poll meaningful. Same idiom as the picker Restart test. */
+async function waitForInPlaceOpRelaunch(
+  installationId: string, beforeStartedAt: number, timeout: number,
+): Promise<void> {
+  await expect
+    .poll(async () => {
+      const after = await getRunningSessionSnapshot(ctx.app, installationId)
+      if (!after) return false
+      return after.startedAt > beforeStartedAt
+    }, { timeout, intervals: [2_000, 5_000] })
+    .toBe(true)
+}
+
 // ---------------------------------------------------------------------------
 // Snapshots x PyTorch stacks: change-pytorch must record pre/post snapshots
 // carrying the v2 torchStack identity, and restoring a snapshot captured on a
@@ -1271,6 +1313,7 @@ interface SnapshotFileLite {
   createdAt: string
   trigger: string
   label: string | null
+  comfyui?: { commit?: string | null }
   torchStack?: {
     kind: 'managed' | 'observed'
     ref?: { packages: { torch: string; torchvision?: string; torchaudio?: string } }
@@ -1329,6 +1372,8 @@ function findStackSnapshot(
  *  operation (torch phase included) before the caller probes the venv. */
 async function restoreSnapshotViaPicker(filename: string): Promise<void> {
   await waitForOperationDrain(_updateInstallId)
+  // Pre-op session identity for the relaunch-leg wait below.
+  const beforeSession = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
   await popup.waitForSelector(byTestId(TID.snapshotRow(filename)), { timeout: 30_000 })
   await popup.clickUntilVisible(
@@ -1342,7 +1387,14 @@ async function restoreSnapshotViaPicker(filename: string): Promise<void> {
   expect(await popup.click(confirmSelector)).toBe(true)
   await waitForProgressTakeoverAfterPopupClose()
   // Same probe discipline as changePytorchStack: never touch the venv while
-  // the restore's torch swap owns it.
+  // the restore's torch swap owns it. The relaunched session is the proof
+  // the restore completed (a bare drain can pass during the pre-op stop
+  // leg; see waitForInPlaceOpRelaunch), then drain the op slot.
+  await waitForInPlaceOpRelaunch(
+    _updateInstallId,
+    beforeSession?.startedAt ?? 0,
+    GPU_VARIANT ? 2_400_000 : 900_000,
+  )
   await waitForOperationDrain(_updateInstallId, GPU_VARIANT ? 2_400_000 : 900_000)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] }).toBe(true)
   await closeTitlePopupIfOpen(ctx.app)
@@ -1814,8 +1866,9 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   // from `stable` to `latest`, runs the master-branch update, then
   // relaunches in place. Stretch the timeout to cover a possible
   // `uv pip install -r requirements.txt` if requirements changed
-  // between the stable release and master.
-  test.setTimeout(600_000)
+  // between the stable release and master, plus the conditional
+  // gap-restore below (a full picker-driven snapshot restore).
+  test.setTimeout(GPU_VARIANT ? 3_000_000 : 1_500_000)
 
   // Sanity: install is on stable before drafting latest.
   const installsBefore = await ctx.panel.evaluate<Array<{ id: string; updateChannel?: string }>>(
@@ -1823,6 +1876,56 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   )
   const before = installsBefore.find((i) => i.id === _updateInstallId)
   expect(before?.updateChannel, 'install must be on stable before the cross-channel switch').toBe('stable')
+
+  // Upstream can cut a stable release directly off the master tip; while
+  // master has no commits after that tag, the install (already updated to
+  // the newest stable by the direct-runAction update test) sits ON the
+  // master tip and `latest` correctly reports "Up to date" - the
+  // cross-channel Update Now button never renders and this test would time
+  // out waiting for a legitimately absent control. Recreate the
+  // stable-behind-master gap through a REAL production path instead of
+  // skipping: restore the pre-update snapshot the stable update op captured
+  // (updateOrchestrator runs with `preUpdateSnapshot: true`), which moves
+  // the working tree AND the InstallationRecord (comfyVersion +
+  // updateChannel) back to the older stable commit, so `latest` genuinely
+  // has work to do. When master is already ahead of the installed stable
+  // (the common case) this branch self-skips; @sec-crosschannel subset runs
+  // without @sec-update never left the pinned second-newest stable tag, so
+  // they self-skip too.
+  const masterTip = execFileSync('git', ['ls-remote', 'origin', 'refs/heads/master'], {
+    cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true, timeout: 60_000,
+  }).split('\t')[0]!.trim()
+  expect(masterTip, 'git ls-remote returned no master tip').toMatch(/^[a-f0-9]{40}$/)
+  const headAtEntry = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
+  }).trim()
+  if (headAtEntry === masterTip) {
+    // Newest-first registry scan: the newest snapshot recorded at a commit
+    // OTHER than the master tip is the stable update's pre-update snapshot.
+    // The pytorch section's own pre/post-update snapshots were all captured
+    // after that update, ON the master-tip commit, so they never match.
+    const rollbackTarget = readSnapshotFiles().find(
+      (s) => s.comfyui?.commit && s.comfyui.commit !== masterTip,
+    )
+    expect(
+      rollbackTarget,
+      'install sits on the master tip but no snapshot at an older commit exists to recreate the cross-channel gap',
+    ).toBeTruthy()
+    await restoreSnapshotViaPicker(rollbackTarget!.filename)
+    const restoredHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,
+    }).trim()
+    expect(restoredHead, 'gap-restore did not land HEAD on the snapshot commit').toBe(rollbackTarget!.comfyui!.commit)
+    // The restore's post-op state re-applies the snapshot's own channel;
+    // the stable precondition above must still hold for the switch below.
+    const installsRestored = await ctx.panel.evaluate<Array<{ id: string; updateChannel?: string }>>(
+      `window.api.getInstallations()`,
+    )
+    expect(
+      installsRestored.find((i) => i.id === _updateInstallId)?.updateChannel,
+      'gap-restore must leave the install on stable',
+    ).toBe('stable')
+  }
 
   const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: _comfyUIDir, encoding: 'utf-8', windowsHide: true,

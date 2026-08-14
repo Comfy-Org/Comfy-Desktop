@@ -222,12 +222,14 @@ export function buildElectronApi(): ElectronApi {
 
     // Model downloads
     listModelDownloads: () => ipcRenderer.invoke('model-download-list'),
-    pauseModelDownload: (url) => ipcRenderer.invoke('model-download-pause', { url }),
-    resumeModelDownload: (url) => ipcRenderer.invoke('model-download-resume', { url }),
-    cancelModelDownload: (url) => ipcRenderer.invoke('model-download-cancel', { url }),
-    dismissModelDownload: (url) => ipcRenderer.invoke('model-download-dismiss', { url }),
+    // Controls take a download ref: the row's stable job id, or its URL for
+    // rows that predate ids. Main resolves either.
+    pauseModelDownload: (ref) => ipcRenderer.invoke('model-download-pause', { ref }),
+    resumeModelDownload: (ref) => ipcRenderer.invoke('model-download-resume', { ref }),
+    cancelModelDownload: (ref) => ipcRenderer.invoke('model-download-cancel', { ref }),
+    dismissModelDownload: (ref) => ipcRenderer.invoke('model-download-dismiss', { ref }),
     clearFinishedModelDownloads: () => ipcRenderer.invoke('model-download-clear-finished'),
-    retryModelDownload: (url) => ipcRenderer.invoke('model-download-retry', { url }),
+    retryModelDownload: (ref) => ipcRenderer.invoke('model-download-retry', { ref }),
     showDownloadInFolder: (savePath) => ipcRenderer.invoke('show-download-in-folder', { savePath }),
     getDownloadThumbnail: (savePath) => ipcRenderer.invoke('download-thumbnail', { savePath }),
 

@@ -21,6 +21,13 @@ export interface SeedOptions {
   /** Runs after the isolated dirs are created but before launch. Use to drop
    *  platform-specific files the main process inspects during early boot. */
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
+  /** Launch against this exact profile dir instead of a fresh mkdtemp one,
+   *  with the same semantics as `LIFECYCLE_REUSE_DIR` (persisted settings are
+   *  folded into the seed; the dir survives cleanup). Lets a spec quit and
+   *  relaunch the SAME profile to cover restart hydration. The caller owns
+   *  creating and removing the dir. Not supported on macOS (Application
+   *  Support ignores the HOME override). */
+  profileDir?: string
 }
 
 export interface SeedInstallation {
@@ -65,9 +72,14 @@ function formatSeedTimestamp(date: Date): string {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}_${pad(date.getMilliseconds(), 3)}`
 }
 
-function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown>): Record<string, string> {
+function buildIsolatedEnv(
+  homeDir: string,
+  settingsSeed?: Record<string, unknown>
+): Record<string, string> {
   const inheritedEnv = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string'
+    )
   )
 
   const env: Record<string, string> = {
@@ -79,7 +91,7 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
     XDG_DATA_HOME: path.join(homeDir, '.local', 'share'),
     XDG_STATE_HOME: path.join(homeDir, '.local', 'state'),
     // Gates `registerE2EHooks()` in main so `globalThis.__e2e` is wired up.
-    E2E: '1',
+    E2E: '1'
   }
 
   // Windows resolves userData via APPDATA; point it into the isolated home
@@ -95,7 +107,7 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
   const effectiveSeed: Record<string, unknown> = {
     firstUseCompleted: false,
     telemetryEnabled: false,
-    ...(settingsSeed ?? {}),
+    ...(settingsSeed ?? {})
   }
   env['E2E_SETTINGS_SEED'] = JSON.stringify(effectiveSeed)
 
@@ -103,34 +115,40 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
-  // Honor `LIFECYCLE_REUSE_DIR` to reuse a previous run's profile dir so a
-  // rerun doesn't redo the ~2-minute install. A reused dir is preserved on
-  // cleanup; a fresh dir is printed so the operator can re-export it.
-  const reuseDir = process.env['LIFECYCLE_REUSE_DIR']
+  // Honor an explicit `profileDir` (spec-driven relaunch of the same
+  // profile) or `LIFECYCLE_REUSE_DIR` (operator rerun without redoing the
+  // ~2-minute install). A reused dir is preserved on cleanup; a fresh dir is
+  // printed so the operator can re-export it.
+  const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
   // macOS ignores the HOME override for userData (Application Support), so
   // a reused profile's persisted settings can neither be read back nor kept
   // from clobbering the developer's real profile - only fresh runs are
   // supported there.
   if (reuseDir && process.platform === 'darwin') {
-    throw new Error('LIFECYCLE_REUSE_DIR is not supported on macOS: Electron resolves userData outside the isolated profile dir, so persisted settings cannot be reused safely - unset it and run against a fresh profile')
+    throw new Error(
+      'Profile reuse (profileDir / LIFECYCLE_REUSE_DIR) is not supported on macOS: Electron resolves userData outside the isolated profile dir, so persisted settings cannot be reused safely - run against a fresh profile'
+    )
   }
-  const homeDir = reuseDir ?? await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
+  const homeDir = reuseDir ?? (await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-')))
   if (reuseDir) {
     console.log(`[lifecycle-harness] reusing profile dir: ${homeDir}`)
   } else {
     console.log(`[lifecycle-harness] fresh profile dir: ${homeDir}`)
-    console.log(`[lifecycle-harness] re-export as LIFECYCLE_REUSE_DIR=${homeDir} to rerun individual tests against this profile`)
+    console.log(
+      `[lifecycle-harness] re-export as LIFECYCLE_REUSE_DIR=${homeDir} to rerun individual tests against this profile`
+    )
   }
 
   // Pre-create the platform-specific config dir Electron resolves to so
   // `settings.set()` writes succeed. On macOS this lives outside the mkdtemp
   // sandbox (Application Support ignores HOME), so persisted settings are
   // seeded via `E2E_SETTINGS_SEED` rather than a settings.json file here.
-  const appDataDir = process.platform === 'win32'
-    ? path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2')
-    : process.platform === 'darwin'
-      ? path.join(homeDir, 'Library', 'Application Support', 'comfyui-desktop-2')
-      : path.join(homeDir, '.config', 'comfyui-desktop-2')
+  const appDataDir =
+    process.platform === 'win32'
+      ? path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2')
+      : process.platform === 'darwin'
+        ? path.join(homeDir, 'Library', 'Application Support', 'comfyui-desktop-2')
+        : path.join(homeDir, '.config', 'comfyui-desktop-2')
   await mkdir(appDataDir, { recursive: true })
 
   if (options?.onSetup) {
@@ -152,7 +170,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       installPath: inst.installPath ?? path.join(homeDir, `install-${i}`),
       sourceId: inst.sourceId ?? 'standalone',
       status: inst.status ?? 'installed',
-      ...rest,
+      ...rest
     }
   })
 
@@ -185,7 +203,8 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       await mkdir(snapshotsDir, { recursive: true })
       for (let j = 0; j < snaps.length; j++) {
         const s = snaps[j]!
-        const createdAt = s.createdAt ?? new Date(Date.now() - (snaps.length - j) * 1000).toISOString()
+        const createdAt =
+          s.createdAt ?? new Date(Date.now() - (snaps.length - j) * 1000).toISOString()
         const full = {
           version: 1,
           createdAt,
@@ -196,7 +215,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
           pipPackages: s.pipPackages ?? {},
           pythonVersion: s.pythonVersion,
           updateChannel: s.updateChannel ?? 'stable',
-          ...(s.skipPipSync ? { skipPipSync: true } : {}),
+          ...(s.skipPipSync ? { skipPipSync: true } : {})
         }
         const filename = `${formatSeedTimestamp(new Date(createdAt))}-${s.trigger}-${(j + 1).toString(16).padStart(6, '0')}.json`
         await writeFileFs(path.join(snapshotsDir, filename), JSON.stringify(full, null, 2))
@@ -224,11 +243,15 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   let persistedSettings: Record<string, unknown> = {}
   if (reuseDir) {
     try {
-      const parsed: unknown = JSON.parse(await readFile(path.join(appDataDir, 'settings.json'), 'utf-8'))
+      const parsed: unknown = JSON.parse(
+        await readFile(path.join(appDataDir, 'settings.json'), 'utf-8')
+      )
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         persistedSettings = parsed as Record<string, unknown>
       }
-    } catch { /* no settings yet on a first run against the reuse dir */ }
+    } catch {
+      /* no settings yet on a first run against the reuse dir */
+    }
     // Safety invariant: a persisted profile must never re-enable telemetry
     // under the harness. Callers can still override explicitly.
     delete persistedSettings['telemetryEnabled']
@@ -240,7 +263,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
 
   const application = await electron.launch({
     args,
-    env,
+    env
   })
 
   // Under Playwright the ready-to-show event may fire but isVisible() can lag,
@@ -278,7 +301,10 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   return { application, homeDir, cdpPort, cleanup }
 }
 
-export async function waitForAppExit(application: ElectronApplication, timeoutMs = 10_000): Promise<void> {
+export async function waitForAppExit(
+  application: ElectronApplication,
+  timeoutMs = 10_000
+): Promise<void> {
   const child = application.process()
   if (child.exitCode !== null) return
 
