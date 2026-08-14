@@ -48,6 +48,7 @@ import {
 import { launchAction } from '../../lib/actions'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { t } from '../../lib/i18n'
+import { formatTime } from '../../lib/util'
 import type { InstallationRecord } from '../../installations'
 import type {
   SourcePlugin,
@@ -269,6 +270,19 @@ export function withAccelArgs(installation: InstallationRecord, launchArgs: stri
   return `${launchArgs} --cpu`.trim()
 }
 
+/** Models-step status line: `file (i/n)  ·  X / Y MB  ·  Z MB/s  ·  Ns remaining`,
+ *  with the transfer facts appended only once the managed job reports them. */
+function stageStatusLine(p: StageProgress): string {
+  const mb = (n: number): string => (n / 1048576).toFixed(1)
+  const parts = [`${p.filename} (${p.index}/${p.total})`]
+  if (p.receivedBytes !== undefined && p.totalBytes !== undefined) {
+    parts.push(`${mb(p.receivedBytes)} / ${mb(p.totalBytes)} MB`)
+  }
+  if (p.speedBytesPerSec !== undefined) parts.push(`${mb(p.speedBytesPerSec)} MB/s`)
+  if (p.etaSecs !== undefined) parts.push(`${formatTime(p.etaSecs)} remaining`)
+  return parts.join('  ·  ')
+}
+
 /**
  * Lay down the environment for whatever artifact the record currently points
  * at. Shared by the first install and by an in-place version change, so the two
@@ -402,7 +416,7 @@ async function installEnvironmentLocked(
       onProgress: (p: StageProgress) =>
         tools.sendProgress('models', {
           percent: p.percent,
-          status: `${p.filename} (${p.index}/${p.total})`
+          status: stageStatusLine(p)
         }),
       ...(tools.signal ? { signal: tools.signal } : {})
     })

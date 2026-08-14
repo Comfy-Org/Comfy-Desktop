@@ -122,4 +122,12 @@ export interface StageProgress {
   filename: string
   /** Percent of the current model (0-100). */
   percent: number
+  /** Bytes received for the current model; absent until the transfer reports. */
+  receivedBytes?: number
+  /** Total bytes of the current model; absent when the server sends no size. */
+  totalBytes?: number
+  /** Transfer rate over the last sample window; absent on the first sample. */
+  speedBytesPerSec?: number
+  /** Seconds until the current model completes at the sampled rate. */
+  etaSecs?: number
 }

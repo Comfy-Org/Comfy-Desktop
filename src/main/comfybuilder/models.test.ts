@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { stageModels, installModelsRoot, type ModelJobSurface } from './models'
 import type { ModelJobOptions, ModelJobOutcome } from '../lib/comfyDownloadManager'
-import type { ModelDescriptor } from './types'
+import type { ModelDescriptor, StageProgress } from './types'
 
 const sha = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex')
 
@@ -247,6 +247,39 @@ describe('stageModels', () => {
     })
     expect(seen.some((s) => s.index === 1 && s.total === 2)).toBe(true)
     expect(seen.some((s) => s.index === 2 && s.total === 2 && s.percent === 100)).toBe(true)
+  })
+
+  it('forwards byte totals plus a window-sampled speed and ETA in progress', async () => {
+    const install = freshInstall()
+    const seen: StageProgress[] = []
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    const jobs = fakeJobs((opts, dest) => {
+      opts.onProgress?.(1_048_576, 10_485_760)
+      nowSpy.mockReturnValue(1_001_000) // 1s later
+      opts.onProgress?.(3_145_728, 10_485_760) // +2 MiB over that second
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, Buffer.from('weights'))
+      return { status: 'completed', savePath: dest }
+    })
+    try {
+      await stageModels({
+        models: [model()],
+        installPath: install,
+        jobs,
+        onProgress: (p) => seen.push(p)
+      })
+    } finally {
+      nowSpy.mockRestore()
+    }
+    // First sample has no prior window, so it carries bytes but no rate.
+    const first = seen.find((p) => p.receivedBytes === 1_048_576)!
+    expect(first.totalBytes).toBe(10_485_760)
+    expect(first.speedBytesPerSec).toBeUndefined()
+    expect(first.etaSecs).toBeUndefined()
+    // Second sample: 2 MiB in 1s, with the ETA derived from that rate.
+    const second = seen.find((p) => p.receivedBytes === 3_145_728)!
+    expect(second.speedBytesPerSec).toBeCloseTo(2_097_152)
+    expect(second.etaSecs).toBeCloseTo((10_485_760 - 3_145_728) / 2_097_152)
   })
 
   it('honors an already-aborted signal before starting any job', async () => {

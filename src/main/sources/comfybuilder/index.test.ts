@@ -269,6 +269,36 @@ describe('comfybuilder.install wiring', () => {
     expect(tools.sent.some((s) => s.phase === 'resolve')).toBe(false)
   })
 
+  it('appends bytes, speed, and ETA to the models status once the job reports them', async () => {
+    const tools = fakeTools()
+    await comfybuilder.install!(record(), tools)
+    const onProgress = (
+      stageModels as unknown as {
+        mock: { calls: Array<[{ onProgress: (p: unknown) => void }]> }
+      }
+    ).mock.calls[0]![0].onProgress
+    // Before the transfer reports, the line is just the file position.
+    onProgress({ index: 1, total: 2, filename: 'm.safetensors', percent: 0 })
+    // Once telemetry arrives, the transfer facts join the line.
+    onProgress({
+      index: 1,
+      total: 2,
+      filename: 'm.safetensors',
+      percent: 30,
+      receivedBytes: 3_145_728,
+      totalBytes: 10_485_760,
+      speedBytesPerSec: 2_097_152,
+      etaSecs: 3.5
+    })
+    const statuses = tools.sent
+      .filter((s) => s.phase === 'models')
+      .map((s) => (s.detail as { status?: string }).status)
+    expect(statuses).toContain('m.safetensors (1/2)')
+    expect(statuses).toContain(
+      'm.safetensors (1/2)  ·  3.0 / 10.0 MB  ·  2.0 MB/s  ·  4s remaining'
+    )
+  })
+
   it('threads the abort signal into both phases', async () => {
     const signal = new AbortController().signal
     await comfybuilder.install!(record(), fakeTools(signal))

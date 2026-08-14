@@ -1,3 +1,5 @@
+import type { DownloadProgress } from './download'
+
 export function parseUrl(
   raw: string | null | undefined
 ): { href: string; hostname: string; port: number } | null {
@@ -20,6 +22,15 @@ export function formatTime(secs: number): string {
   const s = Math.round(secs)
   if (s < 60) return `${s}s`
   return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+/** The one bytes/speed/ETA line every download progress surface shows,
+ *  e.g. `120.0 / 800.0 MB  ·  22.1 MB/s  ·  5s elapsed  ·  31s remaining`. */
+export function formatDownloadDetail(p: DownloadProgress): string {
+  const speed = `${p.speedMBs.toFixed(1)} MB/s`
+  const elapsed = formatTime(p.elapsedSecs)
+  const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
+  return `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
 }
 
 export function extractPort(args: string[], defaultPort = 8188): number {

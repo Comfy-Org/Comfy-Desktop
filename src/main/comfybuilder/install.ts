@@ -22,6 +22,7 @@ import type { DownloadProgress } from '../lib/download'
 import { extractNested } from '../lib/extract'
 import type { ExtractProgress } from '../lib/extract'
 import { sha256File } from '../lib/modelDownloadStaging'
+import { formatDownloadDetail } from '../lib/util'
 import type { ComfyBuilderClient } from './client'
 import { isSecureDownloadUrl, normalizeSha256 } from './integrity'
 import type { Artifact, InstallProgress } from './types'
@@ -139,7 +140,7 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
         onProgress?.({
           phase: 'download',
           percent: p.percent,
-          detail: `${p.receivedMB} / ${p.totalMB} MB`
+          detail: formatDownloadDetail(p)
         }),
       { ...(signal ? { signal } : {}), validateUrl: isSecureDownloadUrl }
     )

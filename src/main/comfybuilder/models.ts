@@ -191,6 +191,7 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
 
     onProgress?.({ index, total, filename: model.filename, percent: 0 })
     let lastReport = 0
+    let lastReportBytes = 0
     const jobOptions: ModelJobOptions = {
       url: model.downloadUrl,
       filename: model.filename,
@@ -205,12 +206,24 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
       onProgress: (receivedBytes, totalBytes) => {
         const now = Date.now()
         if (now - lastReport < PROGRESS_REPORT_MS) return
+        // Rate over the sample window, not since the start: a resumed job
+        // begins mid-file, so a from-zero average would overstate the speed.
+        const windowSecs = lastReport > 0 ? (now - lastReport) / 1000 : 0
+        const windowBytes = receivedBytes - lastReportBytes
+        const speed = windowSecs > 0 && windowBytes > 0 ? windowBytes / windowSecs : undefined
         lastReport = now
+        lastReportBytes = receivedBytes
         onProgress?.({
           index,
           total,
           filename: model.filename,
-          percent: totalBytes > 0 ? Math.min(100, (receivedBytes / totalBytes) * 100) : 0
+          percent: totalBytes > 0 ? Math.min(100, (receivedBytes / totalBytes) * 100) : 0,
+          receivedBytes,
+          ...(totalBytes > 0 ? { totalBytes } : {}),
+          ...(speed !== undefined ? { speedBytesPerSec: speed } : {}),
+          ...(speed !== undefined && totalBytes > 0
+            ? { etaSecs: Math.max(0, totalBytes - receivedBytes) / speed }
+            : {})
         })
       }
     }

@@ -8,8 +8,9 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../lib/download', () => ({ download: vi.fn() }))
 vi.mock('../lib/extract', () => ({ extractNested: vi.fn() }))
 
+import { download } from '../lib/download'
 import { installArtifact } from './install'
-import type { Artifact } from './types'
+import type { Artifact, InstallProgress } from './types'
 
 const artifact = (overrides: Partial<Artifact> = {}): Artifact => ({
   id: 'a1',
@@ -49,5 +50,35 @@ describe('installArtifact guards', () => {
       })
     ).rejects.toMatchObject({ kind: 'invalid-artifact' })
     expect(client.resolveDownloadUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe('installArtifact download progress', () => {
+  it('surfaces bytes, speed, and ETA in the download detail line', async () => {
+    const seen: InstallProgress[] = []
+    vi.mocked(download).mockImplementationOnce(async (_url, _dest, onProgress) => {
+      onProgress?.({
+        percent: 15,
+        receivedBytes: 125_829_120,
+        receivedMB: '120.0',
+        totalMB: '800.0',
+        speedMBs: 22.1,
+        elapsedSecs: 5,
+        etaSecs: 31
+      })
+      throw new Error('stop after progress')
+    })
+    const client = { resolveDownloadUrl: vi.fn(async () => 'https://example.test/a.tar.gz') }
+    await expect(
+      installArtifact({
+        artifact: artifact({ archiveSha256: 'a'.repeat(64) }),
+        client,
+        installPath: path.join(os.tmpdir(), 'cb-progress'),
+        cacheDir: path.join(os.tmpdir(), 'cb-progress-cache'),
+        onProgress: (p) => seen.push(p)
+      })
+    ).rejects.toThrow('stop after progress')
+    const detail = seen.find((p) => p.phase === 'download' && p.detail)?.detail
+    expect(detail).toBe('120.0 / 800.0 MB  ·  22.1 MB/s  ·  5s elapsed  ·  31s remaining')
   })
 })
