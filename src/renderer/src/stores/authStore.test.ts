@@ -157,6 +157,33 @@ describe('useAuthStore', () => {
     expect(store.distributions).toEqual([])
   })
 
+  it('a pushed sign-out with no follow-up fetch clears stuck loading and error flags', async () => {
+    api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    const store = useAuthStore()
+    await store.signIn()
+
+    const stale = deferred<unknown[]>()
+    api.listWorkspaces.mockReturnValueOnce(stale.promise)
+    api.listDistributions.mockRejectedValueOnce(new Error('network'))
+    const staleFetch = store.fetchWorkspaces()
+    await store.fetchDistributions()
+    expect(store.loadingWorkspaces).toBe(true)
+    expect(store.distributionsError).toBe(true)
+
+    // Sign-out arrives while the workspace fetch is still in flight; nothing
+    // refetches for the signed-out state, so the transition itself must
+    // settle the flags.
+    authChangedCb?.({ signedIn: false })
+    expect(store.loadingWorkspaces).toBe(false)
+    expect(store.distributionsError).toBe(false)
+
+    // The stale fetch settling later must not resurrect anything.
+    stale.resolve([{ id: 'w1', name: 'W1', type: 'team', role: 'owner' }])
+    await staleFetch
+    expect(store.loadingWorkspaces).toBe(false)
+    expect(store.workspaces).toEqual([])
+  })
+
   it('a pushed sign-out clears scoped state', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     const store = useAuthStore()

@@ -268,33 +268,29 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     env
   })
 
-  // The main-process evaluation channel intermittently fails with
-  // "Execution context was destroyed" on loaded runners when child
-  // WebContentsViews churn (see evalRetry.ts). The WebContentsPage facades
-  // already retry; route direct `application.evaluate(...)` calls from specs
-  // through the same shared retry so they get identical resilience.
-  const rawEvaluate = application.evaluate.bind(application) as (
-    fn: unknown,
-    arg?: unknown
-  ) => Promise<unknown>
-  application.evaluate = ((fn: unknown, arg?: unknown) =>
-    evalWithRetry(() => rawEvaluate(fn, arg))) as ElectronApplication['evaluate']
-
   // Under Playwright the ready-to-show event may fire but isVisible() can lag,
-  // so force-show once a BrowserWindow exists.
+  // so force-show once a BrowserWindow exists. Retried because the show is
+  // idempotent; side-effectful evaluate calls must NOT be blanket-retried
+  // (a retry can re-run a callback that already executed - see evalRetry.ts).
   const page = await application.firstWindow()
   await page.waitForLoadState('domcontentloaded')
-  await application.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win && !win.isVisible()) win.show()
-  })
+  await evalWithRetry(() =>
+    application.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win && !win.isVisible()) win.show()
+    })
+  )
 
   // Suppress the native uncaught-exception dialog and exit fast so tests don't
   // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
-  await application.evaluate(({ app: electronApp, dialog }) => {
-    dialog.showErrorBox = () => {}
-    electronApp.on('render-process-gone', () => electronApp.exit(1))
-  })
+  // Retried: re-assigning the stub and re-registering the exit handler are
+  // both harmless if the first attempt actually ran.
+  await evalWithRetry(() =>
+    application.evaluate(({ app: electronApp, dialog }) => {
+      dialog.showErrorBox = () => {}
+      electronApp.on('render-process-gone', () => electronApp.exit(1))
+    })
+  )
 
   const cleanup = async (): Promise<void> => {
     try {

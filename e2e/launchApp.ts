@@ -10,17 +10,18 @@
 import { expect, type ElectronApplication } from '@playwright/test'
 import { launchLauncherApp, type SeedOptions } from './support/electronHarness'
 import { panelPage, titleBarPage, waitForWebContents, type WebContentsPage } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 
 /** Poll the main process until both panel.html and comfyTitleBar.html webContents exist. */
 async function waitForChooserWebContents(app: ElectronApplication, timeoutMs = 30_000): Promise<void> {
   await expect.poll(
-    () => app.evaluate(({ webContents }) => {
+    () => evalWithRetry(() => app.evaluate(({ webContents }) => {
       const urls = webContents.getAllWebContents().map((wc) => wc.getURL())
       return {
         hasPanel: urls.some((u) => u.includes('panel.html')),
         hasTitleBar: urls.some((u) => u.includes('comfyTitleBar.html')),
       }
-    }).then((s) => s.hasPanel && s.hasTitleBar),
+    })).then((s) => s.hasPanel && s.hasTitleBar),
     { timeout: timeoutMs, intervals: [250, 500, 1000] },
   ).toBe(true)
 }

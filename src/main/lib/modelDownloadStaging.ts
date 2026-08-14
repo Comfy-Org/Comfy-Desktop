@@ -355,7 +355,12 @@ export async function installStagedAtFinal(
  *  staging pair on disk (`.part` plus v2 sidecar) before its first transfer
  *  starts, so a quit/crash in that window cannot lose the job. An existing
  *  sidecar is a previous attempt's resume identity (validators, expected
- *  size) and is never clobbered - only its missing `.part` is restored.
+ *  size) and keeps that identity - only its missing `.part` is restored and,
+ *  when the new caller supplies a content hash, the persisted `sha256` is
+ *  upgraded to it. The transport rewrites the sidecar only at response time,
+ *  so without that upgrade a crash before the first response would hydrate
+ *  the pair with the old (possibly absent) hash and let an unverified file
+ *  finalize under the final model name.
  *  Orphan `.part` bytes without a sidecar (possibly quarantined migration
  *  data) are parked aside, never claimed or overwritten. Returns false when
  *  the durable pair could not be established - the job must not be admitted
@@ -363,7 +368,13 @@ export async function installStagedAtFinal(
 export function ensureStagedPlaceholder(finalPath: string, meta: StagedDownloadMeta): boolean {
   const metaPath = stagingMetaPathFor(finalPath)
   const stagingPath = stagingPathFor(finalPath)
-  if (readStagedMeta(metaPath) !== null) {
+  const existing = readStagedMeta(metaPath)
+  if (existing !== null) {
+    // Persist the caller's content expectation before the job is admitted;
+    // a caller without one never weakens a persisted hash.
+    if (meta.sha256 && existing.sha256 !== meta.sha256) {
+      if (!writeStagedMeta(metaPath, { ...existing, sha256: meta.sha256 })) return false
+    }
     if (fs.existsSync(stagingPath)) return true
     // The pair is only hydratable when both files exist: restore a missing
     // `.part` (e.g. removed by a scanner) as an empty file; the sidecar's

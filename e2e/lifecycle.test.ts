@@ -1618,12 +1618,12 @@ test('per-install Manager security level + network mode land in Manager config.i
 
   /** Origin of the running ComfyUI server, from the loaded frontend webContents. */
   const comfyOrigin = async (): Promise<string> => {
-    const origin = await ctx.app.evaluate(({ webContents }) => {
+    const origin = await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
       const wc = webContents
         .getAllWebContents()
         .find((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()))
       return wc ? new URL(wc.getURL()).origin : null
-    })
+    }))
     expect(origin, 'no running ComfyUI frontend to derive the server origin from').toBeTruthy()
     return origin!
   }

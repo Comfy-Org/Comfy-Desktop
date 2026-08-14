@@ -25,6 +25,7 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { titlePopupPage } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -91,7 +92,7 @@ test.beforeAll(async () => {
   // off the requested `defaultPath` filename — production code uses
   // distinct default names per export variant (single vs all), so the
   // returned path is uniquely identifiable per call.
-  await ctx.app.evaluate(({ dialog }, dir) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
     ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
       _win: unknown,
       opts: { defaultPath?: string },
@@ -102,7 +103,7 @@ test.beforeAll(async () => {
       const sep = dir.includes('\\') ? '\\' : '/'
       return { canceled: false, filePath: `${dir}${sep}${base}` }
     }
-  }, exportDir)
+  }, exportDir))
 })
 
 test.afterAll(async () => {

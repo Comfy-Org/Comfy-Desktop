@@ -23,6 +23,7 @@ import {
   waitForWebContents,
   type WebContentsPage,
 } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 
 let ctx: AppContext
 let popup: WebContentsPage
@@ -91,13 +92,13 @@ test('title-popup webContents listener counts are stable across repeated opens @
 test('opening the title menu hides the title-bar tooltip @windows @macos @linux', async () => {
   // Drive the tooltip directly via the title-bar bridge, mirroring the
   // existing tooltip-on-demand test in chooser.test.ts.
-  await ctx.app.evaluate(({ webContents }) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitleBar.html'))
     if (!wc) throw new Error('title-bar webContents missing')
     return wc.executeJavaScript(
       `(window).__comfyTitleBar.showTooltip({ text: 'g4 tooltip', leftX: 50, rightX: 200, bottomY: 30 })`,
     )
-  })
+  }))
   await waitForWebContents(ctx.app, 'comfyTitleTooltip.html', 5_000)
   await expect.poll(() => isPopupVisible(ctx.app, 'comfyTitleTooltip.html'), {
     timeout: 5_000,
@@ -122,7 +123,7 @@ test('opening the title menu hides the title-bar tooltip @windows @macos @linux'
  *  dashboard through app UI; this preserves regression coverage for stale
  *  internal zoom state without treating it as supported dashboard behavior. */
 async function setComfyViewZoomLevel(app: ElectronApplication, level: number): Promise<void> {
-  await app.evaluate(async ({ BrowserWindow, WebContentsView }, lvl) => {
+  await evalWithRetry(() => app.evaluate(async ({ BrowserWindow, WebContentsView }, lvl) => {
     const KNOWN_HTML_MARKERS = [
       'panel.html',
       'comfyTitleBar.html',
@@ -141,7 +142,7 @@ async function setComfyViewZoomLevel(app: ElectronApplication, level: number): P
         child.webContents.setZoomLevel(lvl)
       }
     }
-  }, level)
+  }, level))
 }
 
 async function expectNoResetZoomAtLevel(app: ElectronApplication, level: number): Promise<void> {
@@ -165,18 +166,18 @@ async function waitForPopupHidden(app: ElectronApplication): Promise<void> {
 }
 
 async function closeTitlePopupViaBridge(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ webContents }) => {
+  await evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return
     return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-  })
+  }))
 }
 
 /** Sum of registered listeners on the popup webContents, summed across
  *  every event name. A leak would show as monotonic growth across
  *  open/close cycles. */
 async function getPopupListenerCount(app: ElectronApplication): Promise<number> {
-  return app.evaluate(({ webContents }) => {
+  return evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return 0
     type EmitterLike = {
@@ -189,5 +190,5 @@ async function getPopupListenerCount(app: ElectronApplication): Promise<number> 
       total += emitter.listenerCount(name)
     }
     return total
-  })
+  }))
 }

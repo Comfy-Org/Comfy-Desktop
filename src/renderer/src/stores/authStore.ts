@@ -29,6 +29,18 @@ export const useAuthStore = defineStore('auth', () => {
    *  sign-out) so a slower in-flight pull can never overwrite a newer status. */
   let revision = 0
 
+  /** Advance the revision on an authoritative status change. Every in-flight
+   *  fetch becomes stale, and a stale fetch's guarded `finally` refuses to
+   *  touch the shared flags - so reset them here, otherwise a transition with
+   *  no follow-up fetch (e.g. sign-out) would leave loading stuck on. */
+  function advanceRevision(): void {
+    revision += 1
+    loadingWorkspaces.value = false
+    loadingDistributions.value = false
+    workspacesError.value = false
+    distributionsError.value = false
+  }
+
   /** Drop workspace-scoped caches: the list and the distributions both belong
    *  to the token's single workspace, so a switch/sign-out invalidates them. */
   function resetScopedState(): void {
@@ -47,14 +59,14 @@ export const useAuthStore = defineStore('auth', () => {
    *  feedback; a completed sign-in also lands via `onAuthChanged`. */
   async function signIn(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signIn()
-    revision += 1
+    advanceRevision()
     status.value = next
     return next
   }
 
   async function signOut(): Promise<AuthStatus> {
     await comfybuilderApi.signOut()
-    revision += 1
+    advanceRevision()
     status.value = { signedIn: false }
     resetScopedState()
     return status.value
@@ -86,14 +98,14 @@ export const useAuthStore = defineStore('auth', () => {
    *  dropped so the distribution grid re-fetches for the new workspace. */
   async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     const next = await comfybuilderApi.switchWorkspace(workspaceId)
-    revision += 1
+    advanceRevision()
     status.value = next
     distributions.value = []
     return next
   }
 
   const unsubscribe = comfybuilderApi.onAuthChanged((nextStatus) => {
-    revision += 1
+    advanceRevision()
     status.value = nextStatus
     if (!nextStatus.signedIn) resetScopedState()
     else distributions.value = []

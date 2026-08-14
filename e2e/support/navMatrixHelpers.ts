@@ -7,12 +7,13 @@ import type { ElectronApplication } from 'playwright'
 import type { WebContentsPage } from './cdpPages'
 import { titlePopupPage, waitForWebContents } from './cdpPages'
 import { getIpcInvocations } from './devHooks'
+import { evalWithRetry } from './evalRetry'
 
 /** Count of live (non-destroyed) BrowserWindows. */
 export async function liveWindowCount(app: ElectronApplication): Promise<number> {
-  return app.evaluate(({ BrowserWindow }) =>
+  return evalWithRetry(() => app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length,
-  )
+  ))
 }
 
 /**

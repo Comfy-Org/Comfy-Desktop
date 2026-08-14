@@ -43,6 +43,8 @@ function freshInstall(): string {
 /** Ask the app to run the real staging against installPath, reading the manifest
  *  from the env-pointed file the test controls. */
 async function stage(installPath: string): Promise<{ staged?: string[]; error?: string; kind?: string }> {
+  // Deliberately not retried: staging mutates the install's model tree, so a
+  // retry after a lost result could run the real staging twice.
   return ctx.app.evaluate(async (_electron, arg) => {
     const helpers = (globalThis as unknown as {
       __e2e?: { stageDistributionModels: (o: unknown) => Promise<unknown> }
