@@ -100,7 +100,9 @@ function environmentPaths(installPath: string) {
     previousVenv: `${venv}.previous`,
     previousComfy: `${comfy}.previous`,
     models: path.join(comfy, 'models'),
+    user: path.join(comfy, 'user'),
     preservedModels: path.join(installPath, '.comfybuilder-models-preserved'),
+    preservedUser: path.join(installPath, '.comfybuilder-user-preserved'),
     readyMarker: path.join(installPath, READY_MARKER)
   }
 }
@@ -140,7 +142,8 @@ async function hasEnvironmentBackups(installPath: string): Promise<boolean> {
   return (
     (await pathExists(paths.previousVenv)) ||
     (await pathExists(paths.previousComfy)) ||
-    (await pathExists(paths.preservedModels))
+    (await pathExists(paths.preservedModels)) ||
+    (await pathExists(paths.preservedUser))
   )
 }
 
@@ -148,9 +151,13 @@ async function restoreEnvironmentBackups(installPath: string): Promise<void> {
   const paths = environmentPaths(installPath)
   const hasPreviousComfy = await pathExists(paths.previousComfy)
   let hasPreservedModels = await pathExists(paths.preservedModels)
+  let hasPreservedUser = await pathExists(paths.preservedUser)
 
   if (hasPreviousComfy && !hasPreservedModels) {
     hasPreservedModels = await renameIfExists(paths.models, paths.preservedModels)
+  }
+  if (hasPreviousComfy && !hasPreservedUser) {
+    hasPreservedUser = await renameIfExists(paths.user, paths.preservedUser)
   }
   if (hasPreviousComfy) {
     await fs.rm(paths.comfy, { recursive: true, force: true })
@@ -160,6 +167,11 @@ async function restoreEnvironmentBackups(installPath: string): Promise<void> {
     await fs.mkdir(paths.comfy, { recursive: true })
     await fs.rm(paths.models, { recursive: true, force: true })
     await fs.rename(paths.preservedModels, paths.models)
+  }
+  if (hasPreservedUser) {
+    await fs.mkdir(paths.comfy, { recursive: true })
+    await fs.rm(paths.user, { recursive: true, force: true })
+    await fs.rename(paths.preservedUser, paths.user)
   }
   if (await pathExists(paths.previousVenv)) {
     await fs.rm(paths.venv, { recursive: true, force: true })
@@ -174,6 +186,7 @@ async function finalizeEnvironmentTransaction(installPath: string): Promise<void
   await fs.rm(paths.previousVenv, { recursive: true, force: true })
   await fs.rm(paths.previousComfy, { recursive: true, force: true })
   await fs.rm(paths.preservedModels, { recursive: true, force: true })
+  await fs.rm(paths.preservedUser, { recursive: true, force: true })
   await fs.rm(paths.readyMarker, { force: true })
 }
 
@@ -341,12 +354,17 @@ async function installEnvironmentLocked(
   let hadPreviousVenv = false
   let hadPreviousComfy = false
   let modelsDetached = false
+  let userDetached = false
 
-  /** Restore both executable halves of the previous distribution. Models are
-   *  moved out and back rather than copied because they can be hundreds of GB. */
+  /** Restore both executable halves of the previous distribution. Models and
+   *  the user directory are moved out and back rather than copied because
+   *  models can be hundreds of GB. */
   async function restorePreviousEnvironment(): Promise<void> {
     if (hadPreviousComfy && !modelsDetached) {
       modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
+    }
+    if (hadPreviousComfy && !userDetached) {
+      userDetached = await renameIfExists(paths.user, paths.preservedUser)
     }
     if (hadPreviousComfy) {
       await fs.rm(paths.comfy, { recursive: true, force: true }).catch(() => {})
@@ -357,6 +375,11 @@ async function installEnvironmentLocked(
       await fs.rename(paths.preservedModels, paths.models)
       modelsDetached = false
     }
+    if (userDetached) {
+      await fs.mkdir(paths.comfy, { recursive: true })
+      await fs.rename(paths.preservedUser, paths.user)
+      userDetached = false
+    }
     if (hadPreviousVenv) {
       await fs.rm(paths.venv, { recursive: true, force: true }).catch(() => {})
       await fs.rename(paths.previousVenv, paths.venv)
@@ -366,7 +389,10 @@ async function installEnvironmentLocked(
   // Neither executable tree can be overlaid: stale packages or source files can
   // make the resulting version incoherent. Move both aside until archive and
   // model staging finish. Keep models in the active tree so updates preserve
-  // existing weights and stage only what the new manifest adds.
+  // existing weights and stage only what the new manifest adds. The user
+  // directory (workflows, settings, database, manager config) is detached the
+  // same way and restored only after extraction, so archive contents can never
+  // overwrite it.
   const interrupted = await hasEnvironmentBackups(installation.installPath)
   if (interrupted) throw new Error('An interrupted ComfyBuilder update must be recovered first.')
   await fs.rm(paths.readyMarker, { force: true }).catch(() => {})
@@ -377,6 +403,7 @@ async function installEnvironmentLocked(
     await onTransactionStarted?.()
     hadPreviousVenv = await renameIfExists(paths.venv, paths.previousVenv)
     modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
+    userDetached = await renameIfExists(paths.user, paths.preservedUser)
     hadPreviousComfy = await renameIfExists(paths.comfy, paths.previousComfy)
     if (modelsDetached) {
       await fs.mkdir(paths.comfy, { recursive: true })
@@ -398,6 +425,15 @@ async function installEnvironmentLocked(
       },
       ...(tools.signal ? { signal: tools.signal } : {})
     })
+
+    // Put the preserved user directory back now that the layout is validated.
+    // A user/ directory the archive shipped is build debris, never real user
+    // state: the preserved data wins.
+    if (userDetached) {
+      await fs.rm(paths.user, { recursive: true, force: true })
+      await fs.rename(paths.preservedUser, paths.user)
+      userDetached = false
+    }
 
     // Phase 2: models. The archive carries no weights, so stage the
     // distribution's declared models into the install's ComfyUI model tree

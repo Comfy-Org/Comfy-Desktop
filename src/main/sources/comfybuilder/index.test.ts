@@ -200,6 +200,46 @@ describe('comfybuilder.install wiring', () => {
     }
   })
 
+  it('preserves the user directory across the environment swap', async () => {
+    acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
+    await comfybuilder.install!(record(), fakeTools())
+
+    const calls = rename.mock.calls as unknown as Array<[string, string]>
+    const detachIdx = calls.findIndex(
+      ([from, to]) =>
+        /[\\/]ComfyUI[\\/]user$/.test(from) && to.includes('.comfybuilder-user-preserved')
+    )
+    const restoreIdx = calls.findIndex(
+      ([from, to]) =>
+        from.includes('.comfybuilder-user-preserved') && /[\\/]ComfyUI[\\/]user$/.test(to)
+    )
+    expect(detachIdx).toBeGreaterThanOrEqual(0)
+    expect(restoreIdx).toBeGreaterThanOrEqual(0)
+
+    // The restore runs only after extraction has been validated, so archive
+    // contents can never overwrite real user data, and any user/ directory the
+    // archive shipped is removed first.
+    const restoreOrder = rename.mock.invocationCallOrder[restoreIdx]!
+    const installOrder = vi.mocked(installArtifact).mock.invocationCallOrder[0]!
+    expect(restoreOrder).toBeGreaterThan(installOrder)
+    expect(rm).toHaveBeenCalledWith(expect.stringMatching(/[\\/]ComfyUI[\\/]user$/), {
+      recursive: true,
+      force: true
+    })
+  })
+
+  it('puts the preserved user directory back when install fails', async () => {
+    acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
+    vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
+
+    await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow('disk full')
+
+    expect(rename).toHaveBeenCalledWith(
+      expect.stringContaining('.comfybuilder-user-preserved'),
+      expect.stringMatching(/[\\/]ComfyUI[\\/]user$/)
+    )
+  })
+
   // A record without its build identity is corrupt: reject it with a clear
   // message before touching the environment, instead of silently installing
   // a target the record never chose.
@@ -392,6 +432,64 @@ describe('comfybuilder interrupted-install recovery', () => {
       await expect(
         fsp.readFile(path.join(root, 'ComfyUI', 'models', 'user.safetensors'), 'utf8')
       ).resolves.toBe('model')
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('restores the preserved user directory after an interrupted update', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-user-'))
+    try {
+      await fsp.mkdir(path.join(root, 'venv.previous'), { recursive: true })
+      await fsp.mkdir(path.join(root, 'ComfyUI.previous'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI.previous', 'main.py'), 'old code')
+      await fsp.mkdir(path.join(root, 'ComfyUI'), { recursive: true })
+      const preserved = path.join(root, '.comfybuilder-user-preserved', 'default', 'workflows')
+      await fsp.mkdir(preserved, { recursive: true })
+      await fsp.writeFile(path.join(preserved, 'wf.json'), 'workflow')
+
+      await recoverComfyBuilderInstallation(
+        record({
+          installPath: root,
+          status: 'installing',
+          comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
+        })
+      )
+
+      await expect(
+        fsp.readFile(path.join(root, 'ComfyUI', 'user', 'default', 'workflows', 'wf.json'), 'utf8')
+      ).resolves.toBe('workflow')
+      await expect(fsp.access(path.join(root, '.comfybuilder-user-preserved'))).rejects.toThrow()
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps user data already moved into the failed new tree', async () => {
+    // Crash window: the user directory was restored into the new tree after
+    // extraction, but the transaction died before the ready marker was written.
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-user-moved-'))
+    try {
+      await fsp.mkdir(path.join(root, 'venv.previous'), { recursive: true })
+      await fsp.mkdir(path.join(root, 'ComfyUI.previous'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI.previous', 'main.py'), 'old code')
+      await fsp.mkdir(path.join(root, 'ComfyUI', 'user'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'user', 'wf.json'), 'workflow')
+
+      await recoverComfyBuilderInstallation(
+        record({
+          installPath: root,
+          status: 'installing',
+          comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
+        })
+      )
+
+      await expect(fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).resolves.toBe(
+        'old code'
+      )
+      await expect(
+        fsp.readFile(path.join(root, 'ComfyUI', 'user', 'wf.json'), 'utf8')
+      ).resolves.toBe('workflow')
     } finally {
       await fsp.rm(root, { recursive: true, force: true })
     }
