@@ -53,6 +53,7 @@
     "test:e2e": "playwright test",
     "test:e2e:macos": "playwright test --project=macos",
     "test:e2e:windows": "playwright test --project=windows",
+    "test:e2e:hardware-acceleration": "playwright test --project=windows e2e/hardware-acceleration.test.ts",
     "test:e2e:linux": "playwright test --project=linux",
     "test:e2e:lifecycle": "playwright test --project=lifecycle",
     "test:e2e:lifecycle:install": "playwright test --project=lifecycle e2e/lifecycle.test.ts --grep \"@sec-setup|@sec-meta\"",

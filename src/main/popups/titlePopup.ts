@@ -197,7 +197,7 @@ export interface GlobalSettingsModelsDir {
 }
 
 /** Tabs of the Global Settings popup a caller can deep-link into. */
-export type GlobalSettingsTab = 'general' | 'updates' | 'storage' | 'advanced'
+export type GlobalSettingsTab = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
 
 /** Snapshot pushed to the global-settings popup on open and on every
  *  settings-changed / app-update-state / app-update-progress /
@@ -239,6 +239,7 @@ export interface GlobalSettingsSnapshot {
     storage: string
     models: string
     advanced: string
+    logs: string
     sharedDirectories: string
   }
 }
@@ -2184,6 +2185,7 @@ function buildGlobalSettingsSnapshot(
       storage: i18n.t('settings.storageTab'),
       models: i18n.t('settings.models'),
       advanced: i18n.t('settings.advanced'),
+      logs: i18n.t('settings.logs'),
       sharedDirectories: i18n.t('settings.sharedDirectories')
     }
   }
@@ -2973,7 +2975,11 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (parentEntryId === undefined || !parentEntry) return
     const rawTab = payload?.tab
     const initialTab: GlobalSettingsTab | null =
-      rawTab === 'general' || rawTab === 'updates' || rawTab === 'storage' || rawTab === 'advanced'
+      rawTab === 'general' ||
+      rawTab === 'updates' ||
+      rawTab === 'storage' ||
+      rawTab === 'advanced' ||
+      rawTab === 'logs'
         ? rawTab
         : null
     openGlobalSettingsForHost(

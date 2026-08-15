@@ -75,4 +75,33 @@ describe('buildSettingsSections', () => {
       updatedFields.find((field) => field.id === 'warnBeforeRunningMultipleInstances')?.value
     ).toBe(false)
   })
+
+  it('offers hardware acceleration under Advanced with a restart notice', () => {
+    const sections = buildSettingsSections()
+    const generalFields =
+      (sections.find((section) => section.title === 'General')?.fields as
+        | { id?: string }[]
+        | undefined) ?? []
+    const advancedFields =
+      (sections.find((section) => section.title === 'Advanced')?.fields as
+        | { id?: string; value?: unknown; description?: string }[]
+        | undefined) ?? []
+
+    expect(generalFields.map((field) => field.id)).not.toContain('hardwareAcceleration')
+    expect(advancedFields).toContainEqual(
+      expect.objectContaining({
+        id: 'hardwareAcceleration',
+        label: 'Use hardware acceleration',
+        type: 'boolean',
+        value: true,
+        description:
+          'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
+      })
+    )
+
+    mockSettings.hardwareAcceleration = false
+    const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')
+      ?.fields as { id?: string; value?: unknown }[]
+    expect(updatedFields.find((field) => field.id === 'hardwareAcceleration')?.value).toBe(false)
+  })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
@@ -32,7 +32,7 @@ interface ModelsDir {
 interface Snapshot {
   /** Tab to land on; non-null only on the open push (rebroadcasts carry
    *  null so live data refreshes never retarget the user's tab). */
-  initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | null
+  initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -61,6 +61,7 @@ interface Snapshot {
     storage: string
     models: string
     advanced: string
+    logs: string
     sharedDirectories: string
   }
 }
@@ -88,7 +89,7 @@ const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge 
 
 const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
-type TabId = 'general' | 'updates' | 'storage' | 'advanced'
+type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
 const activeTab = ref<TabId>('general')
 
 // Each open pushes a fresh snapshot object, so watching by identity lets a
@@ -106,7 +107,8 @@ const tabs = computed(() => [
   { id: 'general' as const, label: props.snapshot.i18n.overview, icon: Settings2 },
   { id: 'updates' as const, label: props.snapshot.i18n.updates, icon: RefreshCcw },
   { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: HardDrive },
-  { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal }
+  { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal },
+  { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText }
 ])
 
 const storageSnapshot = computed(() => ({
@@ -237,6 +239,7 @@ function handleTabKey(event: KeyboardEvent): void {
   const next =
     event.key === 'ArrowDown' ? (idx + 1) % ids.length : (idx - 1 + ids.length) % ids.length
   activeTab.value = ids[next] as TabId
+  void nextTick(() => document.getElementById(`gs-tab-${activeTab.value}`)?.focus())
 }
 
 onMounted(() => {
@@ -350,7 +353,7 @@ onMounted(() => {
           <GlobalStorageSections :snapshot="storageSnapshot" />
         </template>
 
-        <template v-else>
+        <template v-else-if="activeTab === 'advanced'">
           <GlobalSettingsMicroSection
             :title="t('settings.installLocation', 'Default Install Location')"
             :tooltip="t('tooltips.installDir')"
@@ -381,7 +384,9 @@ onMounted(() => {
               @browse="handleBrowseCacheDir"
             />
           </GlobalSettingsMicroSection>
+        </template>
 
+        <template v-else-if="activeTab === 'logs'">
           <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
             <button type="button" class="gs-logs-btn" @click="handleOpenLogsFolder">
               <FileText :size="14" aria-hidden="true" />

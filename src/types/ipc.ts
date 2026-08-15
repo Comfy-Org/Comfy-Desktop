@@ -1188,7 +1188,7 @@ export interface ElectronApi {
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
    *  same helper the hamburger Settings entry calls. `tab` lands the
    *  popup on that tab instead of its remembered one. */
-  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced'): void
+  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs'): void
   /** Open the instance-picker popup for the panel's host window with
    *  `installationId` seeded as the picker's right-pane selection.
    *  Used by chooser-card "Manage…" (and future per-install entry

@@ -242,6 +242,18 @@ describe('settings unset/default semantics', () => {
     expect(readPersistedSettings()).not.toHaveProperty('autoLaunchOnStartup')
   })
 
+  it('persists the hardware acceleration opt-out', () => {
+    expect(settings.get('hardwareAcceleration')).toBeUndefined()
+
+    settings.set('hardwareAcceleration', false)
+    expect(settings.get('hardwareAcceleration')).toBe(false)
+    expect(readPersistedSettings()['hardwareAcceleration']).toBe(false)
+
+    settings.set('hardwareAcceleration', true)
+    expect(settings.get('hardwareAcceleration')).toBe(true)
+    expect(readPersistedSettings()['hardwareAcceleration']).toBe(true)
+  })
+
   it('treats empty and whitespace-only strings as unset for pypiMirror', () => {
     settings.set('pypiMirror', 'https://mirrors.aliyun.com/pypi/simple/')
     expect(settings.get('pypiMirror')).toBe('https://mirrors.aliyun.com/pypi/simple/')
@@ -567,6 +579,16 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     settings.set('useChineseMirrors', true)
     expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
       setting_use_chinese_mirrors: true
+    })
+  })
+
+  it('hardwareAcceleration: unset reports enabled and explicit false reports disabled', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['hardwareAcceleration'])).toEqual({
+      setting_hardware_acceleration: true
+    })
+    settings.set('hardwareAcceleration', false)
+    expect(settings.getTrackedSettingsTelemetryProperties(['hardwareAcceleration'])).toEqual({
+      setting_hardware_acceleration: false
     })
   })
 
