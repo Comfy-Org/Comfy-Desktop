@@ -172,6 +172,19 @@ describe('GlobalSettingsView', () => {
     expect(wrapper.find('.gs-tab.active').text()).toBe('General')
   })
 
+  it('moves focus with arrow-key tab navigation', async () => {
+    installMockBridge()
+    const wrapper = mountView()
+    const generalTab = wrapper.findAll('.gs-tab')[0]!
+    generalTab.element.focus()
+    await generalTab.trigger('keydown', { key: 'ArrowDown' })
+    await nextTick()
+
+    const updatesTab = wrapper.findAll('.gs-tab')[1]!
+    expect(wrapper.find('.gs-tab.active').text()).toBe('Updates')
+    expect(document.activeElement).toBe(updatesTab.element)
+  })
+
   it('lands on the tab named by snapshot.initialTab', () => {
     // The instance pane's "Manage Shared Directories" deep-link opens this
     // popup with initialTab 'storage' so the user lands on the Storage tab.

@@ -94,6 +94,7 @@ export interface PopupGlobalSettingsSnapshot {
   /** Tab to land on; non-null only on the open push (rebroadcasts carry
    *  null so live data refreshes never retarget the user's tab). */
   initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
+  languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
   desktopUpdateFields: Record<string, unknown>[]
@@ -436,6 +437,7 @@ function isGlobalSettingsSnapshot(value: unknown): value is PopupGlobalSettingsS
   ) {
     return false
   }
+  if (!Array.isArray(v['languageFields'])) return false
   if (!Array.isArray(v['generalFields'])) return false
   if (!Array.isArray(v['telemetryFields'])) return false
   if (!Array.isArray(v['desktopUpdateFields'])) return false

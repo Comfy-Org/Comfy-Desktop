@@ -137,7 +137,7 @@ test('disabling hardware acceleration reduces Desktop VRAM use @windows', async 
   try {
     const acceleratedCtx = await launchApp({
       profileDir,
-      settings: { firstUseCompleted: true, hardwareAcceleration: true }
+      settings: { firstUseCompleted: true, hardwareAcceleration: true, language: 'en' }
     })
     try {
       accelerated = await measureApp(acceleratedCtx.app)

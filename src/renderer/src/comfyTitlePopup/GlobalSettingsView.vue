@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
@@ -239,6 +239,7 @@ function handleTabKey(event: KeyboardEvent): void {
   const next =
     event.key === 'ArrowDown' ? (idx + 1) % ids.length : (idx - 1 + ids.length) % ids.length
   activeTab.value = ids[next] as TabId
+  void nextTick(() => document.getElementById(`gs-tab-${activeTab.value}`)?.focus())
 }
 
 onMounted(() => {
