@@ -93,14 +93,6 @@ export function buildSettingsSections(
           value: s.warnBeforeRunningMultipleInstances !== false,
           tooltip: i18n.t('settings.warnBeforeRunningMultipleInstancesDescription')
         },
-        {
-          id: 'hardwareAcceleration',
-          label: i18n.t('settings.hardwareAcceleration'),
-          type: 'boolean',
-          value: s.hardwareAcceleration !== false,
-          description: i18n.t('settings.hardwareAccelerationDescription'),
-          tooltip: i18n.t('settings.hardwareAccelerationDescription')
-        },
 
         // Cloud opt-out — pure visibility toggle, doesn't affect any
         // running behavior. Kept after the window-behavior block so
@@ -154,6 +146,14 @@ export function buildSettingsSections(
     {
       title: i18n.t('settings.advanced'),
       fields: [
+        {
+          id: 'hardwareAcceleration',
+          label: i18n.t('settings.hardwareAcceleration'),
+          type: 'boolean',
+          value: s.hardwareAcceleration !== false,
+          description: i18n.t('settings.hardwareAccelerationDescription'),
+          tooltip: i18n.t('settings.hardwareAccelerationDescription')
+        },
         {
           id: 'pypiMirror',
           label: i18n.t('settings.pypiMirror'),

@@ -100,6 +100,7 @@ async function disableHardwareAccelerationFromDesktopSettings(ctx: AppContext): 
   await popup.waitForVisible('[role="menuitem"]', { timeout: 5_000 })
   expect(await popup.clickByText('[role="menuitem"]', 'Desktop Settings')).toBe(true)
   await popup.waitForVisible('.global-settings', { timeout: 5_000 })
+  expect(await popup.clickByText('.gs-tab', 'Advanced')).toBe(true)
 
   const selector = '[role="switch"][aria-label="Use hardware acceleration"]'
   await popup.waitForVisible(selector, { timeout: 5_000 })

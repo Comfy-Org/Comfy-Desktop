@@ -12,6 +12,7 @@ interface BridgeState {
   setModelsDirsCalls: string[][]
   openPathCalls: string[]
   openExternalCalls: string[]
+  openLogsFolderCalls: number
   browseFolderReturn: string | null
   checkForUpdateCalls: number
   downloadUpdateCalls: number
@@ -25,6 +26,7 @@ function installMockBridge(): BridgeState {
     setModelsDirsCalls: [],
     openPathCalls: [],
     openExternalCalls: [],
+    openLogsFolderCalls: 0,
     browseFolderReturn: null,
     checkForUpdateCalls: 0,
     downloadUpdateCalls: 0,
@@ -45,6 +47,9 @@ function installMockBridge(): BridgeState {
     },
     globalSettingsOpenExternal: (url: string) => {
       state.openExternalCalls.push(url)
+    },
+    globalSettingsOpenLogsFolder: () => {
+      state.openLogsFolderCalls += 1
     },
     globalSettingsSetModelsDirs: async (dirs: string[]) => {
       state.setModelsDirsCalls.push([...dirs])
@@ -139,6 +144,7 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
       storage: 'Storage',
       models: 'Models',
       advanced: 'Advanced',
+      logs: 'Logs',
       sharedDirectories: 'Shared directories'
     }
   }
@@ -158,11 +164,12 @@ describe('GlobalSettingsView', () => {
     document.body.innerHTML = ''
   })
 
-  it('renders all four tabs and the general tab is active by default', () => {
+  it('renders all five tabs and the general tab is active by default', () => {
     installMockBridge()
     const wrapper = mountView()
     const tabLabels = wrapper.findAll('.gs-tab').map((t) => t.text())
-    expect(tabLabels).toEqual(['General', 'Updates', 'Storage', 'Advanced'])
+    expect(tabLabels).toEqual(['General', 'Updates', 'Storage', 'Advanced', 'Logs'])
+    expect(wrapper.find('.gs-tab.active').text()).toBe('General')
   })
 
   it('lands on the tab named by snapshot.initialTab', () => {
@@ -553,6 +560,27 @@ describe('GlobalSettingsView', () => {
     await row.find('.storage-dir-action').trigger('click')
     await flushPromises()
     expect(bridge.updateFieldCalls).toEqual([{ id: 'cacheDir', value: '/picked/cache' }])
+  })
+
+  it('renders diagnostics only in the Logs tab', async () => {
+    const bridge = installMockBridge()
+    const wrapper = mountView()
+    await wrapper
+      .findAll('.gs-tab')
+      .find((tab) => tab.text() === 'Advanced')!
+      .trigger('click')
+    await nextTick()
+    expect(wrapper.text()).not.toContain('Diagnostics')
+
+    await wrapper
+      .findAll('.gs-tab')
+      .find((tab) => tab.text() === 'Logs')!
+      .trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('Diagnostics')
+    expect(wrapper.find('.gs-logs-btn').text()).toContain('Open logs folder')
+    await wrapper.find('.gs-logs-btn').trigger('click')
+    expect(bridge.openLogsFolderCalls).toBe(1)
   })
 
   it('does not render the Install Location section in the Storage tab', async () => {

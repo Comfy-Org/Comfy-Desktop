@@ -74,7 +74,7 @@ interface GlobalSettingsModelsDir {
 }
 
 interface GlobalSettingsSnapshot {
-  initialTab: 'general' | 'updates' | 'storage' | 'advanced' | null
+  initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
   generalFields: Record<string, unknown>[]
   languageFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -103,6 +103,7 @@ interface GlobalSettingsSnapshot {
     storage: string
     models: string
     advanced: string
+    logs: string
     sharedDirectories: string
   }
 }
@@ -199,6 +200,7 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
     storage: 'Storage',
     models: 'Models',
     advanced: 'Advanced',
+    logs: 'Logs',
     sharedDirectories: 'Shared Directories'
   }
 })

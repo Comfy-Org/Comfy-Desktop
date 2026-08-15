@@ -76,13 +76,19 @@ describe('buildSettingsSections', () => {
     ).toBe(false)
   })
 
-  it('offers a default-on hardware acceleration preference with a restart notice', () => {
-    const fields = buildSettingsSections().flatMap(
-      (s) =>
-        (s.fields as { id?: string; value?: unknown; description?: string }[] | undefined) ?? []
-    )
+  it('offers hardware acceleration under Advanced with a restart notice', () => {
+    const sections = buildSettingsSections()
+    const generalFields =
+      (sections.find((section) => section.title === 'General')?.fields as
+        | { id?: string }[]
+        | undefined) ?? []
+    const advancedFields =
+      (sections.find((section) => section.title === 'Advanced')?.fields as
+        | { id?: string; value?: unknown; description?: string }[]
+        | undefined) ?? []
 
-    expect(fields).toContainEqual(
+    expect(generalFields.map((field) => field.id)).not.toContain('hardwareAcceleration')
+    expect(advancedFields).toContainEqual(
       expect.objectContaining({
         id: 'hardwareAcceleration',
         label: 'Use hardware acceleration',
@@ -94,9 +100,8 @@ describe('buildSettingsSections', () => {
     )
 
     mockSettings.hardwareAcceleration = false
-    const updatedFields = buildSettingsSections().flatMap(
-      (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
-    )
+    const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')
+      ?.fields as { id?: string; value?: unknown }[]
     expect(updatedFields.find((field) => field.id === 'hardwareAcceleration')?.value).toBe(false)
   })
 })

@@ -526,6 +526,7 @@
     "cacheDir": "缓存目录",
     "open": "打开",
     "advanced": "高级",
+    "logs": "日志",
     "pypiMirror": "PyPI 镜像 URL",
     "pypiMirrorPlaceholder": "例如 https://mirrors.aliyun.com/pypi/simple/",
     "useChineseMirrors": "使用中国镜像（Git 和 PyPI）",
