@@ -43,6 +43,30 @@ describe('executionTap', () => {
     })
   })
 
+  it('adds model-load observations to the session summary without separate events', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load MiniMaxH3\nRequested to load MiniMaxH3\n', 'stdout')
+    tap.ingest(
+      'Model MiniMaxH3TEModel_ prepared for dynamic VRAM loading. 7671MB Staged.\n',
+      'stdout'
+    )
+    tap.flushSummary()
+
+    expect(captured.map((entry) => entry.event)).not.toContain('comfy.desktop.comfyui.model_usage')
+    const summary = captured.find(
+      (entry) => entry.event === 'comfy.desktop.execution.session_summary'
+    )
+    expect(summary?.ctx).toMatchObject({
+      model_usage_schema_version: 1,
+      model_observation_semantics: 'runtime_load_log_v1',
+      model_classes: ['MiniMaxH3', 'MiniMaxH3TEModel_'],
+      model_load_triggers: ['requested', 'dynamic_prepare'],
+      model_target_devices: [null, null],
+      model_load_counts: [2, 1],
+      model_usage_truncated: false
+    })
+  })
+
   it('emits validation_failed errors with the reason lines as the message', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // ComfyUI logs the header, then `* node:` / `- reason` detail lines, then
@@ -372,7 +396,28 @@ describe('executionTap', () => {
       installation_id: 'inst-1',
       started_count: 0,
       completed_count: 0,
-      error_count: 0
+      error_count: 0,
+      model_classes: [],
+      model_load_triggers: [],
+      model_target_devices: [],
+      model_load_counts: [],
+      model_usage_truncated: false
+    })
+  })
+
+  it('flushes a model observation from a final unterminated line only once', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load MiniMaxH3', 'stdout')
+    tap.flushSummary()
+    tap.flushSummary()
+
+    const summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.execution.session_summary'
+    )
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.ctx).toMatchObject({
+      model_classes: ['MiniMaxH3'],
+      model_load_counts: [1]
     })
   })
 
