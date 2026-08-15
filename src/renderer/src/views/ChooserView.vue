@@ -724,6 +724,9 @@ const gridHandlers = {
    * so short viewports reclaim the band for an extra tile row. */
   --chooser-fade: clamp(12px, 2.5vh, 24px);
   padding: var(--chooser-fade) var(--shelf-pad-x);
+  /* Size container so each shelf below can snap its width to a whole number
+   * of tile columns. */
+  container-type: inline-size;
 }
 
 /* Soft scroll edges, matched to the vertical padding so rows tuck under. */
@@ -744,6 +747,31 @@ const gridHandlers = {
   flex-direction: column;
   /* The grid's own row gap, so two stacked grids read as continuous rows. */
   gap: 16px;
+  /* Snap each shelf to a whole number of 280px tracks (16px gaps) and center
+   * the snapped block. Without this, a viewport that fits fewer than 4
+   * columns leaves the start-aligned grids pinned left under the centered
+   * wordmark/search with a dead right gutter. Snapping makes start-aligned
+   * and centered rows coincide, and shelf header rules end at the last
+   * column. Thresholds are `cols * 280 + (cols - 1) * 16` against the
+   * shelves' content box (the container defined above). */
+  width: 100%;
+  max-width: 280px;
+  margin-inline: auto;
+}
+@container (width >= 576px) {
+  .chooser-shelf {
+    max-width: 576px;
+  }
+}
+@container (width >= 872px) {
+  .chooser-shelf {
+    max-width: 872px;
+  }
+}
+@container (width >= 1168px) {
+  .chooser-shelf {
+    max-width: 1168px;
+  }
 }
 
 /* Caption weight: the shelf organises, it isn't a section you act on. */
