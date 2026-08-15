@@ -41,22 +41,33 @@ const selectedOption = computed(() => props.options.find((o) => o.value === prop
 const triggerLabel = computed(() => selectedOption.value?.label ?? props.placeholder)
 
 const listboxId = `ui-listbox-${Math.random().toString(36).slice(2, 9)}`
+const POPOVER_GAP = 2
+const VIEWPORT_PADDING = 8
+const ESTIMATED_OPTION_HEIGHT = 36
+const ESTIMATED_LISTBOX_CHROME = 16
+const PREFERRED_MAX_HEIGHT = 280
 
 function updatePosition(): void {
   const trigger = triggerRef.value
   if (!trigger) return
   const rect = trigger.getBoundingClientRect()
-  const spaceBelow = window.innerHeight - rect.bottom
-  const spaceAbove = rect.top
-  const desiredHeight = Math.min(props.options.length * 36 + 16, 280)
-  const openUp = spaceBelow < desiredHeight + 8 && spaceAbove > spaceBelow
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - POPOVER_GAP - VIEWPORT_PADDING)
+  const spaceAbove = Math.max(0, rect.top - POPOVER_GAP - VIEWPORT_PADDING)
+  const estimatedHeight = props.options.length * ESTIMATED_OPTION_HEIGHT + ESTIMATED_LISTBOX_CHROME
+  const measuredHeight = listboxRef.value
+    ? listboxRef.value.scrollHeight +
+      Math.max(0, listboxRef.value.offsetHeight - listboxRef.value.clientHeight)
+    : 0
+  const desiredHeight = Math.min(measuredHeight || estimatedHeight, PREFERRED_MAX_HEIGHT)
+  const openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow
+  const availableHeight = openUp ? spaceAbove : spaceBelow
   popoverStyle.value = {
     position: 'fixed',
     left: `${rect.left}px`,
     width: `${rect.width}px`,
-    top: openUp ? 'auto' : `${rect.bottom + 2}px`,
-    bottom: openUp ? `${window.innerHeight - rect.top + 2}px` : 'auto',
-    maxHeight: `${Math.max(spaceBelow, spaceAbove) - 16}px`,
+    top: openUp ? 'auto' : `${rect.bottom + POPOVER_GAP}px`,
+    bottom: openUp ? `${window.innerHeight - rect.top + POPOVER_GAP}px` : 'auto',
+    maxHeight: `${availableHeight}px`,
     zIndex: '9999'
   }
 }
@@ -68,6 +79,8 @@ function openPanel(): void {
   activeIndex.value = idx >= 0 ? idx : props.options.findIndex((o) => !o.disabled)
   updatePosition()
   void nextTick(() => {
+    // The rendered list may be taller than the per-option estimate.
+    updatePosition()
     listboxRef.value?.focus()
     scrollActiveIntoView()
   })
@@ -330,6 +343,7 @@ onBeforeUnmount(() => {
 <style>
 /* Listbox is teleported to <body>, so it can't be scoped. */
 .ui-select-listbox {
+  box-sizing: border-box;
   margin: 0;
   padding: 4px;
   list-style: none;
