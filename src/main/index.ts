@@ -171,6 +171,10 @@ try {
   // Never let crash-reporter setup block app startup.
 }
 
+if (settings.get('hardwareAcceleration') === false) {
+  app.disableHardwareAcceleration()
+}
+
 todesktop.init({ autoUpdater: false })
 
 const APP_VERSION = getAppVersion()
