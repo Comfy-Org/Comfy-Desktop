@@ -67,6 +67,26 @@ describe('executionTap', () => {
     })
   })
 
+  it('records model loads from ANSI + [LEVEL] prefixed stderr, the shipping log shape', () => {
+    // ComfyUI logs everything to stderr unless --log-stdout is passed (Desktop
+    // never does), through a ColoredFormatter. The parsers are `^`-anchored, so
+    // they only fire if `handleNewLine` strips ANSI + the level tag first.
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('[32m[INFO][0m Requested to load MiniMaxH3\n', 'stderr')
+    tap.ingest('[INFO] Creating deepclone of MiniMaxH3 for cuda:1.\n', 'stderr')
+    tap.flushSummary()
+
+    const summary = captured.find(
+      (entry) => entry.event === 'comfy.desktop.execution.session_summary'
+    )
+    expect(summary?.ctx).toMatchObject({
+      model_classes: ['MiniMaxH3', 'MiniMaxH3'],
+      model_load_triggers: ['deepclone', 'requested'],
+      model_target_devices: ['cuda:1', null],
+      model_load_counts: [1, 1]
+    })
+  })
+
   it('emits validation_failed errors with the reason lines as the message', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     // ComfyUI logs the header, then `* node:` / `- reason` detail lines, then

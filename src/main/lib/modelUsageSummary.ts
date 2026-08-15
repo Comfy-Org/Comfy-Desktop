@@ -8,9 +8,14 @@ interface ModelLoadObservation {
   targetDevice: string | null
 }
 
+// Cold loads only — ComfyUI logs this solely when the model is not already
+// resident, so warm reuse is invisible to this trigger.
 const REQUESTED_LOAD_LINE = /^Requested to load\s+([A-Za-z_][A-Za-z0-9_]{0,63})\s*$/
+// A repeated identical prepare inside a sampling loop is logged at DEBUG, which
+// Desktop's INFO-level console drops — counts here undercount actual prepares.
 const DYNAMIC_PREPARE_LINE =
   /^Model\s+([A-Za-z_][A-Za-z0-9_]{0,63})\s+prepared for dynamic VRAM loading\b/
+// Multi-GPU only; the sole trigger carrying a target device.
 const DEEPCLONE_LINE =
   /^(?:Creating deepclone of|Reusing loaded multigpu deepclone of)\s+([A-Za-z_][A-Za-z0-9_]{0,63})\s+for\s+([a-z][a-z0-9]{0,31}(?::\d{1,4})?)/
 
@@ -55,7 +60,7 @@ export function createModelUsageSummary(): {
       const key = `${observation.modelClass}\t${observation.trigger}\t${observation.targetDevice ?? ''}`
       const current = counts.get(key)
       if (current) {
-        counts.set(key, { ...current, count: current.count + 1 })
+        current.count++
         return
       }
       if (counts.size >= MAX_TRACKED_MODEL_KEYS) {
