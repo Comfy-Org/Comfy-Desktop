@@ -32,6 +32,26 @@ function hasNvidiaGpu(): boolean {
   }
 }
 
+function electronUsesNvidiaGpu(processIds: number[]): boolean {
+  try {
+    const output = execFileSync('nvidia-smi', ['pmon', '-c', '1', '-s', 'm'], {
+      encoding: 'utf-8',
+      timeout: 15_000,
+      windowsHide: true
+    })
+    const nvidiaProcessIds = new Set(
+      output
+        .split(/\r?\n/)
+        .filter((line) => !line.trimStart().startsWith('#'))
+        .map((line) => Number.parseInt(line.trim().split(/\s+/)[1] ?? '', 10))
+        .filter(Number.isFinite)
+    )
+    return processIds.some((pid) => nvidiaProcessIds.has(pid))
+  } catch {
+    return false
+  }
+}
+
 function canReadDedicatedGpuMemory(): boolean {
   try {
     const count = runPowerShell(
@@ -141,9 +161,13 @@ test('disabling hardware acceleration reduces Desktop VRAM use @windows', async 
     })
     try {
       accelerated = await measureApp(acceleratedCtx.app)
+      expect(
+        accelerated.gpuCompositing,
+        'The accelerated launch must have GPU compositing enabled'
+      ).toBe('enabled')
       test.skip(
-        median(accelerated.samples) <= 16 * MIB,
-        'Electron did not establish a dedicated-GPU-memory baseline'
+        !electronUsesNvidiaGpu(await getElectronProcessIds(acceleratedCtx.app)),
+        'Electron is not using the NVIDIA GPU reported by nvidia-smi'
       )
       await disableHardwareAccelerationFromDesktopSettings(acceleratedCtx)
     } finally {
@@ -170,6 +194,10 @@ test('disabling hardware acceleration reduces Desktop VRAM use @windows', async 
       `disabledSamples=${disabled.samples.map((value) => (value / MIB).toFixed(1)).join(',')}`
   )
 
+  expect(
+    acceleratedBytes,
+    'The accelerated launch must establish a material dedicated-GPU-memory baseline'
+  ).toBeGreaterThan(16 * MIB)
   expect(disabled.gpuCompositing).not.toBe('enabled')
   expect(
     disabledBytes,

@@ -220,6 +220,7 @@ pnpm run test:e2e:hardware-acceleration
 ```
 
 NVIDIA's per-process memory query reports `N/A` under Windows WDDM. The test uses
-`nvidia-smi -L` to require an NVIDIA GPU, then reads Windows' per-process
-`GPU Process Memory/Dedicated Usage` counter for the Electron process tree. It skips
-when either facility is unavailable.
+`nvidia-smi -L` to require an NVIDIA GPU and `nvidia-smi pmon` to confirm an Electron
+GPU process is assigned to it, then reads Windows' per-process `GPU Process
+Memory/Dedicated Usage` counter for the Electron process tree. It skips when the
+required hardware or accounting facilities are unavailable.
