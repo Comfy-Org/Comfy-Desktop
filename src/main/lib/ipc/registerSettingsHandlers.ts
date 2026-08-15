@@ -147,21 +147,21 @@ export function buildSettingsSections(
       title: i18n.t('settings.advanced'),
       fields: [
         {
-          id: 'hardwareAcceleration',
-          label: i18n.t('settings.hardwareAcceleration'),
-          type: 'boolean',
-          value: s.hardwareAcceleration !== false,
-          description: i18n.t('settings.hardwareAccelerationDescription'),
-          tooltip: i18n.t('settings.hardwareAccelerationDescription')
-        },
-        {
           id: 'pypiMirror',
           label: i18n.t('settings.pypiMirror'),
           type: 'text' as const,
           value: s.pypiMirror || '',
           placeholder: i18n.t('settings.pypiMirrorPlaceholder')
         },
-        ...(!isChinese ? [chineseMirrorsField] : [])
+        ...(!isChinese ? [chineseMirrorsField] : []),
+        {
+          id: 'hardwareAcceleration',
+          label: i18n.t('settings.hardwareAcceleration'),
+          type: 'boolean',
+          value: s.hardwareAcceleration !== false,
+          description: i18n.t('settings.hardwareAccelerationDescription'),
+          tooltip: i18n.t('settings.hardwareAccelerationDescription')
+        }
       ]
     }
   ]

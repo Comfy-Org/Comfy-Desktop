@@ -98,6 +98,7 @@ describe('buildSettingsSections', () => {
           'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
       })
     )
+    expect(advancedFields.at(-1)?.id).toBe('hardwareAcceleration')
 
     mockSettings.hardwareAcceleration = false
     const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')
