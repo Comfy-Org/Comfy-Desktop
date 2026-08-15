@@ -81,6 +81,7 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `dismiss-error.test.ts` | platform | n/a | Injects the error into the renderer store at runtime (`__e2eRenderer.seedErrorInstance`). |
 | `downloads-shelf.test.ts` | platform | n/a | Injects downloads-tray state via `seedDownloads`. |
 | `dropdowns.test.ts` | platform | n/a | UI regression tests. |
+| `hardware-acceleration.test.ts` | `@windows` | n/a | On NVIDIA systems, launches Desktop with hardware acceleration enabled and disabled, then compares per-process dedicated GPU memory. |
 | `lifecycle-add-existing.test.ts` | `@lifecycle` | Yes (light) | Real probe + tracking against a staged git repo, driven through the waffle menu → TrackModal → Browse → Track Install chain; native directory picker stubbed with the staged path. |
 | `lifecycle-cloud.test.ts` | `@lifecycle` | Yes | Real navigation to `https://cloud.comfy.org/`. |
 | `lifecycle-copy-update-fail.test.ts` | `@lifecycle` | Yes (light) | Real local copy chained into a real update failure, driven through the picker Update tab's Copy & Update button; failure text asserted from the durable app log. Picker opened via direct `openInstancePicker`, not a UI entry control. |
@@ -207,3 +208,18 @@ workflow (`.github/workflows/lifecycle.yml`), always with the CPU variant (hoste
 runners have no GPU). It can also be run on a specific PR by adding the
 `run-lifecycle` label (remove and re-add the label to re-run). It is opt-in and not
 PR-blocking.
+
+## Running the hardware acceleration test
+
+The Windows hardware acceleration test runs automatically in the Windows E2E suite
+when an NVIDIA GPU is present. It can also be run directly:
+
+```powershell
+pnpm run build
+pnpm run test:e2e:hardware-acceleration
+```
+
+NVIDIA's per-process memory query reports `N/A` under Windows WDDM. The test uses
+`nvidia-smi -L` to require an NVIDIA GPU, then reads Windows' per-process
+`GPU Process Memory/Dedicated Usage` counter for the Electron process tree. It skips
+when either facility is unavailable.

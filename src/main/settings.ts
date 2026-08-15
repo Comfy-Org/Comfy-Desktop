@@ -44,6 +44,9 @@ export interface KnownSettings {
   /** When true (default), launching another local instance while one is running
    *  or starting asks the user whether to close the existing instances first. */
   warnBeforeRunningMultipleInstances?: boolean
+  /** Uses GPU rendering for Desktop windows. Disabling this takes effect on
+   *  the next app launch because Electron must configure it before readiness. */
+  hardwareAcceleration?: boolean
   pypiMirror?: string
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
@@ -222,6 +225,10 @@ const SETTINGS_SCHEMA = {
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
   warnBeforeRunningMultipleInstances: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
+  },
+  hardwareAcceleration: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
   },

@@ -509,6 +509,8 @@
     "confirmBeforeClosingWindowDescription": "Ask for confirmation before closing a window that's running a local install.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple instances",
     "warnBeforeRunningMultipleInstancesDescription": "Show a warning before launching another local ComfyUI instance while one is running or starting.",
+    "hardwareAcceleration": "Use hardware acceleration",
+    "hardwareAccelerationDescription": "Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.",
     "hideCloudFromPicker": "Hide Cloud from the Instance Picker",
     "hideCloudFromPickerDescription": "For local-only users — hides the Cloud row from the Dashboard. Cloud remains fully functional; you can re-enable this any time.",
     "checkForUpdates": "Check for updates",

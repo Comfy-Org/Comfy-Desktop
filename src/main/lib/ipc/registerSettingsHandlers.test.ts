@@ -75,4 +75,28 @@ describe('buildSettingsSections', () => {
       updatedFields.find((field) => field.id === 'warnBeforeRunningMultipleInstances')?.value
     ).toBe(false)
   })
+
+  it('offers a default-on hardware acceleration preference with a restart notice', () => {
+    const fields = buildSettingsSections().flatMap(
+      (s) =>
+        (s.fields as { id?: string; value?: unknown; description?: string }[] | undefined) ?? []
+    )
+
+    expect(fields).toContainEqual(
+      expect.objectContaining({
+        id: 'hardwareAcceleration',
+        label: 'Use hardware acceleration',
+        type: 'boolean',
+        value: true,
+        description:
+          'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
+      })
+    )
+
+    mockSettings.hardwareAcceleration = false
+    const updatedFields = buildSettingsSections().flatMap(
+      (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
+    )
+    expect(updatedFields.find((field) => field.id === 'hardwareAcceleration')?.value).toBe(false)
+  })
 })
