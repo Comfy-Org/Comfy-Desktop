@@ -748,6 +748,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   Add Existing Install
   //   Load Snapshot
   //   ── separator ──
+  //   (Log in — while signed out, followed by its own separator)
   //   Desktop Settings
   //   Send Beta Feedback
   //   (Reset Zoom — on install-backed hosts when zoom level != 0)
@@ -771,8 +772,8 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   - "Return to Dashboard" is absent: the picker's Home icon is
   //     the canonical dashboard escape (opens a fresh chooser window
   //     instead of detaching, so the running ComfyUI stays alive).
-  //   - "Log in" sits at the head of the settings group while signed
-  //     out, and is the app's ONLY sign-in affordance. Deliberately
+  //   - "Log in" sits in its own group above Desktop Settings while
+  //     signed out, and is the app's ONLY sign-in affordance. Deliberately
   //     NOT behind the Comfy Builder rollout flag: that flag gates
   //     what a signed-in account may do, and gating login itself
   //     would put it behind a decision that cannot be made until the
@@ -790,7 +791,10 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     { kind: 'separator' }
   ]
   if (!isSignedInToCloud()) {
-    items.push({ id: 'sign-in', label: 'Log in', labelKey: 'fileMenu.signIn' })
+    items.push(
+      { id: 'sign-in', label: 'Log in', labelKey: 'fileMenu.signIn' },
+      { kind: 'separator' }
+    )
   }
   items.push(
     {

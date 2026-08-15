@@ -294,6 +294,21 @@ describe('buildTitlePopupMenuItems', () => {
     expect(ids[ids.length - 1]).toBe('close-all-windows')
   })
 
+  it('separates Log in from Desktop Settings while signed out', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const signInIdx = items.findIndex((i) => i.id === 'sign-in')
+    expect(items[signInIdx + 1]?.kind).toBe('separator')
+    expect(items[signInIdx + 2]?.id).toBe('settings')
+  })
+
+  it('does not leave a doubled separator above Desktop Settings once signed in', () => {
+    devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const settingsIdx = items.findIndex((i) => i.id === 'settings')
+    expect(items[settingsIdx - 1]?.kind).toBe('separator')
+    expect(items[settingsIdx - 2]?.kind).not.toBe('separator')
+  })
+
   it('separators bracket the install-creation block on both hosts', () => {
     for (const installationId of [null, 'inst-1'] as const) {
       const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
