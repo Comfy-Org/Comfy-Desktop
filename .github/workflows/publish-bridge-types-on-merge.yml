@@ -1,0 +1,60 @@
+name: Publish Bridge Types on PR Merge
+
+on:
+  pull_request:
+    types: ['closed']
+    branches: [main]
+    paths:
+      - 'packages/comfyui-desktop-bridge-types/package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve Version and Dist Tag
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      dist_tag: ${{ steps.dist.outputs.dist_tag }}
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+
+      - name: Read bridge-types version
+        id: get_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./packages/comfyui-desktop-bridge-types/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Determine dist-tag
+        id: dist
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+            echo "dist_tag=next" >> "$GITHUB_OUTPUT"
+          else
+            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: Publish Bridge Types to npm
+    needs: resolve
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish-bridge-types.yml
+    with:
+      version: ${{ needs.resolve.outputs.version }}
+      dist_tag: ${{ needs.resolve.outputs.dist_tag }}
+      ref: ${{ github.event.pull_request.merge_commit_sha }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

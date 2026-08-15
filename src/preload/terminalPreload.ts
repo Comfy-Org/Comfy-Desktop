@@ -1,9 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type {
-  ComfyDesktop2TerminalBridge,
-  TerminalRestore
-} from '@comfyorg/comfyui-desktop-bridge-types'
+import type { ComfyDesktop2TerminalBridge, TerminalRestore } from '../types/comfyDesktopBridge'
 
 const Terminal: ComfyDesktop2TerminalBridge = {
   subscribe: (): Promise<TerminalRestore> => ipcRenderer.invoke('terminal-subscribe', null),
