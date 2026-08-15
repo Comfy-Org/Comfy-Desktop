@@ -21,11 +21,18 @@ declare global {
 
 Which members actually exist at runtime is decided by the Desktop binary the
 user is running, and Desktop binaries update far more slowly than the frontend
-that ships into them. Callers must guard every access and carry a fallback:
+that ships into them. Callers must guard every access and carry a fallback —
+including when the member exists but rejects:
 
 ```ts
-const opened = (await window.__comfyDesktop2?.openModelAccessPage?.(url)) === true
-if (!opened) window.open(url, '_blank')
+async function openModelAccessPage(url: string): Promise<void> {
+  try {
+    if ((await window.__comfyDesktop2?.openModelAccessPage?.(url)) === true) return
+  } catch (error) {
+    console.error('Desktop could not open the access page:', error)
+  }
+  window.open(url, '_blank')
+}
 ```
 
 `ComfyDesktop2BridgeImplementation` is the provider-side counterpart: it makes
