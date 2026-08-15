@@ -4,11 +4,11 @@ import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
 import {
-  filesHaveSameBytes,
-  LINK_UNSUPPORTED_CODES,
+  installStagedAtFinal,
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
+  sha256File,
   stagingMetaPathFor,
   stagingPathFor,
   writeStagedMeta,
@@ -52,7 +52,7 @@ export type ModelTransferOutcome =
   | { outcome: 'completed'; savePath: string; finalBytes: number }
   | { outcome: 'paused' }
   | { outcome: 'cancelled' }
-  | { outcome: 'error'; error: string }
+  | { outcome: 'error'; error: string; code?: 'checksum-mismatch' }
 
 export interface ModelTransferOptions {
   /** ORIGINAL source url - the job's stable identity across redirects. */
@@ -69,6 +69,10 @@ export interface ModelTransferOptions {
   session?: Electron.Session
   /** Caller-known total size; conflicts with the server's length fail fast. */
   expectedSize?: number
+  /** Expected lowercase-hex sha256 of the complete file. When present, the
+   *  staged bytes are verified against it before finalization; a mismatch
+   *  discards the staged state and fails with code 'checksum-mismatch'. */
+  sha256?: string
   /** Abort when no bytes arrive for this long (ms). */
   idleTimeoutMs?: number
   onProgress?: (p: ModelTransferProgress) => void
@@ -131,6 +135,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     installationId,
     session,
     expectedSize,
+    sha256,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     onProgress
   } = opts
@@ -248,7 +253,22 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
-    if (existingMeta && existingMeta.url === url && fs.existsSync(stagingPath)) {
+    if (existingMeta && sha256 && existingMeta.sha256 && existingMeta.sha256 !== sha256) {
+      // The staged pair was written for DIFFERENT expected content (e.g. a
+      // superseded distribution version re-using the destination). Splicing
+      // onto those bytes could only ever fail verification - restart clean.
+      removeStagedArtifacts(finalPath)
+      existingMeta = null
+    }
+    // Staged bytes are resumable when they are provably for the same content:
+    // the same source URL, or a matching persisted sha256 (presigned URLs
+    // rotate between attempts while addressing the same object; the recorded
+    // etag/last-modified validators still guard the actual splice, and the
+    // final hash verification catches anything they miss).
+    const stagedContentMatches =
+      existingMeta !== null &&
+      (existingMeta.url === url || (sha256 !== undefined && existingMeta.sha256 === sha256))
+    if (existingMeta && stagedContentMatches && fs.existsSync(stagingPath)) {
       resumeValidator = resumeValidatorFor(existingMeta)
       if (resumeValidator) {
         try {
@@ -320,7 +340,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         expectedSize: expectedSize && expectedSize > 0 ? expectedSize : 0,
         directory,
         filename,
-        installationId: installationId ?? undefined
+        installationId: installationId ?? undefined,
+        sha256: sha256 ?? undefined
       })
       if (!durable) {
         failRetaining('Download failed: cannot write staging metadata')
@@ -551,7 +572,10 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
             : headerString(response.headers['last-modified']),
           directory,
           filename,
-          installationId: installationId ?? undefined
+          installationId: installationId ?? undefined,
+          // Keep a persisted expectation alive across attempts even when a
+          // hydrated resume no longer knows the caller's hash.
+          sha256: sha256 ?? existingMeta?.sha256
         }
         if (!writeStagedMeta(metaPath, meta)) {
           // Accepting body bytes without a durable resume identity would
@@ -665,6 +689,33 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
    *  has closed the stream (the end/verify path). */
   const finalizeClaimed = (finalBytes: number): void => {
     void (async () => {
+      // Content verification before the bytes can appear under the final
+      // name. The expectation comes from the caller or, for a hydrated job
+      // whose caller is gone, from the persisted sidecar. A mismatch is not
+      // resumable - the bytes are wrong, not short - so discard the staged
+      // state; a retry re-fetches from scratch.
+      const expectedSha256 = sha256 ?? readStagedMeta(metaPath)?.sha256
+      if (expectedSha256) {
+        let actualSha256: string
+        try {
+          actualSha256 = await sha256File(stagingPath)
+        } catch (err) {
+          settle({
+            outcome: 'error',
+            error: `Download failed: cannot verify checksum: ${(err as Error).message}`
+          })
+          return
+        }
+        if (actualSha256 !== expectedSha256) {
+          removeStagedArtifacts(finalPath)
+          settle({
+            outcome: 'error',
+            error: `Download corrupt: checksum mismatch: expected ${expectedSha256}, got ${actualSha256}`,
+            code: 'checksum-mismatch'
+          })
+          return
+        }
+      }
       try {
         await installStagedAtFinal(stagingPath, finalPath, finalBytes)
       } catch (err) {
@@ -710,78 +761,4 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     pause: () => stop('pause'),
     cancel: () => stop('cancel')
   }
-}
-
-/**
- * Install verified staged bytes at the final name WITHOUT overwriting a file
- * that appeared there independently (e.g. the user dropped the model in
- * manually). POSIX `rename` silently clobbers, so prefer a same-volume hard
- * link (fails EEXIST); where links are unsupported (exFAT/FAT32/network
- * shares), claim the final name with an atomic exclusive create and rename
- * onto our own claim marker. An existing final that is byte-for-byte
- * IDENTICAL to the verified download is accepted as already-completed
- * content; anything else is a destination conflict that keeps the staged
- * bytes.
- */
-async function installStagedAtFinal(
-  stagingPath: string,
-  finalPath: string,
-  finalBytes: number
-): Promise<void> {
-  const conflictOrAccept = async (): Promise<void> => {
-    let existingSize = -1
-    try {
-      existingSize = fs.statSync(finalPath).size
-    } catch {}
-    if (existingSize === finalBytes && (await filesHaveSameBytes(stagingPath, finalPath))) {
-      // Identical to the verified download - keep the existing file as
-      // authoritative; the staged copy is redundant.
-      try {
-        fs.unlinkSync(stagingPath)
-      } catch {}
-      return
-    }
-    throw new Error('a different file already exists at the destination')
-  }
-  try {
-    fs.linkSync(stagingPath, finalPath)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'EEXIST') {
-      await conflictOrAccept()
-      return
-    }
-    // Only a genuine link-capability gap justifies the claim-close-rename
-    // window below (same policy as `parkFileNoClobber`). A real I/O or
-    // permission failure must surface as the transfer error it is.
-    if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
-    // Filesystem without hard links (exFAT/FAT32/network shares): claim the
-    // final name with an exclusive create (atomically fails EEXIST if a file
-    // appeared there), then rename onto our OWN empty claim marker. A bare
-    // existsSync+rename would silently replace a final that appears between
-    // the check and the rename.
-    try {
-      fs.closeSync(fs.openSync(finalPath, 'wx'))
-    } catch (claimErr) {
-      if ((claimErr as NodeJS.ErrnoException).code === 'EEXIST') {
-        await conflictOrAccept()
-        return
-      }
-      throw claimErr
-    }
-    try {
-      fs.renameSync(stagingPath, finalPath)
-    } catch (renameErr) {
-      // Keep the staged bytes; remove only our empty claim marker so the
-      // final name is not left as a zero-byte fake model.
-      try {
-        fs.unlinkSync(finalPath)
-      } catch {}
-      throw renameErr
-    }
-    return
-  }
-  try {
-    fs.unlinkSync(stagingPath)
-  } catch {}
 }

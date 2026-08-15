@@ -28,6 +28,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { titlePopupPage } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -97,12 +98,12 @@ test.beforeAll(async () => {
   // dialog never opens during the test; the stub returns the seeded
   // envelope path. Stubbed native OS dialogs are the one allowed
   // lifecycle exception.
-  await ctx.app.evaluate(({ dialog }, filePath) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, filePath) => {
     ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
       canceled: false,
       filePaths: [filePath],
     })
-  }, envelopePath)
+  }, envelopePath))
 })
 
 test.afterAll(async () => {

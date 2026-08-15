@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { formatTime } from './util'
+import { formatDownloadDetail, formatTime } from './util'
 import { t } from './i18n'
 import type { Cache } from './cache'
 import { isDownloadComplete } from './download'
@@ -177,14 +177,9 @@ export async function downloadAndExtract(
             url,
             cachePath,
             (p) => {
-              const speed = `${p.speedMBs.toFixed(1)} MB/s`
-              const elapsed = formatTime(p.elapsedSecs)
-              const eta = p.etaSecs >= 0 ? formatTime(p.etaSecs) : '—'
               sendProgress('download', {
                 percent: p.percent,
-                status: t('installer.downloading', {
-                  progress: `${p.receivedMB} / ${p.totalMB} MB  ·  ${speed}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-                })
+                status: t('installer.downloading', { progress: formatDownloadDetail(p) })
               })
             },
             { signal, expectedSize }

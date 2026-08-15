@@ -34,7 +34,12 @@ import { setTerminalEnvResolver } from '../terminal'
 import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
+import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
+import {
+  finalizeComfyBuilderRecovery,
+  recoverComfyBuilderInstallation
+} from '../../sources/comfybuilder'
 
 export {
   getAppVersion,
@@ -119,16 +124,50 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       console.warn('[ipc] Failed to migrate startup defaults or adopted settings:', err)
     })
 
-  // Sweep leftover empty local install dirs (aborted installs) on startup.
-  // Only reclaim dirs that exist but are effectively empty — never a missing
+  const startupRecovery = startupMaintenance.then(async () => {
+    try {
+      let all = await installations.list()
+      let recovered = false
+      const recoveredInstallationIds = new Set<string>()
+      for (const inst of all.filter((item) => item.sourceId === 'comfybuilder')) {
+        try {
+          const result = await recoverComfyBuilderInstallation(inst)
+          if (result.action === 'update') {
+            const updated = await installations.update(inst.id, result.data)
+            if (!updated) continue
+            recovered = true
+            recoveredInstallationIds.add(inst.id)
+            await finalizeComfyBuilderRecovery(inst.installPath)
+          }
+        } catch (err) {
+          console.warn(`[ipc] Failed to recover ComfyBuilder install ${inst.id}:`, err)
+        }
+      }
+      if (recovered) all = await installations.list()
+      if (recovered) _broadcastToRenderer('installations-changed', {})
+      return { all, recoveredInstallationIds }
+    } catch (err) {
+      console.warn('[ipc] Failed to recover ComfyBuilder installations:', err)
+      return null
+    }
+  })
+
+  // Sweep leftover empty local install dirs (aborted installs) after recovery.
+  // Only reclaim dirs that exist but are effectively empty - never a missing
   // or unreadable dir, which would silently forget a tracked instance whose
   // drive is merely offline/renamed (issue #1155).
-  void (async () => {
+  void startupRecovery.then(async (recovery) => {
+    if (!recovery) return
     try {
-      const all = await installations.list()
+      const { all, recoveredInstallationIds } = recovery
       const sweepable = all.filter((inst) => {
         const source = sourceMap[inst.sourceId]
-        return source && !source.skipInstall && inst.installPath
+        return (
+          source &&
+          !source.skipInstall &&
+          inst.installPath &&
+          !recoveredInstallationIds.has(inst.id)
+        )
       })
       // Probe in parallel so a few offline paths don't serialize their timeouts.
       // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
@@ -157,7 +196,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       const remaining = await installations.list()
       sweepOrphanPartitions(new Set(remaining.map((i) => i.id)))
     } catch {}
-  })()
+  })
 
   // Default to bundled bootstrap pygit2 so the pygit2 path is always exercised
   // (system git would otherwise mask bugs real users hit). Falls back to
@@ -283,5 +322,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerLogsHandlers()
   registerCrashHandlers()
   registerTelemetryHandlers()
-  return startupMaintenance
+  registerDevPlatformHandlers()
+  return startupRecovery.then(() => undefined)
 }

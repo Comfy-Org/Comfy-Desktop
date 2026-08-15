@@ -141,8 +141,19 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
             : source.getStatusTag
               ? source.getStatusTag(inst)
               : undefined
+    // A comfybuilder install's raw `version` is its DISTRIBUTION version, not a
+    // ComfyUI one (see `installedDistributionVersions`), so it gets its own
+    // field — otherwise a bare "7" lands where every other tile shows "v0.28.2".
+    const isFromDistribution = inst.sourceId === 'comfybuilder'
+    const distributionVersion = isFromDistribution
+      ? (inst.version as string | undefined)
+      : undefined
     const cv = inst.comfyVersion as ComfyVersion | undefined
-    const rawVersion = cv ? formatComfyVersion(cv, 'short') : (inst.version as string | undefined)
+    const rawVersion = cv
+      ? formatComfyVersion(cv, 'short')
+      : isFromDistribution
+        ? undefined
+        : (inst.version as string | undefined)
     const version = rawVersion === inst.sourceId ? undefined : rawVersion
     return {
       ...inst,
@@ -150,6 +161,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
+      ...(distributionVersion ? { distributionVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})
     }
@@ -180,7 +192,6 @@ export function registerInstallationHandlers(): void {
     // indicator appears/clears as drives go offline/online. Single-flight +
     // broadcasts only on change, so a dashboard refresh can't loop.
     void refreshInstallDirStates()
-
     return enriched
   })
 

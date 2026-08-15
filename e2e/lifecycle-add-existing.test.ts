@@ -21,6 +21,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 
 let ctx: AppContext
 let stagedPath: string
@@ -85,12 +86,12 @@ test.beforeAll(async () => {
 
   // Stub only the native directory picker (Playwright cannot drive OS
   // dialogs) — it supplies the staged path; probe + track stay real.
-  await ctx.app.evaluate(({ dialog }, dirPath) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dirPath) => {
     ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
       canceled: false,
       filePaths: [dirPath],
     })
-  }, stagedPath)
+  }, stagedPath))
 })
 
 test.afterAll(async () => {

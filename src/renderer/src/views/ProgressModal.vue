@@ -409,7 +409,7 @@ function handleDone(): void {
   }
 }
 
-// Return-to-Dashboard from any op state. In-flight prompts local installs (returning stops a running ComfyUI); idle states skip it. Flips an install-backed window back to chooser mode in place.
+// Return-to-Dashboard from any op state. In-flight always prompts (returning cancels the operation, even when the installing record is hidden from the list); idle states skip it. Flips an install-backed window back to chooser mode in place.
 async function returnToDashboard(reason: ReturnToDashboardReason): Promise<void> {
   const id = displayId.value
   const op = id ? progressStore.operations.get(id) : null

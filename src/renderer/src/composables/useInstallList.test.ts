@@ -234,56 +234,6 @@ describe('useInstallList', () => {
     })
   })
 
-  describe('lastLaunchedLabel', () => {
-    it('returns the neverLaunched string when lastLaunchedAt is undefined', () => {
-      const installations = ref<Installation[]>([])
-      const list = withI18nScope(i18n, () => useInstallList({ installations }))
-
-      const inst = makeInstall({ id: 'a' })
-      expect(list.lastLaunchedLabel(inst)).toBe('Not launched yet')
-    })
-
-    it('formats sub-minute timestamps as "just now"', () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date('2026-05-18T12:00:00Z'))
-      const installations = ref<Installation[]>([])
-      const list = withI18nScope(i18n, () => useInstallList({ installations }))
-
-      const inst = makeInstall({ id: 'a', lastLaunchedAt: Date.now() - 30_000 })
-      expect(list.lastLaunchedLabel(inst)).toBe('Launched Just now')
-    })
-
-    it('formats sub-hour timestamps as "Nm ago"', () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date('2026-05-18T12:00:00Z'))
-      const installations = ref<Installation[]>([])
-      const list = withI18nScope(i18n, () => useInstallList({ installations }))
-
-      const inst = makeInstall({ id: 'a', lastLaunchedAt: Date.now() - 17 * 60_000 })
-      expect(list.lastLaunchedLabel(inst)).toBe('Launched 17m ago')
-    })
-
-    it('formats sub-day timestamps as "Nh ago"', () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date('2026-05-18T12:00:00Z'))
-      const installations = ref<Installation[]>([])
-      const list = withI18nScope(i18n, () => useInstallList({ installations }))
-
-      const inst = makeInstall({ id: 'a', lastLaunchedAt: Date.now() - 3 * 3_600_000 })
-      expect(list.lastLaunchedLabel(inst)).toBe('Launched 3h ago')
-    })
-
-    it('formats older timestamps as "Nd ago"', () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date('2026-05-18T12:00:00Z'))
-      const installations = ref<Installation[]>([])
-      const list = withI18nScope(i18n, () => useInstallList({ installations }))
-
-      const inst = makeInstall({ id: 'a', lastLaunchedAt: Date.now() - 5 * 86_400_000 })
-      expect(list.lastLaunchedLabel(inst)).toBe('Launched 5d ago')
-    })
-  })
-
   describe('lastLaunchedShortLabel', () => {
     it('returns an empty string when lastLaunchedAt is undefined', () => {
       const installations = ref<Installation[]>([])

@@ -35,6 +35,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { closeTitlePopupIfOpen, titlePopupPage } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -112,7 +113,7 @@ test.beforeAll(async () => {
   // `defaultPath` filename and parks the resulting absolute path on
   // `globalThis` so the open stub can read it back without the test
   // having to plumb the value through across two evaluate calls.
-  await ctx.app.evaluate(({ dialog }, dir) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
     const g = globalThis as unknown as { __roundtripExportedPath?: string }
     ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
       _win: unknown,
@@ -131,7 +132,7 @@ test.beforeAll(async () => {
       if (!filePath) return { canceled: true, filePaths: [] }
       return { canceled: false, filePaths: [filePath] }
     }
-  }, exportDir)
+  }, exportDir))
 })
 
 test.afterAll(async () => {

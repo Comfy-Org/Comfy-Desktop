@@ -44,7 +44,7 @@ export async function waitForWebContents(
 }
 
 /**
- * Page-like façade over a WebContentsView's webContents. Re-resolves the
+ * Page-like facade over a WebContentsView's webContents. Re-resolves the
  * webContents id each call so it survives reloads while the URL marker matches.
  */
 export class WebContentsPage {
@@ -316,13 +316,13 @@ export function systemModalPage(app: ElectronApplication): WebContentsPage {
 
 /**
  * True iff the WebContentsView matching `marker` is `setVisible(true)` and
- * has non-zero bounds — the EmbeddedPopupView contract for "shown to user".
+ * has non-zero bounds - the EmbeddedPopupView contract for "shown to user".
  */
 export function isPopupVisible(
   app: ElectronApplication,
   marker: string,
 ): Promise<boolean> {
-  return app.evaluate(({ BrowserWindow, WebContentsView }, m) => {
+  return evalWithRetry(() => app.evaluate(({ BrowserWindow, WebContentsView }, m) => {
     for (const win of BrowserWindow.getAllWindows()) {
       for (const child of win.contentView.children) {
         if (!(child instanceof WebContentsView)) continue
@@ -333,7 +333,7 @@ export function isPopupVisible(
       }
     }
     return false
-  }, marker)
+  }, marker))
     // A popup/webContents torn down mid-evaluate destroys the execution
     // context; treat that as "not visible" rather than failing the test.
     .catch(() => false)
@@ -344,12 +344,14 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
   const id = await findWebContentsId(app, 'comfyTitlePopup.html')
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
-  await app.evaluate(({ webContents }) => {
+  // Retried: closing an already-closed popup is a no-op, so re-running the
+  // callback after a lost result is safe.
+  await evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return
     return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-  }).catch(() => {
-    // Popup dismissed between the visibility check and the close call —
+  })).catch(() => {
+    // Popup dismissed between the visibility check and the close call -
     // already in the desired state.
   })
   await expect.poll(

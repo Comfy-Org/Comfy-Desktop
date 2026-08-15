@@ -10,6 +10,17 @@ import { useProgressStore } from '../stores/progressStore'
 import type { Operation } from '../stores/progressStore'
 import type { ActionResult, PortConflictInfo } from '../types/ipc'
 
+// Test-controllable `useModal` mock - the in-flight Return-to-Dashboard path
+// prompts a cancel-operation confirm; default to the user accepting it.
+const mockModal = {
+  alert: vi.fn().mockResolvedValue(undefined),
+  confirm: vi.fn().mockResolvedValue(true),
+  close: vi.fn()
+}
+vi.mock('../composables/useModal', () => ({
+  useModal: () => mockModal
+}))
+
 // Each spec snaps a synthetic op into `progressStore.operations` to lock
 // a precise state and assert what renders, bypassing `startOperation`.
 const messages = {
@@ -25,6 +36,11 @@ const messages = {
         message: 'This will stop the current ComfyUI.',
         confirmLabel: 'Return to Dashboard'
       }
+    },
+    overlay: {
+      cancelCurrentTitle: 'Cancel current operation?',
+      cancelMessage: 'The operation will stop where it is.',
+      cancelConfirm: 'Cancel operation'
     },
     progress: {
       working: 'Working…',
@@ -445,8 +461,12 @@ describe('ProgressModal — brand branch state transitions', () => {
     await flushPromises()
 
     expect(wrapper.emitted('close')?.length).toBeGreaterThan(0)
-    // No installation in the store for inst-1 so the confirm is skipped
-    // and the in-flight op is cancelled.
+    // The in-flight path always prompts the cancel-operation confirm (even
+    // with no installation record in the store); the mock accepts it, so the
+    // in-flight op is cancelled.
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Cancel current operation?' })
+    )
     const store = useProgressStore()
     const op = store.operations.get('inst-1')
     expect(op?.cancelRequested).toBe(true)

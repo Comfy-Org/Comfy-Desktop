@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
@@ -48,6 +49,10 @@ export interface StagedDownloadMeta {
   filename: string
   /** Install that initiated the download, when known. */
   installationId?: string | null
+  /** Expected lowercase-hex sha256 of the complete file. When present, the
+   *  transport verifies the staged bytes against it before finalizing, and a
+   *  restart-hydrated job keeps verifying without the original caller. */
+  sha256?: string
 }
 
 export function stagingPathFor(finalPath: string): string {
@@ -252,6 +257,31 @@ export function quarantineOrphanStagedBytes(finalPath: string): boolean {
   )
 }
 
+/** Streaming lowercase-hex sha256 of a file. Resolves on 'close' (not 'end')
+ *  so the fd is released before any following rm/rename, avoiding EBUSY on
+ *  Windows - but only when 'end' fired first, so an early destroy can never
+ *  yield a digest of a partial read. Shared by the model transport and
+ *  ComfyBuilder archive install. */
+export function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    let ended = false
+    stream.on('error', reject)
+    stream.on('end', () => {
+      ended = true
+    })
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('close', () => {
+      if (!ended) {
+        reject(new Error(`sha256 read stream closed before end of file: ${filePath}`))
+        return
+      }
+      resolve(hash.digest('hex'))
+    })
+  })
+}
+
 /** Byte-for-byte comparison in 1 MiB chunks, async so a multi-gigabyte model
  *  compare cannot block the main process. Any read failure counts as a
  *  mismatch - "same content" must never be assumed. */
@@ -287,11 +317,62 @@ export async function filesHaveSameBytes(a: string, b: string): Promise<boolean>
   }
 }
 
+/**
+ * Install verified staged bytes at the final name without overwriting a file
+ * that appeared there independently. An identical final is accepted and the
+ * staged copy is removed; a different final is preserved and reported as a
+ * conflict. Filesystems without atomic hard-link support fail closed and keep
+ * the staged bytes for retry.
+ */
+export async function installStagedAtFinal(
+  stagingPath: string,
+  finalPath: string,
+  finalBytes: number
+): Promise<void> {
+  const conflictOrAccept = async (): Promise<void> => {
+    let existingSize = -1
+    try {
+      existingSize = fs.statSync(finalPath).size
+    } catch {}
+    if (existingSize === finalBytes && (await filesHaveSameBytes(stagingPath, finalPath))) {
+      try {
+        fs.unlinkSync(stagingPath)
+      } catch {}
+      return
+    }
+    throw new Error('a different file already exists at the destination')
+  }
+
+  try {
+    fs.linkSync(stagingPath, finalPath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'EEXIST') {
+      await conflictOrAccept()
+      return
+    }
+    if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
+    if (fs.existsSync(finalPath)) {
+      await conflictOrAccept()
+      return
+    }
+    throw new Error('atomic no-replace install is not supported by this filesystem', { cause: err })
+  }
+  try {
+    fs.unlinkSync(stagingPath)
+  } catch {}
+}
+
 /** Ensure a job admitted to the in-memory registry has a COMPLETE hydratable
  *  staging pair on disk (`.part` plus v2 sidecar) before its first transfer
  *  starts, so a quit/crash in that window cannot lose the job. An existing
  *  sidecar is a previous attempt's resume identity (validators, expected
- *  size) and is never clobbered - only its missing `.part` is restored.
+ *  size) and keeps that identity - only its missing `.part` is restored and,
+ *  when the new caller supplies a content hash, the persisted `sha256` is
+ *  upgraded to it. The transport rewrites the sidecar only at response time,
+ *  so without that upgrade a crash before the first response would hydrate
+ *  the pair with the old (possibly absent) hash and let an unverified file
+ *  finalize under the final model name.
  *  Orphan `.part` bytes without a sidecar (possibly quarantined migration
  *  data) are parked aside, never claimed or overwritten. Returns false when
  *  the durable pair could not be established - the job must not be admitted
@@ -299,7 +380,13 @@ export async function filesHaveSameBytes(a: string, b: string): Promise<boolean>
 export function ensureStagedPlaceholder(finalPath: string, meta: StagedDownloadMeta): boolean {
   const metaPath = stagingMetaPathFor(finalPath)
   const stagingPath = stagingPathFor(finalPath)
-  if (readStagedMeta(metaPath) !== null) {
+  const existing = readStagedMeta(metaPath)
+  if (existing !== null) {
+    // Persist the caller's content expectation before the job is admitted;
+    // a caller without one never weakens a persisted hash.
+    if (meta.sha256 && existing.sha256 !== meta.sha256) {
+      if (!writeStagedMeta(metaPath, { ...existing, sha256: meta.sha256 })) return false
+    }
     if (fs.existsSync(stagingPath)) return true
     // The pair is only hydratable when both files exist: restore a missing
     // `.part` (e.g. removed by a scanner) as an empty file; the sidecar's
