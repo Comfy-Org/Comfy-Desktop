@@ -1,5 +1,11 @@
 This repository has a zero tolerance policy for flaky tests.
 
+## Pull request descriptions
+
+Every PR description must include a change breakdown that separates product code from test code. Report the files, added and deleted lines, and share of total changed lines for each category. List documentation, configuration, generated files, lockfiles, and vendored code separately when present; do not count merge-only changes.
+
+Use this breakdown to make the implementation size clear when tests account for most of the diff. Summarize the feature behavior separately from the test coverage.
+
 ## ComfyUI-Manager is v4 (not the legacy v3 layout)
 
 Installs launched by this app run **Manager v4**: the `comfyui_manager` Python package inside the standalone env, enabled through ComfyUI's `--enable-manager` flag. Do not reason about Manager from the v3 codebase.
