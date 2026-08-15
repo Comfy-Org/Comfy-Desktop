@@ -16,6 +16,11 @@ on:
         description: 'Git ref to checkout (commit SHA, tag, or branch)'
         required: false
         type: string
+      require_publish:
+        description: 'Fail when the version is already on npm instead of skipping'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       version:
@@ -28,12 +33,18 @@ on:
       ref:
         required: false
         type: string
+      require_publish:
+        required: false
+        type: boolean
+        default: false
     secrets:
       NPM_TOKEN:
         required: true
 
+# No github.workflow here: inside a called workflow it resolves to the caller,
+# so dispatch and on-merge runs of one version would not serialise.
 concurrency:
-  group: publish-bridge-types-${{ github.workflow }}-${{ inputs.version }}-${{ inputs.dist_tag }}
+  group: publish-bridge-types-${{ inputs.version }}-${{ inputs.dist_tag }}
   cancel-in-progress: false
 
 jobs:
@@ -110,6 +121,7 @@ jobs:
         id: check_npm
         env:
           VER: ${{ inputs.version }}
+          REQUIRE_PUBLISH: ${{ inputs.require_publish }}
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +129,10 @@ jobs:
           STATUS=0
           OUTPUT=$(npm view "${NAME}@${VER}" --json 2>&1) || STATUS=$?
           if [ "$STATUS" -eq 0 ]; then
+            if [ "$REQUIRE_PUBLISH" = "true" ]; then
+              echo "::error title=Version already published::${NAME}@${VER} is already on npm, so this merge published nothing and npm now serves different contents under that version. Bump the version and merge again." >&2
+              exit 1
+            fi
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "::warning title=Already published::${NAME}@${VER} already exists on npm. Skipping publish."
           else

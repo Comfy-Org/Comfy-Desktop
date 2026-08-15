@@ -89,17 +89,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Require a version bump when the contract changes
         env:
@@ -108,15 +101,22 @@ jobs:
         run: |
           set -euo pipefail
           PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
-          if git diff --quiet "$BASE_SHA" HEAD -- \
+          # base.sha is the base tip as of the PR's last sync, not the fork
+          # point: diffing it directly attributes main's later commits here.
+          MERGE_BASE=$(git merge-base "$BASE_SHA" HEAD)
+          if git diff --quiet "$MERGE_BASE" HEAD -- \
             src/types/comfyDesktopBridge.ts \
-            packages/comfyui-desktop-bridge-types/comfyDesktopBridge.d.ts; then
+            packages/comfyui-desktop-bridge-types/comfyDesktopBridge.d.ts \
+            packages/comfyui-desktop-bridge-types/index.d.ts \
+            packages/comfyui-desktop-bridge-types/index.js; then
             echo "Bridge contract unchanged; no version bump required."
             exit 0
           fi
-          BASE_VERSION=$(git show "$BASE_SHA:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          BASE_VERSION=$(git show "$MERGE_BASE:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
           HEAD_VERSION=$(node -p "require('./${PACKAGE_JSON}').version")
-          if ! pnpm exec semver -r ">${BASE_VERSION}" "$HEAD_VERSION" >/dev/null; then
+          # -p, else semver excludes prereleases and the publish workflow's
+          # `next` dist-tag path is unreachable through the PR flow.
+          if ! npx --yes semver@7 -p -r ">${BASE_VERSION}" "$HEAD_VERSION" >/dev/null; then
             echo "::error title=Bump the bridge types version::This PR changes the bridge contract, but ${PACKAGE_JSON} is still $HEAD_VERSION (base: $BASE_VERSION). Merging would leave npm serving the old contract, because the publish workflow only fires when that file changes." >&2
             exit 1
           fi

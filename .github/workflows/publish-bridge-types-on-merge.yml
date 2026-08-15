@@ -1,8 +1,9 @@
-name: Publish Bridge Types on PR Merge
+name: Publish Bridge Types on Merge
 
+# `push`, not `pull_request: closed`: fork PRs get no secrets on pull_request,
+# and this covers squash/rebase merges and direct pushes alike.
 on:
-  pull_request:
-    types: ['closed']
+  push:
     branches: [main]
     paths:
       - 'packages/comfyui-desktop-bridge-types/package.json'
@@ -14,15 +15,13 @@ jobs:
   resolve:
     name: Resolve Version and Dist Tag
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       dist_tag: ${{ steps.dist.outputs.dist_tag }}
     steps:
-      - name: Checkout merge commit
+      - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
 
       - name: Read bridge-types version
@@ -55,6 +54,9 @@ jobs:
     with:
       version: ${{ needs.resolve.outputs.version }}
       dist_tag: ${{ needs.resolve.outputs.dist_tag }}
-      ref: ${{ github.event.pull_request.merge_commit_sha }}
+      ref: ${{ github.sha }}
+      # main must never carry a version npm already serves under different
+      # contents, so a collision here is an error rather than a skip.
+      require_publish: true
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
