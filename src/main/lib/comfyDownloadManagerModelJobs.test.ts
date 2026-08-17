@@ -1385,29 +1385,37 @@ describe('destination-keyed retry (issue #1322)', () => {
 })
 
 describe('taskbar download progress', () => {
+  const makeWindow = () => {
+    const setProgressBar = vi.fn()
+    return {
+      setProgressBar,
+      window: {
+        isDestroyed: () => false,
+        setProgressBar,
+        webContents: {
+          isDestroyed: () => false,
+          send: vi.fn(),
+          session: {}
+        }
+      }
+    }
+  }
+
+  const forceDarwin = (): (() => void) => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'darwin' })
+    return () => {
+      if (descriptor) Object.defineProperty(process, 'platform', descriptor)
+    }
+  }
+
   it('shows byte-weighted batch progress and clears only after every download finishes', async () => {
     const nameA = uniqueName()
     const nameB = uniqueName()
     const before = transfers.length
-    const makeWindow = () => {
-      const setProgressBar = vi.fn()
-      return {
-        setProgressBar,
-        window: {
-          isDestroyed: () => false,
-          setProgressBar,
-          webContents: {
-            isDestroyed: () => false,
-            send: vi.fn(),
-            session: {}
-          }
-        }
-      }
-    }
     const winA = makeWindow()
     const winB = makeWindow()
-    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
-    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'darwin' })
+    const restorePlatform = forceDarwin()
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     let h1: ComfyDownloadManager.ModelJobHandle | undefined
     let h2: ComfyDownloadManager.ModelJobHandle | undefined
@@ -1431,10 +1439,10 @@ describe('taskbar download progress', () => {
 
       now.mockReturnValue(2_000)
       transfers[before]!.opts.onProgress?.({ receivedBytes: 50, totalBytes: 100 })
-      // The second job has not reported its size yet, so Electron receives an
-      // indeterminate value instead of a misleading single-file percentage.
-      expect(winA.setProgressBar).toHaveBeenLastCalledWith(2)
-      expect(winB.setProgressBar).toHaveBeenLastCalledWith(2)
+      // Keep the bar empty until every active job has reported its size.
+      // Electron's indeterminate value (> 1) flashes as a full Dock bar.
+      expect(winA.setProgressBar).toHaveBeenLastCalledWith(0)
+      expect(winB.setProgressBar).toHaveBeenLastCalledWith(0)
 
       now.mockReturnValue(3_000)
       transfers[before + 1]!.opts.onProgress?.({ receivedBytes: 25, totalBytes: 300 })
@@ -1463,7 +1471,66 @@ describe('taskbar download progress', () => {
       expect(winB.setProgressBar).toHaveBeenLastCalledWith(-1)
     } finally {
       now.mockRestore()
-      if (platformDescriptor) Object.defineProperty(process, 'platform', platformDescriptor)
+      restorePlatform()
+      if (h1) mod.cancelModelDownload(h1.id)
+      if (h2) mod.cancelModelDownload(h2.id)
+      await Promise.allSettled([h1?.completion, h2?.completion])
+      await flush()
+    }
+  })
+
+  it('removes a cancelled download from the aggregate immediately', async () => {
+    const nameA = uniqueName()
+    const nameB = uniqueName()
+    const before = transfers.length
+    const winA = makeWindow()
+    const winB = makeWindow()
+    const restorePlatform = forceDarwin()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    let h1: ComfyDownloadManager.ModelJobHandle | undefined
+    let h2: ComfyDownloadManager.ModelJobHandle | undefined
+
+    try {
+      h1 = await mod.startManagedModelJob({
+        url: `https://host.example/${nameA}`,
+        filename: nameA,
+        directory: 'checkpoints',
+        window: winA.window as never
+      })
+      h2 = await mod.startManagedModelJob({
+        url: `https://host.example/${nameB}`,
+        filename: nameB,
+        directory: 'checkpoints',
+        window: winB.window as never
+      })
+      await waitForTransfers(before + 2)
+
+      now.mockReturnValue(2_000)
+      transfers[before]!.opts.onProgress?.({ receivedBytes: 50, totalBytes: 100 })
+      now.mockReturnValue(3_000)
+      transfers[before + 1]!.opts.onProgress?.({ receivedBytes: 25, totalBytes: 300 })
+      expect(winA.setProgressBar).toHaveBeenLastCalledWith(75 / 400)
+      expect(winB.setProgressBar).toHaveBeenLastCalledWith(75 / 400)
+
+      winA.setProgressBar.mockClear()
+      winB.setProgressBar.mockClear()
+      expect(mod.cancelModelDownload(h1.id)).toBe(true)
+      await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
+
+      // Cancelling h1 removes both its received bytes and its total from the
+      // batch, leaving only h2's 25 / 300 progress.
+      expect(winA.setProgressBar).not.toHaveBeenCalledWith(-1)
+      expect(winB.setProgressBar).not.toHaveBeenCalledWith(-1)
+      expect(winA.setProgressBar).toHaveBeenLastCalledWith(25 / 300)
+      expect(winB.setProgressBar).toHaveBeenLastCalledWith(25 / 300)
+
+      transfers[before + 1]!.resolve({ outcome: 'completed', savePath: h2.savePath })
+      await expect(h2.completion).resolves.toMatchObject({ status: 'completed' })
+      expect(winA.setProgressBar).toHaveBeenLastCalledWith(-1)
+      expect(winB.setProgressBar).toHaveBeenLastCalledWith(-1)
+    } finally {
+      now.mockRestore()
+      restorePlatform()
       if (h1) mod.cancelModelDownload(h1.id)
       if (h2) mod.cancelModelDownload(h2.id)
       await Promise.allSettled([h1?.completion, h2?.completion])

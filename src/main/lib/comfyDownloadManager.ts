@@ -716,9 +716,10 @@ interface TaskbarDownload extends DownloadProgress {
   id: string
 }
 
-/** A taskbar batch retains terminal jobs until the last job finishes. Without
+/** A taskbar batch retains completed jobs until the last job finishes. Without
  *  that retention, completing one of two downloads would remove its bytes
- *  from the denominator and make the aggregate bar jump backwards. */
+ *  from the denominator and make the aggregate bar jump backwards. Cancelled
+ *  and failed jobs are removed because they no longer belong to the workload. */
 const taskbarBatches = new Map<BrowserWindow, Map<string, TaskbarDownload>>()
 
 function mergeTaskbarDownload(
@@ -739,17 +740,17 @@ function mergeTaskbarDownload(
   return merged
 }
 
-/** Aggregate known byte totals. An active job without a known size makes the
- *  native bar indeterminate (> 1 per Electron) rather than showing a false
- *  percentage. Terminal unknown-size jobs do not hide progress for work that
- *  is still measurable. */
+/** Aggregate known byte totals. Keep the bar empty until every active job has
+ *  reported its size: Electron's indeterminate value (> 1) briefly renders as
+ *  a full Dock bar on macOS. Completed unknown-size jobs do not hide progress
+ *  for work that is still measurable. */
 function aggregateTaskbarProgress(downloads: Iterable<TaskbarDownload>): number {
   const jobs = [...downloads]
   if (!jobs.some((job) => !isTerminalStatus(job.status))) return -1
   if (
     jobs.some((job) => !isTerminalStatus(job.status) && !(job.totalBytes && job.totalBytes > 0))
   ) {
-    return 2
+    return 0
   }
 
   let receivedBytes = 0
@@ -763,7 +764,7 @@ function aggregateTaskbarProgress(downloads: Iterable<TaskbarDownload>): number 
         : (job.receivedBytes ?? job.progress * job.totalBytes)
     receivedBytes += Math.max(0, Math.min(job.totalBytes, received))
   }
-  return totalBytes > 0 ? Math.max(0, Math.min(1, receivedBytes / totalBytes)) : 2
+  return totalBytes > 0 ? Math.max(0, Math.min(1, receivedBytes / totalBytes)) : 0
 }
 
 function liveTaskbarBatches(): Array<[BrowserWindow, Map<string, TaskbarDownload>]> {
@@ -779,7 +780,11 @@ function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress & { i
   if (win.isDestroyed()) return
   let batch = taskbarBatches.get(win)
   if (!batch) taskbarBatches.set(win, (batch = new Map()))
-  batch.set(progress.id, mergeTaskbarDownload(batch.get(progress.id), progress))
+  if (progress.status === 'cancelled' || progress.status === 'error') {
+    batch.delete(progress.id)
+  } else {
+    batch.set(progress.id, mergeTaskbarDownload(batch.get(progress.id), progress))
+  }
 
   // macOS exposes one Dock progress bar for the whole application, so every
   // window-backed download must contribute to the same value. Other platforms
