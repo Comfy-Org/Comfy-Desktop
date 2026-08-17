@@ -13,8 +13,6 @@ import type { Installation } from '../../types/ipc'
 interface Props {
   installation: Installation
   showFreeRunsPill?: boolean
-  /** Renders the (i) explainer trigger. Cloud tiles only — the pitch it opens
-   *  is about Cloud, and first-use is the only other place it's reachable. */
   showWhyCloud?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
@@ -175,21 +173,6 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
     <div class="chooser-tile-actions">
-      <!-- The explainer stands down while the tile is busy or broken: a pitch
-           for Cloud is noise next to a running session or an error to read. -->
-      <Tooltip v-if="showWhyCloudTrigger" :text="t('firstUse.whyTryCloud')">
-        <button
-          type="button"
-          class="chooser-tile-kebab chooser-tile-why-cloud"
-          :aria-label="t('firstUse.whyTryCloud')"
-          :data-testid="TID.dashboardTileWhyCloud(inst.id)"
-          @click.stop="emit('why-cloud')"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          <Info :size="14" />
-        </button>
-      </Tooltip>
       <span
         v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
         class="chooser-cloud-runs-pill"
@@ -246,7 +229,22 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     <!-- Two lines: name, then one row with the meta facts left and the
          action pill (update / migrate) pinned right. -->
     <div class="chooser-tile-body">
-      <TruncatedText class="chooser-tile-name" :text="inst.name" />
+      <div class="chooser-tile-name-row">
+        <TruncatedText class="chooser-tile-name" :text="inst.name" />
+        <Tooltip v-if="showWhyCloudTrigger" :text="t('firstUse.whyTryCloud')">
+          <button
+            type="button"
+            class="chooser-tile-why-cloud"
+            :aria-label="t('firstUse.whyTryCloud')"
+            :data-testid="TID.dashboardTileWhyCloud(inst.id)"
+            @click.stop="emit('why-cloud')"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <Info :size="14" />
+          </button>
+        </Tooltip>
+      </div>
       <div v-if="metaLine || actionPill" class="chooser-tile-footer">
         <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
           <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
@@ -277,8 +275,43 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 <style scoped>
 @import './chooser-tiles.css';
 
+.chooser-tile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.chooser-tile-name-row .truncated-text {
+  min-width: 0;
+}
+.chooser-tile-name-row :deep(.tooltip-wrap) {
+  flex: 0 0 auto;
+}
+
 .chooser-tile-why-cloud {
-  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.7;
+  cursor: pointer;
+  transition:
+    color 100ms ease,
+    opacity 100ms ease;
+}
+.chooser-tile-why-cloud:hover,
+.chooser-tile-why-cloud:focus-visible {
+  color: var(--comfy-yellow);
+  opacity: 1;
+}
+.chooser-tile-why-cloud:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .chooser-cloud-runs-pill {

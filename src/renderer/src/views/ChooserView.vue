@@ -416,8 +416,6 @@ function viewDanger(inst: Installation): void {
   void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
-/** Only `openCloud` is used here — this view resolves the flag and tier itself
- *  below, so `immediate: false` keeps the gate from repeating those two IPCs. */
 const cloudGate = useCloudGate({ immediate: false })
 
 const cloudFreeRunsEnabled = ref(false)
@@ -426,9 +424,6 @@ const showCloudFreeRunsPill = computed(
   () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
 )
 
-/** The explainer outlives the free-runs pill: it's a pitch for Cloud itself,
- *  not for the trial, so it rides the tier alone rather than the free-tier
- *  flag the pill waits on. A subscriber already bought the pitch. */
 const showWhyCloud = computed(() => cloudUserTier.value !== 'paid')
 
 const whyCloudOpen = ref(false)
@@ -438,15 +433,11 @@ function openWhyCloud(): void {
   emitTelemetryAction('comfy.desktop.dashboard.why_cloud_opened', {})
 }
 
-/** The modal collapses Maybe-Later, ✕, Escape and scrim-click into one `close`,
- *  so every non-conversion exit reports the same way. */
 function dismissWhyCloud(): void {
   whyCloudOpen.value = false
   emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'dismiss' })
 }
 
-/** Unlike first-use — where the ToS gate means the CTA can only pre-select
- *  Cloud — the dashboard has no gate left to clear, so the button launches. */
 async function onWhyCloudTryCloud(): Promise<void> {
   whyCloudOpen.value = false
   emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'try_cloud' })

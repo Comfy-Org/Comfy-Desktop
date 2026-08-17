@@ -948,8 +948,16 @@ describe('ChooserView — why-Cloud explainer', () => {
     )
   })
 
-  // The pitch is for people who haven't bought it. Note this is deliberately
-  // NOT gated on the free-runs flag, which only governs the trial pill.
+  it('sits inline after the tile name, not in the action row', async () => {
+    installMockApi([cloudInstall()])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const nameRow = wrapper.find('.chooser-tile-name-row')
+    expect(nameRow.find(WHY_CLOUD).exists()).toBe(true)
+    expect(nameRow.text()).toContain('Comfy Cloud')
+    expect(wrapper.find('.chooser-tile-actions').find(WHY_CLOUD).exists()).toBe(false)
+  })
+
   it('withholds the explainer from paid subscribers', async () => {
     const api = installMockApi([cloudInstall()])
     api.getCloudUserTier.mockResolvedValue('paid')
@@ -968,8 +976,6 @@ describe('ChooserView — why-Cloud explainer', () => {
     await flushPromises()
 
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
-    // The trigger sits inside a tile whose own click picks the install —
-    // @click.stop is the only thing keeping the explainer from opening it.
     expect(wrapper.emitted('pick')).toBeUndefined()
     expect(api.runAction).not.toHaveBeenCalled()
   })

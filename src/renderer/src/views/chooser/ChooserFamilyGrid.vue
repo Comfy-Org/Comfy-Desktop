@@ -20,8 +20,6 @@ const props = withDefaults(
     /** Center the rows instead of left-aligning them under a shelf header. */
     centered?: boolean
     showFreeRunsPill?: boolean
-    /** Offer the Cloud explainer on cloud tiles. Off when the offer doesn't
-     *  apply — e.g. a subscriber, who has nothing to learn from the pitch. */
     showWhyCloud?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
   }>(),
