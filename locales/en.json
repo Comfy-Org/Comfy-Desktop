@@ -162,6 +162,8 @@
     "crashedDescWithCodeHex": "The ComfyUI process exited (exit code {code} / {hex}). You can restart it below.",
     "crashedDescAccessViolation": "ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.",
     "crashedDescVcRuntimeHint": "Some Microsoft Visual C++ Redistributable runtime files appear to be missing; repairing or installing the latest redistributable may fix this.",
+    "crashedDescCudaUnavailable": "ComfyUI stopped because something asked for an NVIDIA CUDA GPU that this machine doesn't have. On Apple Silicon and CPU-only machines PyTorch is built without CUDA by design — this is not a problem with your installer or your download. It is nearly always a custom node that assumes an NVIDIA GPU. Check the logs for the traceback to see which one.",
+    "crashedDescCudaUnavailableNode": "ComfyUI stopped because the custom node {node} asked for an NVIDIA CUDA GPU that this machine doesn't have. On Apple Silicon and CPU-only machines PyTorch is built without CUDA by design — this is not a problem with your installer or your download. Disabling or removing {node} should let ComfyUI start again.",
     "crashedDescLogsHint": "See the logs for details.",
     "restart": "Restart ComfyUI",
     "stoppedTitle": "ComfyUI is stopped",

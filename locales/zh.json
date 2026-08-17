@@ -162,6 +162,8 @@
     "crashedDescWithCodeHex": "ComfyUI 进程已退出（退出代码 {code} / {hex}）。你可以在下方重新启动。",
     "crashedDescAccessViolation": "ComfyUI 因内存访问冲突而崩溃（退出代码 {code} / {hex}）。这通常是某个原生库损坏或缺失导致的，而非 ComfyUI 本身的问题，常在启动时加载某个 Python 包时出现。你可以在下方重新启动。",
     "crashedDescVcRuntimeHint": "检测到部分 Microsoft Visual C++ 运行库文件可能缺失；修复或安装最新的运行库可能会解决此问题。",
+    "crashedDescCudaUnavailable": "ComfyUI 已停止，因为有代码请求了本机不存在的 NVIDIA CUDA GPU。在 Apple Silicon 和纯 CPU 的机器上，PyTorch 本就不包含 CUDA 支持——这并非安装程序或下载文件的问题，通常是某个假定存在 NVIDIA GPU 的自定义节点导致的。请查看日志中的堆栈信息以确定具体是哪一个。",
+    "crashedDescCudaUnavailableNode": "ComfyUI 已停止，因为自定义节点 {node} 请求了本机不存在的 NVIDIA CUDA GPU。在 Apple Silicon 和纯 CPU 的机器上，PyTorch 本就不包含 CUDA 支持——这并非安装程序或下载文件的问题。禁用或删除 {node} 后，ComfyUI 应该就能重新启动。",
     "crashedDescLogsHint": "详情请查看日志。",
     "restart": "重启 ComfyUI",
     "stoppedTitle": "ComfyUI 已停止",

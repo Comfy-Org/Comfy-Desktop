@@ -106,6 +106,17 @@ const crashedMessage = computed<string | null>(() => {
   if ((errorInfo.value?.vcRuntimeMissing?.length ?? 0) > 0) {
     base = `${base} ${t('comfyLifecycle.crashedDescVcRuntimeHint')}`
   }
+  // Python died for want of an NVIDIA GPU. On Apple Silicon this reads to users
+  // like we shipped them a Windows build, so say plainly that it's third-party
+  // code asking for CUDA — and name the node pack when the traceback did.
+  const cudaUnavailable = errorInfo.value?.cudaUnavailable
+  if (cudaUnavailable) {
+    base = `${base} ${
+      cudaUnavailable.customNode
+        ? t('comfyLifecycle.crashedDescCudaUnavailableNode', { node: cudaUnavailable.customNode })
+        : t('comfyLifecycle.crashedDescCudaUnavailable')
+    }`
+  }
   // Append the logs hint only when we actually have stderr to show — the
   // hint would otherwise point at a logs accordion that isn't rendered.
   if (crashedLogs.value) {
@@ -184,6 +195,7 @@ async function hydrateLastCrashError(installationId: string): Promise<void> {
       exitCodeHex: data.exitCodeHex,
       crashKind: data.crashKind,
       vcRuntimeMissing: data.vcRuntimeMissing,
+      cudaUnavailable: data.cudaUnavailable,
       // Carry the main-side crash timestamp so
       // `comfy.desktop.instance.relaunched_after_crash` can compute a real
       // `crash_to_relaunch_seconds` even when this view hydrated AFTER

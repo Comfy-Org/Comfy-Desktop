@@ -58,6 +58,7 @@ import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
+import { diagnoseCudaUnavailable } from '../../cudaUnavailable'
 import { decodeExitCode } from '../../exitCodeInfo'
 import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
@@ -235,23 +236,36 @@ export function onProcessTerminated(
   })
 }
 
+type CrashDiagnosis = Pick<
+  ComfyExitedData,
+  'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing' | 'cudaUnavailable'
+>
+
 /**
- * Diagnose a crash exit code into the extra fields the UI needs to show a
- * human-readable message. Returns `{}` for a plain application exit (the
- * generic "exited with code N" copy still applies). For a Windows native
- * fault it adds the decoded hex + kind, and for an access violation it also
- * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
- * actually missing.
+ * Diagnose a crash into the extra fields the UI needs to show a human-readable
+ * message. Returns `{}` for a plain application exit with nothing recognisable
+ * in its output (the generic "exited with code N" copy still applies).
+ *
+ * Two independent passes:
+ *  - the exit code, for Windows native faults (decoded hex + kind, plus a VC++
+ *    runtime audit on an access violation);
+ *  - the stderr tail, for a "no usable CUDA on this machine" Python failure,
+ *    which exits with a plain code 1 and so is invisible to the code pass.
  */
-async function diagnoseCrash(
-  code: number | null
-): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
-  const decoded = decodeExitCode(code)
-  if (!decoded) return {}
-  const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
-    exitCodeHex: decoded.hex,
-    crashKind: decoded.kind
+async function diagnoseCrash(code: number | null, lastStderr?: string): Promise<CrashDiagnosis> {
+  const out: CrashDiagnosis = {}
+
+  // A caught custom-node import failure is not why the process exited, so it
+  // must not be reported as the cause — see `cudaUnavailable.ts`.
+  const cuda = diagnoseCudaUnavailable(lastStderr)
+  if (cuda && !cuda.handledByNodeImport) {
+    out.cudaUnavailable = { customNode: cuda.customNode }
   }
+
+  const decoded = decodeExitCode(code)
+  if (!decoded) return out
+  out.exitCodeHex = decoded.hex
+  out.crashKind = decoded.kind
   if (decoded.kind === 'access-violation') {
     // Never let an audit failure reject this helper: it runs inside an async
     // EventEmitter listener, so a throw would become an unhandledRejection and
@@ -993,7 +1007,7 @@ async function runLaunch(
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
-      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
+      const crashDiagnosis = crashed ? await diagnoseCrash(code, lastStderr) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -1642,7 +1656,7 @@ async function runLaunch(
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
-      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
+      const crashDiagnosis = crashed ? await diagnoseCrash(code, lastStderr) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,

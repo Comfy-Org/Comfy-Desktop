@@ -34,6 +34,10 @@ const messages = {
         'ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.',
       crashedDescVcRuntimeHint:
         'Some Microsoft Visual C++ Redistributable runtime files appear to be missing; repairing or installing the latest redistributable may fix this.',
+      crashedDescCudaUnavailable:
+        "ComfyUI stopped because something asked for an NVIDIA CUDA GPU that this machine doesn't have. On Apple Silicon and CPU-only machines PyTorch is built without CUDA by design — this is not a problem with your installer or your download. It is nearly always a custom node that assumes an NVIDIA GPU. Check the logs for the traceback to see which one.",
+      crashedDescCudaUnavailableNode:
+        "ComfyUI stopped because the custom node {node} asked for an NVIDIA CUDA GPU that this machine doesn't have. On Apple Silicon and CPU-only machines PyTorch is built without CUDA by design — this is not a problem with your installer or your download. Disabling or removing {node} should let ComfyUI start again.",
       crashedDescLogsHint: 'See the logs for details.',
       restart: 'Restart ComfyUI',
       stoppedTitle: 'ComfyUI is stopped',
@@ -227,6 +231,43 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('memory access violation')
     expect(wrapper.text()).toContain('Visual C++ Redistributable')
+  })
+
+  it('names the culprit node pack on a CUDA-unavailable crash', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1,
+      cudaUnavailable: { customNode: 'ComfyUI-FramePackWrapper' }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('ComfyUI-FramePackWrapper')
+    // The whole point of this copy: stop users blaming the macOS installer.
+    expect(wrapper.text()).toContain('not a problem with your installer')
+  })
+
+  it('falls back to generic CUDA-unavailable copy when no node pack was identified', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1,
+      cudaUnavailable: {}
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('nearly always a custom node')
+  })
+
+  it('shows no CUDA hint on an ordinary crash', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('NVIDIA CUDA GPU')
   })
 
   it('renders the POSIX signal in the crashed message when signal alone is present', async () => {

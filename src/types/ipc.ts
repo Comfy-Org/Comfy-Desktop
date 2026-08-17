@@ -621,6 +621,15 @@ export interface ComfyExitedData {
    *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
    *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
   vcRuntimeMissing?: string[]
+  /** Set when the crash tail shows Python failing because this machine has no
+   *  usable CUDA — the common Apple Silicon case, where torch is built without
+   *  it. Only present when ComfyUI did NOT catch the error as a custom-node
+   *  import failure, since a caught one just disables that pack and boot
+   *  continues, making it the wrong thing to blame a crash on.
+   *  `customNode` names the node pack from the deepest traceback frame when
+   *  the failure came from one; absent when it came from elsewhere or the
+   *  captured tail was truncated past the frames. */
+  cudaUnavailable?: { customNode?: string }
   /**
    * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
    * Set by `recordCrash()` so a renderer that hydrates the crash *after*

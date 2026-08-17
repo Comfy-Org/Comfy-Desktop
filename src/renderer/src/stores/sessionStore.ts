@@ -34,6 +34,10 @@ interface ErrorInstance {
   /** VC++ runtime DLLs found missing on a Windows access-violation crash;
    *  non-empty drives the "repair the redistributable" hint. */
   vcRuntimeMissing?: string[]
+  /** Present when the crash was Python failing for want of a CUDA GPU (the
+   *  usual Apple Silicon case). Drives the "this isn't the installer" hint, and
+   *  names the culprit node pack when the traceback identified one. */
+  cudaUnavailable?: { customNode?: string }
   /** Wall-clock ms when the crash was first recorded. Used to measure
    *  crash-to-relaunch latency on `comfy.desktop.instance.relaunched_after_crash`. */
   crashedAtMs?: number
@@ -200,6 +204,7 @@ export const useSessionStore = defineStore('session', () => {
           exitCodeHex: c.exitCodeHex,
           crashKind: c.crashKind,
           vcRuntimeMissing: c.vcRuntimeMissing,
+          cudaUnavailable: c.cudaUnavailable,
           crashedAtMs: c.crashedAtMs
         })
       }
@@ -259,6 +264,7 @@ export const useSessionStore = defineStore('session', () => {
           exitCodeHex: data.exitCodeHex,
           crashKind: data.crashKind,
           vcRuntimeMissing: data.vcRuntimeMissing,
+          cudaUnavailable: data.cudaUnavailable,
           crashedAtMs: data.crashedAtMs ?? Date.now()
         })
       })
