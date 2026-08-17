@@ -1007,6 +1007,10 @@
     "updateDepsChecking": "正在检查需求…",
     "updateDepsDryRun": "正在检查冲突…",
     "updateDepsInstalling": "正在安装需求…",
+    "uvResolved": "已解析 {count} 个依赖项…",
+    "uvDownloading": "正在获取 {name}…",
+    "uvDownloadingSized": "正在获取 {name} — {size}",
+    "uvInstalling": "正在安装依赖项…",
     "updateDepsUpToDate": "需求未变化。",
     "updateFailed": "更新过程失败，退出代码 {code}。",
     "updateNoGit": "在 ComfyUI/ 中未找到 .git 目录。基于提交的更新需要 git 仓库。",
@@ -1494,5 +1498,45 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消"
+  },
+  "installShowcase": {
+    "cloud": {
+      "title": "完全跳过配置",
+      "body": "Cloud 已就绪。无需安装、驱动或 GPU。"
+    },
+    "cloudCta": "免费试用 Cloud",
+    "gpu": {
+      "title": "RTX 6000 Pro，96GB 显存",
+      "body": "比多数工作站更快，任何设备可用。"
+    },
+    "models": {
+      "title": "900+ 模型已预装",
+      "body": "Wan 2.2、Flux、Qwen、LTX，无需下载。"
+    },
+    "license": {
+      "title": "已获商用授权",
+      "body": "每个模型均可用于商业用途。"
+    },
+    "partner": {
+      "title": "本地无法运行的模型",
+      "body": "Nano Banana Pro、Seedance、Grok Video。"
+    },
+    "nodes": {
+      "title": "你常用的自定义节点",
+      "body": "约 90% 本地工作流所用，已预装并保持更新。"
+    },
+    "loras": {
+      "title": "导入你自己的 LoRA",
+      "body": "从 CivitAI 或 Hugging Face 导入，保持风格。"
+    },
+    "queue": {
+      "title": "一次排队 100 个",
+      "body": "排好任务，继续工作。"
+    },
+    "idle": {
+      "title": "只为运行付费，闲置不计费",
+      "body": "仅在 GPU 运行时消耗积分。"
+    },
+    "label": "等待期间"
   }
 }
