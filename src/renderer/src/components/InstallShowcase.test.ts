@@ -7,11 +7,15 @@ import { TID } from '../../../shared/testIds'
 import { SHOWCASE_CARDS } from '../lib/installShowcase'
 import { SHOWCASE_INTERVAL_MS } from '../composables/useShowcaseCarousel'
 
+const mounted: Array<{ unmount: () => void }> = []
+
 function mountShowcase(canOfferCloud = true) {
-  return mount(InstallShowcase, {
+  const wrapper = mount(InstallShowcase, {
     props: { canOfferCloud },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] }
   })
+  mounted.push(wrapper)
+  return wrapper
 }
 
 const find = (w: ReturnType<typeof mountShowcase>, id: string) => w.find(`[data-testid="${id}"]`)
@@ -26,8 +30,18 @@ const titleAt = (index: number): string => {
   }, en) as string
 }
 
-beforeEach(() => vi.useFakeTimers())
-afterEach(() => vi.useRealTimers())
+beforeEach(() => {
+  vi.useFakeTimers()
+  mounted.length = 0
+})
+
+// Unmount before the clock is restored, so a component's interval cannot
+// outlive the fake timers that were driving it.
+afterEach(() => {
+  mounted.forEach((w) => w.unmount())
+  mounted.length = 0
+  vi.useRealTimers()
+})
 
 describe('cards', () => {
   it('opens on the skip-the-wait card', () => {

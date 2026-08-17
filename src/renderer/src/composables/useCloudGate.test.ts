@@ -181,3 +181,34 @@ describe('opening cloud', () => {
     expect(await gate.openCloud()).toBe(false)
   })
 })
+
+describe('concurrent clicks', () => {
+  it('launches once when clicked twice in a row', async () => {
+    const gate = setup()
+    await gate.resolve()
+
+    const [a, b] = await Promise.all([gate.openCloud(), gate.openCloud()])
+    expect(a).toBe(true)
+    expect(b).toBe(true)
+    expect(api.runAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows a fresh attempt once the first has settled', async () => {
+    const gate = setup()
+    await gate.resolve()
+
+    await gate.openCloud()
+    await gate.openCloud()
+    expect(api.runAction).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not latch a failure, so a retry can still launch', async () => {
+    stubApi({ runAction: vi.fn().mockResolvedValue({ ok: false }) })
+    const gate = setup()
+    await gate.resolve()
+    expect(await gate.openCloud()).toBe(false)
+
+    api.runAction.mockResolvedValue({ ok: true })
+    expect(await gate.openCloud()).toBe(true)
+  })
+})

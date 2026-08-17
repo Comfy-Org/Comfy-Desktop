@@ -279,7 +279,12 @@ async function handleShowcaseCloud(): Promise<void> {
   emitTelemetryAction('comfy.desktop.install.showcase.cloud_open', {
     phase: currentOp.value?.activePhase ?? null
   })
-  await cloudGate.openCloud()
+  // A silent no-op reads as a dead button, so a failed launch says so.
+  if (await cloudGate.openCloud()) return
+  await modal.alert({
+    title: t('installShowcase.cloudFailedTitle'),
+    message: t('installShowcase.cloudFailedMessage')
+  })
 }
 
 // Rides every in-flight install; no tiers or thresholds, so the section is a

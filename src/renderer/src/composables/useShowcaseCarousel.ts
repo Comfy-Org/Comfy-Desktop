@@ -1,16 +1,8 @@
 import { computed, onScopeDispose, ref, type ComputedRef, type Ref } from 'vue'
 import { SHOWCASE_CARDS, type ShowcaseCard } from '../lib/installShowcase'
 
-/** How long each card holds.
- *
- *  The 15-50s figures from Ubuntu and Ubiquity are sized for a full-bleed
- *  slideshow carrying images and several sentences. A card here is one short
- *  line — roughly 3s of reading — so that range would leave it sitting long
- *  after it has been absorbed.
- *
- *  The floor that does apply is Unity's documented 2s minimum dwell, which
- *  exists to stop content flickering past. 7s clears it with room to notice the
- *  change and read without hurrying. */
+/** One short line per card, so the slideshow-scale 15-50s figures do not apply.
+ *  Clears Unity's 2s minimum dwell with room to read unhurried. */
 export const SHOWCASE_INTERVAL_MS = 7_000
 
 export interface ShowcaseCarousel {

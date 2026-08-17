@@ -1537,6 +1537,8 @@
       "title": "Pay for runtime, not idle time",
       "body": "Credits are spent only while the GPU runs."
     },
-    "label": "While you wait"
+    "label": "While you wait",
+    "cloudFailedTitle": "Couldn't open Comfy Cloud",
+    "cloudFailedMessage": "Check your connection and try again from the dashboard."
   }
 }

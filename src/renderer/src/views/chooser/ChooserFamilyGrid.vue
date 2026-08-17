@@ -20,9 +20,12 @@ const props = withDefaults(
     /** Center the rows instead of left-aligning them under a shelf header. */
     centered?: boolean
     showFreeRunsPill?: boolean
+    /** Offer the Cloud explainer on cloud tiles. Off when the offer doesn't
+     *  apply — e.g. a subscriber, who has nothing to learn from the pitch. */
+    showWhyCloud?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
   }>(),
-  { showNew: false, centered: false, showFreeRunsPill: false }
+  { showNew: false, centered: false, showFreeRunsPill: false, showWhyCloud: false }
 )
 
 const emit = defineEmits<{
@@ -35,6 +38,7 @@ const emit = defineEmits<{
   'view-danger': [installation: Installation]
   'dist-select': [distribution: Distribution]
   'dist-kebab': [event: MouseEvent, distribution: Distribution]
+  'why-cloud': []
 }>()
 
 const { t } = useI18n()
@@ -91,7 +95,9 @@ function unlockTileSize(el: Element): void {
         v-if="entry.kind === 'install'"
         :installation="entry.inst"
         :show-free-runs-pill="props.showFreeRunsPill && entry.inst.sourceCategory === 'cloud'"
+        :show-why-cloud="props.showWhyCloud && entry.inst.sourceCategory === 'cloud'"
         :is-stopped-action-gated="props.isStoppedActionGated(entry.inst)"
+        @why-cloud="emit('why-cloud')"
         @pick="emit('pick', $event)"
         @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"
         @open-kebab-menu="(event, inst) => emit('open-kebab-menu', event, inst)"

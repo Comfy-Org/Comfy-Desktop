@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, ArrowRightLeft, MoreVertical } from 'lucide-vue-next'
+import { AlertCircle, ArrowDownToLine, ArrowRightLeft, Info, MoreVertical } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
@@ -13,6 +13,9 @@ import type { Installation } from '../../types/ipc'
 interface Props {
   installation: Installation
   showFreeRunsPill?: boolean
+  /** Renders the (i) explainer trigger. Cloud tiles only — the pitch it opens
+   *  is about Cloud, and first-use is the only other place it's reachable. */
+  showWhyCloud?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
 }
@@ -26,6 +29,7 @@ const emit = defineEmits<{
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
+  'why-cloud': []
 }>()
 
 const { t } = useI18n()
@@ -63,6 +67,10 @@ const statusPill = computed<{ label: string; dotClass: string } | null>(() => {
     return { label: 'chooser.statusRunning', dotClass: 'chooser-tile-status--running' }
   return null
 })
+
+const showWhyCloudTrigger = computed(
+  () => props.showWhyCloud && !hasError.value && !statusPill.value && !dangerTag.value
+)
 
 const hasUpdate = computed(() => inst.value.statusTag?.style === 'update')
 // The backend tags every migratable install (Legacy Desktop, portable, git)
@@ -167,6 +175,21 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <!-- Lifecycle indicator + kebab. Status pill is click-through; error badge opens details. -->
     <div class="chooser-tile-actions">
+      <!-- The explainer stands down while the tile is busy or broken: a pitch
+           for Cloud is noise next to a running session or an error to read. -->
+      <Tooltip v-if="showWhyCloudTrigger" :text="t('firstUse.whyTryCloud')">
+        <button
+          type="button"
+          class="chooser-tile-kebab chooser-tile-why-cloud"
+          :aria-label="t('firstUse.whyTryCloud')"
+          :data-testid="TID.dashboardTileWhyCloud(inst.id)"
+          @click.stop="emit('why-cloud')"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          <Info :size="14" />
+        </button>
+      </Tooltip>
       <span
         v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
         class="chooser-cloud-runs-pill"
@@ -253,6 +276,10 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
 <style scoped>
 @import './chooser-tiles.css';
+
+.chooser-tile-why-cloud {
+  flex-shrink: 0;
+}
 
 .chooser-cloud-runs-pill {
   display: inline-flex;

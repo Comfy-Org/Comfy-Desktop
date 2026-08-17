@@ -7,8 +7,11 @@ import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
+import { useCloudGate } from '../composables/useCloudGate'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
+import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
@@ -413,11 +416,42 @@ function viewDanger(inst: Installation): void {
   void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
+/** Only `openCloud` is used here — this view resolves the flag and tier itself
+ *  below, so `immediate: false` keeps the gate from repeating those two IPCs. */
+const cloudGate = useCloudGate({ immediate: false })
+
 const cloudFreeRunsEnabled = ref(false)
 const cloudUserTier = ref<CloudUserTier>('unknown')
 const showCloudFreeRunsPill = computed(
   () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
 )
+
+/** The explainer outlives the free-runs pill: it's a pitch for Cloud itself,
+ *  not for the trial, so it rides the tier alone rather than the free-tier
+ *  flag the pill waits on. A subscriber already bought the pitch. */
+const showWhyCloud = computed(() => cloudUserTier.value !== 'paid')
+
+const whyCloudOpen = ref(false)
+
+function openWhyCloud(): void {
+  whyCloudOpen.value = true
+  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_opened', {})
+}
+
+/** The modal collapses Maybe-Later, ✕, Escape and scrim-click into one `close`,
+ *  so every non-conversion exit reports the same way. */
+function dismissWhyCloud(): void {
+  whyCloudOpen.value = false
+  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'dismiss' })
+}
+
+/** Unlike first-use — where the ToS gate means the CTA can only pre-select
+ *  Cloud — the dashboard has no gate left to clear, so the button launches. */
+async function onWhyCloudTryCloud(): Promise<void> {
+  whyCloudOpen.value = false
+  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'try_cloud' })
+  await cloudGate.openCloud()
+}
 onMounted(async () => {
   const [freeRunsResult, userTierResult] = await Promise.allSettled([
     window.api.getCloudFreeRunsEnabled(),
@@ -446,7 +480,8 @@ const gridHandlers = {
   'view-error': viewError,
   'view-danger': viewDanger,
   'dist-select': handleDistributionActivate,
-  'dist-kebab': openDistKebabMenu
+  'dist-kebab': openDistKebabMenu,
+  'why-cloud': openWhyCloud
 }
 </script>
 
@@ -491,6 +526,7 @@ const gridHandlers = {
             :centered="!showWorkspaceShelf"
             :entries="ownEntries"
             :show-free-runs-pill="showCloudFreeRunsPill"
+            :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -513,6 +549,7 @@ const gridHandlers = {
             v-if="workspaceInstalledEntries.length"
             :entries="workspaceInstalledEntries"
             :show-free-runs-pill="showCloudFreeRunsPill"
+            :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -520,6 +557,7 @@ const gridHandlers = {
             v-if="workspaceAvailableEntries.length"
             :entries="workspaceAvailableEntries"
             :show-free-runs-pill="showCloudFreeRunsPill"
+            :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -552,6 +590,12 @@ const gridHandlers = {
         :items="distMenuItems"
         @close="closeDistMenu"
         @select="handleDistMenuSelect"
+      />
+
+      <WhyTryCloudModal
+        v-if="whyCloudOpen"
+        @close="dismissWhyCloud"
+        @try-cloud="onWhyCloudTryCloud"
       />
     </div>
   </BrandBackground>

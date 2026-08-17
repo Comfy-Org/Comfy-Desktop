@@ -1537,6 +1537,8 @@
       "title": "只为运行付费，闲置不计费",
       "body": "仅在 GPU 运行时消耗积分。"
     },
-    "label": "等待期间"
+    "label": "等待期间",
+    "cloudFailedTitle": "无法打开 Comfy Cloud",
+    "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
   }
 }

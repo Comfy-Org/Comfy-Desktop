@@ -1,13 +1,5 @@
-/**
- * Feature cards shown while an install runs. Each answers the question the
- * wait raises on its own: why run this on Cloud rather than the machine
- * currently installing.
- *
- * Copy is sourced from the marketing site's `cloud.*` and `pricing.included.*`
- * strings (`ComfyUI_frontend/apps/website/src/i18n/translations.ts`), re-cut as
- * plain text — the originals carry HTML and hard line breaks that vue-i18n
- * renders literally.
- */
+/** Copy is re-cut from the marketing site's `cloud.*` strings, which carry HTML
+ *  and hard line breaks that vue-i18n would render literally. */
 
 export type ShowcaseAction = 'cloud'
 

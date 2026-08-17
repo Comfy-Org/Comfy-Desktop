@@ -3,15 +3,9 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { CloudUserTier, Installation } from '../types/ipc'
 
-/**
- * Whether a Comfy Cloud offer may be shown, and how to open it.
- *
- * Both signals fail closed: an unreachable flag service or tier lookup leaves
- * the offer hidden rather than rendering a CTA we can't stand behind. The
- * `'paid'` exclusion matches the dashboard's rule — a subscriber has nothing to
- * gain from a free-tier pitch — and is deliberately looser than first-use's
- * `'unknown'` check, since by install time the user may already have signed in.
- */
+/** Whether a Comfy Cloud offer may be shown, and how to open it. Every signal
+ *  fails closed, so an unreachable flag service hides the offer rather than
+ *  rendering a CTA we cannot stand behind. */
 export interface CloudGate {
   freeRunsEnabled: Ref<boolean>
   userTier: Ref<CloudUserTier>
@@ -38,13 +32,10 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
   const userTier = ref<CloudUserTier>('unknown')
   const cloudInstall = ref<Installation | null>(null)
 
-  /** The auto-seeded cloud instance. The store isn't hydrated on a cold first
-   *  launch, so a miss re-reads through main before giving up. */
+  /** A miss re-reads through main, since the store is empty on a cold start. */
   async function findCloudInstall(): Promise<Installation | null> {
-    // `sourceId` is the persisted identity (main auto-seeds `'cloud'` every
-    // boot); `sourceCategory` is decorated onto the record by
-    // `getInstallations`. Matching either survives a store that hydrated
-    // before the decoration landed.
+    // `sourceId` is persisted; `sourceCategory` is decorated on by
+    // `getInstallations`. Matching either survives an early-hydrated store.
     const isCloud = (i: Installation): boolean =>
       i.sourceId === 'cloud' || i.sourceCategory === 'cloud'
     const fromStore = installationStore.installations.find(isCloud) ?? null
@@ -68,17 +59,20 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
     () => freeRunsEnabled.value && userTier.value !== 'paid' && cloudInstall.value !== null
   )
 
-  /**
-   * Open Cloud in its own window, leaving whatever is running here untouched.
-   * Focuses an existing cloud window instead of launching a second one — a
-   * focus miss (the window was closed but the session record lingers) falls
-   * through to a normal launch. Returns false when there's nothing to open.
-   *
-   * The launch runs the install's own primary action rather than
-   * `openInstallWindow`, which only focuses an already-open window and
-   * otherwise drops the user on the chooser.
-   */
+  /** Opens Cloud in its own window, leaving this install untouched. Runs the
+   *  install's primary action rather than `openInstallWindow`, which only
+   *  focuses an open window and otherwise drops the user on the chooser. */
+  /** Shared so a double-click cannot fire two launches before the session
+   *  store reflects the first. */
+  let launching: Promise<boolean> | null = null
+
   async function openCloud(): Promise<boolean> {
+    return (launching ??= run().finally(() => {
+      launching = null
+    }))
+  }
+
+  async function run(): Promise<boolean> {
     const install = cloudInstall.value ?? (await findCloudInstall())
     if (!install) return false
     if (sessionStore.isRunning(install.id) || sessionStore.isLaunching(install.id)) {
