@@ -77,7 +77,14 @@ export const TID = {
   /** Visible only when `portConflict.nextPort` is set. */
   progressPortConflictUsePort: 'progress-port-conflict-use-port',
   /** Visible only when `portConflict.isComfy` is true. */
-  progressPortConflictKill: 'progress-port-conflict-kill'
+  progressPortConflictKill: 'progress-port-conflict-kill',
+
+  /** Feature carousel in the install takeover, above the wordmark. Passive:
+   *  rotation has no dots, arrows or pause button — see InstallShowcase.vue. */
+  installShowcase: 'install-showcase',
+  installShowcaseTitle: 'install-showcase-title',
+  installShowcaseCloud: 'install-showcase-cloud',
+
 } as const
 
 export type TestIdKey = keyof typeof TID
