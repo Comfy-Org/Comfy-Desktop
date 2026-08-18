@@ -25,7 +25,6 @@
  */
 import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
-import { createModelUsageSummary } from './modelUsageSummary'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import { buildErrorFields } from '../../shared/errorEvent'
 import { scrubAll } from '../../shared/piiScrub'
@@ -123,7 +122,6 @@ export function createExecutionTap(opts: {
     // through here — the cloud frontend/backend report those directly.
     deployment: 'local' satisfies telemetry.Deployment
   }
-  const modelUsage = createModelUsageSummary()
 
   function pushPromptStart(): void {
     state.promptStartTimes.push(Date.now())
@@ -262,8 +260,6 @@ export function createExecutionTap(opts: {
 
     if (trimmed.length === 0) return
 
-    modelUsage.recordLine(trimmed)
-
     if (PROMPT_GOT.test(trimmed)) {
       state.startedCount++
       pushPromptStart()
@@ -384,8 +380,7 @@ export function createExecutionTap(opts: {
         ...baseContext,
         started_count: state.startedCount,
         completed_count: state.completedCount,
-        error_count: state.errorCount,
-        ...modelUsage.properties()
+        error_count: state.errorCount
       })
     }
   }

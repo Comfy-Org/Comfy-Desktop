@@ -43,38 +43,42 @@ describe('parseModelLoadObservation', () => {
 })
 
 describe('createModelUsageSummary', () => {
-  it('returns deterministic aligned arrays with aggregated tuple counts', () => {
+  it('drains deterministic aligned arrays grouped by UTC observation date', () => {
     const summary = createModelUsageSummary()
-    summary.recordLine('Requested to load MiniMaxH3')
-    summary.recordLine('Creating deepclone of MiniMaxH3 for cuda:2.')
-    summary.recordLine('Requested to load MiniMaxH3')
-    summary.recordLine('Model MiniMaxH3 prepared for dynamic VRAM loading. 100MB Staged.')
-    summary.recordLine('Creating deepclone of MiniMaxH3 for cuda:1.')
-    summary.recordLine('Creating deepclone of MiniMaxH3 for cuda:1.')
+    const firstDay = Date.parse('2026-08-18T23:59:00Z')
+    const secondDay = Date.parse('2026-08-19T00:01:00Z')
+    summary.recordLine('Requested to load MiniMaxH3', firstDay)
+    summary.recordLine('Requested to load MiniMaxH3', secondDay)
+    summary.recordLine('Requested to load MiniMaxH3', secondDay)
+    summary.recordLine('Creating deepclone of MiniMaxH3 for cuda:1.', secondDay)
 
-    expect(summary.properties()).toEqual({
+    expect(summary.drainProperties()).toEqual({
       model_usage_schema_version: 1,
       model_observation_semantics: 'runtime_load_log_v1',
-      model_classes: ['MiniMaxH3', 'MiniMaxH3', 'MiniMaxH3', 'MiniMaxH3'],
-      model_load_triggers: ['deepclone', 'deepclone', 'dynamic_prepare', 'requested'],
-      model_target_devices: ['cuda:1', 'cuda:2', null, null],
-      model_load_counts: [2, 1, 1, 2],
+      model_observation_dates: ['2026-08-18', '2026-08-19', '2026-08-19'],
+      model_classes: ['MiniMaxH3', 'MiniMaxH3', 'MiniMaxH3'],
+      model_load_triggers: ['requested', 'deepclone', 'requested'],
+      model_target_devices: [null, 'cuda:1', null],
+      model_load_counts: [1, 1, 2],
       model_usage_truncated: false
     })
+    expect(summary.drainProperties()).toBeNull()
   })
 
-  it('caps distinct tuples and marks the summary as truncated', () => {
+  it('caps distinct model tuples across drains and marks affected deltas as truncated', () => {
     const summary = createModelUsageSummary()
     for (let index = 0; index < 60; index++) {
       summary.recordLine(`Requested to load Model${index}`)
     }
+    expect(summary.drainProperties()?.model_classes).toHaveLength(60)
+
     summary.recordLine('Requested to load OverflowModel')
     summary.recordLine('Requested to load Model0')
 
-    const properties = summary.properties()
-    expect(properties.model_classes).toHaveLength(60)
-    expect(properties.model_classes).not.toContain('OverflowModel')
-    expect(properties.model_load_counts).toContain(2)
-    expect(properties.model_usage_truncated).toBe(true)
+    const properties = summary.drainProperties()
+    expect(properties?.model_classes).toEqual(['Model0'])
+    expect(properties?.model_classes).not.toContain('OverflowModel')
+    expect(properties?.model_load_counts).toEqual([1])
+    expect(properties?.model_usage_truncated).toBe(true)
   })
 })
