@@ -43,6 +43,14 @@ const slides = computed(() =>
         :aria-hidden="slide.offset !== 0"
       >
         <img class="slider__art" :src="slide.art" :alt="slide.label" draggable="false" />
+
+        <!-- Provider mark always, model name only while the pointer is on the
+             card: the credit belongs with the art, but at rest the art is the
+             point. -->
+        <figcaption class="slider__credit">
+          <span class="slider__mark" aria-hidden="true">{{ slide.providerMark }}</span>
+          <span class="slider__model">{{ slide.model }}</span>
+        </figcaption>
       </figure>
     </div>
 
@@ -118,6 +126,62 @@ const slides = computed(() =>
   border: 1px solid color-mix(in srgb, var(--neutral-100) 8%, transparent);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
+/* Bottom-left of the still, frosted so it holds over any art. The disc is
+   always there; the name only unfolds on hover of the current card. */
+.slider__credit {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.slider__slide.is-current .slider__credit {
+  opacity: 1;
+}
+.slider__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.slider__model {
+  display: block;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #fff;
+  opacity: 0;
+  transition:
+    max-width 320ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 200ms ease,
+    padding-right 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.slider__slide.is-current:hover .slider__model,
+.slider__slide.is-current:focus-within .slider__model {
+  max-width: 14rem;
+  padding-right: 7px;
+  opacity: 1;
+}
+
 /* Frosted, the same recipe the takeover uses for glass, so they read as
    controls without drawing a box around themselves. */
 .slider__side {
@@ -162,6 +226,8 @@ const slides = computed(() =>
 }
 @media (prefers-reduced-motion: reduce) {
   .slider__slide,
+  .slider__model,
+  .slider__credit,
   .slider__side {
     transition: none;
   }
