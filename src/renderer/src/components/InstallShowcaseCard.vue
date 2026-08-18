@@ -90,13 +90,13 @@ const slides = computed(() =>
 .slider__stage {
   position: relative;
   width: calc(var(--slide-w) * 3);
-  height: calc(var(--slide-w) + 76px);
+  height: calc(var(--slide-w) + 94px);
   margin-left: calc(var(--slide-w) * -1);
   mask-image: linear-gradient(to right, transparent 2%, #000 32%, #000 68%, transparent 98%);
 }
 .slider__slide {
   position: absolute;
-  top: 10px;
+  top: 34px;
   left: 50%;
   width: var(--slide-w);
   height: var(--slide-w);
@@ -124,7 +124,7 @@ const slides = computed(() =>
   border-radius: 14px;
   background: var(--neutral-800);
   border: 1px solid color-mix(in srgb, var(--neutral-100) 8%, transparent);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.34);
 }
 /* Bottom-left of the still, frosted so it holds over any art. The disc is
    always there; the name only unfolds on hover of the current card. */
@@ -186,7 +186,7 @@ const slides = computed(() =>
    controls without drawing a box around themselves. */
 .slider__side {
   position: absolute;
-  top: calc(10px + var(--slide-w) / 2);
+  top: calc(34px + var(--slide-w) / 2);
   z-index: 3;
   transform: translateY(-50%);
   display: flex;
