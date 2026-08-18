@@ -56,7 +56,7 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
   }
 
   const canOffer = computed(
-    () => freeRunsEnabled.value && userTier.value !== 'paid' && cloudInstall.value !== null
+    () => freeRunsEnabled.value && userTier.value === 'free' && cloudInstall.value !== null
   )
 
   /** Opens Cloud in its own window, leaving this install untouched. Runs the

@@ -113,6 +113,13 @@ describe('the gate fails closed', () => {
     await gate.resolve()
     expect(gate.canOffer.value).toBe(false)
   })
+
+  it('stays shut when the tier lookup throws', async () => {
+    stubApi({ getCloudUserTier: vi.fn().mockRejectedValue(new Error('offline')) })
+    const gate = setup()
+    await gate.resolve()
+    expect(gate.canOffer.value).toBe(false)
+  })
 })
 
 describe('opening cloud', () => {
