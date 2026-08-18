@@ -179,6 +179,11 @@ describe('the cards themselves', () => {
 })
 
 describe('every card resolves in both locales', () => {
+  const locales = [
+    ['en', en],
+    ['zh', zh]
+  ] as const
+
   const lookup = (tree: Record<string, unknown>, key: string): unknown =>
     key.split('.').reduce<unknown>((node, part) => {
       if (node && typeof node === 'object') return (node as Record<string, unknown>)[part]
@@ -189,10 +194,7 @@ describe('every card resolves in both locales', () => {
     const missing: string[] = []
     for (const card of SHOWCASE_CARDS) {
       for (const key of [card.title, card.body]) {
-        for (const [name, tree] of [
-          ['en', en],
-          ['zh', zh]
-        ] as const) {
+        for (const [name, tree] of locales) {
           if (typeof lookup(tree as Record<string, unknown>, key) !== 'string') {
             missing.push(`${name}: ${key}`)
           }
@@ -203,11 +205,13 @@ describe('every card resolves in both locales', () => {
   })
 
   it('keeps every card to a readable length', () => {
-    for (const card of SHOWCASE_CARDS) {
-      const title = lookup(en as Record<string, unknown>, card.title) as string
-      const body = lookup(en as Record<string, unknown>, card.body) as string
-      expect(title.length, card.id).toBeLessThanOrEqual(32)
-      expect(body.length, card.id).toBeLessThanOrEqual(60)
+    for (const [name, tree] of locales) {
+      for (const card of SHOWCASE_CARDS) {
+        const title = lookup(tree as Record<string, unknown>, card.title) as string
+        const body = lookup(tree as Record<string, unknown>, card.body) as string
+        expect(title.length, `${name}: ${card.id}`).toBeLessThanOrEqual(32)
+        expect(body.length, `${name}: ${card.id}`).toBeLessThanOrEqual(60)
+      }
     }
   })
 
@@ -216,10 +220,14 @@ describe('every card resolves in both locales', () => {
    *  than left to whoever next edits a string. */
   it('fits title, separator and body on a single line', () => {
     const SINGLE_LINE_BUDGET = 95
-    for (const card of SHOWCASE_CARDS) {
-      const title = lookup(en as Record<string, unknown>, card.title) as string
-      const body = lookup(en as Record<string, unknown>, card.body) as string
-      expect(`${title} - ${body}`.length, card.id).toBeLessThanOrEqual(SINGLE_LINE_BUDGET)
+    for (const [name, tree] of locales) {
+      for (const card of SHOWCASE_CARDS) {
+        const title = lookup(tree as Record<string, unknown>, card.title) as string
+        const body = lookup(tree as Record<string, unknown>, card.body) as string
+        expect(`${title} - ${body}`.length, `${name}: ${card.id}`).toBeLessThanOrEqual(
+          SINGLE_LINE_BUDGET
+        )
+      }
     }
   })
 })
