@@ -152,7 +152,9 @@ function rowOpacity(index: number): number {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  /* 1px read as a single wrapped line rather than a label with its detail
+     underneath; enough air to separate them, not enough to split the row. */
+  gap: 5px;
   min-width: 0;
   /* Wide enough for the full download detail line (bytes · speed · ETA) so it
      isn't ellipsized; clamped to the viewport on narrow windows. */
