@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { SHOWCASE_STILLS } from '../lib/installShowcaseStills'
 import { useShowcaseCarousel } from '../composables/useShowcaseCarousel'
 import { TID } from '../../../shared/testIds'
@@ -43,12 +43,7 @@ const slides = computed(() =>
         :aria-hidden="slide.offset !== 0"
       >
         <img class="slider__art" :src="slide.art" alt="" draggable="false" />
-        <figcaption class="slider__label">
-          <span class="slider__badge" aria-hidden="true">
-            <Sparkles :size="12" />
-          </span>
-          {{ slide.label }}
-        </figcaption>
+        <figcaption class="slider__label">{{ slide.label }}</figcaption>
       </figure>
 
       <!-- The neighbours are the control: click the still either side to walk
@@ -122,44 +117,30 @@ const slides = computed(() =>
   border: 1px solid color-mix(in srgb, var(--neutral-100) 8%, transparent);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
-/* Laid over the art on its own scrim: the still is someone's artwork, and a
-   solid bar across it would read as a caption bolted on. */
+/* A chip in the corner rather than a bar across the foot of the still: the art
+   is the point, and a full-width scrim over it reads as a caption bolted on. */
 .slider__label {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 30px 12px 11px;
-  border-radius: 0 0 14px 14px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.74), transparent);
-  font-size: 12.5px;
+  top: 10px;
+  right: 10px;
+  margin: 0;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(12, 9, 15, 0.52);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11.5px;
   font-weight: 500;
+  line-height: 1.2;
   color: #fff;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
   opacity: 0;
   transition: opacity 320ms ease;
 }
 .slider__slide.is-current .slider__label {
   opacity: 1;
 }
-.slider__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-/* Hit areas over the neighbouring stills. The chevron rests at half strength
-   rather than hiding: nothing else on this screen advertises that the row can
-   be walked, and a control you have to hunt for is not a control. */
 .slider__side {
   position: absolute;
   top: 0;
