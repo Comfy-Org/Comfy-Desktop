@@ -763,7 +763,11 @@ defineExpose({ startOperation, showOperation })
         />
       </div>
 
-      <div v-if="currentOp" class="brand-progress__footer">
+      <div
+        v-if="currentOp"
+        class="brand-progress__footer"
+        :class="{ 'has-showcase': showShowcase }"
+      >
         <!-- Log panel (opens above the footer bar) -->
         <BaseAccordion
           v-if="currentOp.terminalOutput"
@@ -989,6 +993,7 @@ defineExpose({ startOperation, showOperation })
    band now that the in-flight exit moved up to the logo row. */
 .brand-progress__showcase-band {
   position: absolute;
+  anchor-name: --showcase-band;
   left: 0;
   right: 0;
   bottom: 0;
@@ -1291,6 +1296,14 @@ defineExpose({ startOperation, showOperation })
   gap: 8px;
   min-height: 0;
   pointer-events: none;
+}
+/* The banner owns the bottom edge, so the footer's own controls (View logs,
+   Skip model download) have to clear it. Anchored rather than given a hardcoded
+   height: the band grows with its copy, and a stale number would put the logs
+   toggle back underneath it. Browsers without anchor positioning fall back to
+   the plain offset above. */
+.brand-progress__footer.has-showcase {
+  bottom: calc(anchor(--showcase-band top) + 12px);
 }
 /* Re-enable interaction on the content; the container is only a geometric bound and stays click-through where empty. */
 .brand-progress__footer > * {
