@@ -557,7 +557,7 @@ defineExpose({ startOperation, showOperation })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="installationId && currentOp">
+  <BrandTakeoverLayout v-if="installationId && currentOp" brand="wordmark">
     <div class="brand-progress">
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
@@ -1013,13 +1013,13 @@ defineExpose({ startOperation, showOperation })
 .brand-progress__showcase {
   margin-bottom: 0;
 }
-/* Top-left, sharing the C logo's band: `--takeover-logo-size` + the logo row's
-   16px padding is exactly the band's height, so the button centres against the
-   logo instead of guessing an offset. */
+/* Top-left corner, in the band the wordmark now centres itself in:
+   `--takeover-logo-size` + the logo row's 16px padding is exactly that band's
+   height, so the button centres against the lockup instead of guessing. */
 .brand-progress__topbar {
   position: absolute;
   top: 0;
-  left: calc(15px + var(--takeover-logo-size) + 12px);
+  left: 15px;
   z-index: 4;
   height: calc(var(--takeover-logo-size) + 32px);
   display: inline-flex;
