@@ -924,9 +924,10 @@ defineExpose({ startOperation, showOperation })
 }
 .brand-progress__bar-wrap {
   /* Own cap rather than the stack's 880px: the stack also carries the finished
-     states, so narrowing it there would move them too. 608px lines the bar up
-     with the stepper block underneath, so the two read as one column. */
-  width: min(100%, 608px);
+     states, so narrowing it there would move them too. Sized against the
+     slider above it, not the text below: the bar reads as that block's
+     measure, and at full stack width it was nearly twice it. */
+  width: min(100%, 500px);
   /* Percentage on the bar's own line, at its end: under it, right-aligned, it
      was a floating number with nothing to belong to. */
   display: flex;

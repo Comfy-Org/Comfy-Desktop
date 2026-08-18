@@ -94,7 +94,7 @@ const slides = computed(() =>
   width: calc(var(--slide-w) * 3);
   height: calc(var(--slide-w) + 94px);
   margin-left: calc(var(--slide-w) * -1);
-  mask-image: linear-gradient(to right, transparent 6%, #000 30%, #000 70%, transparent 94%);
+  mask-image: linear-gradient(to right, transparent 11%, #000 33%, #000 67%, transparent 89%);
 }
 .slider__slide {
   position: absolute;
@@ -136,7 +136,6 @@ const slides = computed(() =>
   bottom: 8px;
   display: flex;
   align-items: center;
-  gap: 6px;
   max-width: calc(100% - 16px);
   padding: 3px;
   border-radius: 999px;
@@ -156,8 +155,8 @@ const slides = computed(() =>
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
+  /* No ground of its own: the chip behind it is already a disc at rest, and two
+     stacked circles read as a mistake. */
 }
 /* Neutral, not the partner's own palette: eight brand colours sitting on eight
    different stills would fight both the art and each other. `brightness(0)`
@@ -180,15 +179,16 @@ const slides = computed(() =>
   font-weight: 500;
   color: #fff;
   opacity: 0;
+  padding-inline: 0;
   transition:
     max-width 320ms cubic-bezier(0.32, 0.72, 0, 1),
     opacity 200ms ease,
-    padding-right 320ms cubic-bezier(0.32, 0.72, 0, 1);
+    padding-inline 320ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .slider__slide.is-current:hover .slider__model,
 .slider__slide.is-current:focus-within .slider__model {
   max-width: 14rem;
-  padding-right: 7px;
+  padding-inline: 6px 8px;
   opacity: 1;
 }
 
