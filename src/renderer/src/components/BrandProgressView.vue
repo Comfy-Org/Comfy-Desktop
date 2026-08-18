@@ -30,16 +30,16 @@ const trackStyle = computed(() => ({
 
 const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS * ROW_H}px` }))
 
-/** Asymmetric on purpose: what is coming next is worth more of the reader's
- *  attention than what is already paid for, so the row below the active one
- *  sits well above the row above it. Nothing is hidden either way. */
+/** Forward only: the step in hand and the ones still to come. A finished step
+ *  is behind the reader, and its row was the loudest thing competing with the
+ *  one actually running. Its slot stays reserved, so nothing below it shifts
+ *  when the stepper advances. */
 function rowOpacity(index: number): number {
   const d = index - activeIndex.value
   if (d === 0) return 1
+  if (d < 0) return 0
   if (d === 1) return 0.45
-  if (d === -1) return 0.16
-  if (d > 1) return Math.max(0.1, 0.3 - (d - 2) * 0.1)
-  return Math.max(0.06, 0.1 - (Math.abs(d) - 2) * 0.03)
+  return Math.max(0.1, 0.3 - (d - 2) * 0.1)
 }
 </script>
 

@@ -1031,14 +1031,11 @@ defineExpose({ startOperation, showOperation })
     transition-duration: 0ms;
   }
 }
-.brand-progress__wordmark {
-  /* Keeps `--brand-beam-target`: the second light beam anchors to whatever
-     stands at the centre of the stack. */
-  width: clamp(200px, 17vw, 320px);
-  height: auto;
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
-  color: var(--comfy-yellow);
+/* The second light beam anchors to whatever stands at the centre of the stack.
+   That used to be the wordmark and is now the slider; with the old selector
+   left behind, the name went undefined and the beam fell back to its own
+   default position, which is what threw the light off centre. */
+.brand-progress__slider {
   anchor-name: --brand-beam-target;
 }
 .brand-progress__bar {
