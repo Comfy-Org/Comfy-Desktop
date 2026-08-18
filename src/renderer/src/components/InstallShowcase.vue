@@ -56,7 +56,10 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
 <style scoped>
 .showcase {
   display: flex;
-  align-items: baseline;
+  /* Centred, not baseline: the row reserves 1.5em for two-line locales, and
+     baseline alignment parks the copy against the top of that box, which reads
+     as off-centre inside the banner. */
+  align-items: center;
   justify-content: center;
   flex-wrap: nowrap;
   gap: 8px;

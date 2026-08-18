@@ -192,7 +192,10 @@ function rowOpacity(index: number): number {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  /* Narrower than the label's measure, so a long producer status ellipsises
+     instead of running wider than the step it belongs to. The head of the line
+     (size, then speed) is what gets read at a glance. */
+  max-width: min(22rem, 70vw);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.65),
     0 0 16px rgba(25, 19, 29, 0.85);

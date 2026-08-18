@@ -994,12 +994,17 @@ defineExpose({ startOperation, showOperation })
 .brand-progress__showcase-band {
   position: absolute;
   anchor-name: --showcase-band;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 4;
   box-sizing: border-box;
-  padding: 16px clamp(16px, 2.5vw, 32px);
+  /* 15px on top, not 16: the hairline border sits inside the box and would
+     otherwise push the copy a pixel below the band's optical centre. */
+  padding: 15px clamp(16px, 2.5vw, 32px) 16px;
   background: color-mix(in srgb, var(--neutral-900) 62%, transparent);
   backdrop-filter: blur(20px) saturate(115%);
   -webkit-backdrop-filter: blur(20px) saturate(115%);
