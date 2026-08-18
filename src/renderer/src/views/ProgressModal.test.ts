@@ -237,6 +237,16 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
   })
 
+  it('shows the Cloud showcase only during install operations', async () => {
+    const { wrapper, body } = await mountWithOp('inst-install', { opKind: 'install' })
+    expect(body.exists('[data-testid="install-showcase"]')).toBe(true)
+
+    snapOp('inst-update', { opKind: 'update' })
+    await wrapper.setProps({ installationId: 'inst-update' })
+    await flushPromises()
+    expect(body.exists('[data-testid="install-showcase"]')).toBe(false)
+  })
+
   it('renders the success banner on a finished+ok op and auto-closes after the grace delay', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,

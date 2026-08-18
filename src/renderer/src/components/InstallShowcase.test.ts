@@ -154,4 +154,20 @@ describe('pausing while the user reads', () => {
     await w.vm.$nextTick()
     expect(find(w, TID.installShowcaseTitle).text()).toBe(en.installShowcase.cloud.title)
   })
+
+  it('stays paused until both hover and focus have left', async () => {
+    const w = mountShowcase()
+    const showcase = find(w, TID.installShowcase)
+    await showcase.trigger('mouseenter')
+    await showcase.trigger('focusin')
+    await showcase.trigger('mouseleave')
+    vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
+    await w.vm.$nextTick()
+    expect(find(w, TID.installShowcaseTitle).text()).toBe(en.installShowcase.cloud.title)
+
+    await showcase.trigger('focusout')
+    vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
+    await w.vm.$nextTick()
+    expect(find(w, TID.installShowcaseTitle).text()).toBe(titleAt(1))
+  })
 })

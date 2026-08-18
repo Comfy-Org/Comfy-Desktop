@@ -290,7 +290,7 @@ async function handleShowcaseCloud(): Promise<void> {
 // Rides every in-flight install; no tiers or thresholds, so the section is a
 // constant part of the wait.
 const showShowcase = computed<boolean>(
-  () => !!currentOp.value && (!currentOp.value.finished || isChainHandoff.value)
+  () => currentOp.value?.opKind === 'install' && (!currentOp.value.finished || isChainHandoff.value)
 )
 
 // Separate from the modal-branch `terminalExpanded` so the brand accordion's state doesn't leak into the modal reopen path.

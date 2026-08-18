@@ -8,6 +8,17 @@ defineProps<{ canOfferCloud: boolean }>()
 const emit = defineEmits<{ 'open-cloud': [] }>()
 
 const carousel = useShowcaseCarousel()
+const pauseReasons = new Set<'focus' | 'hover'>()
+
+function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
+  if (paused) {
+    pauseReasons.add(reason)
+    carousel.pause()
+    return
+  }
+  pauseReasons.delete(reason)
+  if (pauseReasons.size === 0) carousel.resume()
+}
 </script>
 
 <template>
@@ -15,10 +26,10 @@ const carousel = useShowcaseCarousel()
     class="showcase"
     :data-testid="TID.installShowcase"
     :aria-label="$t('installShowcase.label')"
-    @mouseenter="carousel.pause()"
-    @mouseleave="carousel.resume()"
-    @focusin="carousel.pause()"
-    @focusout="carousel.resume()"
+    @mouseenter="setPaused('hover', true)"
+    @mouseleave="setPaused('hover', false)"
+    @focusin="setPaused('focus', true)"
+    @focusout="setPaused('focus', false)"
   >
     <Transition name="showcase-swap" mode="out-in">
       <p :key="carousel.card.value.id" class="showcase__line">
