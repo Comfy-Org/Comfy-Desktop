@@ -92,7 +92,7 @@ const slides = computed(() =>
   width: calc(var(--slide-w) * 3);
   height: calc(var(--slide-w) + 94px);
   margin-left: calc(var(--slide-w) * -1);
-  mask-image: linear-gradient(to right, transparent 2%, #000 32%, #000 68%, transparent 98%);
+  mask-image: linear-gradient(to right, transparent 6%, #000 30%, #000 70%, transparent 94%);
 }
 .slider__slide {
   position: absolute;
@@ -210,10 +210,10 @@ const slides = computed(() =>
     background 160ms ease;
 }
 .slider__side--prev {
-  left: calc(var(--slide-w) * -0.95 - 17px);
+  left: calc(var(--slide-w) * -0.68 - 17px);
 }
 .slider__side--next {
-  right: calc(var(--slide-w) * -0.95 - 17px);
+  right: calc(var(--slide-w) * -0.68 - 17px);
 }
 .slider__side:hover,
 .slider__side:focus-visible {
