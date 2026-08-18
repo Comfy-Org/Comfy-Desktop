@@ -134,7 +134,10 @@ function rowOpacity(index: number): number {
   color: var(--neutral-500);
 }
 .bpv__row.is-done .bpv__icon {
-  color: var(--brand-success, #3ecf8e);
+  /* White, not the success green: these rows are steps that scrolled past, not
+     outcomes to report. The green read as a result worth noticing on every row
+     the install left behind. */
+  color: var(--text);
 }
 .bpv__row.is-focused .bpv__icon {
   color: var(--comfy-yellow);
