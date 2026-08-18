@@ -224,6 +224,8 @@ describe('every card resolves in both locales', () => {
       for (const card of SHOWCASE_CARDS) {
         const title = lookup(tree as Record<string, unknown>, card.title) as string
         const body = lookup(tree as Record<string, unknown>, card.body) as string
+        expect(title, `${name}: ${card.id} title`).not.toMatch(/[\r\n]/)
+        expect(body, `${name}: ${card.id} body`).not.toMatch(/[\r\n]/)
         expect(`${title} - ${body}`.length, `${name}: ${card.id}`).toBeLessThanOrEqual(
           SINGLE_LINE_BUDGET
         )
