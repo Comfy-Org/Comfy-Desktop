@@ -163,21 +163,23 @@ describe('download — no-progress watchdog', () => {
   it('aborts and rejects when no bytes arrive within idleTimeoutMs', async () => {
     const dest = path.join(tmpDir, 'model.safetensors')
     const p = download(URL, dest, null, { idleTimeoutMs: 1000 })
+    const rejection = expect(p).rejects.toThrow(/stalled/i)
     const res = openStreaming(requests[0]!, 100)
     res.emit('data', Buffer.from('ab')) // one chunk, then silence
     await vi.advanceTimersByTimeAsync(1000)
-    await expect(p).rejects.toThrow(/stalled/i)
+    await rejection
     expect(requests[0]!.abort).toHaveBeenCalled()
   })
 
   it('preserves idleTimeoutMs across redirects', async () => {
     const dest = path.join(tmpDir, 'redirected.safetensors')
     const p = download(URL, dest, null, { idleTimeoutMs: 150 })
+    const rejection = expect(p).rejects.toThrow('Download stalled: no data for 0s')
     requests[0]!.emit('response', makeResponse(302, '', { location: `${URL}?redirected=1` }))
     await vi.advanceTimersByTimeAsync(0)
     openStreaming(requests[1]!, 100)
     await vi.advanceTimersByTimeAsync(150)
-    await expect(p).rejects.toThrow('Download stalled: no data for 0s')
+    await rejection
     expect(requests[1]!.abort).toHaveBeenCalled()
   })
 
