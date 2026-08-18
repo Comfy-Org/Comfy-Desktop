@@ -8,10 +8,20 @@ import type { ProgressStepVM } from '../lib/progressViewModel'
  * translates so the active row sits on the centre line; done steps fade up,
  * pending steps wait below.
  */
-const props = defineProps<{ steps: ProgressStepVM[] }>()
+const props = withDefaults(
+  defineProps<{
+    steps: ProgressStepVM[]
+    /** `stack` keeps the rolling three rows. `focus` shows the active row
+     *  alone: on a screen that already carries a bar, a percentage and a
+     *  showcase, the ghost rows above and below are three more lines of text
+     *  saying what the bar has already said. */
+    rows?: 'stack' | 'focus'
+  }>(),
+  { rows: 'stack' }
+)
 
 const ROW_H = 46
-const VISIBLE_ROWS = 3
+const VISIBLE_ROWS = computed(() => (props.rows === 'focus' ? 1 : 3))
 
 const activeIndex = computed(() => {
   const i = props.steps.findIndex((s) => s.status === 'active')
@@ -24,14 +34,17 @@ const activeIndex = computed(() => {
 })
 
 const trackStyle = computed(() => ({
-  transform: `translateY(${(Math.floor(VISIBLE_ROWS / 2) - activeIndex.value) * ROW_H}px)`
+  transform: `translateY(${(Math.floor(VISIBLE_ROWS.value / 2) - activeIndex.value) * ROW_H}px)`
 }))
 
-const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS * ROW_H}px` }))
+const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS.value * ROW_H}px` }))
 
 function rowOpacity(index: number): number {
   const dist = Math.abs(index - activeIndex.value)
   if (dist === 0) return 1
+  // In focus mode the neighbours are still in the DOM (the track slides
+  // through them), they just never show.
+  if (props.rows === 'focus') return 0
   if (dist === 1) return 0.38
   return Math.max(0.08, 0.22 - (dist - 2) * 0.1)
 }

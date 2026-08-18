@@ -633,6 +633,7 @@ defineExpose({ startOperation, showOperation })
                   v-if="progressSteps.length"
                   key="stepper"
                   :steps="progressSteps"
+                  :rows="showShowcase ? 'focus' : 'stack'"
                   class="brand-progress__steps"
                 />
                 <div v-else key="caption" class="brand-progress__status-flat">

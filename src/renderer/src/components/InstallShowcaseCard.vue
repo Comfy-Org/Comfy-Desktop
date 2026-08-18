@@ -42,28 +42,29 @@ const slides = computed(() =>
         :style="{ '--o': slide.offset }"
         :aria-hidden="slide.offset !== 0"
       >
-        <img class="slider__art" :src="slide.art" alt="" draggable="false" />
-        <figcaption class="slider__label">{{ slide.label }}</figcaption>
+        <img class="slider__art" :src="slide.art" :alt="slide.label" draggable="false" />
       </figure>
+    </div>
 
-      <!-- The neighbours are the control: click the still either side to walk
-           the row. Auto-advance carries it otherwise, so this is a shortcut,
-           never the only way through. -->
+    <!-- Under the row, not over it: on the stills they competed with the art
+         they are meant to move. Auto-advance carries the row anyway, so these
+         are a shortcut, never the only way through. -->
+    <div class="slider__nav">
       <button
         type="button"
-        class="slider__side slider__side--prev"
+        class="slider__side"
         :aria-label="$t('common.previous')"
         @click="carousel.prev()"
       >
-        <ChevronLeft :size="18" />
+        <ChevronLeft :size="16" />
       </button>
       <button
         type="button"
-        class="slider__side slider__side--next"
+        class="slider__side"
         :aria-label="$t('common.next')"
         @click="carousel.next()"
       >
-        <ChevronRight :size="18" />
+        <ChevronRight :size="16" />
       </button>
     </div>
   </section>
@@ -73,6 +74,7 @@ const slides = computed(() =>
 .slider {
   --slide-w: clamp(200px, 19vw, 268px);
   --step: calc(var(--slide-w) * 0.86);
+  position: relative;
   width: var(--slide-w);
 }
 /* The stage bleeds a slide either side of the card so the neighbours stay on
@@ -81,13 +83,13 @@ const slides = computed(() =>
 .slider__stage {
   position: relative;
   width: calc(var(--slide-w) * 3);
-  height: var(--slide-w);
+  height: calc(var(--slide-w) + 76px);
   margin-left: calc(var(--slide-w) * -1);
   mask-image: linear-gradient(to right, transparent 2%, #000 32%, #000 68%, transparent 98%);
 }
 .slider__slide {
   position: absolute;
-  top: 0;
+  top: 10px;
   left: 50%;
   width: var(--slide-w);
   height: var(--slide-w);
@@ -117,61 +119,36 @@ const slides = computed(() =>
   border: 1px solid color-mix(in srgb, var(--neutral-100) 8%, transparent);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
-/* A chip in the corner rather than a bar across the foot of the still: the art
-   is the point, and a full-width scrim over it reads as a caption bolted on. */
-.slider__label {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  margin: 0;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: rgba(12, 9, 15, 0.52);
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1.2;
-  color: #fff;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 320ms ease;
+.slider__nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: -14px;
 }
-.slider__slide.is-current .slider__label {
-  opacity: 1;
-}
+/* Frosted, the same recipe the takeover uses for glass, so they read as
+   controls without drawing a box around themselves. */
 .slider__side {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 3;
-  width: calc(var(--slide-w) * 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: 0;
-  background: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.13);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
   color: #fff;
   cursor: pointer;
-  opacity: 0.5;
-  transition: opacity 180ms ease;
+  transition: background 160ms ease;
 }
-.slider__side--prev {
-  left: 0;
-}
-.slider__side--next {
-  right: 0;
-}
-.slider__side:hover,
-.slider__side:focus-visible {
-  opacity: 1;
+.slider__side:hover {
+  background: rgba(255, 255, 255, 0.26);
 }
 .slider__side:focus-visible {
   outline: 2px solid var(--focus-ring);
-  outline-offset: -4px;
-  border-radius: 12px;
+  outline-offset: 3px;
 }
 @media (prefers-reduced-motion: reduce) {
   .slider__slide,
