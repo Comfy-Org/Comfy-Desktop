@@ -955,9 +955,11 @@ defineExpose({ startOperation, showOperation })
      states, so narrowing it there would move them too. 608px lines the bar up
      with the stepper block underneath, so the two read as one column. */
   width: min(100%, 608px);
+  /* Percentage on the bar's own line, at its end: under it, right-aligned, it
+     was a floating number with nothing to belong to. */
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 10px;
 }
 .brand-progress__status {
   position: absolute;
@@ -1040,7 +1042,7 @@ defineExpose({ startOperation, showOperation })
   anchor-name: --brand-beam-target;
 }
 .brand-progress__bar {
-  width: 100%;
+  flex: 1 1 auto;
   height: 5.079px;
   border-radius: 16px;
   background: var(--brand-surface-bg);
@@ -1087,13 +1089,13 @@ defineExpose({ startOperation, showOperation })
   -webkit-user-select: text;
 }
 .brand-progress__percent {
-  font-size: 11px;
-  color: var(--neutral-100);
+  flex: 0 0 auto;
+  min-width: 2.6em;
+  text-align: right;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  align-self: flex-end;
+  font-size: 0.75rem;
   line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--neutral-300);
 }
 
 .brand-caption-fade-enter-active,

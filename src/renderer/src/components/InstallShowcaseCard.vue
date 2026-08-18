@@ -13,7 +13,7 @@ const props = defineProps<{ intervalMs?: number }>()
 
 const carousel = useShowcaseCarousel(
   SHOWCASE_STILLS.map((s) => ({ id: s.id, title: s.label, body: '' })),
-  props.intervalMs ?? 6800
+  props.intervalMs ?? 5000
 )
 
 const count = SHOWCASE_STILLS.length
@@ -138,15 +138,22 @@ const slides = computed(() =>
   -webkit-backdrop-filter: blur(20px) saturate(130%);
   color: #fff;
   cursor: pointer;
-  transition: background 160ms ease;
+  /* Barely there until you reach for them: at rest the row is art, and the
+     controls only need to exist the moment the pointer arrives. */
+  opacity: 0.4;
+  transition:
+    opacity 160ms ease,
+    background 160ms ease;
 }
 .slider__side--prev {
-  left: calc(var(--slide-w) * -1.01 - 17px);
+  left: calc(var(--slide-w) * -0.95 - 17px);
 }
 .slider__side--next {
-  right: calc(var(--slide-w) * -1.01 - 17px);
+  right: calc(var(--slide-w) * -0.95 - 17px);
 }
-.slider__side:hover {
+.slider__side:hover,
+.slider__side:focus-visible {
+  opacity: 1;
   background: rgba(255, 255, 255, 0.26);
 }
 .slider__side:focus-visible {
@@ -155,7 +162,6 @@ const slides = computed(() =>
 }
 @media (prefers-reduced-motion: reduce) {
   .slider__slide,
-  .slider__label,
   .slider__side {
     transition: none;
   }

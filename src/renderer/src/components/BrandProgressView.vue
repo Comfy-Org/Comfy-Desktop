@@ -10,7 +10,8 @@ import type { ProgressStepVM } from '../lib/progressViewModel'
  */
 const props = defineProps<{ steps: ProgressStepVM[] }>()
 
-const ROW_H = 40
+// Must match `--bpv-row-h` in this file's styles.
+const ROW_H = 46
 const VISIBLE_ROWS = 3
 
 const activeIndex = computed(() => {
