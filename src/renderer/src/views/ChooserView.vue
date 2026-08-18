@@ -7,8 +7,11 @@ import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
+import { useCloudGate } from '../composables/useCloudGate'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
+import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
@@ -413,11 +416,40 @@ function viewDanger(inst: Installation): void {
   void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
+const cloudGate = useCloudGate({ immediate: false })
+
 const cloudFreeRunsEnabled = ref(false)
 const cloudUserTier = ref<CloudUserTier>('unknown')
+const cloudUserTierResolved = ref(false)
 const showCloudFreeRunsPill = computed(
   () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
 )
+
+const showWhyCloud = computed(() => cloudUserTierResolved.value && cloudUserTier.value !== 'paid')
+
+const whyCloudOpen = ref(false)
+
+function openWhyCloud(): void {
+  whyCloudOpen.value = true
+  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_opened', {})
+}
+
+function dismissWhyCloud(): void {
+  whyCloudOpen.value = false
+  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'dismiss' })
+}
+
+async function onWhyCloudTryCloud(): Promise<void> {
+  emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'try_cloud' })
+  if (await cloudGate.openCloud()) {
+    whyCloudOpen.value = false
+    return
+  }
+  await modal.alert({
+    title: t('installShowcase.cloudFailedTitle'),
+    message: t('installShowcase.cloudFailedMessage')
+  })
+}
 onMounted(async () => {
   const [freeRunsResult, userTierResult] = await Promise.allSettled([
     window.api.getCloudFreeRunsEnabled(),
@@ -428,6 +460,7 @@ onMounted(async () => {
   }
   if (userTierResult.status === 'fulfilled') {
     cloudUserTier.value = userTierResult.value
+    cloudUserTierResolved.value = true
   }
 })
 function handleNewInstallClick(): void {
@@ -446,7 +479,8 @@ const gridHandlers = {
   'view-error': viewError,
   'view-danger': viewDanger,
   'dist-select': handleDistributionActivate,
-  'dist-kebab': openDistKebabMenu
+  'dist-kebab': openDistKebabMenu,
+  'why-cloud': openWhyCloud
 }
 </script>
 
@@ -491,6 +525,7 @@ const gridHandlers = {
             :centered="!showWorkspaceShelf"
             :entries="ownEntries"
             :show-free-runs-pill="showCloudFreeRunsPill"
+            :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -513,6 +548,7 @@ const gridHandlers = {
             v-if="workspaceInstalledEntries.length"
             :entries="workspaceInstalledEntries"
             :show-free-runs-pill="showCloudFreeRunsPill"
+            :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -520,6 +556,7 @@ const gridHandlers = {
             v-if="workspaceAvailableEntries.length"
             :entries="workspaceAvailableEntries"
             :show-free-runs-pill="showCloudFreeRunsPill"
+            :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
             v-on="gridHandlers"
           />
@@ -552,6 +589,12 @@ const gridHandlers = {
         :items="distMenuItems"
         @close="closeDistMenu"
         @select="handleDistMenuSelect"
+      />
+
+      <WhyTryCloudModal
+        v-if="whyCloudOpen"
+        @close="dismissWhyCloud"
+        @try-cloud="onWhyCloudTryCloud"
       />
     </div>
   </BrandBackground>

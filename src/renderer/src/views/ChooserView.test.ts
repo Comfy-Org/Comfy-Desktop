@@ -4,7 +4,9 @@ import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ChooserView from './ChooserView.vue'
+import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { TID } from '../../../shared/testIds'
 import type { DevPlatformDistribution, Installation } from '../types/ipc'
 
 // Stub the heavy ContextMenu child. Props are declared so tests can assert what
@@ -36,6 +38,11 @@ const messages = {
       cloudSection: 'ComfyUI Cloud',
       launchedAgo: 'Launched {time}',
       neverLaunched: 'Not launched yet'
+    },
+    firstUse: { whyTryCloud: 'Why try Cloud?', cloudFreeRunsPill: '400 FREE CREDITS' },
+    installShowcase: {
+      cloudFailedTitle: "Couldn't open Comfy Cloud",
+      cloudFailedMessage: 'Check your connection and try again from the dashboard.'
     },
     list: { view: 'View' },
     running: { dismiss: 'Dismiss' },
@@ -98,6 +105,7 @@ interface MockApi {
   comfybuilder: Record<string, ReturnType<typeof vi.fn>>
   getCloudFreeRunsEnabled: ReturnType<typeof vi.fn>
   getCloudUserTier: ReturnType<typeof vi.fn>
+  getListActions: ReturnType<typeof vi.fn>
 }
 
 function installMockApi(initial: Installation[]): MockApi {
@@ -120,7 +128,8 @@ function installMockApi(initial: Installation[]): MockApi {
       installDistribution: vi.fn()
     },
     getCloudFreeRunsEnabled: vi.fn().mockResolvedValue(false),
-    getCloudUserTier: vi.fn().mockResolvedValue('unknown')
+    getCloudUserTier: vi.fn().mockResolvedValue('unknown'),
+    getListActions: vi.fn().mockResolvedValue([{ id: 'launch', style: 'primary' }])
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -923,5 +932,123 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(false)
+  })
+})
+
+describe('ChooserView - why-Cloud explainer', () => {
+  const WHY_CLOUD = `[data-testid="${TID.dashboardTileWhyCloud('cloud-1')}"]`
+
+  function cloudInstall(): Installation {
+    return makeInstall({ id: 'cloud-1', name: 'Comfy Cloud', sourceCategory: 'cloud' })
+  }
+
+  it('offers the explainer on the cloud tile, not on local tiles', async () => {
+    installMockApi([cloudInstall(), makeInstall({ id: 'local-1', sourceCategory: 'local' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(true)
+    expect(wrapper.find(`[data-testid="${TID.dashboardTileWhyCloud('local-1')}"]`).exists()).toBe(
+      false
+    )
+  })
+
+  it('sits inline after the tile name, not in the action row', async () => {
+    installMockApi([cloudInstall()])
+    const wrapper = mountChooser()
+    await flushPromises()
+    const nameRow = wrapper.find('.chooser-tile-name-row')
+    expect(nameRow.find(WHY_CLOUD).exists()).toBe(true)
+    expect(nameRow.text()).toContain('Comfy Cloud')
+    expect(wrapper.find('.chooser-tile-actions').find(WHY_CLOUD).exists()).toBe(false)
+  })
+
+  it('withholds the explainer from paid subscribers', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.getCloudUserTier.mockResolvedValue('paid')
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+  })
+
+  it('fails closed until the tier lookup succeeds', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.getCloudUserTier.mockRejectedValue(new Error('offline'))
+    const wrapper = mountChooser()
+
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    await flushPromises()
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+  })
+
+  it('opens the modal without launching the install behind it', async () => {
+    const api = installMockApi([cloudInstall()])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(false)
+
+    await wrapper.find(WHY_CLOUD).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
+    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(api.runAction).not.toHaveBeenCalled()
+  })
+
+  it('launches Cloud from the modal CTA and closes the modal', async () => {
+    const api = installMockApi([cloudInstall()])
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find(WHY_CLOUD).trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('cloud-1', 'launch')
+    expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(false)
+  })
+
+  it('keeps the explainer open and reports a failed launch', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.runAction.mockResolvedValue({ ok: false })
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find(WHY_CLOUD).trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
+    await flushPromises()
+
+    expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
+    expect(mockModal.alert).toHaveBeenCalledWith({
+      title: "Couldn't open Comfy Cloud",
+      message: 'Check your connection and try again from the dashboard.'
+    })
+  })
+
+  it('closes without launching when dismissed', async () => {
+    const api = installMockApi([cloudInstall()])
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find(WHY_CLOUD).trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(WhyTryCloudModal).vm.$emit('close')
+    await flushPromises()
+
+    expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(false)
+    expect(api.runAction).not.toHaveBeenCalled()
+  })
+
+  it('stands the explainer down while the cloud tile is running', async () => {
+    installMockApi([cloudInstall()])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(true)
+
+    useSessionStore().runningInstances.set('cloud-1', { installationId: 'cloud-1' } as never)
+    await flushPromises()
+
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
   })
 })

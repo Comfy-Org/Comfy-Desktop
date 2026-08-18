@@ -1494,5 +1494,47 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled"
+  },
+  "installShowcase": {
+    "cloud": {
+      "title": "Skip the setup entirely",
+      "body": "Cloud is ready now. No install, no drivers, no GPU."
+    },
+    "cloudCta": "Try Cloud free",
+    "gpu": {
+      "title": "RTX 6000 Pro, 96GB VRAM",
+      "body": "Faster than most workstations, from any device you own."
+    },
+    "models": {
+      "title": "900+ models ready",
+      "body": "Wan 2.2, Flux, Qwen, LTX. Nothing left to download."
+    },
+    "license": {
+      "title": "Cleared for commercial use",
+      "body": "Every model licensed for commercial work."
+    },
+    "partner": {
+      "title": "Models you can't run locally",
+      "body": "Nano Banana Pro, Seedance, Grok Video, GPT Image 2."
+    },
+    "nodes": {
+      "title": "The custom nodes you use",
+      "body": "Behind ~90% of local workflows, pre-installed and current."
+    },
+    "loras": {
+      "title": "Bring your own LoRAs",
+      "body": "Import from CivitAI or Hugging Face to keep your style."
+    },
+    "queue": {
+      "title": "Queue 100 at once",
+      "body": "Line up a batch and keep working."
+    },
+    "idle": {
+      "title": "Pay for runtime, not idle time",
+      "body": "Credits are spent only while the GPU runs."
+    },
+    "label": "While you wait",
+    "cloudFailedTitle": "Couldn't open Comfy Cloud",
+    "cloudFailedMessage": "Check your connection and try again from the dashboard."
   }
 }
