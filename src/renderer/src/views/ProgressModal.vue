@@ -913,6 +913,14 @@ defineExpose({ startOperation, showOperation })
   pointer-events: none;
   z-index: -1;
 }
+/* The stepper hangs below the cluster in absolute flow (see
+   `.brand-progress__status`), so the flex centring above never counts it and
+   the visible group as a whole sits low by half its height. Reserving that
+   height here puts the group back on the frame's centre line; the finished
+   states, which render no stepper, are untouched. */
+.brand-progress__stack:has(.brand-progress__status) {
+  margin-bottom: calc(3 * 46px);
+}
 .brand-progress__core {
   position: relative;
   z-index: 1;
