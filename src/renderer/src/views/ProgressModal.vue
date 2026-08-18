@@ -905,8 +905,9 @@ defineExpose({ startOperation, showOperation })
   z-index: 0;
   /* Knocked back from 0.9: the strokes run straight through the stepper and
      the showcase banner, and at anything near full strength they compete with
-     the copy. At 0.25 they read as texture, not as a line to follow. */
-  opacity: 0.25;
+     the copy. At 0.12 they read as texture in the frame, not as a line the eye
+     follows across the stepper and the banner. */
+  opacity: 0.12;
 }
 
 .brand-progress__stack {

@@ -1198,7 +1198,7 @@
     "cachedDownload": "Using cached download",
     "startingDownload": "Starting download…",
     "waitingForDownload": "Waiting for another installation to finish downloading…",
-    "downloading": "Downloading… {progress}",
+    "downloading": "{progress}",
     "extracting": "Extracting… {progress}"
   },
   "launch": {
