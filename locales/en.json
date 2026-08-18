@@ -217,6 +217,8 @@
   },
   "common": {
     "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
     "backToDashboard": "Back to Dashboard",
     "close": "Close",
     "copy": "Copy",

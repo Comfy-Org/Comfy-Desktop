@@ -14,12 +14,12 @@ import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { useProgressStore } from '../stores/progressStore'
 import type { ActionResult, KillResult, ShowProgressOpts } from '../types/ipc'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
-import logoMotion from '../assets/brand/comfy-logo-motion.mp4'
 import BrandProgressGlyph from '../components/icons/BrandProgressGlyph.vue'
 import BaseAccordion from '../components/ui/BaseAccordion.vue'
 import BaseCopyButton from '../components/ui/BaseCopyButton.vue'
 import BrandProgressView from '../components/BrandProgressView.vue'
 import InstallShowcase from '../components/InstallShowcase.vue'
+import InstallShowcaseCard from '../components/InstallShowcaseCard.vue'
 import { useCloudGate } from '../composables/useCloudGate'
 import type { ProgressStepVM } from '../lib/progressViewModel'
 import { TID } from '../../../shared/testIds'
@@ -565,19 +565,7 @@ defineExpose({ startOperation, showOperation })
              back the yellow glyph so stepper text stays legible. -->
         <div class="brand-progress__plate">
           <div class="brand-progress__core">
-            <!-- Dimensional motion logo. Its own backdrop is `--neutral-800`,
-                 the same ink the takeover frame paints, so it sits on the
-                 background with no plate of its own. -->
-            <video
-              class="brand-progress__wordmark"
-              :src="logoMotion"
-              autoplay
-              loop
-              muted
-              playsinline
-              disablepictureinpicture
-              aria-hidden="true"
-            />
+            <InstallShowcaseCard v-if="showShowcase" class="brand-progress__slider" />
 
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap">
@@ -1042,19 +1030,14 @@ defineExpose({ startOperation, showOperation })
   }
 }
 .brand-progress__wordmark {
-  /* Square asset, so it's sized off its own box rather than the old
-     wordmark's 173x48 ratio. Keeps `--brand-beam-target`: the second light
-     beam anchors to whatever stands here. */
+  /* Keeps `--brand-beam-target`: the second light beam anchors to whatever
+     stands at the centre of the stack. */
   width: clamp(200px, 17vw, 320px);
   height: auto;
   aspect-ratio: 1 / 1;
   object-fit: contain;
   color: var(--comfy-yellow);
   anchor-name: --brand-beam-target;
-  /* The frame and the clip share `--neutral-800`, but the beams paint over the
-     frame — feather the edges so the video's flat backdrop never reads as a
-     rectangle sitting on top of the light. */
-  mask-image: radial-gradient(circle at 50% 50%, #000 50%, transparent 74%);
 }
 .brand-progress__bar {
   width: 100%;
@@ -1343,8 +1326,10 @@ defineExpose({ startOperation, showOperation })
   gap: 6px;
   white-space: nowrap;
 }
+/* The shared ghost button ships borderless (`border: 1px solid transparent`
+   in main.css); this screen was drawing an outline on top of it. Only the text
+   colour is worth carrying over the takeover backdrop. */
 .brand-progress__footer-btn.brand-ghost {
-  border-color: var(--neutral-500);
   color: var(--neutral-100);
 }
 @media (max-width: 720px) {
