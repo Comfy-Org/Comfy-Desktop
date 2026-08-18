@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scene 03 — Native Player</title>
+<style>
+  :root { --bg: #0b0b0c; --fg: #ddd; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font: 13px -apple-system, system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+         gap: 12px; padding: 16px; box-sizing: border-box; }
+  .stage-wrap { width: min(96vw, 1056px); aspect-ratio: 1056 / 784; }
+  .stage { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  .scene { position: absolute; top: 0; left: 0; width: 0; height: 0;
+           overflow: hidden; will-change: transform, width, height;
+           background: #000; }
+  .scene video { position: absolute; left: 0; top: 0;
+                 will-change: transform, width, height;
+                 display: none; pointer-events: none;
+                 object-fit: fill; background: transparent; }
+  .scene video.active { display: block; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  button { background: #1e1e22; color: var(--fg); border: 1px solid #333; border-radius: 6px;
+           padding: 6px 10px; cursor: pointer; font: inherit; }
+  button:hover { background: #27272d; }
+  input[type=range] { width: 320px; }
+  .hint { opacity: 0.5; font-size: 12px; }
+</style>
+<style>
+  /* Embed trim: this runs inside the install-wait screen, not as a page. */
+  html, body { background: transparent; }
+  body { padding: 0; gap: 0; }
+  .controls, .hint { display: none !important; }
+  .stage-wrap { width: auto; height: 100%; max-width: 100%; }
+</style>
+</head>
+<body>
+  <div class="stage-wrap">
+    <div id="stage" class="stage"></div>
+  </div>
+  <div class="controls">
+    <button id="play">Play</button>
+    <button id="pause">Pause</button>
+    <button id="restart">Restart</button>
+    <input id="seek" type="range" min="0" max="1000" value="0" step="1">
+    <span id="time" class="hint">0.00 / 0.00</span>
+  </div>
+  <div class="hint">Native HTML/CSS rebuild · Chrome/Edge · videos are real &lt;video&gt; elements, masks are CSS</div>
+
+<script>
+const DATA = {"fps":60,"duration":901,"compW":1056,"compH":784,"scenes":[{"id":"1","name":"1","outerSt":-52,"outerPos":[{"t":0,"v":[568,402],"eo":[0.76,0],"ei":[0.24,1]},{"t":37.999,"v":[528,392]}],"compW":1056,"compH":784,"fillColor":[0.7447,0,0],"maskPos":[{"t":52,"v":[484.302,364.63],"eo":[0.76,0],"ei":[0.24,1]},{"t":112,"v":[328,586.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":201.999,"v":[328,586.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":241.999,"v":[657,201.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":331.998,"v":[657,201.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":371.998,"v":[528.5,390.775]}],"maskSize":[{"t":52,"v":[400,400],"eo":[0.76,0],"ei":[0.24,1]},{"t":90,"v":[300,120],"eo":[0.76,0],"ei":[0.24,1]},{"t":201.999,"v":[300,120],"eo":[0.76,0],"ei":[0.24,1]},{"t":241.999,"v":[300,300]}],"maskRadius":32,"maskGroupOffset":[0,0],"videos":[{"src":"Assets/eye.webm","srcW":1056,"srcH":784,"ip":604,"op":983,"st":604,"scale":[{"t":0,"v":[66.563,66.563]}],"pos":[{"t":0,"v":[-2.302,8.37]}],"anchor":[528,392]},{"src":"Assets/eye.webm","srcW":1056,"srcH":784,"ip":352,"op":750,"st":0,"scale":[{"t":0,"v":[66.563,66.563]}],"pos":[{"t":0,"v":[-2.302,8.37]}],"anchor":[528,392]},{"src":"Assets/dusk_mountains.webm","srcW":1056,"srcH":784,"ip":222,"op":352,"st":0,"scale":[{"t":52,"v":[96.095,96.095,100],"eo":[0.76,0],"ei":[0.24,1]},{"t":89.999,"v":[40.095,40.095,102.558],"eo":[0.76,0],"ei":[0.833,1]},{"t":201.998,"v":[40.095,40.095,102.558],"eo":[0.76,0],"ei":[0.24,1]},{"t":241.998,"v":[70,70,174.587],"eo":[0.167,0],"ei":[0.24,1]}],"pos":[{"t":0,"v":[-2.302,8.37]}],"anchor":[528,392]},{"src":"Assets/clouds.webm","srcW":1056,"srcH":784,"ip":0,"op":222,"st":0,"scale":[{"t":52,"v":[96.095,96.095,100],"eo":[0.76,0],"ei":[0.24,1]},{"t":89.999,"v":[40.095,40.095,102.558],"eo":[0.76,0],"ei":[0.833,1]},{"t":201.998,"v":[40.095,40.095,102.558],"eo":[0.76,0],"ei":[0.24,1]},{"t":241.998,"v":[70,70,174.587],"eo":[0.167,0],"ei":[0.24,1]}],"pos":[{"t":0,"v":[-2.302,8.37]}],"anchor":[528,392]}]},{"id":"2","name":"3","outerSt":-62,"outerPos":[{"t":0,"v":[568,402],"eo":[0.76,0],"ei":[0.24,1]},{"t":37.999,"v":[528,392]}],"compW":1056,"compH":784,"fillColor":[0,1,0.2667],"maskPos":[{"t":62,"v":[544.962,364.63],"eo":[0.76,0],"ei":[0.24,1]},{"t":122,"v":[806,163.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":211.999,"v":[806,163.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":251.999,"v":[520,575.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":341.998,"v":[520,575.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":381.998,"v":[359,553.775]}],"maskSize":[{"t":62,"v":[400,400],"eo":[0.76,0],"ei":[0.24,1]},{"t":100,"v":[426,240],"eo":[0.76,0],"ei":[0.24,1]},{"t":211.999,"v":[426,240],"eo":[0.76,0],"ei":[0.24,1]},{"t":251.999,"v":[240,240],"eo":[0.76,0],"ei":[0.24,1]},{"t":341.998,"v":[240,240],"eo":[0.76,0],"ei":[0.24,1]},{"t":381.998,"v":[300,240]}],"maskRadius":32,"maskGroupOffset":[-60.66,0],"videos":[{"src":"Assets/swings.webm","srcW":1056,"srcH":784,"ip":790,"op":1170,"st":790,"scale":[{"t":0,"v":[49.342,49.342]}],"pos":[{"t":0,"v":[-30.486,2.495]}],"anchor":[528,392]},{"src":"Assets/swings.webm","srcW":1056,"srcH":784,"ip":411,"op":791,"st":411,"scale":[{"t":0,"v":[49.342,49.342]}],"pos":[{"t":0,"v":[-30.486,2.495]}],"anchor":[528,392]},{"src":"Assets/swings.webm","srcW":1056,"srcH":784,"ip":360,"op":412,"st":32,"scale":[{"t":0,"v":[49.342,49.342]}],"pos":[{"t":0,"v":[-30.486,2.495]}],"anchor":[528,392]},{"src":"Assets/kyrie.webm","srcW":1056,"srcH":784,"ip":232,"op":360,"st":104,"scale":[{"t":0,"v":[49.342,49.342]}],"pos":[{"t":0,"v":[-30.486,2.495]}],"anchor":[528,392]},{"src":"Assets/Eat It - Dance [WanAnimate]2.webm","srcW":1056,"srcH":784,"ip":0,"op":232,"st":0,"scale":[{"t":0,"v":[89.638,89.638]}],"pos":[{"t":0,"v":[-63.118,9.863]}],"anchor":[528,392]}]},{"id":"3","name":"2","outerSt":-72,"outerPos":[{"t":-0.001,"v":[568,402],"eo":[0.76,0],"ei":[0.24,1]},{"t":37.999,"v":[528,392]}],"compW":1056,"compH":784,"fillColor":[0.2535,0.888,1],"maskPos":[{"t":72,"v":[424.435,377.208],"eo":[0.76,0],"ei":[0.24,1]},{"t":132,"v":[581,477.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":221.999,"v":[581,477.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":261.999,"v":[318,344.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":351.998,"v":[318,344.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":391.998,"v":[263,251.775]}],"maskSize":[{"t":72,"v":[400,400],"eo":[0.76,0],"ei":[0.24,1]},{"t":110,"v":[288,512],"eo":[0.76,0],"ei":[0.24,1]},{"t":221.999,"v":[288,512],"eo":[0.76,0],"ei":[0.24,1]},{"t":261.999,"v":[340,340],"eo":[0.76,0],"ei":[0.24,1]},{"t":351.998,"v":[340,340],"eo":[0.76,0],"ei":[0.24,1]},{"t":391.998,"v":[400,240]}],"maskRadius":32,"maskGroupOffset":[59.867,-12.578],"videos":[{"src":"Assets/clouds.webm","srcW":1056,"srcH":784,"ip":810,"op":1377.5,"st":810,"scale":[{"t":0,"v":[74.121,74.121]}],"pos":[{"t":0,"v":[58.947,-0.815]}],"anchor":[528,392]},{"src":"Assets/clouds.webm","srcW":1056,"srcH":784,"ip":371,"op":810.5,"st":243,"scale":[{"t":0,"v":[74.121,74.121]}],"pos":[{"t":0,"v":[58.947,-0.815]}],"anchor":[528,392]},{"src":"Assets/swings.webm","srcW":1056,"srcH":784,"ip":243,"op":371,"st":243,"scale":[{"t":0,"v":[146.901,146.901]}],"pos":[{"t":0,"v":[58.947,16.027]}],"anchor":[528,392]},{"src":"Assets/flower.webm","srcW":1056,"srcH":784,"ip":0,"op":243,"st":0,"scale":[{"t":0,"v":[146.901,146.901]}],"pos":[{"t":0,"v":[58.947,16.027]}],"anchor":[528,392]}]},{"id":"4","name":"4","outerSt":-82,"outerPos":[{"t":-0.001,"v":[568,402],"eo":[0.76,0],"ei":[0.24,1]},{"t":37.999,"v":[528,392]}],"compW":1056,"compH":784,"fillColor":[0.4419,0.272,1],"maskPos":[{"t":82,"v":[484.302,364.63],"eo":[0.76,0],"ei":[0.24,1]},{"t":142,"v":[223,242.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":231.999,"v":[223,242.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":271.998,"v":[669,436.775],"eo":[0.76,0.76],"ei":[0.24,0.24]},{"t":361.998,"v":[669,436.775],"eo":[0.76,0],"ei":[0.24,1]},{"t":401.997,"v":[783,387.775]}],"maskSize":[{"t":82,"v":[400,400],"eo":[0.76,0],"ei":[0.24,1]},{"t":120,"v":[300,300],"eo":[0.76,0],"ei":[0.24,1]},{"t":231.999,"v":[300,300],"eo":[0.76,0],"ei":[0.24,1]},{"t":271.998,"v":[300,120],"eo":[0.76,0],"ei":[0.24,1]},{"t":361.998,"v":[300,120],"eo":[0.76,0],"ei":[0.24,1]},{"t":401.997,"v":[300,500]}],"maskRadius":32,"maskGroupOffset":[0,0],"videos":[{"src":"Assets/dusk_mountains.webm","srcW":1056,"srcH":784,"ip":769,"op":1494,"st":769,"scale":[{"t":0,"v":[105.263,105.263]}],"pos":[{"t":0,"v":[-7.368,3.395]}],"anchor":[528,392]},{"src":"Assets/dusk_mountains.webm","srcW":1056,"srcH":784,"ip":382,"op":1107,"st":382,"scale":[{"t":0,"v":[105.263,105.263]}],"pos":[{"t":0,"v":[-7.368,3.395]}],"anchor":[528,392]},{"src":"Assets/paul_trillo.webm","srcW":1056,"srcH":784,"ip":253,"op":382,"st":0,"scale":[{"t":81.999,"v":[105.263,105.263],"eo":[0.167,0.167],"ei":[0.833,0.833]},{"t":119.999,"v":[67.434,67.434]}],"pos":[{"t":0,"v":[-7.368,3.395]}],"anchor":[528,392]},{"src":"Assets/dududu.webm","srcW":1056,"srcH":784,"ip":0,"op":253,"st":-73,"scale":[{"t":81.999,"v":[105.263,105.263],"eo":[0.167,0.167],"ei":[0.833,0.833]},{"t":119.998,"v":[67.434,67.434]}],"pos":[{"t":0,"v":[-7.368,3.395]}],"anchor":[528,392]}]}]};
+
+// ----- helpers ---------------------------------------------------------------
+
+function makeBezier(p1x, p1y, p2x, p2y) {
+  // cubic bezier easing y(x) for x in [0,1]; falls back to identity if degenerate.
+  const cx = 3 * p1x, bx = 3 * (p2x - p1x) - cx, ax = 1 - cx - bx;
+  const cy = 3 * p1y, by = 3 * (p2y - p1y) - cy, ay = 1 - cy - by;
+  const f = (t, a, b, c) => ((a * t + b) * t + c) * t;
+  const fp = (t, a, b, c) => (3 * a * t + 2 * b) * t + c;
+  return function(x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 8; i++) {
+      const xt = f(t, ax, bx, cx) - x;
+      if (Math.abs(xt) < 1e-5) break;
+      const d = fp(t, ax, bx, cx);
+      if (Math.abs(d) < 1e-6) break;
+      t -= xt / d;
+    }
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    return f(t, ay, by, cy);
+  };
+}
+const LINEAR = makeBezier(0, 0, 1, 1);
+
+function lerpKf(kfs, t, dim) {
+  // kfs: [{t, v, eo?, ei?}, ...]   v is array (length dim) or array of length 3 (we pad)
+  // Returns array of length `dim`.
+  if (kfs.length === 0) return new Array(dim).fill(0);
+  if (kfs.length === 1 || t <= kfs[0].t) {
+    const v = kfs[0].v;
+    return v.slice(0, dim);
+  }
+  if (t >= kfs[kfs.length - 1].t) {
+    const v = kfs[kfs.length - 1].v;
+    return v.slice(0, dim);
+  }
+  // Find segment
+  let i = 0;
+  while (i < kfs.length - 1 && kfs[i + 1].t <= t) i++;
+  const a = kfs[i], b = kfs[i + 1];
+  const span = b.t - a.t;
+  if (span <= 0) return a.v.slice(0, dim);
+  const x = (t - a.t) / span;
+  // Easing: out tangent of a, in tangent of b
+  let eased = x;
+  if (a.eo && b.ei) {
+    // Cache the easer on the keyframe pair
+    if (!a._easer) a._easer = makeBezier(a.eo[0], a.eo[1], b.ei[0], b.ei[1]);
+    eased = a._easer(x);
+  }
+  const out = [];
+  for (let k = 0; k < dim; k++) {
+    const av = a.v[k] !== undefined ? a.v[k] : 0;
+    const bv = b.v[k] !== undefined ? b.v[k] : 0;
+    out.push(av + (bv - av) * eased);
+  }
+  return out;
+}
+
+// ----- build DOM -------------------------------------------------------------
+
+const stage = document.getElementById('stage');
+const COMP_W = DATA.compW, COMP_H = DATA.compH;
+
+// Use absolute pixel coordinates inside .stage by scaling .stage to comp size,
+// then letting CSS aspect-ratio handle responsive scaling via the wrapper.
+stage.style.width = COMP_W + 'px';
+stage.style.height = COMP_H + 'px';
+stage.style.transformOrigin = 'top left';
+
+function fitStage() {
+  const wrap = stage.parentElement;
+  const sx = wrap.clientWidth / COMP_W;
+  const sy = wrap.clientHeight / COMP_H;
+  const s = Math.min(sx, sy);
+  stage.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', fitStage);
+
+const sceneEls = [];
+DATA.scenes.forEach((scene, idx) => {
+  const el = document.createElement('div');
+  el.className = 'scene';
+  el.style.zIndex = (DATA.scenes.length - idx); // earlier in array = on top
+  el.style.borderRadius = scene.maskRadius + 'px';
+  // Pre-create one <video> element per video layer in the scene.
+  const videos = scene.videos.map((v, vi) => {
+    const ve = document.createElement('video');
+    ve.src = v.src;
+    ve.muted = true;
+    ve.playsInline = true;
+    ve.preload = 'auto';
+    ve.loop = false;
+    ve.dataset.idx = vi;
+    el.appendChild(ve);
+    return ve;
+  });
+  stage.appendChild(el);
+  sceneEls.push({ el, videos, activeIdx: -1, scene });
+});
+
+// ----- timeline driver -------------------------------------------------------
+
+const FPS = DATA.fps;
+// Embed only: the scene was cut for a website hero, and at full speed it reads
+// as a burst next to a progress bar that will sit there for minutes.
+const SPEED = 0.55;
+const DURATION = DATA.duration;       // frames
+const DURATION_S = DURATION / FPS;
+
+let playing = false;
+let startEpoch = 0;        // performance.now() at masterFrame=0
+let masterFrame = 0;       // current frame
+let lastTickFrame = -1;
+
+const seekEl = document.getElementById('seek');
+const timeEl = document.getElementById('time');
+seekEl.max = DURATION;
+
+function setMasterFrame(f, fromUserSeek = false) {
+  masterFrame = Math.max(0, Math.min(DURATION, f));
+  startEpoch = performance.now() - (masterFrame / FPS) * 1000;
+  if (fromUserSeek) {
+    // Force re-sync of all active videos
+    for (const s of sceneEls) s.activeIdx = -2;
+  }
+}
+
+function play() {
+  if (masterFrame >= DURATION) setMasterFrame(0, true);
+  startEpoch = performance.now() - (masterFrame / FPS) * 1000;
+  playing = true;
+  // Resume currently visible videos
+  for (const s of sceneEls) {
+    for (const v of s.videos) if (v.classList.contains('active')) v.play().catch(() => {});
+  }
+}
+function pause() {
+  playing = false;
+  for (const s of sceneEls) for (const v of s.videos) v.pause();
+}
+
+document.getElementById('play').onclick = play;
+document.getElementById('pause').onclick = pause;
+document.getElementById('restart').onclick = () => { setMasterFrame(0, true); play(); };
+seekEl.oninput = () => { setMasterFrame(parseFloat(seekEl.value), true); render(); };
+
+// Render every frame
+function render() {
+  for (const s of sceneEls) {
+    const scene = s.scene;
+    const pt = masterFrame - scene.outerSt;     // precomp time
+
+    // Outer container offset (delta from natural [528, 392] center)
+    const outer = lerpKf(scene.outerPos, masterFrame, 2);
+    const dx = outer[0] - 528;
+    const dy = outer[1] - 392;
+
+    // Mask center in precomp coords (incl. group offset)
+    const mp = lerpKf(scene.maskPos, pt, 2);
+    const mz = lerpKf(scene.maskSize, pt, 2);
+    const grp = scene.maskGroupOffset;
+    const cx = mp[0] + grp[0] + dx;
+    const cy = mp[1] + grp[1] + dy;
+    const mw = mz[0], mh = mz[1];
+
+    // Position the mask container at mask rect top-left
+    const left = cx - mw / 2;
+    const top  = cy - mh / 2;
+    s.el.style.transform = `translate(${left}px, ${top}px)`;
+    s.el.style.width  = mw + 'px';
+    s.el.style.height = mh + 'px';
+
+    // Find active video layer (topmost visible)
+    let activeIdx = -1;
+    for (let i = 0; i < scene.videos.length; i++) {
+      const v = scene.videos[i];
+      if (pt >= v.ip && pt < v.op) { activeIdx = i; break; }
+    }
+
+    // Switch active if changed
+    if (activeIdx !== s.activeIdx) {
+      for (const ve of s.videos) {
+        ve.classList.remove('active');
+        ve.pause();
+      }
+      if (activeIdx >= 0) {
+        const v = scene.videos[activeIdx];
+        const ve = s.videos[activeIdx];
+        const sourceTime = (pt - v.st) / FPS;
+        const safe = Math.max(0, Math.min(sourceTime, (ve.duration || 60) - 0.001));
+        try { ve.currentTime = safe; } catch (_) {}
+        ve.classList.add('active');
+        if (playing) ve.play().catch(() => {});
+      }
+      s.activeIdx = activeIdx;
+    }
+
+    // Position the active video element inside the mask container
+    if (activeIdx >= 0) {
+      const v = scene.videos[activeIdx];
+      const ve = s.videos[activeIdx];
+      const sc = lerpKf(v.scale, pt, 2);   // [scaleX%, scaleY%]
+      const vp = lerpKf(v.pos,   pt, 2);
+      const sxF = sc[0] / 100, syF = sc[1] / 100;
+      const vw = COMP_W * sxF;
+      const vh = COMP_H * syF;
+      // Anchor [528,392] of source maps to (maskPos + videoPos) in precomp.
+      // Within mask container (top-left at maskCenter - maskSize/2), anchor lands at:
+      //   anchorInMask = (maskPos + videoPos) - (maskCenter - maskSize/2)
+      //                = videoPos - groupOffset + maskSize/2
+      const anchorXInMask = vp[0] - grp[0] + mw / 2;
+      const anchorYInMask = vp[1] - grp[1] + mh / 2;
+      // Video top-left = anchor - scale*[528, 392]
+      const vLeft = anchorXInMask - sxF * 528;
+      const vTop  = anchorYInMask - syF * 392;
+      ve.style.width  = vw + 'px';
+      ve.style.height = vh + 'px';
+      ve.style.transform = `translate(${vLeft}px, ${vTop}px)`;
+    }
+  }
+
+  // Update UI
+  seekEl.value = masterFrame;
+  timeEl.textContent = (masterFrame / FPS).toFixed(2) + ' / ' + DURATION_S.toFixed(2);
+}
+
+function tick(now) {
+  if (playing) {
+    masterFrame = ((now - startEpoch) / 1000) * FPS * SPEED;
+    if (masterFrame >= DURATION) {
+      // Loop
+      masterFrame = 0;
+      startEpoch = now;
+      for (const s of sceneEls) s.activeIdx = -2; // force re-seek
+    }
+  }
+  if (Math.floor(masterFrame) !== lastTickFrame) {
+    render();
+    lastTickFrame = Math.floor(masterFrame);
+  }
+  requestAnimationFrame(tick);
+}
+
+// Boot
+fitStage();
+render();
+requestAnimationFrame(tick);
+
+// Autoplay (muted, so allowed in Chrome)
+window.addEventListener('load', () => {
+  setTimeout(play, 50);
+});
+</script>
+</body>
+</html>

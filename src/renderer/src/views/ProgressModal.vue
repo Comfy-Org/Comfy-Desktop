@@ -19,7 +19,6 @@ import BaseAccordion from '../components/ui/BaseAccordion.vue'
 import BaseCopyButton from '../components/ui/BaseCopyButton.vue'
 import BrandProgressView from '../components/BrandProgressView.vue'
 import InstallShowcase from '../components/InstallShowcase.vue'
-import InstallShowcaseCard from '../components/InstallShowcaseCard.vue'
 import { useCloudGate } from '../composables/useCloudGate'
 import type { ProgressStepVM } from '../lib/progressViewModel'
 import { TID } from '../../../shared/testIds'
@@ -565,7 +564,16 @@ defineExpose({ startOperation, showOperation })
              back the yellow glyph so stepper text stays legible. -->
         <div class="brand-progress__plate">
           <div class="brand-progress__core">
-            <InstallShowcaseCard v-if="showShowcase" class="brand-progress__slider" />
+            <!-- SPIKE: Bert's scene3 animation in place of the slider. Iframed
+                 straight off its own player, untouched, to see how it sits. -->
+            <iframe
+              v-if="showShowcase"
+              class="brand-progress__slider brand-progress__scene"
+              src="/scene3/embed.html"
+              title=""
+              tabindex="-1"
+              scrolling="no"
+            />
 
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap">
@@ -1018,6 +1026,14 @@ defineExpose({ startOperation, showOperation })
    default position, which is what threw the light off centre. */
 .brand-progress__slider {
   anchor-name: --brand-beam-target;
+}
+.brand-progress__scene {
+  width: min(46vw, 560px);
+  aspect-ratio: 1056 / 784;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: transparent;
 }
 .brand-progress__bar {
   flex: 1 1 auto;
