@@ -15,9 +15,9 @@ export interface ShowcaseStill {
   /** Capability, for the image's alt text. */
   label: string
   art: string
-  /** Short provider mark. Two characters at most: it renders inside a 22px
-   *  disc. Stands in for the provider's own logo, which belongs with the art. */
-  providerMark: string
+  /** Provider mark, taken from the design system's partner icons and rendered
+   *  in neutral (see the component: the artwork is flattened to white). */
+  providerIcon: string
   /** Partner model, revealed beside the mark while the pointer is on the card. */
   model: string
 }
@@ -29,56 +29,56 @@ export const SHOWCASE_STILLS: readonly ShowcaseStill[] = [
     id: 'portrait',
     label: 'Text to image',
     art: `${dir}/image_z_image_turbo.webp`,
-    providerMark: 'Z',
-    model: 'Z Image Turbo'
+    providerIcon: `${dir}/providers/bfl.svg`,
+    model: 'FLUX.2 Pro'
   },
   {
     id: 'video',
     label: 'Text to video',
     art: `${dir}/text_to_video_wan.webp`,
-    providerMark: 'W',
-    model: 'Wan 2.2'
+    providerIcon: `${dir}/providers/kling.svg`,
+    model: 'Kling 2.5'
   },
   {
     id: 'character',
     label: 'Character design',
     art: `${dir}/luma-uni-1.webp`,
-    providerMark: 'L',
-    model: 'Luma Ray'
+    providerIcon: `${dir}/providers/luma.svg`,
+    model: 'Ray 3'
   },
   {
     id: 'relight',
     label: 'Relighting',
     art: `${dir}/krea-2.webp`,
-    providerMark: 'K',
-    model: 'Krea Realtime'
+    providerIcon: `${dir}/providers/runway.svg`,
+    model: 'Gen-4'
   },
   {
     id: 'scene',
     label: 'Scene building',
     art: `${dir}/ideogram-4.jpg`,
-    providerMark: 'ID',
+    providerIcon: `${dir}/providers/ideogram.svg`,
     model: 'Ideogram 3'
   },
   {
     id: 'abstract',
     label: 'Motion and effects',
     art: `${dir}/gemma-4.jpg`,
-    providerMark: 'G',
-    model: 'Gemma 3'
+    providerIcon: `${dir}/providers/gemini.svg`,
+    model: 'Nano Banana Pro'
   },
   {
     id: 'splat',
     label: 'Photo to 3D',
     art: `${dir}/triposplat.webp`,
-    providerMark: 'TS',
-    model: 'TripoSplat'
+    providerIcon: `${dir}/providers/bytedance.svg`,
+    model: 'Seedance'
   },
   {
     id: 'audio',
     label: 'Music and sound',
     art: `${dir}/stable-audio-3.jpg`,
-    providerMark: 'SA',
-    model: 'Stable Audio 3'
+    providerIcon: `${dir}/providers/elevenlabs.svg`,
+    model: 'ElevenLabs Music'
   }
 ]

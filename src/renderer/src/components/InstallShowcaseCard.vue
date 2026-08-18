@@ -48,7 +48,9 @@ const slides = computed(() =>
              card: the credit belongs with the art, but at rest the art is the
              point. -->
         <figcaption class="slider__credit">
-          <span class="slider__mark" aria-hidden="true">{{ slide.providerMark }}</span>
+          <span class="slider__mark" aria-hidden="true">
+            <img class="slider__mark-icon" :src="slide.providerIcon" alt="" />
+          </span>
           <span class="slider__model">{{ slide.model }}</span>
         </figcaption>
       </figure>
@@ -156,10 +158,18 @@ const slides = computed(() =>
   flex: 0 0 20px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.22);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #fff;
+}
+/* Neutral, not the partner's own palette: eight brand colours sitting on eight
+   different stills would fight both the art and each other. `brightness(0)`
+   flattens the mark to black, `invert(1)` lifts it to white, and the alpha
+   channel carries the shape through untouched. */
+.slider__mark-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
 }
 .slider__model {
   display: block;
