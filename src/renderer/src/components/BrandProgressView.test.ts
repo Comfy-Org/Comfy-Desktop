@@ -11,7 +11,7 @@ const step = (
 ): ProgressStepVM => ({ phase, label: phase, status, detail, subPercent: null, isError })
 
 const ROW_H = 46
-const CENTER_SLOT = 1 // Math.floor(VISIBLE_ROWS / 2) with VISIBLE_ROWS = 3
+const CENTER_SLOT = 0 // mirrors the component: active row on the first slot
 
 /** The row index the track is translated to centre (from the translateY style). */
 function centeredIndex(wrapper: ReturnType<typeof mount>): number {

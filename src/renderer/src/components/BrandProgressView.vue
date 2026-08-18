@@ -12,7 +12,11 @@ const props = defineProps<{ steps: ProgressStepVM[] }>()
 
 // Must match `--bpv-row-h` in this file's styles.
 const ROW_H = 46
-const VISIBLE_ROWS = 3
+// Completed rows render at zero, so the slot above the active step was
+// reserving 46px of nothing between the progress bar and the step being worked
+// on. The viewport holds the active row and what follows it.
+const VISIBLE_ROWS = 2
+const CENTER_SLOT = 0
 
 const activeIndex = computed(() => {
   const i = props.steps.findIndex((s) => s.status === 'active')
@@ -25,7 +29,7 @@ const activeIndex = computed(() => {
 })
 
 const trackStyle = computed(() => ({
-  transform: `translateY(${(Math.floor(VISIBLE_ROWS / 2) - activeIndex.value) * ROW_H}px)`
+  transform: `translateY(${(CENTER_SLOT - activeIndex.value) * ROW_H}px)`
 }))
 
 const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS * ROW_H}px` }))
