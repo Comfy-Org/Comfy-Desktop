@@ -10,7 +10,7 @@ const step = (
   isError = false
 ): ProgressStepVM => ({ phase, label: phase, status, detail, subPercent: null, isError })
 
-const ROW_H = 46
+const ROW_H = 40
 const CENTER_SLOT = 1 // Math.floor(VISIBLE_ROWS / 2) with VISIBLE_ROWS = 3
 
 /** The row index the track is translated to centre (from the translateY style). */

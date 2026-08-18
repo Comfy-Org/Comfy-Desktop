@@ -46,27 +46,26 @@ const slides = computed(() =>
       </figure>
     </div>
 
-    <!-- Under the row, not over it: on the stills they competed with the art
-         they are meant to move. Auto-advance carries the row anyway, so these
-         are a shortcut, never the only way through. -->
-    <div class="slider__nav">
-      <button
-        type="button"
-        class="slider__side"
-        :aria-label="$t('common.previous')"
-        @click="carousel.prev()"
-      >
-        <ChevronLeft :size="16" />
-      </button>
-      <button
-        type="button"
-        class="slider__side"
-        :aria-label="$t('common.next')"
-        @click="carousel.next()"
-      >
-        <ChevronRight :size="16" />
-      </button>
-    </div>
+    <!-- Out past the neighbours, in the clear the mask fades into, and outside
+         the stage: inside it that same mask faded the controls out with the
+         art. Auto-advance carries the row anyway, so these are a shortcut,
+         never the only way through. -->
+    <button
+      type="button"
+      class="slider__side slider__side--prev"
+      :aria-label="$t('common.previous')"
+      @click="carousel.prev()"
+    >
+      <ChevronLeft :size="17" />
+    </button>
+    <button
+      type="button"
+      class="slider__side slider__side--next"
+      :aria-label="$t('common.next')"
+      @click="carousel.next()"
+    >
+      <ChevronRight :size="17" />
+    </button>
   </section>
 </template>
 
@@ -119,15 +118,13 @@ const slides = computed(() =>
   border: 1px solid color-mix(in srgb, var(--neutral-100) 8%, transparent);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
-.slider__nav {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: -14px;
-}
 /* Frosted, the same recipe the takeover uses for glass, so they read as
    controls without drawing a box around themselves. */
 .slider__side {
+  position: absolute;
+  top: calc(10px + var(--slide-w) / 2);
+  z-index: 3;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -142,6 +139,12 @@ const slides = computed(() =>
   color: #fff;
   cursor: pointer;
   transition: background 160ms ease;
+}
+.slider__side--prev {
+  left: calc(var(--slide-w) * -1.3 - 17px);
+}
+.slider__side--next {
+  right: calc(var(--slide-w) * -1.3 - 17px);
 }
 .slider__side:hover {
   background: rgba(255, 255, 255, 0.26);
