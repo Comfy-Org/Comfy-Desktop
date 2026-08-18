@@ -61,6 +61,7 @@ export function useShowcaseCarousel(
     },
     resume: () => {
       paused.value = false
+      schedule()
     }
   }
 }

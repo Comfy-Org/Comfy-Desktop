@@ -75,7 +75,8 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
   async function run(): Promise<boolean> {
     const install = cloudInstall.value ?? (await findCloudInstall())
     if (!install) return false
-    if (sessionStore.isRunning(install.id) || sessionStore.isLaunching(install.id)) {
+    if (sessionStore.isLaunching(install.id)) return true
+    if (sessionStore.isRunning(install.id)) {
       const focused = await settled(() => window.api.focusComfyWindow(install.id), false)
       if (focused) return true
     }

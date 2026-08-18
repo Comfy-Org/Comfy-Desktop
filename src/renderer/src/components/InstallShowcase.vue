@@ -71,7 +71,7 @@ const carousel = useShowcaseCarousel()
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 .showcase__title::after {
-  content: '—';
+  content: '-';
   margin-inline: 7px;
   font-weight: 400;
   color: var(--neutral-600);

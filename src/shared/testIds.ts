@@ -81,7 +81,7 @@ export const TID = {
   progressPortConflictKill: 'progress-port-conflict-kill',
 
   /** Feature carousel in the install takeover, above the wordmark. Passive:
-   *  rotation has no dots, arrows or pause button — see InstallShowcase.vue. */
+   *  rotation has no dots, arrows or pause button - see InstallShowcase.vue. */
   installShowcase: 'install-showcase',
   installShowcaseTitle: 'install-showcase-title',
   installShowcaseCloud: 'install-showcase-cloud'

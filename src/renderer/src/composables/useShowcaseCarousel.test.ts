@@ -150,6 +150,18 @@ describe('pausing', () => {
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
     expect(c.index.value).toBe(1)
   })
+
+  it('gives the resumed card a full dwell', () => {
+    const c = setup()
+    vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS - 1)
+    c.pause()
+    c.resume()
+
+    vi.advanceTimersByTime(1)
+    expect(c.index.value).toBe(0)
+    vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS - 1)
+    expect(c.index.value).toBe(1)
+  })
 })
 
 describe('the cards themselves', () => {
@@ -207,7 +219,7 @@ describe('every card resolves in both locales', () => {
     for (const card of SHOWCASE_CARDS) {
       const title = lookup(en as Record<string, unknown>, card.title) as string
       const body = lookup(en as Record<string, unknown>, card.body) as string
-      expect(`${title} — ${body}`.length, card.id).toBeLessThanOrEqual(SINGLE_LINE_BUDGET)
+      expect(`${title} - ${body}`.length, card.id).toBeLessThanOrEqual(SINGLE_LINE_BUDGET)
     }
   })
 })

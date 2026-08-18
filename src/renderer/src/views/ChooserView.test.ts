@@ -40,6 +40,10 @@ const messages = {
       neverLaunched: 'Not launched yet'
     },
     firstUse: { whyTryCloud: 'Why try Cloud?', cloudFreeRunsPill: '400 FREE CREDITS' },
+    installShowcase: {
+      cloudFailedTitle: "Couldn't open Comfy Cloud",
+      cloudFailedMessage: 'Check your connection and try again from the dashboard.'
+    },
     list: { view: 'View' },
     running: { dismiss: 'Dismiss' },
     chooser: {
@@ -931,7 +935,7 @@ describe('ChooserView', () => {
   })
 })
 
-describe('ChooserView — why-Cloud explainer', () => {
+describe('ChooserView - why-Cloud explainer', () => {
   const WHY_CLOUD = `[data-testid="${TID.dashboardTileWhyCloud('cloud-1')}"]`
 
   function cloudInstall(): Installation {
@@ -966,6 +970,16 @@ describe('ChooserView — why-Cloud explainer', () => {
     expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
   })
 
+  it('fails closed until the tier lookup succeeds', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.getCloudUserTier.mockRejectedValue(new Error('offline'))
+    const wrapper = mountChooser()
+
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    await flushPromises()
+    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+  })
+
   it('opens the modal without launching the install behind it', async () => {
     const api = installMockApi([cloudInstall()])
     const wrapper = mountChooser()
@@ -992,6 +1006,24 @@ describe('ChooserView — why-Cloud explainer', () => {
 
     expect(api.runAction).toHaveBeenCalledWith('cloud-1', 'launch')
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(false)
+  })
+
+  it('keeps the explainer open and reports a failed launch', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.runAction.mockResolvedValue({ ok: false })
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.find(WHY_CLOUD).trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
+    await flushPromises()
+
+    expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
+    expect(mockModal.alert).toHaveBeenCalledWith({
+      title: "Couldn't open Comfy Cloud",
+      message: 'Check your connection and try again from the dashboard.'
+    })
   })
 
   it('closes without launching when dismissed', async () => {

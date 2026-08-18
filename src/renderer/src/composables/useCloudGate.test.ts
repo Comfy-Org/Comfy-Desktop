@@ -150,6 +150,16 @@ describe('opening cloud', () => {
     expect(api.runAction).not.toHaveBeenCalled()
   })
 
+  it('does not relaunch cloud while a launch is already in progress', async () => {
+    const gate = setup()
+    await gate.resolve()
+    useSessionStore().launchingInstances.set('inst-cloud', { installationName: 'Comfy Cloud' })
+
+    expect(await gate.openCloud()).toBe(true)
+    expect(api.focusComfyWindow).not.toHaveBeenCalled()
+    expect(api.runAction).not.toHaveBeenCalled()
+  })
+
   it('launches when the focus misses, so a stale session cannot strand it', async () => {
     stubApi({ focusComfyWindow: vi.fn().mockResolvedValue(false) })
     const gate = setup()

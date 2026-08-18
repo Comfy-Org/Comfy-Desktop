@@ -420,11 +420,12 @@ const cloudGate = useCloudGate({ immediate: false })
 
 const cloudFreeRunsEnabled = ref(false)
 const cloudUserTier = ref<CloudUserTier>('unknown')
+const cloudUserTierResolved = ref(false)
 const showCloudFreeRunsPill = computed(
   () => cloudFreeRunsEnabled.value && cloudUserTier.value !== 'paid'
 )
 
-const showWhyCloud = computed(() => cloudUserTier.value !== 'paid')
+const showWhyCloud = computed(() => cloudUserTierResolved.value && cloudUserTier.value !== 'paid')
 
 const whyCloudOpen = ref(false)
 
@@ -439,9 +440,15 @@ function dismissWhyCloud(): void {
 }
 
 async function onWhyCloudTryCloud(): Promise<void> {
-  whyCloudOpen.value = false
   emitTelemetryAction('comfy.desktop.dashboard.why_cloud_action', { action: 'try_cloud' })
-  await cloudGate.openCloud()
+  if (await cloudGate.openCloud()) {
+    whyCloudOpen.value = false
+    return
+  }
+  await modal.alert({
+    title: t('installShowcase.cloudFailedTitle'),
+    message: t('installShowcase.cloudFailedMessage')
+  })
 }
 onMounted(async () => {
   const [freeRunsResult, userTierResult] = await Promise.allSettled([
@@ -453,6 +460,7 @@ onMounted(async () => {
   }
   if (userTierResult.status === 'fulfilled') {
     cloudUserTier.value = userTierResult.value
+    cloudUserTierResolved.value = true
   }
 })
 function handleNewInstallClick(): void {

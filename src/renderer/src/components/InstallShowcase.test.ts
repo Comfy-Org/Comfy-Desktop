@@ -107,7 +107,7 @@ describe('the cloud action', () => {
   })
 })
 
-/** Shipped installers rotate passively — no dots, no arrows, no transport.
+/** Shipped installers rotate passively - no dots, no arrows, no transport.
  *  The cloud CTA is the only control on the surface. */
 describe('passive rotation', () => {
   it('ships no carousel transport controls', () => {
