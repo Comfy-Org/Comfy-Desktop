@@ -596,6 +596,21 @@ export type CrashKind =
   | 'heap-corruption'
   | 'unknown'
 
+/** Flavour of a "code wanted a CUDA GPU and didn't get one" Python failure.
+ *  These need materially different advice, so the distinction survives to the
+ *  UI instead of collapsing into one message:
+ *
+ *  - `no-cuda-build` — torch has no CUDA support at all. Expected and harmless
+ *    on Apple Silicon; on a Windows/Linux box with an NVIDIA card it means the
+ *    wrong torch build is installed, which is worth fixing.
+ *  - `no-cuda-device` — torch has CUDA, nothing usable answered. Driver problem
+ *    or a masked/hidden GPU.
+ *  - `cuda-deserialize` — a checkpoint pickled on a GPU was loaded without
+ *    `map_location`. A bug in whatever loaded it, on any platform.
+ *
+ *  Shared across the IPC boundary so producer and consumer can't drift. */
+export type CudaFailureCategory = 'no-cuda-build' | 'no-cuda-device' | 'cuda-deserialize'
+
 export interface ComfyExitedData {
   installationId: string
   installationName: string
@@ -621,15 +636,17 @@ export interface ComfyExitedData {
    *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
    *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
   vcRuntimeMissing?: string[]
-  /** Set when the crash tail shows Python failing because this machine has no
-   *  usable CUDA — the common Apple Silicon case, where torch is built without
-   *  it. Only present when ComfyUI did NOT catch the error as a custom-node
+  /** Set when the crash tail shows Python failing for want of a usable CUDA
+   *  GPU. Only present when ComfyUI did NOT catch the error as a custom-node
    *  import failure, since a caught one just disables that pack and boot
    *  continues, making it the wrong thing to blame a crash on.
-   *  `customNode` names the node pack from the deepest traceback frame when
-   *  the failure came from one; absent when it came from elsewhere or the
-   *  captured tail was truncated past the frames. */
-  cudaUnavailable?: { customNode?: string }
+   *
+   *  `category` decides the advice — a missing CUDA build is expected on Apple
+   *  Silicon but means a broken torch install on a Windows box with an NVIDIA
+   *  card, so the two cannot share copy. `customNode` names the node pack from
+   *  the deepest traceback frame when the failure came from one; absent when it
+   *  came from elsewhere or the captured tail was truncated past the frames. */
+  cudaUnavailable?: { category: CudaFailureCategory; customNode?: string }
   /**
    * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
    * Set by `recordCrash()` so a renderer that hydrates the crash *after*

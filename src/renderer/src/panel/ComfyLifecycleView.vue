@@ -8,9 +8,10 @@ import {
   type ReturnToDashboardReason
 } from '../composables/useReturnToDashboardConfirm'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { normalizePlatform } from '../composables/usePlatform'
 import BrandFinishedSurface from '../components/BrandFinishedSurface.vue'
 import { TID } from '../../../shared/testIds'
-import type { Installation, ShowProgressOpts } from '../types/ipc'
+import type { CudaFailureCategory, Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
  * Body view for the Comfy tab when no ComfyUI process is currently
@@ -73,6 +74,29 @@ const crashedLogs = computed<string | null>(() => {
   return errorInfo.value?.lastStderr ?? null
 })
 
+/**
+ * Pick the explanation that is actually true for this failure on this OS.
+ *
+ * `no-cuda-build` splits on platform: torch ships without CUDA on Apple Silicon
+ * by design, so there we can reassure the user that nothing is wrong with their
+ * download. Saying that on a Windows machine with an NVIDIA card would be a lie
+ * — there it means the wrong torch build is installed and reinstalling fixes
+ * it. `unknown` platforms get the non-Mac wording, which is the safe one: it
+ * suggests a fix rather than dismissing the problem.
+ */
+function cudaExplanationKey(category: CudaFailureCategory): string {
+  switch (category) {
+    case 'no-cuda-build':
+      return normalizePlatform(window.api?.platform) === 'mac'
+        ? 'comfyLifecycle.crashedDescCudaNoBuildMac'
+        : 'comfyLifecycle.crashedDescCudaNoBuild'
+    case 'no-cuda-device':
+      return 'comfyLifecycle.crashedDescCudaNoDevice'
+    case 'cuda-deserialize':
+      return 'comfyLifecycle.crashedDescCudaDeserialize'
+  }
+}
+
 const crashedMessage = computed<string | null>(() => {
   if (state.value !== 'crashed') return null
   // Pick the most specific phrasing for whatever main captured. Signal +
@@ -106,16 +130,17 @@ const crashedMessage = computed<string | null>(() => {
   if ((errorInfo.value?.vcRuntimeMissing?.length ?? 0) > 0) {
     base = `${base} ${t('comfyLifecycle.crashedDescVcRuntimeHint')}`
   }
-  // Python died for want of an NVIDIA GPU. On Apple Silicon this reads to users
-  // like we shipped them a Windows build, so say plainly that it's third-party
-  // code asking for CUDA — and name the node pack when the traceback did.
+  // Python died for want of an NVIDIA GPU. The right explanation depends on
+  // which failure it was AND on the OS: a torch build without CUDA is expected
+  // on Apple Silicon but means a broken install on a Windows box with an NVIDIA
+  // card, so telling both "this is not your installer" would be wrong for one.
   const cudaUnavailable = errorInfo.value?.cudaUnavailable
   if (cudaUnavailable) {
-    base = `${base} ${
-      cudaUnavailable.customNode
-        ? t('comfyLifecycle.crashedDescCudaUnavailableNode', { node: cudaUnavailable.customNode })
-        : t('comfyLifecycle.crashedDescCudaUnavailable')
-    }`
+    base = `${base} ${t(cudaExplanationKey(cudaUnavailable.category))}`
+    // Name the pack separately so every category can carry the same hint.
+    if (cudaUnavailable.customNode) {
+      base = `${base} ${t('comfyLifecycle.crashedDescCudaNodeHint', { node: cudaUnavailable.customNode })}`
+    }
   }
   // Append the logs hint only when we actually have stderr to show — the
   // hint would otherwise point at a logs accordion that isn't rendered.

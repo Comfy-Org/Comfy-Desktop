@@ -24,18 +24,18 @@
  * This module stays pure (string in, verdict out) so it is trivially testable.
  */
 
-/** Python/torch errors that unambiguously mean "code asked for a CUDA GPU that
- *  this machine does not have". Deliberately narrow: a message that merely
- *  mentions CUDA (backend probes list it as unavailable on roughly half of all
- *  Mac boots) must not match, or we would blame nodes for healthy logs. */
-const CUDA_UNAVAILABLE_ERRORS: readonly string[] = [
-  // CPU/MPS build of torch — the macOS case. Raised from torch's lazy init.
-  'Torch not compiled with CUDA enabled',
-  // CUDA build, but no visible device (CPU-only Linux box, masked devices).
-  'No CUDA GPUs are available',
-  'Found no NVIDIA driver on your system',
-  // Loading a checkpoint pickled on a CUDA device without `map_location`.
-  'Attempting to deserialize object on a CUDA device'
+import type { CudaFailureCategory } from '../../types/ipc'
+
+/** Python/torch errors that unambiguously mean "code asked for a CUDA GPU it
+ *  did not get", each with the category that decides the advice. Deliberately
+ *  narrow: a message that merely mentions CUDA (backend probes list it as
+ *  unavailable on roughly half of all Mac boots) must not match, or we would
+ *  blame nodes for healthy logs. */
+const CUDA_UNAVAILABLE_ERRORS: readonly { match: string; category: CudaFailureCategory }[] = [
+  { match: 'Torch not compiled with CUDA enabled', category: 'no-cuda-build' },
+  { match: 'No CUDA GPUs are available', category: 'no-cuda-device' },
+  { match: 'Found no NVIDIA driver on your system', category: 'no-cuda-device' },
+  { match: 'Attempting to deserialize object on a CUDA device', category: 'cuda-deserialize' }
 ]
 
 /** ComfyUI's own log line proving it caught the error while importing a node
@@ -62,6 +62,9 @@ export interface CudaUnavailableDiagnosis {
   /** The matched error text (not the whole line), e.g.
    *  `'Torch not compiled with CUDA enabled'`. */
   error: string
+  /** Which flavour of CUDA failure this is, so the UI can give advice that is
+   *  actually true for it. */
+  category: CudaFailureCategory
   /** Directory name of the implicated pack under `custom_nodes/`, when the
    *  failure came from one — e.g. `'ComfyUI-FramePackWrapper'`. Absent when the
    *  traceback has no `custom_nodes` frame (the failure was in ComfyUI itself
@@ -104,12 +107,14 @@ export function diagnoseCudaUnavailable(
   // one nearest the exit and so the best candidate for having caused it.
   let errorLine = -1
   let error = ''
+  let category: CudaFailureCategory = 'no-cuda-build'
   for (let i = lines.length - 1; i >= 0 && errorLine === -1; i--) {
     const line = lines[i] ?? ''
     for (const candidate of CUDA_UNAVAILABLE_ERRORS) {
-      if (line.includes(candidate)) {
+      if (line.includes(candidate.match)) {
         errorLine = i
-        error = candidate
+        error = candidate.match
+        category = candidate.category
         break
       }
     }
@@ -123,12 +128,19 @@ export function diagnoseCudaUnavailable(
   // the exception message (`Cannot import <path> ...: Torch not compiled with
   // CUDA enabled`), so the backwards scan above lands on the marker rather than
   // on the `AssertionError:` line whenever both are in the tail.
+  //
+  // The marker must also quote THIS error. ComfyUI appends the exception
+  // message to it, so a genuine match always does. Requiring it stops an
+  // unrelated pack failing for some other reason (`No module named 'cv2'`)
+  // from landing inside the lookahead window and silencing a real CUDA crash.
   const end = Math.min(lines.length, errorLine + 1 + CAUGHT_MARKER_LOOKAHEAD)
   for (let i = errorLine; i < end; i++) {
-    const caught = CAUGHT_IMPORT_RE.exec(lines[i] ?? '')
-    if (caught) {
+    const line = lines[i] ?? ''
+    const caught = CAUGHT_IMPORT_RE.exec(line)
+    if (caught && line.includes(error)) {
       return {
         error,
+        category,
         customNode: nodePackFromPath(caught[1] ?? ''),
         handledByNodeImport: true
       }
@@ -156,5 +168,5 @@ export function diagnoseCudaUnavailable(
     }
   }
 
-  return { error, customNode, handledByNodeImport: false }
+  return { error, category, customNode, handledByNodeImport: false }
 }

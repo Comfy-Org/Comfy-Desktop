@@ -259,7 +259,7 @@ async function diagnoseCrash(code: number | null, lastStderr?: string): Promise<
   // must not be reported as the cause — see `cudaUnavailable.ts`.
   const cuda = diagnoseCudaUnavailable(lastStderr)
   if (cuda && !cuda.handledByNodeImport) {
-    out.cudaUnavailable = { customNode: cuda.customNode }
+    out.cudaUnavailable = { category: cuda.category, customNode: cuda.customNode }
   }
 
   const decoded = decodeExitCode(code)

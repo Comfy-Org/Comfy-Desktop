@@ -34,10 +34,16 @@ const messages = {
         'ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.',
       crashedDescVcRuntimeHint:
         'Some Microsoft Visual C++ Redistributable runtime files appear to be missing; repairing or installing the latest redistributable may fix this.',
-      crashedDescCudaUnavailable:
-        "ComfyUI stopped because something asked for an NVIDIA CUDA GPU that this machine doesn't have. On Apple Silicon and CPU-only machines PyTorch is built without CUDA by design — this is not a problem with your installer or your download. It is nearly always a custom node that assumes an NVIDIA GPU. Check the logs for the traceback to see which one.",
-      crashedDescCudaUnavailableNode:
-        "ComfyUI stopped because the custom node {node} asked for an NVIDIA CUDA GPU that this machine doesn't have. On Apple Silicon and CPU-only machines PyTorch is built without CUDA by design — this is not a problem with your installer or your download. Disabling or removing {node} should let ComfyUI start again.",
+      crashedDescCudaNoBuildMac:
+        'Something asked for an NVIDIA CUDA GPU. PyTorch on Apple Silicon is built without CUDA support by design, so this is not a problem with your download or your installer, and it is nearly always a custom node that assumes an NVIDIA GPU.',
+      crashedDescCudaNoBuild:
+        'Something asked for an NVIDIA CUDA GPU, but the installed PyTorch has no CUDA support. If this machine has an NVIDIA GPU, reinstalling PyTorch with CUDA support should fix it; otherwise the code asking for CUDA cannot run here.',
+      crashedDescCudaNoDevice:
+        'Something asked for an NVIDIA CUDA GPU. PyTorch has CUDA support but found no usable GPU, which usually means a driver problem or a GPU that is hidden from this process.',
+      crashedDescCudaDeserialize:
+        "Something loaded a model file that was saved on an NVIDIA GPU without remapping it to this machine's device. That is a bug in whatever loaded the file, not in ComfyUI.",
+      crashedDescCudaNodeHint:
+        'The failure came from the custom node {node}; disabling or removing it should let ComfyUI start again.',
       crashedDescLogsHint: 'See the logs for details.',
       restart: 'Restart ComfyUI',
       stoppedTitle: 'ComfyUI is stopped',
@@ -70,6 +76,7 @@ const SAMPLE_INSTALL: Installation = {
 } as unknown as Installation
 
 interface MockApi {
+  platform: string
   runAction: ReturnType<typeof vi.fn>
   getRunningInstances: ReturnType<typeof vi.fn>
   getLastCrashError: ReturnType<typeof vi.fn>
@@ -86,6 +93,7 @@ interface MockApi {
 
 function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
   const api: MockApi = {
+    platform: 'darwin',
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     getRunningInstances: vi.fn().mockResolvedValue([]),
     getLastCrashError: vi.fn().mockResolvedValue(null),
@@ -239,24 +247,68 @@ describe('ComfyLifecycleView', () => {
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 1,
-      cudaUnavailable: { customNode: 'ComfyUI-FramePackWrapper' }
+      cudaUnavailable: { category: 'no-cuda-build', customNode: 'ComfyUI-FramePackWrapper' }
     })
     await flushPromises()
     expect(wrapper.text()).toContain('ComfyUI-FramePackWrapper')
-    // The whole point of this copy: stop users blaming the macOS installer.
-    expect(wrapper.text()).toContain('not a problem with your installer')
+    expect(wrapper.text()).toContain('disabling or removing it')
+    // The whole point of this copy on a Mac: stop users blaming the installer.
+    expect(wrapper.text()).toContain('not a problem with your download or your installer')
   })
 
-  it('falls back to generic CUDA-unavailable copy when no node pack was identified', async () => {
+  it('falls back to the explanation alone when no node pack was identified', async () => {
     const wrapper = mountView()
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 1,
-      cudaUnavailable: {}
+      cudaUnavailable: { category: 'no-cuda-build' }
     })
     await flushPromises()
     expect(wrapper.text()).toContain('nearly always a custom node')
+    expect(wrapper.text()).not.toContain('The failure came from the custom node')
+  })
+
+  it('does not tell a Windows user their missing CUDA build is fine', async () => {
+    // Same category, opposite advice: on a machine that may well have an NVIDIA
+    // GPU, a CUDA-less torch build IS the problem and reinstalling fixes it.
+    installMockApi({ platform: 'win32' })
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1,
+      cudaUnavailable: { category: 'no-cuda-build' }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('reinstalling PyTorch with CUDA support')
+    expect(wrapper.text()).not.toContain('not a problem with your download')
+    expect(wrapper.text()).not.toContain('Apple Silicon')
+  })
+
+  it('explains a missing CUDA device as a driver problem, not a missing build', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1,
+      cudaUnavailable: { category: 'no-cuda-device' }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('found no usable GPU')
+    expect(wrapper.text()).not.toContain('built without CUDA support by design')
+  })
+
+  it('explains a CUDA deserialization failure as a loader bug', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1,
+      cudaUnavailable: { category: 'cuda-deserialize' }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('without remapping it')
   })
 
   it('shows no CUDA hint on an ordinary crash', async () => {

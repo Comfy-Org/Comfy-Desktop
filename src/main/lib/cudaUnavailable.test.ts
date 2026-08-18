@@ -59,6 +59,7 @@ describe('diagnoseCudaUnavailable', () => {
     const result = diagnoseCudaUnavailable(CAUGHT_IMPORT_TRACEBACK)
     expect(result).toEqual({
       error: 'Torch not compiled with CUDA enabled',
+      category: 'no-cuda-build',
       customNode: 'ComfyUI-FramePackWrapper',
       handledByNodeImport: true
     })
@@ -69,6 +70,7 @@ describe('diagnoseCudaUnavailable', () => {
     const result = diagnoseCudaUnavailable(FATAL_TRACEBACK)
     expect(result).toEqual({
       error: 'Torch not compiled with CUDA enabled',
+      category: 'no-cuda-build',
       customNode: 'ComfyUI-FramePackWrapper',
       handledByNodeImport: false
     })
@@ -83,6 +85,7 @@ describe('diagnoseCudaUnavailable', () => {
     ].join('\n')
     expect(diagnoseCudaUnavailable(coreFailure)).toEqual({
       error: 'Torch not compiled with CUDA enabled',
+      category: 'no-cuda-build',
       customNode: undefined,
       handledByNodeImport: false
     })
@@ -116,18 +119,45 @@ describe('diagnoseCudaUnavailable', () => {
     expect(result?.handledByNodeImport).toBe(false)
   })
 
-  it('recognises the other CUDA-unavailable phrasings', () => {
-    expect(diagnoseCudaUnavailable('RuntimeError: No CUDA GPUs are available')?.error).toBe(
-      'No CUDA GPUs are available'
-    )
+  it('recognises the other CUDA-unavailable phrasings, each with its category', () => {
+    // The categories drive which advice the UI gives, so pin every one of them:
+    // "no CUDA build" and "no CUDA device" need opposite fixes.
+    expect(diagnoseCudaUnavailable('RuntimeError: No CUDA GPUs are available')).toMatchObject({
+      error: 'No CUDA GPUs are available',
+      category: 'no-cuda-device'
+    })
     expect(
-      diagnoseCudaUnavailable('RuntimeError: Found no NVIDIA driver on your system.')?.error
-    ).toBe('Found no NVIDIA driver on your system')
+      diagnoseCudaUnavailable('RuntimeError: Found no NVIDIA driver on your system.')
+    ).toMatchObject({
+      error: 'Found no NVIDIA driver on your system',
+      category: 'no-cuda-device'
+    })
     expect(
       diagnoseCudaUnavailable(
         'RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available() is False.'
-      )?.error
-    ).toBe('Attempting to deserialize object on a CUDA device')
+      )
+    ).toMatchObject({
+      error: 'Attempting to deserialize object on a CUDA device',
+      category: 'cuda-deserialize'
+    })
+    expect(
+      diagnoseCudaUnavailable('AssertionError: Torch not compiled with CUDA enabled')
+    ).toMatchObject({ category: 'no-cuda-build' })
+  })
+
+  it('does not treat an unrelated caught import as handling this error', () => {
+    // A different pack failing for its own reason must not land inside the
+    // lookahead window and silence a real CUDA crash. ComfyUI's marker always
+    // quotes the exception it caught, so requiring the match is safe.
+    const stderr = [
+      'Traceback (most recent call last):',
+      '  File "/Users/gp/ComfyUI/main.py", line 140, in <module>',
+      'AssertionError: Torch not compiled with CUDA enabled',
+      "Cannot import /Users/gp/ComfyUI/custom_nodes/SomeOtherPack module for custom nodes: No module named 'cv2'"
+    ].join('\n')
+    const result = diagnoseCudaUnavailable(stderr)
+    expect(result?.handledByNodeImport).toBe(false)
+    expect(result?.customNode).toBeUndefined()
   })
 
   it('handles Windows-style paths in the traceback', () => {
@@ -147,6 +177,7 @@ describe('diagnoseCudaUnavailable', () => {
     ].join('\n')
     expect(diagnoseCudaUnavailable(truncated)).toEqual({
       error: 'Torch not compiled with CUDA enabled',
+      category: 'no-cuda-build',
       customNode: undefined,
       handledByNodeImport: false
     })
