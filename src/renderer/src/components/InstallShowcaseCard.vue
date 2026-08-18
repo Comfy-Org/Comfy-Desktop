@@ -141,10 +141,10 @@ const slides = computed(() =>
   transition: background 160ms ease;
 }
 .slider__side--prev {
-  left: calc(var(--slide-w) * -1.3 - 17px);
+  left: calc(var(--slide-w) * -1.01 - 17px);
 }
 .slider__side--next {
-  right: calc(var(--slide-w) * -1.3 - 17px);
+  right: calc(var(--slide-w) * -1.01 - 17px);
 }
 .slider__side:hover {
   background: rgba(255, 255, 255, 0.26);
