@@ -10,6 +10,7 @@ import type { ProgressStepVM } from '../lib/progressViewModel'
  */
 const props = defineProps<{ steps: ProgressStepVM[] }>()
 
+// Must match `--bpv-row-h` in this file's styles.
 const ROW_H = 46
 const VISIBLE_ROWS = 3
 
@@ -29,11 +30,16 @@ const trackStyle = computed(() => ({
 
 const viewportStyle = computed(() => ({ height: `${VISIBLE_ROWS * ROW_H}px` }))
 
+/** Forward only: the step in hand and the ones still to come. A finished step
+ *  is behind the reader, and its row was the loudest thing competing with the
+ *  one actually running. Its slot stays reserved, so nothing below it shifts
+ *  when the stepper advances. */
 function rowOpacity(index: number): number {
-  const dist = Math.abs(index - activeIndex.value)
-  if (dist === 0) return 1
-  if (dist === 1) return 0.38
-  return Math.max(0.08, 0.22 - (dist - 2) * 0.1)
+  const d = index - activeIndex.value
+  if (d === 0) return 1
+  if (d < 0) return 0
+  if (d === 1) return 0.45
+  return Math.max(0.1, 0.3 - (d - 2) * 0.1)
 }
 </script>
 
@@ -134,7 +140,10 @@ function rowOpacity(index: number): number {
   color: var(--neutral-500);
 }
 .bpv__row.is-done .bpv__icon {
-  color: var(--brand-success, #3ecf8e);
+  /* White, not the success green: these rows are steps that scrolled past, not
+     outcomes to report. The green read as a result worth noticing on every row
+     the install left behind. */
+  color: var(--text);
 }
 .bpv__row.is-focused .bpv__icon {
   color: var(--comfy-yellow);
@@ -149,7 +158,9 @@ function rowOpacity(index: number): number {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  /* 1px read as a single wrapped line rather than a label with its detail
+     underneath; enough air to separate them, not enough to split the row. */
+  gap: 5px;
   min-width: 0;
   /* Wide enough for the full download detail line (bytes · speed · ETA) so it
      isn't ellipsized; clamped to the viewport on narrow windows. */
@@ -189,7 +200,10 @@ function rowOpacity(index: number): number {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  /* Narrower than the label's measure, so a long producer status ellipsises
+     instead of running wider than the step it belongs to. The head of the line
+     (size, then speed) is what gets read at a glance. */
+  max-width: min(22rem, 70vw);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.65),
     0 0 16px rgba(25, 19, 29, 0.85);

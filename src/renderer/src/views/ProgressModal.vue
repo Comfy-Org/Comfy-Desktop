@@ -14,7 +14,6 @@ import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { useProgressStore } from '../stores/progressStore'
 import type { ActionResult, KillResult, ShowProgressOpts } from '../types/ipc'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
-import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import BrandProgressGlyph from '../components/icons/BrandProgressGlyph.vue'
 import BaseAccordion from '../components/ui/BaseAccordion.vue'
 import BaseCopyButton from '../components/ui/BaseCopyButton.vue'
@@ -557,7 +556,7 @@ defineExpose({ startOperation, showOperation })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="installationId && currentOp">
+  <BrandTakeoverLayout v-if="installationId && currentOp" brand="wordmark">
     <div class="brand-progress">
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
@@ -565,14 +564,16 @@ defineExpose({ startOperation, showOperation })
              back the yellow glyph so stepper text stays legible. -->
         <div class="brand-progress__plate">
           <div class="brand-progress__core">
-            <InstallShowcase
+            <!-- SPIKE: Bert's scene3 animation in place of the slider. Iframed
+                 straight off its own player, untouched, to see how it sits. -->
+            <iframe
               v-if="showShowcase"
-              class="brand-progress__showcase"
-              :can-offer-cloud="cloudGate.canOffer.value"
-              @open-cloud="handleShowcaseCloud"
+              class="brand-progress__slider brand-progress__scene"
+              src="/scene3/embed.html"
+              title=""
+              tabindex="-1"
+              scrolling="no"
             />
-
-            <ComfyWordmark class="brand-progress__wordmark" />
 
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap">
@@ -727,7 +728,42 @@ defineExpose({ startOperation, showOperation })
     </div>
     <!-- Footer band pinned to the takeover's bottom edge. In-flight → Return to Dashboard; port conflict → Use-Port / Kill-Process; error → Reboot + Return. Empty (collapsed) on success/cancel. -->
     <template #footer>
-      <div v-if="currentOp" class="brand-progress__footer">
+      <!-- In-flight exit sits top-left, in the C logo's row: the bottom edge is
+           the showcase banner's now. -->
+      <div v-if="currentOp && !currentOp.finished" class="brand-progress__topbar">
+        <button
+          v-if="currentOp.destroysInstance"
+          type="button"
+          class="brand-ghost brand-progress__footer-btn"
+          @click="cancelDestructiveOp"
+        >
+          <X :size="14" />
+          {{ $t('common.cancel') }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="brand-ghost brand-progress__footer-btn"
+          @click="returnToDashboard('in_flight')"
+        >
+          <ArrowLeft :size="14" />
+          {{ $t('progress.returnToDashboard') }}
+        </button>
+      </div>
+
+      <div v-if="showShowcase" class="brand-progress__showcase-band">
+        <InstallShowcase
+          class="brand-progress__showcase"
+          :can-offer-cloud="cloudGate.canOffer.value"
+          @open-cloud="handleShowcaseCloud"
+        />
+      </div>
+
+      <div
+        v-if="currentOp"
+        class="brand-progress__footer"
+        :class="{ 'has-showcase': showShowcase }"
+      >
         <!-- Log panel (opens above the footer bar) -->
         <BaseAccordion
           v-if="currentOp.terminalOutput"
@@ -758,27 +794,7 @@ defineExpose({ startOperation, showOperation })
           :class="{ 'is-centered': !currentOp.terminalOutput }"
         >
           <div class="brand-progress__footer-left">
-            <template v-if="!currentOp.finished">
-              <button
-                v-if="currentOp.destroysInstance"
-                type="button"
-                class="brand-ghost brand-progress__footer-btn"
-                @click="cancelDestructiveOp"
-              >
-                <X :size="14" />
-                {{ $t('common.cancel') }}
-              </button>
-              <button
-                v-else
-                type="button"
-                class="brand-ghost brand-progress__footer-btn"
-                @click="returnToDashboard('in_flight')"
-              >
-                <ArrowLeft :size="14" />
-                {{ $t('progress.returnToDashboard') }}
-              </button>
-            </template>
-            <template v-else-if="isPortConflictOpen && currentOp.result?.portConflict">
+            <template v-if="isPortConflictOpen && currentOp.result?.portConflict">
               <button
                 type="button"
                 class="brand-ghost brand-progress__footer-btn"
@@ -846,34 +862,6 @@ defineExpose({ startOperation, showOperation })
   align-items: center;
   justify-content: center;
 }
-/* Soft circular ink pool, dead-center, behind the wordmark/bar/text so they
-   stay legible over the glyph — without reading as a shape. Per Figma it's a
-   whisper: the ink starts already semi-transparent at the center and fades to
-   nothing well before the edge, so there's no hard rim. blur(34px) on top of
-   the gradient dissolves it fully into the background; the purple light beam
-   still reads through. Lives on the full-screen container (the stack clips
-   overflow) so it stays a true circle. */
-.brand-progress::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  --scrim-size: clamp(340px, 48vw, 760px);
-  width: var(--scrim-size);
-  height: var(--scrim-size);
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at center,
-    color-mix(in srgb, var(--neutral-950) 58%, transparent) 0%,
-    color-mix(in srgb, var(--neutral-950) 28%, transparent) 32%,
-    color-mix(in srgb, var(--neutral-950) 9%, transparent) 56%,
-    transparent 76%
-  );
-  filter: blur(40px);
-  pointer-events: none;
-  z-index: 1;
-}
 .brand-progress__glyph {
   position: absolute;
   top: 50%;
@@ -883,7 +871,11 @@ defineExpose({ startOperation, showOperation })
   width: auto;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.9;
+  /* Knocked back from 0.9: the strokes run straight through the stepper and
+     the showcase banner, and at anything near full strength they compete with
+     the copy. At 0.12 they read as texture in the frame, not as a line the eye
+     follows across the stepper and the banner. */
+  opacity: 0.12;
 }
 
 .brand-progress__stack {
@@ -929,6 +921,14 @@ defineExpose({ startOperation, showOperation })
   pointer-events: none;
   z-index: -1;
 }
+/* The stepper hangs below the cluster in absolute flow (see
+   `.brand-progress__status`), so the flex centring above never counts it and
+   the visible group as a whole sits low by half its height. Reserving that
+   height here puts the group back on the frame's centre line; the finished
+   states, which render no stepper, are untouched. */
+.brand-progress__stack:has(.brand-progress__status) {
+  margin-bottom: calc(3 * 46px);
+}
 .brand-progress__core {
   position: relative;
   z-index: 1;
@@ -939,10 +939,16 @@ defineExpose({ startOperation, showOperation })
   width: 100%;
 }
 .brand-progress__bar-wrap {
-  width: 100%;
+  /* Own cap rather than the stack's 880px: the stack also carries the finished
+     states, so narrowing it there would move them too. Sized against the
+     slider above it, not the text below: the bar reads as that block's
+     measure, and at full stack width it was nearly twice it. */
+  width: min(100%, 500px);
+  /* Percentage on the bar's own line, at its end: under it, right-aligned, it
+     was a floating number with nothing to belong to. */
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 10px;
 }
 .brand-progress__status {
   position: absolute;
@@ -961,12 +967,44 @@ defineExpose({ startOperation, showOperation })
 .brand-progress__steps {
   width: 100%;
 }
-/* No margin of its own: the core's gap already separates it from the wordmark,
-   and stacking a margin on top of that flex gap was what pushed the bar off
-   centre. The reserved min-height lives on the component so a two-line card in
-   a longer locale cannot reflow the cluster below it. */
+/* Full-bleed banner along the bottom edge. The band carries the blur and runs
+   the whole window width; the showcase keeps its own centred measure inside it.
+   It lives in the outer frame (not the padded inner frame) and owns the bottom
+   band now that the in-flight exit moved up to the logo row. */
+.brand-progress__showcase-band {
+  position: absolute;
+  anchor-name: --showcase-band;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  box-sizing: border-box;
+  /* 15px on top, not 16: the hairline border sits inside the box and would
+     otherwise push the copy a pixel below the band's optical centre. */
+  padding: 15px clamp(16px, 2.5vw, 32px) 16px;
+  background: color-mix(in srgb, var(--neutral-900) 62%, transparent);
+  backdrop-filter: blur(20px) saturate(115%);
+  -webkit-backdrop-filter: blur(20px) saturate(115%);
+  border-top: 1px solid color-mix(in srgb, var(--neutral-100) 7%, transparent);
+}
 .brand-progress__showcase {
   margin-bottom: 0;
+}
+/* Top-left corner, in the band the wordmark now centres itself in:
+   `--takeover-logo-size` + the logo row's 16px padding is exactly that band's
+   height, so the button centres against the lockup instead of guessing. */
+.brand-progress__topbar {
+  position: absolute;
+  top: 0;
+  left: 15px;
+  z-index: 4;
+  height: calc(var(--takeover-logo-size) + 32px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 .brand-status-fade-enter-active,
 .brand-status-fade-leave-active {
@@ -982,14 +1020,23 @@ defineExpose({ startOperation, showOperation })
     transition-duration: 0ms;
   }
 }
-.brand-progress__wordmark {
-  width: clamp(140px, 9.7vw, 240px);
-  height: auto;
-  color: var(--comfy-yellow);
+/* The second light beam anchors to whatever stands at the centre of the stack.
+   That used to be the wordmark and is now the slider; with the old selector
+   left behind, the name went undefined and the beam fell back to its own
+   default position, which is what threw the light off centre. */
+.brand-progress__slider {
   anchor-name: --brand-beam-target;
 }
+.brand-progress__scene {
+  width: min(46vw, 560px);
+  aspect-ratio: 1056 / 784;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: transparent;
+}
 .brand-progress__bar {
-  width: 100%;
+  flex: 1 1 auto;
   height: 5.079px;
   border-radius: 16px;
   background: var(--brand-surface-bg);
@@ -1036,13 +1083,13 @@ defineExpose({ startOperation, showOperation })
   -webkit-user-select: text;
 }
 .brand-progress__percent {
-  font-size: 11px;
-  color: var(--neutral-100);
+  flex: 0 0 auto;
+  min-width: 2.6em;
+  text-align: right;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  align-self: flex-end;
+  font-size: 0.75rem;
   line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--neutral-300);
 }
 
 .brand-caption-fade-enter-active,
@@ -1235,6 +1282,14 @@ defineExpose({ startOperation, showOperation })
   min-height: 0;
   pointer-events: none;
 }
+/* The banner owns the bottom edge, so the footer's own controls (View logs,
+   Skip model download) have to clear it. Anchored rather than given a hardcoded
+   height: the band grows with its copy, and a stale number would put the logs
+   toggle back underneath it. Browsers without anchor positioning fall back to
+   the plain offset above. */
+.brand-progress__footer.has-showcase {
+  bottom: calc(anchor(--showcase-band top) + 12px);
+}
 /* Re-enable interaction on the content; the container is only a geometric bound and stays click-through where empty. */
 .brand-progress__footer > * {
   pointer-events: auto;
@@ -1267,8 +1322,10 @@ defineExpose({ startOperation, showOperation })
   gap: 6px;
   white-space: nowrap;
 }
+/* The shared ghost button ships borderless (`border: 1px solid transparent`
+   in main.css); this screen was drawing an outline on top of it. Only the text
+   colour is worth carrying over the takeover backdrop. */
 .brand-progress__footer-btn.brand-ghost {
-  border-color: var(--neutral-500);
   color: var(--neutral-100);
 }
 @media (max-width: 720px) {

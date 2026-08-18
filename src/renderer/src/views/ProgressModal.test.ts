@@ -231,8 +231,11 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__error-message')).toBe(false)
     expect(body.exists('.brand-progress__bar')).toBe(true)
 
-    expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    // In flight the exit lives in the top-left cluster, not the footer band:
+    // the bottom edge belongs to the showcase banner.
+    expect(body.exists('.brand-progress__topbar')).toBe(true)
+    expect(body.selectorText('.brand-progress__topbar')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Dashboard')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Minimize')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
   })
@@ -412,9 +415,9 @@ describe('ProgressModal — brand branch state transitions', () => {
       flatStatus: 'Deleting installation…',
       flatPercent: 30
     })
-    expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Cancel')
-    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Dashboard')
+    expect(body.exists('.brand-progress__topbar')).toBe(true)
+    expect(body.selectorText('.brand-progress__topbar')).toContain('Cancel')
+    expect(body.selectorText('.brand-progress__topbar')).not.toContain('Return to Dashboard')
   })
 
   it('renders Back (no Reboot) on a destroy op error', async () => {

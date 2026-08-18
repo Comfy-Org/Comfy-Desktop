@@ -6,6 +6,7 @@
 // Forces dark; light-mode brand parity is deferred.
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
+import ComfyWordmark from './icons/ComfyWordmark.vue'
 import BrandBackground from './BrandBackground.vue'
 
 withDefaults(
@@ -13,8 +14,11 @@ withDefaults(
     theme?: 'dark' | 'light'
     vignette?: boolean
     ariaLabel?: string
+    /** Brand lockup in the chrome: the C mark top-left (default, every
+     *  takeover today), or the wordmark centred at the top. */
+    brand?: 'mark' | 'wordmark'
   }>(),
-  { theme: 'dark', vignette: false, ariaLabel: undefined }
+  { theme: 'dark', vignette: false, ariaLabel: undefined, brand: 'mark' }
 )
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -57,8 +61,9 @@ onBeforeUnmount(() => {
       tabindex="-1"
     >
       <BrandBackground :vignette="vignette">
-        <div class="brand-logo-row">
-          <ComfyCLogo class="brand-logo" />
+        <div class="brand-logo-row" :class="{ 'is-centered': brand === 'wordmark' }">
+          <ComfyWordmark v-if="brand === 'wordmark'" class="brand-logo-wordmark" />
+          <ComfyCLogo v-else class="brand-logo" />
         </div>
         <slot />
         <template #footer-left>
@@ -106,6 +111,18 @@ onBeforeUnmount(() => {
   padding: 16px 15px;
   display: flex;
   align-items: center;
+}
+/* Wordmark variant: the lockup spans the top edge and centres itself, so the
+   corner is free for whatever the surface puts there. */
+.brand-logo-row.is-centered {
+  right: 0;
+  justify-content: center;
+  pointer-events: none;
+}
+.brand-logo-wordmark {
+  width: clamp(88px, 7vw, 116px);
+  height: auto;
+  color: var(--comfy-yellow);
 }
 .brand-logo {
   color: var(--comfy-yellow);

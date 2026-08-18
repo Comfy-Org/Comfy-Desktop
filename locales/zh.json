@@ -217,6 +217,8 @@
   },
   "common": {
     "back": "返回",
+    "next": "下一个",
+    "previous": "上一个",
     "backToDashboard": "返回仪表板",
     "close": "关闭",
     "copy": "复制",
@@ -1198,7 +1200,7 @@
     "cachedDownload": "使用缓存的下载",
     "startingDownload": "开始下载…",
     "waitingForDownload": "等待另一个安装完成下载…",
-    "downloading": "正在下载… {progress}",
+    "downloading": "{progress}",
     "extracting": "正在解压… {progress}"
   },
   "launch": {
