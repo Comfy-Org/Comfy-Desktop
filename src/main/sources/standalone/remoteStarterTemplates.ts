@@ -10,12 +10,23 @@
  * Fetched once per process. A content change lands on the next launch, which is
  * why there is no disk cache: offline already falls back to the built-in list,
  * and a cached copy would keep serving a withdrawn payload indefinitely.
+ *
+ * This deliberately differs from `torchIndexManifest`, which persists a
+ * last-good copy so offline reads keep working. That manifest has no usable
+ * built-in fallback, whereas this one does, so here the built-in list is both
+ * the safer and the fresher answer. Deleting the remote document is the
+ * rollback, and it must take effect rather than be outlived by a cache.
+ *
+ * A failed fetch is memoized too, so a blip at boot serves the built-in list
+ * for the process lifetime. That is the same next-launch contract, not an
+ * oversight.
  */
 import { fetchJSON } from '../../lib/fetch'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
 import {
   CURATED_TEMPLATES,
   TEMPLATE_MODALITY_ORDER,
+  isPersistableTemplateId,
   type CuratedTemplate,
   type TemplateModality,
   type TemplateSnapshot
@@ -27,18 +38,27 @@ const SCHEMA_VERSION = 1
 const SLOTS_PER_MODALITY = 4
 const MAX_ID_LENGTH = 128
 const MAX_TEXT_LENGTH = 4096
-
-/** Mirrors the frontend's deeplink validator; the id reaches a URL and a
- *  package-relative path, so no separators and no control characters. */
-const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
+/** Comfortably past the largest real template (~57 GB) while still rejecting a
+ *  value that would make the disk-space gate unsatisfiable. */
+const MAX_SIZE_BYTES = 2 * 1024 ** 4
+/** Only 16 slots can ever be filled; the rest is wasted main-process work. */
+const MAX_ENTRIES = 256
+/** Clear the id pattern but name a directory rather than a template. */
+const RESERVED_IDS = new Set(['.', '..'])
+/** `fetchJSON` has no timeout of its own, and the picker blocks on this read,
+ *  so a stalled connection would leave it rendering nothing. */
+const FETCH_TIMEOUT_MS = 5000
 
 function isModality(value: unknown): value is TemplateModality {
   return typeof value === 'string' && (TEMPLATE_MODALITY_ORDER as readonly string[]).includes(value)
 }
 
 function safeText(value: unknown): string | null {
-  if (typeof value !== 'string' || !value || value.length > MAX_TEXT_LENGTH) return null
-  return value
+  if (typeof value !== 'string' || value.length > MAX_TEXT_LENGTH) return null
+  // Trimmed before the emptiness test: these strings go straight into the card,
+  // and a whitespace-only title renders as a blank card, not a missing one.
+  const trimmed = value.trim()
+  return trimmed || null
 }
 
 function parseSnapshot(value: unknown): TemplateSnapshot | null {
@@ -49,8 +69,11 @@ function parseSnapshot(value: unknown): TemplateSnapshot | null {
   const mediaSubtype = safeText(r.mediaSubtype)
   if (!title || !description || !mediaSubtype) return null
   const { sizeBytes } = r
-  if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes) || sizeBytes < 0) return null
-  return { title, description, sizeBytes, mediaSubtype }
+  // Bounded because this drives the install-time disk-space gate: an absurd
+  // value would block every install with an unsatisfiable free-space check.
+  if (!Number.isInteger(sizeBytes) || (sizeBytes as number) < 0) return null
+  if ((sizeBytes as number) > MAX_SIZE_BYTES) return null
+  return { title, description, sizeBytes: sizeBytes as number, mediaSubtype }
 }
 
 /** Default-deny: anything unexpected drops this entry alone. */
@@ -59,20 +82,25 @@ function parseEntry(value: unknown): CuratedTemplate | null {
   const r = value as Record<string, unknown>
 
   const { id } = r
-  if (typeof id !== 'string' || id.length > MAX_ID_LENGTH || !TEMPLATE_ID_PATTERN.test(id)) {
-    return null
-  }
+  // Shared with the picker's own validator, so the id cannot escape a path or
+  // URL and cannot smuggle in the "skip" sentinel. `.` and `..` clear that
+  // pattern but are path segments, not ids, so they are rejected outright.
+  if (!isPersistableTemplateId(id) || id.length > MAX_ID_LENGTH) return null
+  if (RESERVED_IDS.has(id)) return null
   if (!isModality(r.modality)) return null
 
   const snapshot = parseSnapshot(r.snapshot)
   if (!snapshot) return null
 
   const base = { id, modality: r.modality, snapshot }
-  // A paid card never carries the recommendation: the auto-selected pick must
-  // not spend credits on first run.
-  return r.apiNode === true
-    ? { ...base, apiNode: true }
-    : { ...base, ...(r.recommended === true ? { recommended: true as const } : {}) }
+  if (r.apiNode === true) {
+    // Contradictory under our own invariant: the auto-selected pick must never
+    // spend credits. Dropped rather than silently rewritten, so the slot
+    // backfills and the malformed row is not quietly made valid.
+    if (r.recommended === true) return null
+    return { ...base, apiNode: true }
+  }
+  return { ...base, ...(r.recommended === true ? { recommended: true as const } : {}) }
 }
 
 /**
@@ -91,58 +119,78 @@ export function parseRemoteStarterTemplates(raw: unknown): CuratedTemplate[] | n
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
 
-  const document = data as Record<string, unknown>
-  if (document.schemaVersion !== SCHEMA_VERSION) return null
-  if (!Array.isArray(document.templates)) return null
+  const payload = data as Record<string, unknown>
+  if (payload.schemaVersion !== SCHEMA_VERSION) return null
+  if (!Array.isArray(payload.templates)) return null
 
   const seen = new Set<string>()
   const entries: CuratedTemplate[] = []
-  for (const value of document.templates) {
+  for (const value of payload.templates.slice(0, MAX_ENTRIES)) {
     const entry = parseEntry(value)
     if (!entry || seen.has(entry.id)) continue
     seen.add(entry.id)
     entries.push(entry)
   }
-  if (entries.length === 0) return null
-
-  const claimed = new Set<TemplateModality>()
-  return entries.map((entry) => {
-    if (entry.recommended !== true) return entry
-    if (claimed.has(entry.modality)) {
-      const { recommended: _demoted, ...rest } = entry
-      return rest as CuratedTemplate
-    }
-    claimed.add(entry.modality)
-    return entry
-  })
+  // The one-recommended-per-tab rule is owned by `enforceOneRecommended`, which
+  // re-derives it over the resolved slots. Demoting here too would be dead work.
+  return entries.length > 0 ? entries : null
 }
 
-/** Exactly one free card per tab carries the badge, so the wizard never
- *  auto-selects a card that costs money. An all-paid tab gets none. */
-function enforceOneRecommended(cards: CuratedTemplate[]): CuratedTemplate[] {
-  const winner = cards.find((c) => c.recommended && !c.apiNode) ?? cards.find((c) => !c.apiNode)
+/**
+ * Exactly one free card per tab carries the badge, so the wizard never
+ * auto-selects a card that costs money. An all-paid tab gets none, and the
+ * wizard offers skip instead.
+ *
+ * `fromRemote` is how many leading slots the remote document supplied. When it
+ * filled any, the badge stays among them: a backfilled built-in card arrives
+ * pre-flagged, and letting that win would hand the auto-pick to the one card
+ * content did not choose.
+ */
+function enforceOneRecommended(cards: CuratedTemplate[], fromRemote: number): CuratedTemplate[] {
+  const preferred = fromRemote > 0 ? cards.slice(0, fromRemote) : cards
+  const free = (c: CuratedTemplate): boolean => c.apiNode !== true
+  const winner =
+    preferred.find((c) => c.recommended === true && free(c)) ??
+    preferred.find(free) ??
+    cards.find(free)
+
   return cards.map((card) => {
-    if (card.apiNode) return card
-    const shouldRecommend = card === winner
-    if (shouldRecommend === (card.recommended === true)) return card
-    const { recommended: _drop, ...rest } = card
-    return (shouldRecommend ? { ...rest, recommended: true as const } : rest) as CuratedTemplate
+    // Narrowed to the free arm of the union, so `recommended` is assignable
+    // without asserting past the type that makes the two mutually exclusive.
+    if (card.apiNode === true) return card
+    const { recommended: _drop, ...base } = card
+    return card === winner ? { ...base, recommended: true } : base
   })
 }
+
+/** Modality each built-in id belongs to, so a remote entry cannot file one
+ *  under a different tab and drain that tab's fallback. */
+const BUILT_IN_MODALITY = new Map(CURATED_TEMPLATES.map((t) => [t.id, t.modality]))
 
 /**
  * Merge the remote list with the built-in one: remote entries lead, then the
  * built-in list tops each modality up to four. Pass `null` to use the built-in
  * list alone.
+ *
+ * A remote entry reusing a built-in id must keep that id's modality. Otherwise
+ * filing, say, the four image ids under `video` would consume them before the
+ * image tab is reached, leaving it with nothing to fall back to — an empty tab
+ * from a single content edit.
  */
 export function resolveStarterTemplates(
   remote: readonly CuratedTemplate[] | null
 ): CuratedTemplate[] {
+  const eligible = remote?.filter((entry) => {
+    const builtIn = BUILT_IN_MODALITY.get(entry.id)
+    return builtIn === undefined || builtIn === entry.modality
+  })
+
   const used = new Set<string>()
   const resolved: CuratedTemplate[] = []
 
   for (const modality of TEMPLATE_MODALITY_ORDER) {
     const slots: CuratedTemplate[] = []
+    let fromRemote = 0
 
     const take = (candidates: readonly CuratedTemplate[]): void => {
       for (const candidate of candidates) {
@@ -153,10 +201,13 @@ export function resolveStarterTemplates(
       }
     }
 
-    if (remote) take(remote)
+    if (eligible) {
+      take(eligible)
+      fromRemote = slots.length
+    }
     take(CURATED_TEMPLATES)
 
-    resolved.push(...enforceOneRecommended(slots))
+    resolved.push(...enforceOneRecommended(slots, fromRemote))
   }
   return resolved
 }
@@ -168,7 +219,15 @@ let inFlight: Promise<CuratedTemplate[]> | null = null
  * rejects: any failure yields the built-in list.
  */
 export function loadStarterTemplates(): Promise<CuratedTemplate[]> {
-  inFlight ??= fetchJSON(STARTER_TEMPLATES_URL, { refresh: true })
+  inFlight ??= Promise.race([
+    fetchJSON(STARTER_TEMPLATES_URL, { refresh: true }),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error('starter-templates fetch timed out')), FETCH_TIMEOUT_MS)
+        // Never hold the process open for a timer whose only job is to bound a
+        // fetch the picker may already have given up on.
+        .unref?.()
+    })
+  ])
     .then((raw) => resolveStarterTemplates(parseRemoteStarterTemplates(raw)))
     .catch(() => resolveStarterTemplates(null))
   return inFlight

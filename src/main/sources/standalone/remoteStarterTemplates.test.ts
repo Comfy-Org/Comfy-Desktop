@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
 import {
+  STARTER_TEMPLATES_URL,
   parseRemoteStarterTemplates,
   resolveStarterTemplates,
   loadStarterTemplates,
@@ -128,37 +129,48 @@ describe('B. one bad entry drops alone', () => {
 })
 
 describe('C. composition rules survive a hostile document', () => {
-  it('demotes every recommended after the first in a modality', () => {
-    const parsed = parseRemoteStarterTemplates(
+  it('leaves exactly one auto-pick per tab when the document flags several', () => {
+    const remote = parseRemoteStarterTemplates(
       doc([
         entry({ id: 'a', recommended: true }),
         entry({ id: 'b', recommended: true }),
         entry({ id: 'c', recommended: true })
       ])
     )
+    const image = resolveStarterTemplates(remote).filter((t) => t.modality === 'image')
     expect(
-      parsed!.filter((t) => t.recommended),
-      'at most one auto-pick per tab'
+      image.filter((t) => t.recommended),
+      'the resolved slots are where this rule is enforced'
     ).toHaveLength(1)
-    expect(parsed![0]!.id).toBe('a')
+    expect(image.find((t) => t.recommended)!.id, 'document order breaks the tie').toBe('a')
   })
 
-  it('never lets a paid card carry the recommendation', () => {
+  it('drops a card claiming to be both paid and recommended', () => {
     const parsed = parseRemoteStarterTemplates(
-      doc([entry({ id: 'paid', apiNode: true, recommended: true })])
+      doc([entry({ id: 'paid', apiNode: true, recommended: true }), entry({ id: 'ok' })])
     )
-    expect(parsed![0]!.apiNode, 'the card is kept').toBe(true)
-    expect(parsed![0]!.recommended, 'but never auto-selected, it spends credits').toBeFalsy()
+    expect(
+      parsed?.map((t) => t.id),
+      'contradictory under our own invariant, so dropped not rewritten'
+    ).toEqual(['ok'])
+  })
+
+  it('keeps a paid card that makes no claim to the badge', () => {
+    const parsed = parseRemoteStarterTemplates(doc([entry({ id: 'paid', apiNode: true })]))
+    expect(parsed![0]!.apiNode).toBe(true)
+    expect(parsed![0]!.recommended).toBeUndefined()
   })
 
   it('allows one recommended per modality independently', () => {
-    const parsed = parseRemoteStarterTemplates(
+    const remote = parseRemoteStarterTemplates(
       doc([
         entry({ id: 'i', modality: 'image', recommended: true }),
         entry({ id: 'v', modality: 'video', recommended: true })
       ])
     )
-    expect(parsed!.filter((t) => t.recommended).map((t) => t.id)).toEqual(['i', 'v'])
+    const resolved = resolveStarterTemplates(remote)
+    expect(resolved.find((t) => t.modality === 'image' && t.recommended)!.id).toBe('i')
+    expect(resolved.find((t) => t.modality === 'video' && t.recommended)!.id).toBe('v')
   })
 })
 
@@ -227,6 +239,7 @@ describe('D. the hardcoded list is the floor', () => {
     expect(new Set(image.map((t) => t.id)).size, 'ids collide on the picker option key').toBe(
       image.length
     )
+    expect(image, 'a uniqueness check alone would pass on a short tab').toHaveLength(4)
   })
 
   it('holds every invariant across all four tabs at once', () => {
@@ -281,6 +294,116 @@ describe('D. the hardcoded list is the floor', () => {
   })
 })
 
+describe('F. a remote document cannot starve or hijack a tab', () => {
+  it('cannot drain a tab by filing its built-in ids under another modality', () => {
+    const imageIds = bakedIds('image')
+    const remote = parseRemoteStarterTemplates(
+      doc(imageIds.map((id) => entry({ id, modality: 'video' })))
+    )
+    const resolved = resolveStarterTemplates(remote)
+    for (const modality of TEMPLATE_MODALITY_ORDER) {
+      expect(
+        resolved.filter((t) => t.modality === modality),
+        `${modality} must keep its four cards`
+      ).toHaveLength(4)
+    }
+  })
+
+  it('ignores a single built-in id filed under the wrong tab', () => {
+    const stolen = bakedIds('image')[0]!
+    const remote = parseRemoteStarterTemplates(doc([entry({ id: stolen, modality: 'video' })]))
+    const resolved = resolveStarterTemplates(remote)
+    expect(
+      resolved.filter((t) => t.modality === 'image'),
+      'the image tab keeps its own card'
+    ).toHaveLength(4)
+    expect(
+      resolved.find((t) => t.id === stolen)!.modality,
+      'the id stays on the tab it belongs to'
+    ).toBe('image')
+  })
+
+  it('keeps the badge on a remote card when the tab is partly backfilled', () => {
+    const remote = parseRemoteStarterTemplates(
+      doc(['r1', 'r2', 'r3'].map((id) => entry({ id, modality: 'image' })))
+    )
+    const image = resolveStarterTemplates(remote).filter((t) => t.modality === 'image')
+    const winner = image.find((c) => c.recommended)
+    expect(winner, 'a tab with a free card always has an auto-pick').toBeDefined()
+    expect(
+      ['r1', 'r2', 'r3'],
+      'the backfilled card must not steal the badge content did not give it'
+    ).toContain(winner!.id)
+  })
+
+  it('honours the remote entry that does claim the badge', () => {
+    const remote = parseRemoteStarterTemplates(
+      doc([
+        entry({ id: 'r1', modality: 'image' }),
+        entry({ id: 'r2', modality: 'image', recommended: true })
+      ])
+    )
+    const image = resolveStarterTemplates(remote).filter((t) => t.modality === 'image')
+    expect(image.find((c) => c.recommended)!.id).toBe('r2')
+  })
+})
+
+describe('G. an oversized or hostile document cannot cost more than it should', () => {
+  it('stops reading long past the point where every slot could be filled', () => {
+    const huge = Array.from({ length: 5000 }, (_, i) => entry({ id: `r${i}`, modality: 'image' }))
+    const parsed = parseRemoteStarterTemplates(doc(huge))
+    expect(parsed!.length, 'only 16 slots can ever be filled').toBeLessThanOrEqual(256)
+  })
+
+  it.each([
+    ['an absurd magnitude', 1.5e300],
+    ['past the cap', 3 * 1024 ** 4],
+    ['a fractional byte count', 1.5]
+  ])('rejects a sizeBytes that is %s', (_label, sizeBytes) => {
+    const parsed = parseRemoteStarterTemplates(
+      doc([entry({ id: 'bad', snapshot: { ...SNAPSHOT, sizeBytes } }), entry({ id: 'ok' })])
+    )
+    expect(
+      parsed?.map((t) => t.id),
+      'this value drives the install-time disk-space gate'
+    ).toEqual(['ok'])
+  })
+
+  it.each([
+    ['a blank title', { title: '   ' }],
+    ['a newline-only description', { description: '\n\n' }],
+    ['a blank mediaSubtype', { mediaSubtype: ' ' }]
+  ])('rejects %s that would render as an empty card', (_label, over) => {
+    const parsed = parseRemoteStarterTemplates(
+      doc([entry({ id: 'blank', snapshot: { ...SNAPSHOT, ...over } }), entry({ id: 'ok' })])
+    )
+    expect(parsed?.map((t) => t.id)).toEqual(['ok'])
+  })
+
+  it('trims surrounding whitespace rather than rendering it', () => {
+    const parsed = parseRemoteStarterTemplates(
+      doc([entry({ snapshot: { ...SNAPSHOT, title: '  Padded  ' } })])
+    )
+    expect(parsed![0]!.snapshot.title).toBe('Padded')
+  })
+
+  it.each([['.'], ['..']])('rejects %s, a directory rather than a template', (id) => {
+    const parsed = parseRemoteStarterTemplates(doc([entry({ id }), entry({ id: 'ok' })]))
+    expect(
+      parsed?.map((t) => t.id),
+      'a path segment must never reach a URL or a file path'
+    ).toEqual(['ok'])
+  })
+
+  it('rejects the skip sentinel smuggled in as an id', () => {
+    const parsed = parseRemoteStarterTemplates(doc([entry({ id: 'none' }), entry({ id: 'ok' })]))
+    expect(
+      parsed?.map((t) => t.id),
+      'the sentinel is not a template'
+    ).not.toContain('none')
+  })
+})
+
 describe('E. the network is never trusted to behave', () => {
   beforeEach(() => {
     mockedFetchJSON.mockReset()
@@ -305,6 +428,18 @@ describe('E. the network is never trusted to behave', () => {
     )
   })
 
+  it('is cleared by the catalog reset, so fetch counts stay order-independent', async () => {
+    const { resetTemplateCatalogCache } = await import('./templateCatalog')
+    mockedFetchJSON.mockResolvedValue(doc([entry()]))
+    await loadStarterTemplates()
+    resetTemplateCatalogCache()
+    await loadStarterTemplates()
+    expect(
+      mockedFetchJSON,
+      'a half-cleared cache makes suites order-dependent'
+    ).toHaveBeenCalledTimes(2)
+  })
+
   it('fetches once per process, not once per picker open', async () => {
     mockedFetchJSON.mockResolvedValue(doc([entry({ id: 'r1', modality: 'image' })]))
     await Promise.all([loadStarterTemplates(), loadStarterTemplates()])
@@ -316,10 +451,40 @@ describe('E. the network is never trusted to behave', () => {
     mockedFetchJSON.mockResolvedValue(doc([entry()]))
     await loadStarterTemplates()
     const [url, opts] = mockedFetchJSON.mock.calls[0] as [string, Record<string, unknown>]
-    expect(url).toContain('desktop-assets.comfy.org')
+    expect(url).toBe(STARTER_TEMPLATES_URL)
     expect(opts, 'a stale ETag would strand users on withdrawn content').toMatchObject({
       refresh: true
     })
+  })
+
+  it('always returns a full picker, whatever the document says', async () => {
+    mockedFetchJSON.mockResolvedValue(doc([entry({ id: 'r1', modality: 'image' })]))
+    const loaded = await loadStarterTemplates()
+    expect(loaded, 'four cards in each of four tabs').toHaveLength(
+      TEMPLATE_MODALITY_ORDER.length * 4
+    )
+    for (const modality of TEMPLATE_MODALITY_ORDER) {
+      expect(
+        loaded.filter((t) => t.modality === modality),
+        modality
+      ).toHaveLength(4)
+    }
+  })
+
+  it('falls back rather than hanging when the fetch never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      mockedFetchJSON.mockImplementation(() => new Promise(() => {}))
+      const pending = loadStarterTemplates()
+      await vi.advanceTimersByTimeAsync(10_000)
+      const loaded = await pending
+      expect(
+        loaded.map((t) => t.id).sort(),
+        'a stalled read must not leave the picker rendering nothing'
+      ).toEqual([...CURATED_TEMPLATES].map((t) => t.id).sort())
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('never rejects, whatever the network does', async () => {

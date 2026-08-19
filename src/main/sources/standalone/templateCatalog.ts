@@ -11,7 +11,7 @@
  * non-empty and the picker always renders.
  */
 import { fetchJSON } from '../../lib/fetch'
-import { loadStarterTemplates } from './remoteStarterTemplates'
+import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
 import {
   INDEX_URL,
   TEMPLATE_MODALITY_ORDER,
@@ -222,6 +222,9 @@ export function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
 export function resetTemplateCatalogCache(): void {
   catalogInFlight = null
   catalogCache = null
+  // The starter list is memoized for the process, so leaving it would make a
+  // reset only half-work and any fetch-count assertion order-dependent.
+  _resetStarterTemplatesForTest()
 }
 
 async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
