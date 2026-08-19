@@ -155,6 +155,44 @@ describe('C. composition rules survive a hostile document', () => {
     ).toEqual(['ok'])
   })
 
+  it.each([
+    ['a string', 'true'],
+    ['a number', 1],
+    ['null', null],
+    ['an object', {}]
+  ])('drops an entry whose apiNode is %s rather than a boolean', (_label, apiNode) => {
+    const parsed = parseRemoteStarterTemplates(
+      doc([entry({ id: 'bad', apiNode }), entry({ id: 'ok' })])
+    )
+    expect(
+      parsed?.map((t) => t.id),
+      'a truthy-but-not-true flag would offer a paid card as free'
+    ).toEqual(['ok'])
+  })
+
+  it.each([
+    ['a string', 'true'],
+    ['a number', 1],
+    ['null', null]
+  ])('drops an entry whose recommended is %s rather than a boolean', (_label, recommended) => {
+    const parsed = parseRemoteStarterTemplates(
+      doc([entry({ id: 'bad', recommended }), entry({ id: 'ok' })])
+    )
+    expect(parsed?.map((t) => t.id)).toEqual(['ok'])
+  })
+
+  it('never lets non-boolean flags smuggle a paid card into the auto-pick', () => {
+    const remote = parseRemoteStarterTemplates(
+      doc([entry({ id: 'sneaky', apiNode: 'true', recommended: 'true' })])
+    )
+    const image = resolveStarterTemplates(remote).filter((t) => t.modality === 'image')
+    expect(
+      image.find((c) => c.id === 'sneaky'),
+      'the malformed row never renders'
+    ).toBeUndefined()
+    expect(image.find((c) => c.recommended)!.apiNode, 'the auto-pick stays free').toBeFalsy()
+  })
+
   it('keeps a paid card that makes no claim to the badge', () => {
     const parsed = parseRemoteStarterTemplates(doc([entry({ id: 'paid', apiNode: true })]))
     expect(parsed![0]!.apiNode).toBe(true)

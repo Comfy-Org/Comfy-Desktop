@@ -49,6 +49,10 @@ const RESERVED_IDS = new Set(['.', '..'])
  *  so a stalled connection would leave it rendering nothing. */
 const FETCH_TIMEOUT_MS = 5000
 
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean'
+}
+
 function isModality(value: unknown): value is TemplateModality {
   return typeof value === 'string' && (TEMPLATE_MODALITY_ORDER as readonly string[]).includes(value)
 }
@@ -91,6 +95,11 @@ function parseEntry(value: unknown): CuratedTemplate | null {
 
   const snapshot = parseSnapshot(r.snapshot)
   if (!snapshot) return null
+
+  // Default-deny the flags too. A truthy-but-not-true `apiNode` (`"true"`, `1`)
+  // would otherwise degrade to a free card, offering a paid template as free and
+  // making it eligible for the auto-pick badge.
+  if (!isOptionalBoolean(r.apiNode) || !isOptionalBoolean(r.recommended)) return null
 
   const base = { id, modality: r.modality, snapshot }
   if (r.apiNode === true) {
