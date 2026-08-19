@@ -555,7 +555,25 @@ export const standalone: SourcePlugin = {
       // "None" comes first as the skip option; the per-modality recommended
       // picks carry `recommended` on their own option so the wizard auto-selects
       // a real template (the lightest "wow"), not the skip.
-      const catalog = await loadTemplateCatalog()
+      const releaseData = selections.release?.data as
+        | { latestStableTag?: string | null }
+        | undefined
+      // Only honour a comfyVersion pick on the stable channel, matching the
+      // variant branch and `buildInstallation`: `getFieldOptions` returns [] for
+      // 'latest', so a value carried over from a channel toggle is stale and
+      // would pin the picker to a version the install never runs.
+      const isStable = selections.release?.value === 'stable'
+      const pickedComfyTag =
+        isStable &&
+        typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+          ? selections.comfyVersion.value
+          : null
+      const targetComfyVersion =
+        pickedComfyTag ?? releaseData?.latestStableTag ?? (await getLatestStableTag())
+      const { templates: catalog, assetBase } = await loadTemplateCatalog({
+        comfyVersion: targetComfyVersion
+      })
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
       const installation = installId ? await installations.get(installId) : null
@@ -566,7 +584,7 @@ export const standalone: SourcePlugin = {
       const presencePass = Promise.all(
         catalog.map(async (tpl) => {
           try {
-            const models = await resolveTemplateModels(installation, tpl.id)
+            const models = await resolveTemplateModels(installation, tpl.id, assetBase)
             const present = await areModelsPresent(installId, models)
             if (!budgeted) presenceById.set(tpl.id, present)
           } catch {

@@ -32,8 +32,6 @@ interface RawModel {
   directory?: unknown
 }
 
-const RAW_TEMPLATES_REMOTE_BASE = RAW_TEMPLATES_BASE
-
 /**
  * Resolve the workflow JSON for `templateId` — preferring the copy bundled in
  * the just-installed `comfyui_workflow_templates` package (no network), falling
@@ -57,7 +55,8 @@ const TEMPLATE_PACKAGE_DIRS = [
 
 export async function loadTemplateJson(
   installation: InstallationRecord | null,
-  templateId: string
+  templateId: string,
+  assetBase: string = RAW_TEMPLATES_BASE
 ): Promise<unknown | null> {
   const sitePackages = installation ? findSitePackages(getActiveVenvDir(installation)) : null
   if (sitePackages) {
@@ -76,7 +75,7 @@ export async function loadTemplateJson(
   // the same proven network stack, timeout, and retry behaviour as every other
   // main-side HTTP call.
   try {
-    return await fetchJSON(`${RAW_TEMPLATES_REMOTE_BASE}/${templateId}.json`, { refresh: true })
+    return await fetchJSON(`${assetBase}/${templateId}.json`, { refresh: true })
   } catch {
     return null
   }
@@ -165,9 +164,10 @@ function walkNodes(nodes: unknown, out: RawModel[]): void {
  */
 export async function resolveTemplateModels(
   installation: InstallationRecord | null,
-  templateId: string
+  templateId: string,
+  assetBase?: string
 ): Promise<TemplateModelDownload[]> {
-  const json = await loadTemplateJson(installation, templateId)
+  const json = await loadTemplateJson(installation, templateId, assetBase)
   if (!json || typeof json !== 'object') return []
 
   const doc = json as {

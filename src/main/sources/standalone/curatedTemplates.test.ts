@@ -77,8 +77,6 @@ describe('thumbnailUrlFor', () => {
 })
 
 describe('CURATED_TEMPLATES manifest', () => {
-  // Must match the frontend deeplink validator so the auto-open can't be
-  // rejected for a malformed id.
   const ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
 
   it('offers exactly 4 templates per modality', () => {
@@ -88,11 +86,16 @@ describe('CURATED_TEMPLATES manifest', () => {
     }
   })
 
-  it('marks at most one recommended template per modality', () => {
+  it('marks exactly one recommended template per modality', () => {
     for (const modality of TEMPLATE_MODALITY_ORDER) {
       const recommended = CURATED_TEMPLATES.filter((t) => t.modality === modality && t.recommended)
-      expect(recommended.length, modality).toBeLessThanOrEqual(1)
+      expect(recommended.length, modality).toBe(1)
     }
+  })
+
+  it('has no duplicate ids, which would collide on the picker’s option key', () => {
+    const ids = CURATED_TEMPLATES.map((t) => t.id)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('uses only deeplink-safe ids', () => {

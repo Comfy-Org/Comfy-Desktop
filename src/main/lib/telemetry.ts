@@ -1505,6 +1505,32 @@ export async function getOpsFlag(
 }
 
 /**
+ * `getOpsFlag` for JSON-payload flags. `sendFeatureFlagEvents` is a documented
+ * no-op here, so consent safety rests on this path never capturing an event.
+ */
+export async function getOpsFlagPayload(
+  key: string,
+  distinctId: string,
+  timeoutMs: number
+): Promise<unknown | undefined> {
+  if (!client) return undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const payloadPromise = client.getFeatureFlagPayload(key, distinctId, undefined, {
+      onlyEvaluateLocally: false
+    })
+    const timeoutPromise = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), timeoutMs)
+    })
+    return await Promise.race([payloadPromise, timeoutPromise])
+  } catch {
+    return undefined
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+/**
  * Wrap an async step with start/end/error telemetry events that mirror legacy
  * desktop's `@trackEvent` decorator. Errors are re-thrown so callers can
  * continue normal control flow.

@@ -1,24 +1,36 @@
 /**
- * Hydrates the curated starter-template manifest against the live
- * `comfyui_workflow_templates` index, so card metadata (title, description,
- * size, thumbnail) tracks upstream automatically instead of being hand-kept.
+ * Resolves the starter-template manifest into picker cards, hydrated against the
+ * index the target ComfyUI pins rather than `main`.
  *
- * One ETag-cached fetch per picker open (`fetchJSON` handles caching, R2-mirror
- * retry, and last-cached fallback on network failure); the index is flattened
- * once into a `Map` for O(1) lookup per curated id rather than rescanning its
- * ~500 entries. When the index can't be reached at all (cold cache, offline),
- * every template falls back to its inline `snapshot`, so the catalog is always
- * non-empty and the picker always renders.
+ * Invariant: 4 cards per modality in all 4 modalities, at most one recommended
+ * and never an API-node card.
  */
 import { fetchJSON } from '../../lib/fetch'
 import {
   CURATED_TEMPLATES,
-  INDEX_URL,
   TEMPLATE_MODALITY_ORDER,
   thumbnailUrlFor,
+  type CuratedTemplate,
   type TemplateModality,
   type TemplateSnapshot
 } from './curatedTemplates'
+import { getStarterTemplatesAsync } from './starterTemplateManifest'
+import {
+  resolveTemplatePackageVersion,
+  templateAssetBaseFor,
+  templateIndexUrlFor
+} from './templatePin'
+
+const SLOTS_PER_MODALITY = 4
+
+/** The wizard blocks on this, and failing open costs only card metadata. */
+const INDEX_TIMEOUT_MS = 8000
+
+/** Substitutes only; a named id is always honoured. `type: "image"` also spans
+ *  Utility/LLM/Node Basics, which are not starter material. */
+const SUBSTITUTABLE_CATEGORIES = new Set(['Image', 'Video', 'Audio', '3D Model', 'Use Cases'])
+
+const BAKED_IN_IDS = new Set(CURATED_TEMPLATES.map((t) => t.id))
 
 /** A curated template merged with its (optional) live index metadata, ready to
  *  render as a picker card. */
@@ -54,6 +66,10 @@ interface IndexEntry {
   size?: unknown
   mediaSubtype?: unknown
   tags?: unknown
+  /** Node packs the workflow needs; the frontend hides these on non-cloud. */
+  requiresCustomNodes?: unknown
+  /** `local` / `cloud`. Absent means "everywhere". */
+  includeOnDistributions?: unknown
 }
 
 /** A live index category: `{ title, type, templates: [...] }`. */
@@ -102,10 +118,72 @@ function indexById(index: unknown): Map<string, IndexLocation> {
   return byId
 }
 
+/** The frontend hides custom-node workflows on non-cloud, so offering one
+ *  produces a card that silently disappears. */
+function isRunnableLocally(entry: IndexEntry): boolean {
+  const { requiresCustomNodes, includeOnDistributions } = entry
+  if (Array.isArray(requiresCustomNodes) && requiresCustomNodes.length > 0) return false
+  if (Array.isArray(includeOnDistributions) && !includeOnDistributions.includes('local')) {
+    return false
+  }
+  return true
+}
+
+/** Rendered as itself, replaced by an index pick, or dropped for backfill. */
+type Disposition =
+  | { kind: 'place'; location: IndexLocation | undefined }
+  | { kind: 'substitute'; location: IndexLocation }
+  | { kind: 'drop' }
+
+/** Reads `used` but never mutates it, so the caller owns placement. */
+function disposeOf(
+  template: CuratedTemplate,
+  byId: Map<string, IndexLocation>,
+  used: Set<string>,
+  online: boolean,
+  now: number
+): Disposition {
+  if (!isWithinWindow(template, now)) return { kind: 'drop' }
+
+  const location = byId.get(template.id)
+  if (location && !isRunnableLocally(location.entry)) return { kind: 'drop' }
+
+  if (location || !online) {
+    if (!location && !template.snapshot) return { kind: 'drop' }
+    return { kind: 'place', location }
+  }
+
+  // Runs server-side, so index membership says nothing about whether it works.
+  if (template.apiNode === true) {
+    return template.snapshot ? { kind: 'place', location: undefined } : { kind: 'drop' }
+  }
+
+  // Absent from this install's index, so it can't open. Both paths are silent.
+  const sub = firstUnusedOfModality(byId, template.modality, used)
+  console.warn(
+    `[templates] "${template.id}" is not in this install's template index; ` +
+      (sub ? `substituting "${sub.entry.name}"` : 'falling back to the built-in list')
+  )
+  return sub ? { kind: 'substitute', location: sub } : { kind: 'drop' }
+}
+
+/** Availability window, so content can stage a launch ahead of time. */
+function isWithinWindow(template: CuratedTemplate, now: number): boolean {
+  const { availableFrom, availableUntil } = template
+  if (availableFrom) {
+    const from = Date.parse(availableFrom)
+    if (!Number.isNaN(from) && now < from) return false
+  }
+  if (availableUntil) {
+    const until = Date.parse(availableUntil)
+    if (!Number.isNaN(until) && now >= until) return false
+  }
+  return true
+}
+
 const NON_TASK_TAGS = new Set(['image', 'video', 'audio', '3d', '3d model', 'api'])
 
-/** Subtitle shown when a template's `tags` carry no specific task, so a card is
- *  never left with a blank descriptor (e.g. Wan Fun Camera, tags: ['Video']). */
+/** Fallback so a card is never left with a blank descriptor. */
 const DEFAULT_TASK: Record<TemplateModality, string> = {
   image: 'Text to Image',
   video: 'Text to Video',
@@ -113,8 +191,7 @@ const DEFAULT_TASK: Record<TemplateModality, string> = {
   '3d': 'Image to 3D'
 }
 
-/** The template's task (e.g. "Text to Image", "Image Edit") from its `tags`,
- *  skipping kind labels; falls back to the modality default. */
+/** Task from `tags`, skipping kind labels; falls back to the modality default. */
 function taskOf(tags: unknown, modality: TemplateModality): string {
   if (Array.isArray(tags)) {
     for (const tag of tags) {
@@ -126,9 +203,7 @@ function taskOf(tags: unknown, modality: TemplateModality): string {
   return DEFAULT_TASK[modality]
 }
 
-/** Short card name: the title up to its `:` separator, then with a trailing task
- *  phrase stripped ("Z-Image-Turbo Text to Image" → "Z-Image-Turbo"). Falls back
- *  to the whole title when nothing is strippable. */
+/** "Z-Image-Turbo Text to Image" → "Z-Image-Turbo". */
 function nameOf(title: string, task: string): string {
   const beforeColon = title.split(':')[0]!.trim()
   if (task && beforeColon.toLowerCase().endsWith(task.toLowerCase())) {
@@ -138,9 +213,7 @@ function nameOf(title: string, task: string): string {
   return beforeColon || title
 }
 
-/** Build a card from a template `id` + its live index location (when present),
- *  preferring live metadata and falling back to the offline `snapshot` (which a
- *  substituted, non-curated id won't have). */
+/** Prefers live metadata over `snapshot`; `snapshotOverrides` inverts that. */
 function hydrateOne(card: {
   id: string
   modality: TemplateModality
@@ -148,9 +221,12 @@ function hydrateOne(card: {
   apiNode: boolean
   location: IndexLocation | undefined
   snapshot?: TemplateSnapshot
+  snapshotOverrides?: boolean
+  assetBase: string
 }): HydratedTemplate {
-  const { id, modality, recommended, apiNode, location, snapshot } = card
-  const entry = location?.entry
+  const { id, modality, recommended, apiNode, location, snapshot, snapshotOverrides, assetBase } =
+    card
+  const entry = snapshotOverrides && snapshot ? undefined : location?.entry
 
   const title = typeof entry?.title === 'string' ? entry.title : (snapshot?.title ?? id)
   const description =
@@ -162,7 +238,7 @@ function hydrateOne(card: {
       ? entry.mediaSubtype
       : (snapshot?.mediaSubtype ?? 'webp')
 
-  const task = taskOf(entry?.tags, modality)
+  const task = taskOf(location?.entry?.tags, modality)
 
   return {
     id,
@@ -174,116 +250,239 @@ function hydrateOne(card: {
     description,
     sizeBytes,
     apiNode,
-    thumbnailUrl: thumbnailUrlFor(id, mediaSubtype),
+    thumbnailUrl: thumbnailUrlFor(id, mediaSubtype, assetBase),
     category: location?.category ?? ''
   }
 }
 
-/** Stable ordering for the picker: modality tab order, then curated order
- *  within a modality. */
+/** Modality tab order, then manifest order within a modality. */
 function byModalityOrder(a: HydratedTemplate, b: HydratedTemplate): number {
   return TEMPLATE_MODALITY_ORDER.indexOf(a.modality) - TEMPLATE_MODALITY_ORDER.indexOf(b.modality)
 }
 
-/**
- * Resolve the curated manifest into renderable cards, hydrated from the live
- * index where reachable. Defensive by contract: never throws and never returns
- * a card the picker can't render —
- *   - a failed/garbage index fetch yields a snapshot-only catalog,
- *   - a duplicate curated id (dev typo) is collapsed to its first occurrence,
- *   - a curated entry missing its required snapshot (dev edit) is dropped, not
- *     surfaced as a broken card.
- * So renaming/removing a template upstream, or fat-fingering the manifest, can
- * only ever shrink the offering — it can't crash the picker.
- */
-/** Coalesces the wizard's field-options read and the thumbnail warm-up — which
- *  fire together at picker open — into one index fetch; a later open refetches. */
-const CATALOG_TTL_MS = 60_000
-let catalogInFlight: Promise<HydratedTemplate[]> | null = null
-let catalogCache: { at: number; value: HydratedTemplate[] } | null = null
+/** Cards plus the asset base they were stamped with, so a caller fetching
+ *  workflow JSON reads the same revision the thumbnails came from. */
+export interface TemplateCatalog {
+  templates: HydratedTemplate[]
+  assetBase: string
+}
 
-export function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
-  if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
-    return Promise.resolve(catalogCache.value)
-  }
-  if (catalogInFlight) return catalogInFlight
-  catalogInFlight = loadTemplateCatalogUncached()
+/** Keyed by target version so switching channel mid-wizard re-filters. */
+const CATALOG_TTL_MS = 60_000
+const catalogInFlight = new Map<string, Promise<TemplateCatalog>>()
+const catalogCache = new Map<string, { at: number; value: TemplateCatalog }>()
+
+export function loadTemplateCatalog(opts?: {
+  comfyVersion?: string | null
+}): Promise<TemplateCatalog> {
+  const key = opts?.comfyVersion ?? ''
+  const cached = catalogCache.get(key)
+  if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return Promise.resolve(cached.value)
+
+  const existing = catalogInFlight.get(key)
+  if (existing) return existing
+
+  const promise = loadTemplateCatalogUncached(opts?.comfyVersion ?? null)
     .then((value) => {
-      catalogCache = { at: Date.now(), value }
+      catalogCache.set(key, { at: Date.now(), value })
       return value
     })
     .finally(() => {
-      catalogInFlight = null
+      catalogInFlight.delete(key)
     })
-  return catalogInFlight
+  catalogInFlight.set(key, promise)
+  return promise
 }
 
 /** Drops the memoized catalog so the next read refetches. Test-only. */
 export function resetTemplateCatalogCache(): void {
-  catalogInFlight = null
-  catalogCache = null
+  catalogInFlight.clear()
+  catalogCache.clear()
 }
 
-async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
-  let byId: Map<string, IndexLocation>
+/** An empty list is left empty; `backfill` fills every modality either way. */
+async function activeTemplates(): Promise<readonly CuratedTemplate[]> {
   try {
-    byId = indexById(await fetchJSON(INDEX_URL))
+    return await getStarterTemplatesAsync()
   } catch {
-    byId = new Map()
+    return CURATED_TEMPLATES
   }
-  // Only substitute when we actually have a live index to substitute FROM —
-  // an empty map means offline, where the curated snapshot is the right fallback.
+}
+
+/** The index the target ComfyUI ships, else the live one. Never throws. */
+async function indexForVersion(
+  comfyVersion: string | null
+): Promise<{ byId: Map<string, IndexLocation>; assetBase: string }> {
+  const pin = await resolveTemplatePackageVersion(comfyVersion).catch(() => null)
+  const assetBase = templateAssetBaseFor(pin)
+  try {
+    const index = await fetchJSON(templateIndexUrlFor(pin), { timeoutMs: INDEX_TIMEOUT_MS })
+    return { byId: indexById(index), assetBase }
+  } catch {
+    return { byId: new Map(), assetBase }
+  }
+}
+
+async function loadTemplateCatalogUncached(comfyVersion: string | null): Promise<TemplateCatalog> {
+  const [templates, index] = await Promise.all([activeTemplates(), indexForVersion(comfyVersion)])
+  const { byId, assetBase } = index
   const online = byId.size > 0
+  const now = Date.now()
 
   const used = new Set<string>()
-  const catalog: HydratedTemplate[] = []
-  for (const curated of CURATED_TEMPLATES) {
-    if (!curated?.id || used.has(curated.id) || !curated.snapshot) continue
+  // Payload entries keyed by id, so backfill can honour a window the payload set
+  // on a baked-in card instead of reading only the static list.
+  const windows = new Map(templates.filter((t) => t?.id).map((t) => [t.id, t]))
+  const perModality = new Map<TemplateModality, HydratedTemplate[]>(
+    TEMPLATE_MODALITY_ORDER.map((modality) => [modality, []])
+  )
 
-    const recommended = curated.recommended === true
-    const apiNode = curated.apiNode === true
+  const place = (card: HydratedTemplate): void => {
+    perModality.get(card.modality)?.push(card)
+  }
+  const isFull = (modality: TemplateModality): boolean =>
+    (perModality.get(modality)?.length ?? 0) >= SLOTS_PER_MODALITY
 
-    const { modality, snapshot } = curated
-    const location = byId.get(curated.id)
-    if (location || !online) {
-      used.add(curated.id)
-      catalog.push(
-        hydrateOne({ id: curated.id, modality, recommended, apiNode, location, snapshot })
+  for (const template of templates) {
+    if (!template?.id || used.has(template.id)) continue
+    if (!perModality.has(template.modality) || isFull(template.modality)) continue
+
+    const disposition = disposeOf(template, byId, used, online, now)
+    if (disposition.kind === 'drop') continue
+
+    if (disposition.kind === 'substitute') {
+      const { location } = disposition
+      used.add(location.entry.name)
+      place(
+        hydrateOne({
+          id: location.entry.name,
+          modality: template.modality,
+          recommended: template.recommended === true,
+          apiNode: false,
+          location,
+          assetBase
+        })
       )
       continue
     }
 
-    // Curated id has vanished upstream: show the first live template of the same
-    // modality we haven't already used, so the slot still offers a real,
-    // installable pick rather than a stale snapshot card. An API-node slot keeps
-    // its snapshot — substituting would put a multi-GB download behind a badge
-    // that promises none.
-    const sub = apiNode ? null : firstUnusedOfModality(byId, modality, used)
-    if (sub) {
-      used.add(sub.entry.name)
-      catalog.push(
-        hydrateOne({ id: sub.entry.name, modality, recommended, apiNode: false, location: sub })
-      )
-    } else {
+    used.add(template.id)
+    place(
+      hydrateOne({
+        id: template.id,
+        modality: template.modality,
+        recommended: template.recommended === true,
+        apiNode: template.apiNode === true,
+        location: disposition.location,
+        snapshot: template.snapshot,
+        snapshotOverrides: template.snapshotOverrides,
+        assetBase
+      })
+    )
+  }
+
+  backfill(perModality, byId, used, online, assetBase, now, windows)
+
+  const catalog: HydratedTemplate[] = []
+  for (const modality of TEMPLATE_MODALITY_ORDER) {
+    catalog.push(...enforceOneRecommended(perModality.get(modality) ?? []))
+  }
+  return { templates: catalog.sort(byModalityOrder), assetBase }
+}
+
+/**
+ * Strict pass, then `terminal`, which relaxes index membership and then
+ * `isRunnableLocally` rather than ship a short tab. Identity and the
+ * availability window are never relaxed: two cards sharing an id collide on
+ * `FieldOption.value`, the picker's key, and a retired card must stay retired
+ * even when the alternative is a short tab.
+ */
+function fillFromBakedIn(
+  slots: HydratedTemplate[],
+  modality: TemplateModality,
+  byId: Map<string, IndexLocation>,
+  used: Set<string>,
+  online: boolean,
+  assetBase: string,
+  now: number,
+  windows: Map<string, CuratedTemplate>,
+  terminal: boolean
+): void {
+  const take = (allowUnrunnable: boolean): void => {
+    for (const curated of CURATED_TEMPLATES) {
+      if (slots.length >= SLOTS_PER_MODALITY) break
+      if (curated.modality !== modality || used.has(curated.id)) continue
+      // A window the payload set on this id wins, so content can retire a
+      // baked-in card rather than watch backfill wave it straight back in.
+      if (!isWithinWindow(windows.get(curated.id) ?? curated, now)) continue
+      const location = byId.get(curated.id)
+      if (!allowUnrunnable && location && !isRunnableLocally(location.entry)) continue
+      // Re-adding an index-absent card would undo the gate that dropped it.
+      if (!terminal && online && !location && curated.apiNode !== true) continue
       used.add(curated.id)
-      catalog.push(
+      slots.push(
         hydrateOne({
           id: curated.id,
           modality,
-          recommended,
-          apiNode,
-          location: undefined,
-          snapshot
+          recommended: curated.recommended === true,
+          apiNode: curated.apiNode === true,
+          location,
+          snapshot: curated.snapshot,
+          assetBase
         })
       )
     }
   }
-  return catalog.sort(byModalityOrder)
+
+  take(false)
+  if (terminal) take(true)
 }
 
-/** First unused, locally-installable index template of `modality` — skips
- *  API/cloud entries (`api_*`) and size-less ones, since a substitute fills a
- *  local download slot the disk-space gate sizes off `sizeBytes`. */
+function backfill(
+  perModality: Map<TemplateModality, HydratedTemplate[]>,
+  byId: Map<string, IndexLocation>,
+  used: Set<string>,
+  online: boolean,
+  assetBase: string,
+  now: number,
+  windows: Map<string, CuratedTemplate>
+): void {
+  for (const modality of TEMPLATE_MODALITY_ORDER) {
+    const slots = perModality.get(modality)!
+    if (slots.length >= SLOTS_PER_MODALITY) continue
+
+    fillFromBakedIn(slots, modality, byId, used, online, assetBase, now, windows, false)
+
+    while (slots.length < SLOTS_PER_MODALITY && online) {
+      const sub = firstUnusedOfModality(byId, modality, used)
+      if (!sub) break
+      used.add(sub.entry.name)
+      slots.push(
+        hydrateOne({
+          id: sub.entry.name,
+          modality,
+          recommended: false,
+          apiNode: false,
+          location: sub,
+          assetBase
+        })
+      )
+    }
+
+    fillFromBakedIn(slots, modality, byId, used, online, assetBase, now, windows, true)
+  }
+}
+
+/** An all-API tab gets none: the wizard offers skip rather than auto-selecting
+ *  a card that spends credits. */
+function enforceOneRecommended(slots: HydratedTemplate[]): HydratedTemplate[] {
+  const claimed = slots.find((card) => card.recommended && !card.apiNode)
+  const winner = claimed ?? slots.find((card) => !card.apiNode)
+  return slots.map((card) => ({ ...card, recommended: card === winner }))
+}
+
+/** Skips `api_*`, size-less entries (the disk gate sizes off `sizeBytes`), and
+ *  non-starter categories. */
 function firstUnusedOfModality(
   byId: Map<string, IndexLocation>,
   modality: TemplateModality,
@@ -292,8 +491,12 @@ function firstUnusedOfModality(
   for (const location of byId.values()) {
     const { entry } = location
     if (location.modality !== modality || used.has(entry.name)) continue
+    if (!SUBSTITUTABLE_CATEGORIES.has(location.category)) continue
+    // Owed its own slot later; taking it here consumes one instead of filling one.
+    if (BAKED_IN_IDS.has(entry.name)) continue
     if (entry.name.startsWith('api_')) continue
     if (typeof entry.size !== 'number' || entry.size <= 0) continue
+    if (!isRunnableLocally(entry)) continue
     return location
   }
   return null

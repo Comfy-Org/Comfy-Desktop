@@ -35,17 +35,13 @@ export interface OpsFlag<T> {
   _resetForTest(): void
 }
 
-export function makeOpsFlag<T>(opts: {
-  key: string
-  /** Value held before the fetch resolves, and kept when it fails or returns something
-   *  `parse` doesn't recognise. This is the flag's fail direction. */
-  fallback: T
-  /** Narrow the raw flag value. Return `undefined` to keep the fallback — that is how an
-   *  unrecognised payload is distinguished from a legitimate value. */
-  parse: (value: FeatureFlagValue | undefined) => T | undefined
-  /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
-  logLabel?: string
-}): OpsFlag<T> {
+/** Shared plumbing with the fetcher injected. One copy because these are
+ *  correctness-critical and easy to diverge: a single cached in-flight promise,
+ *  `get()` awaiting rather than racing it, and `cached` set only when resolved. */
+function makeOpsFlagFrom<T, V>(
+  fetchValue: (key: string, distinctId: string, timeoutMs: number) => Promise<V>,
+  opts: { key: string; fallback: T; parse: (value: V) => T | undefined; logLabel?: string }
+): OpsFlag<T> {
   const { key, fallback, parse, logLabel } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
@@ -53,13 +49,12 @@ export function makeOpsFlag<T>(opts: {
   return {
     init(initOpts) {
       if (initPromise) return initPromise
-      initPromise = mainTelemetry
-        .getOpsFlag(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+      initPromise = fetchValue(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
         .then((value) => {
           const parsed = parse(value)
           if (parsed !== undefined) cached = parsed
 
-          if (logLabel) console.log(`[${logLabel}] init: fetched=`, value, '→ cached=', cached)
+          if (logLabel) console.log(`[${logLabel}] init: fetched=`, value, '\u2192 cached=', cached)
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)
@@ -82,4 +77,32 @@ export function makeOpsFlag<T>(opts: {
       initPromise = null
     }
   }
+}
+
+export function makeOpsFlag<T>(opts: {
+  key: string
+  /** Default value used before fetch resolves or if fetch/parse fails. */
+  fallback: T
+  /** Return `undefined` to use fallback for unrecognized values. */
+  parse: (value: FeatureFlagValue | undefined) => T | undefined
+  /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
+  logLabel?: string
+}): OpsFlag<T> {
+  return makeOpsFlagFrom(
+    (key, distinctId, timeoutMs) => mainTelemetry.getOpsFlag(key, distinctId, timeoutMs),
+    opts
+  )
+}
+
+/** For JSON payload flags: PostHog may send a string or object—`parse` handles this. */
+export function makeOpsFlagPayload<T>(opts: {
+  key: string
+  fallback: T
+  parse: (value: unknown) => T | undefined
+  logLabel?: string
+}): OpsFlag<T> {
+  return makeOpsFlagFrom(
+    (key, distinctId, timeoutMs) => mainTelemetry.getOpsFlagPayload(key, distinctId, timeoutMs),
+    opts
+  )
 }
