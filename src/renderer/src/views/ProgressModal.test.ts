@@ -258,6 +258,17 @@ describe('ProgressModal — brand branch state transitions', () => {
     ).toBe(true)
   })
 
+  it('hides the Cloud showcase for a standalone launch op', async () => {
+    const { body } = await mountWithOp('inst-plain-launch', {
+      opKind: 'launch',
+      chainSpan: null
+    })
+    expect(
+      body.exists('[data-testid="install-showcase"]'),
+      'a plain launch (no install chain) must not show the showcase'
+    ).toBe(false)
+  })
+
   it('renders the success banner on a finished+ok op and auto-closes after the grace delay', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,
