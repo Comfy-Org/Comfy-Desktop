@@ -48,7 +48,7 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
       @click="emit('open-cloud')"
     >
       {{ $t('installShowcase.cloudCta') }}
-      <ArrowRight :size="11" stroke-width="2.2" />
+      <ArrowRight :size="11" stroke-width="2.2" aria-hidden="true" />
     </button>
   </section>
 </template>
@@ -56,13 +56,10 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
 <style scoped>
 .showcase {
   display: flex;
-  align-items: baseline;
-  justify-content: center;
+  align-items: center;
+  justify-content: flex-end;
   flex-wrap: nowrap;
-  gap: 8px;
-  width: 100%;
-  max-width: min(72rem, 92vw);
-  margin-inline: auto;
+  gap: 10px;
   min-height: 1.5em;
   white-space: nowrap;
 }

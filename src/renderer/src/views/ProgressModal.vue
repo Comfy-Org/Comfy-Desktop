@@ -14,7 +14,7 @@ import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { useProgressStore } from '../stores/progressStore'
 import type { ActionResult, KillResult, ShowProgressOpts } from '../types/ipc'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
-import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
+import BrandSceneAnimation from '../components/BrandSceneAnimation.vue'
 import BrandProgressGlyph from '../components/icons/BrandProgressGlyph.vue'
 import BaseAccordion from '../components/ui/BaseAccordion.vue'
 import BaseCopyButton from '../components/ui/BaseCopyButton.vue'
@@ -287,11 +287,14 @@ async function handleShowcaseCloud(): Promise<void> {
   })
 }
 
-// Rides every in-flight install; no tiers or thresholds, so the section is a
-// constant part of the wait.
-const showShowcase = computed<boolean>(
-  () => currentOp.value?.opKind === 'install' && (!currentOp.value.finished || isChainHandoff.value)
-)
+// Rides both legs of the install chain: the install op and its chained launch
+// leg (`chainSpan:'launch'`), so it does not drop at the 70% handoff.
+const showShowcase = computed<boolean>(() => {
+  const op = currentOp.value
+  if (!op) return false
+  const isInstallWait = op.opKind === 'install' || op.chainSpan === 'launch'
+  return isInstallWait && (!op.finished || isChainHandoff.value)
+})
 
 // Separate from the modal-branch `terminalExpanded` so the brand accordion's state doesn't leak into the modal reopen path.
 const brandLogsExpanded = ref(false)
@@ -558,6 +561,13 @@ defineExpose({ startOperation, showOperation })
 
 <template>
   <BrandTakeoverLayout v-if="installationId && currentOp">
+    <template #logo-right>
+      <InstallShowcase
+        v-if="showShowcase"
+        :can-offer-cloud="cloudGate.canOffer.value"
+        @open-cloud="handleShowcaseCloud"
+      />
+    </template>
     <div class="brand-progress">
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
@@ -565,14 +575,9 @@ defineExpose({ startOperation, showOperation })
              back the yellow glyph so stepper text stays legible. -->
         <div class="brand-progress__plate">
           <div class="brand-progress__core">
-            <InstallShowcase
-              v-if="showShowcase"
-              class="brand-progress__showcase"
-              :can-offer-cloud="cloudGate.canOffer.value"
-              @open-cloud="handleShowcaseCloud"
-            />
-
-            <ComfyWordmark class="brand-progress__wordmark" />
+            <div v-if="showShowcase" class="brand-progress__scene">
+              <BrandSceneAnimation />
+            </div>
 
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap">
@@ -961,12 +966,13 @@ defineExpose({ startOperation, showOperation })
 .brand-progress__steps {
   width: 100%;
 }
-/* No margin of its own: the core's gap already separates it from the wordmark,
-   and stacking a margin on top of that flex gap was what pushed the bar off
-   centre. The reserved min-height lives on the component so a two-line card in
-   a longer locale cannot reflow the cluster below it. */
-.brand-progress__showcase {
-  margin-bottom: 0;
+.brand-progress__scene {
+  position: relative;
+  width: min(52vw, 620px);
+  aspect-ratio: 1056 / 784;
+  border-radius: 16px;
+  overflow: hidden;
+  anchor-name: --brand-beam-target;
 }
 .brand-status-fade-enter-active,
 .brand-status-fade-leave-active {
@@ -981,12 +987,6 @@ defineExpose({ startOperation, showOperation })
   .brand-status-fade-leave-active {
     transition-duration: 0ms;
   }
-}
-.brand-progress__wordmark {
-  width: clamp(140px, 9.7vw, 240px);
-  height: auto;
-  color: var(--comfy-yellow);
-  anchor-name: --brand-beam-target;
 }
 .brand-progress__bar {
   width: 100%;
