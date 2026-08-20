@@ -3,6 +3,8 @@ import { getAppVersion } from '../lib/ipc'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
+import { getMcpNudgeContentScript } from '../lib/mcpNudgeContentScript'
+import { getFlag, recordExposure } from '../lib/experiments'
 import { closeInstallPopouts } from '../lib/popoutWindows'
 import { _operationAborts, sourceMap } from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
@@ -39,6 +41,10 @@ const APP_VERSION = getAppVersion()
  *  default). These get the stopgap Terminal-tab injection; remote/cloud and
  *  external (legacy v1 desktop) installs do not. */
 const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
+
+/** Experiment flag gating the Local MCP nudge injection. Off ⇒ control (no
+ *  nudge). Read synchronously at `dom-ready`; the cache is warm by then. */
+const MCP_NUDGE_FLAG = 'desktop.mcp_nudge'
 
 /** Entry point that triggered a zoom reset, tagged as `source` on the
  *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
@@ -420,6 +426,16 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // `comfyTerminalContentScript.ts` for the dedupe guard.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
+      // Local MCP distribution surface: a dismiss-once nudge + setup panel that
+      // guides the user to connect their own agent over MCP, using the terminal
+      // as the workspace. Same install gate as the terminal (it opens that shell),
+      // additionally behind the `desktop.mcp_nudge` experiment flag.
+      // `COMFY_FORCE_MCP_NUDGE=1` forces it on for local dev/QA before the
+      // experiment flag is provisioned.
+      if (process.env.COMFY_FORCE_MCP_NUDGE === '1' || getFlag(MCP_NUDGE_FLAG) === true) {
+        recordExposure(MCP_NUDGE_FLAG, 'enabled', 'cache')
+        comfyContents.executeJavaScript(getMcpNudgeContentScript()).catch(() => {})
+      }
     }
     // Cloud-only patches (popup-blocked toast suppression + post-signin
     // flicker hide). Skipped for local installs — they don't load cloud
