@@ -390,7 +390,7 @@ describe('G. an oversized or hostile document cannot cost more than it should', 
   it('stops reading long past the point where every slot could be filled', () => {
     const huge = Array.from({ length: 5000 }, (_, i) => entry({ id: `r${i}`, modality: 'image' }))
     const parsed = parseRemoteStarterTemplates(doc(huge))
-    expect(parsed!.length, 'only 16 slots can ever be filled').toBeLessThanOrEqual(256)
+    expect(parsed!.length, 'parsing stops at the MAX_ENTRIES cap').toBe(256)
   })
 
   it.each([
@@ -437,8 +437,8 @@ describe('G. an oversized or hostile document cannot cost more than it should', 
     const parsed = parseRemoteStarterTemplates(doc([entry({ id: 'none' }), entry({ id: 'ok' })]))
     expect(
       parsed?.map((t) => t.id),
-      'the sentinel is not a template'
-    ).not.toContain('none')
+      'the sentinel drops while its valid neighbour survives'
+    ).toEqual(['ok'])
   })
 })
 
