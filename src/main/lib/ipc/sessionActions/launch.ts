@@ -309,6 +309,35 @@ async function describeExitCode(code: number | null): Promise<string> {
   return out
 }
 
+/**
+ * One clause of CUDA guidance for a launch-failure message, or `''` when the
+ * stderr shows no such failure.
+ *
+ * A fatal CUDA error happens while ComfyUI is still starting up, so it exits
+ * BEFORE the port is ready and never reaches the exit handler that calls
+ * `diagnoseCrash`. Without this, the failure most likely to need the guidance
+ * is the one that wouldn't get it. Mirrors how `describeExitCode` inlines the
+ * access-violation / VC++ hint on this same path.
+ *
+ * Silent when ComfyUI caught the error as a custom-node import failure — that
+ * pack is merely disabled and the boot failed for some other reason.
+ *
+ * English-only to match the surrounding non-localized launch-failure strings.
+ */
+export function _describeCudaFailure(stderr: string | undefined): string {
+  const cuda = diagnoseCudaUnavailable(stderr)
+  if (!cuda || cuda.handledByNodeImport) return ''
+  const from = cuda.customNode ? ` from the custom node ${cuda.customNode}` : ''
+  switch (cuda.category) {
+    case 'no-cuda-build':
+      return `. Something${from} asked for an NVIDIA CUDA GPU, but this PyTorch build has no CUDA support — expected on Apple Silicon, and a sign of the wrong PyTorch build elsewhere`
+    case 'no-cuda-device':
+      return `. Something${from} asked for an NVIDIA CUDA GPU, but no usable GPU was found — usually a driver problem`
+    case 'cuda-deserialize':
+      return `. A model file saved on an NVIDIA GPU was loaded${from} without remapping it to this machine's device`
+  }
+}
+
 async function openLogStream(installPath: string): Promise<WriteStream> {
   const logDir = getLogDir(installPath)
   fs.mkdirSync(logDir, { recursive: true })
@@ -1285,7 +1314,10 @@ async function runLaunch(
           // and add the VC++ hint inline so the launch-failure modal is useful.
           // A signal-kill (code null) reports the signal name instead.
           const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
-          earlyExit = `Process exited with ${rendered}${detail}`
+          // Outside the ternary: a CUDA failure can also arrive as a signal
+          // kill, and the guidance is just as relevant there.
+          const cudaHint = _describeCudaFailure(spawned.getStderr())
+          earlyExit = `Process exited with ${rendered}${cudaHint}${detail}`
           reject(new Error(earlyExit))
         }
       })
