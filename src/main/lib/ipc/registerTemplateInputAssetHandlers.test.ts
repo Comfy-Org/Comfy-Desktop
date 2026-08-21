@@ -47,16 +47,19 @@ function handler(channel: string): IpcHandler {
 describe('registerTemplateInputAssetHandlers', () => {
   const sender = {}
   const win = { webContents: sender }
-  const installation = { id: 'install-1' }
+  const installation = { id: 'install-1', sourceId: 'standalone' }
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.fromWebContents.mockReturnValue(win)
     mocks.getInstallation.mockResolvedValue(installation)
     mocks.resolveInputDir.mockReturnValue('/comfy/input')
-    handlerModule.registerTemplateInputAssetHandlers({
-      findInstallationIdForWindow: () => 'install-1'
-    })
+    const options = {
+      findInstallationIdForWindow: () => 'install-1',
+      isLocalInstallation: (candidate: { sourceId?: unknown }) =>
+        candidate.sourceId === 'standalone'
+    }
+    handlerModule.registerTemplateInputAssetHandlers(options)
   })
 
   it('registers only template-scoped metadata and download channels', () => {
@@ -134,6 +137,21 @@ describe('registerTemplateInputAssetHandlers', () => {
         { templateId: 'template-1', assetId: 'sample.png' }
       )
     ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
+  })
+
+  it('fails closed for a remote installation even when the sender is bound', async () => {
+    mocks.getInstallation.mockResolvedValue({ id: 'cloud', sourceId: 'cloud' })
+
+    await expect(
+      handler('desktop2-get-template-input-assets')({ sender }, { templateId: 'template-1' })
+    ).resolves.toBeNull()
+    await expect(
+      handler('desktop2-download-template-input-asset')(
+        { sender },
+        { templateId: 'template-1', assetId: 'sample.png' }
+      )
+    ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
+    expect(mocks.resolveAssets).not.toHaveBeenCalled()
   })
 
   it('does not accept an asset id that the template does not declare', async () => {
