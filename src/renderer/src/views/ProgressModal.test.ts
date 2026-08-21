@@ -269,6 +269,25 @@ describe('ProgressModal — brand branch state transitions', () => {
     ).toBe(false)
   })
 
+  it('shows the brand scene for any in-flight op, not just installs', async () => {
+    // The scene is the loader centrepiece and must render whatever the op kind
+    // is, or opening an already-installed instance shows an empty centre.
+    for (const opKind of ['launch', 'update', 'generic'] as const) {
+      const { wrapper, body } = await mountWithOp(`inst-${opKind}`, { opKind, chainSpan: null })
+      expect(body.exists('.brand-progress__scene'), `scene missing for ${opKind}`).toBe(true)
+      wrapper.unmount()
+    }
+  })
+
+  it('hides the brand scene once the op finishes', async () => {
+    const { body } = await mountWithOp('inst-done', {
+      opKind: 'launch',
+      finished: true,
+      result: { ok: true } as ActionResult
+    })
+    expect(body.exists('.brand-progress__scene')).toBe(false)
+  })
+
   it('renders the success banner on a finished+ok op and auto-closes after the grace delay', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,

@@ -287,8 +287,18 @@ async function handleShowcaseCloud(): Promise<void> {
   })
 }
 
-// Rides both legs of the install chain: the install op and its chained launch
-// leg (`chainSpan:'launch'`), so it does not drop at the 70% handoff.
+// The brand centrepiece: shown for any operation that is still working, so the
+// loader always has an identity regardless of op kind (launch, install, update,
+// destructive…). Independent of the Cloud upsell, which is install-only.
+const showScene = computed<boolean>(() => {
+  const op = currentOp.value
+  if (!op) return false
+  return !op.finished || isChainHandoff.value
+})
+
+// The Cloud upsell (rotating pitch + Try Cloud CTA). Install-specific: it rides
+// both legs of the install chain (the install op and its chained launch leg,
+// `chainSpan:'launch'`), but stays off unrelated ops.
 const showShowcase = computed<boolean>(() => {
   const op = currentOp.value
   if (!op) return false
@@ -575,7 +585,7 @@ defineExpose({ startOperation, showOperation })
              back the yellow glyph so stepper text stays legible. -->
         <div class="brand-progress__plate">
           <div class="brand-progress__core">
-            <div v-if="showShowcase" class="brand-progress__scene">
+            <div v-if="showScene" class="brand-progress__scene">
               <BrandSceneAnimation />
             </div>
 
