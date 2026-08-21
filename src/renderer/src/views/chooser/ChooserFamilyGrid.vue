@@ -107,15 +107,8 @@ function unlockTileSize(el: Element): void {
       @click="emit('workspace-create')"
     >
       <div class="chooser-tile-icon"><Plus :size="32" /></div>
-      <div class="workspace-cta__options" aria-hidden="true">
-        <span class="workspace-cta__option workspace-cta__option--create">{{
-          t('chooser.workspaceCreateWeb')
-        }}</span>
-        <span class="workspace-cta__separator">{{ t('chooser.workspaceCtaOr') }}</span>
-        <span class="workspace-cta__option workspace-cta__option--promote">{{
-          t('chooser.workspacePromoteLocal')
-        }}</span>
-      </div>
+      <div class="chooser-tile-name">{{ t('chooser.workspaceCtaLabel') }}</div>
+      <div class="chooser-tile-meta">{{ t('chooser.workspaceCtaDesc') }}</div>
     </button>
 
     <template v-for="entry in props.entries" :key="entryKey(entry)">
@@ -161,40 +154,6 @@ function unlockTileSize(el: Element): void {
 }
 .chooser-family-grid--centered {
   justify-content: center;
-}
-
-.chooser-tile-workspace-cta {
-  justify-content: flex-end;
-}
-.workspace-cta__options {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: stretch;
-  gap: 7px;
-  width: 100%;
-}
-.workspace-cta__option {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.25;
-  text-align: center;
-}
-.workspace-cta__option--create {
-  color: var(--accent, #4a90e2);
-}
-.workspace-cta__option--promote {
-  color: var(--comfy-yellow);
-}
-.workspace-cta__separator {
-  align-self: center;
-  color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
 }
 
 /* Tile FLIP. */

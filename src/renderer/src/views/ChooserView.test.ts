@@ -66,10 +66,8 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate',
       workspaceShelf: 'Workspace',
-      workspaceCtaLabel: 'Create on the Web or Promote Local Instance',
-      workspaceCreateWeb: 'Create on the Web',
-      workspaceCtaOr: 'or',
-      workspacePromoteLocal: 'Promote Local Instance'
+      workspaceCtaLabel: 'Create New Build on the Web',
+      workspaceCtaDesc: 'Create a workspace build in Comfy Builder.'
     },
     devPlatform: {
       workspace: {
@@ -844,11 +842,14 @@ describe('ChooserView', () => {
     expect(wrapper.find('.chooser-shelf-count').text()).toBe('0')
     expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(true)
     const cta = wrapper.find('[data-testid="chooser-workspace-cta"]')
-    expect(cta.text()).toContain('Create on the Web')
-    expect(cta.text()).toContain('Promote Local Instance')
+    expect(cta.text()).toContain('Create New Build on the Web')
+    expect(cta.text()).toContain('Create a workspace build in Comfy Builder.')
+    expect(cta.find('.chooser-tile-name').exists()).toBe(true)
+    expect(cta.find('.chooser-tile-meta').exists()).toBe(true)
+    expect(cta.find('.workspace-cta__options').exists()).toBe(false)
   })
 
-  it('opens Comfy Builder from the combined Workspace CTA', async () => {
+  it('opens Comfy Builder from the Workspace CTA', async () => {
     const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
