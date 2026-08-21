@@ -98,7 +98,7 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
-/** Labelled ("Dist v7") so it can't be read as the ComfyUI version beside it. */
+/** Labelled ("Build v7") so it can't be read as the ComfyUI version beside it. */
 const trailingFact = computed(() =>
   isFromDistribution.value
     ? distributionVersion.value
@@ -107,7 +107,7 @@ const trailingFact = computed(() =>
     : inst.value.version || ''
 )
 
-/** Distribution installs read "<ComfyUI version> · Dist v7"; everything else
+/** Distribution installs read "<ComfyUI version> · Build v7"; everything else
  *  keeps "<source> · <version>". */
 const leadingFact = computed(() =>
   isFromDistribution.value ? inst.value.version || '' : sourceLabel.value

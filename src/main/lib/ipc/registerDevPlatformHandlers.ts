@@ -198,7 +198,7 @@ export function registerDevPlatformHandlers(): void {
             inst.status !== 'failed'
         )
         if (existing) {
-          return { ok: false, message: `"${existing.name}" already installs this distribution.` }
+          return { ok: false, message: `"${existing.name}" already installs this build.` }
         }
         const client = getBuilderClient()
         const host = await resolveHost()

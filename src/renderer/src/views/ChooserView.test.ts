@@ -71,7 +71,7 @@ const messages = {
       workspace: { personalLabel: 'Personal' },
       distribution: {
         menuInstall: 'Install',
-        distVersion: 'Dist v{version}',
+        distVersion: 'Build v{version}',
         notInstalled: 'Not installed',
         states: {
           noBuild: 'No build',
@@ -79,7 +79,7 @@ const messages = {
           updateAvailable: 'Update'
         },
         blockedReason: {
-          buildFailed: 'This distribution has no successful build yet.',
+          buildFailed: 'This build has no successful version yet.',
           noArtifactForMachine:
             'The latest build has no artifact for this operating system and GPU.'
         }
@@ -587,7 +587,7 @@ describe('ChooserView', () => {
     expect(meta.text()).toContain('Not installed')
     // The distribution's own release belongs on the INSTALL tile, once you
     // have one — a card never shows a version you don't have.
-    expect(meta.text()).not.toContain('Dist v2')
+    expect(meta.text()).not.toContain('Build v2')
   })
 
   it('labels a distribution install so its release cannot be read as a ComfyUI version', async () => {
@@ -608,7 +608,7 @@ describe('ChooserView', () => {
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('BuiltThing'))!
     const meta = tile.find('.chooser-tile-meta-line').text()
     expect(meta).toContain('v0.28.2')
-    expect(meta).toContain('Dist v7')
+    expect(meta).toContain('Build v7')
     // The install path is noise on a tile whose identity is the distribution.
     expect(meta).not.toContain('Standalone')
   })

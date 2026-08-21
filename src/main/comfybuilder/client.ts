@@ -1,7 +1,7 @@
 /**
  * ComfyBuilder catalog client - the read side of the functionality library.
  *
- * Lists distributions -> versions -> artifacts and resolves an artifact's
+ * Lists builds -> versions -> artifacts and resolves an artifact's
  * presigned download URL, over the deployed builder gateway. Every request
  * carries a bearer token from the injected {@link TokenProvider}; the token
  * never leaves this process and is never returned to callers. Failures surface
@@ -69,7 +69,7 @@ export interface ComfyBuilderClientOptions {
 }
 
 interface DistributionsResponse {
-  distributions?: Distribution[]
+  builds?: Distribution[]
 }
 interface VersionsResponse {
   versions?: DistributionVersion[]
@@ -94,16 +94,16 @@ export class ComfyBuilderClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
 
-  /** Every distribution visible to the signed-in workspace. */
+  /** Every build visible to the signed-in workspace. */
   async listDistributions(): Promise<Distribution[]> {
-    const body = await this.get<DistributionsResponse>('/v1/distributions')
-    return body.distributions ?? []
+    const body = await this.get<DistributionsResponse>('/v1/builds')
+    return body.builds ?? []
   }
 
-  /** Versions (build history) of one distribution. */
+  /** Versions (build history) of one build. */
   async listVersions(distributionId: string): Promise<DistributionVersion[]> {
     const body = await this.get<VersionsResponse>(
-      `/v1/distributions/${encodeURIComponent(distributionId)}/versions`
+      `/v1/builds/${encodeURIComponent(distributionId)}/versions`
     )
     return body.versions ?? []
   }
@@ -113,7 +113,7 @@ export class ComfyBuilderClient {
     versionId: string
   ): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
     const body = await this.get<VersionDetailResponse>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}`
+      `/v1/build-versions/${encodeURIComponent(versionId)}`
     )
     return { version: body.version, artifacts: body.artifacts ?? [] }
   }
@@ -126,7 +126,7 @@ export class ComfyBuilderClient {
    */
   async fetchModelManifest(versionId: string): Promise<ModelManifest> {
     const body = await this.get<Partial<ModelManifest>>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}/manifest`
+      `/v1/build-versions/${encodeURIComponent(versionId)}/manifest`
     )
     if (!Array.isArray(body.models)) {
       throw new ComfyBuilderApiError(

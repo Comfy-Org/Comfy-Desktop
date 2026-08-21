@@ -254,7 +254,7 @@ function artifactFromRecord(inst: InstallationRecord): Artifact {
   const gpu = inst.artifactGpu as ArtifactGpu | undefined
   if (!id || !os || !gpu) {
     throw new Error(
-      'This installation record is missing its build identity (artifact id, OS, or GPU) and cannot be installed. Remove it and install the distribution again.'
+      'This installation record is missing its build identity (artifact id, OS, or GPU) and cannot be installed. Remove it and install the build again.'
     )
   }
   return {
@@ -472,7 +472,7 @@ async function installEnvironmentLocked(
 export const comfybuilder: SourcePlugin = {
   id: 'comfybuilder',
   label: 'ComfyBuilder',
-  description: 'Install a ComfyUI distribution built with ComfyBuilder.',
+  description: 'Install a ComfyUI build from ComfyBuilder.',
   category: 'local',
   // Never a "New Install" wizard source: records are created by the dev-platform
   // distribution flow, so it must not appear in the generic source picker.

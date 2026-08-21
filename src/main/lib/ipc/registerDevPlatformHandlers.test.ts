@@ -287,7 +287,7 @@ describe('registerDevPlatformHandlers', () => {
     const result = await handler('comfybuilder:installDistribution')({}, 'd1')
     expect(result).toEqual({
       ok: false,
-      message: '"Image Baseline" already installs this distribution.'
+      message: '"Image Baseline" already installs this build.'
     })
     expect(mocks.add).not.toHaveBeenCalled()
   })
