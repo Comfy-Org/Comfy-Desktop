@@ -394,47 +394,6 @@ describe('resolveAssetSavePath', () => {
 })
 
 describe('asset download retries', () => {
-  type ManagedAssetAdmission =
-    | { status: 'already-present' | 'not-started' }
-    | { status: 'accepted' | 'joined'; downloadId: string }
-
-  type StartManagedAssetDownload = (
-    win: Electron.BrowserWindow,
-    url: string,
-    filename: string,
-    outputDir: string,
-    authToken?: string,
-    senderContents?: Electron.WebContents,
-    options?: { existingFilePolicy?: 'deduplicate' | 'skip' }
-  ) => Promise<ManagedAssetAdmission>
-
-  function startManagedAssetDownload(
-    ...args: Parameters<StartManagedAssetDownload>
-  ): Promise<ManagedAssetAdmission> {
-    const start = (
-      mod as typeof mod & {
-        startManagedAssetDownload?: StartManagedAssetDownload
-      }
-    ).startManagedAssetDownload
-    return start?.(...args) ?? Promise.resolve({ status: 'not-started' })
-  }
-
-  function getActiveAssetDownload(
-    url: string,
-    filename: string,
-    outputDir: string
-  ): ComfyDownloadManager.DownloadProgress | undefined {
-    return (
-      mod as typeof mod & {
-        getActiveAssetDownload?: (
-          url: string,
-          filename: string,
-          outputDir: string
-        ) => ComfyDownloadManager.DownloadProgress | undefined
-      }
-    ).getActiveAssetDownload?.(url, filename, outputDir)
-  }
-
   it('preserves a deduplicated nested path resolved from Content-Disposition', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=hash.mp4'
@@ -725,7 +684,7 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const first = await startManagedAssetDownload(
+      const first = await mod.startManagedAssetDownload(
         h.win,
         url,
         'sample.png',
@@ -734,7 +693,7 @@ describe('asset download retries', () => {
         undefined,
         { existingFilePolicy: 'skip' }
       )
-      const joined = await startManagedAssetDownload(
+      const joined = await mod.startManagedAssetDownload(
         h.win,
         url,
         'sample.png',
@@ -743,7 +702,7 @@ describe('asset download retries', () => {
         undefined,
         { existingFilePolicy: 'skip' }
       )
-      const otherDestination = await startManagedAssetDownload(
+      const otherDestination = await mod.startManagedAssetDownload(
         h.win,
         url,
         'sample.png',
@@ -786,7 +745,7 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const admission = await startManagedAssetDownload(
+      const admission = await mod.startManagedAssetDownload(
         h.win,
         url,
         'sample.png',
@@ -799,11 +758,11 @@ describe('asset download retries', () => {
         throw new Error('Expected an accepted asset download')
       }
 
-      expect(getActiveAssetDownload(url, 'sample.png', firstDir)).toMatchObject({
+      expect(mod.getActiveAssetDownload(url, 'sample.png', firstDir)).toMatchObject({
         id: admission.downloadId,
         status: 'pending'
       })
-      expect(getActiveAssetDownload(url, 'sample.png', secondDir)).toBeUndefined()
+      expect(mod.getActiveAssetDownload(url, 'sample.png', secondDir)).toBeUndefined()
 
       const item = h.createItem(url)
       h.getWillDownload()!({}, item.item, null)
@@ -812,7 +771,7 @@ describe('asset download retries', () => {
       await fs.promises.writeFile(tempPath!, 'content')
       item.getDone()!({}, 'completed')
 
-      expect(getActiveAssetDownload(url, 'sample.png', firstDir)).toBeUndefined()
+      expect(mod.getActiveAssetDownload(url, 'sample.png', firstDir)).toBeUndefined()
     } finally {
       await fs.promises.rm(firstDir, { recursive: true, force: true })
       await fs.promises.rm(secondDir, { recursive: true, force: true })
@@ -828,7 +787,7 @@ describe('asset download retries', () => {
       await fs.promises.writeFile(path.join(outputDir, 'sample.png'), 'existing')
 
       await expect(
-        startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
+        mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
           existingFilePolicy: 'skip'
         })
       ).resolves.toEqual({ status: 'already-present' })
@@ -846,7 +805,7 @@ describe('asset download retries', () => {
 
     try {
       await expect(
-        startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
+        mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
           existingFilePolicy: 'skip'
         })
       ).resolves.toMatchObject({ status: 'accepted' })
@@ -875,7 +834,7 @@ describe('asset download retries', () => {
 
     try {
       await expect(
-        startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
+        mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
           existingFilePolicy: 'skip'
         })
       ).resolves.toMatchObject({ status: 'accepted' })
@@ -903,7 +862,7 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const admission = await startManagedAssetDownload(
+      const admission = await mod.startManagedAssetDownload(
         h.win,
         url,
         'sample.png',
