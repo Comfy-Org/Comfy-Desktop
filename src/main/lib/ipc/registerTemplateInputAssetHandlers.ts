@@ -3,7 +3,7 @@ import { get as getInstallation, type InstallationRecord } from '../../installat
 import {
   resolveInputDir,
   resolveTemplateInputAssetAvailability,
-  resolveTemplateInputAssets
+  resolveTemplateInputAssetSnapshot
 } from '../../sources/standalone/templateInputAssets'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
 import {
@@ -58,7 +58,8 @@ export function registerTemplateInputAssetHandlers({
       const context = await resolveRequestContext(event.sender)
       if (!context) return null
 
-      const assets = await resolveTemplateInputAssets(context.installation, templateId)
+      const assets = await resolveTemplateInputAssetSnapshot(context.installation, templateId)
+      if (!assets) return null
       const availability = await resolveTemplateInputAssetAvailability(
         context.installation,
         assets.map(({ filename }) => filename)
@@ -92,7 +93,10 @@ export function registerTemplateInputAssetHandlers({
         return { status: 'not-started' as const, reason: 'unavailable' as const }
       }
 
-      const assets = await resolveTemplateInputAssets(context.installation, templateId)
+      const assets = await resolveTemplateInputAssetSnapshot(context.installation, templateId)
+      if (!assets) {
+        return { status: 'not-started' as const, reason: 'unavailable' as const }
+      }
       const asset = assets.find((candidate) => candidate.assetId === assetId)
       if (!asset) {
         return { status: 'not-started' as const, reason: 'not-declared' as const }

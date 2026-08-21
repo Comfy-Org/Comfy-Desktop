@@ -100,19 +100,7 @@ function walkLoadNodes(nodes: unknown, out: DeclaredInputAsset[]): void {
   }
 }
 
-/**
- * Extract the de-duplicated, validated set of sample input assets a template
- * needs. Scans every Load* node (including subgraph definitions), keeps only
- * bare media filenames, and points each at the repo's `input/` dir. Returns `[]`
- * for templates with no image/media input or when the JSON can't be resolved.
- */
-export async function resolveTemplateInputAssets(
-  installation: InstallationRecord,
-  templateId: string
-): Promise<TemplateInputAsset[]> {
-  const json = await loadTemplateJson(installation, templateId)
-  if (!json || typeof json !== 'object') return []
-
+function extractTemplateInputAssets(json: object): TemplateInputAsset[] {
   const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
   const declarations: DeclaredInputAsset[] = []
   walkLoadNodes(doc.nodes, declarations)
@@ -141,6 +129,33 @@ export async function resolveTemplateInputAssets(
     })
   }
   return result
+}
+
+/**
+ * Resolve the de-duplicated, validated set of sample input assets a template
+ * declares. `null` means the workflow metadata could not be resolved; `[]`
+ * means it resolved successfully and declares no supported input media. The
+ * distinction matters to inspection UIs, which must not present an unknown
+ * requirement set as an empty one.
+ */
+export async function resolveTemplateInputAssetSnapshot(
+  installation: InstallationRecord,
+  templateId: string
+): Promise<TemplateInputAsset[] | null> {
+  const json = await loadTemplateJson(installation, templateId)
+  return json && typeof json === 'object' ? extractTemplateInputAssets(json) : null
+}
+
+/**
+ * Compatibility helper for the best-effort install path. A metadata failure
+ * remains “nothing to place” there; template-scoped inspection should use the
+ * nullable snapshot above instead.
+ */
+export async function resolveTemplateInputAssets(
+  installation: InstallationRecord,
+  templateId: string
+): Promise<TemplateInputAsset[]> {
+  return (await resolveTemplateInputAssetSnapshot(installation, templateId)) ?? []
 }
 
 /**
