@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   resolveAvailability: vi.fn(),
   resolveAssets: vi.fn(),
+  resolveSnapshot: vi.fn(),
   resolveInputDir: vi.fn(),
   getActiveAssetDownload: vi.fn(),
   startManagedAssetDownload: vi.fn()
@@ -23,6 +24,7 @@ vi.mock('../../installations', () => ({
 vi.mock('../../sources/standalone/templateInputAssets', () => ({
   resolveTemplateInputAssetAvailability: mocks.resolveAvailability,
   resolveTemplateInputAssets: mocks.resolveAssets,
+  resolveTemplateInputAssetSnapshot: mocks.resolveSnapshot,
   resolveInputDir: mocks.resolveInputDir
 }))
 
@@ -54,6 +56,7 @@ describe('registerTemplateInputAssetHandlers', () => {
     mocks.fromWebContents.mockReturnValue(win)
     mocks.getInstallation.mockResolvedValue(installation)
     mocks.resolveInputDir.mockReturnValue('/comfy/input')
+    mocks.resolveSnapshot.mockImplementation((...args) => mocks.resolveAssets(...args))
     const options = {
       findInstallationIdForWindow: () => 'install-1',
       isLocalInstallation: (candidate: { sourceId?: unknown }) =>
@@ -123,6 +126,22 @@ describe('registerTemplateInputAssetHandlers', () => {
       handler('desktop2-get-template-input-assets')({ sender }, { templateId: '../template-1' })
     ).resolves.toBeNull()
     expect(mocks.resolveAssets).not.toHaveBeenCalled()
+  })
+
+  it('does not claim there are no inputs when template metadata is unavailable', async () => {
+    mocks.resolveAssets.mockResolvedValue(null)
+
+    await expect(
+      handler('desktop2-get-template-input-assets')({ sender }, { templateId: 'template-1' })
+    ).resolves.toBeNull()
+    await expect(
+      handler('desktop2-download-template-input-asset')(
+        { sender },
+        { templateId: 'template-1', assetId: 'sample.png' }
+      )
+    ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
+    expect(mocks.resolveAvailability).not.toHaveBeenCalled()
+    expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
 
   it('fails closed when the sender is not bound to an installation', async () => {
@@ -205,6 +224,7 @@ describe('registerTemplateInputAssetHandlers', () => {
     })
     mocks.getActiveAssetDownload.mockReturnValue({
       id: 'download-1',
+      url: 'https://example.com/sample.png',
       filename: 'sample.png',
       progress: 0,
       status: 'pending'

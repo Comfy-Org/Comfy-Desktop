@@ -17,6 +17,15 @@ import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
 
 const { resolveTemplateInputAssets, resolveInputDir } = templateInputAssets
+const resolveTemplateInputAssetSnapshot =
+  (
+    templateInputAssets as typeof templateInputAssets & {
+      resolveTemplateInputAssetSnapshot?: (
+        installation: InstallationRecord,
+        templateId: string
+      ) => Promise<unknown>
+    }
+  ).resolveTemplateInputAssetSnapshot ?? resolveTemplateInputAssets
 const resolveTemplateInputAssetAvailability =
   (
     templateInputAssets as typeof templateInputAssets & {
@@ -110,6 +119,13 @@ describe('resolveTemplateInputAssets', () => {
   it('returns [] when the workflow JSON cannot be resolved', async () => {
     loadTemplateJson.mockResolvedValue(null)
     expect(await resolveTemplateInputAssets(inst, 't')).toEqual([])
+  })
+
+  it('keeps unresolved metadata distinct from a resolved template with no inputs', async () => {
+    loadTemplateJson.mockResolvedValue(null)
+
+    await expect(resolveTemplateInputAssetSnapshot(inst, 't')).resolves.toBeNull()
+    await expect(resolveTemplateInputAssets(inst, 't')).resolves.toEqual([])
   })
 })
 
