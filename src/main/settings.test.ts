@@ -306,6 +306,36 @@ describe('getMirrorConfig', () => {
       useChineseMirrors: false
     })
   })
+
+  it('normalizes a hand-edited whitespace hfMirror to undefined', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ hfMirror: '   ' }, null, 2),
+      'utf-8'
+    )
+    expect(settings.getMirrorConfig().hfMirror).toBeUndefined()
+  })
+
+  it('trims a hand-edited hfMirror with surrounding whitespace', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ hfMirror: '  https://hf-mirror.com/  ' }, null, 2),
+      'utf-8'
+    )
+    expect(settings.getMirrorConfig().hfMirror).toBe('https://hf-mirror.com/')
+  })
+
+  it('drops a non-string hfMirror loaded from settings.json', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ hfMirror: 12345 }, null, 2),
+      'utf-8'
+    )
+    expect(settings.getMirrorConfig().hfMirror).toBeUndefined()
+  })
 })
 
 describe('settings path sanitization', () => {
