@@ -1673,6 +1673,25 @@ export async function startAssetDownload(
   return admission.status !== 'not-started'
 }
 
+/** Return a read-only progress snapshot only when this exact asset destination
+ *  is currently owned by a managed job. URL alone is intentionally
+ *  insufficient because one source may be downloading into multiple installs. */
+export function getActiveAssetDownload(
+  url: string,
+  filename: string,
+  outputDir: string
+): DownloadProgress | undefined {
+  const safeFilename = sanitizeAssetFilename(filename, outputDir)
+  if (!safeFilename) return undefined
+  const requestedDestKey = canonicalDestKey(path.join(outputDir, safeFilename))
+  const pending = activeJobsForUrl(url).find(
+    (candidate) =>
+      candidate.kind === 'asset' &&
+      canonicalDestKey(candidate.requestedSavePath ?? candidate.savePath) === requestedDestKey
+  )
+  return pending ? { ...pending.lastProgress } : undefined
+}
+
 async function deduplicatePath(filePath: string): Promise<string> {
   if (!(await fileExists(filePath))) return filePath
   const dir = path.dirname(filePath)
