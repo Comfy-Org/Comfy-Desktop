@@ -771,9 +771,15 @@ export function getMirrorConfig(): {
 } {
   return {
     pypiMirror: get('pypiMirror'),
-    hfMirror: get('hfMirror'),
+    hfMirror: normalizeMirror(get('hfMirror')),
     useChineseMirrors: get('useChineseMirrors') === true
   }
+}
+
+function normalizeMirror(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed
 }
 
 // Let paths.defaultInstallDir() honor the user's configured location without
