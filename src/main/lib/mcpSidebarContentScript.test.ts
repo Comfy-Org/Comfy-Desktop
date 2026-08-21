@@ -51,12 +51,24 @@ describe('getMcpSidebarContentScript', () => {
     expect(() => new Function(script)).not.toThrow()
   })
 
-  it('bails when the desktop MCP-setup opener is absent', () => {
-    expect(script).toContain(`typeof window.__comfyDesktop2.openMcpSetup !== 'function'`)
+  it('injects nothing when the desktop MCP-setup opener is absent', () => {
+    // Bridge present but openMcpSetup missing → the guard must bail before injecting.
+    Reflect.set(window, '__comfyDesktop2', { Telemetry: { capture: vi.fn() } })
+    setupDom()
+    new Function(script)()
+    expect(document.getElementById('comfy-desktop-mcp-btn')).toBeNull()
+    expect(Reflect.get(window, '__comfyDesktopMcpSidebar')).toBeUndefined()
   })
 
-  it('guards against double injection', () => {
-    expect(script).toContain('window.__comfyDesktopMcpSidebar')
+  it('the re-entry guard stops a second run from re-injecting', () => {
+    installBridge()
+    setupDom()
+    new Function(script)()
+    document.getElementById('comfy-desktop-mcp-btn')?.remove()
+    // STATE persists, so a re-run must bail at the top-level guard and NOT
+    // re-inject even though the button is gone from the DOM.
+    new Function(script)()
+    expect(document.getElementById('comfy-desktop-mcp-btn')).toBeNull()
   })
 
   it('injects the plug button into the bottom cluster, above the help icon', () => {
@@ -111,6 +123,32 @@ describe('getMcpSidebarContentScript', () => {
     Reflect.deleteProperty(window, '__comfyDesktopMcpSidebar')
     new Function(script)()
     expect(document.querySelectorAll('#comfy-desktop-mcp-btn')).toHaveLength(1)
+  })
+
+  it('falls back to the .mt-auto cluster when the help button is absent', () => {
+    installBridge()
+    // Toolbar with a bottom cluster but no help-center button.
+    document.body.innerHTML = `
+      <nav data-testid="side-toolbar"><div class="mt-auto"><button>gear</button></div></nav>
+    `
+    new Function(script)()
+    const btn = document.getElementById('comfy-desktop-mcp-btn')
+    expect(btn).not.toBeNull()
+    expect(btn?.parentElement?.className).toBe('mt-auto')
+  })
+
+  it('re-injects via the observer when the toolbar re-renders the button away', async () => {
+    installBridge()
+    setupDom()
+    new Function(script)()
+    expect(document.getElementById('comfy-desktop-mcp-btn')).not.toBeNull()
+
+    // Simulate a toolbar re-render dropping our button; the observer restores it.
+    document.getElementById('comfy-desktop-mcp-btn')?.remove()
+    document.querySelector('.mt-auto')?.appendChild(document.createElement('span'))
+    await Promise.resolve()
+
+    expect(document.getElementById('comfy-desktop-mcp-btn')).not.toBeNull()
   })
 
   it('memoizes the assembled script', () => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { ref } from 'vue'
 import { emitTelemetryAction } from '../../lib/telemetry'
+import BaseModal from '../../components/ui/BaseModal.vue'
 import McpVideoPlayer from './McpVideoPlayer.vue'
 
 const emit = defineEmits<{
@@ -24,12 +25,6 @@ function toggleOption(next: AgentMode): void {
   openOption.value = next
   emitTelemetryAction('comfy.desktop.mcp.option_selected', { option: next })
 }
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape') dismiss()
-}
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 interface CopyStep {
   client: string
@@ -105,7 +100,7 @@ async function copy(step: CopyStep): Promise<void> {
 }
 
 function openTerminal(): void {
-  emitTelemetryAction('comfy.desktop.mcp.path_selected', { path: 'have_agent' })
+  emitTelemetryAction('comfy.desktop.mcp.terminal_opened', {})
   emit('openTerminal')
   emit('close')
 }
@@ -123,13 +118,16 @@ function dismiss(): void {
 </script>
 
 <template>
-  <div class="mcp-backdrop" @click.self="dismiss">
-    <div
-      class="mcp-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Connect an agent with Comfy MCP"
-    >
+  <BaseModal
+    :open="true"
+    size="xl"
+    aria-label="Connect an agent with Comfy MCP"
+    :show-close-button="false"
+    blur-overlay
+    content-class="mcp-modal-panel"
+    @close="dismiss"
+  >
+    <div class="mcp-modal">
       <section class="mcp-media">
         <McpVideoPlayer :src="VIDEO_SRC" aria-label="How to connect an agent with Comfy MCP" />
       </section>
@@ -313,47 +311,32 @@ function dismiss(): void {
         </footer>
       </section>
     </div>
-  </div>
+  </BaseModal>
 </template>
 
 <style scoped>
-.mcp-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  background: rgba(6, 5, 8, 0.62);
-  backdrop-filter: blur(4px);
-  animation: mcp-fade 160ms ease;
-}
-@keyframes mcp-fade {
-  from {
-    opacity: 0;
-  }
+/* BaseModal owns the overlay, focus trap, scroll lock, ESC and fade. This
+   contentClass strips its default padded panel so the two-column layout can
+   bleed edge-to-edge. */
+:deep(.mcp-modal-panel) {
+  width: min(100%, 1040px);
+  max-width: min(100%, 1040px);
+  max-height: min(720px, calc(100vh - 64px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--neutral-100) 9%, transparent);
 }
 
 .mcp-modal {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  width: min(100%, 1040px);
+  width: 100%;
   max-height: min(720px, calc(100vh - 64px));
   overflow: hidden;
   border-radius: 16px;
   background: var(--neutral-800);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 9%, transparent);
-  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
   color: var(--text);
   font-family: var(--font-sans);
-  animation: mcp-rise 220ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes mcp-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.985);
-  }
 }
 
 /* ---- Media (bleeds edge-to-edge) ---- */

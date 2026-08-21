@@ -11,9 +11,11 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 
-// Body modes the panel WebContentsView can render. Mirrors `BodyMode`
-// in main; `'comfy'` is admitted so the renderer can reflect main's
-// activePanel after a drawer close.
+/**
+ * Body modes the panel WebContentsView can render. Mirrors `BodyMode`
+ * in main; `'comfy'` is admitted so the renderer can reflect main's
+ * activePanel after a drawer close.
+ */
 export type PanelKey =
   | 'comfy'
   | 'comfy-lifecycle'
