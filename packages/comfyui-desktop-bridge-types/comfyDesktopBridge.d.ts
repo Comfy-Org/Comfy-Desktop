@@ -15,6 +15,47 @@ export interface ComfyDownloadProgress {
   error?: string
   isImage?: boolean
 }
+export interface ComfyTemplateInputReference {
+  templateId: string
+  assetId: string
+}
+export interface ComfyTemplateInputAssetDownload {
+  downloadId: string
+  filename: string
+  progress: number
+  receivedBytes?: number
+  totalBytes?: number
+  status: ComfyDownloadProgress['status']
+  error?: string
+}
+export interface ComfyTemplateInputDownloadProgress extends ComfyTemplateInputAssetDownload {
+  /** Every template asset currently sharing this managed download job. */
+  templateInputs: ComfyTemplateInputReference[]
+}
+export interface ComfyTemplateInputAsset {
+  /** Opaque, template-scoped identifier accepted by `downloadTemplateInputAsset`. */
+  assetId: string
+  filename: string
+  mediaType: 'image' | 'video' | 'audio'
+  /** Desktop-resolved public URL for previewing this declared template asset. */
+  previewUrl: string
+  availability: 'present' | 'missing' | 'unknown'
+  /** Present when this exact asset destination already has a managed job. */
+  activeDownload?: ComfyTemplateInputAssetDownload
+}
+export type ComfyTemplateInputAssetDownloadResult =
+  | {
+      status: 'already-present'
+    }
+  | {
+      status: 'accepted' | 'joined'
+      /** Admission snapshot seeds UI state even if the first IPC event raced ahead. */
+      download: ComfyTemplateInputAssetDownload
+    }
+  | {
+      status: 'not-started'
+      reason: 'invalid-request' | 'not-declared' | 'unavailable'
+    }
 export interface TerminalRestore {
   buffer: string[]
   size: {
@@ -80,6 +121,18 @@ export interface ComfyDesktop2Bridge {
   openModelAccessPage?: (url: string) => Promise<boolean>
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
   downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>
+  /** Resolve only assets declared by this template. `null` means Desktop cannot
+   *  authorize the current renderer/installation; `[]` means none are declared. */
+  getTemplateInputAssets?: (templateId: string) => Promise<ComfyTemplateInputAsset[] | null>
+  /** Start or join the managed download for one declared template asset. */
+  downloadTemplateInputAsset?: (
+    templateId: string,
+    assetId: string
+  ) => Promise<ComfyTemplateInputAssetDownloadResult>
+  /** Download events decorated with the template asset identities that own the job. */
+  onTemplateInputDownloadProgress?: (
+    callback: (data: ComfyTemplateInputDownloadProgress) => void
+  ) => () => void
   pauseDownload?: (url: string) => Promise<boolean>
   resumeDownload?: (url: string) => Promise<boolean>
   cancelDownload?: (url: string) => Promise<boolean>
