@@ -432,8 +432,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       // sidebar that opens the desktop MCP setup modal, guiding the user to
       // connect their own agent. Same install gate as the terminal (the modal
       // drives that shell), additionally behind the `desktop.mcp_nudge`
-      // experiment flag.
-      if (getFlag(MCP_NUDGE_FLAG) === true) {
+      // experiment flag. `COMFY_FORCE_MCP_NUDGE=1` is a QA escape hatch that
+      // forces it on without provisioning the flag; off in normal runs.
+      if (process.env.COMFY_FORCE_MCP_NUDGE === '1' || getFlag(MCP_NUDGE_FLAG) === true) {
         recordExposure(MCP_NUDGE_FLAG, 'enabled', 'cache')
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       }
