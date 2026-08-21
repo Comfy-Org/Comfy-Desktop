@@ -74,7 +74,7 @@ describe('ComfyBuilderClient', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists builds with a Bearer token at the right path', async () => {
-    const f = mockFetch(200, { builds: [{ id: 'b1', name: 'Build One' }] })
+    const f = mockFetch(200, { distributions: [{ id: 'b1', name: 'Build One' }] })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({
       baseUrl: 'https://api.test/builder',
@@ -83,7 +83,7 @@ describe('ComfyBuilderClient', () => {
     const builds = await client.listBuilds()
     expect(builds).toEqual([{ id: 'b1', name: 'Build One' }])
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/builds')
+    expect(call[0]).toBe('https://api.test/builder/v1/distributions')
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
   })
 
@@ -124,7 +124,7 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({ snapshot: { ...snapshot, installationName: 'Local One' } })
     })
-    expect(calls[1]![0]).toBe('https://api.test/builder/v1/builds')
+    expect(calls[1]![0]).toBe('https://api.test/builder/v1/distributions')
     expect(calls[1]![1]).toMatchObject({
       method: 'POST',
       headers: {
@@ -187,14 +187,14 @@ describe('ComfyBuilderClient', () => {
     expect(await client.resolveDownloadUrl('a1')).toBe('https://gcs/signed')
   })
 
-  it('lists versions from the build path', async () => {
+  it('lists versions from the Builder path', async () => {
     const f = mockFetch(200, { versions: [{ id: 'v1', version: 1, status: 'complete' }] })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
 
     await expect(client.listVersions('build/one')).resolves.toHaveLength(1)
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/builds/build%2Fone/versions')
+    expect(call[0]).toBe('https://api.test/builder/v1/distributions/build%2Fone/versions')
   })
 
   it('rejects a non-HTTPS artifact URL outside loopback', async () => {
@@ -221,7 +221,7 @@ describe('ComfyBuilderClient', () => {
     expect(m.modelPolicy).toBeNull()
     expect(m.partnerNodePolicy).toBeNull()
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/build-versions/ver-9/manifest')
+    expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/ver-9/manifest')
   })
 
   it('rejects a manifest response without an explicit model list', async () => {
@@ -273,7 +273,7 @@ describe('ComfyBuilderClient', () => {
       archiveRef: 'blob/a1'
     })
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/build-versions/version%2Fone')
+    expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/version%2Fone')
   })
 
   it('throws unauthorized (no network) when signed out', async () => {
