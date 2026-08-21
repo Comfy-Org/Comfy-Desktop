@@ -32,6 +32,11 @@ let settings: {
   get: (key: string) => unknown
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
+  getMirrorConfig: () => {
+    pypiMirror?: string
+    hfMirror?: string
+    useChineseMirrors?: boolean
+  }
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -266,6 +271,40 @@ describe('settings unset/default semantics', () => {
     settings.set('pypiMirror', '   ')
     expect(settings.get('pypiMirror')).toBeUndefined()
     expect(readPersistedSettings()).not.toHaveProperty('pypiMirror')
+  })
+
+  it('treats empty and whitespace-only strings as unset for hfMirror', () => {
+    settings.set('hfMirror', 'https://hf-mirror.com')
+    expect(settings.get('hfMirror')).toBe('https://hf-mirror.com')
+
+    settings.set('hfMirror', '')
+    expect(settings.get('hfMirror')).toBeUndefined()
+    expect(readPersistedSettings()).not.toHaveProperty('hfMirror')
+
+    settings.set('hfMirror', 'https://other.example/')
+    settings.set('hfMirror', '   ')
+    expect(settings.get('hfMirror')).toBeUndefined()
+    expect(readPersistedSettings()).not.toHaveProperty('hfMirror')
+  })
+})
+
+describe('getMirrorConfig', () => {
+  it('exposes hfMirror alongside pypiMirror', () => {
+    settings.set('hfMirror', 'https://hf-mirror.com')
+    settings.set('pypiMirror', 'https://mirrors.aliyun.com/pypi/simple/')
+    expect(settings.getMirrorConfig()).toEqual({
+      hfMirror: 'https://hf-mirror.com',
+      pypiMirror: 'https://mirrors.aliyun.com/pypi/simple/',
+      useChineseMirrors: false
+    })
+  })
+
+  it('omits hfMirror when unset', () => {
+    expect(settings.getMirrorConfig()).toEqual({
+      hfMirror: undefined,
+      pypiMirror: undefined,
+      useChineseMirrors: false
+    })
   })
 })
 
