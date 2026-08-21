@@ -78,37 +78,8 @@ interface VersionDetailResponse {
 interface SignedDownloadResponse {
   downloadUrl?: string
 }
-interface SnapshotNode {
-  name: string
-  cnrId?: string
-  registryVersion?: string
-  repository?: string
-  commit?: string
-}
-interface SnapshotImportReport {
-  unresolvedNodes: string[]
-  notInRegistry: string[]
-  registryPending: string[]
-  skippedPins: string[]
-  unpinnablePins: string[]
-  unverifiedPins: string[]
-  collidingNodes?: string[]
-  droppedComfyVersion?: string
-  pythonSatisfied: boolean
-}
 interface SnapshotResolutionResponse {
   definition?: unknown
-  comfyVersion?: unknown
-  pythonVersion?: unknown
-  nodes?: unknown
-  report?: unknown
-}
-interface SnapshotResolution {
-  definition: Record<string, unknown>
-  comfyVersion: string
-  pythonVersion: string
-  nodes: SnapshotNode[]
-  report: SnapshotImportReport
 }
 interface CreatedBuildResponse {
   id?: unknown
@@ -117,80 +88,6 @@ interface CreatedBuildResponse {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === 'string'
-}
-
-function isSnapshotNode(value: unknown): value is SnapshotNode {
-  if (!isRecord(value)) return false
-  return (
-    typeof value.name === 'string' &&
-    value.name.length > 0 &&
-    isOptionalString(value.cnrId) &&
-    isOptionalString(value.registryVersion) &&
-    isOptionalString(value.repository) &&
-    isOptionalString(value.commit)
-  )
-}
-
-function normalizeSnapshotReport(value: unknown): SnapshotImportReport | null {
-  if (!isRecord(value) || typeof value.pythonSatisfied !== 'boolean') return null
-  const unresolvedNodes = value.unresolvedNodes
-  const notInRegistry = value.notInRegistry
-  const registryPending = value.registryPending
-  const skippedPins = value.skippedPins
-  const unpinnablePins = value.unpinnablePins
-  const unverifiedPins = value.unverifiedPins
-  const collidingNodes = value.collidingNodes
-  if (
-    (unresolvedNodes !== undefined && !isStringArray(unresolvedNodes)) ||
-    (notInRegistry !== undefined && !isStringArray(notInRegistry)) ||
-    (registryPending !== undefined && !isStringArray(registryPending)) ||
-    (skippedPins !== undefined && !isStringArray(skippedPins)) ||
-    (unpinnablePins !== undefined && !isStringArray(unpinnablePins)) ||
-    (unverifiedPins !== undefined && !isStringArray(unverifiedPins)) ||
-    (collidingNodes !== undefined && !isStringArray(collidingNodes)) ||
-    !isOptionalString(value.droppedComfyVersion)
-  ) {
-    return null
-  }
-  return {
-    unresolvedNodes: unresolvedNodes ?? [],
-    notInRegistry: notInRegistry ?? [],
-    registryPending: registryPending ?? [],
-    skippedPins: skippedPins ?? [],
-    unpinnablePins: unpinnablePins ?? [],
-    unverifiedPins: unverifiedPins ?? [],
-    ...(collidingNodes ? { collidingNodes } : {}),
-    ...(value.droppedComfyVersion ? { droppedComfyVersion: value.droppedComfyVersion } : {}),
-    pythonSatisfied: value.pythonSatisfied
-  }
-}
-
-function normalizeSnapshotResolution(value: SnapshotResolutionResponse): SnapshotResolution | null {
-  if (
-    !isRecord(value.definition) ||
-    !isOptionalString(value.comfyVersion) ||
-    !isOptionalString(value.pythonVersion)
-  ) {
-    return null
-  }
-  const nodes = value.nodes ?? []
-  const report = normalizeSnapshotReport(value.report)
-  if (!Array.isArray(nodes) || !nodes.every(isSnapshotNode) || !report) return null
-  return {
-    definition: value.definition,
-    comfyVersion: value.comfyVersion ?? '',
-    pythonVersion: value.pythonVersion ?? '',
-    nodes,
-    report
-  }
 }
 
 function isOpaqueId(value: unknown): value is string {
@@ -228,33 +125,21 @@ export class ComfyBuilderClient {
       { snapshot: envelope },
       token
     )
-    const resolved = normalizeSnapshotResolution(resolvedBody)
-    if (!resolved) {
+    if (!isRecord(resolvedBody.definition)) {
       throw new ComfyBuilderApiError('server', 'Builder returned an invalid snapshot resolution')
     }
 
-    const definition = {
-      ...resolved.definition,
-      uiDesktopSnapshotImport: {
-        installationName: name,
-        comfyVersion: resolved.comfyVersion,
-        pythonVersion: resolved.pythonVersion,
-        nodes: resolved.nodes,
-        pipRequirements:
-          typeof resolved.definition.pipDependencies === 'string'
-            ? resolved.definition.pipDependencies.split(/\r?\n/).filter(Boolean)
-            : [],
-        report: resolved.report
-      }
-    }
-    const created = await this.post<CreatedBuildResponse>('/v1/builds', { name, definition }, token)
+    const created = await this.post<CreatedBuildResponse>(
+      '/v1/builds',
+      { name, definition: resolvedBody.definition },
+      token
+    )
     if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
       throw new ComfyBuilderApiError('server', 'Builder returned an invalid draft Build')
     }
     const query = new URLSearchParams({
       workspace: created.workspaceId,
-      edit: created.id,
-      step: 'import'
+      edit: created.id
     })
     return {
       buildId: created.id,

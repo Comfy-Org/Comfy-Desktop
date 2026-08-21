@@ -110,7 +110,7 @@ describe('ComfyBuilderClient', () => {
     await expect(client.createBuildDraft(snapshot)).resolves.toEqual({
       buildId: 'build/id+1',
       workspaceId: 'workspace/id+1',
-      editUrl: '/profile/builds/new?workspace=workspace%2Fid%2B1&edit=build%2Fid%2B1&step=import'
+      editUrl: '/profile/builds/new?workspace=workspace%2Fid%2B1&edit=build%2Fid%2B1'
     })
     const calls = (f as unknown as ReturnType<typeof vi.fn>).mock.calls
     expect(calls).toHaveLength(2)
@@ -134,17 +134,7 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({
         name: 'Local One',
-        definition: {
-          ...resolution.definition,
-          uiDesktopSnapshotImport: {
-            installationName: 'Local One',
-            comfyVersion: resolution.comfyVersion,
-            pythonVersion: resolution.pythonVersion,
-            nodes: resolution.nodes,
-            pipRequirements: ['einops==0.8.0', 'numpy==2.0.0'],
-            report: resolution.report
-          }
-        }
+        definition: resolution.definition
       })
     })
     expect(getAccessToken).toHaveBeenCalledOnce()
