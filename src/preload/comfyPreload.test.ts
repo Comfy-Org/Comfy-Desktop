@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  ComfyDesktop2BridgeImplementation,
+  ComfyDownloadProgress,
+  TerminalRestore
+} from '../types/comfyDesktopBridge'
 
 const mocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
@@ -21,53 +26,21 @@ vi.mock('electron', () => ({
 }))
 
 import './comfyPreload'
-import type { LegacyTerminalBridge } from './comfyPreload'
-import type { ComfyDesktop2BridgeImplementation } from '../types/comfyDesktopBridge'
 
-type TemplateInputRef = { templateId: string; assetId: string }
-type TemplateInputDownload = {
-  downloadId: string
-  filename: string
-  progress: number
-  status: 'pending' | 'downloading' | 'completed' | 'error'
-  error?: string
-}
-type TemplateInputProgress = TemplateInputDownload & {
-  templateInputs: TemplateInputRef[]
-}
-
-type HostedFrontendBridge = ComfyDesktop2BridgeImplementation & {
-  getTemplateInputAssets: (templateId: string) => Promise<
-    | {
-        assetId: string
-        filename: string
-        mediaType: 'image' | 'video' | 'audio'
-        previewUrl: string
-        availability: 'present' | 'missing' | 'unknown'
-        activeDownload?: TemplateInputDownload
-      }[]
-    | null
-  >
-  downloadTemplateInputAsset: (
-    templateId: string,
-    assetId: string
-  ) => Promise<
-    | { status: 'already-present' }
-    | { status: 'accepted' | 'joined'; download: TemplateInputDownload }
-    | { status: 'not-started'; reason: string }
-  >
-  onTemplateInputDownloadProgress: (callback: (data: TemplateInputProgress) => void) => () => void
-  Terminal: LegacyTerminalBridge
+type HostedFrontendBridge = Omit<ComfyDesktop2BridgeImplementation, 'Terminal'> & {
+  Terminal: ComfyDesktop2BridgeImplementation['Terminal'] & {
+    restore: () => Promise<TerminalRestore>
+  }
 }
 
 function hostedBridge(): HostedFrontendBridge {
   return mocks.exposeInMainWorld.mock.calls[0]![1] as HostedFrontendBridge
 }
 
-function downloadProgressHandler(): (event: unknown, progress: Record<string, unknown>) => void {
+function downloadProgressHandler(): (event: unknown, progress: ComfyDownloadProgress) => void {
   const call = mocks.on.mock.calls.find(([channel]) => channel === 'desktop2-download-progress')
   expect(call).toBeDefined()
-  return call![1] as (event: unknown, progress: Record<string, unknown>) => void
+  return call![1] as (event: unknown, progress: ComfyDownloadProgress) => void
 }
 
 describe('comfyPreload model access bridge', () => {
@@ -136,6 +109,7 @@ describe('comfyPreload template input asset bridge', () => {
         {},
         {
           id: 'download-1',
+          url: 'https://example.com/sample.png',
           filename: 'sample.png',
           progress: 0,
           status: 'pending'
@@ -235,6 +209,7 @@ describe('comfyPreload template input asset bridge', () => {
       {},
       {
         id: 'shared-download',
+        url: 'https://example.com/sample.png',
         filename: 'sample.png',
         progress: 0.5,
         status: 'downloading'
@@ -274,6 +249,7 @@ describe('comfyPreload template input asset bridge', () => {
       {},
       {
         id: 'failed-download',
+        url: 'https://example.com/sample.png',
         filename: 'sample.png',
         progress: 0.6,
         status: 'error',
@@ -286,6 +262,7 @@ describe('comfyPreload template input asset bridge', () => {
       {},
       {
         id: 'failed-download',
+        url: 'https://example.com/sample.png',
         filename: 'sample.png',
         progress: 1,
         status: 'completed'
@@ -297,6 +274,7 @@ describe('comfyPreload template input asset bridge', () => {
       {},
       {
         id: 'retry-download',
+        url: 'https://example.com/sample.png',
         filename: 'sample.png',
         progress: 0.25,
         status: 'downloading'
@@ -341,6 +319,7 @@ describe('comfyPreload template input asset bridge', () => {
       {},
       {
         id: 'active-download',
+        url: 'https://example.com/sample.png',
         filename: 'sample.png',
         progress: 0.5,
         status: 'downloading'
