@@ -3,7 +3,7 @@ import { getAppVersion } from '../lib/ipc'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
-import { getMcpNudgeContentScript } from '../lib/mcpNudgeContentScript'
+import { getMcpSidebarContentScript } from '../lib/mcpSidebarContentScript'
 import { getFlag, recordExposure } from '../lib/experiments'
 import { closeInstallPopouts } from '../lib/popoutWindows'
 import { _operationAborts, sourceMap } from '../lib/ipc/shared'
@@ -426,15 +426,14 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // `comfyTerminalContentScript.ts` for the dedupe guard.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
-      // Local MCP distribution surface: a dismiss-once nudge + setup panel that
-      // guides the user to connect their own agent over MCP, using the terminal
-      // as the workspace. Same install gate as the terminal (it opens that shell),
-      // additionally behind the `desktop.mcp_nudge` experiment flag.
-      // `COMFY_FORCE_MCP_NUDGE=1` forces it on for local dev/QA before the
-      // experiment flag is provisioned.
-      if (process.env.COMFY_FORCE_MCP_NUDGE === '1' || getFlag(MCP_NUDGE_FLAG) === true) {
+      // Local MCP distribution surface: a plug icon in the ComfyUI left
+      // sidebar that opens the desktop MCP setup modal, guiding the user to
+      // connect their own agent. Same install gate as the terminal (the modal
+      // drives that shell), additionally behind the `desktop.mcp_nudge`
+      // experiment flag.
+      if (getFlag(MCP_NUDGE_FLAG) === true) {
         recordExposure(MCP_NUDGE_FLAG, 'enabled', 'cache')
-        comfyContents.executeJavaScript(getMcpNudgeContentScript()).catch(() => {})
+        comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       }
     }
     // Cloud-only patches (popup-blocked toast suppression + post-signin
