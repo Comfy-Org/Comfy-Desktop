@@ -32,7 +32,10 @@ function togglePlay(): void {
   const el = videoEl.value
   if (!el) return
   if (el.paused) {
-    el.play().then(() => (playing.value = true), () => {})
+    el.play().then(
+      () => (playing.value = true),
+      () => {}
+    )
   } else {
     el.pause()
     playing.value = false
@@ -112,8 +115,18 @@ function toggleMute(): void {
           aria-hidden="true"
         >
           <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke-width="2" stroke-linecap="round" />
-          <path d="M19.07 4.93a10 10 0 0 1 0 14.14" fill="none" stroke-width="2" stroke-linecap="round" />
+          <path
+            d="M15.54 8.46a5 5 0 0 1 0 7.07"
+            fill="none"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+          <path
+            d="M19.07 4.93a10 10 0 0 1 0 14.14"
+            fill="none"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
         </svg>
       </button>
     </div>
