@@ -4,37 +4,28 @@ import { getMcpSidebarContentScript } from './mcpSidebarContentScript'
 describe('getMcpSidebarContentScript', () => {
   const script = getMcpSidebarContentScript()
 
-  type SidebarTab = {
-    id: string
-    icon: string
-    type: string
-    iconBadge: () => string | null
-    render: () => void
+  const setupDom = (): void => {
+    // Minimal left-toolbar shape: a bottom (.mt-auto) cluster with the help
+    // button, which the script anchors off.
+    document.body.innerHTML = `
+      <nav data-testid="side-toolbar">
+        <div class="top"></div>
+        <div class="mt-auto">
+          <button data-testid="help-center-button">?</button>
+          <button data-testid="settings">gear</button>
+        </div>
+      </nav>
+    `
   }
 
-  const setupComfy = (): {
+  const installBridge = (): {
     capture: ReturnType<typeof vi.fn>
     openMcpSetup: ReturnType<typeof vi.fn>
-    toggleSidebarTab: ReturnType<typeof vi.fn>
-    tabs: SidebarTab[]
   } => {
     const capture = vi.fn()
     const openMcpSetup = vi.fn(() => Promise.resolve(true))
-    const toggleSidebarTab = vi.fn()
-    const tabs: SidebarTab[] = []
     Reflect.set(window, '__comfyDesktop2', { openMcpSetup, Telemetry: { capture } })
-    Reflect.set(window, 'comfyAPI', {
-      app: {
-        app: {
-          extensionManager: {
-            registerSidebarTab: (tab: SidebarTab) => tabs.push(tab),
-            getSidebarTabs: () => tabs,
-            toggleSidebarTab
-          }
-        }
-      }
-    })
-    return { capture, openMcpSetup, toggleSidebarTab, tabs }
+    return { capture, openMcpSetup }
   }
 
   beforeEach(() => {
@@ -43,11 +34,15 @@ describe('getMcpSidebarContentScript', () => {
   })
 
   afterEach(() => {
+    const state = Reflect.get(window, '__comfyDesktopMcpSidebar') as
+      | { observer?: MutationObserver }
+      | undefined
+    state?.observer?.disconnect()
     vi.clearAllTimers()
     vi.useRealTimers()
+    document.body.innerHTML = ''
     window.localStorage.clear()
     Reflect.deleteProperty(window, '__comfyDesktop2')
-    Reflect.deleteProperty(window, 'comfyAPI')
     Reflect.deleteProperty(window, '__comfyDesktopMcpSidebar')
   })
 
@@ -64,40 +59,58 @@ describe('getMcpSidebarContentScript', () => {
     expect(script).toContain('window.__comfyDesktopMcpSidebar')
   })
 
-  it('registers a plug sidebar tab through the extension manager', () => {
-    const { tabs } = setupComfy()
+  it('injects the plug button into the bottom cluster, above the help icon', () => {
+    installBridge()
+    setupDom()
     new Function(script)()
-    expect(tabs).toHaveLength(1)
-    expect(tabs[0]!.id).toBe('comfy-desktop-mcp')
-    expect(tabs[0]!.icon).toBe('icon-[lucide--plug]')
-    expect(tabs[0]!.type).toBe('custom')
+
+    const btn = document.getElementById('comfy-desktop-mcp-btn')
+    const help = document.querySelector('[data-testid="help-center-button"]')
+    expect(btn).not.toBeNull()
+    if (!btn || !help) throw new Error('Expected button and help icon')
+    // Same cluster as help, and ordered before it.
+    expect(btn.parentElement).toBe(help.parentElement)
+    expect(btn.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(btn.querySelector('.icon-\\[lucide--plug\\]')).not.toBeNull()
   })
 
   it('shows the unseen dot until the surface is opened once', () => {
-    const { tabs } = setupComfy()
+    installBridge()
+    setupDom()
     new Function(script)()
-    expect(tabs[0]!.iconBadge()).toBe('•')
+    const dot = document.querySelector<HTMLElement>('#comfy-desktop-mcp-btn .comfy-mcp-dot')
+    expect(dot?.style.display).not.toBe('none')
   })
 
-  it('opens the desktop modal on select, clears the dot, and closes the phantom panel', () => {
-    const { openMcpSetup, toggleSidebarTab, capture, tabs } = setupComfy()
+  it('opens the modal on click, clears the dot, and persists seen', () => {
+    const { openMcpSetup, capture } = installBridge()
+    setupDom()
     new Function(script)()
-    tabs[0]!.render()
-    vi.runAllTimers()
+    document.getElementById('comfy-desktop-mcp-btn')?.click()
 
     expect(openMcpSetup).toHaveBeenCalledOnce()
-    expect(toggleSidebarTab).toHaveBeenCalledWith('comfy-desktop-mcp')
     expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.sidebar_opened', {})
     expect(window.localStorage.getItem('comfyDesktopMcpSeen')).toBe('1')
-    expect(tabs[0]!.iconBadge()).toBeNull()
+    const dot = document.querySelector<HTMLElement>('#comfy-desktop-mcp-btn .comfy-mcp-dot')
+    expect(dot?.style.display).toBe('none')
   })
 
-  it('does not re-register when the tab already exists', () => {
-    const { tabs } = setupComfy()
+  it('hides the dot from the start when already seen', () => {
+    window.localStorage.setItem('comfyDesktopMcpSeen', '1')
+    installBridge()
+    setupDom()
+    new Function(script)()
+    const dot = document.querySelector<HTMLElement>('#comfy-desktop-mcp-btn .comfy-mcp-dot')
+    expect(dot?.style.display).toBe('none')
+  })
+
+  it('does not inject twice', () => {
+    installBridge()
+    setupDom()
     new Function(script)()
     Reflect.deleteProperty(window, '__comfyDesktopMcpSidebar')
     new Function(script)()
-    expect(tabs).toHaveLength(1)
+    expect(document.querySelectorAll('#comfy-desktop-mcp-btn')).toHaveLength(1)
   })
 
   it('memoizes the assembled script', () => {
