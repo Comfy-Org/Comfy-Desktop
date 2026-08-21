@@ -147,9 +147,9 @@ options:
     // force-fp32 and force-fp16 should be exclusive
     expect(byName.get('force-fp32')?.exclusiveGroup).toBe(byName.get('force-fp16')?.exclusiveGroup)
 
-    expect(byName.get('use-ck-attention')?.exclusiveGroup).toBe(
-      byName.get('use-pytorch-cross-attention')?.exclusiveGroup
-    )
+    const ckAttentionGroup = byName.get('use-ck-attention')?.exclusiveGroup
+    expect(ckAttentionGroup).toBeDefined()
+    expect(ckAttentionGroup).toBe(byName.get('use-pytorch-cross-attention')?.exclusiveGroup)
   })
 
   it('populates knownFlags set', () => {
