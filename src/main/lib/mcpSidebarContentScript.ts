@@ -43,25 +43,43 @@ function buildButton() {
   var btn = document.createElement('button');
   btn.id = BTN_ID;
   btn.type = 'button';
-  btn.className = 'side-bar-button cursor-pointer border-none comfy-mcp-btn';
+  btn.className = 'side-bar-button comfy-mcp-btn';
   btn.setAttribute('aria-label', 'Connect an agent (MCP)');
   btn.title = 'Connect an agent (MCP)';
+  // The frontend's .side-bar-button rule is scoped, so injected DOM must
+  // reproduce it inline. Values mirror SidebarIcon.vue exactly (dims, radius,
+  // hover surface + color tokens) so the plug sits flush with Help/Settings.
+  btn.style.cssText =
+    'display:flex;align-items:center;justify-content:center;overflow:visible;' +
+    'width:var(--sidebar-width);height:var(--sidebar-item-height);' +
+    'border:none;border-radius:0;flex-shrink:0;cursor:pointer;background:transparent;' +
+    'color:var(--content-fg,#9b9b9b);transition:background-color 120ms ease,color 120ms ease;';
+  btn.addEventListener('mouseenter', function () {
+    btn.style.backgroundColor = 'var(--interface-panel-hover-surface)';
+    btn.style.color = 'var(--content-hover-fg)';
+  });
+  btn.addEventListener('mouseleave', function () {
+    btn.style.backgroundColor = 'transparent';
+    btn.style.color = 'var(--content-fg,#9b9b9b)';
+  });
 
   var content = document.createElement('div');
   content.className = 'side-bar-button-content flex flex-col items-center gap-2';
 
   var wrap = document.createElement('div');
   wrap.className = 'sidebar-icon-wrapper relative';
+  wrap.style.cssText = 'position:relative;overflow:visible;';
 
   var icon = document.createElement('i');
   icon.className = 'icon-[lucide--plug] side-bar-button-icon';
+  icon.style.fontSize = 'var(--sidebar-icon-size)';
 
   var dot = document.createElement('span');
   dot.className = 'comfy-mcp-dot';
   dot.style.cssText =
-    'position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:9999px;' +
-    'background:#0b84ff;box-shadow:0 0 0 2px var(--comfy-menu-bg,#000);';
-  if (isSeen()) dot.style.display = 'none';
+    'position:absolute;top:-3px;right:-8px;width:8px;height:8px;border-radius:9999px;' +
+    'background:#2f80ff;pointer-events:none;';
+  dot.style.display = isSeen() ? 'none' : 'block';
 
   wrap.appendChild(icon);
   wrap.appendChild(dot);
