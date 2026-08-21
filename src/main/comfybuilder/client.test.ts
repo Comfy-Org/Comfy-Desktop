@@ -22,7 +22,7 @@ describe('ComfyBuilderClient', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists distributions with a Bearer token at the right path', async () => {
-    const f = mockFetch(200, { distributions: [{ id: 'd1', name: 'Dist One' }] })
+    const f = mockFetch(200, { builds: [{ id: 'd1', name: 'Dist One' }] })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({
       baseUrl: 'https://api.test/builder',
@@ -31,7 +31,7 @@ describe('ComfyBuilderClient', () => {
     const dists = await client.listDistributions()
     expect(dists).toEqual([{ id: 'd1', name: 'Dist One' }])
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distributions')
+    expect(call[0]).toBe('https://api.test/builder/v1/builds')
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
   })
 
@@ -118,7 +118,7 @@ describe('ComfyBuilderClient', () => {
     expect(m.modelPolicy).toBeNull()
     expect(m.partnerNodePolicy).toBeNull()
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/ver-9/manifest')
+    expect(call[0]).toBe('https://api.test/builder/v1/build-versions/ver-9/manifest')
   })
 
   it('rejects a manifest response without an explicit model list', async () => {

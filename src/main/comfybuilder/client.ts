@@ -69,7 +69,7 @@ export interface ComfyBuilderClientOptions {
 }
 
 interface DistributionsResponse {
-  distributions?: Distribution[]
+  builds?: Distribution[]
 }
 interface VersionsResponse {
   versions?: DistributionVersion[]
@@ -104,10 +104,10 @@ export class ComfyBuilderClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
 
-  /** Every product Build visible to the workspace; the wire API calls them distributions. */
+  /** Every product Build visible to the workspace. */
   async listDistributions(): Promise<Distribution[]> {
-    const body = await this.get<DistributionsResponse>('/v1/distributions')
-    return body.distributions ?? []
+    const body = await this.get<DistributionsResponse>('/v1/builds')
+    return body.builds ?? []
   }
 
   /** Upload a Desktop snapshot and return the Platform edit-page handoff. */
@@ -137,7 +137,7 @@ export class ComfyBuilderClient {
   /** Published versions of one product Build. */
   async listVersions(distributionId: string): Promise<DistributionVersion[]> {
     const body = await this.get<VersionsResponse>(
-      `/v1/distributions/${encodeURIComponent(distributionId)}/versions`
+      `/v1/builds/${encodeURIComponent(distributionId)}/versions`
     )
     return body.versions ?? []
   }
@@ -147,7 +147,7 @@ export class ComfyBuilderClient {
     versionId: string
   ): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
     const body = await this.get<VersionDetailResponse>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}`
+      `/v1/build-versions/${encodeURIComponent(versionId)}`
     )
     return { version: body.version, artifacts: body.artifacts ?? [] }
   }
@@ -160,7 +160,7 @@ export class ComfyBuilderClient {
    */
   async fetchModelManifest(versionId: string): Promise<ModelManifest> {
     const body = await this.get<Partial<ModelManifest>>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}/manifest`
+      `/v1/build-versions/${encodeURIComponent(versionId)}/manifest`
     )
     if (!Array.isArray(body.models)) {
       throw new ComfyBuilderApiError(
