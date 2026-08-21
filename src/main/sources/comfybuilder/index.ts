@@ -12,7 +12,7 @@
  *
  * Launch parity matters as much as install: the renderer discovers whether an
  * install can run from `getListActions`, so omitting it silently downgrades a
- * distribution to "not launchable" and bounces a tile click into the
+ * build to "not launchable" and bounces a tile click into the
  * new-install wizard. That is why `getListActions` below exists even though it
  * looks like boilerplate.
  */
@@ -39,7 +39,7 @@ import {
   listCompleteVersions,
   resolveHost,
   resolveHostArtifactForVersion
-} from '../../devplatform/distributions'
+} from '../../devplatform/builds'
 import {
   getAvailableUpdate,
   getVersionCacheGeneration,
@@ -254,7 +254,7 @@ function artifactFromRecord(inst: InstallationRecord): Artifact {
   const gpu = inst.artifactGpu as ArtifactGpu | undefined
   if (!id || !os || !gpu) {
     throw new Error(
-      'This installation record is missing its build identity (artifact id, OS, or GPU) and cannot be installed. Remove it and install the distribution again.'
+      'This installation record is missing its build identity (artifact id, OS, or GPU) and cannot be installed. Remove it and install the build again.'
     )
   }
   return {
@@ -356,7 +356,7 @@ async function installEnvironmentLocked(
   let modelsDetached = false
   let userDetached = false
 
-  /** Restore both executable halves of the previous distribution. Models and
+  /** Restore both executable halves of the previous build. Models and
    *  the user directory are moved out and back rather than copied because
    *  models can be hundreds of GB. */
   async function restorePreviousEnvironment(): Promise<void> {
@@ -436,7 +436,7 @@ async function installEnvironmentLocked(
     }
 
     // Phase 2: models. The archive carries no weights, so stage the
-    // distribution's declared models into the install's ComfyUI model tree
+    // build's declared models into the install's ComfyUI model tree
     // before launch, the way comfy-deploy provisions a volume before boot. An
     // empty manifest stages nothing and the step completes immediately.
     const manifest = await resolveModelManifest(
@@ -472,10 +472,10 @@ async function installEnvironmentLocked(
 export const comfybuilder: SourcePlugin = {
   id: 'comfybuilder',
   label: 'ComfyBuilder',
-  description: 'Install a ComfyUI distribution built with ComfyBuilder.',
+  description: 'Install a ComfyUI build created with ComfyBuilder.',
   category: 'local',
   // Never a "New Install" wizard source: records are created by the dev-platform
-  // distribution flow, so it must not appear in the generic source picker.
+  // build flow, so it must not appear in the generic source picker.
   hidden: true,
   fields: [],
   defaultLaunchArgs: DEFAULT_LAUNCH_ARGS,
@@ -493,25 +493,25 @@ export const comfybuilder: SourcePlugin = {
   },
 
   buildInstallation(): Record<string, unknown> {
-    // Records are assembled by `installDistribution` (which already knows the
+    // Records are assembled by the build install handler (which already knows the
     // resolved artifact), not the generic build-installation chain.
     return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
   },
 
   // The tile prefers this over the source label, and the install is named after
-  // the distribution, so returning the name here would echo the tile title and
-  // hide the one label marking this as a distribution. Surface it only once a
+  // the build, so returning the name here would echo the tile title and hide
+  // the one label marking this as a build. Surface it only once a
   // rename has made the two differ.
   getListPreview(installation: InstallationRecord): string | null {
-    const distributionName = (installation.distributionName as string) || ''
-    return distributionName && distributionName !== installation.name ? distributionName : null
+    const buildName = (installation.distributionName as string) || ''
+    return buildName && buildName !== installation.name ? buildName : null
   },
 
   getStatusTag(installation: InstallationRecord): StatusTag | undefined {
-    const distributionId = installation.distributionId as string | undefined
+    const buildId = installation.distributionId as string | undefined
     const currentVersion = (installation.version as string | undefined) ?? ''
-    if (!distributionId) return undefined
-    const latest = getAvailableUpdate(distributionId, currentVersion)
+    if (!buildId) return undefined
+    const latest = getAvailableUpdate(buildId, currentVersion)
     if (latest === undefined) return undefined
     const version = `v${latest}`
     return {
@@ -535,7 +535,7 @@ export const comfybuilder: SourcePlugin = {
   // Launch is discovered through this list, not through `getLaunchCommand`: a
   // plugin without it hands the renderer an empty action array, which reads as
   // "this install cannot launch" and bounces a tile click into the new-install
-  // wizard. Distributions launch like any other local install.
+  // wizard. Builds launch like any other local install.
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {
     const installed = installation.status === 'installed'
     return [launchAction(installed, !installed ? t('errors.installNotReady') : undefined)]
@@ -562,15 +562,15 @@ export const comfybuilder: SourcePlugin = {
     actionData: Record<string, unknown> | undefined,
     tools: ActionTools
   ): Promise<ActionResult> {
-    const distributionId = installation.distributionId as string | undefined
-    if (!distributionId) return { ok: false, message: t('comfybuilder.errorNoDistribution') }
+    const buildId = installation.distributionId as string | undefined
+    if (!buildId) return { ok: false, message: t('comfybuilder.errorNoBuild') }
 
     if (actionId === 'check-update') {
       try {
         const cacheGeneration = getVersionCacheGeneration()
         setCachedVersions(
-          distributionId,
-          await listCompleteVersions(getBuilderClient(), distributionId),
+          buildId,
+          await listCompleteVersions(getBuilderClient(), buildId),
           cacheGeneration
         )
         return { ok: true }
@@ -580,7 +580,7 @@ export const comfybuilder: SourcePlugin = {
     }
 
     if (actionId === 'update-comfyui') {
-      return updateDistributionVersion(installation, distributionId, actionData, tools)
+      return updateBuildVersion(installation, buildId, actionData, tools)
     }
 
     return { ok: false, message: `Action "${actionId}" not yet implemented.` }
@@ -588,7 +588,7 @@ export const comfybuilder: SourcePlugin = {
 }
 
 /**
- * Move this install to another published version of its own distribution.
+ * Move this install to another published version of its own build.
  *
  * Re-installs in place: the record is re-pointed at the target artifact, then
  * the same `installEnvironment` a first install runs lays the new environment
@@ -597,12 +597,12 @@ export const comfybuilder: SourcePlugin = {
  * only needed for a FRESH install. The directory and the record already exist,
  * so what remains is the status arc, which is handled explicitly below.
  *
- * Targets the INSTALLATION, never the distribution id: several installs of one
- * distribution are allowed, so distribution-keyed lookup would pick arbitrarily.
+ * Targets the INSTALLATION, never the persisted Builder id: several installs
+ * of one build are allowed, so an id-keyed lookup would pick arbitrarily.
  */
-async function updateDistributionVersion(
+async function updateBuildVersion(
   installation: InstallationRecord,
-  distributionId: string,
+  buildId: string,
   actionData: Record<string, unknown> | undefined,
   tools: ActionTools
 ): Promise<ActionResult> {
@@ -629,7 +629,7 @@ async function updateDistributionVersion(
     const resolved = await resolveHostArtifactForVersion(
       getBuilderClient(),
       await resolveHost(),
-      distributionId,
+      buildId,
       target
     )
     if (!resolved) {
@@ -669,7 +669,7 @@ async function updateDistributionVersion(
     }
 
     // Any remaining backup means the rollback did not complete. Even if both
-    // active paths exist, they may belong to different distribution versions.
+    // active paths exist, they may belong to different build versions.
     const runnable =
       !(await hasEnvironmentBackups(installation.installPath)) &&
       (await isRunnableEnvironment(installation.installPath))

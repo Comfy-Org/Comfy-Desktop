@@ -32,7 +32,10 @@ const apiMock = {
   onErrorDetail: vi.fn(() => () => {}),
   getSnapshots: vi.fn().mockResolvedValue({ snapshots: [] }),
   exportSnapshot: vi.fn().mockResolvedValue({ ok: true }),
-  stopComfyUI: vi.fn().mockResolvedValue(undefined)
+  stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  comfybuilder: {
+    promoteLocalInstance: vi.fn().mockResolvedValue({ ok: true })
+  }
 }
 vi.stubGlobal('window', {
   ...window,
@@ -69,7 +72,14 @@ const messages = {
       noSnapshotsToShare: 'There are no snapshots to share yet.',
       shareFailed: 'Could not share the snapshot.'
     },
-    progress: { working: 'Working…' },
+    devPlatform: {
+      workspace: {
+        promoteToWorkspace: 'Promote to Workspace',
+        promoteFailedTitle: "Couldn't promote instance",
+        promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
+      }
+    },
+    progress: { working: 'Working...' },
     running: { dismiss: 'Dismiss' }
   }
 }
@@ -103,13 +113,17 @@ const HarnessComponent = defineComponent({
   }
 })
 
-function mountHarness(inst: Installation, mutate?: (h: HarnessHandles) => void) {
+function mountHarness(
+  inst: Installation,
+  mutate?: (h: HarnessHandles) => void,
+  canPromoteToWorkspace?: (inst: Installation) => boolean
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const i18n = createI18n({ legacy: false, locale: 'en', messages })
   let handles!: HarnessHandles
   _harnessSetup = () => {
-    const menu = useInstallContextMenu({ onManage: () => {} })
+    const menu = useInstallContextMenu({ onManage: () => {}, canPromoteToWorkspace })
     const session = useSessionStore()
     const progress = useProgressStore()
     handles = { menu, session, progress }
@@ -492,6 +506,49 @@ describe('useInstallContextMenu — share (export latest snapshot)', () => {
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
     expect(modalMock.alert.mock.calls[0]![0].message).toBe('Disk full')
+  })
+})
+
+describe('useInstallContextMenu - promote to workspace', () => {
+  beforeEach(() => {
+    apiMock.comfybuilder.promoteLocalInstance.mockReset().mockResolvedValue({ ok: true })
+    modalMock.alert.mockReset()
+  })
+
+  it('shows the item only when the dashboard eligibility gate accepts the install', () => {
+    const eligible = mountHarness(makeInstall(), undefined, () => true)
+    expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')?.label).toBe(
+      'Promote to Workspace'
+    )
+
+    const ineligible = mountHarness(makeInstall(), undefined, () => false)
+    expect(findItem(ineligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toBeUndefined()
+  })
+
+  it('asks main to create the draft and stays silent on success', async () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, undefined, () => true)
+
+    await menu.triggerAction('promote-to-workspace', inst)
+
+    expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith(inst.id)
+    expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a draft creation failure', async () => {
+    apiMock.comfybuilder.promoteLocalInstance.mockResolvedValue({
+      ok: false,
+      message: 'Snapshot upload failed.'
+    })
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, undefined, () => true)
+
+    await menu.triggerAction('promote-to-workspace', inst)
+
+    expect(modalMock.alert).toHaveBeenCalledWith({
+      title: "Couldn't promote instance",
+      message: 'Snapshot upload failed.'
+    })
   })
 })
 

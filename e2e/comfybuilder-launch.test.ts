@@ -1,5 +1,5 @@
 /**
- * E2E: launching a ComfyBuilder distribution from the chooser.
+ * E2E: launching a ComfyBuilder build from the chooser.
  *
  * The renderer resolves launch ONLY from `get-list-actions`
  * (`performChooserLaunch`), so a source plugin without `getListActions`
@@ -7,7 +7,7 @@
  * bounces the tile click into the new-install wizard. This file pins the
  * comfybuilder plugin's `getListActions` end-to-end:
  *
- *   1. an installed distribution tile launches (run-action `launch` plus the
+ *   1. an installed build tile launches (run-action `launch` plus the
  *      progress takeover) and never mounts the wizard;
  *   2. clicking a not-ready one explains itself instead of bouncing there.
  *
@@ -37,29 +37,29 @@ import { byTestId, TID } from './support/testIds'
  *  used to bounce the user into. */
 const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
 
-interface DistributionCase {
+interface BuildCase {
   id: string
   name: string
   status: string
   installPath: string
 }
 
-const INSTALLED: DistributionCase = {
+const INSTALLED: BuildCase = {
   id: 'inst-comfybuilder-installed',
   name: 'desktop-4target-stg-v0190',
   status: 'installed',
-  installPath: '',
+  installPath: ''
 }
 
 /** `failed` is the only not-installed status that renders a tile:
  *  `enrichInstallationsForRenderer` filters `installing` out. The per-status
  *  action contract is pinned deterministically by the plugin unit test; here we
  *  only cover what a user can actually click. */
-const FAILED: DistributionCase = {
+const FAILED: BuildCase = {
   id: 'inst-comfybuilder-failed',
   name: 'desktop-4target-stg-v0192',
   status: 'failed',
-  installPath: '',
+  installPath: ''
 }
 
 let ctx: AppContext
@@ -67,16 +67,16 @@ let rootDir: string
 
 test.describe.configure({ mode: 'serial' })
 
-/** Mirrors what `installDistribution` writes for a real distribution install. */
-function distributionRecord(dist: DistributionCase): SeedInstallation {
+/** Mirrors what the build install handler writes for a real build install. */
+function buildRecord(build: BuildCase): SeedInstallation {
   return {
-    id: dist.id,
-    name: dist.name,
+    id: build.id,
+    name: build.name,
     sourceId: 'comfybuilder',
     sourceLabel: 'ComfyBuilder',
-    installPath: dist.installPath,
-    distributionId: `d-${dist.id}`,
-    distributionName: dist.name,
+    installPath: build.installPath,
+    distributionId: `d-${build.id}`,
+    distributionName: build.name,
     version: '1',
     artifactId: 'a-1',
     artifactOs: process.platform === 'win32' ? 'windows' : 'mac',
@@ -85,8 +85,8 @@ function distributionRecord(dist: DistributionCase): SeedInstallation {
     launchArgs: '--enable-manager',
     launchMode: 'window',
     browserPartition: 'unique',
-    status: dist.status,
-    seen: true,
+    status: build.status,
+    seen: true
   }
 }
 
@@ -94,7 +94,7 @@ function distributionRecord(dist: DistributionCase): SeedInstallation {
  *  `ComfyUI/main.py` both exist, and a null launch command fails the launch
  *  before it is ever attempted. Written for every case so the disabled-action
  *  assertions prove the gate is the record status, not the disk. */
-async function writeDistributionLayout(installPath: string): Promise<void> {
+async function writeBuildLayout(installPath: string): Promise<void> {
   await mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
   await writeFile(path.join(installPath, 'ComfyUI', 'main.py'), '')
   if (process.platform === 'win32') {
@@ -113,14 +113,14 @@ async function writeDistributionLayout(installPath: string): Promise<void> {
 test.beforeAll(async () => {
   rootDir = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-comfybuilder-e2e-'))
   const cases = [INSTALLED, FAILED]
-  for (const dist of cases) {
-    dist.installPath = path.join(rootDir, dist.id)
-    await writeDistributionLayout(dist.installPath)
+  for (const build of cases) {
+    build.installPath = path.join(rootDir, build.id)
+    await writeBuildLayout(build.installPath)
   }
 
   ctx = await launchApp({
     settings: { firstUseCompleted: true, telemetryEnabled: false },
-    installations: cases.map(distributionRecord),
+    installations: cases.map(buildRecord)
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -138,11 +138,16 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
   // show-progress -> run-action) ends here; with no launch action in the
   // list it never starts and the wizard takes over instead.
   await expect
-    .poll(async () => {
-      const calls = (await getIpcInvocations(ctx.app, 'run-action')) as
-        { installationId?: string; actionId?: string }[]
-      return calls.some((c) => c.installationId === INSTALLED.id && c.actionId === 'launch')
-    }, { timeout: 20_000, intervals: [200, 500] })
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+          actionId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALLED.id && c.actionId === 'launch')
+      },
+      { timeout: 20_000, intervals: [200, 500] }
+    )
     .toBe(true)
 
   await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })

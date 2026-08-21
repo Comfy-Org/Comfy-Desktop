@@ -26,6 +26,7 @@ export type InstallMenuActionId =
   | 'stop'
   | 'reveal-in-folder'
   | 'share'
+  | 'promote-to-workspace'
   | 'copy-install'
   | 'untrack'
   | 'delete'
@@ -46,6 +47,9 @@ export function useInstallContextMenu(
      *  (Delete). Avoids the ManageInstallModal spinner flash. Falls back
      *  to `onManage(inst, { autoAction })` when omitted. */
     onShowProgress?: (showOpts: ShowProgressOpts) => void
+    /** Dashboard-only gate for the workspace promotion action. Main revalidates
+     *  the installation and active workspace before uploading anything. */
+    canPromoteToWorkspace?: (inst: Installation) => boolean
   } = {}
 ) {
   const { t } = useI18n()
@@ -147,6 +151,13 @@ export function useInstallContextMenu(
     // gate on installed + local.
     if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
       items.push({ id: 'share', label: t('actions.share', 'Share') })
+    }
+
+    if (opts.canPromoteToWorkspace?.(inst)) {
+      items.push({
+        id: 'promote-to-workspace',
+        label: t('devPlatform.workspace.promoteToWorkspace', 'Promote to Workspace')
+      })
     }
 
     // Copy Installation — standalone source only. REQUIRES_STOPPED.
@@ -282,6 +293,24 @@ export function useInstallContextMenu(
         }
       } catch (err) {
         await modal.alert({ title: label, message: (err as Error)?.message || String(err) })
+      }
+    } else if (id === 'promote-to-workspace') {
+      const title = t('devPlatform.workspace.promoteFailedTitle', "Couldn't promote instance")
+      try {
+        const result = await window.api.comfybuilder.promoteLocalInstance(inst.id)
+        if (!result.ok) {
+          await modal.alert({
+            title,
+            message:
+              result.message ||
+              t(
+                'devPlatform.workspace.promoteFailedMessage',
+                'Could not create a draft in Comfy Builder.'
+              )
+          })
+        }
+      } catch (err) {
+        await modal.alert({ title, message: (err as Error)?.message || String(err) })
       }
     } else if (id === 'copy-install') {
       // Route through `onManage` so the prompt / disk-check / showProgress

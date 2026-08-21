@@ -11,8 +11,8 @@ const api = {
   onAuthChanged: vi.fn(() => () => {}),
   listWorkspaces: vi.fn(),
   switchWorkspace: vi.fn(),
-  listDistributions: vi.fn(),
-  installDistribution: vi.fn()
+  listBuilds: vi.fn(),
+  installBuild: vi.fn()
 }
 
 /** Capture the renderer-side auth-change listener the store registers. */
@@ -58,34 +58,34 @@ describe('useAuthStore', () => {
     expect(store.status).toMatchObject({ signedIn: true, workspaceId: 'w1' })
   })
 
-  it('fetchDistributions pulls rows only when signed in', async () => {
+  it('fetchBuilds pulls rows only when signed in', async () => {
     const store = useAuthStore()
     // Signed out: no call, empty list.
-    expect(await store.fetchDistributions()).toEqual([])
-    expect(api.listDistributions).not.toHaveBeenCalled()
+    expect(await store.fetchBuilds()).toEqual([])
+    expect(api.listBuilds).not.toHaveBeenCalled()
 
     api.signIn.mockResolvedValue({ signedIn: true })
     await store.signIn()
-    api.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
-    const rows = await store.fetchDistributions()
+    api.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
+    const rows = await store.fetchBuilds()
     expect(rows).toEqual([{ id: 'd1', name: 'Image', state: 'installable' }])
-    expect(store.distributions).toHaveLength(1)
+    expect(store.builds).toHaveLength(1)
   })
 
-  it('flags a failed distribution fetch, and a successful retry clears it', async () => {
+  it('flags a failed build fetch, and a successful retry clears it', async () => {
     api.signIn.mockResolvedValue({ signedIn: true })
     const store = useAuthStore()
     await store.signIn()
 
-    api.listDistributions.mockRejectedValueOnce(new Error('network'))
-    await store.fetchDistributions()
-    expect(store.distributionsError).toBe(true)
-    expect(store.distributions).toEqual([]) // stays empty, but flagged as an error not an empty workspace
+    api.listBuilds.mockRejectedValueOnce(new Error('network'))
+    await store.fetchBuilds()
+    expect(store.buildsError).toBe(true)
+    expect(store.builds).toEqual([]) // stays empty, but flagged as an error not an empty workspace
 
-    api.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
-    await store.fetchDistributions()
-    expect(store.distributionsError).toBe(false)
-    expect(store.distributions).toHaveLength(1)
+    api.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
+    await store.fetchBuilds()
+    expect(store.buildsError).toBe(false)
+    expect(store.builds).toHaveLength(1)
   })
 
   it('flags a failed workspace fetch without throwing', async () => {
@@ -120,32 +120,32 @@ describe('useAuthStore', () => {
     expect(store.loadingWorkspaces).toBe(false)
   })
 
-  it('keeps distributions loading until the current revision fetch settles', async () => {
+  it('keeps builds loading until the current revision fetch settles', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     api.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
     const store = useAuthStore()
     await store.signIn()
     const stale = deferred<unknown[]>()
     const current = deferred<unknown[]>()
-    api.listDistributions.mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise)
+    api.listBuilds.mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise)
 
-    const staleFetch = store.fetchDistributions()
+    const staleFetch = store.fetchBuilds()
     await store.switchWorkspace('w2')
-    const currentFetch = store.fetchDistributions()
+    const currentFetch = store.fetchBuilds()
     stale.resolve([])
     await staleFetch
-    expect(store.loadingDistributions).toBe(true)
+    expect(store.loadingBuilds).toBe(true)
 
     current.resolve([])
     await currentFetch
-    expect(store.loadingDistributions).toBe(false)
+    expect(store.loadingBuilds).toBe(false)
   })
 
-  it('switchWorkspace adopts the new status and drops the stale distribution cache', async () => {
+  it('switchWorkspace adopts the new status and drops the stale build cache', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     const store = useAuthStore()
     await store.signIn()
-    store.distributions = [{ id: 'd1', name: 'Old', state: 'installable' }]
+    store.builds = [{ id: 'd1', name: 'Old', state: 'installable' }]
 
     api.switchWorkspace.mockResolvedValue({
       signedIn: true,
@@ -154,10 +154,10 @@ describe('useAuthStore', () => {
     })
     await store.switchWorkspace('w2')
     expect(store.status).toMatchObject({ workspaceId: 'w2' })
-    expect(store.distributions).toEqual([])
+    expect(store.builds).toEqual([])
   })
 
-  it('the duplicate switch status (push, then invoke result) keeps the sole distribution fetch alive', async () => {
+  it('the duplicate switch status (push, then invoke result) keeps the sole build fetch alive', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     const store = useAuthStore()
     await store.signIn()
@@ -171,21 +171,21 @@ describe('useAuthStore', () => {
     authChangedCb?.({ signedIn: true, workspaceId: 'w2' })
 
     const rows = deferred<unknown[]>()
-    api.listDistributions.mockReturnValueOnce(rows.promise)
-    const fetching = store.fetchDistributions()
-    expect(store.loadingDistributions).toBe(true)
+    api.listBuilds.mockReturnValueOnce(rows.promise)
+    const fetching = store.fetchBuilds()
+    expect(store.loadingBuilds).toBe(true)
 
     // The invoke result carries the identical identity; it must not advance
     // the revision - that would discard the only fetch for w2 and leave the
     // UI reporting a false empty workspace with no re-fire.
     invoke.resolve({ signedIn: true, workspaceId: 'w2' })
     await switching
-    expect(store.loadingDistributions).toBe(true)
+    expect(store.loadingBuilds).toBe(true)
 
     rows.resolve([{ id: 'd2', name: 'New', state: 'installable' }])
     await fetching
-    expect(store.loadingDistributions).toBe(false)
-    expect(store.distributions).toEqual([{ id: 'd2', name: 'New', state: 'installable' }])
+    expect(store.loadingBuilds).toBe(false)
+    expect(store.builds).toEqual([{ id: 'd2', name: 'New', state: 'installable' }])
   })
 
   it('a pushed sign-out with no follow-up fetch clears stuck loading and error flags', async () => {
@@ -195,18 +195,18 @@ describe('useAuthStore', () => {
 
     const stale = deferred<unknown[]>()
     api.listWorkspaces.mockReturnValueOnce(stale.promise)
-    api.listDistributions.mockRejectedValueOnce(new Error('network'))
+    api.listBuilds.mockRejectedValueOnce(new Error('network'))
     const staleFetch = store.fetchWorkspaces()
-    await store.fetchDistributions()
+    await store.fetchBuilds()
     expect(store.loadingWorkspaces).toBe(true)
-    expect(store.distributionsError).toBe(true)
+    expect(store.buildsError).toBe(true)
 
     // Sign-out arrives while the workspace fetch is still in flight; nothing
     // refetches for the signed-out state, so the transition itself must
     // settle the flags.
     authChangedCb?.({ signedIn: false })
     expect(store.loadingWorkspaces).toBe(false)
-    expect(store.distributionsError).toBe(false)
+    expect(store.buildsError).toBe(false)
 
     // The stale fetch settling later must not resurrect anything.
     stale.resolve([{ id: 'w1', name: 'W1', type: 'team', role: 'owner' }])
@@ -220,11 +220,11 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     await store.signIn()
     store.workspaces = [{ id: 'w1', name: 'W1', type: 'team', role: 'owner' }]
-    store.distributions = [{ id: 'd1', name: 'D', state: 'installable' }]
+    store.builds = [{ id: 'd1', name: 'D', state: 'installable' }]
 
     authChangedCb?.({ signedIn: false })
     expect(store.isSignedIn).toBe(false)
     expect(store.workspaces).toEqual([])
-    expect(store.distributions).toEqual([])
+    expect(store.builds).toEqual([])
   })
 })

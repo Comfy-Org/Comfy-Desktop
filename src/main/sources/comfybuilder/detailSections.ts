@@ -1,24 +1,24 @@
 /**
- * Manage-view sections for a distribution install.
+ * Manage-view sections for a Builder build install.
  *
  * Deliberately NOT built on `standalone/updateSections.ts`. That model updates
- * along a ComfyUI release *channel*; a distribution pins its ComfyUI build, and
- * what the user moves between is distribution versions. Offering a channel
- * switch here would either do nothing or break the pin the distribution exists
+ * along a ComfyUI release *channel*; a build pins its ComfyUI version, and
+ * what the user moves between is build versions. Offering a channel
+ * switch here would either do nothing or break the pin the build exists
  * to provide.
  *
- * Tabs a distribution deliberately does NOT get. A tab exists iff a section
+ * Tabs a build deliberately does NOT get. A tab exists iff a section
  * declares it, so leaving one out IS the gate — don't reinstate either by
  * copying another source's sections wholesale:
  *
  *   - Snapshots — admin/owner only (Jul 24 dev-platform standup).
- *   - Storage — each distribution carries its own allowed model list, and
- *     shared models are off for distributions at MVP. Note a REDUCED storage
+ *   - Storage - each build carries its own allowed model list, and
+ *     shared models are off for builds at MVP. Note a REDUCED storage
  *     section does not achieve that: `StoragePane` treats an ABSENT
  *     `useSharedModels` field as enabled (`f ? f.value !== false : true`) and
  *     renders the global shared-models directory list, and declaring the field
  *     `false` is no better because `BooleanToggle` ignores `editable` and would
- *     hand the user a live switch. Showing a distribution's staged models needs
+ *     hand the user a live switch. Showing a build's staged models needs
  *     its own pane, not a subset of this one.
  */
 import { t } from '../../lib/i18n'
@@ -36,13 +36,13 @@ import type { ComfyVersion } from '../../lib/version'
 import type { InstallationRecord } from '../../installations'
 import { DEFAULT_LAUNCH_ARGS } from './constants'
 
-/** The distribution's own release. Stored in `version` because that IS what the
+/** The build's own release. Stored in `version` because that IS what the
  *  builder versions; the ComfyUI build it pins is a separate fact. */
-function distributionVersion(installation: InstallationRecord): string {
+function buildVersion(installation: InstallationRecord): string {
   return (installation.version as string | undefined) || ''
 }
 
-/** The ComfyUI version the distribution pins, when the record carries one.
+/** The ComfyUI version the build pins, when the record carries one.
  *  Probed post-install like any other local install. */
 function comfyVersionLabel(installation: InstallationRecord): string {
   const cv = installation.comfyVersion as ComfyVersion | undefined
@@ -50,7 +50,7 @@ function comfyVersionLabel(installation: InstallationRecord): string {
 }
 
 function buildStatusFields(installation: InstallationRecord): Record<string, unknown>[] {
-  const dist = distributionVersion(installation)
+  const build = buildVersion(installation)
   const comfy = comfyVersionLabel(installation)
   return [
     {
@@ -58,15 +58,15 @@ function buildStatusFields(installation: InstallationRecord): Record<string, unk
       value: (installation.sourceLabel as string) || 'ComfyBuilder'
     },
     {
-      label: t('comfybuilder.distribution'),
+      label: t('comfybuilder.build'),
       value: (installation.distributionName as string) || '—'
     },
-    // Labelled as the DISTRIBUTION's version. A bare "7" next to a "v0.28.2"
+    // Labelled as the build's version. A bare "7" next to a "v0.28.2"
     // reads as a ComfyUI version and isn't one.
     {
-      key: 'distribution-version',
-      label: t('comfybuilder.distributionVersion'),
-      value: dist ? `v${dist}` : '—'
+      key: 'build-version',
+      label: t('comfybuilder.buildVersion'),
+      value: build ? `v${build}` : '-'
     },
     { key: 'comfyui-version', label: t('comfybuilder.comfyuiVersion'), value: comfy || '—' },
     { label: t('common.location'), value: (installation.installPath as string) || '—' }
@@ -74,23 +74,23 @@ function buildStatusFields(installation: InstallationRecord): Record<string, unk
 }
 
 /**
- * The Update tab: which distribution version this install is on, and where it
+ * The Update tab: which build version this install is on, and where it
  * can go.
  *
- * Versions come from the catalog cache, which the chooser's distribution read
+ * Versions come from the catalog cache, which the chooser's build read
  * warms. Cold (nothing read yet, or signed out) the latest row is omitted
  * rather than shown empty — "no versions found" is a different claim from "not
  * looked yet".
  */
 function buildUpdateSection(installation: InstallationRecord): Record<string, unknown> | null {
-  const distributionId = installation.distributionId as string | undefined
-  if (!distributionId) return null
+  const buildId = installation.distributionId as string | undefined
+  if (!buildId) return null
 
-  const current = distributionVersion(installation)
-  const cached = getCachedVersions(distributionId)
+  const current = buildVersion(installation)
+  const cached = getCachedVersions(buildId)
   const versions = cached?.versions ?? []
   const latest = versions[0]
-  const availableUpdate = getAvailableUpdate(distributionId, current)
+  const availableUpdate = getAvailableUpdate(buildId, current)
   const updateAvailable = availableUpdate !== undefined
 
   // The same version table the local-install Update tab uses, so the two read
@@ -122,11 +122,11 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
 
   return {
     tab: 'update',
-    title: t('comfybuilder.distributionVersionTitle'),
+    title: t('comfybuilder.buildVersionTitle'),
     fields: [
       {
-        id: 'distributionVersionStats',
-        label: t('comfybuilder.distributionVersionTitle'),
+        id: 'buildVersionStats',
+        label: t('comfybuilder.buildVersionTitle'),
         editType: 'version-stats',
         editable: false,
         value: {
@@ -189,7 +189,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     {
       tab: 'settings',
       title: t('common.launchSettings'),
-      // Args stay open even where a distribution may ignore some of them —
+      // Args stay open even where a build may ignore some of them -
       // the Jul 24 standup kept the field editable rather than second-guessing
       // which flags a given build honours.
       fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS })

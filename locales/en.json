@@ -21,7 +21,7 @@
     "legacyDesktop": "Legacy Desktop",
     "remote": "Remote",
     "unknown": "Unknown",
-    "distribution": "Distribution"
+    "build": "Build"
   },
   "chooser": {
     "title": "Choose an instance",
@@ -40,6 +40,10 @@
     "updatePill": "Update",
     "migratePill": "Migrate",
     "workspaceShelf": "Workspace",
+    "workspaceCtaLabel": "Create on the Web or Promote Local Instance",
+    "workspaceCreateWeb": "Create on the Web",
+    "workspaceCtaOr": "or",
+    "workspacePromoteLocal": "Promote Local Instance",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
@@ -291,19 +295,19 @@
   },
   "comfybuilder": {
     "stageModels": "Download models",
-    "distribution": "Distribution",
-    "distributionVersion": "Distribution Version",
+    "build": "Build",
+    "buildVersion": "Build Version",
     "comfyuiVersion": "ComfyUI Version",
-    "distributionVersionTitle": "Distribution Version",
+    "buildVersionTitle": "Build Version",
     "installedVersion": "Installed",
     "latestVersion": "Latest Published",
-    "errorNoDistribution": "This install is not linked to a distribution.",
+    "errorNoBuild": "This install is not linked to a build.",
     "updateAvailable": "Update available",
     "upToDate": "Up to date",
     "lastChecked": "Last Checked",
     "updateToVersion": "Update to v{version}",
     "updatingTo": "Updating to v{version}",
-    "updateConfirmTitle": "Update distribution",
+    "updateConfirmTitle": "Update build",
     "updateConfirmMessage": "Update this instance from {from} to {to}?\n\nThe environment is replaced in place. Your workflows and staged models are kept.",
     "errorNoVersion": "No target version was given.",
     "errorVersionUnavailable": "Version v{version} has no build for this machine."
@@ -1241,20 +1245,27 @@
       "signOut": "Sign out",
       "signedInAs": "Signed in as {email}",
       "signOutConfirmTitle": "Sign out of ComfyBuilder?",
-      "signOutConfirmBody": "Your installed distributions are kept and still run. They just stop receiving updates until you sign back in.",
+      "signOutConfirmBody": "Your installed builds are kept and still run. They just stop receiving updates until you sign back in.",
       "signOutConfirmCta": "Sign out"
     },
     "workspace": {
       "personalLabel": "Personal",
       "switchLabel": "Workspace",
-      "loadError": "Couldn't load workspaces. Retry"
+      "currentFallback": "Current workspace",
+      "loadError": "Couldn't load workspaces. Retry",
+      "refresh": "Refresh workspaces",
+      "openBuilderFailedTitle": "Couldn't open Comfy Builder",
+      "openBuilderFailedMessage": "Check your connection and try again.",
+      "promoteToWorkspace": "Promote to Workspace",
+      "promoteFailedTitle": "Couldn't promote instance",
+      "promoteFailedMessage": "Could not create a draft in Comfy Builder."
     },
-    "distribution": {
+    "build": {
       "menuInstall": "Install",
-      "distVersion": "Dist v{version}",
+      "version": "Build v{version}",
       "notInstalled": "Not installed",
-      "emptyTitle": "No distributions published to this workspace yet.",
-      "loadError": "Couldn't load distributions. Retry",
+      "emptyTitle": "No builds published to this workspace yet.",
+      "loadError": "Couldn't load builds. Retry",
       "installFailed": "Could not start the install. Try again.",
       "states": {
         "noBuild": "No build",
@@ -1262,7 +1273,7 @@
         "updateAvailable": "Update"
       },
       "blockedReason": {
-        "buildFailed": "This distribution has no successful build yet.",
+        "buildFailed": "This build has not completed successfully yet.",
         "buildInProgress": "The latest build is still in progress.",
         "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
       }

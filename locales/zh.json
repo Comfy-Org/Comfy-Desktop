@@ -21,7 +21,7 @@
     "legacyDesktop": "旧版桌面端",
     "remote": "远程",
     "unknown": "未知",
-    "distribution": "分发版"
+    "build": "构建"
   },
   "chooser": {
     "title": "选择一个实例",
@@ -40,6 +40,10 @@
     "updatePill": "更新",
     "migratePill": "迁移",
     "workspaceShelf": "工作区",
+    "workspaceCtaLabel": "在网页上创建或将本地实例添加到工作区",
+    "workspaceCreateWeb": "在网页上创建",
+    "workspaceCtaOr": "或",
+    "workspacePromoteLocal": "将本地实例添加到工作区",
     "openInstall": "打开",
     "manageInstall": "管理",
     "moreActions": "更多操作",
@@ -291,19 +295,19 @@
   },
   "comfybuilder": {
     "stageModels": "下载模型",
-    "distribution": "分发版",
-    "distributionVersion": "分发版版本",
+    "build": "构建",
+    "buildVersion": "构建版本",
     "comfyuiVersion": "ComfyUI 版本",
-    "distributionVersionTitle": "分发版版本",
+    "buildVersionTitle": "构建版本",
     "installedVersion": "已安装",
     "latestVersion": "最新发布",
-    "errorNoDistribution": "此安装未关联到分发版。",
+    "errorNoBuild": "此安装未关联到构建。",
     "updateAvailable": "有可用更新",
     "upToDate": "已是最新",
     "lastChecked": "上次检查",
     "updateToVersion": "更新到 v{version}",
     "updatingTo": "正在更新到 v{version}",
-    "updateConfirmTitle": "更新分发版",
+    "updateConfirmTitle": "更新构建",
     "updateConfirmMessage": "将此实例从 {from} 更新到 {to}？\n\n环境将就地替换，工作流与已暂存的模型会保留。",
     "errorNoVersion": "未指定目标版本。",
     "errorVersionUnavailable": "版本 v{version} 没有适用于此设备的构建。"
@@ -1241,20 +1245,27 @@
       "signOut": "退出登录",
       "signedInAs": "已登录为 {email}",
       "signOutConfirmTitle": "退出 ComfyBuilder？",
-      "signOutConfirmBody": "已安装的分发版本会保留并仍可运行，只是在重新登录前不再接收更新。",
+      "signOutConfirmBody": "已安装的构建会保留并仍可运行，只是在重新登录前不再接收更新。",
       "signOutConfirmCta": "退出登录"
     },
     "workspace": {
       "personalLabel": "个人",
       "switchLabel": "工作区",
-      "loadError": "无法加载工作区，请重试"
+      "currentFallback": "当前工作区",
+      "loadError": "无法加载工作区，请重试",
+      "refresh": "刷新工作区",
+      "openBuilderFailedTitle": "无法打开 Comfy Builder",
+      "openBuilderFailedMessage": "请检查网络连接后重试。",
+      "promoteToWorkspace": "添加到工作区",
+      "promoteFailedTitle": "无法添加实例",
+      "promoteFailedMessage": "无法在 Comfy Builder 中创建草稿。"
     },
-    "distribution": {
+    "build": {
       "menuInstall": "安装",
-      "distVersion": "分发版 v{version}",
+      "version": "构建 v{version}",
       "notInstalled": "未安装",
-      "emptyTitle": "此工作区尚未发布任何分发版本。",
-      "loadError": "无法加载分发版本，请重试",
+      "emptyTitle": "此工作区尚未发布任何构建。",
+      "loadError": "无法加载构建，请重试",
       "installFailed": "无法开始安装，请重试。",
       "states": {
         "noBuild": "无构建",
@@ -1262,7 +1273,7 @@
         "updateAvailable": "更新"
       },
       "blockedReason": {
-        "buildFailed": "此分发版本尚无成功的构建。",
+        "buildFailed": "此构建尚未成功完成。",
         "buildInProgress": "最新构建仍在进行中。",
         "noArtifactForMachine": "最新构建没有适用于此操作系统和 GPU 的制品。"
       }

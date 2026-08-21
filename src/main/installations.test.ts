@@ -188,6 +188,61 @@ describe('installations.add (id uniqueness)', () => {
   })
 })
 
+describe('installations.associateUnownedBuildInstalls', () => {
+  it('associates exact legacy matches once without overwriting existing ownership', async () => {
+    const installations = await loadInstallations()
+    const matching = await installations.add({
+      name: 'Exact Match',
+      installPath: path.join(tmpRoot, 'matching'),
+      sourceId: 'comfybuilder',
+      distributionId: 'dist-visible',
+      status: 'installed'
+    })
+    const sameName = await installations.add({
+      name: 'Visible Build',
+      installPath: path.join(tmpRoot, 'same-name'),
+      sourceId: 'comfybuilder',
+      distributionId: 'dist-not-visible',
+      status: 'installed'
+    })
+    const localWithMatchingId = await installations.add({
+      name: 'Local Record',
+      installPath: path.join(tmpRoot, 'local-record'),
+      sourceId: 'standalone',
+      distributionId: 'dist-visible',
+      status: 'installed'
+    })
+    const alreadyOwned = await installations.add({
+      name: 'Already Owned',
+      installPath: path.join(tmpRoot, 'already-owned'),
+      sourceId: 'comfybuilder',
+      workspaceId: 'workspace-old',
+      distributionId: 'dist-visible',
+      status: 'installed'
+    })
+    const changed = vi.fn()
+    installations.installationEvents.on('changed', changed)
+
+    const updated = await installations.associateUnownedBuildInstalls(
+      'workspace-current',
+      new Set(['dist-visible'])
+    )
+
+    expect(updated.map((record) => record.id)).toEqual([matching.id])
+    expect((await installations.get(matching.id))!.workspaceId).toBe('workspace-current')
+    expect((await installations.get(sameName.id))!.workspaceId).toBeUndefined()
+    expect((await installations.get(localWithMatchingId.id))!.workspaceId).toBeUndefined()
+    expect((await installations.get(alreadyOwned.id))!.workspaceId).toBe('workspace-old')
+    expect(changed).toHaveBeenCalledOnce()
+
+    await installations.associateUnownedBuildInstalls(
+      'workspace-current',
+      new Set(['dist-visible'])
+    )
+    expect(changed).toHaveBeenCalledOnce()
+  })
+})
+
 describe('installations.getRecent', () => {
   it('returns null when no installs have been launched', async () => {
     const installations = await loadInstallations()

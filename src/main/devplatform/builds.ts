@@ -1,9 +1,10 @@
 /**
- * Distribution display + install-state policy: the UI layer, NOT the library.
+ * Build display + install-state policy: the UI layer, NOT the library.
  *
- * The comfy-builder library gives raw distributions / versions / artifacts and a
+ * The Builder wire API still calls catalog entries distributions. It also gives
+ * raw versions / artifacts and a
  * pure host-matcher (`selectArtifactForHost`). This module applies the product
- * policy on top: for each distribution it resolves the latest COMPLETE version,
+ * policy on top: for each Desktop build it resolves the latest COMPLETE version,
  * asks whether an artifact exists for THIS host, and flattens that into a single
  * renderer-safe display row (`installable` / `no-build` / `platform-mismatch`).
  * The renderer renders the row and, on click, asks main to install by id: the
@@ -25,41 +26,37 @@ import { runPool } from '../sources/standalone/templateDownloadCore'
 import { setCachedVersions } from './versionCache'
 
 /**
- * Distribution tile states. `installable` / `no-build` / `platform-mismatch` are
+ * Build tile states. `installable` / `no-build` / `platform-mismatch` are
  * decided from the catalog alone; `update-available` also needs the installed
  * version (passed in), and only fires when the newer version has a host-runnable
  * artifact (you can never "update" to a build with nothing for this machine).
  */
-export type DistributionRowState =
-  | 'installable'
-  | 'no-build'
-  | 'platform-mismatch'
-  | 'update-available'
+export type BuildRowState = 'installable' | 'no-build' | 'platform-mismatch' | 'update-available'
 
-/** One renderer-safe distribution tile row. Field names mirror the renderer's
+/** One renderer-safe build tile row. Field names mirror the renderer's
  *  `devplatform/types.ts` so swapping mocks for this stays mechanical. */
-export interface DistributionRow {
+export interface BuildRow {
   id: string
   name: string
   description?: string
   version?: string
-  /** ComfyUI version bundled by this distribution. TODO(builder-backend): the
+  /** ComfyUI version bundled by this build. TODO(builder-backend): the
    *  build metadata doesn't carry it yet, so this is currently never set. */
   comfyuiVersion?: string
   finishedAt?: string
   numCustomNodes?: number
-  state: DistributionRowState
-  /** The installed version of this distribution, when one backs it. Set for both
+  state: BuildRowState
+  /** The installed version of this build, when one backs it. Set for both
    *  an up-to-date install and an `update-available` one; absent when not installed. */
   installedVersion?: number
-  /** i18n suffix explaining a blocked state (see `devPlatform.distribution.blockedReason.*`). */
+  /** i18n suffix explaining a blocked state (see `devPlatform.build.blockedReason.*`). */
   blockedReason?: string
   /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
    *  / `linux`), so the card can name a machine that would run it. */
   targetOs?: string[]
 }
 
-/** What `installDistribution` resolves before it hands off to the install chain. */
+/** What `installBuild` resolves before it hands off to the install chain. */
 export interface ResolvedHostArtifact {
   artifact: Artifact
   version: number
@@ -86,30 +83,32 @@ function latestCompleteVersion<T extends { version: number; status: string }>(
 }
 
 /**
- * Resolve one distribution into a display row: newest complete version, then
- * whether it has a host-runnable artifact. Never drops the distribution: an
+ * Resolve one wire catalog entry into a build display row: newest complete
+ * version, then whether it has a host-runnable artifact. Never drops the build: an
  * un-installable one becomes a blocked row with a reason, not a hidden entry.
  */
 async function buildRow(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
-  dist: Distribution,
+  wireBuild: Distribution,
   installed?: ReadonlyMap<string, number>,
   cacheGeneration?: number
-): Promise<DistributionRow> {
-  const base: DistributionRow = {
-    id: dist.id,
-    name: dist.name,
-    ...(dist.description ? { description: dist.description } : {}),
-    ...(typeof dist.numCustomNodes === 'number' ? { numCustomNodes: dist.numCustomNodes } : {}),
+): Promise<BuildRow> {
+  const base: BuildRow = {
+    id: wireBuild.id,
+    name: wireBuild.name,
+    ...(wireBuild.description ? { description: wireBuild.description } : {}),
+    ...(typeof wireBuild.numCustomNodes === 'number'
+      ? { numCustomNodes: wireBuild.numCustomNodes }
+      : {}),
     state: 'no-build'
   }
 
-  const allVersions = await client.listVersions(dist.id)
+  const allVersions = await client.listVersions(wireBuild.id)
   // The manage view's version picker is built synchronously and can't fetch, so
   // hand it what this read already saw.
   setCachedVersions(
-    dist.id,
+    wireBuild.id,
     allVersions.filter((v) => v.status === 'complete').map((v) => v.version),
     cacheGeneration
   )
@@ -127,8 +126,8 @@ async function buildRow(
     }
   }
 
-  const installedVersion = installed?.get(dist.id)
-  const withVersion: DistributionRow = {
+  const installedVersion = installed?.get(wireBuild.id)
+  const withVersion: BuildRow = {
     ...base,
     version: String(latest.version),
     ...(latest.createdAt ? { finishedAt: latest.createdAt } : {}),
@@ -157,44 +156,60 @@ async function buildRow(
 }
 
 /**
- * Every distribution the signed-in workspace can see, as display rows. A
- * distribution whose version lookup fails is dropped for THIS list rather than
+ * Every build the signed-in workspace can see, as display rows. A build whose
+ * version lookup fails is dropped for THIS list rather than
  * failing the whole grid. Rows resolve through a bounded pool: each one costs
  * two gateway requests (listVersions + getVersion), so an unbounded map over a
  * large catalog would fire 2N concurrent requests and trip rate limits.
  */
 const ROW_CONCURRENCY = 6
 
-export async function listDistributionRows(
+export async function listBuildRows(
   client: ComfyBuilderClient,
   host: Host,
   installed?: ReadonlyMap<string, number>,
   cacheGeneration?: number
-): Promise<DistributionRow[]> {
-  const dists = await client.listDistributions()
-  const rows: (DistributionRow | undefined)[] = new Array<DistributionRow | undefined>(dists.length)
-  await runPool(dists, ROW_CONCURRENCY, async (d, i) => {
+): Promise<BuildRow[]> {
+  return resolveBuildRows(
+    client,
+    host,
+    await client.listDistributions(),
+    installed,
+    cacheGeneration
+  )
+}
+
+/** Resolve an already-fetched catalog without requesting the wire list again. */
+export async function resolveBuildRows(
+  client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
+  host: Host,
+  wireBuilds: readonly Distribution[],
+  installed?: ReadonlyMap<string, number>,
+  cacheGeneration?: number
+): Promise<BuildRow[]> {
+  const rows: (BuildRow | undefined)[] = new Array<BuildRow | undefined>(wireBuilds.length)
+  await runPool(wireBuilds, ROW_CONCURRENCY, async (wireBuild, index) => {
     try {
-      rows[i] = await buildRow(client, host, d, installed, cacheGeneration)
+      rows[index] = await buildRow(client, host, wireBuild, installed, cacheGeneration)
     } catch (err) {
-      console.error('[devplatform] failed to resolve distribution row:', err)
+      console.error('[devplatform] failed to resolve build row:', err)
     }
   })
-  return rows.filter((r): r is DistributionRow => r !== undefined)
+  return rows.filter((r): r is BuildRow => r !== undefined)
 }
 
 /**
- * Resolve the artifact to install for one distribution on this host: the latest
+ * Resolve the artifact to install for one build on this host: the latest
  * complete version's host-matched artifact, or null when none is runnable here.
- * This is the same policy `listDistributionRows` renders, re-run at install time
+ * This is the same policy `listBuildRows` renders, re-run at install time
  * against fresh catalog data.
  */
 export async function resolveHostArtifact(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
-  distributionId: string
+  buildId: string
 ): Promise<ResolvedHostArtifact | null> {
-  const latest = latestCompleteVersion(await client.listVersions(distributionId))
+  const latest = latestCompleteVersion(await client.listVersions(buildId))
   if (!latest) return null
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
@@ -212,10 +227,10 @@ export async function resolveHostArtifact(
 export async function resolveHostArtifactForVersion(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
-  distributionId: string,
+  buildId: string,
   version: number
 ): Promise<ResolvedHostArtifact | null> {
-  const target = (await client.listVersions(distributionId)).find(
+  const target = (await client.listVersions(buildId)).find(
     (v) => v.version === version && v.status === 'complete'
   )
   if (!target) return null
@@ -228,9 +243,9 @@ export async function resolveHostArtifactForVersion(
  *  published, and the basis for a future version picker. */
 export async function listCompleteVersions(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
-  distributionId: string
+  buildId: string
 ): Promise<number[]> {
-  const versions = await client.listVersions(distributionId)
+  const versions = await client.listVersions(buildId)
   return versions
     .filter((v) => v.status === 'complete')
     .map((v) => v.version)

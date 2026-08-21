@@ -12,7 +12,7 @@
  * const workspaces = await session.listWorkspaces()       // choose workspace
  * await session.switchWorkspace(chosen.id)                // re-auth, scoped
  * const client = new ComfyBuilderClient({ auth: session.asTokenProvider() })
- * const dists = await client.listDistributions()          // scoped to that workspace
+ * const builds = await client.listDistributions()         // scoped to that workspace
  * ```
  */
 export { CloudSession } from './session'

@@ -2,7 +2,7 @@
  * Target resolution - pure host <-> artifact matching.
  *
  * A version fans out into per-target artifacts (os x gpu x accel). The UI picks
- * ONE distribution + version; this module picks the artifact for the host, so a
+ * ONE build + version; this module picks the artifact for the host, so a
  * user never chooses `windows/cpu` vs `windows/nvidia` by hand. Pure functions,
  * no I/O; the caller supplies the host GPU (Desktop already detects it).
  */

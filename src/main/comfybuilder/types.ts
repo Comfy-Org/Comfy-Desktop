@@ -10,7 +10,7 @@
 export type ArtifactOs = 'linux' | 'windows' | 'mac'
 export type ArtifactGpu = 'nvidia' | 'amd' | 'cpu' | 'mps'
 
-/** A distribution: a named, versioned ComfyUI environment recipe. */
+/** A product Build. Builder's wire schema retains the legacy `Distribution` name. */
 export interface Distribution {
   id: string
   name: string
@@ -20,10 +20,17 @@ export interface Distribution {
   updatedAt?: string
 }
 
-/** One immutable build of a distribution (fans out into per-target artifacts). */
+/** Builder draft created from a Desktop snapshot through the Platform web API. */
+export interface DesktopDraft {
+  distributionId: string
+  workspaceId: string
+  editUrl: string
+}
+
+/** One immutable version of a product Build, fanned out into target artifacts. */
 export interface DistributionVersion {
   id: string
-  /** Monotonic version number within the distribution. */
+  /** Monotonic version number within the product Build. */
   version: number
   status: string
   createdAt?: string
@@ -80,7 +87,7 @@ export interface InstallProgress {
 }
 
 /**
- * One model the distribution pre-installs, projected from the version's sealed
+ * One model the product Build pre-installs, projected from the version's sealed
  * manifest by the builder API (mirrors its `DistributionModel` schema). `type`
  * is the ComfyUI model directory the file installs into (e.g. `checkpoints`),
  * so the file lands at `models/<type>/<filename>`. `downloadUrl` is ready to GET
@@ -104,7 +111,7 @@ export interface ModelPolicy {
 }
 
 /**
- * The model + policy view of a distribution version (the builder API's
+ * The model + policy view of a Build version (the Builder API's
  * `DistributionManifest`). A client stages `models` before starting ComfyUI; the
  * archive itself carries only code and the environment, never weights.
  */

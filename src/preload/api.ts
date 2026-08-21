@@ -201,7 +201,7 @@ export function buildElectronApi(): ElectronApi {
     getDeviceId: () => ipcRenderer.invoke('get-device-id'),
 
     // Dev platform (cloud auth + comfy-builder). Tokens never cross IPC; these
-    // only ever carry AuthStatus / Workspace / distribution display rows.
+    // only ever carry AuthStatus / Workspace / build display rows.
     comfybuilder: {
       signIn: () => ipcRenderer.invoke('comfybuilder:signIn'),
       signOut: () => ipcRenderer.invoke('comfybuilder:signOut'),
@@ -215,9 +215,11 @@ export function buildElectronApi(): ElectronApi {
       listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
       switchWorkspace: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
-      listDistributions: () => ipcRenderer.invoke('comfybuilder:listDistributions'),
-      installDistribution: (distributionId) =>
-        ipcRenderer.invoke('comfybuilder:installDistribution', distributionId)
+      listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
+      installBuild: (buildId) => ipcRenderer.invoke('comfybuilder:installBuild', buildId),
+      openBuilderCreate: () => ipcRenderer.invoke('comfybuilder:openBuilderCreate'),
+      promoteLocalInstance: (installationId) =>
+        ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)
     },
 
     // Model downloads

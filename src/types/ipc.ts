@@ -11,9 +11,9 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
-/** Every state a distribution tile can be in. The first four are pre-install;
+/** Every state a build tile can be in. The first four are pre-install;
  *  the last two are local (renderer-owned via de-dup against installs). */
-export type DevPlatformDistributionState =
+export type DevPlatformBuildState =
   | 'installable'
   | 'no-build'
   | 'platform-mismatch'
@@ -21,39 +21,44 @@ export type DevPlatformDistributionState =
   | 'installed'
   | 'update-available'
 
-/** One distribution as a renderer-safe display row. The install-decision fields
+/** One build as a renderer-safe display row. The install-decision fields
  *  (artifact id / download ref) stay main-side; the renderer installs by id. */
-export interface DevPlatformDistribution {
+export interface DevPlatformBuild {
   id: string
   name: string
   description?: string
   version?: string
-  /** The ComfyUI version this distribution bundles, for the card's facts line.
-   *  TODO(builder-backend): not yet populated by `listDistributionRows` — the
+  /** The ComfyUI version this build bundles, for the card's facts line.
+   *  TODO(builder-backend): not yet populated by `listBuildRows` - the
    *  build metadata needs to carry it through. Absent renders as unknown. */
   comfyuiVersion?: string
   /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number
   numCustomNodes?: number
-  state: DevPlatformDistributionState
-  /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
+  state: DevPlatformBuildState
+  /** i18n suffix explaining a blocking state (see `devPlatform.build.blockedReason.*`). */
   blockedReason?: string
   /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
    *  / `linux`). The card names them instead of saying "not for this machine". */
   targetOs?: string[]
   minDesktopVersion?: string
-  /** Local-only: present for installed / update-available. A distribution
+  /** Local-only: present for installed / update-available. A build
    *  version is an integer, matching how the row builder sets it. */
   installedVersion?: number
 }
 
-/** Kickoff result of `installDistribution`: mirrors `addInstallation` so the
+/** Kickoff result of `installBuild`: mirrors `addInstallation` so the
  *  renderer drives the same `installInstance` + progress flow. */
-export interface InstallDistributionResult {
+export interface InstallBuildResult {
   ok: boolean
   message?: string
   entry?: { id: string; name: string }
+}
+
+export interface PromoteLocalInstanceResult {
+  ok: boolean
+  message?: string
 }
 
 // Unsubscribe function returned by event listeners
@@ -91,6 +96,8 @@ export interface Installation {
   name: string
   sourceLabel: string
   sourceCategory: string
+  /** Workspace that owns this installation. Absent for local and legacy records. */
+  workspaceId?: string
   version?: string
   statusTag?: { style: string; label: string; version?: string; detail?: string }
   seen?: boolean
@@ -1403,7 +1410,7 @@ export interface ElectronApi {
 
   // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
   // for this flow. Access/refresh tokens never cross IPC: every method returns
-  // or observes a renderer-safe AuthStatus / Workspace / distribution row.
+  // or observes a renderer-safe AuthStatus / Workspace / build row.
   comfybuilder: {
     signIn(): Promise<AuthStatus>
     signOut(): Promise<AuthStatus>
@@ -1411,8 +1418,10 @@ export interface ElectronApi {
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
-    listDistributions(): Promise<DevPlatformDistribution[]>
-    installDistribution(distributionId: string): Promise<InstallDistributionResult>
+    listBuilds(): Promise<DevPlatformBuild[]>
+    installBuild(buildId: string): Promise<InstallBuildResult>
+    openBuilderCreate(): Promise<void>
+    promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
 
   // Updates

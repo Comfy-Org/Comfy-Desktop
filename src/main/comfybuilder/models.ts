@@ -1,9 +1,9 @@
 /**
- * Model staging: the models half of a distribution install.
+ * Model staging: the models half of a Builder build install.
  *
- * A distribution archive carries only code and the environment (`venv/` +
+ * A build archive carries only code and the environment (`venv/` +
  * `ComfyUI/`), never model weights. After the archive extracts, this stages the
- * distribution's declared models into the install's own ComfyUI model tree so
+ * build's declared models into the install's own ComfyUI model tree so
  * they are present before ComfyUI starts, mirroring how comfy-deploy provisions
  * weights onto a volume before boot.
  *

@@ -7,7 +7,7 @@ import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
-import { isDistributionInstall } from '../../devplatform/distributionState'
+import { isBuildInstall } from '../../devplatform/buildState'
 import type { Installation } from '../../types/ipc'
 
 interface Props {
@@ -78,19 +78,19 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
-/** Wears the distribution glyph rather than its install-type icon, so a
- *  distribution keeps one identity whether it's installed or still a card. */
-const isFromDistribution = computed(() => isDistributionInstall(inst.value))
+/** Wears the build glyph rather than its install-type icon, so a build keeps
+ *  one identity whether it's installed or still a card. */
+const isFromBuild = computed(() => isBuildInstall(inst.value))
 
-const distributionVersion = computed(() =>
+const buildVersion = computed(() =>
   typeof inst.value.distributionVersion === 'string' ? inst.value.distributionVersion : ''
 )
 
 /** Desktop's listPreview is the bare installPath (useless as a label), so fall
  *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
 const sourceLabel = computed(() => {
-  // The path is noise on a tile whose identity is the distribution.
-  if (isFromDistribution.value) return ''
+  // The path is noise on a tile whose identity is the build.
+  if (isFromBuild.value) return ''
   const raw =
     inst.value.sourceId === 'desktop'
       ? inst.value.sourceLabel
@@ -98,19 +98,19 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
-/** Labelled ("Dist v7") so it can't be read as the ComfyUI version beside it. */
+/** Labelled ("Build v7") so it can't be read as the ComfyUI version beside it. */
 const trailingFact = computed(() =>
-  isFromDistribution.value
-    ? distributionVersion.value
-      ? t('devPlatform.distribution.distVersion', { version: distributionVersion.value })
+  isFromBuild.value
+    ? buildVersion.value
+      ? t('devPlatform.build.version', { version: buildVersion.value })
       : ''
     : inst.value.version || ''
 )
 
-/** Distribution installs read "<ComfyUI version> · Dist v7"; everything else
+/** Build installs read "<ComfyUI version> - Build v7"; everything else
  *  keeps "<source> · <version>". */
 const leadingFact = computed(() =>
-  isFromDistribution.value ? inst.value.version || '' : sourceLabel.value
+  isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
@@ -164,9 +164,9 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @contextmenu.prevent="emit('open-card-menu', $event, inst)"
   >
     <!-- Type icon only; source/channel lives in the meta line below. A
-         distribution install wears the distribution glyph instead. -->
+         build install wears the build glyph instead. -->
     <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
-      <!-- `typeMeta` resolves the distribution glyph itself, so the tile, the
+      <!-- `typeMeta` resolves the build glyph itself, so the tile, the
            picker row and the title bar can't drift apart. -->
       <component :is="typeMeta.icon" :size="22" />
     </span>

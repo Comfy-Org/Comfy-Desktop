@@ -35,6 +35,59 @@ describe('ComfyBuilderClient', () => {
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
   })
 
+  it('uploads a Desktop snapshot to create a draft', async () => {
+    const f = mockFetch(200, {
+      distributionId: 'dist-1',
+      workspaceId: 'w1',
+      editUrl: '/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+    })
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({
+      baseUrl: 'https://api.test/builder',
+      platformBaseUrl: 'https://platform.test',
+      auth: auth('tok-123')
+    })
+    const snapshot = {
+      type: 'comfyui-desktop-2-snapshot' as const,
+      version: 2 as const,
+      exportedAt: '2026-08-21T00:00:00.000Z',
+      installationName: 'Local One',
+      snapshots: []
+    }
+
+    await expect(client.createDesktopDraft(snapshot)).resolves.toEqual({
+      distributionId: 'dist-1',
+      workspaceId: 'w1',
+      editUrl: '/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+    })
+    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(call[0]).toBe('https://platform.test/api/desktop/distribution-drafts')
+    expect(call[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer tok-123',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(snapshot)
+    })
+  })
+
+  it('rejects an incomplete desktop draft response', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, {}))
+    const client = new ComfyBuilderClient({ auth: auth('t') })
+
+    await expect(
+      client.createDesktopDraft({
+        type: 'comfyui-desktop-2-snapshot',
+        version: 2,
+        exportedAt: '2026-08-21T00:00:00.000Z',
+        installationName: 'Local One',
+        snapshots: []
+      })
+    ).rejects.toMatchObject({ kind: 'server' })
+  })
+
   it('resolveDownloadUrl returns the presigned url', async () => {
     vi.stubGlobal('fetch', mockFetch(200, { downloadUrl: 'https://gcs/signed', expiresAt: 'x' }))
     const client = new ComfyBuilderClient({ auth: auth('t') })

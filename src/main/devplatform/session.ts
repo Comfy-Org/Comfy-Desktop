@@ -1,13 +1,13 @@
 /**
  * The single main-process CloudSession + the ComfyBuilderClient built from it.
  *
- * Both the IPC handlers (auth / workspaces / distributions / install) and the
+ * Both the IPC handlers (auth / workspaces / builds / install) and the
  * comfy-builder SourcePlugin's `install()` read the SAME session here, so a
  * sign-in, workspace switch, or sign-out is reflected everywhere without any of
  * them owning their own token state. The client pulls a bearer token from the
  * session's `TokenProvider` per request; the token never leaves this process.
  */
-import { BUILDER_BASE_URL } from './config'
+import { BUILDER_BASE_URL, PLATFORM_WEB_BASE_URL } from './config'
 import { CloudSession } from '../cloud'
 import { ComfyBuilderClient } from '../comfybuilder'
 
@@ -30,6 +30,7 @@ export function getBuilderClient(): ComfyBuilderClient {
   if (!client) {
     client = new ComfyBuilderClient({
       baseUrl: BUILDER_BASE_URL,
+      platformBaseUrl: PLATFORM_WEB_BASE_URL,
       auth: getCloudSession().asTokenProvider(() => unauthorizedHandler?.())
     })
   }

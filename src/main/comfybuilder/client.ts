@@ -1,23 +1,21 @@
 /**
- * ComfyBuilder catalog client - the read side of the functionality library.
- *
- * Lists distributions -> versions -> artifacts and resolves an artifact's
- * presigned download URL, over the deployed builder gateway. Every request
- * carries a bearer token from the injected {@link TokenProvider}; the token
- * never leaves this process and is never returned to callers. Failures surface
- * as a typed {@link ComfyBuilderApiError} whose `kind` a caller can branch on.
+ * Authenticated client for Builder catalog reads, artifact download resolution,
+ * and Platform Desktop snapshot drafts. Tokens never leave this process.
  */
 import type {
   Artifact,
+  DesktopDraft,
   Distribution,
   DistributionVersion,
   ModelManifest,
   TokenProvider
 } from './types'
+import type { SnapshotExportEnvelope } from '../lib/snapshots/types'
 import { isSecureDownloadUrl, isValidSha256 } from './integrity'
 
 /** Prod builder gateway. Pass `baseUrl` to target staging or a mock. */
 export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
+export const DEFAULT_PLATFORM_BASE_URL = 'https://platform.comfy.org'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
@@ -62,6 +60,8 @@ async function errorReason(res: Response): Promise<string> {
 export interface ComfyBuilderClientOptions {
   /** Gateway base URL including the `/builder` mount. Defaults to prod. */
   baseUrl?: string
+  /** Platform web origin that accepts Desktop snapshot draft uploads. */
+  platformBaseUrl?: string
   /** Auth seam: the UI's token source. */
   auth: TokenProvider
   /** Per-request timeout in ms. Defaults to 30s. */
@@ -81,26 +81,60 @@ interface VersionDetailResponse {
 interface SignedDownloadResponse {
   downloadUrl?: string
 }
+interface DesktopDraftResponse {
+  distributionId?: string
+  workspaceId?: string
+  editUrl?: string
+}
 
-/** The catalog + download-resolve surface the UI calls to populate its tiles. */
+/** The authenticated Builder and Platform API surface used by Desktop. */
 export class ComfyBuilderClient {
   private readonly baseUrl: string
+  private readonly platformBaseUrl: string
   private readonly auth: TokenProvider
   private readonly timeoutMs: number
 
   constructor(options: ComfyBuilderClientOptions) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
+    this.platformBaseUrl = (options.platformBaseUrl ?? DEFAULT_PLATFORM_BASE_URL).replace(
+      /\/+$/,
+      ''
+    )
     this.auth = options.auth
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
 
-  /** Every distribution visible to the signed-in workspace. */
+  /** Every product Build visible to the workspace; the wire API calls them distributions. */
   async listDistributions(): Promise<Distribution[]> {
     const body = await this.get<DistributionsResponse>('/v1/distributions')
     return body.distributions ?? []
   }
 
-  /** Versions (build history) of one distribution. */
+  /** Upload a Desktop snapshot and return the Platform edit-page handoff. */
+  async createDesktopDraft(snapshot: SnapshotExportEnvelope): Promise<DesktopDraft> {
+    const body = await this.post<DesktopDraftResponse>(
+      '/api/desktop/distribution-drafts',
+      snapshot,
+      this.platformBaseUrl
+    )
+    if (
+      typeof body.distributionId !== 'string' ||
+      !body.distributionId ||
+      typeof body.workspaceId !== 'string' ||
+      !body.workspaceId ||
+      typeof body.editUrl !== 'string' ||
+      !body.editUrl
+    ) {
+      throw new ComfyBuilderApiError('server', 'Desktop draft response is incomplete')
+    }
+    return {
+      distributionId: body.distributionId,
+      workspaceId: body.workspaceId,
+      editUrl: body.editUrl
+    }
+  }
+
+  /** Published versions of one product Build. */
   async listVersions(distributionId: string): Promise<DistributionVersion[]> {
     const body = await this.get<VersionsResponse>(
       `/v1/distributions/${encodeURIComponent(distributionId)}/versions`
@@ -162,13 +196,27 @@ export class ComfyBuilderClient {
   }
 
   private async get<T>(path: string): Promise<T> {
+    return this.request<T>(path)
+  }
+
+  private async post<T>(path: string, payload: unknown, baseUrl = this.baseUrl): Promise<T> {
+    return this.request<T>(path, payload, baseUrl)
+  }
+
+  private async request<T>(path: string, payload?: unknown, baseUrl = this.baseUrl): Promise<T> {
     const token = await this.auth.getAccessToken()
     if (!token) throw new ComfyBuilderApiError('unauthorized', 'Not signed in to ComfyBuilder')
 
     let res: Response
     try {
-      res = await fetch(`${this.baseUrl}${path}`, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      res = await fetch(`${baseUrl}${path}`, {
+        method: payload === undefined ? 'GET' : 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          ...(payload === undefined ? {} : { 'Content-Type': 'application/json' })
+        },
+        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
         signal: AbortSignal.timeout(this.timeoutMs)
       })
     } catch (err) {

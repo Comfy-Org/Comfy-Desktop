@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
  * One grid of chooser tiles — the shared body of every shelf. Renders a mixed
- * list of install tiles and distribution cards and re-emits every tile event
+ * list of install tiles and build cards and re-emits every tile event
  * verbatim; `ChooserView` owns the handlers, so the two families can't drift.
  */
 import { useI18n } from 'vue-i18n'
 import { Plus } from 'lucide-vue-next'
 import ChooserInstallTile from './ChooserInstallTile.vue'
-import DevPlatformDistributionCard from '../devplatform/DevPlatformDistributionCard.vue'
+import DevPlatformBuildCard from '../devplatform/DevPlatformBuildCard.vue'
 import { entryKey, type ChooserGridEntry } from './chooserGridEntry'
-import type { Distribution } from '../../devplatform/types'
+import type { Build } from '../../devplatform/types'
 import type { Installation } from '../../types/ipc'
 
 const props = withDefaults(
@@ -17,25 +17,34 @@ const props = withDefaults(
     entries: ChooserGridEntry[]
     /** Lead with the New Install tile (the your-installs family owns it). */
     showNew?: boolean
+    /** Lead with the web Builder CTA in the Workspace family. */
+    showWorkspaceCta?: boolean
     /** Center the rows instead of left-aligning them under a shelf header. */
     centered?: boolean
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
   }>(),
-  { showNew: false, centered: false, showFreeRunsPill: false, showWhyCloud: false }
+  {
+    showNew: false,
+    showWorkspaceCta: false,
+    centered: false,
+    showFreeRunsPill: false,
+    showWhyCloud: false
+  }
 )
 
 const emit = defineEmits<{
   'new-install': []
+  'workspace-create': []
   pick: [installation: Installation]
   'open-card-menu': [event: MouseEvent, installation: Installation]
   'open-kebab-menu': [event: MouseEvent, installation: Installation]
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
-  'dist-select': [distribution: Distribution]
-  'dist-kebab': [event: MouseEvent, distribution: Distribution]
+  'build-select': [build: Build]
+  'build-kebab': [event: MouseEvent, build: Build]
   'why-cloud': []
 }>()
 
@@ -88,6 +97,27 @@ function unlockTileSize(el: Element): void {
       <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
     </button>
 
+    <button
+      v-if="props.showWorkspaceCta"
+      key="__workspace-create"
+      type="button"
+      class="chooser-tile chooser-tile-workspace-cta"
+      :aria-label="t('chooser.workspaceCtaLabel')"
+      data-testid="chooser-workspace-cta"
+      @click="emit('workspace-create')"
+    >
+      <div class="chooser-tile-icon"><Plus :size="32" /></div>
+      <div class="workspace-cta__options" aria-hidden="true">
+        <span class="workspace-cta__option workspace-cta__option--create">{{
+          t('chooser.workspaceCreateWeb')
+        }}</span>
+        <span class="workspace-cta__separator">{{ t('chooser.workspaceCtaOr') }}</span>
+        <span class="workspace-cta__option workspace-cta__option--promote">{{
+          t('chooser.workspacePromoteLocal')
+        }}</span>
+      </div>
+    </button>
+
     <template v-for="entry in props.entries" :key="entryKey(entry)">
       <ChooserInstallTile
         v-if="entry.kind === 'install'"
@@ -103,11 +133,11 @@ function unlockTileSize(el: Element): void {
         @view-error="emit('view-error', $event)"
         @view-danger="emit('view-danger', $event)"
       />
-      <DevPlatformDistributionCard
+      <DevPlatformBuildCard
         v-else
-        :distribution="entry.dist"
-        @select="emit('dist-select', entry.dist)"
-        @open-kebab-menu="(event) => emit('dist-kebab', event, entry.dist)"
+        :build="entry.build"
+        @select="emit('build-select', entry.build)"
+        @open-kebab-menu="(event) => emit('build-kebab', event, entry.build)"
       />
     </template>
   </TransitionGroup>
@@ -131,6 +161,40 @@ function unlockTileSize(el: Element): void {
 }
 .chooser-family-grid--centered {
   justify-content: center;
+}
+
+.chooser-tile-workspace-cta {
+  justify-content: flex-end;
+}
+.workspace-cta__options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 7px;
+  width: 100%;
+}
+.workspace-cta__option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+}
+.workspace-cta__option--create {
+  color: var(--accent, #4a90e2);
+}
+.workspace-cta__option--promote {
+  color: var(--comfy-yellow);
+}
+.workspace-cta__separator {
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 /* Tile FLIP. */

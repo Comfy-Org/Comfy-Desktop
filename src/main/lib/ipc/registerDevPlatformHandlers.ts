@@ -2,31 +2,28 @@
  * Dev-platform IPC bridge: the ONE seam between the renderer and the
  * cloud-auth + comfy-builder libraries.
  *
- * Auth, workspace, distribution-catalog, and install-kickoff all funnel through
+ * Auth, workspace, build-catalog, and install-kickoff all funnel through
  * the single main-process `CloudSession` (see `../../devplatform/session`).
  * Access/refresh tokens NEVER cross this boundary: handlers return and broadcast
- * only renderer-safe shapes: `AuthStatus`, `Workspace[]`, and distribution
+ * only renderer-safe shapes: `AuthStatus`, `Workspace[]`, and build
  * DISPLAY rows: never a token or a download ref.
  *
  * `signInToCloud` is exported alongside the handlers because the title-bar file
  * menu starts sign-ins from main, with no renderer in the loop. It shares the
  * same auth broadcast as renderer-driven sign-ins.
  */
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, shell } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
+import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
 import {
   getBuilderClient,
   getCloudSession,
   setUnauthorizedHandler
 } from '../../devplatform/session'
-import {
-  listDistributionRows,
-  resolveHost,
-  resolveHostArtifact
-} from '../../devplatform/distributions'
-import type { DistributionRow } from '../../devplatform/distributions'
+import { resolveBuildRows, resolveHost, resolveHostArtifact } from '../../devplatform/builds'
+import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
 import type { AuthStatus, Workspace } from '../../cloud'
 import {
@@ -36,8 +33,14 @@ import {
   allocateUniqueDir,
   findDuplicatePath,
   defaultInstallDir,
+  sourceMap,
+  saveSnapshot,
+  loadSnapshot,
+  getSnapshotCount,
+  buildExportEnvelope,
   _broadcastToRenderer
 } from './shared'
+import type { InstallationRecord } from '../../installations'
 
 /** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
@@ -47,8 +50,10 @@ export const DEVPLATFORM_CHANNELS = {
   authChanged: 'comfybuilder:authChanged',
   listWorkspaces: 'comfybuilder:listWorkspaces',
   switchWorkspace: 'comfybuilder:switchWorkspace',
-  listDistributions: 'comfybuilder:listDistributions',
-  installDistribution: 'comfybuilder:installDistribution'
+  listBuilds: 'comfybuilder:listBuilds',
+  installBuild: 'comfybuilder:installBuild',
+  openBuilderCreate: 'comfybuilder:openBuilderCreate',
+  promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
 
 const SIGNED_OUT: AuthStatus = { signedIn: false }
@@ -59,10 +64,34 @@ const COMFYBUILDER_LAUNCH_ARGS = '--enable-manager'
 
 /** Result of an install-kickoff: mirrors the `add-installation` handler's shape
  *  so the renderer can drive the same `installInstance` + progress UI. */
-export interface InstallDistributionResult {
+export interface InstallBuildResult {
   ok: boolean
   message?: string
   entry?: { id: string; name: string }
+}
+
+export interface PromoteLocalInstanceResult {
+  ok: boolean
+  message?: string
+}
+
+function isPromotableLocalInstallation(inst: InstallationRecord): boolean {
+  return (
+    inst.status === 'installed' &&
+    Boolean(inst.installPath) &&
+    sourceMap[inst.sourceId]?.category === 'local' &&
+    inst.sourceId !== COMFYBUILDER_SOURCE_ID &&
+    !inst.workspaceId
+  )
+}
+
+function validatePlatformDraftUrl(value: string): string {
+  const platformOrigin = new URL(PLATFORM_WEB_BASE_URL).origin
+  const url = new URL(value, PLATFORM_WEB_BASE_URL)
+  if (url.protocol !== 'https:' || url.origin !== platformOrigin) {
+    throw new Error('Comfy Builder returned an invalid draft URL.')
+  }
+  return url.toString()
 }
 
 /**
@@ -122,9 +151,10 @@ export function registerDevPlatformHandlers(): void {
     broadcastAuthChanged(SIGNED_OUT)
   })
 
-  // Distribution ids whose install-kickoff is mid-flight, so a double-click
-  // cannot create two records for the same distribution.
+  // Build ids whose install-kickoff is mid-flight, so a double-click cannot
+  // create two records for the same build.
   const installing = new Set<string>()
+  const promoting = new Set<string>()
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
@@ -156,53 +186,136 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
+  ipcMain.handle(DEVPLATFORM_CHANNELS.openBuilderCreate, async (): Promise<void> => {
+    const status = session.status()
+    if (!status.signedIn) throw new Error('Not signed in.')
+    const url = new URL('/profile/distributions/new', PLATFORM_WEB_BASE_URL)
+    if (status.workspaceId) url.searchParams.set('workspace', status.workspaceId)
+    await shell.openExternal(url.toString())
+  })
+
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.promoteLocalInstance,
+    async (_event, installationId: string): Promise<PromoteLocalInstanceResult> => {
+      if (promoting.has(installationId)) {
+        return { ok: false, message: 'Promotion is already in progress.' }
+      }
+      promoting.add(installationId)
+      try {
+        const status = session.status()
+        if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
+        const workspaceId = status.workspaceId
+        if (!workspaceId) return { ok: false, message: 'No active workspace.' }
+
+        const inst = await installations.get(installationId)
+        if (!inst) return { ok: false, message: 'Instance not found.' }
+        if (!isPromotableLocalInstallation(inst)) {
+          return { ok: false, message: 'This instance cannot be promoted to a workspace.' }
+        }
+
+        const filename = await saveSnapshot(inst.installPath, inst, 'manual')
+        const snapshot = await loadSnapshot(inst.installPath, filename)
+        const snapshotCount = await getSnapshotCount(inst.installPath)
+        await installations.update(inst.id, { lastSnapshot: filename, snapshotCount })
+
+        const current = await installations.get(installationId)
+        if (!current || !isPromotableLocalInstallation(current)) {
+          return { ok: false, message: 'The instance changed. Try again.' }
+        }
+        if (session.status().workspaceId !== workspaceId) {
+          return { ok: false, message: 'The active workspace changed. Try again.' }
+        }
+
+        const envelope = buildExportEnvelope(inst.name, [{ filename, snapshot }])
+        const draft = await getBuilderClient().createDesktopDraft(envelope)
+        if (draft.workspaceId !== workspaceId) {
+          throw new Error('Comfy Builder created the draft in a different workspace.')
+        }
+        const latest = await installations.get(installationId)
+        if (!latest || !isPromotableLocalInstallation(latest)) {
+          return { ok: false, message: 'The instance changed. Try again.' }
+        }
+        if (session.status().workspaceId !== workspaceId) {
+          return { ok: false, message: 'The active workspace changed. Try again.' }
+        }
+        await shell.openExternal(validatePlatformDraftUrl(draft.editUrl))
+        return { ok: true }
+      } catch (err) {
+        console.warn('[dev-platform] Failed to promote local instance:', err)
+        return { ok: false, message: (err as Error)?.message || String(err) }
+      } finally {
+        promoting.delete(installationId)
+      }
+    }
+  )
+
   // Display rows for the current workspace. Signed out -> empty (no network
   // calls); the renderer already gates the grid on sign-in. The installed-version
   // map lets a row whose newer build runs here surface as `update-available`.
-  ipcMain.handle(DEVPLATFORM_CHANNELS.listDistributions, async (): Promise<DistributionRow[]> => {
+  ipcMain.handle(DEVPLATFORM_CHANNELS.listBuilds, async (): Promise<BuildRow[]> => {
     if (!session.isSignedIn()) return []
+    const workspaceId = session.status().workspaceId
     const cacheGeneration = getVersionCacheGeneration()
     const host = await resolveHost()
-    const rows = await listDistributionRows(
-      getBuilderClient(),
+    const client = getBuilderClient()
+    const wireDistributions = await client.listDistributions()
+    // Associate only unowned installs whose exact opaque id is present in the
+    // successfully fetched catalog for the same active workspace.
+    if (workspaceId && session.status().workspaceId === workspaceId) {
+      try {
+        await installations.associateUnownedBuildInstalls(
+          workspaceId,
+          new Set(wireDistributions.map((distribution) => distribution.id))
+        )
+      } catch (err) {
+        console.warn('[dev-platform] Failed to associate unowned build installs:', err)
+      }
+    }
+    const rows = await resolveBuildRows(
+      client,
       host,
-      await installedDistributionVersions(),
+      wireDistributions,
+      await installedBuildVersions(workspaceId),
       cacheGeneration
     )
     // Catalog reads warm the synchronous source update cache. Re-pull
-    // installations so existing distribution tiles gain their Update action.
+    // installations so existing build tiles gain their Update action.
     _broadcastToRenderer('installations-changed', {})
     return rows
   })
 
-  // Resolve the host artifact for one distribution and create an `installing`
+  // Resolve the host artifact for one build and create an `installing`
   // record, then hand the id back so the renderer runs the normal
   // `installInstance` + progress flow. The install itself (download -> verify
   // sha -> extract) runs in the comfybuilder SourcePlugin.
   ipcMain.handle(
-    DEVPLATFORM_CHANNELS.installDistribution,
-    async (_event, distributionId: string): Promise<InstallDistributionResult> => {
+    DEVPLATFORM_CHANNELS.installBuild,
+    async (_event, buildId: string): Promise<InstallBuildResult> => {
       if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
-      if (installing.has(distributionId)) return { ok: false, message: 'Install already starting.' }
-      installing.add(distributionId)
+      const workspaceId = session.status().workspaceId
+      if (!workspaceId) return { ok: false, message: 'No active workspace.' }
+      const installKey = `${workspaceId}:${buildId}`
+      if (installing.has(installKey)) return { ok: false, message: 'Install already starting.' }
+      installing.add(installKey)
       try {
         // The in-flight set only covers one handler invocation: a repeat call
         // after this one returns (but before the renderer's install starts)
-        // would otherwise create a second record for the same distribution.
+        // would otherwise create a second record for the same build.
         // Failed records don't block: retrying those goes through their own
         // install tile, and startup recovery demotes stale `installing` ones.
         const existing = (await installations.list()).find(
           (inst) =>
             inst.sourceId === COMFYBUILDER_SOURCE_ID &&
-            inst.distributionId === distributionId &&
+            inst.workspaceId === workspaceId &&
+            inst.distributionId === buildId &&
             inst.status !== 'failed'
         )
         if (existing) {
-          return { ok: false, message: `"${existing.name}" already installs this distribution.` }
+          return { ok: false, message: `"${existing.name}" already installs this build.` }
         }
         const client = getBuilderClient()
         const host = await resolveHost()
-        const resolved = await resolveHostArtifact(client, host, distributionId)
+        const resolved = await resolveHostArtifact(client, host, buildId)
         if (!resolved) return { ok: false, message: 'No installable build for this machine.' }
 
         const { artifact } = resolved
@@ -210,24 +323,28 @@ export function registerDevPlatformHandlers(): void {
           return { ok: false, message: 'This build has no SHA-256 integrity value.' }
         }
 
-        // Name the install after the distribution. One extra list call keeps the
+        // Name the install after the build. One extra list call keeps the
         // renderer from having to pass a (spoofable) display name back to main.
-        const dists = await client.listDistributions()
-        const dist = dists.find((d) => d.id === distributionId)
-        const displayName = await uniqueName(dist?.name ?? distributionId)
+        const wireBuilds = await client.listDistributions()
+        const wireBuild = wireBuilds.find((build) => build.id === buildId)
+        const displayName = await uniqueName(wireBuild?.name ?? buildId)
 
         const installPath = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(displayName))
         const duplicate = await findDuplicatePath(installPath)
         if (duplicate)
           return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
+        if (session.status().workspaceId !== workspaceId) {
+          return { ok: false, message: 'The active workspace changed. Try again.' }
+        }
 
         const entry = await installations.add({
           name: displayName,
           sourceId: COMFYBUILDER_SOURCE_ID,
           sourceLabel: COMFYBUILDER_SOURCE_LABEL,
           installPath,
-          distributionId,
-          distributionName: dist?.name ?? distributionId,
+          workspaceId,
+          distributionId: buildId,
+          distributionName: wireBuild?.name ?? buildId,
           version: String(resolved.version),
           artifactId: artifact.id,
           artifactOs: artifact.os,
@@ -244,18 +361,21 @@ export function registerDevPlatformHandlers(): void {
 
         return { ok: true, entry: { id: entry.id, name: entry.name } }
       } finally {
-        installing.delete(distributionId)
+        installing.delete(installKey)
       }
     }
   )
 }
 
-/** distributionId -> highest installed version, over the comfybuilder installs,
- *  so `listDistributionRows` can mark an outdated one `update-available`. */
-async function installedDistributionVersions(): Promise<Map<string, number>> {
+/** Persisted Builder API id -> highest installed version, over the comfybuilder
+ *  installs, so `listBuildRows` can mark an outdated one `update-available`. */
+async function installedBuildVersions(
+  workspaceId: string | undefined
+): Promise<Map<string, number>> {
   const map = new Map<string, number>()
+  if (!workspaceId) return map
   for (const inst of await installations.list()) {
-    if (inst.sourceId !== COMFYBUILDER_SOURCE_ID) continue
+    if (inst.sourceId !== COMFYBUILDER_SOURCE_ID || inst.workspaceId !== workspaceId) continue
     const id = inst.distributionId
     const version = Number(inst.version)
     if (typeof id !== 'string' || !id || !Number.isFinite(version)) continue

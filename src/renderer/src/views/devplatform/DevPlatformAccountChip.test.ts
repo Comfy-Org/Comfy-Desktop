@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import DevPlatformAccountChip from './DevPlatformAccountChip.vue'
 import { useAuthStore } from '../../stores/authStore'
-import type { AuthStatus, Workspace } from '../../../../types/ipc'
+import type { AuthStatus } from '../../../../types/ipc'
 
 // The real `confirm` resolves only when the singleton DialogHost answers, and
 // no host is mounted here — stub it so the sign-out path is deterministic.
@@ -44,22 +44,9 @@ const SIGNED_IN: AuthStatus = {
   workspaceType: 'personal'
 }
 
-const TEAM_SIGNED_IN: AuthStatus = {
-  signedIn: true,
-  email: 'someone@comfy.org',
-  workspaceType: 'team',
-  workspaceId: 'w1'
-}
-
-const TEAM_WORKSPACES: Workspace[] = [
-  { id: 'w1', name: 'Team One', type: 'team', role: 'owner' },
-  { id: 'w2', name: 'Team Two', type: 'team', role: 'admin' }
-]
-
 /** Mount with the auth status hydrated. */
-async function mountChip(status: AuthStatus = SIGNED_OUT, workspaces: Workspace[] = []) {
+async function mountChip(status: AuthStatus = SIGNED_OUT) {
   installMockApi(status)
-  api.comfybuilder.listWorkspaces.mockResolvedValue(workspaces)
   setActivePinia(createPinia())
   const store = useAuthStore()
   const wrapper = mount(DevPlatformAccountChip)
@@ -97,14 +84,14 @@ describe('DevPlatformAccountChip — signed out', () => {
 })
 
 describe('DevPlatformAccountChip — signed in', () => {
-  it('names the account and the workspace on the chip face', async () => {
+  it('names only the account on the chip face', async () => {
     const { wrapper } = await mountChip(SIGNED_IN)
     expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('someone@comfy.org')
-    expect(wrapper.text()).toContain('Personal')
+    expect(wrapper.text()).not.toContain('Personal')
   })
 
-  it('opens the workspace switcher and pulls the list lazily', async () => {
+  it('opens an account-only menu without pulling workspaces', async () => {
     const { wrapper } = await mountChip(SIGNED_IN)
     expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(false)
 
@@ -112,54 +99,9 @@ describe('DevPlatformAccountChip — signed in', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(true)
-    expect(api.comfybuilder.listWorkspaces).toHaveBeenCalledOnce()
-  })
-
-  // The chip face must never show a raw workspace id, so a team session pulls
-  // the workspace list up front instead of waiting for the menu to open.
-  it('resolves the team workspace name on the face without opening the menu', async () => {
-    const { wrapper } = await mountChip(TEAM_SIGNED_IN, TEAM_WORKSPACES)
-    expect(api.comfybuilder.listWorkspaces).toHaveBeenCalledOnce()
-    expect(wrapper.find('.account-chip__workspace-name').text()).toBe('Team One')
-    expect(wrapper.find('[data-testid="devplatform-account-menu"]').exists()).toBe(false)
-  })
-
-  it('switches workspace and emits, ignoring the active row', async () => {
-    const { wrapper } = await mountChip(TEAM_SIGNED_IN, TEAM_WORKSPACES)
-    api.comfybuilder.switchWorkspace.mockResolvedValue({
-      signedIn: true,
-      email: 'someone@comfy.org',
-      workspaceType: 'team',
-      workspaceId: 'w2'
-    })
-
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
-    await flushPromises()
-
-    // Clicking the already-active workspace is a no-op.
-    await wrapper.find('[data-testid="devplatform-workspace-w1"]').trigger('click')
-    await flushPromises()
-    expect(api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
-    expect(wrapper.emitted('workspace-switched')).toBeUndefined()
-
-    await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
-    await flushPromises()
-    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
-    expect(wrapper.emitted('workspace-switched')).toHaveLength(1)
-  })
-
-  // A cancelled/failed re-auth leaves the current workspace untouched.
-  it('keeps the active workspace when the switch re-auth fails', async () => {
-    const { wrapper, store } = await mountChip(TEAM_SIGNED_IN, TEAM_WORKSPACES)
-    api.comfybuilder.switchWorkspace.mockRejectedValue(new Error('cancelled'))
-
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.emitted('workspace-switched')).toBeUndefined()
-    expect(store.status.workspaceId).toBe('w1')
+    expect(wrapper.find('[data-testid="devplatform-account-signout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid^="devplatform-workspace-"]').exists()).toBe(false)
+    expect(api.comfybuilder.listWorkspaces).not.toHaveBeenCalled()
   })
 
   it('signs out only after the confirm is accepted', async () => {

@@ -2,13 +2,13 @@ import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
-import type { Distribution } from '../devplatform/types'
+import type { Build } from '../devplatform/types'
 
 /**
  * Dev-platform session store: the renderer's single source of auth + workspace
- * + distribution state.
+ * + build state.
  *
- * It only ever holds renderer-safe data (AuthStatus / Workspace / distribution
+ * It only ever holds renderer-safe data (AuthStatus / Workspace / build
  * display rows); tokens live in the main process. Every mutation goes through
  * `window.api.comfybuilder`, and `onAuthChanged` keeps the store in lockstep
  * with a sign-in / switch / sign-out that originated anywhere.
@@ -16,13 +16,13 @@ import type { Distribution } from '../devplatform/types'
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
   const workspaces = ref<Workspace[]>([])
-  const distributions = ref<Distribution[]>([])
+  const builds = ref<Build[]>([])
   const loadingWorkspaces = ref(false)
-  const loadingDistributions = ref(false)
+  const loadingBuilds = ref(false)
   // Load-failure flags so the UI can tell a transient error apart from an empty
   // workspace (both otherwise leave the arrays empty).
   const workspacesError = ref(false)
-  const distributionsError = ref(false)
+  const buildsError = ref(false)
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
   /** Bumped on every authoritative status change (push, sign-in, switch,
@@ -36,9 +36,9 @@ export const useAuthStore = defineStore('auth', () => {
   function advanceRevision(): void {
     revision += 1
     loadingWorkspaces.value = false
-    loadingDistributions.value = false
+    loadingBuilds.value = false
     workspacesError.value = false
-    distributionsError.value = false
+    buildsError.value = false
   }
 
   /** The session identity the scoped caches are keyed on. */
@@ -61,14 +61,14 @@ export const useAuthStore = defineStore('auth', () => {
     advanceRevision()
     status.value = next
     if (!next.signedIn) resetScopedState()
-    else distributions.value = []
+    else builds.value = []
   }
 
-  /** Drop workspace-scoped caches: the list and the distributions both belong
+  /** Drop workspace-scoped caches: the list and the builds both belong
    *  to the token's single workspace, so a switch/sign-out invalidates them. */
   function resetScopedState(): void {
     workspaces.value = []
-    distributions.value = []
+    builds.value = []
   }
 
   async function fetchStatus(): Promise<AuthStatus> {
@@ -115,7 +115,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** Switch the active workspace (re-runs the browser handoff pre-selecting it).
    *  The new status also arrives via `onAuthChanged`; the scoped caches are
-   *  dropped so the distribution grid re-fetches for the new workspace. */
+   *  dropped so the build grid re-fetches for the new workspace. */
   async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     const next = await comfybuilderApi.switchWorkspace(workspaceId)
     applyAuthoritativeStatus(next)
@@ -137,41 +137,41 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isSignedIn = computed(() => status.value.signedIn)
 
-  /** The distributions published to the signed-in workspace, as display rows. */
-  async function fetchDistributions(): Promise<Distribution[]> {
+  /** The builds published to the signed-in workspace, as display rows. */
+  async function fetchBuilds(): Promise<Build[]> {
     if (!isSignedIn.value) {
-      distributions.value = []
-      return distributions.value
+      builds.value = []
+      return builds.value
     }
     const seen = revision
-    loadingDistributions.value = true
-    if (revision === seen) distributionsError.value = false
+    loadingBuilds.value = true
+    if (revision === seen) buildsError.value = false
     try {
-      const next = await comfybuilderApi.listDistributions()
-      if (revision === seen) distributions.value = next
-      return distributions.value
+      const next = await comfybuilderApi.listBuilds()
+      if (revision === seen) builds.value = next
+      return builds.value
     } catch {
-      if (revision === seen) distributionsError.value = true
-      return distributions.value
+      if (revision === seen) buildsError.value = true
+      return builds.value
     } finally {
-      if (revision === seen) loadingDistributions.value = false
+      if (revision === seen) loadingBuilds.value = false
     }
   }
 
   return {
     status,
     workspaces,
-    distributions,
+    builds,
     loadingWorkspaces,
-    loadingDistributions,
+    loadingBuilds,
     workspacesError,
-    distributionsError,
+    buildsError,
     isSignedIn,
     fetchStatus,
     signIn,
     signOut,
     fetchWorkspaces,
     switchWorkspace,
-    fetchDistributions
+    fetchBuilds
   }
 })

@@ -37,7 +37,7 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
   startManagedModelJob,
   cancelModelDownload
 }))
-vi.mock('../../devplatform/distributions', () => ({
+vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
   listCompleteVersions: vi.fn(async () => [])
@@ -47,10 +47,7 @@ import fs, { promises as fsp } from 'fs'
 import os from 'os'
 import path from 'path'
 import { installArtifact, stageModels, resolveModelManifest } from '../../comfybuilder'
-import {
-  listCompleteVersions,
-  resolveHostArtifactForVersion
-} from '../../devplatform/distributions'
+import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
   getCachedVersions,
@@ -85,7 +82,7 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     distributionId: 'd1',
     distributionName: 'desktop-4target-stg-v0190',
     version: '1',
-    // Every real record carries its build identity (written by installDistribution).
+    // Every real record carries its build identity (written by the install handler).
     artifactId: 'art-default',
     artifactOs: 'linux',
     artifactGpu: 'nvidia',
@@ -284,7 +281,7 @@ describe('comfybuilder.install wiring', () => {
       .invocationCallOrder[0]!
     expect(archiveOrder).toBeLessThan(stageOrder)
 
-    // The manifest is keyed by the record's distribution + version number.
+    // The manifest is keyed by the record's build id and version number.
     expect(resolveModelManifest).toHaveBeenCalledWith(expect.anything(), 'd1', '1')
     // Staging runs on the managed download surface, not an ad-hoc downloader.
     expect(stageModels).toHaveBeenCalledWith(
@@ -354,7 +351,7 @@ describe('comfybuilder.install wiring', () => {
 })
 
 describe('comfybuilder interrupted-install recovery', () => {
-  it('migrates existing distribution records to isolated model storage', async () => {
+  it('migrates existing build records to isolated model storage', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-isolation-'))
     try {
       await expect(
@@ -577,7 +574,7 @@ describe('comfybuilder.getListPreview', () => {
     expect(comfybuilder.getListPreview!(record())).toBeNull()
   })
 
-  it('surfaces the distribution once a rename has made the two differ', () => {
+  it('surfaces the build name once a rename has made the two differ', () => {
     expect(comfybuilder.getListPreview!(record({ name: 'My Renamed Install' }))).toBe(
       'desktop-4target-stg-v0190'
     )
@@ -587,7 +584,7 @@ describe('comfybuilder.getListPreview', () => {
 describe('comfybuilder.withAccelArgs', () => {
   // The flag tracks the INSTALLED ARTIFACT, not the host. `selectArtifactForHost`
   // treats a cpu build as the universal fallback, so an nvidia machine lands on
-  // a cpu artifact whenever the distribution has no nvidia build: that torch is
+  // a cpu artifact whenever the build has no nvidia artifact: that torch is
   // still CPU-only and ComfyUI would assert "Torch not compiled with CUDA
   // enabled" without --cpu. nvidia/amd/mps builds bring their own accelerated
   // torch and are auto-detected, so they take no flag.

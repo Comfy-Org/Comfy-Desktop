@@ -42,16 +42,27 @@ function freshInstall(): string {
 
 /** Ask the app to run the real staging against installPath, reading the manifest
  *  from the env-pointed file the test controls. */
-async function stage(installPath: string): Promise<{ staged?: string[]; error?: string; kind?: string }> {
+async function stage(
+  installPath: string
+): Promise<{ staged?: string[]; error?: string; kind?: string }> {
   // Deliberately not retried: staging mutates the install's model tree, so a
   // retry after a lost result could run the real staging twice.
-  return ctx.app.evaluate(async (_electron, arg) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { stageDistributionModels: (o: unknown) => Promise<unknown> }
-    }).__e2e
-    if (!helpers) throw new Error('__e2e not registered')
-    return helpers.stageDistributionModels(arg) as Promise<{ staged?: string[]; error?: string; kind?: string }>
-  }, { installPath, distributionId: 'd-e2e', version: '1' })
+  return ctx.app.evaluate(
+    async (_electron, arg) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { stageBuildModels: (o: unknown) => Promise<unknown> }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('__e2e not registered')
+      return helpers.stageBuildModels(arg) as Promise<{
+        staged?: string[]
+        error?: string
+        kind?: string
+      }>
+    },
+    { installPath, buildId: 'd-e2e', version: '1' }
+  )
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -85,12 +96,25 @@ test.afterAll(async () => {
 })
 
 test('stages verified models into ComfyUI/models/<type>/<filename> @windows @macos', async () => {
-  writeFileSync(manifestFile, JSON.stringify({
-    models: [
-      { type: 'vae_approx', filename: 'taesd_decoder.pth', sha256: sha(DECODER), downloadUrl: `${baseUrl}/decoder` },
-      { type: 'vae_approx', filename: 'taesd_encoder.pth', sha256: sha(ENCODER), downloadUrl: `${baseUrl}/encoder` },
-    ],
-  }))
+  writeFileSync(
+    manifestFile,
+    JSON.stringify({
+      models: [
+        {
+          type: 'vae_approx',
+          filename: 'taesd_decoder.pth',
+          sha256: sha(DECODER),
+          downloadUrl: `${baseUrl}/decoder`
+        },
+        {
+          type: 'vae_approx',
+          filename: 'taesd_encoder.pth',
+          sha256: sha(ENCODER),
+          downloadUrl: `${baseUrl}/encoder`
+        }
+      ]
+    })
+  )
   const install = freshInstall()
   const res = await stage(install)
   expect(res.error, res.error).toBeUndefined()
@@ -106,9 +130,19 @@ test('stages verified models into ComfyUI/models/<type>/<filename> @windows @mac
 })
 
 test('fails the stage and leaves no file when a model checksum does not match @windows @macos', async () => {
-  writeFileSync(manifestFile, JSON.stringify({
-    models: [{ type: 'checkpoints', filename: 'bad.safetensors', sha256: sha(Buffer.from('other')), downloadUrl: `${baseUrl}/decoder` }],
-  }))
+  writeFileSync(
+    manifestFile,
+    JSON.stringify({
+      models: [
+        {
+          type: 'checkpoints',
+          filename: 'bad.safetensors',
+          sha256: sha(Buffer.from('other')),
+          downloadUrl: `${baseUrl}/decoder`
+        }
+      ]
+    })
+  )
   const install = freshInstall()
   const res = await stage(install)
   expect(res.kind).toBe('model-checksum-mismatch')
