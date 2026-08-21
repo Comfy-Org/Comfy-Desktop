@@ -7,7 +7,7 @@
  * them owning their own token state. The client pulls a bearer token from the
  * session's `TokenProvider` per request; the token never leaves this process.
  */
-import { BUILDER_BASE_URL, PLATFORM_WEB_BASE_URL } from './config'
+import { BUILDER_BASE_URL } from './config'
 import { CloudSession } from '../cloud'
 import { ComfyBuilderClient } from '../comfybuilder'
 
@@ -30,7 +30,6 @@ export function getBuilderClient(): ComfyBuilderClient {
   if (!client) {
     client = new ComfyBuilderClient({
       baseUrl: BUILDER_BASE_URL,
-      platformBaseUrl: PLATFORM_WEB_BASE_URL,
       auth: getCloudSession().asTokenProvider(() => unauthorizedHandler?.())
     })
   }

@@ -1,12 +1,12 @@
 /**
  * Authenticated client for Builder catalog reads, artifact download resolution,
- * and Platform Desktop snapshot drafts. Tokens never leave this process.
+ * and Desktop snapshot drafts. Tokens never leave this process.
  */
 import type {
   Artifact,
   Build,
+  BuildDraft,
   BuildVersion,
-  DesktopDraft,
   ModelManifest,
   TokenProvider
 } from './types'
@@ -15,7 +15,6 @@ import { isSecureDownloadUrl, isValidSha256 } from './integrity'
 
 /** Prod builder gateway. Pass `baseUrl` to target staging or a mock. */
 export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
-export const DEFAULT_PLATFORM_BASE_URL = 'https://platform.comfy.org'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
@@ -60,8 +59,6 @@ async function errorReason(res: Response): Promise<string> {
 export interface ComfyBuilderClientOptions {
   /** Gateway base URL including the `/builder` mount. Defaults to prod. */
   baseUrl?: string
-  /** Platform web origin that accepts Desktop snapshot draft uploads. */
-  platformBaseUrl?: string
   /** Auth seam: the UI's token source. */
   auth: TokenProvider
   /** Per-request timeout in ms. Defaults to 30s. */
@@ -81,25 +78,133 @@ interface VersionDetailResponse {
 interface SignedDownloadResponse {
   downloadUrl?: string
 }
-interface DesktopDraftResponse {
-  buildId?: string
-  workspaceId?: string
-  editUrl?: string
+interface SnapshotNode {
+  name: string
+  cnrId?: string
+  registryVersion?: string
+  repository?: string
+  commit?: string
+}
+interface SnapshotImportReport {
+  unresolvedNodes: string[]
+  notInRegistry: string[]
+  registryPending: string[]
+  skippedPins: string[]
+  unpinnablePins: string[]
+  unverifiedPins: string[]
+  collidingNodes?: string[]
+  droppedComfyVersion?: string
+  pythonSatisfied: boolean
+}
+interface SnapshotResolutionResponse {
+  definition?: unknown
+  comfyVersion?: unknown
+  pythonVersion?: unknown
+  nodes?: unknown
+  report?: unknown
+}
+interface SnapshotResolution {
+  definition: Record<string, unknown>
+  comfyVersion: string
+  pythonVersion: string
+  nodes: SnapshotNode[]
+  report: SnapshotImportReport
+}
+interface CreatedBuildResponse {
+  id?: unknown
+  workspaceId?: unknown
 }
 
-/** The authenticated Builder and Platform API surface used by Desktop. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === 'string'
+}
+
+function isSnapshotNode(value: unknown): value is SnapshotNode {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.name === 'string' &&
+    value.name.length > 0 &&
+    isOptionalString(value.cnrId) &&
+    isOptionalString(value.registryVersion) &&
+    isOptionalString(value.repository) &&
+    isOptionalString(value.commit)
+  )
+}
+
+function normalizeSnapshotReport(value: unknown): SnapshotImportReport | null {
+  if (!isRecord(value) || typeof value.pythonSatisfied !== 'boolean') return null
+  const unresolvedNodes = value.unresolvedNodes
+  const notInRegistry = value.notInRegistry
+  const registryPending = value.registryPending
+  const skippedPins = value.skippedPins
+  const unpinnablePins = value.unpinnablePins
+  const unverifiedPins = value.unverifiedPins
+  const collidingNodes = value.collidingNodes
+  if (
+    (unresolvedNodes !== undefined && !isStringArray(unresolvedNodes)) ||
+    (notInRegistry !== undefined && !isStringArray(notInRegistry)) ||
+    (registryPending !== undefined && !isStringArray(registryPending)) ||
+    (skippedPins !== undefined && !isStringArray(skippedPins)) ||
+    (unpinnablePins !== undefined && !isStringArray(unpinnablePins)) ||
+    (unverifiedPins !== undefined && !isStringArray(unverifiedPins)) ||
+    (collidingNodes !== undefined && !isStringArray(collidingNodes)) ||
+    !isOptionalString(value.droppedComfyVersion)
+  ) {
+    return null
+  }
+  return {
+    unresolvedNodes: unresolvedNodes ?? [],
+    notInRegistry: notInRegistry ?? [],
+    registryPending: registryPending ?? [],
+    skippedPins: skippedPins ?? [],
+    unpinnablePins: unpinnablePins ?? [],
+    unverifiedPins: unverifiedPins ?? [],
+    ...(collidingNodes ? { collidingNodes } : {}),
+    ...(value.droppedComfyVersion ? { droppedComfyVersion: value.droppedComfyVersion } : {}),
+    pythonSatisfied: value.pythonSatisfied
+  }
+}
+
+function normalizeSnapshotResolution(value: SnapshotResolutionResponse): SnapshotResolution | null {
+  if (
+    !isRecord(value.definition) ||
+    !isOptionalString(value.comfyVersion) ||
+    !isOptionalString(value.pythonVersion)
+  ) {
+    return null
+  }
+  const nodes = value.nodes ?? []
+  const report = normalizeSnapshotReport(value.report)
+  if (!Array.isArray(nodes) || !nodes.every(isSnapshotNode) || !report) return null
+  return {
+    definition: value.definition,
+    comfyVersion: value.comfyVersion ?? '',
+    pythonVersion: value.pythonVersion ?? '',
+    nodes,
+    report
+  }
+}
+
+function isOpaqueId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 500
+}
+
+/** The authenticated Builder API surface used by Desktop. */
 export class ComfyBuilderClient {
   private readonly baseUrl: string
-  private readonly platformBaseUrl: string
   private readonly auth: TokenProvider
   private readonly timeoutMs: number
 
   constructor(options: ComfyBuilderClientOptions) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
-    this.platformBaseUrl = (options.platformBaseUrl ?? DEFAULT_PLATFORM_BASE_URL).replace(
-      /\/+$/,
-      ''
-    )
     this.auth = options.auth
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
@@ -110,27 +215,51 @@ export class ComfyBuilderClient {
     return body.builds ?? []
   }
 
-  /** Upload a Desktop snapshot and return the Platform edit-page handoff. */
-  async createDesktopDraft(snapshot: SnapshotExportEnvelope): Promise<DesktopDraft> {
-    const body = await this.post<DesktopDraftResponse>(
-      '/api/desktop/build-drafts',
-      snapshot,
-      this.platformBaseUrl
-    )
-    if (
-      typeof body.buildId !== 'string' ||
-      !body.buildId ||
-      typeof body.workspaceId !== 'string' ||
-      !body.workspaceId ||
-      typeof body.editUrl !== 'string' ||
-      !body.editUrl
-    ) {
-      throw new ComfyBuilderApiError('server', 'Desktop draft response is incomplete')
+  /** Resolve a Desktop snapshot into a draft Build and return its web handoff. */
+  async createBuildDraft(snapshot: SnapshotExportEnvelope): Promise<BuildDraft> {
+    const name = snapshot.installationName.trim()
+    if (!name || name.length > 200 || snapshot.snapshots.length !== 1) {
+      throw new ComfyBuilderApiError('server', 'Desktop snapshot cannot be promoted')
     }
+    const envelope = { ...snapshot, installationName: name }
+    const token = await this.accessToken()
+    const resolvedBody = await this.post<SnapshotResolutionResponse>(
+      '/v1/snapshots/resolve',
+      { snapshot: envelope },
+      token
+    )
+    const resolved = normalizeSnapshotResolution(resolvedBody)
+    if (!resolved) {
+      throw new ComfyBuilderApiError('server', 'Builder returned an invalid snapshot resolution')
+    }
+
+    const definition = {
+      ...resolved.definition,
+      uiDesktopSnapshotImport: {
+        installationName: name,
+        comfyVersion: resolved.comfyVersion,
+        pythonVersion: resolved.pythonVersion,
+        nodes: resolved.nodes,
+        pipRequirements:
+          typeof resolved.definition.pipDependencies === 'string'
+            ? resolved.definition.pipDependencies.split(/\r?\n/).filter(Boolean)
+            : [],
+        report: resolved.report
+      }
+    }
+    const created = await this.post<CreatedBuildResponse>('/v1/builds', { name, definition }, token)
+    if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
+      throw new ComfyBuilderApiError('server', 'Builder returned an invalid draft Build')
+    }
+    const query = new URLSearchParams({
+      workspace: created.workspaceId,
+      edit: created.id,
+      step: 'import'
+    })
     return {
-      buildId: body.buildId,
-      workspaceId: body.workspaceId,
-      editUrl: body.editUrl
+      buildId: created.id,
+      workspaceId: created.workspaceId,
+      editUrl: `/profile/builds/new?${query.toString()}`
     }
   }
 
@@ -199,17 +328,22 @@ export class ComfyBuilderClient {
     return this.request<T>(path)
   }
 
-  private async post<T>(path: string, payload: unknown, baseUrl = this.baseUrl): Promise<T> {
-    return this.request<T>(path, payload, baseUrl)
+  private async post<T>(path: string, payload: unknown, token?: string): Promise<T> {
+    return this.request<T>(path, payload, token)
   }
 
-  private async request<T>(path: string, payload?: unknown, baseUrl = this.baseUrl): Promise<T> {
+  private async accessToken(): Promise<string> {
     const token = await this.auth.getAccessToken()
     if (!token) throw new ComfyBuilderApiError('unauthorized', 'Not signed in to ComfyBuilder')
+    return token
+  }
+
+  private async request<T>(path: string, payload?: unknown, pinnedToken?: string): Promise<T> {
+    const token = pinnedToken ?? (await this.accessToken())
 
     let res: Response
     try {
-      res = await fetch(`${baseUrl}${path}`, {
+      res = await fetch(`${this.baseUrl}${path}`, {
         method: payload === undefined ? 'GET' : 'POST',
         headers: {
           Accept: 'application/json',

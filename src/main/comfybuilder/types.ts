@@ -20,8 +20,8 @@ export interface Build {
   updatedAt?: string
 }
 
-/** Builder draft created from a Desktop snapshot through the Platform web API. */
-export interface DesktopDraft {
+/** Builder draft created from a Desktop snapshot. */
+export interface BuildDraft {
   buildId: string
   workspaceId: string
   editUrl: string

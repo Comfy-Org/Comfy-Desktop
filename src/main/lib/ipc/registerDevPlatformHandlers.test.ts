@@ -17,10 +17,10 @@ const mocks = vi.hoisted(() => ({
   // client + policy
   getBuilderClient: vi.fn(() => ({
     listBuilds: mocks.listBuilds,
-    createDesktopDraft: mocks.createDesktopDraft
+    createBuildDraft: mocks.createBuildDraft
   })),
   listBuilds: vi.fn(),
-  createDesktopDraft: vi.fn(),
+  createBuildDraft: vi.fn(),
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
@@ -137,7 +137,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.getSnapshotCount.mockResolvedValue(3)
     mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
     mocks.listBuilds.mockResolvedValue([])
-    mocks.createDesktopDraft.mockResolvedValue({
+    mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
       workspaceId: 'w1',
       editUrl: '/profile/builds/new?workspace=w1&edit=build-1&step=import'
@@ -322,7 +322,7 @@ describe('registerDevPlatformHandlers', () => {
         snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
       }
     ])
-    expect(mocks.createDesktopDraft).toHaveBeenCalledExactlyOnceWith({
+    expect(mocks.createBuildDraft).toHaveBeenCalledExactlyOnceWith({
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
@@ -345,7 +345,7 @@ describe('registerDevPlatformHandlers', () => {
     expect(second).toEqual({ ok: false, message: 'Promotion is already in progress.' })
     finishCapture('fresh.json')
     await expect(first).resolves.toEqual({ ok: true })
-    expect(mocks.createDesktopDraft).toHaveBeenCalledOnce()
+    expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -358,7 +358,7 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(result).toEqual({ ok: false, message })
     expect(mocks.saveSnapshot).not.toHaveBeenCalled()
-    expect(mocks.createDesktopDraft).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -384,7 +384,7 @@ describe('registerDevPlatformHandlers', () => {
       message: 'This instance cannot be promoted to a workspace.'
     })
     expect(mocks.saveSnapshot).not.toHaveBeenCalled()
-    expect(mocks.createDesktopDraft).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
   })
 
   it('does not upload if the active workspace changes during capture', async () => {
@@ -403,7 +403,7 @@ describe('registerDevPlatformHandlers', () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 
     expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
-    expect(mocks.createDesktopDraft).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
@@ -420,12 +420,12 @@ describe('registerDevPlatformHandlers', () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 
     expect(result).toEqual({ ok: false, message: 'The instance changed. Try again.' })
-    expect(mocks.createDesktopDraft).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
   it('does not open the draft if the active workspace changes during upload', async () => {
-    mocks.createDesktopDraft.mockImplementationOnce(async () => {
+    mocks.createBuildDraft.mockImplementationOnce(async () => {
       mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
       return {
         buildId: 'build-1',
@@ -465,7 +465,7 @@ describe('registerDevPlatformHandlers', () => {
     'https://attacker.example/profile/builds/new?workspace=w1&edit=build-1&step=import'
   ])('refuses to open an unsafe draft URL: %s', async (draftUrl) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mocks.createDesktopDraft.mockResolvedValue({
+    mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
       workspaceId: 'w1',
       editUrl: draftUrl
@@ -483,7 +483,7 @@ describe('registerDevPlatformHandlers', () => {
 
   it('refuses to open a draft created for another workspace', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mocks.createDesktopDraft.mockResolvedValue({
+    mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
       workspaceId: 'w2',
       editUrl: 'https://platform.comfy.org/profile/builds/new?workspace=w2&edit=build-1&step=import'
@@ -510,7 +510,7 @@ describe('registerDevPlatformHandlers', () => {
       message: 'Could not inspect the Python environment.'
     })
     expect(mocks.update).not.toHaveBeenCalled()
-    expect(mocks.createDesktopDraft).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
     warn.mockRestore()
   })
 

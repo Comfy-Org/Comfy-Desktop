@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComfyBuilderApiError, ComfyBuilderClient } from './client'
 import type { TokenProvider } from './types'
+import type { SnapshotExportEnvelope } from '../lib/snapshots/types'
 
 const auth = (token: string | null, onUnauthorized = vi.fn()): TokenProvider => ({
   getAccessToken: async () => token,
@@ -16,6 +17,57 @@ function mockFetch(status: number, body: unknown): typeof fetch {
         headers: { 'content-type': 'application/json' }
       })
   ) as unknown as typeof fetch
+}
+
+function snapshotExport(installationName = 'Local One'): SnapshotExportEnvelope {
+  return {
+    type: 'comfyui-desktop-2-snapshot',
+    version: 2,
+    exportedAt: '2026-08-21T00:00:00.000Z',
+    installationName,
+    snapshots: [
+      {
+        version: 2,
+        createdAt: '2026-08-21T00:00:00.000Z',
+        trigger: 'manual',
+        label: null,
+        comfyui: {
+          ref: 'v0.28.2',
+          commit: null,
+          releaseTag: 'v0.28.2',
+          variant: 'nvidia'
+        },
+        customNodes: [],
+        pipPackages: {},
+        pythonVersion: '3.13.1'
+      }
+    ]
+  }
+}
+
+function snapshotResolution() {
+  return {
+    definition: {
+      baseImage: 'cuda128-py312',
+      baseComfyVersion: 'v0.28.2',
+      customNodes: [],
+      pipDependencies: 'einops==0.8.0\n\nnumpy==2.0.0'
+    },
+    comfyVersion: 'v0.28.2',
+    pythonVersion: '3.13.1',
+    nodes: [{ name: 'ComfyUI-Test', cnrId: 'test-pack', registryVersion: '1.0.0' }],
+    report: {
+      unresolvedNodes: ['missing-pack'],
+      notInRegistry: ['missing-registry-pack'],
+      registryPending: [],
+      skippedPins: ['torch'],
+      unpinnablePins: ['local-package'],
+      unverifiedPins: [],
+      collidingNodes: ['duplicate-pack'],
+      droppedComfyVersion: 'old-ref',
+      pythonSatisfied: false
+    }
+  }
 }
 
 describe('ComfyBuilderClient', () => {
@@ -35,57 +87,108 @@ describe('ComfyBuilderClient', () => {
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
   })
 
-  it('uploads a Desktop snapshot to create a draft', async () => {
-    const f = mockFetch(200, {
-      buildId: 'build-1',
-      workspaceId: 'w1',
-      editUrl: '/profile/builds/new?workspace=w1&edit=build-1&step=import'
-    })
+  it('resolves a Desktop snapshot and creates a Build draft with the same token', async () => {
+    const resolution = snapshotResolution()
+    const f = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      const body = url.endsWith('/v1/snapshots/resolve')
+        ? resolution
+        : { id: 'build/id+1', workspaceId: 'workspace/id+1' }
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }) as unknown as typeof fetch
     vi.stubGlobal('fetch', f)
+    const getAccessToken = vi.fn(async () => 'tok-123')
     const client = new ComfyBuilderClient({
       baseUrl: 'https://api.test/builder',
-      platformBaseUrl: 'https://platform.test',
-      auth: auth('tok-123')
+      auth: { getAccessToken }
     })
-    const snapshot = {
-      type: 'comfyui-desktop-2-snapshot' as const,
-      version: 2 as const,
-      exportedAt: '2026-08-21T00:00:00.000Z',
-      installationName: 'Local One',
-      snapshots: []
-    }
+    const snapshot = snapshotExport(' Local One ')
 
-    await expect(client.createDesktopDraft(snapshot)).resolves.toEqual({
-      buildId: 'build-1',
-      workspaceId: 'w1',
-      editUrl: '/profile/builds/new?workspace=w1&edit=build-1&step=import'
+    await expect(client.createBuildDraft(snapshot)).resolves.toEqual({
+      buildId: 'build/id+1',
+      workspaceId: 'workspace/id+1',
+      editUrl: '/profile/builds/new?workspace=workspace%2Fid%2B1&edit=build%2Fid%2B1&step=import'
     })
-    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://platform.test/api/desktop/build-drafts')
-    expect(call[1]).toMatchObject({
+    const calls = (f as unknown as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls).toHaveLength(2)
+    expect(calls[0]![0]).toBe('https://api.test/builder/v1/snapshots/resolve')
+    expect(calls[0]![1]).toMatchObject({
       method: 'POST',
       headers: {
         Accept: 'application/json',
         Authorization: 'Bearer tok-123',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(snapshot)
+      body: JSON.stringify({ snapshot: { ...snapshot, installationName: 'Local One' } })
     })
+    expect(calls[1]![0]).toBe('https://api.test/builder/v1/builds')
+    expect(calls[1]![1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer tok-123',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: 'Local One',
+        definition: {
+          ...resolution.definition,
+          uiDesktopSnapshotImport: {
+            installationName: 'Local One',
+            comfyVersion: resolution.comfyVersion,
+            pythonVersion: resolution.pythonVersion,
+            nodes: resolution.nodes,
+            pipRequirements: ['einops==0.8.0', 'numpy==2.0.0'],
+            report: resolution.report
+          }
+        }
+      })
+    })
+    expect(getAccessToken).toHaveBeenCalledOnce()
   })
 
-  it('rejects an incomplete desktop draft response', async () => {
+  it('does not create a Build when snapshot resolution is invalid', async () => {
     vi.stubGlobal('fetch', mockFetch(200, {}))
     const client = new ComfyBuilderClient({ auth: auth('t') })
 
-    await expect(
-      client.createDesktopDraft({
-        type: 'comfyui-desktop-2-snapshot',
-        version: 2,
-        exportedAt: '2026-08-21T00:00:00.000Z',
-        installationName: 'Local One',
-        snapshots: []
-      })
-    ).rejects.toMatchObject({ kind: 'server' })
+    await expect(client.createBuildDraft(snapshotExport())).rejects.toMatchObject({
+      kind: 'server'
+    })
+  })
+
+  it('rejects a Build response without opaque IDs', async () => {
+    const f = vi.fn(async (input: string | URL | Request) => {
+      const body = String(input).endsWith('/v1/snapshots/resolve') ? snapshotResolution() : {}
+      return new Response(JSON.stringify(body), { status: 200 })
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({ auth: auth('t') })
+
+    await expect(client.createBuildDraft(snapshotExport())).rejects.toMatchObject({
+      kind: 'server'
+    })
+  })
+
+  it.each([
+    { case: 'an empty snapshot list', snapshots: [] },
+    {
+      case: 'retained snapshot history',
+      snapshots: [snapshotExport().snapshots[0]!, snapshotExport().snapshots[0]!]
+    }
+  ])('rejects $case', async ({ snapshots }) => {
+    const f = mockFetch(200, snapshotResolution())
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({ auth: auth('t') })
+
+    await expect(client.createBuildDraft({ ...snapshotExport(), snapshots })).rejects.toMatchObject(
+      {
+        kind: 'server'
+      }
+    )
+    expect(f).not.toHaveBeenCalled()
   })
 
   it('resolveDownloadUrl returns the presigned url', async () => {
