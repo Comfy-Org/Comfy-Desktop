@@ -2252,9 +2252,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   ipcMain.handle('desktop2-open-mcp-setup', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
     if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
-    // `'mcp-setup'` is an overlay panel (like `'feedback'`): the modal mounts
-    // over the live canvas, which stays visible and dimmed underneath. Ensure
-    // the panelView, then flip the host into that mode.
+    // 'mcp-setup' overlays the live canvas like 'feedback' rather than hiding it.
     const panelView = bindings.ensurePanelViewForEntry(parentEntry)
     if (panelView.webContents.isDestroyed()) return false
     bindings.setActivePanel(parentEntry.windowKey, 'mcp-setup')

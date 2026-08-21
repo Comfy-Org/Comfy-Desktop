@@ -42,11 +42,8 @@ const APP_VERSION = getAppVersion()
  *  external (legacy v1 desktop) installs do not. */
 const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
 
-/** Experiment flag gating the Local MCP surface (the sidebar plug icon).
- *  Off ⇒ control (no icon). Read synchronously at `dom-ready`; the cache is
- *  warm by then. Flag key kept as `mcp_nudge` for continuity with the
- *  already-provisioned experiment. */
-const MCP_NUDGE_FLAG = 'desktop.mcp_nudge'
+/** PostHog flag gating the Local MCP sidebar icon. */
+const MCP_SIDEBAR_FLAG = 'mcp_sidebar_enabled'
 
 /** Entry point that triggered a zoom reset, tagged as `source` on the
  *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
@@ -428,14 +425,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // `comfyTerminalContentScript.ts` for the dedupe guard.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
-      // Local MCP distribution surface: a plug icon in the ComfyUI left
-      // sidebar that opens the desktop MCP setup modal, guiding the user to
-      // connect their own agent. Same install gate as the terminal (the modal
-      // drives that shell), additionally behind the `desktop.mcp_nudge`
-      // experiment flag. `COMFY_FORCE_MCP_NUDGE=1` is a QA escape hatch that
-      // forces it on without provisioning the flag; off in normal runs.
-      if (process.env.COMFY_FORCE_MCP_NUDGE === '1' || getFlag(MCP_NUDGE_FLAG) === true) {
-        recordExposure(MCP_NUDGE_FLAG, 'enabled', 'cache')
+      // Local MCP sidebar icon, flag-gated. Same install gate as the terminal.
+      if (getFlag(MCP_SIDEBAR_FLAG) === true) {
+        recordExposure(MCP_SIDEBAR_FLAG, 'enabled', 'cache')
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       }
     }

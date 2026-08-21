@@ -37,8 +37,6 @@ function hideDot() {
   if (dot) dot.style.display = 'none';
 }
 
-// Match the SidebarIcon markup so the plug button sits flush with Help /
-// Settings: a .side-bar-button hosting a masked-icon <i> and a small dot.
 function buildButton() {
   var btn = document.createElement('button');
   btn.id = BTN_ID;
@@ -46,9 +44,7 @@ function buildButton() {
   btn.className = 'side-bar-button comfy-mcp-btn';
   btn.setAttribute('aria-label', 'Connect an agent (MCP)');
   btn.title = 'Connect an agent (MCP)';
-  // The frontend's .side-bar-button rule is scoped, so injected DOM must
-  // reproduce it inline. Values mirror SidebarIcon.vue exactly (dims, radius,
-  // hover surface + color tokens) so the plug sits flush with Help/Settings.
+  // .side-bar-button is scoped, so mirror SidebarIcon.vue's chrome inline.
   btn.style.cssText =
     'display:flex;align-items:center;justify-content:center;overflow:visible;' +
     'width:var(--sidebar-width);height:var(--sidebar-item-height);' +
@@ -90,8 +86,7 @@ function buildButton() {
 }
 
 function bottomCluster() {
-  // The bottom group is the .mt-auto container inside the left toolbar; anchor
-  // off the help-center button, which lives there, to avoid guessing classes.
+  // Anchor off the help button so we don't guess the .mt-auto group's classes.
   var help = document.querySelector('[data-testid="help-center-button"]');
   if (help) {
     var group = help.closest('.mt-auto') || help.parentElement;
@@ -113,8 +108,7 @@ function inject() {
   return true;
 }
 
-// The toolbar re-renders (theme, small-mode, route changes), so keep the
-// button restored; MutationObserver + a bounded settle loop covers both.
+// Toolbar re-renders drop the button, so restore it via observer + settle loop.
 function start() {
   if (STATE.started) return;
   STATE.started = true;
