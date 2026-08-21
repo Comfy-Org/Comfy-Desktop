@@ -419,6 +419,22 @@ describe('asset download retries', () => {
     return start?.(...args) ?? Promise.resolve({ status: 'not-started' })
   }
 
+  function getActiveAssetDownload(
+    url: string,
+    filename: string,
+    outputDir: string
+  ): ComfyDownloadManager.DownloadProgress | undefined {
+    return (
+      mod as typeof mod & {
+        getActiveAssetDownload?: (
+          url: string,
+          filename: string,
+          outputDir: string
+        ) => ComfyDownloadManager.DownloadProgress | undefined
+      }
+    ).getActiveAssetDownload?.(url, filename, outputDir)
+  }
+
   it('preserves a deduplicated nested path resolved from Content-Disposition', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=hash.mp4'
@@ -757,6 +773,46 @@ describe('asset download retries', () => {
         await fs.promises.writeFile(tempPath!, outputDir)
         item.getDone()!({}, 'completed')
       }
+    } finally {
+      await fs.promises.rm(firstDir, { recursive: true, force: true })
+      await fs.promises.rm(secondDir, { recursive: true, force: true })
+    }
+  })
+
+  it('snapshots only the active download for the exact destination', async () => {
+    const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
+    const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const admission = await startManagedAssetDownload(
+        h.win,
+        url,
+        'sample.png',
+        firstDir,
+        undefined,
+        undefined,
+        { existingFilePolicy: 'skip' }
+      )
+      if (admission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      expect(getActiveAssetDownload(url, 'sample.png', firstDir)).toMatchObject({
+        id: admission.downloadId,
+        status: 'pending'
+      })
+      expect(getActiveAssetDownload(url, 'sample.png', secondDir)).toBeUndefined()
+
+      const item = h.createItem(url)
+      h.getWillDownload()!({}, item.item, null)
+      const tempPath = item.setSavePath.mock.calls[0]?.[0]
+      expect(tempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(tempPath!, 'content')
+      item.getDone()!({}, 'completed')
+
+      expect(getActiveAssetDownload(url, 'sample.png', firstDir)).toBeUndefined()
     } finally {
       await fs.promises.rm(firstDir, { recursive: true, force: true })
       await fs.promises.rm(secondDir, { recursive: true, force: true })
