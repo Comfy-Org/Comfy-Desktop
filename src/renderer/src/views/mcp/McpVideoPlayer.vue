@@ -62,6 +62,7 @@ function toggleMute(): void {
       playsinline
       @playing="playing = true"
       @pause="playing = false"
+      @volumechange="muted = ($event.target as HTMLVideoElement).muted"
       @click="togglePlay"
     />
     <div v-else class="mcp-player__placeholder">
