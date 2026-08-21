@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ArrowUpRight, ChevronDown, ExternalLink, Terminal, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../../lib/telemetry'
 import BaseModal from '../../components/ui/BaseModal.vue'
+import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import McpVideoPlayer from './McpVideoPlayer.vue'
 
 const emit = defineEmits<{
@@ -12,8 +14,7 @@ const emit = defineEmits<{
 type Path = 'have_agent' | 'no_agent'
 const path = ref<Path>('have_agent')
 
-/** Within "I have an agent": where the agent runs. Both options start
- *  collapsed; each toggles independently. */
+/** Where the agent runs, within "I have an agent". Both start collapsed. */
 type AgentMode = 'in_agent' | 'in_terminal'
 const openOption = ref<AgentMode | null>('in_agent')
 
@@ -26,37 +27,15 @@ function toggleOption(next: AgentMode): void {
   emitTelemetryAction('comfy.desktop.mcp.option_selected', { option: next })
 }
 
-interface CopyStep {
-  client: string
-  label: string
-  value: string
+const AGENT_CMD = 'pip install comfy-mcp && claude mcp add comfy-mcp -- comfy-mcp'
+const JSON_CMD = '{ "mcpServers": { "comfy-mcp": { "command": "comfy-mcp" } } }'
+const TERMINAL_CMD = `${AGENT_CMD} && claude`
+
+function trackCopy(client: string): void {
+  emitTelemetryAction('comfy.desktop.mcp.snippet_copied', { client })
 }
 
-// Option 1 — bring Comfy into the agent the user already drives elsewhere.
-// One snippet, one copy. Cursor / Claude Desktop users copy the JSON via the
-// inline link instead of a third stacked field.
-const AGENT_STEP: CopyStep = {
-  client: 'claude_code',
-  label: 'Copy into your agent',
-  value: 'pip install comfy-mcp && claude mcp add comfy-mcp -- comfy-mcp'
-}
-const JSON_STEP = {
-  client: 'json',
-  label: 'Cursor / Claude Desktop (JSON)',
-  value: '{ "mcpServers": { "comfy-mcp": { "command": "comfy-mcp" } } }'
-}
-
-// Option 2 — run the agent inside the desktop terminal instead: one line that
-// installs, registers and launches, since the terminal already lives next to
-// this ComfyUI.
-const TERMINAL_STEP = {
-  client: 'terminal_one_liner',
-  label: 'Run in the Comfy terminal',
-  value: 'pip install comfy-mcp && claude mcp add comfy-mcp -- comfy-mcp && claude'
-}
-
-// `icon` is the official simple-icons monochrome path (24x24 viewBox),
-// rendered solid white in the row.
+/** `icon` is the agent's simple-icons monochrome path (24x24 viewBox). */
 const AGENTS = [
   {
     label: 'Claude Code',
@@ -78,25 +57,10 @@ const AGENTS = [
 const DOCS_URL = 'https://docs.comfy.org/agent-tools/mcp#local-comfy-mcp-connection'
 const VIDEO_SRC = 'https://media.comfy.org/website/mcp/launch-film.mp4'
 
-const copiedClient = ref<string | null>(null)
-
 function selectPath(next: Path): void {
   if (path.value === next) return
   path.value = next
   emitTelemetryAction('comfy.desktop.mcp.path_selected', { path: next })
-}
-
-async function copy(step: CopyStep): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(step.value)
-  } catch {
-    /* clipboard blocked — no-op */
-  }
-  copiedClient.value = step.client
-  emitTelemetryAction('comfy.desktop.mcp.snippet_copied', { client: step.client })
-  window.setTimeout(() => {
-    if (copiedClient.value === step.client) copiedClient.value = null
-  }, 1600)
 }
 
 function openTerminal(): void {
@@ -134,9 +98,7 @@ function dismiss(): void {
 
       <section class="mcp-panel">
         <button class="mcp-close" aria-label="Close" @click="dismiss">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
+          <X :size="16" />
         </button>
 
         <header class="mcp-head">
@@ -178,45 +140,36 @@ function dismiss(): void {
               >
                 <span class="mcp-option__text">
                   <span class="mcp-option__title">
-                    <svg class="mcp-option__glyph" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M7 17L17 7M9 7h8v8" />
-                    </svg>
+                    <ArrowUpRight class="mcp-option__glyph" :size="14" />
                     Use Comfy in your agent
                   </span>
                   <span class="mcp-option__sub"
                     >Copy the setup into the agent you already use.</span
                   >
                 </span>
-                <svg class="mcp-option__chevron" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+                <ChevronDown class="mcp-option__chevron" :size="15" />
               </button>
               <div v-show="openOption === 'in_agent'" class="mcp-steps">
                 <div class="mcp-cmd">
-                  <code class="mcp-cmd__text">{{ AGENT_STEP.value }}</code>
-                  <button
+                  <code class="mcp-cmd__text">{{ AGENT_CMD }}</code>
+                  <BaseCopyButton
+                    :value="AGENT_CMD"
+                    :size="14"
+                    aria-label="Copy connect command"
                     class="mcp-cmd__copy"
-                    :aria-label="copiedClient === AGENT_STEP.client ? 'Copied' : 'Copy'"
-                    @click="copy(AGENT_STEP)"
-                  >
-                    <svg
-                      v-if="copiedClient === AGENT_STEP.client"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path d="M5 13l4 4L19 7" />
-                    </svg>
-                    <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                      <rect x="9" y="9" width="11" height="11" rx="2" />
-                      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-                    </svg>
-                  </button>
+                    @click="trackCopy('claude_code')"
+                  />
                 </div>
                 <p class="mcp-alt">
                   Using Cursor or Claude Desktop?
-                  <button class="mcp-alt__link" @click="copy(JSON_STEP)">
-                    {{ copiedClient === JSON_STEP.client ? 'Copied' : 'Copy the JSON config' }}
-                  </button>
+                  <BaseCopyButton
+                    :value="JSON_CMD"
+                    :size="13"
+                    aria-label="Copy the JSON config"
+                    class="mcp-alt__copy"
+                    @click="trackCopy('json')"
+                  />
+                  <span>Copy the JSON config</span>
                 </p>
               </div>
             </section>
@@ -230,38 +183,24 @@ function dismiss(): void {
               >
                 <span class="mcp-option__text">
                   <span class="mcp-option__title">
-                    <svg class="mcp-option__glyph" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M4 17l6-5-6-5M12 19h8" />
-                    </svg>
+                    <Terminal class="mcp-option__glyph" :size="14" />
                     Use your agent inside the Comfy terminal
                   </span>
                   <span class="mcp-option__sub"
                     >Open the terminal below and run the setup there.</span
                   >
                 </span>
-                <svg class="mcp-option__chevron" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+                <ChevronDown class="mcp-option__chevron" :size="15" />
               </button>
               <div v-show="openOption === 'in_terminal'" class="mcp-cmd">
-                <code class="mcp-cmd__text">{{ TERMINAL_STEP.value }}</code>
-                <button
+                <code class="mcp-cmd__text">{{ TERMINAL_CMD }}</code>
+                <BaseCopyButton
+                  :value="TERMINAL_CMD"
+                  :size="14"
+                  aria-label="Copy terminal command"
                   class="mcp-cmd__copy"
-                  :aria-label="copiedClient === TERMINAL_STEP.client ? 'Copied' : 'Copy'"
-                  @click="copy(TERMINAL_STEP)"
-                >
-                  <svg
-                    v-if="copiedClient === TERMINAL_STEP.client"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path d="M5 13l4 4L19 7" />
-                  </svg>
-                  <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="9" y="9" width="11" height="11" rx="2" />
-                    <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-                  </svg>
-                </button>
+                  @click="trackCopy('terminal_one_liner')"
+                />
               </div>
               <button
                 v-show="openOption === 'in_terminal'"
@@ -293,9 +232,7 @@ function dismiss(): void {
                 </svg>
                 <span class="mcp-agent__name">{{ agent.label }}</span>
                 <span class="mcp-agent__meta">Install guide</span>
-                <svg class="mcp-ext mcp-agent__ext" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M7 17L17 7M9 7h8v8" />
-                </svg>
+                <ExternalLink class="mcp-agent__ext" :size="14" />
               </a>
             </div>
           </div>
@@ -304,9 +241,7 @@ function dismiss(): void {
         <footer class="mcp-actions">
           <button class="mcp-btn mcp-btn--soft" @click="openDocs('mcp_local')">
             Read the docs
-            <svg class="mcp-ext" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M7 17L17 7M9 7h8v8" />
-            </svg>
+            <ExternalLink :size="14" />
           </button>
         </footer>
       </section>
@@ -315,38 +250,33 @@ function dismiss(): void {
 </template>
 
 <style scoped>
-/* BaseModal owns the overlay, focus trap, scroll lock, ESC and fade. This
-   contentClass strips its default padded panel so the two-column layout can
-   bleed edge-to-edge. */
-:deep(.mcp-modal-panel) {
+:global(.base-modal-panel.mcp-modal-panel) {
   width: min(100%, 1040px);
   max-width: min(100%, 1040px);
+  min-height: 0;
   max-height: min(720px, calc(100vh - 64px));
+}
+:global(.mcp-modal-panel .base-modal-body) {
   padding: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 9%, transparent);
 }
 
 .mcp-modal {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   width: 100%;
-  max-height: min(720px, calc(100vh - 64px));
+  height: 100%;
   overflow: hidden;
-  border-radius: 16px;
-  background: var(--neutral-800);
   color: var(--text);
   font-family: var(--font-sans);
 }
 
-/* ---- Media (bleeds edge-to-edge) ---- */
 .mcp-media {
   position: relative;
   min-height: 100%;
   background: #000;
 }
 
-/* ---- Content panel ---- */
 .mcp-panel {
   position: relative;
   display: flex;
@@ -380,12 +310,6 @@ function dismiss(): void {
 }
 .mcp-close svg {
   flex: none;
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
 }
 
 .mcp-head {
@@ -409,7 +333,6 @@ function dismiss(): void {
   color: color-mix(in oklab, var(--neutral-100) 62%, transparent);
 }
 
-/* ---- Neutral segmented control (accent reserved for the CTA) ---- */
 .mcp-seg {
   display: inline-flex;
   align-self: flex-start;
@@ -440,14 +363,10 @@ function dismiss(): void {
   color: var(--text);
 }
 
-/* ---- Body: fixed min-height so tab swaps don't reflow the modal ---- */
-/* Fixed to the tallest state (terminal option expanded) so switching tabs or
- * toggling options never resizes the modal. */
 .mcp-body {
   min-height: 262px;
 }
 
-/* ---- The two "I have an agent" options (Jo's structure) ---- */
 .mcp-options {
   display: flex;
   flex-direction: column;
@@ -487,15 +406,9 @@ function dismiss(): void {
 }
 .mcp-option__chevron {
   flex: none;
-  width: 15px;
-  height: 15px;
   margin-top: 8px;
   margin-left: auto;
-  fill: none;
-  stroke: color-mix(in oklab, var(--neutral-100) 45%, transparent);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  color: color-mix(in oklab, var(--neutral-100) 45%, transparent);
   transition: transform 160ms ease;
 }
 .mcp-option.is-open .mcp-option__chevron {
@@ -503,13 +416,7 @@ function dismiss(): void {
 }
 .mcp-option__glyph {
   flex: none;
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: var(--text);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  color: var(--text);
 }
 .mcp-option__text {
   display: flex;
@@ -542,24 +449,15 @@ function dismiss(): void {
   padding-bottom: 2px;
 }
 .mcp-alt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-size: 12px;
   color: color-mix(in oklab, var(--neutral-100) 48%, transparent);
 }
-.mcp-alt__link {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-  color: color-mix(in oklab, var(--neutral-100) 78%, transparent);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: color-mix(in oklab, var(--neutral-100) 30%, transparent);
-}
-.mcp-alt__link:hover {
-  color: var(--text);
+.mcp-alt__copy {
+  flex: none;
 }
 .mcp-cmd {
   display: flex;
@@ -589,32 +487,17 @@ function dismiss(): void {
 }
 .mcp-cmd__copy {
   flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
+  width: 32px;
+  height: 32px;
+  align-self: center;
+  padding: 0;
   border: 1px solid var(--brand-surface-border);
-  border-radius: 8px;
-  cursor: pointer;
+  border-radius: 7px;
   background: var(--brand-surface-bg);
-  color: color-mix(in oklab, var(--neutral-100) 70%, transparent);
-  transition:
-    background 140ms ease,
-    color 140ms ease;
 }
 .mcp-cmd__copy:hover {
   background: var(--brand-surface-bg-hover);
-  color: var(--text);
-}
-.mcp-cmd__copy svg {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  border-color: var(--brand-surface-border);
 }
 
 .mcp-agents {
@@ -684,23 +567,22 @@ function dismiss(): void {
   font-size: 13.5px;
   font-weight: 600;
 }
-.mcp-btn--outline {
+.mcp-btn--outline,
+.mcp-btn--soft {
   height: 34px;
   padding: 0 16px;
   font-size: 12.5px;
-  background: transparent;
   color: var(--text);
+}
+.mcp-btn--outline {
+  background: transparent;
   border: 1px solid color-mix(in oklab, var(--neutral-100) 28%, transparent);
   transition:
     background 140ms ease,
     border-color 140ms ease;
 }
 .mcp-btn--soft {
-  height: 34px;
-  padding: 0 16px;
-  font-size: 12.5px;
   background: color-mix(in oklab, var(--neutral-100) 8%, transparent);
-  color: var(--text);
   border: 0;
   transition: background 140ms ease;
 }
@@ -710,17 +592,6 @@ function dismiss(): void {
 .mcp-btn--outline:hover {
   background: color-mix(in oklab, var(--neutral-100) 7%, transparent);
   border-color: color-mix(in oklab, var(--neutral-100) 42%, transparent);
-}
-
-.mcp-ext {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.7;
 }
 
 @media (max-width: 800px) {
