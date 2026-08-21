@@ -11,8 +11,8 @@
  * non-empty and the picker always renders.
  */
 import { fetchJSON } from '../../lib/fetch'
+import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
 import {
-  CURATED_TEMPLATES,
   INDEX_URL,
   TEMPLATE_MODALITY_ORDER,
   thumbnailUrlFor,
@@ -222,22 +222,28 @@ export function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
 export function resetTemplateCatalogCache(): void {
   catalogInFlight = null
   catalogCache = null
+  // The starter list is memoized for the process, so leaving it would make a
+  // reset only half-work and any fetch-count assertion order-dependent.
+  _resetStarterTemplatesForTest()
 }
 
 async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
-  let byId: Map<string, IndexLocation>
-  try {
-    byId = indexById(await fetchJSON(INDEX_URL))
-  } catch {
-    byId = new Map()
-  }
+  // The card list comes from R2 so content can change it without a release;
+  // `loadStarterTemplates` falls back to `CURATED_TEMPLATES` on any failure and
+  // never rejects, so this stays a straight read.
+  const [starterTemplates, index] = await Promise.all([
+    loadStarterTemplates(),
+    fetchJSON(INDEX_URL).catch(() => null)
+  ])
+
+  const byId = index ? indexById(index) : new Map<string, IndexLocation>()
   // Only substitute when we actually have a live index to substitute FROM —
   // an empty map means offline, where the curated snapshot is the right fallback.
   const online = byId.size > 0
 
   const used = new Set<string>()
   const catalog: HydratedTemplate[] = []
-  for (const curated of CURATED_TEMPLATES) {
+  for (const curated of starterTemplates) {
     if (!curated?.id || used.has(curated.id) || !curated.snapshot) continue
 
     const recommended = curated.recommended === true

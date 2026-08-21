@@ -261,7 +261,11 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
   })
 
   it('falls back to snapshot metadata when the index fetch fails (offline)', async () => {
-    mockedFetchJSON.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+    mockedFetchJSON.mockImplementation((url: string) =>
+      String(url).includes('index.json')
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(null)
+    )
     const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
     const first = CURATED_TEMPLATES[0]!
     const card = options.find((o) => o.value === first.id)!

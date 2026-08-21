@@ -1,10 +1,11 @@
 /**
  * Parses ComfyUI's `python main.py --help` output into a structured schema
- * for the args-builder UI. Supports caching per installation version.
+ * for the args-builder UI. Supports caching per installation source revision.
  */
 
 import { execFile } from 'child_process'
 import * as path from 'path'
+import { readGitHead } from './git'
 
 export interface ComfyArgDef {
   /** CLI flag without leading dashes, e.g. "port" */
@@ -106,6 +107,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'use-pytorch-cross-attention': 'performance',
   'use-sage-attention': 'performance',
   'use-flash-attention': 'performance',
+  'use-ck-attention': 'performance',
   'enable-triton-backend': 'performance',
   'disable-triton-backend': 'performance',
   'disable-xformers': 'performance',
@@ -359,26 +361,27 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
   return { args, knownFlags }
 }
 
-const schemaCache = new Map<string, { schema: ComfyArgsSchema; version: string }>()
+const schemaCache = new Map<string, { schema: ComfyArgsSchema; revision: string }>()
 
-/** Run `python main.py --help` and parse the output, cached per installationId+version. */
+/** Run `python main.py --help` and parse the output, cached per installation and source revision. */
 export async function getComfyArgsSchema(
   pythonPath: string,
   mainPyPath: string,
   cwd: string,
   installationId: string,
-  version?: string
+  fallbackRevision?: string
 ): Promise<ComfyArgsSchema> {
+  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
   const cached = schemaCache.get(installationId)
-  if (cached && version && cached.version === version) {
+  if (cached && revision && cached.revision === revision) {
     return cached.schema
   }
 
   const helpText = await runHelp(pythonPath, mainPyPath, cwd)
   const schema = parseHelpOutput(helpText)
 
-  if (version) {
-    schemaCache.set(installationId, { schema, version })
+  if (revision) {
+    schemaCache.set(installationId, { schema, revision })
   }
 
   return schema
@@ -455,7 +458,7 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
-/** Clear the schema cache for an installation (e.g. after version update). */
+/** Clear the schema cache for an installation. */
 export function clearSchemaCache(installationId: string): void {
   schemaCache.delete(installationId)
 }
