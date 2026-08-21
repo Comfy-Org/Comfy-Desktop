@@ -16,10 +16,10 @@ const mocks = vi.hoisted(() => ({
   getVersionCacheGeneration: vi.fn(() => 3),
   // client + policy
   getBuilderClient: vi.fn(() => ({
-    listDistributions: mocks.listDistributions,
+    listBuilds: mocks.listBuilds,
     createDesktopDraft: mocks.createDesktopDraft
   })),
-  listDistributions: vi.fn(),
+  listBuilds: vi.fn(),
   createDesktopDraft: vi.fn(),
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveBuildRows: vi.fn(),
@@ -136,11 +136,11 @@ describe('registerDevPlatformHandlers', () => {
     mocks.loadSnapshot.mockResolvedValue({ version: 2, createdAt: '2026-08-21T00:00:00.000Z' })
     mocks.getSnapshotCount.mockResolvedValue(3)
     mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
-    mocks.listDistributions.mockResolvedValue([])
+    mocks.listBuilds.mockResolvedValue([])
     mocks.createDesktopDraft.mockResolvedValue({
-      distributionId: 'dist-1',
+      buildId: 'build-1',
       workspaceId: 'w1',
-      editUrl: '/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+      editUrl: '/profile/builds/new?workspace=w1&edit=build-1&step=import'
     })
     registerDevPlatformHandlers()
   })
@@ -238,7 +238,7 @@ describe('registerDevPlatformHandlers', () => {
 
   it('listBuilds returns rows for the signed-in workspace', async () => {
     mocks.isSignedIn.mockReturnValue(true)
-    mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image' }])
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image' }])
     mocks.resolveBuildRows.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
     const rows = await handler('comfybuilder:listBuilds')({})
     expect(rows).toEqual([{ id: 'd1', name: 'Image', state: 'installable' }])
@@ -251,7 +251,7 @@ describe('registerDevPlatformHandlers', () => {
 
   it('does not backfill ownership when the build catalog fails to load', async () => {
     mocks.isSignedIn.mockReturnValue(true)
-    mocks.listDistributions.mockRejectedValue(new Error('catalog unavailable'))
+    mocks.listBuilds.mockRejectedValue(new Error('catalog unavailable'))
 
     await expect(handler('comfybuilder:listBuilds')({})).rejects.toThrow('catalog unavailable')
 
@@ -261,7 +261,7 @@ describe('registerDevPlatformHandlers', () => {
 
   it('does not backfill ownership if the active workspace changes during the catalog read', async () => {
     mocks.isSignedIn.mockReturnValue(true)
-    mocks.listDistributions.mockImplementationOnce(async () => {
+    mocks.listBuilds.mockImplementationOnce(async () => {
       mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
       return [{ id: 'd1', name: 'Image' }]
     })
@@ -291,7 +291,7 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:openBuilderCreate')({})
 
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/distributions/new?workspace=w1'
+      'https://platform.comfy.org/profile/builds/new?workspace=w1'
     )
   })
 
@@ -326,7 +326,7 @@ describe('registerDevPlatformHandlers', () => {
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+      'https://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1&step=import'
     )
   })
 
@@ -428,10 +428,10 @@ describe('registerDevPlatformHandlers', () => {
     mocks.createDesktopDraft.mockImplementationOnce(async () => {
       mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
       return {
-        distributionId: 'dist-1',
+        buildId: 'build-1',
         workspaceId: 'w1',
         editUrl:
-          'https://platform.comfy.org/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+          'https://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1&step=import'
       }
     })
 
@@ -461,12 +461,12 @@ describe('registerDevPlatformHandlers', () => {
   })
 
   it.each([
-    'http://platform.comfy.org/profile/distributions/new?workspace=w1&edit=dist-1&step=import',
-    'https://attacker.example/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+    'http://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1&step=import',
+    'https://attacker.example/profile/builds/new?workspace=w1&edit=build-1&step=import'
   ])('refuses to open an unsafe draft URL: %s', async (draftUrl) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mocks.createDesktopDraft.mockResolvedValue({
-      distributionId: 'dist-1',
+      buildId: 'build-1',
       workspaceId: 'w1',
       editUrl: draftUrl
     })
@@ -484,10 +484,9 @@ describe('registerDevPlatformHandlers', () => {
   it('refuses to open a draft created for another workspace', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mocks.createDesktopDraft.mockResolvedValue({
-      distributionId: 'dist-1',
+      buildId: 'build-1',
       workspaceId: 'w2',
-      editUrl:
-        'https://platform.comfy.org/profile/distributions/new?workspace=w2&edit=dist-1&step=import'
+      editUrl: 'https://platform.comfy.org/profile/builds/new?workspace=w2&edit=build-1&step=import'
     })
 
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
@@ -528,7 +527,7 @@ describe('registerDevPlatformHandlers', () => {
         archiveSha256: 'deadbeef'
       }
     })
-    mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
 
     const result = await handler('comfybuilder:installBuild')({}, 'd1')
@@ -561,7 +560,7 @@ describe('registerDevPlatformHandlers', () => {
         archiveSha256: 'deadbeef'
       }
     })
-    mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     mocks.findDuplicatePath.mockImplementationOnce(async () => {
       mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
       return null

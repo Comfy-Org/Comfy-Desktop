@@ -4,9 +4,9 @@
  */
 import type {
   Artifact,
+  Build,
+  BuildVersion,
   DesktopDraft,
-  Distribution,
-  DistributionVersion,
   ModelManifest,
   TokenProvider
 } from './types'
@@ -68,11 +68,11 @@ export interface ComfyBuilderClientOptions {
   timeoutMs?: number
 }
 
-interface DistributionsResponse {
-  builds?: Distribution[]
+interface BuildsResponse {
+  builds?: Build[]
 }
 interface VersionsResponse {
-  versions?: DistributionVersion[]
+  versions?: BuildVersion[]
 }
 interface VersionDetailResponse {
   version?: number
@@ -82,7 +82,7 @@ interface SignedDownloadResponse {
   downloadUrl?: string
 }
 interface DesktopDraftResponse {
-  distributionId?: string
+  buildId?: string
   workspaceId?: string
   editUrl?: string
 }
@@ -105,21 +105,21 @@ export class ComfyBuilderClient {
   }
 
   /** Every product Build visible to the workspace. */
-  async listDistributions(): Promise<Distribution[]> {
-    const body = await this.get<DistributionsResponse>('/v1/builds')
+  async listBuilds(): Promise<Build[]> {
+    const body = await this.get<BuildsResponse>('/v1/builds')
     return body.builds ?? []
   }
 
   /** Upload a Desktop snapshot and return the Platform edit-page handoff. */
   async createDesktopDraft(snapshot: SnapshotExportEnvelope): Promise<DesktopDraft> {
     const body = await this.post<DesktopDraftResponse>(
-      '/api/desktop/distribution-drafts',
+      '/api/desktop/build-drafts',
       snapshot,
       this.platformBaseUrl
     )
     if (
-      typeof body.distributionId !== 'string' ||
-      !body.distributionId ||
+      typeof body.buildId !== 'string' ||
+      !body.buildId ||
       typeof body.workspaceId !== 'string' ||
       !body.workspaceId ||
       typeof body.editUrl !== 'string' ||
@@ -128,16 +128,16 @@ export class ComfyBuilderClient {
       throw new ComfyBuilderApiError('server', 'Desktop draft response is incomplete')
     }
     return {
-      distributionId: body.distributionId,
+      buildId: body.buildId,
       workspaceId: body.workspaceId,
       editUrl: body.editUrl
     }
   }
 
   /** Published versions of one product Build. */
-  async listVersions(distributionId: string): Promise<DistributionVersion[]> {
+  async listVersions(buildId: string): Promise<BuildVersion[]> {
     const body = await this.get<VersionsResponse>(
-      `/v1/builds/${encodeURIComponent(distributionId)}/versions`
+      `/v1/builds/${encodeURIComponent(buildId)}/versions`
     )
     return body.versions ?? []
   }

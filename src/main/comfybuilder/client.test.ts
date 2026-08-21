@@ -21,15 +21,15 @@ function mockFetch(status: number, body: unknown): typeof fetch {
 describe('ComfyBuilderClient', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('lists distributions with a Bearer token at the right path', async () => {
-    const f = mockFetch(200, { builds: [{ id: 'd1', name: 'Dist One' }] })
+  it('lists builds with a Bearer token at the right path', async () => {
+    const f = mockFetch(200, { builds: [{ id: 'b1', name: 'Build One' }] })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({
       baseUrl: 'https://api.test/builder',
       auth: auth('tok-123')
     })
-    const dists = await client.listDistributions()
-    expect(dists).toEqual([{ id: 'd1', name: 'Dist One' }])
+    const builds = await client.listBuilds()
+    expect(builds).toEqual([{ id: 'b1', name: 'Build One' }])
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
     expect(call[0]).toBe('https://api.test/builder/v1/builds')
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
@@ -37,9 +37,9 @@ describe('ComfyBuilderClient', () => {
 
   it('uploads a Desktop snapshot to create a draft', async () => {
     const f = mockFetch(200, {
-      distributionId: 'dist-1',
+      buildId: 'build-1',
       workspaceId: 'w1',
-      editUrl: '/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+      editUrl: '/profile/builds/new?workspace=w1&edit=build-1&step=import'
     })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({
@@ -56,12 +56,12 @@ describe('ComfyBuilderClient', () => {
     }
 
     await expect(client.createDesktopDraft(snapshot)).resolves.toEqual({
-      distributionId: 'dist-1',
+      buildId: 'build-1',
       workspaceId: 'w1',
-      editUrl: '/profile/distributions/new?workspace=w1&edit=dist-1&step=import'
+      editUrl: '/profile/builds/new?workspace=w1&edit=build-1&step=import'
     })
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://platform.test/api/desktop/distribution-drafts')
+    expect(call[0]).toBe('https://platform.test/api/desktop/build-drafts')
     expect(call[1]).toMatchObject({
       method: 'POST',
       headers: {
@@ -92,6 +92,16 @@ describe('ComfyBuilderClient', () => {
     vi.stubGlobal('fetch', mockFetch(200, { downloadUrl: 'https://gcs/signed', expiresAt: 'x' }))
     const client = new ComfyBuilderClient({ auth: auth('t') })
     expect(await client.resolveDownloadUrl('a1')).toBe('https://gcs/signed')
+  })
+
+  it('lists versions from the build path', async () => {
+    const f = mockFetch(200, { versions: [{ id: 'v1', version: 1, status: 'complete' }] })
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
+
+    await expect(client.listVersions('build/one')).resolves.toHaveLength(1)
+    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(call[0]).toBe('https://api.test/builder/v1/builds/build%2Fone/versions')
   })
 
   it('rejects a non-HTTPS artifact URL outside loopback', async () => {
@@ -144,39 +154,40 @@ describe('ComfyBuilderClient', () => {
   )
 
   it('getVersion surfaces the wire archiveSha256/archiveRef so the archive can be verified', async () => {
-    vi.stubGlobal(
-      'fetch',
-      mockFetch(200, {
-        version: 3,
-        artifacts: [
-          {
-            id: 'a1',
-            os: 'linux',
-            gpu: 'nvidia',
-            accelVariant: 'cu128',
-            status: 'ready',
-            archiveRef: 'blob/a1',
-            archiveSha256: 'deadbeef'
-          }
-        ]
-      })
-    )
-    const { version, artifacts } = await new ComfyBuilderClient({ auth: auth('t') }).getVersion(
-      'v1'
-    )
+    const f = mockFetch(200, {
+      version: 3,
+      artifacts: [
+        {
+          id: 'a1',
+          os: 'linux',
+          gpu: 'nvidia',
+          accelVariant: 'cu128',
+          status: 'ready',
+          archiveRef: 'blob/a1',
+          archiveSha256: 'deadbeef'
+        }
+      ]
+    })
+    vi.stubGlobal('fetch', f)
+    const { version, artifacts } = await new ComfyBuilderClient({
+      baseUrl: 'https://api.test/builder',
+      auth: auth('t')
+    }).getVersion('version/one')
     expect(version).toBe(3)
     expect(artifacts[0]).toMatchObject({
       id: 'a1',
       archiveSha256: 'deadbeef',
       archiveRef: 'blob/a1'
     })
+    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(call[0]).toBe('https://api.test/builder/v1/build-versions/version%2Fone')
   })
 
   it('throws unauthorized (no network) when signed out', async () => {
     const f = mockFetch(200, {})
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({ auth: auth(null) })
-    await expect(client.listDistributions()).rejects.toMatchObject({ kind: 'unauthorized' })
+    await expect(client.listBuilds()).rejects.toMatchObject({ kind: 'unauthorized' })
     expect(f).not.toHaveBeenCalled()
   })
 
@@ -230,7 +241,7 @@ describe('ComfyBuilderClient', () => {
     const onUnauthorized = vi.fn()
     vi.stubGlobal('fetch', mockFetch(403, {}))
     await expect(
-      new ComfyBuilderClient({ auth: auth('t', onUnauthorized) }).listDistributions()
+      new ComfyBuilderClient({ auth: auth('t', onUnauthorized) }).listBuilds()
     ).rejects.toMatchObject({ kind: 'forbidden' })
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
@@ -240,9 +251,9 @@ describe('ComfyBuilderClient', () => {
       'fetch',
       vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch
     )
-    await expect(
-      new ComfyBuilderClient({ auth: auth('t') }).listDistributions()
-    ).rejects.toMatchObject({ kind: 'server' })
+    await expect(new ComfyBuilderClient({ auth: auth('t') }).listBuilds()).rejects.toMatchObject({
+      kind: 'server'
+    })
   })
 
   it('a throwing onUnauthorized does not mask the unauthorized error', async () => {

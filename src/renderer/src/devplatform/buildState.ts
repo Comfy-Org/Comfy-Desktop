@@ -5,10 +5,10 @@
 import type { Build, BuildState } from './types'
 import type { Installation } from '../types/ipc'
 
-/** The rule itself, over the two raw fields — so callers holding only a subset
+/** The rule itself, over the two raw fields - so callers holding only a subset
  *  of the record (the picker row, the title bar) can ask without a cast.
- *  `distributionId` is the persisted Builder API field, hence the emptiness
- *  check rather than a `typeof`. */
+ *  `distributionId` is the legacy installation schema field, hence the
+ *  emptiness check rather than a `typeof`. */
 export function isBuildSource(sourceId: unknown, distributionId: unknown): boolean {
   return sourceId === 'comfybuilder' || Boolean(distributionId)
 }

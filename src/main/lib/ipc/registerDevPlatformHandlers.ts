@@ -189,7 +189,7 @@ export function registerDevPlatformHandlers(): void {
   ipcMain.handle(DEVPLATFORM_CHANNELS.openBuilderCreate, async (): Promise<void> => {
     const status = session.status()
     if (!status.signedIn) throw new Error('Not signed in.')
-    const url = new URL('/profile/distributions/new', PLATFORM_WEB_BASE_URL)
+    const url = new URL('/profile/builds/new', PLATFORM_WEB_BASE_URL)
     if (status.workspaceId) url.searchParams.set('workspace', status.workspaceId)
     await shell.openExternal(url.toString())
   })
@@ -258,14 +258,14 @@ export function registerDevPlatformHandlers(): void {
     const cacheGeneration = getVersionCacheGeneration()
     const host = await resolveHost()
     const client = getBuilderClient()
-    const wireDistributions = await client.listDistributions()
+    const builds = await client.listBuilds()
     // Associate only unowned installs whose exact opaque id is present in the
     // successfully fetched catalog for the same active workspace.
     if (workspaceId && session.status().workspaceId === workspaceId) {
       try {
         await installations.associateUnownedBuildInstalls(
           workspaceId,
-          new Set(wireDistributions.map((distribution) => distribution.id))
+          new Set(builds.map((build) => build.id))
         )
       } catch (err) {
         console.warn('[dev-platform] Failed to associate unowned build installs:', err)
@@ -274,7 +274,7 @@ export function registerDevPlatformHandlers(): void {
     const rows = await resolveBuildRows(
       client,
       host,
-      wireDistributions,
+      builds,
       await installedBuildVersions(workspaceId),
       cacheGeneration
     )
@@ -325,9 +325,9 @@ export function registerDevPlatformHandlers(): void {
 
         // Name the install after the build. One extra list call keeps the
         // renderer from having to pass a (spoofable) display name back to main.
-        const wireBuilds = await client.listDistributions()
-        const wireBuild = wireBuilds.find((build) => build.id === buildId)
-        const displayName = await uniqueName(wireBuild?.name ?? buildId)
+        const builds = await client.listBuilds()
+        const build = builds.find((candidate) => candidate.id === buildId)
+        const displayName = await uniqueName(build?.name ?? buildId)
 
         const installPath = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(displayName))
         const duplicate = await findDuplicatePath(installPath)
@@ -344,7 +344,7 @@ export function registerDevPlatformHandlers(): void {
           installPath,
           workspaceId,
           distributionId: buildId,
-          distributionName: wireBuild?.name ?? buildId,
+          distributionName: build?.name ?? buildId,
           version: String(resolved.version),
           artifactId: artifact.id,
           artifactOs: artifact.os,
@@ -367,8 +367,9 @@ export function registerDevPlatformHandlers(): void {
   )
 }
 
-/** Persisted Builder API id -> highest installed version, over the comfybuilder
- *  installs, so `listBuildRows` can mark an outdated one `update-available`. */
+/** Persisted build id -> highest installed version, over the comfybuilder
+ *  installs, so `listBuildRows` can mark an outdated one `update-available`.
+ *  The installation schema retains the legacy `distributionId` field name. */
 async function installedBuildVersions(
   workspaceId: string | undefined
 ): Promise<Map<string, number>> {

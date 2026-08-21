@@ -1,7 +1,7 @@
 /**
- * E2E: staging a distribution's models in the real app.
+ * E2E: staging a Build's models in the real app.
  *
- * A distribution archive carries no model weights, so the comfybuilder install
+ * A Build archive carries no model weights, so the comfybuilder install
  * downloads the version's declared models into `<installPath>/ComfyUI/models/
  * <type>/<filename>` before launch. This drives the REAL staging code (real
  * Electron download, real fs, real sha256) in the real main process, decoupled

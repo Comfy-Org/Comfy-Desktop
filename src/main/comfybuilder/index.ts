@@ -10,7 +10,7 @@
  * Typical UI wiring:
  * ```ts
  * const client = new ComfyBuilderClient({ baseUrl, auth: tokenStoreAdapter })
- * const builds = await client.listDistributions()              // render tiles
+ * const builds = await client.listBuilds()                     // render tiles
  * const { artifacts } = await client.getVersion(versionId)
  * const artifact = selectArtifactForHost(artifacts, { os: hostOs(), gpu })
  * await installArtifact({ artifact, client, installPath, cacheDir, onProgress })
@@ -32,9 +32,9 @@ export type {
   Artifact,
   ArtifactGpu,
   ArtifactOs,
+  Build,
+  BuildVersion,
   DesktopDraft,
-  Distribution,
-  DistributionVersion,
   Host,
   InstallProgress,
   LaunchSpec,

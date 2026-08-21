@@ -10,8 +10,8 @@
 export type ArtifactOs = 'linux' | 'windows' | 'mac'
 export type ArtifactGpu = 'nvidia' | 'amd' | 'cpu' | 'mps'
 
-/** A product Build. Builder's wire schema retains the legacy `Distribution` name. */
-export interface Distribution {
+/** A product Build returned by Builder. */
+export interface Build {
   id: string
   name: string
   description?: string
@@ -22,13 +22,13 @@ export interface Distribution {
 
 /** Builder draft created from a Desktop snapshot through the Platform web API. */
 export interface DesktopDraft {
-  distributionId: string
+  buildId: string
   workspaceId: string
   editUrl: string
 }
 
 /** One immutable version of a product Build, fanned out into target artifacts. */
-export interface DistributionVersion {
+export interface BuildVersion {
   id: string
   /** Monotonic version number within the product Build. */
   version: number
@@ -88,7 +88,7 @@ export interface InstallProgress {
 
 /**
  * One model the product Build pre-installs, projected from the version's sealed
- * manifest by the builder API (mirrors its `DistributionModel` schema). `type`
+ * manifest by the Builder API. `type`
  * is the ComfyUI model directory the file installs into (e.g. `checkpoints`),
  * so the file lands at `models/<type>/<filename>`. `downloadUrl` is ready to GET
  * as-is (a public source URL, or a short-lived presigned URL for a private one).
@@ -103,17 +103,17 @@ export interface ModelDescriptor {
   expiresAt?: string
 }
 
-/** A runtime allow/deny list (`DistributionPolicy` on the wire). Advisory
- *  metadata the client may later enforce; staging does not gate on it. */
+/** A runtime allow/deny list. Advisory metadata the client may later enforce;
+ *  staging does not gate on it. */
 export interface ModelPolicy {
   mode: 'allowlist' | 'blocklist'
   list?: string[]
 }
 
 /**
- * The model + policy view of a Build version (the Builder API's
- * `DistributionManifest`). A client stages `models` before starting ComfyUI; the
- * archive itself carries only code and the environment, never weights.
+ * The model + policy view of a Build version. A client stages `models` before
+ * starting ComfyUI; the archive itself carries only code and the environment,
+ * never weights.
  */
 export interface ModelManifest {
   models: ModelDescriptor[]
