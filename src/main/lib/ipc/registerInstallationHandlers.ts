@@ -678,7 +678,7 @@ export function registerInstallationHandlers(): void {
           mainPyAbs,
           launchCmd.cwd,
           installationId,
-          inst.version as string | undefined
+          inst.comfyVersion?.commit ?? (inst.version as string | undefined)
         )
         return { args: schema.args }
       } catch (err) {

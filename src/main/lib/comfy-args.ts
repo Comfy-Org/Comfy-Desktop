@@ -106,6 +106,7 @@ const CATEGORY_MAP: Record<string, string> = {
   'use-pytorch-cross-attention': 'performance',
   'use-sage-attention': 'performance',
   'use-flash-attention': 'performance',
+  'use-ck-attention': 'performance',
   'enable-triton-backend': 'performance',
   'disable-triton-backend': 'performance',
   'disable-xformers': 'performance',
@@ -359,26 +360,26 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
   return { args, knownFlags }
 }
 
-const schemaCache = new Map<string, { schema: ComfyArgsSchema; version: string }>()
+const schemaCache = new Map<string, { schema: ComfyArgsSchema; revision: string }>()
 
-/** Run `python main.py --help` and parse the output, cached per installationId+version. */
+/** Run `python main.py --help` and parse the output, cached per installation and source revision. */
 export async function getComfyArgsSchema(
   pythonPath: string,
   mainPyPath: string,
   cwd: string,
   installationId: string,
-  version?: string
+  revision?: string
 ): Promise<ComfyArgsSchema> {
   const cached = schemaCache.get(installationId)
-  if (cached && version && cached.version === version) {
+  if (cached && revision && cached.revision === revision) {
     return cached.schema
   }
 
   const helpText = await runHelp(pythonPath, mainPyPath, cwd)
   const schema = parseHelpOutput(helpText)
 
-  if (version) {
-    schemaCache.set(installationId, { schema, version })
+  if (revision) {
+    schemaCache.set(installationId, { schema, revision })
   }
 
   return schema
