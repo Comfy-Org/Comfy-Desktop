@@ -11,26 +11,17 @@ import {
   startManagedAssetDownload,
   type DownloadProgress
 } from '../comfyDownloadManager'
+import type { ComfyTemplateInputAssetDownload } from '../../../types/comfyDesktopBridge'
 
 interface TemplateInputAssetHandlerOptions {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
-}
-
-interface TemplateInputDownloadSnapshot {
-  downloadId: string
-  filename: string
-  progress: number
-  receivedBytes?: number
-  totalBytes?: number
-  status: DownloadProgress['status']
-  error?: string
 }
 
 function toDownloadSnapshot(
   progress: DownloadProgress | undefined,
   downloadId?: string,
   filename?: string
-): TemplateInputDownloadSnapshot | undefined {
+): ComfyTemplateInputAssetDownload | undefined {
   const resolvedId = progress?.id ?? downloadId
   const resolvedFilename = progress?.filename ?? filename
   if (!resolvedId || !resolvedFilename) return undefined

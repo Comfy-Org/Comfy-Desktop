@@ -6,6 +6,10 @@ import type {
   ComfyDesktop2TelemetryBridge,
   ComfyDesktop2TerminalBridge,
   ComfyDownloadProgress,
+  ComfyTemplateInputAssetDownload,
+  ComfyTemplateInputAssetDownloadResult,
+  ComfyTemplateInputDownloadProgress,
+  ComfyTemplateInputReference,
   LogsOutputMsg,
   LogsRestore,
   TerminalRestore
@@ -95,6 +99,126 @@ const Telemetry: ComfyDesktop2TelemetryBridge = {
 
 startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
 
+type TemplateInputProgressCallback = (data: ComfyTemplateInputDownloadProgress) => void
+
+const templateInputsByDownloadId = new Map<string, Map<string, ComfyTemplateInputReference>>()
+const templateInputProgressCallbacks = new Set<TemplateInputProgressCallback>()
+let templateInputProgressHandler:
+  | ((event: IpcRendererEvent, data: ComfyDownloadProgress) => void)
+  | undefined
+
+function templateInputReferenceKey({ templateId, assetId }: ComfyTemplateInputReference): string {
+  return `${templateId}\u0000${assetId}`
+}
+
+function emitTemplateInputProgress(
+  download: ComfyTemplateInputAssetDownload,
+  templateInputs: ComfyTemplateInputReference[]
+): void {
+  const progress = { ...download, templateInputs }
+  for (const callback of templateInputProgressCallbacks) callback(progress)
+}
+
+function removeTemplateInputProgressHandler(): void {
+  if (!templateInputProgressHandler) return
+  ipcRenderer.removeListener('desktop2-download-progress', templateInputProgressHandler)
+  templateInputProgressHandler = undefined
+}
+
+function maybeRemoveTemplateInputProgressHandler(): void {
+  if (templateInputProgressCallbacks.size === 0 && templateInputsByDownloadId.size === 0) {
+    removeTemplateInputProgressHandler()
+  }
+}
+
+function ensureTemplateInputProgressHandler(): void {
+  if (templateInputProgressHandler) return
+  templateInputProgressHandler = (_event, data) => {
+    if (!data.id) return
+    const references = templateInputsByDownloadId.get(data.id)
+    if (!references) return
+    const download: ComfyTemplateInputAssetDownload = {
+      downloadId: data.id,
+      filename: data.filename,
+      progress: data.progress,
+      ...(data.receivedBytes === undefined ? {} : { receivedBytes: data.receivedBytes }),
+      ...(data.totalBytes === undefined ? {} : { totalBytes: data.totalBytes }),
+      status: data.status,
+      ...(data.error === undefined ? {} : { error: data.error })
+    }
+    if (['completed', 'error', 'cancelled'].includes(data.status)) {
+      templateInputsByDownloadId.delete(data.id)
+    }
+    emitTemplateInputProgress(download, [...references.values()])
+    maybeRemoveTemplateInputProgressHandler()
+  }
+  ipcRenderer.on('desktop2-download-progress', templateInputProgressHandler)
+}
+
+function trackTemplateInputDownload(
+  reference: ComfyTemplateInputReference,
+  download: ComfyTemplateInputAssetDownload,
+  emitSnapshot: boolean
+): void {
+  let references = templateInputsByDownloadId.get(download.downloadId)
+  if (!references) {
+    references = new Map()
+    templateInputsByDownloadId.set(download.downloadId, references)
+  }
+  references.set(templateInputReferenceKey(reference), reference)
+  ensureTemplateInputProgressHandler()
+  if (emitSnapshot) emitTemplateInputProgress(download, [...references.values()])
+}
+
+const getTemplateInputAssets: NonNullable<
+  ComfyDesktop2BridgeImplementation['getTemplateInputAssets']
+> = async (templateId) => {
+  const assets = await ipcRenderer.invoke('desktop2-get-template-input-assets', { templateId })
+  if (!assets) return null
+  for (const asset of assets) {
+    if (asset.activeDownload) {
+      trackTemplateInputDownload(
+        { templateId, assetId: asset.assetId },
+        asset.activeDownload,
+        false
+      )
+    }
+  }
+  return assets
+}
+
+const downloadTemplateInputAsset: NonNullable<
+  ComfyDesktop2BridgeImplementation['downloadTemplateInputAsset']
+> = async (templateId, assetId): Promise<ComfyTemplateInputAssetDownloadResult> => {
+  const result = await ipcRenderer.invoke('desktop2-download-template-input-asset', {
+    templateId,
+    assetId
+  })
+  if (result.status === 'accepted' || result.status === 'joined') {
+    trackTemplateInputDownload({ templateId, assetId }, result.download, true)
+  }
+  return result
+}
+
+const onTemplateInputDownloadProgress: NonNullable<
+  ComfyDesktop2BridgeImplementation['onTemplateInputDownloadProgress']
+> = (callback) => {
+  templateInputProgressCallbacks.add(callback)
+  ensureTemplateInputProgressHandler()
+  let subscribed = true
+  return () => {
+    if (!subscribed) return
+    subscribed = false
+    templateInputProgressCallbacks.delete(callback)
+    if (templateInputProgressCallbacks.size === 0) {
+      // A future detail view reconstructs active ownership from its metadata
+      // snapshot. Do not retain identities for a renderer with no consumers.
+      templateInputsByDownloadId.clear()
+    }
+    maybeRemoveTemplateInputProgressHandler()
+  }
+}
+
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
   openModelAccessPage: (url: string): Promise<boolean> => {
@@ -110,6 +234,9 @@ const bridge = {
       authToken: authToken || undefined
     })
   },
+  getTemplateInputAssets,
+  downloadTemplateInputAsset,
+  onTemplateInputDownloadProgress,
   pauseDownload: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('model-download-pause', { url })
   },
