@@ -999,6 +999,7 @@ export function buildLaunchEnv(
   sessionPath?: string
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
+  const hfMirror = settings.getMirrorConfig().hfMirror
   return {
     ...process.env,
     ...userEnvVars,
@@ -1010,6 +1011,7 @@ export function buildLaunchEnv(
     // Cost is one-time handler install; zero overhead on the normal path.
     PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
+    ...(hfMirror ? { HF_ENDPOINT: hfMirror } : {}),
     // Only force ComfyUI-Manager onto the pygit2 backend when a developer
     // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
     // unset so Manager's git_compat prefers system git when available (honoring

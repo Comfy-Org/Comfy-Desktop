@@ -48,6 +48,10 @@ export interface KnownSettings {
    *  the next app launch because Electron must configure it before readiness. */
   hardwareAcceleration?: boolean
   pypiMirror?: string
+  /** Optional HuggingFace mirror URL (e.g. https://hf-mirror.com) injected as
+   *  `HF_ENDPOINT` into the spawned ComfyUI Python process. Empty string is
+   *  treated as unset. */
+  hfMirror?: string
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
   telemetryEnabled?: boolean
@@ -234,6 +238,7 @@ const SETTINGS_SCHEMA = {
   },
   // Mirror URL can be a private/identifying endpoint — presence only.
   pypiMirror: { nullable: false, telemetry: { policy: 'presence' } },
+  hfMirror: { nullable: false, telemetry: { policy: 'presence' } },
   useChineseMirrors: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
@@ -614,7 +619,7 @@ export function get(key: string): unknown {
 }
 
 /** Keys whose values should be deleted when set to an empty or whitespace-only string. */
-const EMPTY_STRING_MEANS_UNSET: ReadonlySet<string> = new Set<KnownSettingKey>(['pypiMirror'])
+const EMPTY_STRING_MEANS_UNSET: ReadonlySet<string> = new Set<KnownSettingKey>(['pypiMirror', 'hfMirror'])
 
 /** Keys whose default value should be persisted as absence — `set(k, default)`
  *  drops the key so the file doesn't accumulate no-op writes. */
@@ -759,8 +764,16 @@ export function has(key: string): boolean {
 }
 
 /** Build a PipMirrorConfig from current settings. */
-export function getMirrorConfig(): { pypiMirror?: string; useChineseMirrors?: boolean } {
-  return { pypiMirror: get('pypiMirror'), useChineseMirrors: get('useChineseMirrors') === true }
+export function getMirrorConfig(): {
+  pypiMirror?: string
+  hfMirror?: string
+  useChineseMirrors?: boolean
+} {
+  return {
+    pypiMirror: get('pypiMirror'),
+    hfMirror: get('hfMirror'),
+    useChineseMirrors: get('useChineseMirrors') === true
+  }
 }
 
 // Let paths.defaultInstallDir() honor the user's configured location without
