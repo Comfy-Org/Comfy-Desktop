@@ -287,18 +287,14 @@ async function handleShowcaseCloud(): Promise<void> {
   })
 }
 
-// The brand centrepiece: shown for any operation that is still working, so the
-// loader always has an identity regardless of op kind (launch, install, update,
-// destructive…). Independent of the Cloud upsell, which is install-only.
+/** Brand centrepiece for any still-working op, whatever its kind. */
 const showScene = computed<boolean>(() => {
   const op = currentOp.value
   if (!op) return false
   return !op.finished || isChainHandoff.value
 })
 
-// The Cloud upsell (rotating pitch + Try Cloud CTA). Install-specific: it rides
-// both legs of the install chain (the install op and its chained launch leg,
-// `chainSpan:'launch'`), but stays off unrelated ops.
+/** Cloud upsell, install-only: rides both legs of the install chain. */
 const showShowcase = computed<boolean>(() => {
   const op = currentOp.value
   if (!op) return false

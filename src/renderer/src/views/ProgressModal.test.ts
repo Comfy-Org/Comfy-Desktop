@@ -270,11 +270,12 @@ describe('ProgressModal — brand branch state transitions', () => {
   })
 
   it('shows the brand scene for any in-flight op, not just installs', async () => {
-    // The scene is the loader centrepiece and must render whatever the op kind
-    // is, or opening an already-installed instance shows an empty centre.
     for (const opKind of ['launch', 'update', 'generic'] as const) {
       const { wrapper, body } = await mountWithOp(`inst-${opKind}`, { opKind, chainSpan: null })
-      expect(body.exists('.brand-progress__scene'), `scene missing for ${opKind}`).toBe(true)
+      expect(
+        body.exists('.brand-progress__scene'),
+        `${opKind} left the centre empty; the scene must render for every op kind`
+      ).toBe(true)
       wrapper.unmount()
     }
   })
