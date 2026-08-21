@@ -39,14 +39,18 @@ function openSetup(app) {
   } catch (e) {}
   // The MCP experience is a desktop overlay, not an in-page sidebar panel.
   // Toggle our own tab back off so the icon behaves as a plain button and
-  // the empty phantom panel never lingers.
-  try {
-    var mgr = app.extensionManager;
-    var store = (mgr && mgr.sidebarTab) || mgr;
-    if (store && typeof store.toggleSidebarTab === 'function') {
-      store.toggleSidebarTab(TAB_ID);
-    }
-  } catch (e) {}
+  // the empty phantom panel never lingers. Deferred a tick so the toggle
+  // lands after the frontend finishes activating this same tab (a sync
+  // toggle inside render() can be swallowed mid-activation).
+  setTimeout(function () {
+    try {
+      var mgr = app.extensionManager;
+      var store = (mgr && mgr.sidebarTab) || mgr;
+      if (store && typeof store.toggleSidebarTab === 'function') {
+        store.toggleSidebarTab(TAB_ID);
+      }
+    } catch (e) {}
+  }, 0);
 }
 
 function alreadyRegistered(app) {

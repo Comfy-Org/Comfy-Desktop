@@ -83,6 +83,7 @@ describe('getMcpSidebarContentScript', () => {
     const { openMcpSetup, toggleSidebarTab, capture, tabs } = setupComfy()
     new Function(script)()
     tabs[0]!.render()
+    vi.runAllTimers()
 
     expect(openMcpSetup).toHaveBeenCalledOnce()
     expect(toggleSidebarTab).toHaveBeenCalledWith('comfy-desktop-mcp')

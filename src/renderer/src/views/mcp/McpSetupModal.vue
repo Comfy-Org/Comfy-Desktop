@@ -701,14 +701,6 @@ function dismiss(): void {
   font-size: 13.5px;
   font-weight: 600;
 }
-.mcp-btn--primary {
-  background: var(--comfy-yellow);
-  color: #211927;
-  transition: filter 140ms ease;
-}
-.mcp-btn--primary:hover {
-  filter: brightness(1.05);
-}
 .mcp-btn--outline {
   height: 34px;
   padding: 0 16px;

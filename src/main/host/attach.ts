@@ -42,8 +42,10 @@ const APP_VERSION = getAppVersion()
  *  external (legacy v1 desktop) installs do not. */
 const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
 
-/** Experiment flag gating the Local MCP nudge injection. Off ⇒ control (no
- *  nudge). Read synchronously at `dom-ready`; the cache is warm by then. */
+/** Experiment flag gating the Local MCP surface (the sidebar plug icon).
+ *  Off ⇒ control (no icon). Read synchronously at `dom-ready`; the cache is
+ *  warm by then. Flag key kept as `mcp_nudge` for continuity with the
+ *  already-provisioned experiment. */
 const MCP_NUDGE_FLAG = 'desktop.mcp_nudge'
 
 /** Entry point that triggered a zoom reset, tagged as `source` on the
