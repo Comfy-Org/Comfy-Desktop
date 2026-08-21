@@ -12,9 +12,21 @@ vi.mock('./templateModels', () => ({
   loadTemplateJson: (...a: unknown[]) => loadTemplateJson(...a)
 }))
 
-import { resolveTemplateInputAssets, resolveInputDir } from './templateInputAssets'
+import * as templateInputAssets from './templateInputAssets'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
+
+const { resolveTemplateInputAssets, resolveInputDir } = templateInputAssets
+const resolveTemplateInputAssetAvailability =
+  (
+    templateInputAssets as typeof templateInputAssets & {
+      resolveTemplateInputAssetAvailability?: (
+        installation: InstallationRecord,
+        filenames: readonly string[],
+        dependencies: { access: (filePath: string) => Promise<void> }
+      ) => Promise<unknown>
+    }
+  ).resolveTemplateInputAssetAvailability ?? (async () => [])
 
 const inst = { id: 'i1', bundledTemplateId: 't' } as unknown as InstallationRecord
 
@@ -23,14 +35,17 @@ const loadNode = (type: string, filename: unknown) => ({ type, widgets_values: [
 beforeEach(() => loadTemplateJson.mockReset())
 
 describe('resolveTemplateInputAssets', () => {
-  it('derives the input filename from a LoadImage node and points at the repo input dir', async () => {
+  it('derives trusted preview metadata from a declared LoadImage input', async () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadImage', 'white-hotel-on-rocky-island.png')]
     })
     const assets = await resolveTemplateInputAssets(inst, 't')
     expect(assets).toEqual([
       {
+        assetId: 'white-hotel-on-rocky-island.png',
         filename: 'white-hotel-on-rocky-island.png',
+        mediaType: 'image',
+        previewUrl: `${TEMPLATE_INPUT_BASE}/white-hotel-on-rocky-island.png`,
         url: `${TEMPLATE_INPUT_BASE}/white-hotel-on-rocky-island.png`
       }
     ])
@@ -49,9 +64,9 @@ describe('resolveTemplateInputAssets', () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadVideo', 'clip.mp4'), loadNode('LoadAudio', 'voice.mp3')]
     })
-    expect((await resolveTemplateInputAssets(inst, 't')).map((a) => a.filename)).toEqual([
-      'clip.mp4',
-      'voice.mp3'
+    expect(await resolveTemplateInputAssets(inst, 't')).toMatchObject([
+      { filename: 'clip.mp4', mediaType: 'video' },
+      { filename: 'voice.mp3', mediaType: 'audio' }
     ])
   })
 
@@ -113,5 +128,65 @@ describe('resolveInputDir', () => {
       installPath: '/apps/c'
     } as unknown as InstallationRecord
     expect(resolveInputDir(rec)).toMatch(/[/\\]apps[/\\]c[/\\]ComfyUI[/\\]input$/)
+  })
+})
+
+describe('resolveTemplateInputAssetAvailability', () => {
+  it('distinguishes exact files already present in the active input directory', async () => {
+    const access = vi.fn(async (filePath: string) => {
+      if (filePath.endsWith('present.png')) return
+      const error = new Error('missing') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      throw error
+    })
+
+    await expect(
+      resolveTemplateInputAssetAvailability(
+        {
+          useSharedInput: false,
+          inputDir: '/inputs'
+        } as unknown as InstallationRecord,
+        ['present.png', 'missing.png'],
+        { access }
+      )
+    ).resolves.toEqual([
+      { filename: 'present.png', status: 'present' },
+      { filename: 'missing.png', status: 'missing' }
+    ])
+  })
+
+  it('rejects unsafe and duplicate declarations without probing outside input', async () => {
+    const access = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+
+    await expect(
+      resolveTemplateInputAssetAvailability(
+        {
+          useSharedInput: false,
+          inputDir: '/inputs'
+        } as unknown as InstallationRecord,
+        ['safe.png', '../escape.png', 'safe.png', 'weights.safetensors'],
+        { access }
+      )
+    ).resolves.toEqual([{ filename: 'safe.png', status: 'missing' }])
+    expect(access).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps non-ENOENT filesystem failures unknown instead of claiming missing', async () => {
+    const access = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }))
+
+    await expect(
+      resolveTemplateInputAssetAvailability(
+        {
+          useSharedInput: false,
+          inputDir: '/inputs'
+        } as unknown as InstallationRecord,
+        ['private.png'],
+        { access }
+      )
+    ).resolves.toEqual([{ filename: 'private.png', status: 'unknown' }])
   })
 })
