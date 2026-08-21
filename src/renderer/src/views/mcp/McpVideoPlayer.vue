@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, useTemplateRef, watch } from 'vue'
+import { Pause, Play, Volume2, VolumeX } from 'lucide-vue-next'
 
 const { src = '', ariaLabel = '' } = defineProps<{
   src?: string
@@ -79,13 +80,8 @@ function toggleMute(): void {
         :aria-label="playing ? 'Pause' : 'Play'"
         @click="togglePlay"
       >
-        <svg v-if="playing" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <rect x="6" y="5" width="4" height="14" rx="1" />
-          <rect x="14" y="5" width="4" height="14" rx="1" />
-        </svg>
-        <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M8 5v14l11-7z" />
-        </svg>
+        <Pause v-if="playing" :size="18" fill="currentColor" />
+        <Play v-else :size="18" fill="currentColor" />
       </button>
 
       <button
@@ -94,40 +90,8 @@ function toggleMute(): void {
         :aria-label="muted ? 'Unmute' : 'Mute'"
         @click="toggleMute"
       >
-        <svg
-          v-if="muted"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          stroke="currentColor"
-          stroke-width="1.5"
-          aria-hidden="true"
-        >
-          <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
-          <line x1="23" y1="9" x2="17" y2="15" stroke-width="2.5" />
-          <line x1="17" y1="9" x2="23" y2="15" stroke-width="2.5" />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          stroke="currentColor"
-          stroke-width="1.5"
-          aria-hidden="true"
-        >
-          <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
-          <path
-            d="M15.54 8.46a5 5 0 0 1 0 7.07"
-            fill="none"
-            stroke-width="2"
-            stroke-linecap="round"
-          />
-          <path
-            d="M19.07 4.93a10 10 0 0 1 0 14.14"
-            fill="none"
-            stroke-width="2"
-            stroke-linecap="round"
-          />
-        </svg>
+        <VolumeX v-if="muted" :size="18" />
+        <Volume2 v-else :size="18" />
       </button>
     </div>
   </div>
@@ -167,11 +131,7 @@ function toggleMute(): void {
   bottom: 16px;
   display: flex;
   gap: 8px;
-  opacity: 1;
   transition: opacity 200ms ease;
-}
-.mcp-player:hover .mcp-player__controls {
-  opacity: 1;
 }
 .mcp-player.is-idle .mcp-player__controls {
   opacity: 0;
@@ -199,9 +159,6 @@ function toggleMute(): void {
 }
 .mcp-player__icon-btn svg {
   flex: none;
-  width: 18px;
-  height: 18px;
   display: block;
-  color: #fff;
 }
 </style>
