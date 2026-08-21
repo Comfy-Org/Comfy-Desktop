@@ -122,7 +122,8 @@ export interface ComfyDesktop2Bridge {
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
   downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>
   /** Resolve only assets declared by this template. `null` means Desktop cannot
-   *  authorize the current renderer/installation; `[]` means none are declared. */
+   *  authorize the caller or resolve the metadata; `[]` means the resolved
+   *  template declares none. */
   getTemplateInputAssets?: (templateId: string) => Promise<ComfyTemplateInputAsset[] | null>
   /** Start or join the managed download for one declared template asset. */
   downloadTemplateInputAsset?: (
