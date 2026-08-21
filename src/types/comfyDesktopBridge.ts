@@ -70,6 +70,7 @@ export interface ComfyDesktop2TelemetryBridge {
 export interface ComfyDesktop2Bridge {
   isRemote(): boolean
   openTerminal?: () => Promise<boolean>
+  openMcpSetup?: () => Promise<boolean>
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
   downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>
   pauseDownload?: (url: string) => Promise<boolean>

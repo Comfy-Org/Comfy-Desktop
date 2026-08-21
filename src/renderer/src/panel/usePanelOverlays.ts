@@ -31,6 +31,10 @@ export type PanelKey =
    *  separately — but accepting it keeps `isValidPanel` from
    *  swallowing the event. */
   | 'progress'
+  /** Mirror of main's `'mcp-setup'` overlay panel. `onPanelSwitch` sets
+   *  `activePanel` to this, and PanelApp renders `McpSetupModal` over the
+   *  live (dimmed) canvas via `panel-overlay-mode`. */
+  | 'mcp-setup'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -41,7 +45,8 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'track',
   'load-snapshot',
   'quick-install',
-  'progress'
+  'progress',
+  'mcp-setup'
 ])
 
 /**

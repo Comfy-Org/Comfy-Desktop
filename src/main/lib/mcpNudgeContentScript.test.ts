@@ -4,23 +4,27 @@ import { getMcpNudgeContentScript } from './mcpNudgeContentScript'
 describe('getMcpNudgeContentScript', () => {
   const script = getMcpNudgeContentScript()
 
-  const installBridge = (): { capture: ReturnType<typeof vi.fn>; openTerminal: ReturnType<typeof vi.fn> } => {
+  const installBridge = (): {
+    capture: ReturnType<typeof vi.fn>
+    openMcpSetup: ReturnType<typeof vi.fn>
+  } => {
     const capture = vi.fn()
-    const openTerminal = vi.fn(() => Promise.resolve(true))
+    const openMcpSetup = vi.fn(() => Promise.resolve(true))
     Reflect.set(window, '__comfyDesktop2', {
-      openTerminal,
+      openMcpSetup,
       Telemetry: { capture }
     })
-    return { capture, openTerminal }
+    return { capture, openMcpSetup }
   }
 
   beforeEach(() => {
-    window.localStorage.clear()
+    vi.useFakeTimers()
   })
 
   afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
     document.body.innerHTML = ''
-    window.localStorage.clear()
     Reflect.deleteProperty(window, '__comfyDesktop2')
     Reflect.deleteProperty(window, '__comfyDesktopMcpNudge')
   })
@@ -30,24 +34,51 @@ describe('getMcpNudgeContentScript', () => {
     expect(() => new Function(script)).not.toThrow()
   })
 
-  it('bails when the desktop terminal opener is absent', () => {
-    expect(script).toContain(`typeof window.__comfyDesktop2.openTerminal !== 'function'`)
+  it('bails when the desktop MCP-setup opener is absent', () => {
+    expect(script).toContain(`typeof window.__comfyDesktop2.openMcpSetup !== 'function'`)
   })
 
   it('guards against double injection', () => {
     expect(script).toContain('window.__comfyDesktopMcpNudge')
   })
 
-  it('shows the nudge and fires nudge_shown once', () => {
+  it('shows the branded banner and fires nudge_shown once', () => {
     const { capture } = installBridge()
     new Function(script)()
 
-    expect(document.getElementById('comfy-desktop-mcp-nudge')).not.toBeNull()
+    const nudge = document.getElementById('comfy-desktop-mcp-nudge')
+    expect(nudge).not.toBeNull()
+    expect(nudge?.textContent).toContain('Comfy has an MCP')
     expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.nudge_shown', {})
   })
 
-  it('stays dismissed across re-injection once closed', () => {
+  it('uses the brand yellow on the CTA', () => {
     installBridge()
+    new Function(script)()
+    const connect = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('#comfy-desktop-mcp-nudge button')
+    ).find((b) => b.textContent === 'CONNECT')
+    if (!connect) throw new Error('Expected Connect button')
+    expect(connect.style.background.replace(/\s/g, '')).toBe('#f2ff59')
+  })
+
+  it('opens the desktop MCP setup modal from Connect and reports panel_opened', () => {
+    const { capture, openMcpSetup } = installBridge()
+    new Function(script)()
+    const connect = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('#comfy-desktop-mcp-nudge button')
+    ).find((b) => b.textContent === 'CONNECT')
+    if (!connect) throw new Error('Expected Connect button')
+    connect.click()
+
+    expect(openMcpSetup).toHaveBeenCalledOnce()
+    expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.panel_opened', { entrypoint: 'nudge' })
+    // Banner removes itself once the modal is requested.
+    expect(document.getElementById('comfy-desktop-mcp-nudge')).toBeNull()
+  })
+
+  it('dismisses for the session and re-shows on the next injection', () => {
+    const { capture } = installBridge()
     new Function(script)()
     const close = document.querySelector<HTMLButtonElement>(
       '#comfy-desktop-mcp-nudge [aria-label="Dismiss"]'
@@ -55,63 +86,11 @@ describe('getMcpNudgeContentScript', () => {
     if (!close) throw new Error('Expected dismiss button')
     close.click()
     expect(document.getElementById('comfy-desktop-mcp-nudge')).toBeNull()
+    expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.panel_dismissed', { stage: 'nudge' })
 
     Reflect.deleteProperty(window, '__comfyDesktopMcpNudge')
     new Function(script)()
-    expect(document.getElementById('comfy-desktop-mcp-nudge')).toBeNull()
-  })
-
-  it('opens the setup panel from the nudge and reports panel_opened', () => {
-    const { capture } = installBridge()
-    new Function(script)()
-    const connect = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('#comfy-desktop-mcp-nudge button')
-    ).find((b) => b.textContent === 'Connect')
-    if (!connect) throw new Error('Expected Connect button')
-    connect.click()
-
-    expect(document.getElementById('comfy-desktop-mcp-panel')).not.toBeNull()
-    expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.panel_opened', { entrypoint: 'nudge' })
-  })
-
-  it('copies a connect snippet and tags the client', () => {
-    const writeText = vi.fn(() => Promise.resolve())
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true
-    })
-    const { capture } = installBridge()
-    new Function(script)()
-    document
-      .querySelector<HTMLButtonElement>('#comfy-desktop-mcp-nudge button:nth-child(2)')
-      ?.click()
-
-    const copy = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('#comfy-desktop-mcp-panel button')
-    ).find((b) => b.textContent === 'Copy')
-    if (!copy) throw new Error('Expected a Copy button')
-    copy.click()
-
-    expect(writeText).toHaveBeenCalledWith('pip install comfy-mcp')
-    expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.snippet_copied', { client: 'install' })
-  })
-
-  it('opens the terminal and records the have_agent path', () => {
-    const { capture, openTerminal } = installBridge()
-    new Function(script)()
-    document
-      .querySelector<HTMLButtonElement>('#comfy-desktop-mcp-nudge button:nth-child(2)')
-      ?.click()
-
-    const open = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('#comfy-desktop-mcp-panel button')
-    ).find((b) => b.textContent === 'Open terminal')
-    if (!open) throw new Error('Expected Open terminal button')
-    open.click()
-
-    expect(openTerminal).toHaveBeenCalledOnce()
-    expect(capture).toHaveBeenCalledWith('comfy.desktop.mcp.path_selected', { path: 'have_agent' })
-    expect(document.getElementById('comfy-desktop-mcp-panel')).toBeNull()
+    expect(document.getElementById('comfy-desktop-mcp-nudge')).not.toBeNull()
   })
 
   it('memoizes the assembled script', () => {
