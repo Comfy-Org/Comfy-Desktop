@@ -5,8 +5,6 @@ describe('getMcpSidebarContentScript', () => {
   const script = getMcpSidebarContentScript()
 
   const setupDom = (): void => {
-    // Minimal left-toolbar shape: a bottom (.mt-auto) cluster with the help
-    // button, which the script anchors off.
     document.body.innerHTML = `
       <nav data-testid="side-toolbar">
         <div class="top"></div>
@@ -52,11 +50,13 @@ describe('getMcpSidebarContentScript', () => {
   })
 
   it('injects nothing when the desktop MCP-setup opener is absent', () => {
-    // Bridge present but openMcpSetup missing → the guard must bail before injecting.
     Reflect.set(window, '__comfyDesktop2', { Telemetry: { capture: vi.fn() } })
     setupDom()
     new Function(script)()
-    expect(document.getElementById('comfy-desktop-mcp-btn')).toBeNull()
+    expect(
+      document.getElementById('comfy-desktop-mcp-btn'),
+      'must bail before injecting when openMcpSetup is missing'
+    ).toBeNull()
     expect(Reflect.get(window, '__comfyDesktopMcpSidebar')).toBeUndefined()
   })
 
@@ -65,10 +65,11 @@ describe('getMcpSidebarContentScript', () => {
     setupDom()
     new Function(script)()
     document.getElementById('comfy-desktop-mcp-btn')?.remove()
-    // STATE persists, so a re-run must bail at the top-level guard and NOT
-    // re-inject even though the button is gone from the DOM.
     new Function(script)()
-    expect(document.getElementById('comfy-desktop-mcp-btn')).toBeNull()
+    expect(
+      document.getElementById('comfy-desktop-mcp-btn'),
+      'STATE persists, so a second run bails at the top-level guard'
+    ).toBeNull()
   })
 
   it('injects the plug button into the bottom cluster, above the help icon', () => {
@@ -80,9 +81,11 @@ describe('getMcpSidebarContentScript', () => {
     const help = document.querySelector('[data-testid="help-center-button"]')
     expect(btn).not.toBeNull()
     if (!btn || !help) throw new Error('Expected button and help icon')
-    // Same cluster as help, and ordered before it.
-    expect(btn.parentElement).toBe(help.parentElement)
-    expect(btn.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(btn.parentElement, 'same cluster as help').toBe(help.parentElement)
+    expect(
+      btn.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING,
+      'ordered before help'
+    ).toBeTruthy()
     expect(btn.querySelector('.icon-\\[lucide--plug\\]')).not.toBeNull()
   })
 
@@ -127,7 +130,6 @@ describe('getMcpSidebarContentScript', () => {
 
   it('falls back to the .mt-auto cluster when the help button is absent', () => {
     installBridge()
-    // Toolbar with a bottom cluster but no help-center button.
     document.body.innerHTML = `
       <nav data-testid="side-toolbar"><div class="mt-auto"><button>gear</button></div></nav>
     `
@@ -143,7 +145,6 @@ describe('getMcpSidebarContentScript', () => {
     new Function(script)()
     expect(document.getElementById('comfy-desktop-mcp-btn')).not.toBeNull()
 
-    // Simulate a toolbar re-render dropping our button; the observer restores it.
     document.getElementById('comfy-desktop-mcp-btn')?.remove()
     document.querySelector('.mt-auto')?.appendChild(document.createElement('span'))
     await Promise.resolve()

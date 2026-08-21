@@ -60,8 +60,6 @@ export type BodyMode =
   | 'track'
   | 'load-snapshot'
   | 'quick-install'
-  /** Mirror of the `'mcp-setup'` ComfyPanelKey; overlay mode — the modal mounts
-   *  over the live canvas, kept visible and dimmed underneath (like `'feedback'`). */
   | 'mcp-setup'
 
 /**

@@ -12,9 +12,9 @@ import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 
 /**
- * Body modes the panel WebContentsView can render. Mirrors `BodyMode`
- * in main; `'comfy'` is admitted so the renderer can reflect main's
- * activePanel after a drawer close.
+ * Panel body modes available in the WebContentsView.
+ * Mirrors main's `BodyMode`. Includes `'comfy'` so the renderer
+ * can reflect main's `activePanel` after closing a drawer.
  */
 export type PanelKey =
   | 'comfy'
@@ -33,9 +33,6 @@ export type PanelKey =
    *  separately — but accepting it keeps `isValidPanel` from
    *  swallowing the event. */
   | 'progress'
-  /** Mirror of main's `'mcp-setup'` overlay panel. `onPanelSwitch` sets
-   *  `activePanel` to this, and PanelApp renders `McpSetupModal` over the
-   *  live (dimmed) canvas via `panel-overlay-mode`. */
   | 'mcp-setup'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([

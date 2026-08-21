@@ -340,14 +340,18 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-// Closing the MCP overlay: flip the host back to `'comfy'`. `'mcp-setup'` is an
-// overlay panel (canvas stays live underneath), so this just drops the panel.
+/**
+ * Dismisses the MCP overlay and restores the main canvas.
+ * The 'mcp-setup' overlay leaves the underlying view active.
+ */
 function handleMcpClose(): void {
   window.api.closeCurrentPanel()
 }
 
-// "Open terminal" CTA — lands the user on the console tab. The modal emits
-// `close` alongside `openTerminal`, so `handleMcpClose` restores the canvas.
+/**
+ * Handles the "Open terminal" CTA.
+ * Switches to the console tab, and restores the canvas when closed.
+ */
 function handleMcpOpenTerminal(): void {
   if (!installationId) return
   window.api.openInstancePicker({ installationId, initialTab: 'console' })
