@@ -17,8 +17,14 @@ import type { InstallationRecord } from '../../installations'
  * tracking any binary.
  */
 export interface TemplateInputAsset {
+  /** Template-scoped identifier accepted by the privileged download bridge. */
+  assetId: string
   /** Bare on-disk filename, placed at `<inputDir>/<filename>`. */
   filename: string
+  mediaType: 'image' | 'video' | 'audio'
+  /** Host-generated public preview URL. Its existence is not guaranteed when
+   *  an installed template package and the live templates repo have drifted. */
+  previewUrl: string
   /** Source URL under the repo's `input/` dir. */
   url: string
 }
@@ -52,6 +58,19 @@ const ALLOWED_INPUT_EXTENSIONS = [
   '.m4a'
 ]
 
+type TemplateInputMediaType = TemplateInputAsset['mediaType']
+
+interface DeclaredInputAsset {
+  filename: string
+  mediaType: TemplateInputMediaType
+}
+
+function mediaTypeForNode(nodeType: string): TemplateInputMediaType {
+  if (nodeType === 'LoadAudio') return 'audio'
+  if (nodeType === 'LoadVideo' || nodeType === 'VHS_LoadVideo') return 'video'
+  return 'image'
+}
+
 /** A template-declared input filename must be a bare name (no separator, no
  *  `..`) with an allowed media extension, so it can't escape the input dir or
  *  pull a non-media payload. */
@@ -62,7 +81,7 @@ function isSafeInputAsset(name: string): boolean {
 }
 
 /** Collect the first widget value (the filename) of every Load* node. */
-function walkLoadNodes(nodes: unknown, out: string[]): void {
+function walkLoadNodes(nodes: unknown, out: DeclaredInputAsset[]): void {
   if (!Array.isArray(nodes)) return
   for (const node of nodes) {
     if (!node || typeof node !== 'object') continue
@@ -73,7 +92,9 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
       Array.isArray(n.widgets_values)
     ) {
       const first = n.widgets_values[0]
-      if (typeof first === 'string') out.push(first)
+      if (typeof first === 'string') {
+        out.push({ filename: first, mediaType: mediaTypeForNode(n.type) })
+      }
     }
     if (Array.isArray(n.nodes)) walkLoadNodes(n.nodes, out)
   }
@@ -93,22 +114,31 @@ export async function resolveTemplateInputAssets(
   if (!json || typeof json !== 'object') return []
 
   const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
-  const names: string[] = []
-  walkLoadNodes(doc.nodes, names)
+  const declarations: DeclaredInputAsset[] = []
+  walkLoadNodes(doc.nodes, declarations)
   const subgraphs = doc.definitions?.subgraphs
   if (Array.isArray(subgraphs)) {
     for (const sg of subgraphs) {
-      if (sg && typeof sg === 'object') walkLoadNodes((sg as { nodes?: unknown }).nodes, names)
+      if (sg && typeof sg === 'object') {
+        walkLoadNodes((sg as { nodes?: unknown }).nodes, declarations)
+      }
     }
   }
 
   const seen = new Set<string>()
   const result: TemplateInputAsset[] = []
-  for (const raw of names) {
-    const filename = stripQueryParams(raw)
+  for (const declaration of declarations) {
+    const filename = stripQueryParams(declaration.filename)
     if (!isSafeInputAsset(filename) || seen.has(filename)) continue
     seen.add(filename)
-    result.push({ filename, url: `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}` })
+    const url = `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}`
+    result.push({
+      assetId: filename,
+      filename,
+      mediaType: declaration.mediaType,
+      previewUrl: url,
+      url
+    })
   }
   return result
 }
@@ -123,6 +153,45 @@ export function resolveInputDir(installation: InstallationRecord): string {
     return settings.get('inputDir') || settings.defaults.inputDir
   }
   return installation.inputDir || path.join(installation.installPath, 'ComfyUI', 'input')
+}
+
+export interface TemplateInputAssetAvailability {
+  filename: string
+  status: 'present' | 'missing' | 'unknown'
+}
+
+interface TemplateInputAssetAvailabilityDependencies {
+  access: (filePath: string) => Promise<void>
+}
+
+/** Resolve safe, exact filenames against the active installation. Only ENOENT
+ *  proves absence; permission and other filesystem failures remain unknown. */
+export async function resolveTemplateInputAssetAvailability(
+  installation: InstallationRecord,
+  filenames: readonly string[],
+  { access = fs.promises.access }: Partial<TemplateInputAssetAvailabilityDependencies> = {}
+): Promise<TemplateInputAssetAvailability[]> {
+  const inputDir = resolveInputDir(installation)
+  const seen = new Set<string>()
+  const result: TemplateInputAssetAvailability[] = []
+
+  for (const filename of filenames) {
+    if (!isSafeInputAsset(filename) || seen.has(filename)) continue
+    seen.add(filename)
+
+    try {
+      await access(path.join(inputDir, filename))
+      result.push({ filename, status: 'present' })
+    } catch (error) {
+      result.push({
+        filename,
+        status:
+          (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? 'missing' : 'unknown'
+      })
+    }
+  }
+
+  return result
 }
 
 export interface PlacedInputAsset {
