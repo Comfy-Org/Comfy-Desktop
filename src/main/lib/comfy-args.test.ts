@@ -1,11 +1,14 @@
 // @vitest-environment node
 import { execFile } from 'child_process'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readGitHead } from './git'
 
 vi.mock('child_process', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
   return { ...actual, execFile: vi.fn() }
 })
+
+vi.mock('./git', () => ({ readGitHead: vi.fn() }))
 
 import {
   clearSchemaCache,
@@ -16,6 +19,7 @@ import {
 } from './comfy-args'
 
 const mockedExecFile = vi.mocked(execFile)
+const mockedReadGitHead = vi.mocked(readGitHead)
 
 function mockHelpOutput(getOutput: () => string): void {
   mockedExecFile.mockImplementation(((
@@ -269,35 +273,38 @@ describe('getComfyArgsSchema', () => {
   beforeEach(() => {
     clearSchemaCache(installationId)
     mockedExecFile.mockReset()
+    mockedReadGitHead.mockReset()
   })
 
-  it('reuses a schema for one revision and refreshes it when the revision changes', async () => {
+  it('reuses a schema for one commit and refreshes it when the checkout changes', async () => {
     const oldHelp = SAMPLE_HELP.replace(' | --use-ck-attention', '').replace(
       '  --use-ck-attention    Use Comfy Kitchen attention.\n',
       ''
     )
     let helpOutput = oldHelp
     mockHelpOutput(() => helpOutput)
+    mockedReadGitHead.mockReturnValue('old-commit')
 
     const oldSchema = await getComfyArgsSchema(
       'python',
       'main.py',
       '.',
       installationId,
-      'old-commit'
+      'stored-version'
     )
     expect(oldSchema.knownFlags.has('use-ck-attention')).toBe(false)
 
-    await getComfyArgsSchema('python', 'main.py', '.', installationId, 'old-commit')
+    await getComfyArgsSchema('python', 'main.py', '.', installationId, 'stored-version')
     expect(mockedExecFile).toHaveBeenCalledTimes(1)
 
     helpOutput = SAMPLE_HELP
+    mockedReadGitHead.mockReturnValue('new-commit')
     const updatedSchema = await getComfyArgsSchema(
       'python',
       'main.py',
       '.',
       installationId,
-      'new-commit'
+      'stored-version'
     )
     expect(mockedExecFile).toHaveBeenCalledTimes(2)
     expect(updatedSchema.knownFlags.has('use-ck-attention')).toBe(true)

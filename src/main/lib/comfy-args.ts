@@ -1,10 +1,11 @@
 /**
  * Parses ComfyUI's `python main.py --help` output into a structured schema
- * for the args-builder UI. Supports caching per installation version.
+ * for the args-builder UI. Supports caching per installation source revision.
  */
 
 import { execFile } from 'child_process'
 import * as path from 'path'
+import { readGitHead } from './git'
 
 export interface ComfyArgDef {
   /** CLI flag without leading dashes, e.g. "port" */
@@ -368,8 +369,9 @@ export async function getComfyArgsSchema(
   mainPyPath: string,
   cwd: string,
   installationId: string,
-  revision?: string
+  fallbackRevision?: string
 ): Promise<ComfyArgsSchema> {
+  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
   const cached = schemaCache.get(installationId)
   if (cached && revision && cached.revision === revision) {
     return cached.schema
@@ -456,7 +458,7 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
-/** Clear the schema cache for an installation (e.g. after version update). */
+/** Clear the schema cache for an installation. */
 export function clearSchemaCache(installationId: string): void {
   schemaCache.delete(installationId)
 }
