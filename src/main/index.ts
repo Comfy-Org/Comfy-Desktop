@@ -2169,7 +2169,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
-    registerTemplateInputAssetHandlers({ findInstallationIdForWindow })
+    registerTemplateInputAssetHandlers({
+      findInstallationIdForWindow,
+      isLocalInstallation: (installation) => sourceMap[installation.sourceId]?.category === 'local'
+    })
     cleanupTempDownloads()
     await ipc.register({
       onLaunch,

@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { get as getInstallation } from '../../installations'
+import { get as getInstallation, type InstallationRecord } from '../../installations'
 import {
   resolveInputDir,
   resolveTemplateInputAssetAvailability,
@@ -15,6 +15,7 @@ import type { ComfyTemplateInputAssetDownload } from '../../../types/comfyDeskto
 
 interface TemplateInputAssetHandlerOptions {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
+  isLocalInstallation: (installation: InstallationRecord) => boolean
 }
 
 function toDownloadSnapshot(
@@ -38,7 +39,8 @@ function toDownloadSnapshot(
 }
 
 export function registerTemplateInputAssetHandlers({
-  findInstallationIdForWindow
+  findInstallationIdForWindow,
+  isLocalInstallation
 }: TemplateInputAssetHandlerOptions): void {
   async function resolveRequestContext(sender: Electron.WebContents) {
     const win = BrowserWindow.fromWebContents(sender)
@@ -46,7 +48,7 @@ export function registerTemplateInputAssetHandlers({
     const installationId = findInstallationIdForWindow(win)
     if (!installationId) return null
     const installation = await getInstallation(installationId)
-    return installation ? { installation, win } : null
+    return installation && isLocalInstallation(installation) ? { installation, win } : null
   }
 
   ipcMain.handle(
