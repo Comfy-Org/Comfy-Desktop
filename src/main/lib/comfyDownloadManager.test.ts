@@ -841,6 +841,51 @@ describe('asset download retries', () => {
     }
   })
 
+  it('preserves exact-destination semantics when a failed download is retried', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const admission = await startManagedAssetDownload(
+        h.win,
+        url,
+        'sample.png',
+        outputDir,
+        undefined,
+        undefined,
+        { existingFilePolicy: 'skip' }
+      )
+      if (admission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      const first = h.createItem(url)
+      h.getWillDownload()!({}, first.item, null)
+      const firstTempPath = first.setSavePath.mock.calls[0]?.[0]
+      expect(firstTempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(firstTempPath!, 'partial')
+      first.getDone()!({}, 'interrupted')
+
+      expect(mod.retryDownload(admission.downloadId)).toBe(true)
+      await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(2))
+
+      const retry = h.createItem(url, 'attachment; filename="renamed-by-server.png"')
+      h.getWillDownload()!({}, retry.item, null)
+      const retryTempPath = retry.setSavePath.mock.calls[0]?.[0]
+      expect(retryTempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(retryTempPath!, 'complete')
+      retry.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
+      await expect(fs.promises.readFile(path.join(outputDir, 'sample.png'), 'utf8')).resolves.toBe(
+        'complete'
+      )
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('discards the download when an identical file already sits at the requested path', async () => {
     // The "remote" server may be a local ComfyUI writing outputs into the
     // same directory the auto-download saves to (desktop launches installs
