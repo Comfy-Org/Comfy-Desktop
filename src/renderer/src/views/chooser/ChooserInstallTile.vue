@@ -122,8 +122,8 @@ const trailingFact = computed(() =>
     : inst.value.version || ''
 )
 
-/** Build installs read "<ComfyUI version> - Build v7"; everything else
- *  keeps "<source> · <version>". */
+/** Build installs show the ComfyUI version followed by the Build version;
+ *  everything else shows the source followed by its version. */
 const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
