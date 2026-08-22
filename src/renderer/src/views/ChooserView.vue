@@ -14,11 +14,13 @@ import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { buildEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
+import { isBlockedBuild } from '../devplatform/buildState'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Build } from '../devplatform/types'
@@ -137,9 +139,7 @@ function installationBacksBuild(inst: Installation, build: Build): boolean {
   return inst.name.trim().toLowerCase() === build.name.trim().toLowerCase()
 }
 
-/** Every build that earns a tile, before search. Blocked builds are kept
- *  and receded by the card, not filtered out — a hidden one is indistinguishable
- *  from one that was never published. */
+/** Every build that earns a tile, before the explicit compatibility filter and search. */
 const chooserBuilds = computed<Build[]>(() => {
   if (!authStore.isSignedIn) return []
   return authStore.builds.filter(
@@ -149,9 +149,27 @@ const chooserBuilds = computed<Build[]>(() => {
   )
 })
 
-/** Search filters builds through the SAME query as the install tiles. */
+type WorkspaceBuildFilter = 'compatible' | 'all'
+
+const workspaceBuildFilter = ref<WorkspaceBuildFilter>('compatible')
+const workspaceBuildFilterOptions = computed<BaseSelectOption[]>(() => [
+  { value: 'compatible', label: t('chooser.workspaceFilterCompatible') },
+  { value: 'all', label: t('chooser.filterAll') }
+])
+
+function setWorkspaceBuildFilter(value: string): void {
+  workspaceBuildFilter.value = value === 'all' ? 'all' : 'compatible'
+}
+
+const filteredChooserBuilds = computed<Build[]>(() =>
+  workspaceBuildFilter.value === 'all'
+    ? chooserBuilds.value
+    : chooserBuilds.value.filter((build) => !isBlockedBuild(build))
+)
+
+/** Search filters the selected build set through the SAME query as the install tiles. */
 const visibleBuilds = computed<Build[]>(() =>
-  chooserBuilds.value.filter((build) => matchesQuery(build.name))
+  filteredChooserBuilds.value.filter((build) => matchesQuery(build.name))
 )
 
 /** A failed build fetch, distinct from an empty workspace: the watch
@@ -319,14 +337,15 @@ function handleBuildMenuSelect(itemId: string): void {
 
 const TILES_PER_ROW = 4
 
-/** Unfiltered row count across both shelves, reserving `min-height` so the
- *  cluster doesn't shift while typing in search. Raw lists, not `visible*`. */
+/** Search-independent row count across both shelves, reserving `min-height` so
+ *  the cluster doesn't shift while typing. The explicit workspace filter does
+ *  resize the shelf because it deliberately changes the selected set. */
 const clusterRows = computed(() => {
   // +1: the New Install tile rides with the your-installs family.
   const ownRows = Math.ceil((1 + allOwnInstalls.value.length) / TILES_PER_ROW)
   if (!showWorkspaceShelf.value) return ownRows
   // +1: the Create New Build on the Web card.
-  const shelfTiles = 1 + allWorkspaceInstalls.value.length + chooserBuilds.value.length
+  const shelfTiles = 1 + allWorkspaceInstalls.value.length + filteredChooserBuilds.value.length
   return ownRows + Math.ceil(shelfTiles / TILES_PER_ROW)
 })
 
@@ -571,24 +590,33 @@ const gridHandlers = {
             <span class="chooser-shelf-count">{{
               workspaceInstalledEntries.length + workspaceAvailableEntries.length
             }}</span>
-            <button
-              type="button"
-              class="chooser-workspace-refresh"
-              :disabled="refreshingWorkspace"
-              :aria-label="t('devPlatform.workspace.refresh')"
-              :title="t('devPlatform.workspace.refresh')"
-              data-testid="chooser-workspace-refresh"
-              @click="refreshWorkspace"
-            >
-              <RefreshCw
-                :size="13"
-                :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
-              />
-            </button>
+            <span class="chooser-shelf-divider" aria-hidden="true" />
+            <div class="chooser-workspace-controls">
+              <button
+                type="button"
+                class="chooser-workspace-refresh"
+                :disabled="refreshingWorkspace"
+                :aria-label="t('devPlatform.workspace.refresh')"
+                :title="t('devPlatform.workspace.refresh')"
+                data-testid="chooser-workspace-refresh"
+                @click="refreshWorkspace"
+              >
+                <RefreshCw
+                  :size="13"
+                  :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+                />
+              </button>
+              <DevPlatformWorkspaceSelector />
+              <div class="chooser-workspace-filter" data-testid="chooser-workspace-filter">
+                <BaseSelect
+                  :model-value="workspaceBuildFilter"
+                  :options="workspaceBuildFilterOptions"
+                  :aria-label="t('chooser.workspaceFilterLabel')"
+                  @update:model-value="setWorkspaceBuildFilter"
+                />
+              </div>
+            </div>
           </header>
-          <div class="chooser-workspace-selector">
-            <DevPlatformWorkspaceSelector />
-          </div>
           <ChooserFamilyGrid
             :entries="workspaceInstalledEntries"
             show-workspace-cta
@@ -864,39 +892,64 @@ const gridHandlers = {
   }
 }
 
-/* Caption weight: the shelf organises, it isn't a section you act on. */
 .chooser-shelf-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
-.chooser-shelf-head::after {
-  content: '';
+.chooser-shelf-divider {
   flex: 1 1 auto;
+  min-width: 16px;
   height: 1px;
   background: var(--chooser-surface-border-hover);
 }
 .chooser-shelf-title {
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  line-height: 1.2;
+  color: var(--neutral-100);
 }
 .chooser-shelf-count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
 }
-.chooser-workspace-selector {
+.chooser-workspace-controls {
   display: flex;
+  flex: 1 0 100%;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.chooser-workspace-controls :deep(.workspace-selector) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chooser-workspace-controls :deep(.workspace-selector__face) {
+  --dp-avatar-size: 20px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+}
+.chooser-workspace-filter {
+  flex: 0 0 112px;
+  width: 112px;
+}
+.chooser-workspace-filter :deep(.ui-select-trigger) {
+  min-height: 30px;
+  padding: 6px 10px;
+  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
+  border-radius: 6px;
+  font-size: var(--takeover-fs-caption);
 }
 .chooser-workspace-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -923,6 +976,21 @@ const gridHandlers = {
 @keyframes chooser-workspace-refresh-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@container (width >= 576px) {
+  .chooser-shelf-head {
+    flex-wrap: nowrap;
+  }
+  .chooser-workspace-controls {
+    flex: 0 0 auto;
+  }
+  .chooser-workspace-controls :deep(.workspace-selector) {
+    flex: 0 0 auto;
+  }
+  .chooser-workspace-controls :deep(.workspace-selector__face) {
+    width: auto;
+    min-width: 220px;
   }
 }
 </style>

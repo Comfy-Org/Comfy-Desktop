@@ -40,6 +40,8 @@
     "updatePill": "Update",
     "migratePill": "Migrate",
     "workspaceShelf": "Workspace",
+    "workspaceFilterLabel": "Filter workspace builds",
+    "workspaceFilterCompatible": "Compatible",
     "workspaceCtaLabel": "Create New Build on the Web",
     "workspaceCtaDesc": "Or promote an existing instance.",
     "openInstall": "Open",

@@ -40,6 +40,8 @@
     "updatePill": "更新",
     "migratePill": "迁移",
     "workspaceShelf": "工作区",
+    "workspaceFilterLabel": "筛选工作区构建",
+    "workspaceFilterCompatible": "兼容",
     "workspaceCtaLabel": "在网页上创建新构建",
     "workspaceCtaDesc": "或添加现有实例",
     "openInstall": "打开",

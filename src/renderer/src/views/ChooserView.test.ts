@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import ChooserView from './ChooserView.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
+import BaseSelect from '../components/ui/BaseSelect.vue'
 import { useSessionStore } from '../stores/sessionStore'
 import { TID } from '../../../shared/testIds'
 import type { AuthStatus, DevPlatformBuild, Installation } from '../types/ipc'
@@ -66,6 +67,8 @@ const messages = {
       updatePill: 'Update',
       migratePill: 'Migrate',
       workspaceShelf: 'Workspace',
+      workspaceFilterLabel: 'Filter workspace builds',
+      workspaceFilterCompatible: 'Compatible',
       workspaceCtaLabel: 'Create New Build on the Web',
       workspaceCtaDesc: 'Or promote an existing instance.'
     },
@@ -196,6 +199,14 @@ function mountChooser() {
   return mount(ChooserView, {
     global: { plugins: [createTestI18n(), createPinia()] }
   })
+}
+
+async function setWorkspaceBuildFilter(
+  wrapper: ReturnType<typeof mountChooser>,
+  value: 'compatible' | 'all'
+): Promise<void> {
+  wrapper.getComponent(BaseSelect).vm.$emit('update:modelValue', value)
+  await flushPromises()
 }
 
 describe('ChooserView', () => {
@@ -638,11 +649,12 @@ describe('ChooserView', () => {
     expect(card.find('.chooser-tile-pill-update').exists()).toBe(true)
   })
 
-  it('shows builds this machine cannot install, receded and inert', async () => {
+  it('defaults to compatible builds and shows blocked builds when All is selected', async () => {
     installMockApiSignedIn(
       [],
       [
         makeBuild({ id: 'ok', name: 'InstallableThing', state: 'installable' }),
+        makeBuild({ id: 'nb', name: 'NoBuildThing', state: 'no-build' }),
         makeBuild({
           id: 'pm',
           name: 'WrongPlatformThing',
@@ -656,10 +668,22 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    // Nothing is hidden, and the count says so.
+    const filter = wrapper.getComponent(BaseSelect)
+    expect(filter.props('modelValue')).toBe('compatible')
+    expect(filter.props('options')).toEqual([
+      { value: 'compatible', label: 'Compatible' },
+      { value: 'all', label: 'All' }
+    ])
     expect(wrapper.text()).toContain('InstallableThing')
+    expect(wrapper.text()).not.toContain('NoBuildThing')
+    expect(wrapper.text()).not.toContain('WrongPlatformThing')
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('1')
+
+    await setWorkspaceBuildFilter(wrapper, 'all')
+
+    expect(wrapper.text()).toContain('NoBuildThing')
     expect(wrapper.text()).toContain('WrongPlatformThing')
-    expect(wrapper.find('.chooser-shelf-count').text()).toBe('2')
+    expect(wrapper.find('.chooser-shelf-count').text()).toBe('3')
 
     // The blocked one reads as blocked: receded, reason in the status slot,
     // full explanation on hover, and no blue pill promising an install.
@@ -689,6 +713,7 @@ describe('ChooserView', () => {
     )
     const wrapper = mountChooser()
     await flushPromises()
+    await setWorkspaceBuildFilter(wrapper, 'all')
     const card = wrapper.find('[data-testid="chooser-build-tile-pm2"]')
     expect(card.find('.build-tile-state-tag').text()).toBe('Not for this machine')
   })
@@ -700,6 +725,7 @@ describe('ChooserView', () => {
     )
     const wrapper = mountChooser()
     await flushPromises()
+    await setWorkspaceBuildFilter(wrapper, 'all')
     await wrapper.find('[data-testid="chooser-build-tile-nb"]').trigger('click')
     await flushPromises()
     expect(api.comfybuilder.installBuild).not.toHaveBeenCalled()
@@ -841,11 +867,10 @@ describe('ChooserView', () => {
 
     expect(wrapper.find('.chooser-shelf-head').exists()).toBe(true)
     expect(wrapper.find('.chooser-shelf-count').text()).toBe('0')
-    expect(
-      wrapper
-        .find('.chooser-workspace-selector [data-testid="devplatform-workspace-selector"]')
-        .exists()
-    ).toBe(true)
+    const controls = wrapper.find('.chooser-workspace-controls')
+    expect(controls.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(true)
+    expect(controls.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(true)
+    expect(controls.find('[data-testid="chooser-workspace-filter"]').exists()).toBe(true)
     const cta = wrapper.find('[data-testid="chooser-workspace-cta"]')
     expect(cta.text()).toContain('Create New Build on the Web')
     expect(cta.text()).toContain('Or promote an existing instance.')
