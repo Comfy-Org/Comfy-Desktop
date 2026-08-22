@@ -194,7 +194,9 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         activeInstallationId: null,
         runningInstallationIds: []
       })
-      expect(wrapper.find('.picker-search input').exists()).toBe(true)
+      const input = wrapper.get('.picker-search input')
+      expect(input.attributes('placeholder')).toBe('Search instances')
+      expect(input.attributes('aria-label')).toBe('Search instances')
       expect(wrapper.findAll('.picker-chip').length).toBeGreaterThan(0)
       expect(wrapper.find('.picker-list').exists()).toBe(true)
       expect(wrapper.find('.picker-detail-wrap.is-expanded').exists()).toBe(true)

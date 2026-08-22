@@ -61,7 +61,7 @@
     "statusError": "错误",
     "viewErrorTooltip": "查看错误详情",
     "errorTitle": "错误",
-    "searchPlaceholder": "搜索并打开实例",
+    "searchPlaceholder": "搜索实例",
     "noMatches": "没有匹配的实例"
   },
   "titleBar": {

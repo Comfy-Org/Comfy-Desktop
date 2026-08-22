@@ -57,7 +57,7 @@ const messages = {
       filterRemote: 'Remote',
       moreActions: 'More actions',
       manageInstall: 'Manage',
-      searchPlaceholder: 'Search for and open an instance',
+      searchPlaceholder: 'Search instances',
       noMatches: 'No instances match',
       statusRunning: 'Running',
       statusLaunching: 'Starting…',
@@ -214,6 +214,16 @@ describe('ChooserView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockModal.alert.mockClear()
+  })
+
+  it('uses the concise instance search prompt', async () => {
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const input = wrapper.get('.chooser-search input')
+    expect(input.attributes('placeholder')).toBe('Search instances')
+    expect(input.attributes('aria-label')).toBe('Search instances')
   })
 
   it('renders the New Instance tile when the user has zero installs', async () => {

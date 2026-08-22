@@ -61,7 +61,7 @@
     "statusError": "Error",
     "viewErrorTooltip": "View error details",
     "errorTitle": "Error",
-    "searchPlaceholder": "Search for and open an instance",
+    "searchPlaceholder": "Search instances",
     "noMatches": "No instances match"
   },
   "titleBar": {
