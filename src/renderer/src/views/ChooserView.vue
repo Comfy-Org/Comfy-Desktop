@@ -935,8 +935,8 @@ const gridHandlers = {
   padding: 4px 8px;
 }
 .chooser-workspace-filter {
-  flex: 0 0 112px;
-  width: 112px;
+  flex: 0 0 128px;
+  width: 128px;
 }
 .chooser-workspace-filter :deep(.ui-select-trigger) {
   min-height: 30px;
