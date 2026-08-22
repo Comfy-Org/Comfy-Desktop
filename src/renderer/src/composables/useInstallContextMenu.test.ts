@@ -146,7 +146,28 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
+it('groups common desktop-card actions in the requested order', () => {
+  const inst = makeInstall({ adopted: true } as Partial<Installation>)
+  const { menu } = mountHarness(inst, undefined, () => true)
+  const items = menu.ctxMenuItems.value
+
+  expect(items.map(({ id }) => id)).toEqual([
+    'manage',
+    'update',
+    'copy-install',
+    'reveal-in-folder',
+    'share',
+    'restore-snapshot',
+    'promote-to-workspace',
+    'delete'
+  ])
+  expect(items.filter(({ separator }) => separator).map(({ id }) => id)).toEqual([
+    'share',
+    'delete'
+  ])
+})
+
+describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   // Update and migrate are mutually exclusive (a single `statusTag`), so each
   // is exercised against an install carrying the matching tag.
   it('renders update / restore-snapshot / delete enabled when the install is idle', () => {
@@ -204,12 +225,12 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
     const inst = makeInstall()
     const { menu } = mountHarness(inst, ({ progress }) => {
       progress.operations.set(inst.id, {
-        title: 'Updating…',
+        title: 'Updating...',
         steps: null,
         activePhase: null,
         activePercent: 0,
         lastStatus: {},
-        flatStatus: 'Working…',
+        flatStatus: 'Working...',
         flatPercent: 0.5,
         terminalOutput: '',
         done: false,
@@ -246,7 +267,7 @@ function mountHarnessWithProgress(
   return { menu }
 }
 
-describe('useInstallContextMenu — delete fast path (regression for #582)', () => {
+describe('useInstallContextMenu - delete fast path (regression for #582)', () => {
   beforeEach(() => {
     apiMock.getDetailSections.mockClear()
     apiMock.runAction.mockClear()
@@ -282,7 +303,7 @@ describe('useInstallContextMenu — delete fast path (regression for #582)', () 
     expect(onShowProgress).toHaveBeenCalledTimes(1)
     const opts = onShowProgress.mock.calls[0][0]
     expect(opts.installationId).toBe(inst.id)
-    expect(opts.title).toBe('Delete — My Install')
+    expect(opts.title).toBe('Delete - My Install')
     expect(opts.cancellable).toBe(true)
     expect(opts.returnTo).toBe('list')
     expect(opts.destroysInstance).toBe(true)
@@ -323,7 +344,7 @@ function mountHarnessWithManage(
   return { menu }
 }
 
-describe('useInstallContextMenu — copy-install routing', () => {
+describe('useInstallContextMenu - copy-install routing', () => {
   beforeEach(() => {
     apiMock.runAction.mockClear()
   })
@@ -359,7 +380,7 @@ describe('useInstallContextMenu — copy-install routing', () => {
   })
 })
 
-describe('useInstallContextMenu — untrack confirm-then-remove', () => {
+describe('useInstallContextMenu - untrack confirm-then-remove', () => {
   beforeEach(() => {
     apiMock.runAction.mockClear()
     modalMock.confirm.mockReset()
@@ -423,7 +444,7 @@ describe('useInstallContextMenu — untrack confirm-then-remove', () => {
   })
 })
 
-describe('useInstallContextMenu — migrate item keys off the migrate status tag', () => {
+describe('useInstallContextMenu - migrate item keys off the migrate status tag', () => {
   // Portable, git, and Legacy Desktop installs all report a `migrate`
   // status tag (and `sourceCategory === 'local'`), so the Migrate item must
   // follow the tag, not a single source.
@@ -448,7 +469,7 @@ describe('useInstallContextMenu — migrate item keys off the migrate status tag
   })
 })
 
-describe('useInstallContextMenu — share (export latest snapshot)', () => {
+describe('useInstallContextMenu - share (export latest snapshot)', () => {
   beforeEach(() => {
     apiMock.getSnapshots.mockReset()
     apiMock.exportSnapshot.mockReset()
@@ -496,12 +517,12 @@ describe('useInstallContextMenu — share (export latest snapshot)', () => {
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
 
-    // Cancel — export IPC returns { ok: false } with no message.
+    // Cancel - export IPC returns { ok: false } with no message.
     apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).not.toHaveBeenCalled()
 
-    // Real failure — a message is present, so it surfaces.
+    // Real failure - a message is present, so it surfaces.
     apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false, message: 'Disk full' })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
@@ -552,7 +573,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
   })
 })
 
-describe('useInstallContextMenu — stop (shut down backend, keep window)', () => {
+describe('useInstallContextMenu - stop (shut down backend, keep window)', () => {
   beforeEach(() => {
     apiMock.stopComfyUI.mockClear()
     modalMock.confirm.mockReset()

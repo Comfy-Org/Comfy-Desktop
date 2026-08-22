@@ -11,7 +11,7 @@ import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 /** Action / context menu for chooser tiles, powering both the right-click
- *  context menu and the kebab (⋮) action menu with the same items. The
+ *  context menu and the kebab action menu with the same items. The
  *  same items also drive the tile's update/migrate pills via
  *  `triggerAction`, so the surfaces cannot diverge.
  *
@@ -39,7 +39,7 @@ export interface ManageOpenOptions {
 
 export function useInstallContextMenu(
   opts: {
-    /** Open the per-install Manage… overlay. Items funnel through this with
+    /** Open the per-install Manage... overlay. Items funnel through this with
      *  the right `initialTab` / `autoAction` so the source-side action
      *  machinery is reused. */
     onManage?: (inst: Installation, options?: ManageOpenOptions) => void
@@ -82,7 +82,7 @@ export function useInstallContextMenu(
 
   function hasMigratePrompt(inst: Installation): boolean {
     // The backend tags every migratable install (Legacy Desktop, portable,
-    // git) with a `migrate` status tag — mirror the `hasUpdateTag` pattern
+    // git) with a `migrate` status tag - mirror the `hasUpdateTag` pattern
     // rather than special-casing a single source.
     return inst.statusTag?.style === 'migrate'
   }
@@ -129,38 +129,9 @@ export function useInstallContextMenu(
           title: gatedTitle
         })
       }
-      if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
-        items.push({
-          id: 'restore-snapshot',
-          label: t('chooser.menuRestoreSnapshot'),
-          disabled: stoppedActionGated,
-          title: gatedTitle
-        })
-      }
     }
 
-    if (hasInstallPath(inst) && isLocalLikeInstall(inst)) {
-      items.push({
-        id: 'reveal-in-folder',
-        label: revealInFolderLabel(window.api?.platform),
-        separator: items.length > 0
-      })
-    }
-
-    // Share — export the latest snapshot. Local-only and post-boot, so
-    // gate on installed + local.
-    if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
-      items.push({ id: 'share', label: t('actions.share', 'Share') })
-    }
-
-    if (opts.canPromoteToWorkspace?.(inst)) {
-      items.push({
-        id: 'promote-to-workspace',
-        label: t('devPlatform.workspace.promoteToWorkspace', 'Promote to Workspace')
-      })
-    }
-
-    // Copy Installation — standalone source only. REQUIRES_STOPPED.
+    // Copy Installation - standalone source only. REQUIRES_STOPPED.
     if (isInstalled(inst) && inst.sourceCategory === 'local') {
       items.push({
         id: 'copy-install',
@@ -170,7 +141,44 @@ export function useInstallContextMenu(
       })
     }
 
-    // Bottom cluster — Stop (running only) + Untrack (registry only, hidden for
+    if (hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+      items.push({
+        id: 'reveal-in-folder',
+        label: revealInFolderLabel(window.api?.platform)
+      })
+    }
+
+    const snapshotCluster: ContextMenuItem[] = []
+
+    // Share - export the latest snapshot. Local-only and post-boot, so
+    // gate on installed + local.
+    if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+      snapshotCluster.push({ id: 'share', label: t('actions.share', 'Share') })
+    }
+
+    if (opts.onManage && isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+      snapshotCluster.push({
+        id: 'restore-snapshot',
+        label: t('chooser.menuRestoreSnapshot'),
+        disabled: stoppedActionGated,
+        title: gatedTitle
+      })
+    }
+
+    if (opts.canPromoteToWorkspace?.(inst)) {
+      snapshotCluster.push({
+        id: 'promote-to-workspace',
+        label: t('devPlatform.workspace.promoteToWorkspace', 'Promote to Workspace')
+      })
+    }
+
+    const [snapshotClusterHead] = snapshotCluster
+    if (snapshotClusterHead) {
+      snapshotClusterHead.separator = items.length > 0
+      items.push(...snapshotCluster)
+    }
+
+    // Bottom cluster - Stop (running only) + Untrack (registry only, hidden for
     // adopted installs whose legacy marker would re-track them) + Delete (wipes
     // disk). Built as one group so only its first item draws the divider.
     const cluster: ContextMenuItem[] = []
@@ -206,7 +214,7 @@ export function useInstallContextMenu(
     return items
   }
 
-  /** Right-click on a card — anchor at click coords. */
+  /** Right-click on a card - anchor at click coords. */
   function openCardMenu(event: MouseEvent, inst: Installation): void {
     const items = getMenuItems(inst)
     if (items.length === 0) return
@@ -214,7 +222,7 @@ export function useInstallContextMenu(
     ctxMenu.value = { open: true, x: event.clientX, y: event.clientY, inst }
   }
 
-  /** Click on the kebab (⋮) button — anchor the menu beneath the icon. */
+  /** Click on the kebab button - anchor the menu beneath the icon. */
   function openKebabMenu(event: MouseEvent, inst: Installation): void {
     const items = getMenuItems(inst)
     if (items.length === 0) return
@@ -349,7 +357,7 @@ export function useInstallContextMenu(
         if (!confirmed) return
         opts.onShowProgress({
           installationId: inst.id,
-          title: `${deleteLabel} — ${inst.name}`,
+          title: `${deleteLabel} - ${inst.name}`,
           apiCall: () => window.api.runAction(inst.id, 'delete'),
           cancellable: true,
           returnTo: 'list',
