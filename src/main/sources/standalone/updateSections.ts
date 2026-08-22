@@ -7,6 +7,7 @@ import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { truncateNotes } from '../../lib/comfyui-releases'
 import {
+  copyAction,
   deleteAction,
   untrackAction,
   launchAction,
@@ -629,27 +630,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       actions: [
         launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
         renameAction(installation.name),
-        {
-          id: 'copy',
-          label: t('actions.copyInstallation'),
-          style: 'default',
-          enabled: installed,
-          showProgress: true,
-          progressTitle: t('actions.copyingInstallation'),
-          cancellable: true,
-          prompt: {
-            title: t('actions.copyInstallationTitle'),
-            message: t('actions.copyInstallationMessage'),
-            // Pre-fill with the numbered name the duplicate will actually get on
-            // save ("ComfyUI" → "ComfyUI (1)"), via uniqueName(), instead of a
-            // "(Copy)" label or a stale suggestion that differs from the result.
-            defaultValue: installation.name,
-            uniquifyDefault: true,
-            confirmLabel: t('actions.copyInstallationConfirm'),
-            required: true,
-            field: 'name'
-          }
-        },
+        copyAction(installation.name, installed),
         openFolderAction(installation.installPath),
         { id: 'share', label: t('actions.share'), style: 'default', enabled: installed },
         // Adopted installs are non-forgettable: the `.comfyui-desktop-2`

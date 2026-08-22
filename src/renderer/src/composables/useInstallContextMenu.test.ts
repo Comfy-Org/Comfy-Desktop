@@ -85,6 +85,7 @@ function makeInstall(overrides: Partial<Installation> = {}): Installation {
   return {
     id: 'inst-1',
     name: 'Inst 1',
+    sourceId: 'standalone',
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     status: 'installed',
@@ -346,9 +347,28 @@ describe('useInstallContextMenu - copy-install routing', () => {
     apiMock.runAction.mockClear()
   })
 
+  it('offers Duplicate Instance for standalone and managed Build installs only', () => {
+    expect(
+      findItem(mountHarness(makeInstall()).menu.ctxMenuItems.value, 'copy-install')
+    ).toBeTruthy()
+    expect(
+      findItem(
+        mountHarness(makeInstall({ sourceId: 'comfybuilder', distributionId: 'build-1' })).menu
+          .ctxMenuItems.value,
+        'copy-install'
+      )
+    ).toBeTruthy()
+    expect(
+      findItem(
+        mountHarness(makeInstall({ sourceId: 'portable' })).menu.ctxMenuItems.value,
+        'copy-install'
+      )
+    ).toBeUndefined()
+  })
+
   it('copy-install routes through onManage with autoAction "copy" and does not call runAction directly', async () => {
     const onManage = vi.fn<(inst: Installation, options?: { autoAction?: string | null }) => void>()
-    const inst = makeInstall()
+    const inst = makeInstall({ sourceId: 'comfybuilder', distributionId: 'build-1' })
     const { menu } = mountHarnessWithManage(onManage)
 
     await menu.triggerAction('copy-install', inst)

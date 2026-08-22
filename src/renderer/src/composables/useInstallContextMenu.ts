@@ -145,8 +145,8 @@ export function useInstallContextMenu(
       }
     }
 
-    // Copy Installation - standalone source only. REQUIRES_STOPPED.
-    if (isInstalled(inst) && inst.sourceCategory === 'local') {
+    // Only sources whose detail sections expose the generic copy action.
+    if (isInstalled(inst) && (inst.sourceId === 'standalone' || isBuildInstall(inst))) {
       items.push({
         id: 'copy-install',
         label: t('actions.copyInstallation'),

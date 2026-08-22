@@ -23,6 +23,7 @@
  */
 import { t } from '../../lib/i18n'
 import {
+  copyAction,
   deleteAction,
   launchAction,
   openFolderAction,
@@ -204,6 +205,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       actions: [
         launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
         renameAction(installation.name),
+        copyAction(installation.name, installed),
         openFolderAction(installation.installPath),
         untrackAction(),
         deleteAction(installation)

@@ -114,12 +114,31 @@ describe('comfybuilder.getDetailSections', () => {
     expect(buildField?.value).toBe('v7')
   })
 
-  it('pins launch/rename/open-folder/remove/delete, all session-dispatched ids', () => {
+  it('pins all session-dispatched Build actions', () => {
     const pinned = sectionsFor(record()).find((s) => s.pinBottom === true)
     const ids = (pinned?.actions ?? []).map((a) => a.id)
     expect(ids).toEqual(
-      expect.arrayContaining(['launch', 'rename', 'open-folder', 'remove', 'delete'])
+      expect.arrayContaining(['launch', 'rename', 'copy', 'open-folder', 'remove', 'delete'])
     )
+  })
+
+  it('declares the duplicate prompt and disables it until the Build is installed', () => {
+    const actions = sectionsFor(record()).find((s) => s.pinBottom === true)?.actions ?? []
+    const copy = actions.find((action) => action.id === 'copy')
+    expect(copy).toMatchObject({
+      enabled: true,
+      showProgress: true,
+      cancellable: true,
+      prompt: {
+        defaultValue: 'Studio Render Pipeline',
+        uniquifyDefault: true,
+        field: 'name'
+      }
+    })
+
+    const unavailableActions =
+      sectionsFor(record({ status: 'failed' })).find((s) => s.pinBottom === true)?.actions ?? []
+    expect(unavailableActions.find((action) => action.id === 'copy')?.enabled).toBe(false)
   })
 
   it('renders the update tab as a version-stats table, like a local install', () => {
