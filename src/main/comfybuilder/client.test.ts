@@ -83,8 +83,37 @@ describe('ComfyBuilderClient', () => {
     const builds = await client.listBuilds()
     expect(builds).toEqual([{ id: 'b1', name: 'Build One' }])
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distributions')
+    expect(call[0]).toBe('https://api.test/builder/v1/distributions?limit=100')
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
+  })
+
+  it('follows the legacy distribution cursor until every build is loaded', async () => {
+    const f = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      const body = url.includes('cursor=next%2Fpage%2B2')
+        ? { distributions: [{ id: 'b2', name: 'Build Two' }] }
+        : {
+            distributions: [{ id: 'b1', name: 'Build One' }],
+            nextCursor: 'next/page+2'
+          }
+      return new Response(JSON.stringify(body), { status: 200 })
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', f)
+    const getAccessToken = vi.fn(async () => 'tok-123')
+    const client = new ComfyBuilderClient({
+      baseUrl: 'https://api.test/builder',
+      auth: { getAccessToken }
+    })
+
+    await expect(client.listBuilds()).resolves.toEqual([
+      { id: 'b1', name: 'Build One' },
+      { id: 'b2', name: 'Build Two' }
+    ])
+    expect(f).toHaveBeenCalledTimes(2)
+    expect((f as unknown as ReturnType<typeof vi.fn>).mock.calls[1]![0]).toBe(
+      'https://api.test/builder/v1/distributions?limit=100&cursor=next%2Fpage%2B2'
+    )
+    expect(getAccessToken).toHaveBeenCalledOnce()
   })
 
   it('resolves a Desktop snapshot and creates a Build draft with the same token', async () => {

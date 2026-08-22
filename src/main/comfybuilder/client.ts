@@ -67,6 +67,7 @@ export interface ComfyBuilderClientOptions {
 
 interface BuildsResponse {
   distributions?: Build[]
+  nextCursor?: string
 }
 interface VersionsResponse {
   versions?: BuildVersion[]
@@ -108,8 +109,17 @@ export class ComfyBuilderClient {
 
   /** Every product Build visible to the workspace. */
   async listBuilds(): Promise<Build[]> {
-    const body = await this.get<BuildsResponse>('/v1/distributions')
-    return body.distributions ?? []
+    const token = await this.accessToken()
+    const builds: Build[] = []
+    let cursor: string | undefined
+    do {
+      const query = new URLSearchParams({ limit: '100' })
+      if (cursor) query.set('cursor', cursor)
+      const body = await this.get<BuildsResponse>(`/v1/distributions?${query}`, token)
+      builds.push(...(body.distributions ?? []))
+      cursor = body.nextCursor || undefined
+    } while (cursor)
+    return builds
   }
 
   /** Resolve a Desktop snapshot into a draft Build and return its web handoff. */
@@ -209,8 +219,8 @@ export class ComfyBuilderClient {
     return body.downloadUrl
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return this.request<T>(path)
+  private async get<T>(path: string, token?: string): Promise<T> {
+    return this.request<T>(path, undefined, token)
   }
 
   private async post<T>(path: string, payload: unknown, token?: string): Promise<T> {
