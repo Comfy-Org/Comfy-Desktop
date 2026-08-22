@@ -41,7 +41,7 @@
     "migratePill": "Migrate",
     "workspaceShelf": "Workspace",
     "workspaceCtaLabel": "Create New Build on the Web",
-    "workspaceCtaDesc": "Create a workspace build in Comfy Builder.",
+    "workspaceCtaDesc": "Or promote an existing instance",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",

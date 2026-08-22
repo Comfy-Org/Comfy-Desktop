@@ -67,7 +67,7 @@ const messages = {
       migratePill: 'Migrate',
       workspaceShelf: 'Workspace',
       workspaceCtaLabel: 'Create New Build on the Web',
-      workspaceCtaDesc: 'Create a workspace build in Comfy Builder.'
+      workspaceCtaDesc: 'Or promote an existing instance'
     },
     devPlatform: {
       workspace: {
@@ -843,7 +843,7 @@ describe('ChooserView', () => {
     expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(true)
     const cta = wrapper.find('[data-testid="chooser-workspace-cta"]')
     expect(cta.text()).toContain('Create New Build on the Web')
-    expect(cta.text()).toContain('Create a workspace build in Comfy Builder.')
+    expect(cta.text()).toContain('Or promote an existing instance')
     expect(cta.find('.chooser-tile-name').exists()).toBe(true)
     expect(cta.find('.chooser-tile-meta').exists()).toBe(true)
     expect(cta.find('.workspace-cta__options').exists()).toBe(false)
