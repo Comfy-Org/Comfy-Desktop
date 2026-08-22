@@ -7,6 +7,7 @@ const acquireModelDownloadRootLock = vi.hoisted(() =>
 const releaseParkedModelJobsUnder = vi.hoisted(() => vi.fn<(modelsRoot: string) => void>())
 const startManagedModelJob = vi.hoisted(() => vi.fn())
 const cancelModelDownload = vi.hoisted(() => vi.fn(async () => {}))
+const releaseInstallTerminalForFsOp = vi.hoisted(() => vi.fn<(installationId: string) => void>())
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
@@ -42,6 +43,7 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
   startManagedModelJob,
   cancelModelDownload
 }))
+vi.mock('../../lib/popoutWindows', () => ({ releaseInstallTerminalForFsOp }))
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
@@ -174,6 +176,10 @@ describe('comfybuilder.install wiring', () => {
         installArtifact as unknown as { mock: { invocationCallOrder: number[] } }
       ).mock.invocationCallOrder[0]!
       expect(renameOrder).toBeLessThan(installOrder)
+      expect(releaseInstallTerminalForFsOp).toHaveBeenCalledWith('i1')
+      expect(releaseInstallTerminalForFsOp.mock.invocationCallOrder[0]!).toBeLessThan(
+        rename.mock.invocationCallOrder[0]!
+      )
       expect(acquireModelDownloadRootLock).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
       // Stale parked rows must be retired before the lock is taken, or they
       // would keep the root busy forever.
@@ -187,6 +193,23 @@ describe('comfybuilder.install wiring', () => {
       rm.mockRestore()
       mkdir.mockRestore()
     }
+  })
+
+  it('retries a transient Windows lock while preserving models', async () => {
+    acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
+    const lockError = Object.assign(new Error('EPERM: operation not permitted, rename'), {
+      code: 'EPERM'
+    })
+    rename.mockResolvedValueOnce(undefined).mockRejectedValueOnce(lockError)
+
+    await expect(comfybuilder.install!(record(), fakeTools())).resolves.toBeUndefined()
+
+    const renameCalls = rename.mock.calls as unknown as Array<[string, string]>
+    const modelDetachCalls = renameCalls.filter(
+      ([from, to]) =>
+        /[\\/]ComfyUI[\\/]models$/.test(from) && to.includes('.comfybuilder-models-preserved')
+    )
+    expect(modelDetachCalls).toHaveLength(2)
   })
 
   it('puts the previous code, venv, and preserved models back when install fails', async () => {

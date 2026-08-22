@@ -47,7 +47,9 @@ import {
   setCachedVersions
 } from '../../devplatform/versionCache'
 import { launchAction } from '../../lib/actions'
+import { renameWithLockRetry } from '../../lib/fsRetry'
 import { defaultDownloadCacheDir } from '../../lib/paths'
+import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import { t } from '../../lib/i18n'
 import { formatTime } from '../../lib/util'
 import type { InstallationRecord } from '../../installations'
@@ -119,9 +121,9 @@ async function pathExists(target: string): Promise<boolean> {
   }
 }
 
-async function renameIfExists(from: string, to: string): Promise<boolean> {
+async function renameIfExists(from: string, to: string, signal?: AbortSignal): Promise<boolean> {
   try {
-    await fs.rename(from, to)
+    await renameWithLockRetry(from, to, signal)
     return true
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
@@ -163,21 +165,21 @@ async function restoreEnvironmentBackups(installPath: string): Promise<void> {
   }
   if (hasPreviousComfy) {
     await fs.rm(paths.comfy, { recursive: true, force: true })
-    await fs.rename(paths.previousComfy, paths.comfy)
+    await renameWithLockRetry(paths.previousComfy, paths.comfy)
   }
   if (hasPreservedModels) {
     await fs.mkdir(paths.comfy, { recursive: true })
     await fs.rm(paths.models, { recursive: true, force: true })
-    await fs.rename(paths.preservedModels, paths.models)
+    await renameWithLockRetry(paths.preservedModels, paths.models)
   }
   if (hasPreservedUser) {
     await fs.mkdir(paths.comfy, { recursive: true })
     await fs.rm(paths.user, { recursive: true, force: true })
-    await fs.rename(paths.preservedUser, paths.user)
+    await renameWithLockRetry(paths.preservedUser, paths.user)
   }
   if (await pathExists(paths.previousVenv)) {
     await fs.rm(paths.venv, { recursive: true, force: true })
-    await fs.rename(paths.previousVenv, paths.venv)
+    await renameWithLockRetry(paths.previousVenv, paths.venv)
   }
 }
 
@@ -315,6 +317,8 @@ async function installEnvironment(
   },
   onTransactionStarted?: () => Promise<void>
 ): Promise<void> {
+  releaseInstallTerminalForFsOp(installation.id)
+
   // Load this lazily: the download manager imports the source registry, which
   // includes this plugin.
   const downloadManager = await import('../../lib/comfyDownloadManager')
@@ -369,22 +373,22 @@ async function installEnvironmentLocked(
       userDetached = await renameIfExists(paths.user, paths.preservedUser)
     }
     if (hadPreviousComfy) {
-      await fs.rm(paths.comfy, { recursive: true, force: true }).catch(() => {})
-      await fs.rename(paths.previousComfy, paths.comfy)
+      await fs.rm(paths.comfy, { recursive: true, force: true })
+      await renameWithLockRetry(paths.previousComfy, paths.comfy)
     }
     if (modelsDetached) {
       await fs.mkdir(paths.comfy, { recursive: true })
-      await fs.rename(paths.preservedModels, paths.models)
+      await renameWithLockRetry(paths.preservedModels, paths.models)
       modelsDetached = false
     }
     if (userDetached) {
       await fs.mkdir(paths.comfy, { recursive: true })
-      await fs.rename(paths.preservedUser, paths.user)
+      await renameWithLockRetry(paths.preservedUser, paths.user)
       userDetached = false
     }
     if (hadPreviousVenv) {
-      await fs.rm(paths.venv, { recursive: true, force: true }).catch(() => {})
-      await fs.rename(paths.previousVenv, paths.venv)
+      await fs.rm(paths.venv, { recursive: true, force: true })
+      await renameWithLockRetry(paths.previousVenv, paths.venv)
     }
   }
 
@@ -403,13 +407,13 @@ async function installEnvironmentLocked(
     // Persist the non-runnable status and rollback metadata before moving either
     // executable tree, so another window cannot launch through the swap.
     await onTransactionStarted?.()
-    hadPreviousVenv = await renameIfExists(paths.venv, paths.previousVenv)
+    hadPreviousVenv = await renameIfExists(paths.venv, paths.previousVenv, tools.signal)
     modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
     userDetached = await renameIfExists(paths.user, paths.preservedUser)
     hadPreviousComfy = await renameIfExists(paths.comfy, paths.previousComfy)
     if (modelsDetached) {
       await fs.mkdir(paths.comfy, { recursive: true })
-      await fs.rename(paths.preservedModels, paths.models)
+      await renameWithLockRetry(paths.preservedModels, paths.models)
       modelsDetached = false
     }
     // Phase 1: archive (code + environment). `installArtifact` verifies the
@@ -433,7 +437,7 @@ async function installEnvironmentLocked(
     // state: the preserved data wins.
     if (userDetached) {
       await fs.rm(paths.user, { recursive: true, force: true })
-      await fs.rename(paths.preservedUser, paths.user)
+      await renameWithLockRetry(paths.preservedUser, paths.user)
       userDetached = false
     }
 
