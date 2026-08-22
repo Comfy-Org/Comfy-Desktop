@@ -181,13 +181,13 @@ async function onSelectWorkspace(workspaceId: string): Promise<void> {
   padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  background: var(--neutral-800);
+  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
   color: var(--neutral-100);
   font: inherit;
   cursor: pointer;
 }
 .workspace-selector__face:hover {
-  background: color-mix(in srgb, var(--neutral-100) 4%, var(--neutral-800));
+  background: color-mix(in oklab, var(--neutral-100) 10%, transparent);
   border-color: color-mix(in oklab, var(--neutral-100) 18%, transparent);
 }
 .workspace-selector__face:focus-visible {
