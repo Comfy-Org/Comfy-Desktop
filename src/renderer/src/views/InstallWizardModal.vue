@@ -929,7 +929,6 @@ defineExpose({ open })
   <BrandTakeoverLayout>
     <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
       <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
-      <p class="brand-lead">{{ $t('newInstall.configureLead') }}</p>
       <div class="config-card">
         <div class="config-card__body">
           <div class="config-field">

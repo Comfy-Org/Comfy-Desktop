@@ -34,6 +34,17 @@ beforeEach(() => {
   } as unknown as typeof window.api
 })
 
+describe('InstallWizardModal heading', () => {
+  it('uses the new-instance title without a subtitle', async () => {
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.get('.brand-title').text()).toBe('Create a New Instance')
+    expect(wrapper.find('.brand-lead').exists()).toBe(false)
+  })
+})
+
 describe('InstallWizardModal install-location field', () => {
   it('renders the default install location as a clickable path that opens the folder', async () => {
     const wrapper = mountModal()
