@@ -49,6 +49,7 @@ const messages = {
       menuUpdate: 'Update',
       menuMigrate: 'Migrate to Standalone',
       menuRestoreSnapshot: 'Restore Snapshot',
+      menuExportSnapshot: 'Export Snapshot',
       menuRevealInFolder: 'Open Folder',
       menuDelete: 'Uninstall'
     },
@@ -62,7 +63,6 @@ const messages = {
       deleteConfirmTitle: 'Delete Install',
       deleteConfirmMessage:
         'This permanently removes this ComfyUI installation and all its files. Other installations and ComfyUI itself are unaffected. This cannot be undone.',
-      share: 'Share',
       stop: 'Stop',
       stopConfirmTitle: 'Stop ComfyUI',
       stopConfirmMessage:
@@ -470,19 +470,19 @@ describe('useInstallContextMenu - migrate item keys off the migrate status tag',
   })
 })
 
-describe('useInstallContextMenu - share (export latest snapshot)', () => {
+describe('useInstallContextMenu - export latest snapshot', () => {
   beforeEach(() => {
     apiMock.getSnapshots.mockReset()
     apiMock.exportSnapshot.mockReset()
     modalMock.alert.mockReset()
   })
 
-  it('shows the Share item for an installed local install', () => {
+  it('shows Export Snapshot for an installed local install', () => {
     const { menu } = mountHarness(makeInstall({ sourceCategory: 'local' }))
-    expect(findItem(menu.ctxMenuItems.value, 'share')).toBeTruthy()
+    expect(findItem(menu.ctxMenuItems.value, 'share')?.label).toBe('Export Snapshot')
   })
 
-  it('hides the Share item for cloud installs (snapshots are local-only)', () => {
+  it('hides Export Snapshot for cloud installs (snapshots are local-only)', () => {
     const { menu } = mountHarness(makeInstall({ sourceCategory: 'cloud' }))
     expect(findItem(menu.ctxMenuItems.value, 'share')).toBeUndefined()
   })

@@ -162,10 +162,13 @@ export function useInstallContextMenu(
 
     const snapshotCluster: ContextMenuItem[] = []
 
-    // Share - export the latest snapshot. Local-only and post-boot, so
-    // gate on installed + local.
+    // Export the latest snapshot. Local-only and post-boot, so gate on
+    // installed + local.
     if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
-      snapshotCluster.push({ id: 'share', label: t('actions.share', 'Share') })
+      snapshotCluster.push({
+        id: 'share',
+        label: t('chooser.menuExportSnapshot', 'Export Snapshot')
+      })
     }
 
     if (opts.onManage && isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
@@ -303,7 +306,7 @@ export function useInstallContextMenu(
     } else if (id === 'share') {
       // Export the latest snapshot. The IPC owns its own save dialog; a
       // cancel is a silent no-op. Only surface genuine failures.
-      const label = t('actions.share', 'Share')
+      const label = t('chooser.menuExportSnapshot', 'Export Snapshot')
       try {
         const result = await shareLatestSnapshot(inst.id)
         if (!result.ok) {

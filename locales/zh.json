@@ -48,6 +48,7 @@
     "menuUpdate": "更新",
     "menuMigrate": "迁移到独立版",
     "menuRestoreSnapshot": "恢复快照",
+    "menuExportSnapshot": "导出快照",
     "menuRevealInFolder": "打开文件夹",
     "menuDelete": "卸载",
     "stoppedActionGatedReason": "请先停止正在运行的实例。",
