@@ -7,6 +7,7 @@ import { useStopAction } from './useStopAction'
 import { revealInFolderLabel } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import { shareLatestSnapshot } from '../lib/snapshots'
+import { isBuildInstall } from '../devplatform/buildState'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
@@ -115,6 +116,8 @@ export function useInstallContextMenu(
   function getMenuItems(inst: Installation): ContextMenuItem[] {
     const items: ContextMenuItem[] = []
     const stoppedActionGated = isStoppedActionGated(inst)
+    const supportsSnapshotActions =
+      isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isBuildInstall(inst)
     // Tooltip explaining why the gated items are greyed out.
     const gatedTitle = stoppedActionGated ? t('chooser.stoppedActionGatedReason') : undefined
 
@@ -161,16 +164,15 @@ export function useInstallContextMenu(
 
     const snapshotCluster: ContextMenuItem[] = []
 
-    // Export the latest snapshot. Local-only and post-boot, so gate on
-    // installed + local.
-    if (isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+    // Workspace-managed installs do not support Desktop snapshot actions.
+    if (supportsSnapshotActions) {
       snapshotCluster.push({
         id: 'share',
         label: t('chooser.menuExportSnapshot', 'Export Snapshot')
       })
     }
 
-    if (opts.onManage && isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst)) {
+    if (opts.onManage && supportsSnapshotActions) {
       snapshotCluster.push({
         id: 'restore-snapshot',
         label: t('chooser.menuRestoreSnapshot'),

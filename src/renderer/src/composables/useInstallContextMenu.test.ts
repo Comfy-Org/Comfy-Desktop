@@ -419,6 +419,12 @@ describe('useInstallContextMenu - export latest snapshot', () => {
     expect(findItem(menu.ctxMenuItems.value, 'share')).toBeUndefined()
   })
 
+  it('hides snapshot actions for workspace-managed installs', () => {
+    const { menu } = mountHarness(makeInstall({ sourceId: 'comfybuilder' }))
+    expect(findItem(menu.ctxMenuItems.value, 'share')).toBeUndefined()
+    expect(findItem(menu.ctxMenuItems.value, 'restore-snapshot')).toBeUndefined()
+  })
+
   it('exports the newest snapshot and shows no alert on success', async () => {
     apiMock.getSnapshots.mockResolvedValue({
       snapshots: [{ filename: 'snap-newest.json' }, { filename: 'snap-older.json' }]

@@ -841,7 +841,11 @@ describe('ChooserView', () => {
 
     expect(wrapper.find('.chooser-shelf-head').exists()).toBe(true)
     expect(wrapper.find('.chooser-shelf-count').text()).toBe('0')
-    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(true)
+    expect(
+      wrapper
+        .find('.chooser-workspace-selector [data-testid="devplatform-workspace-selector"]')
+        .exists()
+    ).toBe(true)
     const cta = wrapper.find('[data-testid="chooser-workspace-cta"]')
     expect(cta.text()).toContain('Create New Build on the Web')
     expect(cta.text()).toContain('Or promote an existing instance.')

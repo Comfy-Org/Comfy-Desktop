@@ -586,7 +586,9 @@ const gridHandlers = {
               />
             </button>
           </header>
-          <DevPlatformWorkspaceSelector />
+          <div class="chooser-workspace-selector">
+            <DevPlatformWorkspaceSelector />
+          </div>
           <ChooserFamilyGrid
             :entries="workspaceInstalledEntries"
             show-workspace-cta
@@ -884,6 +886,10 @@ const gridHandlers = {
 .chooser-shelf-count {
   font-size: 11px;
   color: var(--text-faint);
+}
+.chooser-workspace-selector {
+  display: flex;
+  justify-content: flex-end;
 }
 .chooser-workspace-refresh {
   display: inline-flex;
