@@ -69,7 +69,7 @@ const messages = {
       workspaceShelf: 'Workspace',
       workspaceFilterLabel: 'Filter workspace builds',
       workspaceFilterCompatible: 'Compatible',
-      workspaceCtaLabel: 'Create New Build on the Web',
+      workspaceCtaLabel: 'Create New Build',
       workspaceCtaDesc: 'Or promote an existing instance.'
     },
     devPlatform: {
@@ -872,7 +872,7 @@ describe('ChooserView', () => {
     expect(controls.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(true)
     expect(controls.find('[data-testid="chooser-workspace-filter"]').exists()).toBe(true)
     const cta = wrapper.find('[data-testid="chooser-workspace-cta"]')
-    expect(cta.text()).toContain('Create New Build on the Web')
+    expect(cta.text()).toContain('Create New Build')
     expect(cta.text()).toContain('Or promote an existing instance.')
     expect(cta.find('.chooser-tile-name').exists()).toBe(true)
     expect(cta.find('.chooser-tile-meta').exists()).toBe(true)

@@ -344,7 +344,7 @@ const clusterRows = computed(() => {
   // +1: the New Install tile rides with the your-installs family.
   const ownRows = Math.ceil((1 + allOwnInstalls.value.length) / TILES_PER_ROW)
   if (!showWorkspaceShelf.value) return ownRows
-  // +1: the Create New Build on the Web card.
+  // +1: the Create New Build card.
   const shelfTiles = 1 + allWorkspaceInstalls.value.length + filteredChooserBuilds.value.length
   return ownRows + Math.ceil(shelfTiles / TILES_PER_ROW)
 })

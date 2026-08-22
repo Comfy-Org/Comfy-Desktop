@@ -42,7 +42,7 @@
     "workspaceShelf": "Workspace",
     "workspaceFilterLabel": "Filter workspace builds",
     "workspaceFilterCompatible": "Compatible",
-    "workspaceCtaLabel": "Create New Build on the Web",
+    "workspaceCtaLabel": "Create New Build",
     "workspaceCtaDesc": "Or promote an existing instance.",
     "openInstall": "Open",
     "manageInstall": "Manage",
