@@ -181,13 +181,13 @@ async function onSelectWorkspace(workspaceId: string): Promise<void> {
   padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
+  background: var(--neutral-800);
   color: var(--neutral-100);
   font: inherit;
   cursor: pointer;
 }
 .workspace-selector__face:hover {
-  background: color-mix(in oklab, var(--neutral-100) 10%, transparent);
+  background: color-mix(in srgb, var(--neutral-100) 4%, var(--neutral-800));
   border-color: color-mix(in oklab, var(--neutral-100) 18%, transparent);
 }
 .workspace-selector__face:focus-visible {
@@ -230,8 +230,7 @@ async function onSelectWorkspace(workspaceId: string): Promise<void> {
   padding: 6px;
   border-radius: 10px;
   border: 1px solid var(--brand-surface-border);
-  background: var(--chooser-surface-bg);
-  backdrop-filter: blur(18px);
+  background: var(--neutral-800);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
