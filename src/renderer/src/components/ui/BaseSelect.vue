@@ -18,12 +18,14 @@ interface Props {
   ariaLabel?: string
   placeholder?: string
   disabled?: boolean
+  compact?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   ariaLabel: undefined,
   placeholder: '',
-  disabled: false
+  disabled: false,
+  compact: false
 })
 
 const emit = defineEmits<{
@@ -225,6 +227,7 @@ onBeforeUnmount(() => {
     ref="triggerRef"
     type="button"
     class="ui-select-trigger"
+    :class="{ 'ui-select-trigger--compact': compact }"
     role="combobox"
     :aria-expanded="open"
     :aria-controls="listboxId"
@@ -246,6 +249,7 @@ onBeforeUnmount(() => {
         :id="listboxId"
         ref="listboxRef"
         class="ui-select-listbox"
+        :class="{ 'ui-select-listbox--compact': compact }"
         role="listbox"
         tabindex="-1"
         :style="popoverStyle"
@@ -338,6 +342,10 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+.ui-select-trigger--compact {
+  font-size: var(--takeover-fs-caption);
+}
 </style>
 
 <style>
@@ -367,6 +375,11 @@ onBeforeUnmount(() => {
   font-size: 14px;
   cursor: pointer;
   user-select: none;
+}
+
+.ui-select-listbox--compact .ui-select-option {
+  padding: 6px 8px;
+  font-size: var(--takeover-fs-caption);
 }
 
 .ui-select-option[data-active] {

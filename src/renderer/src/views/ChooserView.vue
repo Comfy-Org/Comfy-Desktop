@@ -612,6 +612,7 @@ const gridHandlers = {
                   :model-value="workspaceBuildFilter"
                   :options="workspaceBuildFilterOptions"
                   :aria-label="t('chooser.workspaceFilterLabel')"
+                  compact
                   @update:model-value="setWorkspaceBuildFilter"
                 />
               </div>
@@ -942,7 +943,6 @@ const gridHandlers = {
   padding: 6px 10px;
   background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
   border-radius: 6px;
-  font-size: var(--takeover-fs-caption);
 }
 .chooser-workspace-refresh {
   display: inline-flex;
