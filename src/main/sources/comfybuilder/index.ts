@@ -67,7 +67,10 @@ import { DEFAULT_LAUNCH_ARGS } from './constants'
 import { getDetailSections } from './detailSections'
 
 const READY_MARKER = '.comfybuilder-environment-ready'
+const ENTRY_SWAP_MARKER = '.comfybuilder-entry-swap'
+const ACTIVE_CODE_MARKER = '.comfybuilder-active-code'
 const ROLLBACK_FIELD = 'comfybuilderRollback'
+const PRESERVED_COMFY_ENTRIES = new Set(['models', 'user'])
 
 interface EnvironmentRollback {
   version?: string
@@ -98,6 +101,7 @@ function recoveryResult(
 function environmentPaths(installPath: string) {
   const venv = path.join(installPath, 'venv')
   const comfy = path.join(installPath, 'ComfyUI')
+  const nextEnvironment = path.join(installPath, '.comfybuilder-next')
   return {
     venv,
     comfy,
@@ -107,6 +111,12 @@ function environmentPaths(installPath: string) {
     user: path.join(comfy, 'user'),
     preservedModels: path.join(installPath, '.comfybuilder-models-preserved'),
     preservedUser: path.join(installPath, '.comfybuilder-user-preserved'),
+    nextEnvironment,
+    nextVenv: path.join(nextEnvironment, 'venv'),
+    nextComfy: path.join(nextEnvironment, 'ComfyUI'),
+    entrySwapMarker: path.join(installPath, ENTRY_SWAP_MARKER),
+    entrySwapMarkerTemp: path.join(installPath, `${ENTRY_SWAP_MARKER}.tmp`),
+    activeCodeMarker: path.join(installPath, ACTIVE_CODE_MARKER),
     readyMarker: path.join(installPath, READY_MARKER)
   }
 }
@@ -131,6 +141,62 @@ async function renameIfExists(from: string, to: string, signal?: AbortSignal): P
   }
 }
 
+async function directoryEntries(target: string): Promise<string[]> {
+  try {
+    return await fs.readdir(target)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+}
+
+function isPreservedComfyEntry(entry: string): boolean {
+  return PRESERVED_COMFY_ENTRIES.has(entry.toLowerCase())
+}
+
+async function comfyCodeEntries(target: string): Promise<string[]> {
+  return (await directoryEntries(target)).filter((entry) => !isPreservedComfyEntry(entry))
+}
+
+async function moveComfyCode(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+  entries?: string[]
+): Promise<void> {
+  entries ??= await comfyCodeEntries(from)
+  if (entries.length === 0) return
+  await fs.mkdir(to, { recursive: true })
+  for (const entry of entries) {
+    await renameWithLockRetry(path.join(from, entry), path.join(to, entry), signal)
+  }
+}
+
+async function readEntrySwapManifest(marker: string): Promise<Set<string>> {
+  const value: unknown = JSON.parse(await fs.readFile(marker, 'utf8'))
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+    throw new Error('The ComfyBuilder update recovery manifest is invalid.')
+  }
+  return new Set(value.map((entry) => entry.toLowerCase()))
+}
+
+async function removeReplacedComfyCode(
+  target: string,
+  previous: string,
+  previousEntryNames: ReadonlySet<string>
+): Promise<void> {
+  const backupEntries = new Set(
+    (await comfyCodeEntries(previous)).map((entry) => entry.toLowerCase())
+  )
+  const entries = (await comfyCodeEntries(target)).filter((entry) => {
+    const normalized = entry.toLowerCase()
+    return backupEntries.has(normalized) || !previousEntryNames.has(normalized)
+  })
+  await Promise.all(
+    entries.map((entry) => fs.rm(path.join(target, entry), { recursive: true, force: true }))
+  )
+}
+
 async function isRunnableEnvironment(installPath: string): Promise<boolean> {
   return Promise.all([
     fs.stat(path.join(installPath, 'venv')),
@@ -147,40 +213,64 @@ async function hasEnvironmentBackups(installPath: string): Promise<boolean> {
     (await pathExists(paths.previousVenv)) ||
     (await pathExists(paths.previousComfy)) ||
     (await pathExists(paths.preservedModels)) ||
-    (await pathExists(paths.preservedUser))
+    (await pathExists(paths.preservedUser)) ||
+    (await pathExists(paths.nextEnvironment)) ||
+    (await pathExists(paths.entrySwapMarker)) ||
+    (await pathExists(paths.entrySwapMarkerTemp))
   )
 }
 
 async function restoreEnvironmentBackups(installPath: string): Promise<void> {
   const paths = environmentPaths(installPath)
+  const usesEntrySwap = await pathExists(paths.entrySwapMarker)
   const hasPreviousComfy = await pathExists(paths.previousComfy)
   let hasPreservedModels = await pathExists(paths.preservedModels)
   let hasPreservedUser = await pathExists(paths.preservedUser)
 
-  if (hasPreviousComfy && !hasPreservedModels) {
-    hasPreservedModels = await renameIfExists(paths.models, paths.preservedModels)
-  }
-  if (hasPreviousComfy && !hasPreservedUser) {
-    hasPreservedUser = await renameIfExists(paths.user, paths.preservedUser)
-  }
-  if (hasPreviousComfy) {
-    await fs.rm(paths.comfy, { recursive: true, force: true })
-    await renameWithLockRetry(paths.previousComfy, paths.comfy)
-  }
-  if (hasPreservedModels) {
+  if (usesEntrySwap) {
     await fs.mkdir(paths.comfy, { recursive: true })
-    await fs.rm(paths.models, { recursive: true, force: true })
-    await renameWithLockRetry(paths.preservedModels, paths.models)
-  }
-  if (hasPreservedUser) {
-    await fs.mkdir(paths.comfy, { recursive: true })
-    await fs.rm(paths.user, { recursive: true, force: true })
-    await renameWithLockRetry(paths.preservedUser, paths.user)
+    if (await pathExists(paths.activeCodeMarker)) {
+      await removeReplacedComfyCode(
+        paths.comfy,
+        paths.previousComfy,
+        await readEntrySwapManifest(paths.entrySwapMarker)
+      )
+    }
+    if (hasPreviousComfy) {
+      await moveComfyCode(paths.previousComfy, paths.comfy)
+      await fs.rm(paths.previousComfy, { recursive: true, force: true })
+    }
+  } else {
+    // Recover transactions created by versions that moved the whole ComfyUI tree.
+    if (hasPreviousComfy && !hasPreservedModels) {
+      hasPreservedModels = await renameIfExists(paths.models, paths.preservedModels)
+    }
+    if (hasPreviousComfy && !hasPreservedUser) {
+      hasPreservedUser = await renameIfExists(paths.user, paths.preservedUser)
+    }
+    if (hasPreviousComfy) {
+      await fs.rm(paths.comfy, { recursive: true, force: true })
+      await renameWithLockRetry(paths.previousComfy, paths.comfy)
+    }
+    if (hasPreservedModels) {
+      await fs.mkdir(paths.comfy, { recursive: true })
+      await fs.rm(paths.models, { recursive: true, force: true })
+      await renameWithLockRetry(paths.preservedModels, paths.models)
+    }
+    if (hasPreservedUser) {
+      await fs.mkdir(paths.comfy, { recursive: true })
+      await fs.rm(paths.user, { recursive: true, force: true })
+      await renameWithLockRetry(paths.preservedUser, paths.user)
+    }
   }
   if (await pathExists(paths.previousVenv)) {
     await fs.rm(paths.venv, { recursive: true, force: true })
     await renameWithLockRetry(paths.previousVenv, paths.venv)
   }
+  await fs.rm(paths.nextEnvironment, { recursive: true, force: true })
+  await fs.rm(paths.activeCodeMarker, { force: true })
+  await fs.rm(paths.entrySwapMarker, { force: true })
+  await fs.rm(paths.entrySwapMarkerTemp, { force: true })
 }
 
 /** Remove committed transaction debris, deleting the marker last so startup
@@ -191,6 +281,10 @@ async function finalizeEnvironmentTransaction(installPath: string): Promise<void
   await fs.rm(paths.previousComfy, { recursive: true, force: true })
   await fs.rm(paths.preservedModels, { recursive: true, force: true })
   await fs.rm(paths.preservedUser, { recursive: true, force: true })
+  await fs.rm(paths.nextEnvironment, { recursive: true, force: true })
+  await fs.rm(paths.activeCodeMarker, { force: true })
+  await fs.rm(paths.entrySwapMarker, { force: true })
+  await fs.rm(paths.entrySwapMarkerTemp, { force: true })
   await fs.rm(paths.readyMarker, { force: true })
 }
 
@@ -356,72 +450,21 @@ async function installEnvironmentLocked(
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
   const paths = environmentPaths(installation.installPath)
-
-  let hadPreviousVenv = false
-  let hadPreviousComfy = false
-  let modelsDetached = false
-  let userDetached = false
-
-  /** Restore both executable halves of the previous build. Models and
-   *  the user directory are moved out and back rather than copied because
-   *  models can be hundreds of GB. */
-  async function restorePreviousEnvironment(): Promise<void> {
-    if (hadPreviousComfy && !modelsDetached) {
-      modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
-    }
-    if (hadPreviousComfy && !userDetached) {
-      userDetached = await renameIfExists(paths.user, paths.preservedUser)
-    }
-    if (hadPreviousComfy) {
-      await fs.rm(paths.comfy, { recursive: true, force: true })
-      await renameWithLockRetry(paths.previousComfy, paths.comfy)
-    }
-    if (modelsDetached) {
-      await fs.mkdir(paths.comfy, { recursive: true })
-      await renameWithLockRetry(paths.preservedModels, paths.models)
-      modelsDetached = false
-    }
-    if (userDetached) {
-      await fs.mkdir(paths.comfy, { recursive: true })
-      await renameWithLockRetry(paths.preservedUser, paths.user)
-      userDetached = false
-    }
-    if (hadPreviousVenv) {
-      await fs.rm(paths.venv, { recursive: true, force: true })
-      await renameWithLockRetry(paths.previousVenv, paths.venv)
-    }
-  }
-
-  // Neither executable tree can be overlaid: stale packages or source files can
-  // make the resulting version incoherent. Move both aside until archive and
-  // model staging finish. Keep models in the active tree so updates preserve
-  // existing weights and stage only what the new manifest adds. The user
-  // directory (workflows, settings, database, manager config) is detached the
-  // same way and restored only after extraction, so archive contents can never
-  // overwrite it.
   const interrupted = await hasEnvironmentBackups(installation.installPath)
   if (interrupted) throw new Error('An interrupted ComfyBuilder update must be recovered first.')
   await fs.rm(paths.readyMarker, { force: true }).catch(() => {})
+  const hasExistingEnvironment = (await pathExists(paths.venv)) || (await pathExists(paths.comfy))
 
   try {
-    // Persist the non-runnable status and rollback metadata before moving either
-    // executable tree, so another window cannot launch through the swap.
-    await onTransactionStarted?.()
-    hadPreviousVenv = await renameIfExists(paths.venv, paths.previousVenv, tools.signal)
-    modelsDetached = await renameIfExists(paths.models, paths.preservedModels)
-    userDetached = await renameIfExists(paths.user, paths.preservedUser)
-    hadPreviousComfy = await renameIfExists(paths.comfy, paths.previousComfy)
-    if (modelsDetached) {
-      await fs.mkdir(paths.comfy, { recursive: true })
-      await renameWithLockRetry(paths.preservedModels, paths.models)
-      modelsDetached = false
-    }
-    // Phase 1: archive (code + environment). `installArtifact` verifies the
-    // sha256 and fails on a missing hash or byte mismatch.
+    // Download and validate updates in a staging directory so the installed
+    // environment stays runnable until the filesystem swap begins.
+    const artifactInstallPath = hasExistingEnvironment
+      ? paths.nextEnvironment
+      : installation.installPath
     await installArtifact({
       artifact,
       client,
-      installPath: installation.installPath,
+      installPath: artifactInstallPath,
       cacheDir: defaultDownloadCacheDir(),
       onProgress: (p: InstallProgress) => {
         // The library's `resolve` phase has no labeled step; fold it into the
@@ -432,19 +475,33 @@ async function installEnvironmentLocked(
       ...(tools.signal ? { signal: tools.signal } : {})
     })
 
-    // Put the preserved user directory back now that the layout is validated.
-    // A user/ directory the archive shipped is build debris, never real user
-    // state: the preserved data wins.
-    if (userDetached) {
-      await fs.rm(paths.user, { recursive: true, force: true })
-      await renameWithLockRetry(paths.preservedUser, paths.user)
-      userDetached = false
+    if (hasExistingEnvironment) {
+      // Models and user data can be locked by Windows after an instance has run.
+      // Keep both directories at their stable paths and swap only executable
+      // entries. The staged archive copies are build debris, not user state.
+      await fs.rm(path.join(paths.nextComfy, 'models'), { recursive: true, force: true })
+      await fs.rm(path.join(paths.nextComfy, 'user'), { recursive: true, force: true })
+
+      // Persist the non-runnable status and rollback metadata before moving
+      // executable files, so another window cannot launch through the swap.
+      await onTransactionStarted?.()
+      const previousCodeEntries = await comfyCodeEntries(paths.comfy)
+      await fs.writeFile(paths.entrySwapMarkerTemp, JSON.stringify(previousCodeEntries))
+      await renameWithLockRetry(paths.entrySwapMarkerTemp, paths.entrySwapMarker, tools.signal)
+      await renameIfExists(paths.venv, paths.previousVenv, tools.signal)
+      await fs.mkdir(paths.previousComfy, { recursive: true })
+      await moveComfyCode(paths.comfy, paths.previousComfy, tools.signal, previousCodeEntries)
+      await fs.writeFile(paths.activeCodeMarker, '')
+
+      await renameWithLockRetry(paths.nextVenv, paths.venv, tools.signal)
+      await fs.mkdir(paths.comfy, { recursive: true })
+      await moveComfyCode(paths.nextComfy, paths.comfy, tools.signal)
+      await fs.rm(paths.nextEnvironment, { recursive: true, force: true })
+    } else {
+      await onTransactionStarted?.()
     }
 
-    // Phase 2: models. The archive carries no weights, so stage the
-    // build's declared models into the install's ComfyUI model tree
-    // before launch, the way comfy-deploy provisions a volume before boot. An
-    // empty manifest stages nothing and the step completes immediately.
+    // Stage the build's declared models into the stable model tree before launch.
     const manifest = await resolveModelManifest(
       client,
       installation.distributionId as string,
@@ -466,7 +523,9 @@ async function installEnvironmentLocked(
     await fs.writeFile(paths.readyMarker, '')
   } catch (err) {
     // Put the complete working environment back before surfacing the failure.
-    await restorePreviousEnvironment().catch(() => {})
+    if (hasExistingEnvironment) {
+      await restoreEnvironmentBackups(installation.installPath).catch(() => {})
+    }
     await fs.rm(paths.readyMarker, { force: true }).catch(() => {})
     throw err
   }

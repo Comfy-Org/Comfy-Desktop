@@ -151,134 +151,79 @@ describe('comfybuilder.install wiring', () => {
     writeFile.mockRestore()
   })
 
-  it('moves both executable trees aside while preserving models', async () => {
+  it('installs a fresh environment without an unnecessary filesystem swap', async () => {
     const releaseModelRoot = vi.fn()
     acquireModelDownloadRootLock.mockReturnValueOnce(releaseModelRoot)
-    const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
-    const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
-    const mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined)
-    try {
-      await comfybuilder.install!(record(), fakeTools())
-      expect(rename).toHaveBeenCalledWith(
-        expect.stringContaining('venv'),
-        expect.stringContaining('venv.previous')
-      )
-      expect(rename).toHaveBeenCalledWith(
-        expect.stringMatching(/[\\/]ComfyUI$/),
-        expect.stringContaining('ComfyUI.previous')
-      )
-      expect(rename).toHaveBeenCalledWith(
-        expect.stringContaining('.comfybuilder-models-preserved'),
-        expect.stringMatching(/[\\/]ComfyUI[\\/]models$/)
-      )
-      const renameOrder = rename.mock.invocationCallOrder[0]!
-      const installOrder = (
-        installArtifact as unknown as { mock: { invocationCallOrder: number[] } }
-      ).mock.invocationCallOrder[0]!
-      expect(renameOrder).toBeLessThan(installOrder)
-      expect(releaseInstallTerminalForFsOp).toHaveBeenCalledWith('i1')
-      expect(releaseInstallTerminalForFsOp.mock.invocationCallOrder[0]!).toBeLessThan(
-        rename.mock.invocationCallOrder[0]!
-      )
-      expect(acquireModelDownloadRootLock).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
-      // Stale parked rows must be retired before the lock is taken, or they
-      // would keep the root busy forever.
-      expect(releaseParkedModelJobsUnder).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
-      expect(releaseParkedModelJobsUnder.mock.invocationCallOrder[0]!).toBeLessThan(
-        acquireModelDownloadRootLock.mock.invocationCallOrder[0]!
-      )
-      expect(releaseModelRoot).toHaveBeenCalledOnce()
-    } finally {
-      rename.mockRestore()
-      rm.mockRestore()
-      mkdir.mockRestore()
-    }
-  })
 
-  it('retries a transient Windows lock while preserving models', async () => {
-    acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
-    const lockError = Object.assign(new Error('EPERM: operation not permitted, rename'), {
-      code: 'EPERM'
-    })
-    rename.mockResolvedValueOnce(undefined).mockRejectedValueOnce(lockError)
-
-    await expect(comfybuilder.install!(record(), fakeTools())).resolves.toBeUndefined()
-
-    const renameCalls = rename.mock.calls as unknown as Array<[string, string]>
-    const modelDetachCalls = renameCalls.filter(
-      ([from, to]) =>
-        /[\\/]ComfyUI[\\/]models$/.test(from) && to.includes('.comfybuilder-models-preserved')
-    )
-    expect(modelDetachCalls).toHaveLength(2)
-  })
-
-  it('puts the previous code, venv, and preserved models back when install fails', async () => {
-    const releaseModelRoot = vi.fn()
-    acquireModelDownloadRootLock.mockReturnValueOnce(releaseModelRoot)
-    const rename = vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
-    const rm = vi.spyOn(fsp, 'rm').mockResolvedValue(undefined)
-    const mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined)
-    vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
-    try {
-      await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow('disk full')
-      expect(rename).toHaveBeenCalledWith(
-        expect.stringContaining('venv.previous'),
-        expect.stringMatching(/[\\/]venv$/)
-      )
-      expect(rename).toHaveBeenCalledWith(
-        expect.stringContaining('ComfyUI.previous'),
-        expect.stringMatching(/[\\/]ComfyUI$/)
-      )
-      expect(rename).toHaveBeenLastCalledWith(
-        expect.stringContaining('venv.previous'),
-        expect.stringMatching(/[\\/]venv$/)
-      )
-      expect(releaseModelRoot).toHaveBeenCalledOnce()
-    } finally {
-      rename.mockRestore()
-      rm.mockRestore()
-      mkdir.mockRestore()
-    }
-  })
-
-  it('preserves the user directory across the environment swap', async () => {
-    acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
     await comfybuilder.install!(record(), fakeTools())
 
-    const calls = rename.mock.calls as unknown as Array<[string, string]>
-    const detachIdx = calls.findIndex(
-      ([from, to]) =>
-        /[\\/]ComfyUI[\\/]user$/.test(from) && to.includes('.comfybuilder-user-preserved')
+    expect(rename).not.toHaveBeenCalled()
+    expect(installArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ installPath: '/installs/dist' })
     )
-    const restoreIdx = calls.findIndex(
-      ([from, to]) =>
-        from.includes('.comfybuilder-user-preserved') && /[\\/]ComfyUI[\\/]user$/.test(to)
-    )
-    expect(detachIdx).toBeGreaterThanOrEqual(0)
-    expect(restoreIdx).toBeGreaterThanOrEqual(0)
-
-    // The restore runs only after extraction has been validated, so archive
-    // contents can never overwrite real user data, and any user/ directory the
-    // archive shipped is removed first.
-    const restoreOrder = rename.mock.invocationCallOrder[restoreIdx]!
-    const installOrder = vi.mocked(installArtifact).mock.invocationCallOrder[0]!
-    expect(restoreOrder).toBeGreaterThan(installOrder)
-    expect(rm).toHaveBeenCalledWith(expect.stringMatching(/[\\/]ComfyUI[\\/]user$/), {
-      recursive: true,
-      force: true
-    })
+    expect(releaseInstallTerminalForFsOp).toHaveBeenCalledWith('i1')
+    expect(acquireModelDownloadRootLock).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+    expect(releaseParkedModelJobsUnder).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
+    expect(releaseModelRoot).toHaveBeenCalledOnce()
   })
 
-  it('puts the preserved user directory back when install fails', async () => {
+  it('updates code while models and user data remain at stable paths', async () => {
+    access.mockImplementation(realFsp.access)
+    mkdir.mockImplementation(realFsp.mkdir)
+    rename.mockImplementation(realFsp.rename)
+    rm.mockImplementation(realFsp.rm)
+    writeFile.mockImplementation(realFsp.writeFile)
     acquireModelDownloadRootLock.mockReturnValueOnce(vi.fn())
-    vi.mocked(installArtifact).mockRejectedValueOnce(new Error('disk full'))
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-stable-data-'))
+    const models = path.join(root, 'ComfyUI', 'models')
+    const user = path.join(root, 'ComfyUI', 'user')
+    let modelHandle: Awaited<ReturnType<typeof fsp.open>> | undefined
 
-    await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow('disk full')
+    try {
+      await fsp.mkdir(path.join(root, 'venv'), { recursive: true })
+      await fsp.mkdir(models, { recursive: true })
+      await fsp.mkdir(user, { recursive: true })
+      await fsp.writeFile(path.join(root, 'venv', 'old.txt'), 'old venv')
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'main.py'), 'old code')
+      await fsp.writeFile(path.join(models, 'user.safetensors'), 'model')
+      await fsp.writeFile(path.join(user, 'workflow.json'), 'workflow')
+      modelHandle = await fsp.open(path.join(models, 'user.safetensors'), 'r')
 
-    expect(rename).toHaveBeenCalledWith(
-      expect.stringContaining('.comfybuilder-user-preserved'),
-      expect.stringMatching(/[\\/]ComfyUI[\\/]user$/)
-    )
+      vi.mocked(installArtifact).mockImplementationOnce(async ({ installPath }) => {
+        await fsp.mkdir(path.join(installPath, 'venv'), { recursive: true })
+        await fsp.mkdir(path.join(installPath, 'ComfyUI', 'models'), { recursive: true })
+        await fsp.mkdir(path.join(installPath, 'ComfyUI', 'user'), { recursive: true })
+        await fsp.writeFile(path.join(installPath, 'venv', 'new.txt'), 'new venv')
+        await fsp.writeFile(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
+        await fsp.writeFile(path.join(installPath, 'ComfyUI', 'models', 'build.bin'), 'debris')
+        await fsp.writeFile(path.join(installPath, 'ComfyUI', 'user', 'build.json'), 'debris')
+      })
+
+      await comfybuilder.install!(record({ installPath: root }), fakeTools())
+
+      await expect(fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).resolves.toBe(
+        'new code'
+      )
+      await expect(fsp.readFile(path.join(models, 'user.safetensors'), 'utf8')).resolves.toBe(
+        'model'
+      )
+      await expect(fsp.readFile(path.join(user, 'workflow.json'), 'utf8')).resolves.toBe('workflow')
+      await expect(fsp.access(path.join(models, 'build.bin'))).rejects.toThrow()
+      await expect(fsp.access(path.join(user, 'build.json'))).rejects.toThrow()
+
+      const calls = (rename.mock.calls as unknown as Array<[string, string]>).map(([from, to]) => [
+        from,
+        to
+      ])
+      expect(calls.some(([from, to]) => from === models || to === models)).toBe(false)
+      expect(calls.some(([from, to]) => from === user || to === user)).toBe(false)
+      expect(vi.mocked(installArtifact).mock.calls[0]![0].installPath).toBe(
+        path.join(root, '.comfybuilder-next')
+      )
+    } finally {
+      await modelHandle?.close()
+      await realFsp.rm(root, { recursive: true, force: true })
+    }
   })
 
   // A record without its build identity is corrupt: reject it with a clear
@@ -469,6 +414,90 @@ describe('comfybuilder interrupted-install recovery', () => {
       )
       await expect(fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).resolves.toBe(
         'old code'
+      )
+      await expect(
+        fsp.readFile(path.join(root, 'ComfyUI', 'models', 'user.safetensors'), 'utf8')
+      ).resolves.toBe('model')
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rolls back swapped code without moving models or user data', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-entry-recovery-'))
+    try {
+      await fsp.mkdir(path.join(root, 'venv.previous'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'venv.previous', 'old.txt'), 'old venv')
+      await fsp.mkdir(path.join(root, 'venv'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'venv', 'new.txt'), 'new venv')
+      await fsp.mkdir(path.join(root, 'ComfyUI.previous'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI.previous', 'main.py'), 'old code')
+      await fsp.mkdir(path.join(root, 'ComfyUI', 'models'), { recursive: true })
+      await fsp.mkdir(path.join(root, 'ComfyUI', 'user'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'main.py'), 'new code')
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'new.py'), 'new only')
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'models', 'user.safetensors'), 'model')
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'user', 'workflow.json'), 'workflow')
+      await fsp.writeFile(path.join(root, '.comfybuilder-entry-swap'), JSON.stringify(['main.py']))
+      await fsp.writeFile(path.join(root, '.comfybuilder-active-code'), '')
+
+      const result = await recoverComfyBuilderInstallation(
+        record({
+          installPath: root,
+          version: '9',
+          artifactId: 'new',
+          status: 'installing',
+          comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
+        })
+      )
+
+      expect(result).toEqual({
+        action: 'update',
+        data: expect.objectContaining({ version: '1', artifactId: 'old', status: 'installed' })
+      })
+      await expect(fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).resolves.toBe(
+        'old code'
+      )
+      await expect(fsp.access(path.join(root, 'ComfyUI', 'new.py'))).rejects.toThrow()
+      await expect(
+        fsp.readFile(path.join(root, 'ComfyUI', 'models', 'user.safetensors'), 'utf8')
+      ).resolves.toBe('model')
+      await expect(
+        fsp.readFile(path.join(root, 'ComfyUI', 'user', 'workflow.json'), 'utf8')
+      ).resolves.toBe('workflow')
+      await expect(fsp.access(path.join(root, '.comfybuilder-entry-swap'))).rejects.toThrow()
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('restores a partially backed-up code tree before activation starts', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-partial-backup-'))
+    try {
+      await fsp.mkdir(path.join(root, 'venv'), { recursive: true })
+      await fsp.mkdir(path.join(root, 'ComfyUI.previous'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI.previous', 'main.py'), 'old main')
+      await fsp.mkdir(path.join(root, 'ComfyUI', 'models'), { recursive: true })
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'server.py'), 'old server')
+      await fsp.writeFile(path.join(root, 'ComfyUI', 'models', 'user.safetensors'), 'model')
+      await fsp.writeFile(
+        path.join(root, '.comfybuilder-entry-swap'),
+        JSON.stringify(['main.py', 'server.py'])
+      )
+
+      await recoverComfyBuilderInstallation(
+        record({
+          installPath: root,
+          status: 'installing',
+          comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
+        })
+      )
+
+      await expect(fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).resolves.toBe(
+        'old main'
+      )
+      await expect(fsp.readFile(path.join(root, 'ComfyUI', 'server.py'), 'utf8')).resolves.toBe(
+        'old server'
       )
       await expect(
         fsp.readFile(path.join(root, 'ComfyUI', 'models', 'user.safetensors'), 'utf8')
@@ -822,9 +851,11 @@ describe('comfybuilder update-comfyui', () => {
     vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
     vi.mocked(installArtifact).mockImplementationOnce(async ({ installPath }) => {
       fs.mkdirSync(path.join(installPath, 'venv'), { recursive: true })
-      fs.writeFileSync(path.join(installPath, 'venv', 'new.txt'), 'partial venv')
-      throw new Error('disk full')
+      fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
+      fs.writeFileSync(path.join(installPath, 'venv', 'new.txt'), 'new venv')
+      fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
     })
+    vi.mocked(stageModels).mockRejectedValueOnce(new Error('disk full'))
     const previousVenv = path.join(root, 'venv.previous')
     const activeVenv = path.join(root, 'venv')
     rm.mockImplementation(async (target: fs.PathLike, options?: fs.RmOptions) => {
@@ -850,6 +881,23 @@ describe('comfybuilder update-comfyui', () => {
         comfybuilderRollback: expect.objectContaining({ version: '1', artifactId: 'art-1' })
       })
       await expect(fsp.access(previousVenv)).resolves.toBeUndefined()
+
+      rm.mockImplementation(realFsp.rm)
+      await expect(
+        recoverComfyBuilderInstallation(
+          record({
+            installPath: root,
+            status: 'failed',
+            comfybuilderRollback: { version: '1', artifactId: 'art-1', status: 'installed' }
+          })
+        )
+      ).resolves.toEqual({
+        action: 'update',
+        data: expect.objectContaining({ status: 'installed', comfybuilderRollback: undefined })
+      })
+      await expect(fsp.readFile(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).resolves.toBe(
+        'old code'
+      )
     } finally {
       await fsp.rm(root, { recursive: true, force: true })
     }
