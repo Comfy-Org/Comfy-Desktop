@@ -21,6 +21,7 @@ import path from 'path'
 import {
   installArtifact,
   buildLaunchSpec,
+  venvPython,
   stageModels,
   installModelsRoot,
   resolveModelManifest,
@@ -56,7 +57,8 @@ import type {
   ActionResult,
   ActionTools,
   InstallTools,
-  StatusTag
+  StatusTag,
+  TerminalEnv
 } from '../../types/sources'
 
 import { DEFAULT_LAUNCH_ARGS } from './constants'
@@ -530,6 +532,18 @@ export const comfybuilder: SourcePlugin = {
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
+  },
+
+  getTerminalEnv(installation: InstallationRecord): TerminalEnv {
+    const venvDir = path.join(installation.installPath, 'venv')
+    const python = venvPython(installation.installPath)
+    return {
+      cwd: path.join(installation.installPath, 'ComfyUI'),
+      venvDir,
+      ...(process.platform === 'win32' ? { pathPrepends: [path.dirname(python)] } : {}),
+      promptName: 'venv',
+      pip: { exe: python, args: ['-s', '-m', 'pip'] }
+    }
   },
 
   // Launch is discovered through this list, not through `getLaunchCommand`: a

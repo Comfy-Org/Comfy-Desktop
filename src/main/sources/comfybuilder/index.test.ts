@@ -21,6 +21,11 @@ vi.mock('electron', () => ({
 vi.mock('../../comfybuilder', () => ({
   installArtifact: vi.fn(async () => {}),
   buildLaunchSpec: vi.fn(() => null),
+  venvPython: vi.fn((installPath: string) =>
+    process.platform === 'win32'
+      ? `${installPath}\\venv\\base\\python.exe`
+      : `${installPath}/venv/bin/python3`
+  ),
   stageModels: vi.fn(async () => {}),
   installModelsRoot: vi.fn((installPath: string) => `${installPath}/ComfyUI/models`),
   normalizeSha256: vi.fn((value: string | undefined) => value?.trim() ?? ''),
@@ -46,7 +51,7 @@ vi.mock('../../devplatform/builds', () => ({
 import fs, { promises as fsp } from 'fs'
 import os from 'os'
 import path from 'path'
-import { installArtifact, stageModels, resolveModelManifest } from '../../comfybuilder'
+import { installArtifact, stageModels, resolveModelManifest, venvPython } from '../../comfybuilder'
 import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
@@ -103,6 +108,22 @@ function fakeTools(
     ...(signal ? { signal } : {})
   } as never
 }
+
+describe('comfybuilder terminal environment', () => {
+  it('uses the managed archive venv without referencing standalone-env', () => {
+    const installation = record()
+    const python = venvPython(installation.installPath)
+
+    expect(comfybuilder.getTerminalEnv!(installation)).toEqual({
+      cwd: path.join(installation.installPath, 'ComfyUI'),
+      venvDir: path.join(installation.installPath, 'venv'),
+      ...(process.platform === 'win32' ? { pathPrepends: [path.dirname(python)] } : {}),
+      promptName: 'venv',
+      pip: { exe: python, args: ['-s', '-m', 'pip'] }
+    })
+    expect(python).not.toContain('standalone-env')
+  })
+})
 
 describe('comfybuilder.install wiring', () => {
   let access: ReturnType<typeof vi.spyOn>
