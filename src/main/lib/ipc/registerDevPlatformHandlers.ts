@@ -189,7 +189,7 @@ export function registerDevPlatformHandlers(): void {
   ipcMain.handle(DEVPLATFORM_CHANNELS.openBuilderCreate, async (): Promise<void> => {
     const status = session.status()
     if (!status.signedIn) throw new Error('Not signed in.')
-    const url = new URL('/profile/builds/new', PLATFORM_WEB_BASE_URL)
+    const url = new URL('/profile/distributions/new', PLATFORM_WEB_BASE_URL)
     if (status.workspaceId) url.searchParams.set('workspace', status.workspaceId)
     await shell.openExternal(url.toString())
   })

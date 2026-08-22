@@ -144,7 +144,7 @@ export class ComfyBuilderClient {
     return {
       buildId: created.id,
       workspaceId: created.workspaceId,
-      editUrl: `/profile/builds/new?${query.toString()}`
+      editUrl: `/profile/distributions/new?${query.toString()}`
     }
   }
 

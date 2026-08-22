@@ -140,7 +140,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
       workspaceId: 'w1',
-      editUrl: '/profile/builds/new?workspace=w1&edit=build-1'
+      editUrl: '/profile/distributions/new?workspace=w1&edit=build-1'
     })
     registerDevPlatformHandlers()
   })
@@ -291,7 +291,7 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:openBuilderCreate')({})
 
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/new?workspace=w1'
+      'https://platform.comfy.org/profile/distributions/new?workspace=w1'
     )
   })
 
@@ -326,7 +326,7 @@ describe('registerDevPlatformHandlers', () => {
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1'
+      'https://platform.comfy.org/profile/distributions/new?workspace=w1&edit=build-1'
     )
   })
 
@@ -430,7 +430,7 @@ describe('registerDevPlatformHandlers', () => {
       return {
         buildId: 'build-1',
         workspaceId: 'w1',
-        editUrl: 'https://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1'
+        editUrl: 'https://platform.comfy.org/profile/distributions/new?workspace=w1&edit=build-1'
       }
     })
 
@@ -460,8 +460,8 @@ describe('registerDevPlatformHandlers', () => {
   })
 
   it.each([
-    'http://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1',
-    'https://attacker.example/profile/builds/new?workspace=w1&edit=build-1'
+    'http://platform.comfy.org/profile/distributions/new?workspace=w1&edit=build-1',
+    'https://attacker.example/profile/distributions/new?workspace=w1&edit=build-1'
   ])('refuses to open an unsafe draft URL: %s', async (draftUrl) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mocks.createBuildDraft.mockResolvedValue({
@@ -485,7 +485,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
       workspaceId: 'w2',
-      editUrl: 'https://platform.comfy.org/profile/builds/new?workspace=w2&edit=build-1'
+      editUrl: 'https://platform.comfy.org/profile/distributions/new?workspace=w2&edit=build-1'
     })
 
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
