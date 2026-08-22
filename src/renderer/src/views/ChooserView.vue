@@ -378,7 +378,8 @@ const {
   handleCtxMenuSelect,
   closeMenu,
   triggerAction,
-  isStoppedActionGated
+  isStoppedActionGated,
+  isPromotingToWorkspace
 } = useInstallContextMenu({
   onManage: (inst, opts) => openManage(inst, opts ?? {}),
   // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
@@ -553,6 +554,7 @@ const gridHandlers = {
             :show-free-runs-pill="showCloudFreeRunsPill"
             :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
+            :is-promoting-to-workspace="isPromotingToWorkspace"
             v-on="gridHandlers"
           />
         </section>
@@ -591,6 +593,7 @@ const gridHandlers = {
             :show-free-runs-pill="showCloudFreeRunsPill"
             :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
+            :is-promoting-to-workspace="isPromotingToWorkspace"
             v-on="gridHandlers"
           />
           <ChooserFamilyGrid
@@ -599,6 +602,7 @@ const gridHandlers = {
             :show-free-runs-pill="showCloudFreeRunsPill"
             :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
+            :is-promoting-to-workspace="isPromotingToWorkspace"
             v-on="gridHandlers"
           />
         </section>

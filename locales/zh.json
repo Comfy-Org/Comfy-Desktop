@@ -1255,6 +1255,7 @@
       "openBuilderFailedTitle": "无法打开 Comfy Builder",
       "openBuilderFailedMessage": "请检查网络连接后重试。",
       "promoteToWorkspace": "添加到工作区",
+      "promoting": "正在添加到工作区...",
       "promoteFailedTitle": "无法添加实例",
       "promoteFailedMessage": "无法在 Comfy Builder 中创建草稿。"
     },

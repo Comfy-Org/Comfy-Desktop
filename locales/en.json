@@ -1255,6 +1255,7 @@
       "openBuilderFailedTitle": "Couldn't open Comfy Builder",
       "openBuilderFailedMessage": "Check your connection and try again.",
       "promoteToWorkspace": "Promote to Workspace",
+      "promoting": "Promoting...",
       "promoteFailedTitle": "Couldn't promote instance",
       "promoteFailedMessage": "Could not create a draft in Comfy Builder."
     },

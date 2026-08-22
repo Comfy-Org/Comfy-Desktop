@@ -285,9 +285,21 @@
 .chooser-tile-status--stopping {
   color: var(--accent-warning, #d97706);
 }
+.chooser-tile-status--promoting {
+  color: var(--text-muted);
+}
+.chooser-tile-status-spinner {
+  flex-shrink: 0;
+  animation: chooser-tile-status-spin 900ms linear infinite;
+}
 /* Launching pulses so an in-flight start reads as active, not parked. */
 .chooser-tile-status--launching .chooser-tile-status-dot {
   animation: chooser-tile-status-pulse 1.2s ease-in-out infinite;
+}
+@keyframes chooser-tile-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 @keyframes chooser-tile-status-pulse {
   0%,
@@ -299,7 +311,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .chooser-tile-status--launching .chooser-tile-status-dot {
+  .chooser-tile-status--launching .chooser-tile-status-dot,
+  .chooser-tile-status-spinner {
     animation: none;
   }
 }

@@ -24,13 +24,15 @@ const props = withDefaults(
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
+    isPromotingToWorkspace?: (inst: Installation) => boolean
   }>(),
   {
     showNew: false,
     showWorkspaceCta: false,
     centered: false,
     showFreeRunsPill: false,
-    showWhyCloud: false
+    showWhyCloud: false,
+    isPromotingToWorkspace: () => false
   }
 )
 
@@ -118,6 +120,7 @@ function unlockTileSize(el: Element): void {
         :show-free-runs-pill="props.showFreeRunsPill && entry.inst.sourceCategory === 'cloud'"
         :show-why-cloud="props.showWhyCloud && entry.inst.sourceCategory === 'cloud'"
         :is-stopped-action-gated="props.isStoppedActionGated(entry.inst)"
+        :is-promoting-to-workspace="props.isPromotingToWorkspace(entry.inst)"
         @why-cloud="emit('why-cloud')"
         @pick="emit('pick', $event)"
         @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"

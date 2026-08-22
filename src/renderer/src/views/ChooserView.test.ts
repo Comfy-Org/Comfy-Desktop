@@ -79,6 +79,7 @@ const messages = {
         openBuilderFailedTitle: "Couldn't open Comfy Builder",
         openBuilderFailedMessage: 'Check your connection and try again.',
         promoteToWorkspace: 'Promote to Workspace',
+        promoting: 'Promoting...',
         promoteFailedTitle: "Couldn't promote instance",
         promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
       },
@@ -882,8 +883,52 @@ describe('ChooserView', () => {
     const menu = wrapper
       .findAllComponents({ name: 'ContextMenu' })
       .find((candidate) => candidate.props('open') === true)!
-    const items = menu.props('items') as { id: string; label: string }[]
-    expect(items).toContainEqual({ id: 'promote-to-workspace', label: 'Promote to Workspace' })
+    const items = menu.props('items') as { id: string; label: string; disabled?: boolean }[]
+    expect(items.find(({ id }) => id === 'promote-to-workspace')).toMatchObject({
+      label: 'Promote to Workspace',
+      disabled: false
+    })
+  })
+
+  it('shows promotion progress on the originating instance card', async () => {
+    const api = installMockApiSignedIn(
+      [
+        makeInstall({
+          id: 'local',
+          name: 'LocalThing',
+          sourceId: 'standalone',
+          status: 'installed',
+          installPath: '/installs/local'
+        })
+      ],
+      [],
+      { id: 'w1', name: 'Comfy Design Team' }
+    )
+    let finishPromotion!: (result: { ok: true }) => void
+    api.comfybuilder.promoteLocalInstance.mockReturnValue(
+      new Promise((resolve) => {
+        finishPromotion = resolve
+      })
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const tile = wrapper.find(`[data-testid="${TID.dashboardTile('local')}"]`)
+    await tile.trigger('contextmenu')
+    const menu = wrapper
+      .findAllComponents({ name: 'ContextMenu' })
+      .find((candidate) => candidate.props('open') === true)!
+
+    menu.vm.$emit('select', 'promote-to-workspace')
+    await wrapper.vm.$nextTick()
+
+    expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Promoting...')
+    expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
+    expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
+
+    finishPromotion({ ok: true })
+    await flushPromises()
+    expect(tile.find('.chooser-tile-status--promoting').exists()).toBe(false)
   })
 
   it.each([

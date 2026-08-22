@@ -67,6 +67,18 @@ export function useInstallContextMenu(
     y: 0,
     inst: null as Installation | null
   })
+  const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
+
+  function setPromotingToWorkspace(installationId: string, promoting: boolean): void {
+    const next = new Set(promotingInstallationIds.value)
+    if (promoting) next.add(installationId)
+    else next.delete(installationId)
+    promotingInstallationIds.value = next
+  }
+
+  function isPromotingToWorkspace(inst: Installation): boolean {
+    return promotingInstallationIds.value.has(inst.id)
+  }
 
   function isLocalLikeInstall(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
@@ -166,9 +178,13 @@ export function useInstallContextMenu(
     }
 
     if (opts.canPromoteToWorkspace?.(inst)) {
+      const promoting = isPromotingToWorkspace(inst)
       snapshotCluster.push({
         id: 'promote-to-workspace',
-        label: t('devPlatform.workspace.promoteToWorkspace', 'Promote to Workspace')
+        label: promoting
+          ? t('devPlatform.workspace.promoting', 'Promoting...')
+          : t('devPlatform.workspace.promoteToWorkspace', 'Promote to Workspace'),
+        disabled: promoting
       })
     }
 
@@ -303,23 +319,26 @@ export function useInstallContextMenu(
         await modal.alert({ title: label, message: (err as Error)?.message || String(err) })
       }
     } else if (id === 'promote-to-workspace') {
+      if (isPromotingToWorkspace(inst)) return
       const title = t('devPlatform.workspace.promoteFailedTitle', "Couldn't promote instance")
+      let failureMessage: string | null = null
+      setPromotingToWorkspace(inst.id, true)
       try {
         const result = await window.api.comfybuilder.promoteLocalInstance(inst.id)
         if (!result.ok) {
-          await modal.alert({
-            title,
-            message:
-              result.message ||
-              t(
-                'devPlatform.workspace.promoteFailedMessage',
-                'Could not create a draft in Comfy Builder.'
-              )
-          })
+          failureMessage =
+            result.message ||
+            t(
+              'devPlatform.workspace.promoteFailedMessage',
+              'Could not create a draft in Comfy Builder.'
+            )
         }
       } catch (err) {
-        await modal.alert({ title, message: (err as Error)?.message || String(err) })
+        failureMessage = (err as Error)?.message || String(err)
+      } finally {
+        setPromotingToWorkspace(inst.id, false)
       }
+      if (failureMessage) await modal.alert({ title, message: failureMessage })
     } else if (id === 'copy-install') {
       // Route through `onManage` so the prompt / disk-check / showProgress
       // chain runs; calling `runAction('copy')` directly bails on a
@@ -395,6 +414,7 @@ export function useInstallContextMenu(
     handleCtxMenuSelect,
     closeMenu,
     triggerAction,
-    isStoppedActionGated
+    isStoppedActionGated,
+    isPromotingToWorkspace
   }
 }

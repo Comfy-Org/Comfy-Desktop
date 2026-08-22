@@ -75,6 +75,7 @@ const messages = {
     devPlatform: {
       workspace: {
         promoteToWorkspace: 'Promote to Workspace',
+        promoting: 'Promoting...',
         promoteFailedTitle: "Couldn't promote instance",
         promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
       }
@@ -554,6 +555,32 @@ describe('useInstallContextMenu - promote to workspace', () => {
 
     expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith(inst.id)
     expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
+  it('shows promotion progress and prevents duplicate requests', async () => {
+    let finishPromotion!: (result: { ok: true }) => void
+    apiMock.comfybuilder.promoteLocalInstance.mockReturnValue(
+      new Promise((resolve) => {
+        finishPromotion = resolve
+      })
+    )
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, undefined, () => true)
+
+    const promotion = menu.triggerAction('promote-to-workspace', inst)
+
+    expect(menu.isPromotingToWorkspace(inst)).toBe(true)
+    expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
+      label: 'Promoting...',
+      disabled: true
+    })
+
+    await menu.triggerAction('promote-to-workspace', inst)
+    expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledOnce()
+
+    finishPromotion({ ok: true })
+    await promotion
+    expect(menu.isPromotingToWorkspace(inst)).toBe(false)
   })
 
   it('surfaces a draft creation failure', async () => {

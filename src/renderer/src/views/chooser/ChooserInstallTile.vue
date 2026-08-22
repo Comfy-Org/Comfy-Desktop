@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, ArrowRightLeft, Info, MoreVertical } from 'lucide-vue-next'
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowRightLeft,
+  Info,
+  LoaderCircle,
+  MoreVertical
+} from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
@@ -16,6 +23,8 @@ interface Props {
   showWhyCloud?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
+  /** True while Desktop captures this instance and creates its workspace draft. */
+  isPromotingToWorkspace?: boolean
 }
 
 const props = defineProps<Props>()
@@ -56,7 +65,13 @@ const statusClasses = computed<Record<string, boolean>>(() => ({
 /* Lifecycle → top-right status pill (dot + label). Stopping wins over
  * launching wins over running; an idle tile gets no pill. An errored
  * tile shows the clickable error badge instead (see template). */
-const statusPill = computed<{ label: string; dotClass: string } | null>(() => {
+const statusPill = computed<{ label: string; dotClass: string; spinning?: boolean } | null>(() => {
+  if (props.isPromotingToWorkspace)
+    return {
+      label: 'devPlatform.workspace.promoting',
+      dotClass: 'chooser-tile-status--promoting',
+      spinning: true
+    }
   if (isStopping.value)
     return { label: 'chooser.statusStopping', dotClass: 'chooser-tile-status--stopping' }
   if (isLaunching.value)
@@ -196,7 +211,13 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         class="chooser-tile-pill chooser-tile-status"
         :class="statusPill.dotClass"
       >
-        <span class="chooser-tile-status-dot" aria-hidden="true" />
+        <LoaderCircle
+          v-if="statusPill.spinning"
+          :size="12"
+          class="chooser-tile-status-spinner"
+          aria-hidden="true"
+        />
+        <span v-else class="chooser-tile-status-dot" aria-hidden="true" />
         {{ t(statusPill.label) }}
       </span>
       <button
