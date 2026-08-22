@@ -28,7 +28,6 @@ export type InstallMenuActionId =
   | 'share'
   | 'promote-to-workspace'
   | 'copy-install'
-  | 'untrack'
   | 'delete'
   | 'dismiss-error'
 
@@ -197,17 +196,13 @@ export function useInstallContextMenu(
       items.push(...snapshotCluster)
     }
 
-    // Bottom cluster - Stop (running only) + Untrack (registry only, hidden for
-    // adopted installs whose legacy marker would re-track them) + Delete (wipes
-    // disk). Built as one group so only its first item draws the divider.
+    // Bottom cluster - Stop (running only) + Delete (wipes disk). Built as one
+    // group so only its first item draws the divider.
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
       cluster.push({ id: 'stop', label: t('actions.stop', 'Stop'), style: 'danger' })
     }
     if (isInstalled(inst) && isLocalLikeInstall(inst)) {
-      if (!inst.adopted) {
-        cluster.push({ id: 'untrack', label: t('actions.untrack'), style: 'danger' })
-      }
       cluster.push({
         id: 'delete',
         label: t('chooser.menuDelete'),
@@ -347,19 +342,6 @@ export function useInstallContextMenu(
       // chain runs; calling `runAction('copy')` directly bails on a
       // missing name.
       opts.onManage?.(inst, { autoAction: 'copy' })
-    } else if (id === 'untrack') {
-      const untrackLabel = t('actions.untrack', 'Forget')
-      const confirmed = await modal.confirm({
-        title: t('actions.untrackConfirmTitle', 'Forget Instance'),
-        message: t(
-          'actions.untrackConfirmMessage',
-          'This will remove the instance from the app. The files will not be deleted.'
-        ),
-        confirmLabel: untrackLabel,
-        confirmStyle: 'danger'
-      })
-      if (!confirmed) return
-      await runInstantActionWithAlert(inst, 'remove', untrackLabel)
     } else if (id === 'delete') {
       // Build the confirm + showProgress payload renderer-side instead of
       // round-tripping through `getDetailSections` (the ~2s Windows stall).

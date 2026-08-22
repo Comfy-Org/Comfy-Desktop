@@ -55,10 +55,6 @@ const messages = {
     },
     actions: {
       copyInstallation: 'Duplicate Instance',
-      untrack: 'Forget',
-      untrackConfirmTitle: 'Forget Instance',
-      untrackConfirmMessage:
-        'This will remove the instance from the app. The files will not be deleted.',
       delete: 'Delete',
       deleteConfirmTitle: 'Delete Install',
       deleteConfirmMessage:
@@ -148,7 +144,7 @@ beforeEach(() => {
 })
 
 it('groups common desktop-card actions in the requested order', () => {
-  const inst = makeInstall({ adopted: true } as Partial<Installation>)
+  const inst = makeInstall()
   const { menu } = mountHarness(inst, undefined, () => true)
   const items = menu.ctxMenuItems.value
 
@@ -378,70 +374,6 @@ describe('useInstallContextMenu - copy-install routing', () => {
       initialTab: 'update',
       autoAction: 'update-comfyui'
     })
-  })
-})
-
-describe('useInstallContextMenu - untrack confirm-then-remove', () => {
-  beforeEach(() => {
-    apiMock.runAction.mockClear()
-    modalMock.confirm.mockReset()
-  })
-
-  it('shows a danger confirm and never opens the picker', async () => {
-    modalMock.confirm.mockResolvedValue(true)
-    const onManage = vi.fn()
-    const inst = makeInstall()
-    const { menu } = mountHarnessWithManage(onManage)
-
-    await menu.triggerAction('untrack', inst)
-
-    expect(modalMock.confirm).toHaveBeenCalledTimes(1)
-    const args = modalMock.confirm.mock.calls[0]![0]
-    expect(args.title).toBe('Forget Instance')
-    expect(args.confirmLabel).toBe('Forget')
-    expect(args.confirmStyle).toBe('danger')
-    expect(onManage).not.toHaveBeenCalled()
-  })
-
-  it('on confirm true, dispatches the `remove` action once', async () => {
-    modalMock.confirm.mockResolvedValue(true)
-    const inst = makeInstall()
-    const { menu } = mountHarnessWithManage(() => {})
-
-    await menu.triggerAction('untrack', inst)
-
-    expect(apiMock.runAction).toHaveBeenCalledTimes(1)
-    expect(apiMock.runAction).toHaveBeenCalledWith(inst.id, 'remove')
-  })
-
-  it('on confirm cancel, does not dispatch the action', async () => {
-    modalMock.confirm.mockResolvedValue(false)
-    const inst = makeInstall()
-    const { menu } = mountHarnessWithManage(() => {})
-
-    await menu.triggerAction('untrack', inst)
-
-    expect(apiMock.runAction).not.toHaveBeenCalled()
-  })
-
-  // Adopted (legacy-desktop) installs hide the Forget item: the
-  // `.comfyui-desktop-2` marker on disk also makes the legacy
-  // auto-tracker stop surfacing the install, so forgetting strands
-  // the user with no path back. Delete still appears (real disposal).
-  it('hides the Forget item for adopted installs but keeps Delete', () => {
-    const inst = makeInstall({ adopted: true } as Partial<Installation>)
-    const { menu } = mountHarness(inst)
-    const items = menu.ctxMenuItems.value
-    expect(findItem(items, 'untrack')).toBeUndefined()
-    expect(findItem(items, 'delete')).toBeTruthy()
-  })
-
-  it('shows the Forget item for non-adopted installs', () => {
-    const inst = makeInstall()
-    const { menu } = mountHarness(inst)
-    const items = menu.ctxMenuItems.value
-    expect(findItem(items, 'untrack')).toBeTruthy()
-    expect(findItem(items, 'delete')).toBeTruthy()
   })
 })
 
