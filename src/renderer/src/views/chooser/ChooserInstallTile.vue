@@ -47,6 +47,7 @@ const inst = computed(() => props.installation)
 const isRunning = computed(() => sessionStore.isRunning(inst.value.id))
 const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
 const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
+const isUpdating = computed(() => inst.value.status === 'installing')
 const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
 
 /* Backend-flagged problem states (failed install, interrupted delete, missing
@@ -59,6 +60,7 @@ const dangerTag = computed(() =>
 const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-running': isRunning.value && !isStopping.value,
   'chooser-tile-stopping': isStopping.value,
+  'chooser-tile-updating': isUpdating.value,
   'chooser-tile-errored': hasError.value || dangerTag.value != null
 }))
 
@@ -70,6 +72,12 @@ const statusPill = computed<{ label: string; dotClass: string; spinning?: boolea
     return {
       label: 'devPlatform.workspace.promoting',
       dotClass: 'chooser-tile-status--promoting',
+      spinning: true
+    }
+  if (isUpdating.value)
+    return {
+      label: 'instancePicker.progressUpdating',
+      dotClass: 'chooser-tile-status--updating',
       spinning: true
     }
   if (isStopping.value)
@@ -133,6 +141,7 @@ const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(B
 /** The single update/migrate affordance, or null when the install has neither.
  *  The Update tooltip surfaces the target version the bare pill hides. */
 const actionPill = computed(() => {
+  if (isUpdating.value) return null
   if (hasUpdate.value)
     return {
       action: 'update' as const,
@@ -153,8 +162,13 @@ const actionPill = computed(() => {
 })
 
 function handleClick(): void {
-  if (isStopping.value) return
+  if (isStopping.value || isUpdating.value) return
   emit('pick', inst.value)
+}
+
+function handleContextMenu(event: MouseEvent): void {
+  if (isUpdating.value) return
+  emit('open-card-menu', event, inst.value)
 }
 
 /** Fire an action pill's emit, no-op while REQUIRES_STOPPED actions are gated.
@@ -168,7 +182,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 <template>
   <div
     role="button"
-    tabindex="0"
+    :tabindex="isUpdating ? -1 : 0"
+    :aria-disabled="isUpdating || undefined"
     class="chooser-tile chooser-tile--install"
     :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
@@ -176,7 +191,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @click="handleClick"
     @keydown.enter="handleClick"
     @keydown.space.prevent="handleClick"
-    @contextmenu.prevent="emit('open-card-menu', $event, inst)"
+    @contextmenu.prevent="handleContextMenu"
   >
     <!-- Type icon only; source/channel lives in the meta line below. A
          build install wears the build glyph instead. -->
@@ -233,6 +248,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         {{ dangerTag.label }}
       </button>
       <button
+        v-if="!isUpdating"
         type="button"
         class="chooser-tile-kebab"
         :title="t('chooser.moreActions')"

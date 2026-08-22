@@ -41,6 +41,7 @@ const messages = {
       neverLaunched: 'Not launched yet'
     },
     firstUse: { whyTryCloud: 'Why try Cloud?', cloudFreeRunsPill: '400 FREE CREDITS' },
+    instancePicker: { progressUpdating: 'Updating.' },
     installShowcase: {
       cloudFailedTitle: "Couldn't open Comfy Cloud",
       cloudFailedMessage: 'Check your connection and try again from the dashboard.'
@@ -249,6 +250,40 @@ describe('ChooserView', () => {
     const events = wrapper.emitted('pick')
     expect(events).toBeDefined()
     expect((events![0]![0] as Installation).id).toBe('cloud')
+  })
+
+  it('keeps a managed Build update visible and non-interactive', async () => {
+    installMockApiSignedIn(
+      [
+        makeInstall({
+          id: 'managed-update',
+          name: 'Managed Build',
+          sourceId: 'comfybuilder',
+          sourceLabel: 'ComfyBuilder',
+          sourceCategory: 'local',
+          workspaceId: 'workspace-1',
+          status: 'installing',
+          comfybuilderRollback: { version: '1' }
+        })
+      ],
+      [],
+      { id: 'workspace-1', name: 'Workspace One' }
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const tile = wrapper.get(`[data-testid="${TID.dashboardTile('managed-update')}"]`)
+    expect(tile.text()).toContain('Managed Build')
+    expect(tile.text()).toContain('Updating.')
+    expect(tile.attributes('aria-disabled')).toBe('true')
+    expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
+    expect(tile.find(`[data-testid="${TID.dashboardTileKebab('managed-update')}"]`).exists()).toBe(
+      false
+    )
+
+    await tile.trigger('click')
+    await tile.trigger('contextmenu')
+    expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
   it('orders install tiles by lastLaunchedAt desc with never-launched at the end', async () => {

@@ -51,6 +51,7 @@ import {
 } from '../../sources/standalone/templateDownloadTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { isInstallationVisibleToRenderer } from './installationVisibility'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -86,13 +87,13 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       .filter(
         (i) =>
           (i.copyReason as string | undefined) === 'standalone-migration' &&
-          i.status !== 'installing'
+          isInstallationVisibleToRenderer(i)
       )
       .map((i) => i.copiedFrom as string)
       .filter(Boolean)
   )
   const visible = allInstalls.filter(
-    (i) => i.status !== 'installing' && !migratedSourceIds.has(i.id)
+    (i) => isInstallationVisibleToRenderer(i) && !migratedSourceIds.has(i.id)
   )
   const enriched = visible.map((inst) => {
     const source = sourceMap[inst.sourceId]

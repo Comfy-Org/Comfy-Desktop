@@ -288,6 +288,12 @@
 .chooser-tile-status--promoting {
   color: var(--text-muted);
 }
+.chooser-tile-status--updating {
+  color: var(--text-muted);
+}
+.chooser-tile-updating {
+  cursor: wait;
+}
 .chooser-tile-status-spinner {
   flex-shrink: 0;
   animation: chooser-tile-status-spin 900ms linear infinite;
