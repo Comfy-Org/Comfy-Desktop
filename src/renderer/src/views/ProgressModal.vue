@@ -764,10 +764,7 @@ defineExpose({ startOperation, showOperation })
             {{ displayedTerminalOutput }}
           </div>
         </BaseAccordion>
-        <div
-          class="brand-progress__footer-bar"
-          :class="{ 'is-centered': !currentOp.terminalOutput }"
-        >
+        <div class="brand-progress__footer-bar">
           <div class="brand-progress__footer-left">
             <template v-if="!currentOp.finished">
               <button
@@ -1251,9 +1248,6 @@ defineExpose({ startOperation, showOperation })
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-}
-.brand-progress__footer-bar.is-centered {
-  justify-content: center;
 }
 .brand-progress__footer-left {
   display: inline-flex;
