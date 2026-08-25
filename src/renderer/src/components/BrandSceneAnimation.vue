@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useBrandScene } from '../composables/useBrandScene'
 import type { BrandScene } from '../lib/brandScene/types'
 import sceneData from '../lib/brandScene/installShowcaseScene.json'
+import { START_POSTERS } from '../lib/brandScene/startPosters'
 
 const props = withDefaults(
   defineProps<{
@@ -19,7 +20,7 @@ const { ready } = useBrandScene(stageRef, data, { fit: props.fit, speed: props.s
 </script>
 
 <template>
-  <div class="brand-scene-wrap" :class="{ 'is-ready': ready }" aria-hidden="true">
+  <div class="brand-scene-wrap" aria-hidden="true">
     <div ref="stageRef" class="brand-scene-stage">
       <div
         v-for="(scene, si) in data.scenes"
@@ -27,6 +28,13 @@ const { ready } = useBrandScene(stageRef, data, { fit: props.fit, speed: props.s
         class="brand-scene"
         :style="{ zIndex: data.scenes.length - si, borderRadius: `${scene.maskRadius}px` }"
       >
+        <img
+          v-if="START_POSTERS[scene.id]"
+          class="brand-scene__poster"
+          :class="{ 'is-hidden': ready }"
+          :src="START_POSTERS[scene.id]"
+          alt=""
+        />
         <video
           v-for="(v, vi) in scene.videos"
           :key="vi"
@@ -47,16 +55,6 @@ const { ready } = useBrandScene(stageRef, data, { fit: props.fit, speed: props.s
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 320ms ease;
-}
-.brand-scene-wrap.is-ready {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .brand-scene-wrap {
-    transition: none;
-  }
 }
 .brand-scene-stage {
   position: absolute;
@@ -88,5 +86,24 @@ const { ready } = useBrandScene(stageRef, data, { fit: props.fit, speed: props.s
 }
 .brand-scene video.is-active {
   display: block;
+  z-index: 2;
+}
+.brand-scene__poster {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+  transition: opacity 260ms ease;
+}
+.brand-scene__poster.is-hidden {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-scene__poster {
+    transition: none;
+  }
 }
 </style>
