@@ -226,6 +226,37 @@ const commands = {
     summarise(doc)
   },
 
+  /**
+   * Rebuild the whole list from a set of ids — a seasonal refresh, rather than
+   * a one-slot swap. Ids are given per tab; everything else is derived.
+   *
+   *   --video a,b,c,d --image a,b,c,d --3d a,b,c,d --audio a,b,c,d
+   *
+   * Mark the auto-pick with `*` and a paid card with `$`:
+   *   --video "*wan_t2v,$api_seedance,wan_inp,wan_cam"
+   */
+  async replace() {
+    const index = await liveIndex()
+    const templates = []
+    for (const modality of MODALITIES) {
+      const raw = arg(modality)
+      if (!raw) die(`--${modality} is required — give ${SLOTS} ids, comma-separated`)
+      const ids = raw.split(',').map((s) => s.trim()).filter(Boolean)
+      if (ids.length !== SLOTS) {
+        die(`--${modality} needs exactly ${SLOTS} ids, got ${ids.length}`)
+      }
+      for (const marked of ids) {
+        const recommended = marked.startsWith('*')
+        const paid = marked.startsWith('$')
+        const id = marked.replace(/^[*$]/, '')
+        templates.push(entryFor(id, modality, index, { recommended, paid }))
+      }
+    }
+    write({ schemaVersion: SCHEMA_VERSION, templates })
+    console.log(`\n  ✓ rebuilt the whole list`)
+    summarise({ templates })
+  },
+
   /** Browse what upstream offers, so an editor can find an id without guessing. */
   async list() {
     const modality = arg('modality')

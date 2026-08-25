@@ -50,6 +50,20 @@ node scripts/starter-templates.mjs set --modality video --id <new_id> --replaces
 Each tab keeps 4 slots, so a `set` replaces rather than appends. The script
 validates before writing and refuses anything that would break the picker.
 
+### Rebuild the whole list
+
+For a seasonal refresh rather than a one-slot swap. Four ids per tab, `*` marks
+the auto-pick, `$` marks the paid card. Use single quotes so the shell leaves
+`$` alone.
+
+```bash
+node scripts/starter-templates.mjs replace \
+  --video '*id_a,$api_id,id_c,id_d' \
+  --image '*id_a,$api_id,id_c,id_d' \
+  --3d '*id_a,$api_id,id_c,id_d' \
+  --audio '*id_a,$api_id,id_c,id_d'
+```
+
 ### 3. Refresh stale metadata
 
 When upstream retitles or resizes a template already in the list:
