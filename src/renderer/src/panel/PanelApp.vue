@@ -13,6 +13,7 @@ import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
 import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
+import McpSetupModal from '../views/mcp/McpSetupModal.vue'
 import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -339,11 +340,32 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-/** Composite the live ComfyUI canvas through while the feedback overlay is mounted. */
+/**
+ * Dismisses the MCP overlay and restores the main canvas.
+ * The 'mcp-setup' overlay leaves the underlying view active.
+ */
+function handleMcpClose(): void {
+  window.api.closeCurrentPanel()
+}
+
+/**
+ * Handles the "Open terminal" CTA.
+ * Switches to the console tab, and restores the canvas when closed.
+ */
+function handleMcpOpenTerminal(): void {
+  if (!installationId) return
+  window.api.openInstancePicker({ installationId, initialTab: 'console' })
+}
+
+/** Composite the live ComfyUI canvas through while an overlay panel (feedback
+ *  or MCP setup) is mounted. */
 watch(
   activePanel,
   (next) => {
-    document.body.classList.toggle('panel-overlay-mode', next === 'feedback')
+    document.body.classList.toggle(
+      'panel-overlay-mode',
+      next === 'feedback' || next === 'mcp-setup'
+    )
   },
   { immediate: true }
 )
@@ -625,6 +647,12 @@ onUnmounted(() => {
         @chain-migrate="handleFirstUseChainMigrate"
       />
     </template>
+
+    <McpSetupModal
+      v-if="activePanel === 'mcp-setup'"
+      @close="handleMcpClose"
+      @open-terminal="handleMcpOpenTerminal"
+    />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
 

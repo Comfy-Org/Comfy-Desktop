@@ -658,7 +658,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     /** Overlay mode mounts a modal over the live canvas, kept visible underneath at full
      *  bodyRect; the panel paints transparent (PanelApp's `panel-overlay-mode`) so it
      *  composites through on macOS CALayers. */
-    const isOverlayMode = mode === 'feedback'
+    const isOverlayMode = mode === 'feedback' || mode === 'mcp-setup'
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
       entry.panelView.setVisible(true)
