@@ -556,21 +556,26 @@ export const standalone: SourcePlugin = {
       // picks carry `recommended` on their own option so the wizard auto-selects
       // a real template (the lightest "wow"), not the skip.
       // Resolve the picker against the ComfyUI the install will actually run,
-      // so a template that version cannot open is never offered. Only honour a
-      // comfyVersion pick on the stable channel: `getFieldOptions` returns []
-      // for 'latest', so a value left over from a channel toggle is stale.
+      // so a template that version cannot open is never offered.
+      //
+      // Stable lands on a known tag, so pin to it. Latest fast-forwards to
+      // master HEAD, which is AHEAD of the newest stable tag: pinning it there
+      // would hide templates the install does support, so it resolves against
+      // `main` (comfyVersion null) instead.
       const releaseData = selections.release?.data as
         | { latestStableTag?: string | null }
         | undefined
       const isStableChannel = selections.release?.value === 'stable'
+      // `getFieldOptions` returns [] for 'latest', so a comfyVersion left over
+      // from a channel toggle is stale. Mirrors the guard in `buildInstallation`.
       const pickedTag =
-        isStableChannel &&
         typeof selections.comfyVersion?.value === 'string' &&
         /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
           ? selections.comfyVersion.value
           : null
-      const targetComfyVersion =
-        pickedTag ?? releaseData?.latestStableTag ?? (await getLatestStableTag())
+      const targetComfyVersion = isStableChannel
+        ? (pickedTag ?? releaseData?.latestStableTag ?? (await getLatestStableTag()))
+        : null
       const catalog = await loadTemplateCatalog({ comfyVersion: targetComfyVersion })
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
