@@ -94,6 +94,10 @@ function check(doc) {
     if (!s.description?.trim()) errors.push(`"${t.id}" has no description`)
     if (!Number.isInteger(s.sizeBytes) || s.sizeBytes < 0) {
       errors.push(`"${t.id}" has an invalid sizeBytes`)
+    } else if (!t.apiNode && s.sizeBytes === 0) {
+      errors.push(`"${t.id}" is free but reports no size — the disk-space check would under-count`)
+    } else if (t.apiNode && s.sizeBytes !== 0) {
+      errors.push(`"${t.id}" is paid, so it downloads nothing and must report 0 bytes`)
     }
     if (t.apiNode && t.recommended) errors.push(`"${t.id}" cannot be both paid and recommended`)
   }
@@ -104,9 +108,10 @@ function check(doc) {
       errors.push(`${modality}: needs exactly ${SLOTS} templates, found ${tab.length}`)
     }
     const paid = tab.filter((t) => t.apiNode)
-    if (paid.length > 1) {
+    if (paid.length !== 1) {
       errors.push(
-        `${modality}: ${paid.length} paid templates — at most one per tab (open-source rule)`
+        `${modality}: needs exactly 1 paid template, found ${paid.length} ` +
+          `(one showcases API nodes; more than one breaks the open-source balance)`
       )
     }
     const rec = tab.filter((t) => t.recommended)

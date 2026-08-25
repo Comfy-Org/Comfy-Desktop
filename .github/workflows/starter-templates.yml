@@ -8,6 +8,8 @@ on:
     paths:
       - 'assets/starter-templates.json'
       - 'scripts/starter-templates.mjs'
+      - 'scripts/starter-templates.spec.mjs'
+      - 'vitest.starter-templates.config.mjs'
       - '.github/workflows/starter-templates.yml'
   push:
     branches: [main]
@@ -28,6 +30,11 @@ jobs:
       # Checks the tab counts and the one-paid-per-tab rule, and confirms every
       # id still exists upstream.
       - run: node scripts/starter-templates.mjs validate
+
+      # Every way an edit can break the picker silently: wrong counts, a paid
+      # auto-pick, a duplicate id, a free card with no size.
+      - name: guardrails hold
+        run: npx vitest run --config vitest.starter-templates.config.mjs
 
       # A hand-edit that skipped the script would drift from the index, so
       # regenerating must be a no-op.
