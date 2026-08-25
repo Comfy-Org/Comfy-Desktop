@@ -53,6 +53,11 @@ function entryFor(id, modality, index, flags = {}) {
   const live = index.get(id)
   if (!live) die(`"${id}" is not in the template index — check the id at ${INDEX_URL}`)
   if (!ID.test(id)) die(`"${id}" is not a valid template id`)
+  // Otherwise an image template lands in the audio tab, carrying its own title
+  // and description, and the picker groups it by the modality we stored.
+  if (live.modality && live.modality !== modality) {
+    die(`"${id}" is a ${live.modality} template upstream, not ${modality}`)
+  }
 
   const paid = flags.paid ?? id.startsWith('api_')
   const size = typeof live.size === 'number' && live.size > 0 ? live.size : 0
@@ -143,9 +148,7 @@ function write(doc) {
     process.exit(1)
   }
   // Tab order first, so the file reads in the order the picker renders.
-  doc.templates.sort(
-    (a, b) => MODALITIES.indexOf(a.modality) - MODALITIES.indexOf(b.modality)
-  )
+  doc.templates.sort((a, b) => MODALITIES.indexOf(a.modality) - MODALITIES.indexOf(b.modality))
   fs.mkdirSync(path.dirname(OUT), { recursive: true })
   fs.writeFileSync(OUT, JSON.stringify(doc, null, 2) + '\n')
 }
@@ -246,14 +249,18 @@ const commands = {
     for (const modality of MODALITIES) {
       const raw = arg(modality)
       if (!raw) die(`--${modality} is required — give ${SLOTS} ids, comma-separated`)
-      const ids = raw.split(',').map((s) => s.trim()).filter(Boolean)
-      if (ids.length !== SLOTS) {
-        die(`--${modality} needs exactly ${SLOTS} ids, got ${ids.length}`)
+      // Not filtered: `a,b,,c,d` would otherwise pass as four ids and write a
+      // different list than the one asked for.
+      const ids = raw.split(',').map((s) => s.trim())
+      if (ids.length !== SLOTS || ids.some((id) => !id)) {
+        die(`--${modality} needs exactly ${SLOTS} non-empty ids, comma-separated`)
       }
       for (const marked of ids) {
         const recommended = marked.startsWith('*')
-        const paid = marked.startsWith('$')
         const id = marked.replace(/^[*$]/, '')
+        // `$` is a convenience, not the definition: an `api_` id is paid either
+        // way, or it would be written as free and fail the zero-size rule.
+        const paid = marked.startsWith('$') || id.startsWith('api_')
         templates.push(entryFor(id, modality, index, { recommended, paid }))
       }
     }
@@ -288,7 +295,9 @@ const commands = {
 
 const command = process.argv[2]
 if (!commands[command]) {
-  console.error(`\n  usage: node scripts/starter-templates.mjs <${Object.keys(commands).join('|')}>\n`)
+  console.error(
+    `\n  usage: node scripts/starter-templates.mjs <${Object.keys(commands).join('|')}>\n`
+  )
   process.exit(1)
 }
 await commands[command]()

@@ -1,7 +1,7 @@
 ---
 name: starter-templates
 description: Change which starter templates the desktop install picker offers. Use when someone wants to swap, add, feature or refresh a starter template, or asks what the picker shows after install.
-argument-hint: "[what you want to change]"
+argument-hint: '[what you want to change]'
 allowed-tools: Bash(node scripts/starter-templates.mjs *) Bash(git checkout *) Bash(git switch *) Bash(git add *) Bash(git commit *) Bash(git push *) Bash(gh pr create *) Read
 ---
 
@@ -14,8 +14,9 @@ list lives in `assets/starter-templates.json`, which desktop reads from R2 at
 boot, so a merged change reaches users on their next launch with no app release.
 
 **Only ever supply template ids.** Titles, descriptions, download sizes and
-thumbnails are pulled from the live template index, so they can never drift from
-the template they describe. Never hand-edit the JSON.
+thumbnails are refreshed from the live template index whenever `set`, `replace`
+or `regenerate` runs, so they are never typed by hand. If upstream retitles a
+template already in the list, `regenerate` picks it up. Never hand-edit the JSON.
 
 ### 1. Find the template id
 

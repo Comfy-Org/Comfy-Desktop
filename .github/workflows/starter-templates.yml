@@ -9,7 +9,6 @@ on:
       - 'assets/starter-templates.json'
       - 'scripts/starter-templates.mjs'
       - 'scripts/starter-templates.spec.mjs'
-      - 'vitest.starter-templates.config.mjs'
       - '.github/workflows/starter-templates.yml'
   push:
     branches: [main]
@@ -34,20 +33,25 @@ jobs:
 
       # Every way an edit can break the picker silently: wrong counts, a paid
       # auto-pick, a duplicate id, a free card with no size.
+      # `node --test`, so this needs no dependency install.
       - name: guardrails hold
-        run: npx vitest run --config vitest.starter-templates.config.mjs
+        run: node --test scripts/starter-templates.spec.mjs
 
       # A hand-edit that skipped the script would drift from the index, so
       # regenerating must be a no-op.
+      # A warning, not a failure: these fields are refreshed from upstream's
+      # `main`, so an unrelated edit there would otherwise redden every open PR
+      # and send the author hunting a hand-edit that does not exist.
       - name: display fields match the live index
         run: |
           node scripts/starter-templates.mjs regenerate >/dev/null
           if ! git diff --quiet -- assets/starter-templates.json; then
-            echo "::error::Display fields are stale or hand-edited."
-            echo "Run: node scripts/starter-templates.mjs regenerate"
+            echo "::warning::Display fields differ from upstream. If this PR did not"
+            echo "::warning::edit them, upstream changed: run"
+            echo "::warning::  node scripts/starter-templates.mjs regenerate"
             git diff -- assets/starter-templates.json
-            exit 1
           fi
+          git checkout -- assets/starter-templates.json
 
   # Merging to main publishes the list. Desktop reads it at boot, so users pick
   # the change up on their next launch with no app release.
