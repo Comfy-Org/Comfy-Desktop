@@ -379,8 +379,8 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         // the Configure picker's same carve-out (see `InstallWizardModal.vue`).
         const pick =
           field.id === 'bundledTemplate'
-            ? options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0]
-            : options.find((o) => o.recommended) ?? options[0]
+            ? (options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0])
+            : (options.find((o) => o.recommended) ?? options[0])
         if (!pick) {
           emitTelemetryAction('comfy.desktop.install.express.fallback', {
             reason: 'precondition_failed'
