@@ -192,10 +192,15 @@ export class ComfyBuilderClient {
         `Manifest for version ${versionId} has no model list`
       )
     }
-    if (body.models.some((model) => !isValidSha256(model.sha256))) {
+    const invalidModel = body.models.find((model) => !isValidSha256(model.sha256))
+    if (invalidModel) {
+      const rawSha256 = invalidModel.sha256?.trim()
+      const received = rawSha256
+        ? `received ${JSON.stringify(rawSha256.length > 80 ? `${rawSha256.slice(0, 77)}...` : rawSha256)} (${rawSha256.length} characters)`
+        : 'the manifest did not provide sha256'
       throw new ComfyBuilderApiError(
         'server',
-        `Manifest for version ${versionId} contains a model without a valid SHA-256`
+        `Manifest for version ${versionId} has invalid model integrity for ${invalidModel.type}/${invalidModel.filename}: expected SHA-256 as 64 hexadecimal characters, optionally prefixed with "sha256:", but ${received}.`
       )
     }
     return {
