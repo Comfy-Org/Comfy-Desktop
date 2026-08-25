@@ -108,7 +108,9 @@ jobs:
           if git diff --quiet "$MERGE_BASE" "$HEAD_SHA" -- \
             src/types/comfyDesktopBridge.ts \
             'packages/comfyui-desktop-bridge-types/*.d.ts' \
-            packages/comfyui-desktop-bridge-types/index.js; then
+            packages/comfyui-desktop-bridge-types/index.js \
+            packages/comfyui-desktop-bridge-types/package.json \
+            packages/comfyui-desktop-bridge-types/LICENSE; then
             echo "Bridge contract unchanged; no version bump required."
             exit 0
           fi
