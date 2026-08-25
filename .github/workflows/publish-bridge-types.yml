@@ -4,32 +4,30 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 0.2.0)'
-        required: true
+        description: 'Version to publish (e.g., 0.2.0). Blank reads it from the ref.'
+        required: false
         type: string
       dist_tag:
-        description: 'npm dist-tag to use'
-        required: true
-        default: latest
+        description: 'npm dist-tag to use. Blank picks next for prereleases, latest otherwise.'
+        required: false
         type: string
       ref:
         description: 'Git ref to checkout (commit SHA, tag, or branch)'
         required: false
         type: string
       require_publish:
-        description: 'Fail when the version is already on npm instead of skipping'
+        description: 'Fail when the version is already on npm with different declarations'
         required: false
         default: false
         type: boolean
   workflow_call:
     inputs:
       version:
-        required: true
+        required: false
         type: string
       dist_tag:
         required: false
         type: string
-        default: latest
       ref:
         required: false
         type: string
@@ -42,7 +40,9 @@ on:
         required: true
 
 # No github.workflow here: inside a called workflow it resolves to the caller,
-# so dispatch and on-merge runs of one version would not serialise.
+# so dispatch and on-merge runs of one version would not serialise. The version
+# is usually resolved from the ref rather than passed, in which case every
+# publish serialises - which is what we want anyway.
 concurrency:
   group: publish-bridge-types-${{ inputs.version }}-${{ inputs.dist_tag }}
   cancel-in-progress: false
@@ -54,18 +54,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Validate inputs
-        env:
-          VERSION: ${{ inputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
-          if [[ ! "$VERSION" =~ $SEMVER_REGEX ]]; then
-            echo "::error title=Invalid version::Version '$VERSION' must follow semantic versioning (x.y.z[-suffix][+build])" >&2
-            exit 1
-          fi
-
       - name: Determine ref to checkout
         id: resolve_ref
         env:
@@ -84,17 +72,50 @@ jobs:
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.resolve_ref.outputs.ref }}
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Resolve version and dist-tag
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DIST_TAG: ${{ inputs.dist_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
+          VERSION=$(node -p "require('./${PACKAGE_JSON}').version")
+          # A dispatcher who names a version is asserting what they expect the
+          # ref to hold; the ref is still the source of truth.
+          if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$VERSION" ]; then
+            echo "::error title=Version mismatch::${PACKAGE_JSON} version $VERSION does not match input $INPUT_VERSION" >&2
+            exit 1
+          fi
+          SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+          if [[ ! "$VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error title=Invalid version::Version '$VERSION' must follow semantic versioning (x.y.z[-suffix][+build])" >&2
+            exit 1
+          fi
+          DIST_TAG="$INPUT_DIST_TAG"
+          if [ -z "$DIST_TAG" ]; then
+            if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+              DIST_TAG=next
+            else
+              DIST_TAG=latest
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing $VERSION under dist-tag $DIST_TAG."
+
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -104,23 +125,12 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify the package matches its source
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
-          VERSION=$(node -p "require('./${PACKAGE_JSON}').version")
-          if [ "$VERSION" != "$INPUT_VERSION" ]; then
-            echo "::error title=Version mismatch::${PACKAGE_JSON} version $VERSION does not match input $INPUT_VERSION" >&2
-            exit 1
-          fi
-          pnpm run bridge-types:check
+        run: pnpm run bridge-types:check
 
       - name: Check if version already on npm
         id: check_npm
         env:
-          VER: ${{ inputs.version }}
+          VER: ${{ steps.resolve.outputs.version }}
           REQUIRE_PUBLISH: ${{ inputs.require_publish }}
         shell: bash
         run: |
@@ -128,26 +138,39 @@ jobs:
           NAME=@comfyorg/comfyui-desktop-bridge-types
           STATUS=0
           OUTPUT=$(npm view "${NAME}@${VER}" --json 2>&1) || STATUS=$?
-          if [ "$STATUS" -eq 0 ]; then
-            if [ "$REQUIRE_PUBLISH" = "true" ]; then
-              echo "::error title=Version already published::${NAME}@${VER} is already on npm, so this merge published nothing and npm now serves different contents under that version. Bump the version and merge again." >&2
-              exit 1
-            fi
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Already published::${NAME}@${VER} already exists on npm. Skipping publish."
-          else
+          if [ "$STATUS" -ne 0 ]; then
             if echo "$OUTPUT" | grep -q "E404"; then
               echo "exists=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error title=Registry lookup failed::$OUTPUT" >&2
-              exit "$STATUS"
+              exit 0
             fi
+            echo "::error title=Registry lookup failed::$OUTPUT" >&2
+            exit "$STATUS"
           fi
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          if [ "$REQUIRE_PUBLISH" != "true" ]; then
+            echo "::warning title=Already published::${NAME}@${VER} already exists on npm. Skipping publish."
+            exit 0
+          fi
+          # Publishing nothing is only harmless when npm already serves these
+          # exact declarations, so compare instead of assuming. Metadata and
+          # prose are excluded: they ride along with the next real bump, and a
+          # description typo must not redden main.
+          WORK="$RUNNER_TEMP/published"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          (cd "$WORK" && npm pack "${NAME}@${VER}" >/dev/null && tar -xzf ./*.tgz)
+          if diff -r -q --exclude=package.json --exclude=README.md --exclude=LICENSE \
+            "$WORK/package" packages/comfyui-desktop-bridge-types; then
+            echo "::warning title=Already published::${NAME}@${VER} is on npm with these exact declarations. Nothing to publish."
+            exit 0
+          fi
+          echo "::error title=Version already published::${NAME}@${VER} is already on npm with different declarations, so this push published nothing and npm now serves an older contract. Bump the version and merge again." >&2
+          exit 1
 
       - name: Publish package
         if: steps.check_npm.outputs.exists == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          DIST_TAG: ${{ inputs.dist_tag }}
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
         run: pnpm publish --access public --tag "$DIST_TAG" --no-git-checks --ignore-scripts
         working-directory: packages/comfyui-desktop-bridge-types

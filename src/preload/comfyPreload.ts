@@ -12,7 +12,7 @@ import type {
 } from '../types/comfyDesktopBridge'
 import { startLocalFirebaseAuthMonitor } from './localFirebaseAuthMonitor'
 
-type LegacyTerminalBridge = ComfyDesktop2TerminalBridge & {
+export type LegacyTerminalBridge = ComfyDesktop2TerminalBridge & {
   restore(): Promise<TerminalRestore>
 }
 

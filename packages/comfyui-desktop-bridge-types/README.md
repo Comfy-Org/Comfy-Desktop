@@ -17,7 +17,7 @@ declare global {
 }
 ```
 
-## Almost every member is optional for a reason
+## Every member is optional for a reason
 
 Which members actually exist at runtime is decided by the Desktop binary the
 user is running, and Desktop binaries update far more slowly than the frontend
@@ -35,10 +35,6 @@ async function openModelAccessPage(url: string): Promise<void> {
 }
 ```
 
-`isRemote()` is the one exception — it is declared required, so TypeScript will
-not force you to guard it. Desktop builds predating it still exist, so treat it
-as optional anyway: reach it through `window.__comfyDesktop2?.isRemote?.()`.
-
 `ComfyDesktop2BridgeImplementation` is the provider-side counterpart: it makes
 every top-level member required, so Desktop's preload cannot claim the contract
 while omitting part of it.
@@ -49,4 +45,5 @@ Generated from `src/types/comfyDesktopBridge.ts` in
 [Comfy-Org/Comfy-Desktop](https://github.com/Comfy-Org/Comfy-Desktop), which is
 the same file the preload implements. Edit that file, run
 `pnpm run bridge-types:gen`, and bump the version in this package's
-`package.json` — that bump is what publishes the result on merge.
+`package.json`. Merging to `main` then publishes it; CI refuses a contract
+change that arrives without a bump.
