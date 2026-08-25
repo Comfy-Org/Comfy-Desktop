@@ -55,8 +55,16 @@ describe('registerTemplateInputAssetHandlers', () => {
     return handler('desktop2-get-template-input-assets')({ sender }, { templateId })
   }
 
-  function downloadAsset(assetId = declaredAsset.assetId, templateId = 'template-1') {
+  function downloadAsset(
+    assetId: unknown = declaredAsset.assetId,
+    templateId: unknown = 'template-1'
+  ) {
     return handler('desktop2-download-template-input-asset')({ sender }, { templateId, assetId })
+  }
+
+  function mockMissingAsset() {
+    mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
+    mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'missing' }])
   }
 
   beforeEach(() => {
@@ -86,7 +94,8 @@ describe('registerTemplateInputAssetHandlers', () => {
         filename: 'sample.png',
         mediaType: 'image',
         previewUrl: 'https://example.com/sample.png',
-        url: 'https://example.com/sample.png'
+        url: 'https://example.com/sample.png',
+        internalPath: '/private/comfy/input/sample.png'
       }
     ])
     mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'missing' }])
@@ -128,6 +137,17 @@ describe('registerTemplateInputAssetHandlers', () => {
 
   it('rejects invalid template metadata requests before resolving files', async () => {
     await expect(getAssets('../template-1')).resolves.toBeNull()
+    expect(mocks.resolveSnapshot).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an invalid template id', 'sample-asset', '../template-1'],
+    ['a non-string asset id', 42, 'template-1']
+  ])('rejects %s before resolving download metadata', async (_label, assetId, templateId) => {
+    await expect(downloadAsset(assetId, templateId)).resolves.toEqual({
+      status: 'not-started',
+      reason: 'invalid-request'
+    })
     expect(mocks.resolveSnapshot).not.toHaveBeenCalled()
   })
 
@@ -189,8 +209,7 @@ describe('registerTemplateInputAssetHandlers', () => {
   })
 
   it('hands a missing declared asset to the exact input-dir download owner', async () => {
-    mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
-    mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'missing' }])
+    mockMissingAsset()
     mocks.startManagedAssetDownload.mockResolvedValue({
       status: 'accepted',
       downloadId: 'download-1'
@@ -221,6 +240,35 @@ describe('registerTemplateInputAssetHandlers', () => {
       sender,
       { existingFilePolicy: 'skip' }
     )
+  })
+
+  it('normalizes a rejected managed-download admission as unavailable', async () => {
+    mockMissingAsset()
+    mocks.startManagedAssetDownload.mockResolvedValue({ status: 'not-started' })
+
+    await expect(downloadAsset()).resolves.toEqual({
+      status: 'not-started',
+      reason: 'unavailable'
+    })
+  })
+
+  it('falls back to the admission identity before active progress is observable', async () => {
+    mockMissingAsset()
+    mocks.startManagedAssetDownload.mockResolvedValue({
+      status: 'accepted',
+      downloadId: 'download-1'
+    })
+    mocks.getActiveAssetDownload.mockReturnValue(undefined)
+
+    await expect(downloadAsset()).resolves.toEqual({
+      status: 'accepted',
+      download: {
+        downloadId: 'download-1',
+        filename: 'sample.png',
+        progress: 0,
+        status: 'pending'
+      }
+    })
   })
 
   it('does not dispatch when filesystem availability is unknown', async () => {

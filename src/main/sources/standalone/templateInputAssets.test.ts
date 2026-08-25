@@ -63,6 +63,22 @@ describe('resolveTemplateInputAssets', () => {
     ])
   })
 
+  it('uses the safe filename extension when a loader type and media disagree', async () => {
+    loadTemplateJson.mockResolvedValue({
+      nodes: [
+        loadNode('LoadImage', 'clip.mp4'),
+        loadNode('LoadVideo', 'still.webp'),
+        loadNode('LoadAudio', 'voice.wav')
+      ]
+    })
+
+    expect(await resolveTemplateInputAssets(inst, 't')).toMatchObject([
+      { filename: 'clip.mp4', mediaType: 'video' },
+      { filename: 'still.webp', mediaType: 'image' },
+      { filename: 'voice.wav', mediaType: 'audio' }
+    ])
+  })
+
   it('de-duplicates a filename referenced by multiple nodes', async () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadImage', 'dup.png'), loadNode('LoadImage', 'dup.png')]

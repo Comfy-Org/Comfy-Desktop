@@ -737,6 +737,13 @@ describe('asset download retries', () => {
       for (const { item } of downloads) {
         item.getDone()!({}, 'completed')
       }
+      await expect(
+        Promise.all(
+          [firstDir, secondDir].map((outputDir) =>
+            fs.promises.readFile(path.join(outputDir, 'sample.png'), 'utf8')
+          )
+        )
+      ).resolves.toEqual([firstDir, secondDir])
     } finally {
       await fs.promises.rm(firstDir, { recursive: true, force: true })
       await fs.promises.rm(secondDir, { recursive: true, force: true })
@@ -903,6 +910,61 @@ describe('asset download retries', () => {
       )
     } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('allows retry while the same URL is active for a different exact destination', async () => {
+    const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
+    const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const failedAdmission = await mod.startManagedAssetDownload(
+        h.win,
+        url,
+        'sample.png',
+        firstDir,
+        undefined,
+        undefined,
+        { existingFilePolicy: 'skip' }
+      )
+      if (failedAdmission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      const failed = h.createItem(url)
+      h.getWillDownload()!({}, failed.item, null)
+      const failedTempPath = failed.setSavePath.mock.calls[0]?.[0]
+      expect(failedTempPath).toBeTypeOf('string')
+      await fs.promises.writeFile(failedTempPath!, 'partial')
+      failed.getDone()!({}, 'interrupted')
+
+      await expect(
+        mod.startManagedAssetDownload(h.win, url, 'sample.png', secondDir, undefined, undefined, {
+          existingFilePolicy: 'skip'
+        })
+      ).resolves.toMatchObject({ status: 'accepted' })
+
+      expect(mod.retryDownload(failedAdmission.downloadId)).toBe(true)
+      await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(3))
+
+      const downloads = [secondDir, firstDir].map((outputDir) => {
+        const item = h.createItem(url)
+        h.getWillDownload()!({}, item.item, null)
+        const tempPath = item.setSavePath.mock.calls[0]?.[0]
+        expect(tempPath).toBeTypeOf('string')
+        return { item, outputDir, tempPath: tempPath! }
+      })
+      for (const { outputDir, tempPath } of downloads) {
+        await fs.promises.writeFile(tempPath, outputDir)
+      }
+      for (const { item } of downloads) {
+        item.getDone()!({}, 'completed')
+      }
+    } finally {
+      await fs.promises.rm(firstDir, { recursive: true, force: true })
+      await fs.promises.rm(secondDir, { recursive: true, force: true })
     }
   })
 
