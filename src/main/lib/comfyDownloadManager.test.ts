@@ -677,6 +677,34 @@ describe('asset download retries', () => {
     return { win, session, send, getWillDownload: () => willDownload, createItem }
   }
 
+  function startExactAssetDownload(
+    harness: ReturnType<typeof makeAssetHarness>,
+    url: string,
+    outputDir: string
+  ) {
+    return mod.startManagedAssetDownload(
+      harness.win,
+      url,
+      'sample.png',
+      outputDir,
+      undefined,
+      undefined,
+      { existingFilePolicy: 'skip' }
+    )
+  }
+
+  function bindAssetItem(
+    harness: ReturnType<typeof makeAssetHarness>,
+    url: string,
+    contentDisposition: string | null = null
+  ) {
+    const item = harness.createItem(url, contentDisposition)
+    harness.getWillDownload()!({}, item.item, null)
+    const tempPath = item.setSavePath.mock.calls[0]?.[0]
+    expect(tempPath).toBeTypeOf('string')
+    return { ...item, tempPath: tempPath! }
+  }
+
   it('joins only the same URL and exact destination under one download identity', async () => {
     const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
     const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
@@ -684,33 +712,9 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const first = await mod.startManagedAssetDownload(
-        h.win,
-        url,
-        'sample.png',
-        firstDir,
-        undefined,
-        undefined,
-        { existingFilePolicy: 'skip' }
-      )
-      const joined = await mod.startManagedAssetDownload(
-        h.win,
-        url,
-        'sample.png',
-        firstDir,
-        undefined,
-        undefined,
-        { existingFilePolicy: 'skip' }
-      )
-      const otherDestination = await mod.startManagedAssetDownload(
-        h.win,
-        url,
-        'sample.png',
-        secondDir,
-        undefined,
-        undefined,
-        { existingFilePolicy: 'skip' }
-      )
+      const first = await startExactAssetDownload(h, url, firstDir)
+      const joined = await startExactAssetDownload(h, url, firstDir)
+      const otherDestination = await startExactAssetDownload(h, url, secondDir)
 
       expect(first).toMatchObject({ status: 'accepted' })
       expect(joined).toEqual({
@@ -725,14 +729,10 @@ describe('asset download retries', () => {
       expect(h.session.downloadURL).toHaveBeenCalledTimes(2)
 
       const downloads = [firstDir, secondDir].map((outputDir) => {
-        const item = h.createItem(url)
-        h.getWillDownload()!({}, item.item, null)
-        const tempPath = item.setSavePath.mock.calls[0]?.[0]
-        expect(tempPath).toBeTypeOf('string')
-        return { item, outputDir, tempPath: tempPath! }
+        return { item: bindAssetItem(h, url), outputDir }
       })
-      for (const { outputDir, tempPath } of downloads) {
-        await fs.promises.writeFile(tempPath, outputDir)
+      for (const { item, outputDir } of downloads) {
+        await fs.promises.writeFile(item.tempPath, outputDir)
       }
       for (const { item } of downloads) {
         item.getDone()!({}, 'completed')
@@ -757,15 +757,7 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const admission = await mod.startManagedAssetDownload(
-        h.win,
-        url,
-        'sample.png',
-        firstDir,
-        undefined,
-        undefined,
-        { existingFilePolicy: 'skip' }
-      )
+      const admission = await startExactAssetDownload(h, url, firstDir)
       if (admission.status !== 'accepted') {
         throw new Error('Expected an accepted asset download')
       }
@@ -776,11 +768,8 @@ describe('asset download retries', () => {
       })
       expect(mod.getActiveAssetDownload(url, 'sample.png', secondDir)).toBeUndefined()
 
-      const item = h.createItem(url)
-      h.getWillDownload()!({}, item.item, null)
-      const tempPath = item.setSavePath.mock.calls[0]?.[0]
-      expect(tempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(tempPath!, 'content')
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'content')
       item.getDone()!({}, 'completed')
 
       expect(mod.getActiveAssetDownload(url, 'sample.png', firstDir)).toBeUndefined()
@@ -798,11 +787,9 @@ describe('asset download retries', () => {
     try {
       await fs.promises.writeFile(path.join(outputDir, 'sample.png'), 'existing')
 
-      await expect(
-        mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
-          existingFilePolicy: 'skip'
-        })
-      ).resolves.toEqual({ status: 'already-present' })
+      await expect(startExactAssetDownload(h, url, outputDir)).resolves.toEqual({
+        status: 'already-present'
+      })
       expect(h.session.downloadURL).not.toHaveBeenCalled()
       await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
     } finally {
@@ -816,17 +803,12 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      await expect(
-        mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
-          existingFilePolicy: 'skip'
-        })
-      ).resolves.toMatchObject({ status: 'accepted' })
+      await expect(startExactAssetDownload(h, url, outputDir)).resolves.toMatchObject({
+        status: 'accepted'
+      })
 
-      const item = h.createItem(url, 'attachment; filename="renamed-by-server.png"')
-      h.getWillDownload()!({}, item.item, null)
-      const tempPath = item.setSavePath.mock.calls[0]?.[0]
-      expect(tempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(tempPath!, 'content')
+      const item = bindAssetItem(h, url, 'attachment; filename="renamed-by-server.png"')
+      await fs.promises.writeFile(item.tempPath, 'content')
       item.getDone()!({}, 'completed')
 
       await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
@@ -845,24 +827,19 @@ describe('asset download retries', () => {
     const destination = path.join(outputDir, 'sample.png')
 
     try {
-      await expect(
-        mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir, undefined, undefined, {
-          existingFilePolicy: 'skip'
-        })
-      ).resolves.toMatchObject({ status: 'accepted' })
+      await expect(startExactAssetDownload(h, url, outputDir)).resolves.toMatchObject({
+        status: 'accepted'
+      })
 
-      const item = h.createItem(url)
-      h.getWillDownload()!({}, item.item, null)
-      const tempPath = item.setSavePath.mock.calls[0]?.[0]
-      expect(tempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(tempPath!, 'downloaded')
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
       await fs.promises.writeFile(destination, 'created-during-download')
       item.getDone()!({}, 'completed')
 
       await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe(
         'created-during-download'
       )
-      await expect(fs.promises.stat(tempPath!)).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
     }
@@ -874,34 +851,20 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const admission = await mod.startManagedAssetDownload(
-        h.win,
-        url,
-        'sample.png',
-        outputDir,
-        undefined,
-        undefined,
-        { existingFilePolicy: 'skip' }
-      )
+      const admission = await startExactAssetDownload(h, url, outputDir)
       if (admission.status !== 'accepted') {
         throw new Error('Expected an accepted asset download')
       }
 
-      const first = h.createItem(url)
-      h.getWillDownload()!({}, first.item, null)
-      const firstTempPath = first.setSavePath.mock.calls[0]?.[0]
-      expect(firstTempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(firstTempPath!, 'partial')
+      const first = bindAssetItem(h, url)
+      await fs.promises.writeFile(first.tempPath, 'partial')
       first.getDone()!({}, 'interrupted')
 
       expect(mod.retryDownload(admission.downloadId)).toBe(true)
       await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(2))
 
-      const retry = h.createItem(url, 'attachment; filename="renamed-by-server.png"')
-      h.getWillDownload()!({}, retry.item, null)
-      const retryTempPath = retry.setSavePath.mock.calls[0]?.[0]
-      expect(retryTempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(retryTempPath!, 'complete')
+      const retry = bindAssetItem(h, url, 'attachment; filename="renamed-by-server.png"')
+      await fs.promises.writeFile(retry.tempPath, 'complete')
       retry.getDone()!({}, 'completed')
 
       await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
@@ -920,44 +883,27 @@ describe('asset download retries', () => {
     const h = makeAssetHarness()
 
     try {
-      const failedAdmission = await mod.startManagedAssetDownload(
-        h.win,
-        url,
-        'sample.png',
-        firstDir,
-        undefined,
-        undefined,
-        { existingFilePolicy: 'skip' }
-      )
+      const failedAdmission = await startExactAssetDownload(h, url, firstDir)
       if (failedAdmission.status !== 'accepted') {
         throw new Error('Expected an accepted asset download')
       }
 
-      const failed = h.createItem(url)
-      h.getWillDownload()!({}, failed.item, null)
-      const failedTempPath = failed.setSavePath.mock.calls[0]?.[0]
-      expect(failedTempPath).toBeTypeOf('string')
-      await fs.promises.writeFile(failedTempPath!, 'partial')
+      const failed = bindAssetItem(h, url)
+      await fs.promises.writeFile(failed.tempPath, 'partial')
       failed.getDone()!({}, 'interrupted')
 
-      await expect(
-        mod.startManagedAssetDownload(h.win, url, 'sample.png', secondDir, undefined, undefined, {
-          existingFilePolicy: 'skip'
-        })
-      ).resolves.toMatchObject({ status: 'accepted' })
+      await expect(startExactAssetDownload(h, url, secondDir)).resolves.toMatchObject({
+        status: 'accepted'
+      })
 
       expect(mod.retryDownload(failedAdmission.downloadId)).toBe(true)
       await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(3))
 
       const downloads = [secondDir, firstDir].map((outputDir) => {
-        const item = h.createItem(url)
-        h.getWillDownload()!({}, item.item, null)
-        const tempPath = item.setSavePath.mock.calls[0]?.[0]
-        expect(tempPath).toBeTypeOf('string')
-        return { item, outputDir, tempPath: tempPath! }
+        return { item: bindAssetItem(h, url), outputDir }
       })
-      for (const { outputDir, tempPath } of downloads) {
-        await fs.promises.writeFile(tempPath, outputDir)
+      for (const { item, outputDir } of downloads) {
+        await fs.promises.writeFile(item.tempPath, outputDir)
       }
       for (const { item } of downloads) {
         item.getDone()!({}, 'completed')
