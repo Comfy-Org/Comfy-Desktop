@@ -115,6 +115,8 @@ jobs:
           read_version() { git show "$1:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version"; }
           BASE_VERSION=$(read_version "$MERGE_BASE")
           HEAD_VERSION=$(read_version "$HEAD_SHA")
+          # Exported, not just assigned: the comparator reads them from env.
+          export BASE_VERSION HEAD_VERSION
           # Prerelease-aware precedence, inline so an unrelated registry outage
           # cannot fail this PR. Build metadata is ignored, per semver.
           if ! node -e '
