@@ -76,12 +76,14 @@ const TINY_SCENE: BrandScene = {
   scenes: []
 }
 
+let lastScene: ReturnType<typeof useBrandScene> | null = null
+
 function mountScene() {
   return mount(
     defineComponent({
       setup() {
         const stageRef = ref<HTMLElement | null>(null)
-        useBrandScene(stageRef, TINY_SCENE)
+        lastScene = useBrandScene(stageRef, TINY_SCENE)
         return () => h('div', [h('div', { ref: stageRef, class: 'brand-scene-stage' })])
       }
     })
@@ -143,5 +145,10 @@ describe('useBrandScene playback gating', () => {
     const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame')
     wrapper.unmount()
     expect(cancelSpy).toHaveBeenCalled()
+  })
+
+  it('reveals immediately when there are no clips to wait on', () => {
+    mount()
+    expect(lastScene?.ready.value, 'a scene with no active video has nothing to decode').toBe(true)
   })
 })

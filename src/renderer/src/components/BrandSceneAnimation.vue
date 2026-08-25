@@ -15,11 +15,11 @@ const props = withDefaults(
 const data = sceneData as BrandScene
 
 const stageRef = ref<HTMLElement | null>(null)
-useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
+const { ready } = useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
 </script>
 
 <template>
-  <div class="brand-scene-wrap" aria-hidden="true">
+  <div class="brand-scene-wrap" :class="{ 'is-ready': ready }" aria-hidden="true">
     <div ref="stageRef" class="brand-scene-stage">
       <div
         v-for="(scene, si) in data.scenes"
@@ -47,6 +47,16 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+.brand-scene-wrap.is-ready {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-scene-wrap {
+    transition: none;
+  }
 }
 .brand-scene-stage {
   position: absolute;
@@ -63,7 +73,7 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
   width: 0;
   height: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--neutral-900, #19131d);
   will-change: transform, width, height;
 }
 .brand-scene video {
