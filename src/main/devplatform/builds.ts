@@ -5,14 +5,14 @@
  * (`selectArtifactForHost`). This module applies the product
  * policy on top: for each Desktop build it resolves the latest COMPLETE version,
  * asks whether an artifact exists for THIS host, and flattens that into a single
- * renderer-safe display row (`installable` / `no-build` / `platform-mismatch`).
- * The renderer renders the row and, on click, asks main to install by id: the
+ * renderer-safe catalog row (`installable` / `no-build` / `platform-mismatch`).
+ * The workspace install wizard uses that row and asks main to install by id: the
  * chosen artifact (and its download ref) never leaves the main process.
  *
  * `update-available` also lives here: given the installed version (passed in by
  * the handler from the installations store), a row whose newer complete version
  * has a host-runnable artifact is marked updatable. Plain `installed` (up to date)
- * stays a renderer concern: it de-dupes those tiles out of the grid.
+ * stays a renderer concern: it removes those Builds from the install picker.
  */
 // Import from the library's leaf modules (not its barrel): these are pure and
 // pull no Electron/filesystem side effects, so this policy module stays cheap to
@@ -25,14 +25,14 @@ import { runPool } from '../sources/standalone/templateDownloadCore'
 import { setCachedVersions } from './versionCache'
 
 /**
- * Build tile states. `installable` / `no-build` / `platform-mismatch` are
+ * Build catalog states. `installable` / `no-build` / `platform-mismatch` are
  * decided from the catalog alone; `update-available` also needs the installed
  * version (passed in), and only fires when the newer version has a host-runnable
  * artifact (you can never "update" to a build with nothing for this machine).
  */
 export type BuildRowState = 'installable' | 'no-build' | 'platform-mismatch' | 'update-available'
 
-/** One renderer-safe build tile row. Field names mirror the renderer's
+/** One renderer-safe Build catalog row. Field names mirror the renderer's
  *  `devplatform/types.ts` so swapping mocks for this stays mechanical. */
 export interface BuildRow {
   id: string
@@ -48,10 +48,10 @@ export interface BuildRow {
   /** The installed version of this build, when one backs it. Set for both
    *  an up-to-date install and an `update-available` one; absent when not installed. */
   installedVersion?: number
-  /** i18n suffix explaining a blocked state (see `devPlatform.build.blockedReason.*`). */
+  /** Machine-readable reason for a blocked state. */
   blockedReason?: string
   /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
-   *  / `linux`), so the card can name a machine that would run it. */
+   *  / `linux`), so clients can explain which machines can run it. */
   targetOs?: string[]
 }
 

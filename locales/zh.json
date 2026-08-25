@@ -39,11 +39,6 @@
     "filterRemote": "远程",
     "updatePill": "更新",
     "migratePill": "迁移",
-    "workspaceShelf": "工作区",
-    "workspaceFilterLabel": "筛选工作区构建",
-    "workspaceFilterCompatible": "兼容",
-    "workspaceCtaLabel": "创建新构建",
-    "workspaceCtaDesc": "或添加现有实例",
     "openInstall": "打开",
     "manageInstall": "管理",
     "moreActions": "更多操作",
@@ -373,7 +368,10 @@
     "latest": "最新",
     "changeInstallType": "更改安装类型",
     "nameWhitespace": "输入名称，或留空使用建议名称。",
-    "urlInvalid": "请输入有效 URL（例如 http://localhost:8188）。"
+    "urlInvalid": "请输入有效 URL（例如 http://localhost:8188）。",
+    "workspaceBuildLabel": "构建",
+    "selectWorkspaceBuild": "选择构建",
+    "noCompatibleBuilds": "没有可安装的兼容构建。"
   },
   "templateQuit": {
     "title": "模板模型仍在下载",
@@ -1250,34 +1248,19 @@
     },
     "workspace": {
       "personalLabel": "个人",
+      "unmanagedLabel": "未管理",
       "switchLabel": "工作区",
       "currentFallback": "当前工作区",
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",
-      "openBuilderFailedTitle": "无法打开 Comfy Builder",
-      "openBuilderFailedMessage": "请检查网络连接后重试。",
       "promoteToWorkspace": "添加到工作区",
       "promoting": "正在添加到工作区...",
       "promoteFailedTitle": "无法添加实例",
       "promoteFailedMessage": "无法在 Comfy Builder 中创建草稿。"
     },
     "build": {
-      "menuInstall": "安装",
       "version": "构建 v{version}",
-      "notInstalled": "未安装",
-      "emptyTitle": "此工作区尚未发布任何构建。",
-      "loadError": "无法加载构建，请重试",
-      "installFailed": "无法开始安装，请重试。",
-      "states": {
-        "noBuild": "无构建",
-        "platformMismatch": "不适用于此设备",
-        "updateAvailable": "更新"
-      },
-      "blockedReason": {
-        "buildFailed": "此构建尚未成功完成。",
-        "buildInProgress": "最新构建仍在进行中。",
-        "noArtifactForMachine": "最新构建没有适用于此操作系统和 GPU 的制品。"
-      }
+      "loadError": "无法加载构建，请重试"
     }
   },
   "errors": {

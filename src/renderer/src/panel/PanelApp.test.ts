@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const installWizardOpen = vi.hoisted(() => vi.fn())
+
 vi.mock('../main', () => ({
   i18n: {
     global: { t: (key: string) => key }
@@ -61,7 +63,7 @@ vi.mock('../views/ChooserView.vue', () => ({
     name: 'ChooserView',
     emits: ['pick', 'show-new-install'],
     template:
-      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
+      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\', \'workspace-1\')">New</button></div>'
   }
 }))
 vi.mock('../views/InstallWizardModal.vue', () => ({
@@ -69,7 +71,7 @@ vi.mock('../views/InstallWizardModal.vue', () => ({
     name: 'InstallWizardModal',
     emits: ['close', 'navigate-list', 'show-progress'],
     template: '<div data-testid="new-install-modal" />',
-    methods: { open: vi.fn() }
+    methods: { open: installWizardOpen }
   }
 }))
 vi.mock('../views/TrackModal.vue', () => ({
@@ -421,6 +423,10 @@ describe('PanelApp', () => {
     // Both visible — takeover sits ABOVE the chooser body.
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+    expect(installWizardOpen).toHaveBeenCalledWith({
+      entrypoint: 'chooser',
+      workspaceId: 'workspace-1'
+    })
   })
 
   it('returns to the underlying body when a takeover emits close', async () => {

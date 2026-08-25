@@ -13,8 +13,7 @@ const api = {
   listWorkspaces: vi.fn(),
   switchWorkspace: vi.fn(),
   listBuilds: vi.fn(),
-  installBuild: vi.fn(),
-  openBuilderCreate: vi.fn()
+  installBuild: vi.fn()
 }
 
 const messages = {
@@ -23,6 +22,7 @@ const messages = {
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
+        unmanagedLabel: 'Unmanaged',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
         loadError: "Couldn't load workspaces. Retry"
@@ -31,8 +31,9 @@ const messages = {
   }
 }
 
-function mountSelector() {
+function mountSelector(modelValue: string | null = 'w1') {
   return mount(DevPlatformWorkspaceSelector, {
+    props: { modelValue },
     global: {
       plugins: [createI18n({ legacy: false, locale: 'en', messages }), createPinia()]
     }
@@ -62,7 +63,7 @@ describe('DevPlatformWorkspaceSelector', () => {
     ;(window as unknown as { api: { comfybuilder: typeof api } }).api = { comfybuilder: api }
   })
 
-  it('loads and displays the active workspace in the shelf selector', async () => {
+  it('loads and displays the selected workspace', async () => {
     const wrapper = mountSelector()
     await flushPromises()
 
@@ -72,22 +73,38 @@ describe('DevPlatformWorkspaceSelector', () => {
     )
   })
 
-  it('switches from the shelf menu while ignoring the active workspace', async () => {
+  it('closes without switching when the active workspace is selected', async () => {
     const wrapper = mountSelector()
     await flushPromises()
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
 
     await wrapper.find('[data-testid="devplatform-workspace-w1"]').trigger('click')
     expect(api.switchWorkspace).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.find('[data-testid="devplatform-workspace-menu"]').exists()).toBe(false)
+  })
+
+  it('switches the authenticated workspace before selecting it', async () => {
+    const wrapper = mountSelector()
+    await flushPromises()
+    await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
 
     await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
     await flushPromises()
 
     expect(api.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
-    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').text()).toContain(
-      'Team Two'
-    )
+    expect(wrapper.emitted('update:modelValue')).toEqual([['w2']])
     expect(wrapper.find('[data-testid="devplatform-workspace-menu"]').exists()).toBe(false)
+  })
+
+  it('selects Unmanaged without changing the authenticated workspace', async () => {
+    const wrapper = mountSelector()
+    await flushPromises()
+    await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper.find('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+
+    expect(api.switchWorkspace).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[null]])
   })
 
   it('keeps the active workspace when browser re-authentication fails', async () => {
@@ -98,6 +115,26 @@ describe('DevPlatformWorkspaceSelector', () => {
     await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').text()).toContain(
+      'Team One'
+    )
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('does not select a workspace when re-authentication returns a different workspace', async () => {
+    api.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w1'
+    })
+    const wrapper = mountSelector()
+    await flushPromises()
+    await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
+
+    await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').text()).toContain(
       'Team One'
     )

@@ -41,6 +41,7 @@ import {
   _broadcastToRenderer
 } from './shared'
 import type { InstallationRecord } from '../../installations'
+import type { InstallBuildRequest, InstallBuildResult } from '../../../types/ipc'
 
 /** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
@@ -52,7 +53,6 @@ export const DEVPLATFORM_CHANNELS = {
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listBuilds: 'comfybuilder:listBuilds',
   installBuild: 'comfybuilder:installBuild',
-  openBuilderCreate: 'comfybuilder:openBuilderCreate',
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
 
@@ -61,14 +61,6 @@ const SIGNED_OUT: AuthStatus = { signedIn: false }
 const COMFYBUILDER_SOURCE_ID = 'comfybuilder'
 const COMFYBUILDER_SOURCE_LABEL = 'ComfyBuilder'
 const COMFYBUILDER_LAUNCH_ARGS = '--enable-manager'
-
-/** Result of an install-kickoff: mirrors the `add-installation` handler's shape
- *  so the renderer can drive the same `installInstance` + progress UI. */
-export interface InstallBuildResult {
-  ok: boolean
-  message?: string
-  entry?: { id: string; name: string }
-}
 
 export interface PromoteLocalInstanceResult {
   ok: boolean
@@ -186,14 +178,6 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.openBuilderCreate, async (): Promise<void> => {
-    const status = session.status()
-    if (!status.signedIn) throw new Error('Not signed in.')
-    const url = new URL('/profile/distributions/new', PLATFORM_WEB_BASE_URL)
-    if (status.workspaceId) url.searchParams.set('workspace', status.workspaceId)
-    await shell.openExternal(url.toString())
-  })
-
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.promoteLocalInstance,
     async (_event, installationId: string): Promise<PromoteLocalInstanceResult> => {
@@ -279,7 +263,7 @@ export function registerDevPlatformHandlers(): void {
       cacheGeneration
     )
     // Catalog reads warm the synchronous source update cache. Re-pull
-    // installations so existing build tiles gain their Update action.
+    // installations so existing managed instances gain their Update action.
     _broadcastToRenderer('installations-changed', {})
     return rows
   })
@@ -290,10 +274,21 @@ export function registerDevPlatformHandlers(): void {
   // sha -> extract) runs in the comfybuilder SourcePlugin.
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.installBuild,
-    async (_event, buildId: string): Promise<InstallBuildResult> => {
+    async (_event, request: InstallBuildRequest): Promise<InstallBuildResult> => {
       if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
       const workspaceId = session.status().workspaceId
       if (!workspaceId) return { ok: false, message: 'No active workspace.' }
+      if (!request || typeof request !== 'object') {
+        return { ok: false, message: 'Invalid build install request.' }
+      }
+      const buildId = typeof request.buildId === 'string' ? request.buildId.trim() : ''
+      if (!buildId) return { ok: false, message: 'A build is required.' }
+      if (request.name !== undefined && typeof request.name !== 'string') {
+        return { ok: false, message: 'Invalid instance name.' }
+      }
+      if (request.installRoot !== undefined && typeof request.installRoot !== 'string') {
+        return { ok: false, message: 'Invalid install location.' }
+      }
       const installKey = `${workspaceId}:${buildId}`
       if (installing.has(installKey)) return { ok: false, message: 'Install already starting.' }
       installing.add(installKey)
@@ -314,6 +309,9 @@ export function registerDevPlatformHandlers(): void {
           return { ok: false, message: `"${existing.name}" already installs this build.` }
         }
         const client = getBuilderClient()
+        const builds = await client.listBuilds()
+        const build = builds.find((candidate) => candidate.id === buildId)
+        if (!build) return { ok: false, message: 'Build not found in the active workspace.' }
         const host = await resolveHost()
         const resolved = await resolveHostArtifact(client, host, buildId)
         if (!resolved) return { ok: false, message: 'No installable build for this machine.' }
@@ -323,13 +321,11 @@ export function registerDevPlatformHandlers(): void {
           return { ok: false, message: 'This build has no SHA-256 integrity value.' }
         }
 
-        // Name the install after the build. One extra list call keeps the
-        // renderer from having to pass a (spoofable) display name back to main.
-        const builds = await client.listBuilds()
-        const build = builds.find((candidate) => candidate.id === buildId)
-        const displayName = await uniqueName(build?.name ?? buildId)
+        const requestedName = request.name?.trim()
+        const displayName = await uniqueName(requestedName || build.name)
 
-        const installPath = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(displayName))
+        const installRoot = request.installRoot?.trim() || defaultInstallDir()
+        const installPath = allocateUniqueDir(installRoot, sanitizeDirName(displayName))
         const duplicate = await findDuplicatePath(installPath)
         if (duplicate)
           return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
@@ -344,7 +340,7 @@ export function registerDevPlatformHandlers(): void {
           installPath,
           workspaceId,
           distributionId: buildId,
-          distributionName: build?.name ?? buildId,
+          distributionName: build.name,
           version: String(resolved.version),
           artifactId: artifact.id,
           artifactOs: artifact.os,
@@ -376,7 +372,13 @@ async function installedBuildVersions(
   const map = new Map<string, number>()
   if (!workspaceId) return map
   for (const inst of await installations.list()) {
-    if (inst.sourceId !== COMFYBUILDER_SOURCE_ID || inst.workspaceId !== workspaceId) continue
+    if (
+      inst.sourceId !== COMFYBUILDER_SOURCE_ID ||
+      inst.workspaceId !== workspaceId ||
+      inst.status === 'failed'
+    ) {
+      continue
+    }
     const id = inst.distributionId
     const version = Number(inst.version)
     if (typeof id !== 'string' || !id || !Number.isFinite(version)) continue

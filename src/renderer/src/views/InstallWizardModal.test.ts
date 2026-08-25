@@ -1,18 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { createPinia, setActivePinia } from 'pinia'
 
 import { en } from '../lib/i18nMessages.ts'
 import InstallWizardModal from './InstallWizardModal.vue'
+import BaseSelect from '../components/ui/BaseSelect.vue'
+import { useInstallationStore } from '../stores/installationStore'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
 }
 
 function mountModal() {
+  const pinia = createPinia()
+  setActivePinia(pinia)
   return mount(InstallWizardModal, {
     global: {
-      plugins: [makeI18n()],
+      plugins: [makeI18n(), pinia],
       stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } }
     }
   })
@@ -30,7 +35,21 @@ beforeEach(() => {
     getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
-    validateInstallPath: vi.fn().mockResolvedValue([])
+    validateInstallPath: vi.fn().mockResolvedValue([]),
+    getInstallations: vi.fn().mockResolvedValue([]),
+    onInstallationsChanged: vi.fn(() => () => {}),
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
+    installInstance: vi.fn().mockResolvedValue({ ok: true }),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn(() => () => {}),
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+      listWorkspaces: vi.fn().mockResolvedValue([]),
+      switchWorkspace: vi.fn(),
+      listBuilds: vi.fn().mockResolvedValue([]),
+      installBuild: vi.fn()
+    }
   } as unknown as typeof window.api
 })
 
@@ -68,6 +87,109 @@ describe('InstallWizardModal install-location field', () => {
     expect(wrapper.find('button.config-path-open').exists()).toBe(false)
     expect(wrapper.find('.config-path-open--static').exists()).toBe(true)
     expect(window.api.openPath).not.toHaveBeenCalled()
+  })
+})
+
+describe('InstallWizardModal workspace Builds', () => {
+  function signInToWorkspace(builds: Array<Record<string, unknown>>): void {
+    ;(window.api.comfybuilder.getAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team'
+    })
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue(builds)
+  }
+
+  async function openWorkspaceModal() {
+    const wrapper = mountModal()
+    await flushPromises()
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w1' })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('replaces Advanced with compatible, uninstalled Builds', async () => {
+    signInToWorkspace([
+      { id: 'ready', name: 'Ready Build', state: 'installable' },
+      { id: 'none', name: 'No Build Yet', state: 'no-build' },
+      { id: 'linux', name: 'Linux Build', state: 'platform-mismatch' },
+      { id: 'installed', name: 'Installed Build', state: 'installable', installedVersion: 2 },
+      { id: 'linked', name: 'Linked Build', state: 'installable' }
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+    useInstallationStore().installations = [
+      {
+        id: 'linked-install',
+        name: 'Linked Build',
+        sourceId: 'comfybuilder',
+        sourceLabel: 'ComfyBuilder',
+        sourceCategory: 'local',
+        workspaceId: 'w1',
+        distributionId: 'linked',
+        status: 'installed'
+      }
+    ]
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w1' })
+    await flushPromises()
+
+    expect(wrapper.find('.config-advanced').exists()).toBe(false)
+    const buildSelect = wrapper.getComponent(BaseSelect)
+    expect(buildSelect.props('options')).toEqual([{ value: 'ready', label: 'Ready Build' }])
+    expect(buildSelect.props('modelValue')).toBe('ready')
+  })
+
+  it('shows an empty state when no compatible Builds can be installed', async () => {
+    signInToWorkspace([{ id: 'none', name: 'No Build Yet', state: 'no-build' }])
+    const wrapper = await openWorkspaceModal()
+
+    expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain(
+      'No compatible Builds are available to install.'
+    )
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeDefined()
+  })
+
+  it('retries a failed Build catalog request from the wizard', async () => {
+    signInToWorkspace([])
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    const wrapper = await openWorkspaceModal()
+
+    await wrapper.get('.wizard-build-retry').trigger('click')
+    await flushPromises()
+
+    expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledTimes(2)
+    expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+      { value: 'ready', label: 'Ready Build' }
+    ])
+  })
+
+  it('installs the selected Build with the requested name and install root', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.comfybuilder.installBuild as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      entry: { id: 'managed-1', name: 'My Managed Instance' }
+    })
+    const wrapper = await openWorkspaceModal()
+    await wrapper.get('#inst-name-standalone').setValue('My Managed Instance')
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(window.api.comfybuilder.installBuild).toHaveBeenCalledExactlyOnceWith({
+      buildId: 'ready',
+      name: 'My Managed Instance',
+      installRoot: '/home/user/ComfyUI'
+    })
+    expect(wrapper.emitted('show-progress')?.[0]?.[0]).toMatchObject({
+      installationId: 'managed-1',
+      autoLaunchOnFinish: true,
+      opKind: 'install'
+    })
   })
 })
 

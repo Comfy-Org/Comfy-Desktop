@@ -11,8 +11,7 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
-/** Every state a build tile can be in. The first four are pre-install;
- *  the last two are local (renderer-owned via de-dup against installs). */
+/** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
   | 'no-build'
@@ -28,7 +27,7 @@ export interface DevPlatformBuild {
   name: string
   description?: string
   version?: string
-  /** The ComfyUI version this build bundles, for the card's facts line.
+  /** The ComfyUI version this build bundles.
    *  TODO(builder-backend): not yet populated by `listBuildRows` - the
    *  build metadata needs to carry it through. Absent renders as unknown. */
   comfyuiVersion?: string
@@ -37,10 +36,10 @@ export interface DevPlatformBuild {
   sizeBytes?: number
   numCustomNodes?: number
   state: DevPlatformBuildState
-  /** i18n suffix explaining a blocking state (see `devPlatform.build.blockedReason.*`). */
+  /** Machine-readable reason for a blocking state. */
   blockedReason?: string
   /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
-   *  / `linux`). The card names them instead of saying "not for this machine". */
+   *  / `linux`). */
   targetOs?: string[]
   minDesktopVersion?: string
   /** Local-only: present for installed / update-available. A build
@@ -54,6 +53,12 @@ export interface InstallBuildResult {
   ok: boolean
   message?: string
   entry?: { id: string; name: string }
+}
+
+export interface InstallBuildRequest {
+  buildId: string
+  name?: string
+  installRoot?: string
 }
 
 export interface PromoteLocalInstanceResult {
@@ -1419,8 +1424,7 @@ export interface ElectronApi {
     listWorkspaces(): Promise<Workspace[]>
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
-    installBuild(buildId: string): Promise<InstallBuildResult>
-    openBuilderCreate(): Promise<void>
+    installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
 

@@ -1,10 +1,18 @@
 <script setup lang="ts">
-/** Active workspace selector rendered inside the dashboard's Workspace shelf. */
+/** Dashboard scope selector for unmanaged installs and authenticated workspaces. */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, Loader2 } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
+
+const props = defineProps<{
+  modelValue: string | null
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [workspaceId: string | null]
+}>()
 
 const { t } = useI18n()
 const store = useAuthStore()
@@ -13,13 +21,14 @@ const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
 const switchingTo = ref<string | null>(null)
-const currentWorkspaceId = computed(() => store.status.workspaceId ?? null)
+const currentWorkspaceId = computed(() => props.modelValue)
 
 function workspaceLabel(workspace: { name: string; type: string }): string {
   return workspace.type === 'team' ? workspace.name : t('devPlatform.workspace.personalLabel')
 }
 
 const currentWorkspaceName = computed(() => {
+  if (currentWorkspaceId.value === null) return t('devPlatform.workspace.unmanagedLabel')
   const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
   if (current) return workspaceLabel(current)
   if (store.status.workspaceType !== 'team') return t('devPlatform.workspace.personalLabel')
@@ -73,16 +82,30 @@ onBeforeUnmount(() => {
 })
 
 async function onSelectWorkspace(workspaceId: string): Promise<void> {
-  if (workspaceId === currentWorkspaceId.value || switchingTo.value) return
+  if (switchingTo.value) return
+  if (workspaceId === currentWorkspaceId.value) {
+    closeMenu()
+    return
+  }
   switchingTo.value = workspaceId
   try {
-    await store.switchWorkspace(workspaceId)
+    if (workspaceId !== store.status.workspaceId) {
+      const status = await store.switchWorkspace(workspaceId)
+      if (!status.signedIn || status.workspaceId !== workspaceId) return
+    }
+    emit('update:modelValue', workspaceId)
     closeMenu()
   } catch {
     // A cancelled browser sign-in leaves the active workspace unchanged.
   } finally {
     switchingTo.value = null
   }
+}
+
+function onSelectUnmanaged(): void {
+  if (switchingTo.value) return
+  emit('update:modelValue', null)
+  closeMenu()
 }
 </script>
 
@@ -129,6 +152,28 @@ async function onSelectWorkspace(workspaceId: string): Promise<void> {
         @click="store.fetchWorkspaces()"
       >
         {{ $t('devPlatform.workspace.loadError') }}
+      </button>
+
+      <button
+        type="button"
+        class="workspace-selector__item"
+        :aria-pressed="currentWorkspaceId === null"
+        :disabled="switchingTo !== null"
+        data-testid="devplatform-workspace-unmanaged"
+        @click="onSelectUnmanaged"
+      >
+        <DevPlatformAvatar :name="$t('devPlatform.workspace.unmanagedLabel')" />
+        <span class="workspace-selector__identity">
+          <span class="workspace-selector__item-name">{{
+            $t('devPlatform.workspace.unmanagedLabel')
+          }}</span>
+        </span>
+        <Check
+          v-if="currentWorkspaceId === null"
+          :size="15"
+          class="workspace-selector__check"
+          aria-hidden="true"
+        />
       </button>
 
       <button

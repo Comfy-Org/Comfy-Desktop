@@ -14,37 +14,23 @@ import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BrandBackground from '../components/BrandBackground.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
-import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
-import { buildEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
-import { isBlockedBuild } from '../devplatform/buildState'
 import { resolvePickerTab } from '../lib/pickerTabs'
-import type { ContextMenuItem } from '../types/context-menu'
-import type { Build } from '../devplatform/types'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
- * Chooser view — recents grid.
+ * Chooser view - recents grid.
  *
  * A golden-ratio tile grid the user picks from. The install-less host
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Layout:
- *   - Top-right: dev-platform account identity and sign-out menu.
- *   - Top-left: "New Install" (always present).
- *   - Following: every install (local / cloud / remote) ordered by
- *     `lastLaunchedAt` desc, never-launched at the end.
- *   - Then, when signed in, one tile per build published to the workspace that
- *     isn't installed yet: installing a build is the
- *     SAME GESTURE as launching an existing install: one tile, one click.
- *   - Filter chips above the grid narrow by source category.
- *
- * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`;
- * per-build tiles in `devplatform/DevPlatformBuildCard.vue`.
+ * Signed-in users choose either Unmanaged or one authenticated workspace next
+ * to search. The grid contains only installed instances in that scope.
+ * Available Builds belong in the workspace New Instance flow, not this grid.
  */
 
 const props = withDefaults(
@@ -57,13 +43,12 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  /** User picked an install — caller decides whether to swap-in-place,
+  /** User picked an install - caller decides whether to swap-in-place,
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
-  /** User triggered the new-install flow (top-left card or empty Cloud
-   *  card). */
-  'show-new-install': []
-  /** A long-running action was kicked off from the inline Manage…
+  /** User triggered the new-install flow in the current dashboard scope. */
+  'show-new-install': [workspaceId?: string]
+  /** A long-running action was kicked off from the inline Manage...
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
   'show-progress': [opts: ShowProgressOpts]
@@ -81,10 +66,9 @@ onMounted(() => {
   }
 })
 
-// Sign-in / workspace-switch can happen ON this page (the chip), so the
-// build list follows the session rather than mount timing. Keying on the
-// workspace id (not just signed-in) is what re-fetches after a switch, where the
-// store clears the grid but signed-in stays true.
+// The Build catalog is not rendered on the dashboard. It still follows the
+// authenticated workspace so the New Instance wizard is ready and legacy
+// managed installs can be associated with their workspace by exact Build id.
 watch(
   () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
   () => {
@@ -103,12 +87,12 @@ watch(
 // regressions guard.
 //
 // "Local" includes both standalone local installs and Legacy Desktop
-// installs (both report `sourceCategory === 'local'`) — they're
+// installs (both report `sourceCategory === 'local'`) - they're
 // conceptually the same family from the user's POV. Cloud installs
-// flow through `visibleInstalls` like every other source — there is no
+// flow through `visibleInstalls` like every other source - there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, matchesQuery } = useInstallList({
+const { searchQuery, activeFilter, visibleInstalls } = useInstallList({
   installations: installationsRef
 })
 
@@ -118,116 +102,51 @@ const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, matchesQuery 
 // doesn't reference the ref directly (chips are TODO(brand-cleanup)).
 defineExpose({ activeFilter })
 
-// --- Comfy Builder builds ---
-//
-// ORDERING: New install -> existing installs -> builds. Existing installs
-// are what the user returns to and their position is muscle memory, so the
-// "things I could add" family goes last.
-//
-// DE-DUPLICATION: an already-installed build is an ordinary
-// installation and must not be listed twice. `installation.distributionId`
-// when the comfybuilder install carries it (the index signature passes it
-// through), else case-insensitive name equality: an install created from a
-// build inherits its name.
-function installationBacksBuild(inst: Installation, build: Build): boolean {
-  if (!installationBelongsToActiveWorkspace(inst)) return false
-  const linked = inst.distributionId
-  if (typeof linked === 'string' && linked.length > 0) return linked === build.id
-  // Name-match is a fallback only for a comfybuilder install; never let an
-  // unrelated same-named local install hide a build tile.
-  if (inst.sourceId !== 'comfybuilder') return false
-  return inst.name.trim().toLowerCase() === build.name.trim().toLowerCase()
+// --- Dashboard scope ---
+
+const selectedWorkspaceId = ref<string | null>(null)
+let dashboardScopeInitialized = false
+
+watch(
+  () => ({ signedIn: authStore.isSignedIn, workspaceId: authStore.status.workspaceId }),
+  (next, previous) => {
+    if (!next.signedIn) {
+      selectedWorkspaceId.value = null
+      dashboardScopeInitialized = false
+      return
+    }
+    if (!dashboardScopeInitialized) {
+      selectedWorkspaceId.value = next.workspaceId ?? null
+      dashboardScopeInitialized = true
+      return
+    }
+    // Follow an external authenticated workspace switch only while the user is
+    // viewing that workspace. An explicit Unmanaged selection remains local.
+    if (selectedWorkspaceId.value !== null && selectedWorkspaceId.value === previous?.workspaceId) {
+      selectedWorkspaceId.value = next.workspaceId ?? null
+    }
+  },
+  { immediate: true }
+)
+
+function installationIsInSelectedScope(inst: Installation): boolean {
+  if (!authStore.isSignedIn) return true
+  return selectedWorkspaceId.value === null
+    ? inst.workspaceId === undefined
+    : inst.workspaceId === selectedWorkspaceId.value
 }
 
-/** Every build that earns a tile, before the explicit compatibility filter and search. */
-const chooserBuilds = computed<Build[]>(() => {
-  if (!authStore.isSignedIn) return []
-  return authStore.builds.filter(
-    (build) =>
-      build.state !== 'update-available' &&
-      !installationStore.installations.some((inst) => installationBacksBuild(inst, build))
-  )
-})
-
-type WorkspaceBuildFilter = 'compatible' | 'all'
-
-const workspaceBuildFilter = ref<WorkspaceBuildFilter>('compatible')
-const workspaceBuildFilterOptions = computed<BaseSelectOption[]>(() => [
-  { value: 'compatible', label: t('chooser.workspaceFilterCompatible') },
-  { value: 'all', label: t('chooser.filterAll') }
-])
-
-function setWorkspaceBuildFilter(value: string): void {
-  workspaceBuildFilter.value = value === 'all' ? 'all' : 'compatible'
-}
-
-const filteredChooserBuilds = computed<Build[]>(() =>
-  workspaceBuildFilter.value === 'all'
-    ? chooserBuilds.value
-    : chooserBuilds.value.filter((build) => !isBlockedBuild(build))
+const scopedVisibleInstalls = computed(() =>
+  visibleInstalls.value.filter(installationIsInSelectedScope)
 )
-
-/** Search filters the selected build set through the SAME query as the install tiles. */
-const visibleBuilds = computed<Build[]>(() =>
-  filteredChooserBuilds.value.filter((build) => matchesQuery(build.name))
+const scopedInstallCount = computed(
+  () => installationStore.installations.filter(installationIsInSelectedScope).length
 )
-
-/** A failed build fetch, distinct from an empty workspace: the watch
- *  keys on session identity so it won't re-fetch on its own, hence the retry. */
-const buildLoadFailed = computed(
-  () => authStore.isSignedIn && authStore.buildsError && authStore.builds.length === 0
-)
-
-/** The no-matches hint may only fire when NOTHING in the grid matches. A failed
- *  fetch shows its own retry line instead, so the two never co-render. */
 const showNoMatches = computed(
-  () => showEmptyHint.value && visibleBuilds.value.length === 0 && !buildLoadFailed.value
+  () =>
+    scopedVisibleInstalls.value.length === 0 &&
+    (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
 )
-
-/** One quiet line under the grid when the signed-in workspace has nothing
- *  published (or the fetch failed). Never a panel: this page already has content. */
-const buildNote = computed(() => {
-  if (!authStore.isSignedIn) return ''
-  if (searchQuery.value.trim()) return ''
-  if (authStore.loadingBuilds) return ''
-  if (buildLoadFailed.value) return t('devPlatform.build.loadError')
-  if (authStore.builds.length === 0) return t('devPlatform.build.emptyTitle')
-  return ''
-})
-
-// --- Shelves ---
-//
-// Your installs lead, unheaded; the workspace's own installs and available
-// builds sit under one header beneath. With nothing to shelve the page
-// falls back to the shipped centered grid — a lone left-aligned cluster under
-// no header reads as broken.
-
-function installationBelongsToActiveWorkspace(inst: Installation): boolean {
-  const workspaceId = authStore.status.workspaceId
-  return Boolean(workspaceId && inst.workspaceId === workspaceId)
-}
-
-const allOwnInstalls = computed(() =>
-  installationStore.installations.filter((inst) => !installationBelongsToActiveWorkspace(inst))
-)
-const allWorkspaceInstalls = computed(() =>
-  installationStore.installations.filter(installationBelongsToActiveWorkspace)
-)
-
-const ownEntries = computed<ChooserGridEntry[]>(() =>
-  visibleInstalls.value
-    .filter((inst) => !installationBelongsToActiveWorkspace(inst))
-    .map(installEntry)
-)
-const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
-  visibleInstalls.value.filter(installationBelongsToActiveWorkspace).map(installEntry)
-)
-const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
-  visibleBuilds.value.map(buildEntry)
-)
-
-/** The selector and create card keep an empty signed-in workspace actionable. */
-const showWorkspaceShelf = computed(() => authStore.isSignedIn)
 
 const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
 
@@ -236,130 +155,24 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-async function openBuilderCreate(): Promise<void> {
-  emitTelemetryAction('comfy.desktop.workspace.builder_opened', {})
-  try {
-    await window.api.comfybuilder.openBuilderCreate()
-  } catch {
-    await modal.alert({
-      title: t('devPlatform.workspace.openBuilderFailedTitle'),
-      message: t('devPlatform.workspace.openBuilderFailedMessage')
-    })
-  }
-}
-
-/**
- * Install a build: main resolves the host artifact + creates the record,
- * then we drive the SAME `installInstance` + progress UI every other install
- * uses (via the `show-progress` event PanelApp already handles). A blocked tile
- * never reaches here: the card suppresses its own activation.
- */
-/** Build id whose install-kickoff is in flight, so a fast second click
- *  (tile then kebab, or a double-click) can't start two installs before the
- *  progress modal takes over. Main also guards this, belt-and-suspenders. */
-const activatingBuild = ref<string | null>(null)
-
-async function handleBuildActivate(build: Build): Promise<void> {
-  if (activatingBuild.value) return
-  activatingBuild.value = build.id
-  try {
-    const result = await window.api.comfybuilder.installBuild(build.id).catch((err: unknown) => ({
-      ok: false as const,
-      message: (err as Error)?.message || String(err)
-    }))
-    if (!result || !result.ok || !result.entry) {
-      await modal.alert({
-        title: t('errors.installFailed'),
-        message: result.message || t('devPlatform.build.installFailed')
-      })
-      return
-    }
-    emit('show-progress', {
-      installationId: result.entry.id,
-      title: `${t('newInstall.installing')}: ${result.entry.name}`,
-      apiCall: () => window.api.installInstance(result.entry!.id),
-      autoLaunchOnFinish: true,
-      opKind: 'install'
-    })
-  } finally {
-    activatingBuild.value = null
-  }
-}
-
-// --- Build kebab menu ---
-//
-// Build cards carry the same top-right kebab as install tiles, so the corner
-// means one thing across the grid. Install is the only action a build supports;
-// blocked states keep the item visible but
-// disabled rather than presenting an empty menu, which reads as a bug.
-const buildMenu = ref<{ open: boolean; x: number; y: number; build: Build | null }>({
-  open: false,
-  x: 0,
-  y: 0,
-  build: null
-})
-
-const buildMenuItems = computed<ContextMenuItem[]>(() => {
-  const build = buildMenu.value.build
-  if (!build) return []
-  return [
-    {
-      id: 'install',
-      label: t('devPlatform.build.menuInstall'),
-      // Only a never-installed build installs from here. An
-      // `update-available` row never renders in the chooser (updates live on
-      // the existing install), and installing one anew would duplicate it.
-      disabled: build.state !== 'installable'
-    }
-  ]
-})
-
-function openBuildKebabMenu(event: MouseEvent, build: Build): void {
-  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect?.()
-  // Right-aligned drop, matching the install-tile kebab. ContextMenu clamps to
-  // the viewport, so a negative x is safe.
-  const x = rect ? rect.right - 180 : event.clientX
-  const y = (rect?.bottom ?? event.clientY) + 4
-  buildMenu.value = { open: true, x, y, build }
-}
-
-function closeBuildMenu(): void {
-  buildMenu.value = { open: false, x: 0, y: 0, build: null }
-}
-
-function handleBuildMenuSelect(itemId: string): void {
-  const build = buildMenu.value.build
-  closeBuildMenu()
-  if (itemId === 'install' && build) void handleBuildActivate(build)
-}
-
 // --- Cluster top offset ---
 
 const TILES_PER_ROW = 4
 
-/** Search-independent row count across both shelves, reserving `min-height` so
- *  the cluster doesn't shift while typing. The explicit workspace filter does
- *  resize the shelf because it deliberately changes the selected set. */
-const clusterRows = computed(() => {
-  // +1: the New Install tile rides with the your-installs family.
-  const ownRows = Math.ceil((1 + allOwnInstalls.value.length) / TILES_PER_ROW)
-  if (!showWorkspaceShelf.value) return ownRows
-  // +1: the Create New Build card.
-  const shelfTiles = 1 + allWorkspaceInstalls.value.length + filteredChooserBuilds.value.length
-  return ownRows + Math.ceil(shelfTiles / TILES_PER_ROW)
-})
+/** Search-independent height reservation for New Instance plus scoped installs. */
+const clusterRows = computed(() => Math.ceil((1 + scopedInstallCount.value) / TILES_PER_ROW))
 
 // --- Manage / context menu ---
 // All Manage routes go through `window.api.openInstancePicker` (the
-// picker popup) — the legacy `useOverlay`-driven `ManageInstallModal`
+// picker popup) - the legacy `useOverlay`-driven `ManageInstallModal`
 // route is retired.
 
 function openManage(
   installation: Installation,
   opts: { initialTab?: string; autoAction?: string | null } = {}
 ): void {
-  // Every Manage entry — bare "Manage…" and the specialised kebab
-  // items (Update / Migrate / Restore Snapshot / Delete) — routes to
+  // Every Manage entry - bare "Manage..." and the specialised kebab
+  // items (Update / Migrate / Restore Snapshot / Delete) - routes to
   // the instance-picker popup. Bare goes to compact (default identity
   // card + CTAs); specialised paths open the picker directly in
   // expanded mode on the relevant tab with `autoAction` so the action
@@ -410,8 +223,8 @@ const {
 
 async function pickInstall(inst: Installation): Promise<void> {
   // The instance window owns lifecycle. If a host window already exists for
-  // this install — running, launching, OR crashed (the window stays open on
-  // its lifecycle/error surface) — bring it forward instead of kicking off a
+  // this install - running, launching, OR crashed (the window stays open on
+  // its lifecycle/error surface) - bring it forward instead of kicking off a
   // second launch with a dashboard takeover. Restart, stop, and crash details
   // all live inside that window.
   if (
@@ -421,7 +234,7 @@ async function pickInstall(inst: Installation): Promise<void> {
   ) {
     const focused = await window.api.focusComfyWindow(inst.id)
     // `errorInstances` can be hydrated from the retained crash buffer after
-    // the window was closed, so a focus may find nothing — fall through and
+    // the window was closed, so a focus may find nothing - fall through and
     // launch normally in that case.
     if (focused) return
   }
@@ -511,14 +324,15 @@ onMounted(async () => {
   }
 })
 function handleNewInstallClick(): void {
-  emit('show-new-install')
+  if (authStore.isSignedIn && selectedWorkspaceId.value) {
+    emit('show-new-install', selectedWorkspaceId.value)
+  } else {
+    emit('show-new-install')
+  }
 }
 
-/** Shared by every `ChooserFamilyGrid`, so a tile behaves the same whichever
- *  shelf it landed in. */
 const gridHandlers = {
   'new-install': handleNewInstallClick,
-  'workspace-create': openBuilderCreate,
   pick: pickInstall,
   'open-card-menu': openCardMenu,
   'open-kebab-menu': openKebabMenu,
@@ -526,8 +340,6 @@ const gridHandlers = {
     triggerAction(action, inst),
   'view-error': viewError,
   'view-danger': viewDanger,
-  'build-select': handleBuildActivate,
-  'build-kebab': openBuildKebabMenu,
   'why-cloud': openWhyCloud
 }
 </script>
@@ -541,14 +353,33 @@ const gridHandlers = {
       </div>
 
       <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
-      <div class="chooser-search">
-        <BaseInput
-          v-model="searchQuery"
-          :placeholder="t('chooser.searchPlaceholder')"
-          :aria-label="t('chooser.searchPlaceholder')"
-        >
-          <template #leading><Search :size="16" /></template>
-        </BaseInput>
+      <div class="chooser-toolbar">
+        <div v-if="authStore.isSignedIn" class="chooser-workspace-controls">
+          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
+          <button
+            type="button"
+            class="chooser-workspace-refresh"
+            :disabled="refreshingWorkspace"
+            :aria-label="t('devPlatform.workspace.refresh')"
+            :title="t('devPlatform.workspace.refresh')"
+            data-testid="chooser-workspace-refresh"
+            @click="refreshWorkspace"
+          >
+            <RefreshCw
+              :size="13"
+              :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+            />
+          </button>
+        </div>
+        <div class="chooser-search">
+          <BaseInput
+            v-model="searchQuery"
+            :placeholder="t('chooser.searchPlaceholder')"
+            :aria-label="t('chooser.searchPlaceholder')"
+          >
+            <template #leading><Search :size="16" /></template>
+          </BaseInput>
+        </div>
       </div>
 
       <div
@@ -563,73 +394,11 @@ const gridHandlers = {
       </div>
 
       <div v-else class="chooser-shelves">
-        <!-- Your installs: bare tiles, no header, centered until a shelf
-             appears beneath them. -->
         <section class="chooser-shelf">
           <ChooserFamilyGrid
             show-new
-            :centered="!showWorkspaceShelf"
-            :entries="ownEntries"
-            :show-free-runs-pill="showCloudFreeRunsPill"
-            :show-why-cloud="showWhyCloud"
-            :is-stopped-action-gated="isStoppedActionGated"
-            :is-promoting-to-workspace="isPromotingToWorkspace"
-            v-on="gridHandlers"
-          />
-        </section>
-
-        <!-- The workspace shelf: what it already put on this machine, then what
-             it still offers on a fresh row. -->
-        <!-- Gated on the same pre-search predicate as the grid's centering:
-             if the shelf ducked out when a query filtered its entries, the
-             own-installs grid above would sit left-aligned under no header.
-             With every entry filtered, the header stays with a 0 count. -->
-        <section v-if="showWorkspaceShelf" class="chooser-shelf">
-          <header class="chooser-shelf-head">
-            <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
-            <span class="chooser-shelf-count">{{
-              workspaceInstalledEntries.length + workspaceAvailableEntries.length
-            }}</span>
-            <span class="chooser-shelf-divider" aria-hidden="true" />
-            <div class="chooser-workspace-controls">
-              <button
-                type="button"
-                class="chooser-workspace-refresh"
-                :disabled="refreshingWorkspace"
-                :aria-label="t('devPlatform.workspace.refresh')"
-                :title="t('devPlatform.workspace.refresh')"
-                data-testid="chooser-workspace-refresh"
-                @click="refreshWorkspace"
-              >
-                <RefreshCw
-                  :size="13"
-                  :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
-                />
-              </button>
-              <DevPlatformWorkspaceSelector />
-              <div class="chooser-workspace-filter" data-testid="chooser-workspace-filter">
-                <BaseSelect
-                  :model-value="workspaceBuildFilter"
-                  :options="workspaceBuildFilterOptions"
-                  :aria-label="t('chooser.workspaceFilterLabel')"
-                  compact
-                  @update:model-value="setWorkspaceBuildFilter"
-                />
-              </div>
-            </div>
-          </header>
-          <ChooserFamilyGrid
-            :entries="workspaceInstalledEntries"
-            show-workspace-cta
-            :show-free-runs-pill="showCloudFreeRunsPill"
-            :show-why-cloud="showWhyCloud"
-            :is-stopped-action-gated="isStoppedActionGated"
-            :is-promoting-to-workspace="isPromotingToWorkspace"
-            v-on="gridHandlers"
-          />
-          <ChooserFamilyGrid
-            v-if="workspaceAvailableEntries.length"
-            :entries="workspaceAvailableEntries"
+            centered
+            :installations="scopedVisibleInstalls"
             :show-free-runs-pill="showCloudFreeRunsPill"
             :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
@@ -639,16 +408,6 @@ const gridHandlers = {
         </section>
       </div>
 
-      <button
-        v-if="buildLoadFailed"
-        type="button"
-        class="chooser-build-note chooser-build-note--retry"
-        @click="authStore.fetchBuilds()"
-      >
-        {{ $t('devPlatform.build.loadError') }}
-      </button>
-      <p v-else-if="buildNote" class="chooser-build-note">{{ buildNote }}</p>
-
       <ContextMenu
         :open="ctxMenu.open"
         :x="ctxMenu.x"
@@ -656,15 +415,6 @@ const gridHandlers = {
         :items="ctxMenuItems"
         @close="closeMenu"
         @select="handleCtxMenuSelect"
-      />
-
-      <ContextMenu
-        :open="buildMenu.open"
-        :x="buildMenu.x"
-        :y="buildMenu.y"
-        :items="buildMenuItems"
-        @close="closeBuildMenu"
-        @select="handleBuildMenuSelect"
       />
 
       <WhyTryCloudModal
@@ -703,15 +453,15 @@ const gridHandlers = {
 }
 
 .chooser-view {
-  /* Symmetric top + bottom spacers (both 1fr) center the wordmark→grid block
-   * as a group whenever it fits — looks deliberate at any viewport height.
+  /* Symmetric top + bottom spacers (both 1fr) center the wordmark-to-grid block
+   * as a group whenever it fits - looks deliberate at any viewport height.
    * When the (unfiltered) content is taller than the viewport, the
    * `minmax(0, 1fr)` spacers collapse to 0 and the grid scrolls internally.
    * Rows: [top spacer] [wordmark] [search] [grid] [bottom spacer]
    *
    * No-shift guarantee: the grid row reserves its height from the UNFILTERED
    * `--rows` (see `.chooser-grid` min-height), so typing in search empties
-   * tiles without shrinking the grid box — the centered cluster stays put. */
+   * tiles without shrinking the grid box - the centered cluster stays put. */
   --chooser-pad-y: clamp(12px, 2.5vh, 24px);
   --chooser-row-gap: clamp(16px, 3.5vh, 32px);
   flex: 1 1 auto;
@@ -743,34 +493,6 @@ const gridHandlers = {
   max-width: min(340px, 45%);
 }
 
-/* Quiet one-liner for the build family's empty story. Lives in the
- * bottom spacer row so it costs the centered cluster no layout; on a short
- * window the spacer collapses and this caption is the first thing to go. */
-.chooser-build-note {
-  grid-row: 5;
-  align-self: start;
-  margin: 0;
-  padding-top: 4px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  text-align: center;
-}
-.chooser-build-note--retry {
-  border: none;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-.chooser-build-note--retry:hover {
-  color: var(--neutral-100);
-  text-decoration: underline;
-}
-.chooser-build-note--retry:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
 .chooser-wordmark {
   grid-row: 2;
   /* `align-self` + `aspect-ratio` keep the SVG from stretching to fill the
@@ -785,16 +507,25 @@ const gridHandlers = {
   anchor-name: --brand-beam-target;
 }
 
-.chooser-search {
+.chooser-toolbar {
   grid-row: 3;
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 10px;
   width: 100%;
+  max-width: 900px;
   flex-shrink: 0;
 }
 
+.chooser-search {
+  display: flex;
+  flex: 1 1 600px;
+  min-width: 180px;
+}
+
 .chooser-search :deep(.ui-input) {
-  max-width: 600px;
+  width: 100%;
   border-radius: 12px;
   border: 1px solid var(--chooser-surface-border);
   background: var(--chooser-surface-bg);
@@ -816,13 +547,13 @@ const gridHandlers = {
   padding: 24px;
 }
 
-/* The scroll viewport both shelves live in — column, scroll and fade only;
+/* The scoped install grid's scroll viewport - column, scroll and fade only;
  * tile layout and the FLIP belong to `ChooserFamilyGrid`. */
 .chooser-shelves {
   grid-row: 4;
   width: 100%;
-  /* Content box must hold exactly 4 tracks (4 × 280 + 3 × 16 = 1168px), so the
-   * side padding sits OUTSIDE the cap — inside it, `auto-fit` drops to 3
+  /* Content box must hold exactly 4 tracks (4 x 280 + 3 x 16 = 1168px), so the
+   * side padding sits OUTSIDE the cap - inside it, `auto-fit` drops to 3
    * columns on a wide viewport. */
   --shelf-pad-x: 4px;
   max-width: calc(1168px + 2 * var(--shelf-pad-x));
@@ -893,33 +624,10 @@ const gridHandlers = {
   }
 }
 
-.chooser-shelf-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.chooser-shelf-divider {
-  flex: 1 1 auto;
-  min-width: 16px;
-  height: 1px;
-  background: var(--chooser-surface-border-hover);
-}
-.chooser-shelf-title {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--neutral-100);
-}
-.chooser-shelf-count {
-  font-size: 12px;
-  color: var(--text-faint);
-}
 .chooser-workspace-controls {
   display: flex;
-  flex: 1 0 100%;
+  flex: 0 1 290px;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
   min-width: 0;
 }
@@ -931,18 +639,8 @@ const gridHandlers = {
   --dp-avatar-size: 20px;
   box-sizing: border-box;
   width: 100%;
-  min-width: 0;
+  min-width: 180px;
   padding: 4px 8px;
-}
-.chooser-workspace-filter {
-  flex: 0 0 128px;
-  width: 128px;
-}
-.chooser-workspace-filter :deep(.ui-select-trigger) {
-  min-height: 30px;
-  padding: 6px 10px;
-  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
-  border-radius: 6px;
 }
 .chooser-workspace-refresh {
   display: inline-flex;
@@ -978,19 +676,14 @@ const gridHandlers = {
     transform: rotate(360deg);
   }
 }
-@container (width >= 576px) {
-  .chooser-shelf-head {
-    flex-wrap: nowrap;
+@media (max-width: 640px) {
+  .chooser-toolbar {
+    flex-wrap: wrap;
   }
-  .chooser-workspace-controls {
-    flex: 0 0 auto;
-  }
-  .chooser-workspace-controls :deep(.workspace-selector) {
-    flex: 0 0 auto;
-  }
-  .chooser-workspace-controls :deep(.workspace-selector__face) {
-    width: auto;
-    min-width: 220px;
+
+  .chooser-workspace-controls,
+  .chooser-search {
+    flex-basis: 100%;
   }
 }
 </style>

@@ -39,11 +39,6 @@
     "filterRemote": "Remote",
     "updatePill": "Update",
     "migratePill": "Migrate",
-    "workspaceShelf": "Workspace",
-    "workspaceFilterLabel": "Filter workspace builds",
-    "workspaceFilterCompatible": "Compatible",
-    "workspaceCtaLabel": "Create New Build",
-    "workspaceCtaDesc": "Or promote an existing instance.",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
@@ -373,7 +368,10 @@
     "latest": "Latest",
     "changeInstallType": "Change Install Type",
     "nameWhitespace": "Enter a name, or leave blank to use the suggested one.",
-    "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188)."
+    "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188).",
+    "workspaceBuildLabel": "Build",
+    "selectWorkspaceBuild": "Select a Build",
+    "noCompatibleBuilds": "No compatible Builds are available to install."
   },
   "templateQuit": {
     "title": "Template models are still downloading",
@@ -1250,34 +1248,19 @@
     },
     "workspace": {
       "personalLabel": "Personal",
+      "unmanagedLabel": "Unmanaged",
       "switchLabel": "Workspace",
       "currentFallback": "Current workspace",
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",
-      "openBuilderFailedTitle": "Couldn't open Comfy Builder",
-      "openBuilderFailedMessage": "Check your connection and try again.",
       "promoteToWorkspace": "Promote to Workspace",
       "promoting": "Promoting...",
       "promoteFailedTitle": "Couldn't promote instance",
       "promoteFailedMessage": "Could not create a draft in Comfy Builder."
     },
     "build": {
-      "menuInstall": "Install",
       "version": "Build v{version}",
-      "notInstalled": "Not installed",
-      "emptyTitle": "No builds published to this workspace yet.",
-      "loadError": "Couldn't load builds. Retry",
-      "installFailed": "Could not start the install. Try again.",
-      "states": {
-        "noBuild": "No build",
-        "platformMismatch": "Not for this machine",
-        "updateAvailable": "Update"
-      },
-      "blockedReason": {
-        "buildFailed": "This build has not completed successfully yet.",
-        "buildInProgress": "The latest build is still in progress.",
-        "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
-      }
+      "loadError": "Couldn't load builds. Retry"
     }
   },
   "errors": {

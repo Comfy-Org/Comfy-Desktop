@@ -287,21 +287,6 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
-  it('opens the create page for the active workspace', async () => {
-    await handler('comfybuilder:openBuilderCreate')({})
-
-    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/distributions/new?workspace=w1'
-    )
-  })
-
-  it('does not open the create page while signed out', async () => {
-    mocks.status.mockReturnValue({ signedIn: false })
-
-    await expect(handler('comfybuilder:openBuilderCreate')({})).rejects.toThrow('Not signed in')
-    expect(mocks.openExternal).not.toHaveBeenCalled()
-  })
-
   it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 
@@ -529,10 +514,21 @@ describe('registerDevPlatformHandlers', () => {
     mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
 
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      {
+        buildId: 'd1',
+        name: 'Custom Image',
+        installRoot: '/custom-root'
+      }
+    )
     expect(result).toEqual({ ok: true, entry: { id: 'inst-1', name: 'Image Baseline' } })
+    expect(mocks.uniqueName).toHaveBeenCalledWith('Custom Image')
+    expect(mocks.allocateUniqueDir).toHaveBeenCalledWith('/custom-root', 'Custom Image')
     expect(mocks.add).toHaveBeenCalledWith(
       expect.objectContaining({
+        name: 'Custom Image',
+        installPath: '/custom-root/Custom Image',
         sourceId: 'comfybuilder',
         workspaceId: 'w1',
         distributionId: 'd1',
@@ -544,6 +540,25 @@ describe('registerDevPlatformHandlers', () => {
         status: 'installing'
       })
     )
+  })
+
+  it('installBuild rejects the legacy string request shape', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+
+    expect(result).toEqual({ ok: false, message: 'Invalid build install request.' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+  })
+
+  it('installBuild requires the Build to belong to the active workspace catalog', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'other', name: 'Other Build' }])
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({ ok: false, message: 'Build not found in the active workspace.' })
+    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
   })
 
   it('does not persist ownership if the active workspace changes during resolution', async () => {
@@ -565,7 +580,7 @@ describe('registerDevPlatformHandlers', () => {
       return null
     })
 
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
 
     expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
     expect(mocks.add).not.toHaveBeenCalled()
@@ -583,7 +598,8 @@ describe('registerDevPlatformHandlers', () => {
         status: 'ready'
       }
     })
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toEqual({ ok: false, message: 'This build has no SHA-256 integrity value.' })
     expect(mocks.add).not.toHaveBeenCalled()
   })
@@ -591,7 +607,8 @@ describe('registerDevPlatformHandlers', () => {
   it('installBuild refuses when no host artifact resolves', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue(null)
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toMatchObject({ ok: false })
     expect(mocks.add).not.toHaveBeenCalled()
   })
@@ -610,7 +627,7 @@ describe('registerDevPlatformHandlers', () => {
         status: 'installing'
       }
     ])
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toEqual({
       ok: false,
       message: '"Image Baseline" already installs this build.'
@@ -631,7 +648,8 @@ describe('registerDevPlatformHandlers', () => {
       }
     ])
     mocks.resolveHostArtifact.mockResolvedValue(null)
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     // Past the duplicate guard: it failed only because no artifact resolved.
     expect(mocks.resolveHostArtifact).toHaveBeenCalled()
     expect(result).toMatchObject({ ok: false, message: 'No installable build for this machine.' })
@@ -639,7 +657,7 @@ describe('registerDevPlatformHandlers', () => {
 
   it('installBuild refuses when signed out', async () => {
     mocks.isSignedIn.mockReturnValue(false)
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toMatchObject({ ok: false })
     expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
   })
@@ -648,7 +666,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.status.mockReturnValue({ signedIn: true })
 
-    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
 
     expect(result).toEqual({ ok: false, message: 'No active workspace.' })
     expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
@@ -668,7 +686,8 @@ describe('registerDevPlatformHandlers', () => {
     ])
     mocks.resolveHostArtifact.mockResolvedValue(null)
 
-    await handler('comfybuilder:installBuild')({}, 'd1')
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
 
     expect(mocks.resolveHostArtifact).toHaveBeenCalled()
   })
@@ -677,6 +696,14 @@ describe('registerDevPlatformHandlers', () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.list.mockResolvedValue([
       { id: 'i1', sourceId: 'comfybuilder', workspaceId: 'w1', distributionId: 'd1', version: '3' },
+      {
+        id: 'failed',
+        sourceId: 'comfybuilder',
+        workspaceId: 'w1',
+        distributionId: 'd1',
+        version: '8',
+        status: 'failed'
+      },
       { id: 'i2', sourceId: 'comfybuilder', workspaceId: 'w2', distributionId: 'd2', version: '9' },
       { id: 'i3', sourceId: 'standalone', distributionId: 'ignored', version: '9' }
     ])

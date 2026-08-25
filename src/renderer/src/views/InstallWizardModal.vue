@@ -3,8 +3,11 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } fro
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, HardDrive, CircleAlert } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
+import { useAuthStore } from '../stores/authStore'
+import { useInstallationStore } from '../stores/installationStore'
 
 import type {
+  InstallBuildResult,
   Source,
   SourceField,
   FieldOption,
@@ -33,6 +36,7 @@ import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
+import type { Build } from '../devplatform/types'
 
 const emit = defineEmits<{
   close: []
@@ -52,6 +56,8 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const modal = useModal()
+const authStore = useAuthStore()
+const installationStore = useInstallationStore()
 
 const sources = ref<Source[]>([])
 const currentSource = ref<Source | null>(null)
@@ -70,6 +76,61 @@ const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
 const sourceError = ref('')
+const workspaceId = ref<string | null>(null)
+const selectedBuildId = ref('')
+const workspaceMode = computed(() => workspaceId.value !== null)
+
+function installationBacksBuild(build: Build): boolean {
+  return installationStore.installations.some((installation) => {
+    if (
+      installation.status === 'failed' ||
+      installation.sourceId !== 'comfybuilder' ||
+      installation.workspaceId !== workspaceId.value
+    ) {
+      return false
+    }
+    if (installation.distributionId) return installation.distributionId === build.id
+    return installation.name.trim().toLowerCase() === build.name.trim().toLowerCase()
+  })
+}
+
+const workspaceBuilds = computed(() => {
+  if (!workspaceId.value || authStore.status.workspaceId !== workspaceId.value) return []
+  return authStore.builds.filter(
+    (build) =>
+      build.state === 'installable' &&
+      build.installedVersion === undefined &&
+      !installationBacksBuild(build)
+  )
+})
+const workspaceBuildOptions = computed<BaseSelectOption[]>(() =>
+  workspaceBuilds.value.map((build) => ({
+    value: build.id,
+    label: build.name,
+    description: build.description
+  }))
+)
+const selectedBuild = computed(
+  () => workspaceBuilds.value.find((build) => build.id === selectedBuildId.value) ?? null
+)
+
+watch(workspaceBuilds, (builds) => {
+  if (!workspaceMode.value) return
+  if (!builds.some((build) => build.id === selectedBuildId.value)) {
+    selectedBuildId.value = builds[0]?.id ?? ''
+  }
+})
+
+watch(selectedBuild, (build) => {
+  if (!workspaceMode.value || !build || instName.value.trim()) return
+  const buildId = build.id
+  void window.api
+    .getUniqueName(build.name)
+    .then((name) => {
+      if (selectedBuild.value?.id === buildId && !instName.value.trim()) suggestedName.value = name
+    })
+    .catch(() => {})
+})
 
 // Per-field state
 const fieldOptions = ref(new Map<string, FieldOption[]>())
@@ -116,7 +177,7 @@ function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
     entrypoint: entrypoint.value,
-    source_id: currentSource.value?.id ?? null,
+    source_id: workspaceMode.value ? 'comfybuilder' : (currentSource.value?.id ?? null),
     variant: variantId ? toVariantBucket(variantId) : null,
     express: false
   }
@@ -338,6 +399,9 @@ const urlFieldError = computed(() => {
 
 // Continue gate. `skipInstall` sources (Remote Connection) have no install path, so the path-issue guard is skipped for them.
 const canContinue = computed(() => {
+  if (workspaceMode.value) {
+    return Boolean(selectedBuild.value && !nameError.value && pathIssues.value.length === 0)
+  }
   if (!currentSource.value) return false
   if (nameError.value || urlFieldError.value) return false
   if (currentSource.value.skipInstall) return !saveDisabled.value
@@ -425,6 +489,8 @@ interface OpenOpts {
   cameFromLocalBranch?: boolean
   /** Where this wizard was opened from (`first_use`, `chooser`, `titlebar`, `url`); carried onto the install.dispatched / install.not_started funnel events. */
   entrypoint?: string
+  /** Active workspace whose compatible Builds replace the generic source controls. */
+  workspaceId?: string
 }
 
 const cameFromLocalBranch = ref(false)
@@ -433,16 +499,20 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
   const gen = loadGeneration
   instName.value = ''
+  workspaceId.value = opts.workspaceId?.trim() || null
+  selectedBuildId.value = ''
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
-  void window.api
-    .getUniqueName(DEFAULT_INSTALL_NAME)
-    .then((name) => {
-      suggestedName.value = name
-    })
-    .catch(() => {})
+  if (!workspaceMode.value) {
+    void window.api
+      .getUniqueName(DEFAULT_INSTALL_NAME)
+      .then((name) => {
+        suggestedName.value = name
+      })
+      .catch(() => {})
+  }
   instPath.value = ''
   selections.value = {}
   currentSource.value = null
@@ -464,29 +534,39 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   pickerEnabled.value = true
   hasLocalInstall.value = false
 
-  // Resolve picker gating in the background — needed only by the time the user
-  // reaches the (later) template step, so they never block the Configure
-  // screen's first paint. Generation-guarded so a reopen discards stale results.
-  void window.api
-    .getSetting('skipTemplatePickerStep')
-    .then((skip) => {
-      if (gen !== loadGeneration) return
-      pickerEnabled.value = skip !== true
-    })
-    .catch(() => {})
-  void window.api
-    .getInstallationsSummary()
-    .then((summary) => {
-      if (gen !== loadGeneration) return
-      hasLocalInstall.value = summary.localCount > 0
-    })
-    .catch(() => {})
+  if (!workspaceMode.value) {
+    // Resolve picker gating in the background - needed only by the time the user
+    // reaches the later template step, so it never blocks Configure's first paint.
+    void window.api
+      .getSetting('skipTemplatePickerStep')
+      .then((skip) => {
+        if (gen !== loadGeneration) return
+        pickerEnabled.value = skip !== true
+      })
+      .catch(() => {})
+    void window.api
+      .getInstallationsSummary()
+      .then((summary) => {
+        if (gen !== loadGeneration) return
+        hasLocalInstall.value = summary.localCount > 0
+      })
+      .catch(() => {})
+  }
 
   try {
-    const [, installDir] = await Promise.all([loadSources(), installDirPromise])
+    const installDir = await installDirPromise
 
     defaultInstPath.value = installDir ?? ''
     instPath.value = defaultInstPath.value
+
+    if (workspaceMode.value) {
+      if (authStore.builds.length === 0 && !authStore.loadingBuilds) {
+        void authStore.fetchBuilds()
+      }
+      return
+    }
+
+    await loadSources()
 
     // Pre-select Standalone (the recommended method); other sources are reachable via the Advanced method-picker chips.
     hardwareValidation = await window.api.validateHardware()
@@ -729,7 +809,76 @@ function handleOpenInstPath(): void {
   if (instPath.value) void window.api.openPath(instPath.value)
 }
 
+async function validateSelectedInstallRoot(): Promise<boolean> {
+  if (!instPath.value) return true
+  try {
+    const issues = await window.api.validateInstallPath(instPath.value)
+    return showPathIssueAlerts(issues, 'wizard', 'save', modal.alert, t)
+  } catch {
+    return true
+  }
+}
+
+async function handOffInstall(
+  result: InstallBuildResult,
+  failureTitle: string,
+  templateSelected: boolean
+): Promise<void> {
+  if (!result.ok) {
+    emitTelemetryAction('comfy.desktop.install.not_started', {
+      ...installHandoffProps(),
+      reason: 'add_installation_failed',
+      error_bucket: toErrorBucket(result.message || '')
+    })
+    await modal.alert({ title: failureTitle, message: result.message || '' })
+    return
+  }
+  if (result.entry) {
+    resolved.value = true
+    emitTelemetryAction('comfy.desktop.install.dispatched', {
+      ...installHandoffProps(),
+      installation_id: result.entry.id,
+      template_selected: templateSelected
+    })
+    emit('show-progress', {
+      installationId: result.entry.id,
+      title: `${t('newInstall.installing')} - ${result.entry.name}`,
+      apiCall: () => window.api.installInstance(result.entry!.id),
+      autoLaunchOnFinish: true,
+      opKind: 'install'
+    })
+    return
+  }
+  resolved.value = true
+  emitTelemetryAction('comfy.desktop.install.not_started', {
+    ...installHandoffProps(),
+    reason: 'dispatch_no_entry',
+    installation_id: null
+  })
+  emit('close')
+}
+
+async function handleWorkspaceBuildSave(): Promise<void> {
+  const build = selectedBuild.value
+  if (!build || !(await validateSelectedInstallRoot())) return
+  const result = await window.api.comfybuilder
+    .installBuild({
+      buildId: build.id,
+      ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
+      ...(instPath.value.trim() ? { installRoot: instPath.value.trim() } : {})
+    })
+    .catch((error: unknown) => ({
+      ok: false,
+      message: error instanceof Error ? error.message : String(error)
+    }))
+  await handOffInstall(result, t('errors.installFailed'), false)
+}
+
 async function handleSave(): Promise<void> {
+  if (workspaceMode.value) {
+    await handleWorkspaceBuildSave()
+    return
+  }
   const source = currentSource.value
   if (!source) return
 
@@ -779,17 +928,7 @@ async function handleSave(): Promise<void> {
     return
   }
 
-  // Validate install path against restricted locations
-  if (instPath.value) {
-    try {
-      const issues = await window.api.validateInstallPath(instPath.value)
-      if (!(await showPathIssueAlerts(issues, 'wizard', 'save', modal.alert, t))) {
-        return
-      }
-    } catch {
-      // If validation fails, proceed anyway
-    }
-  }
+  if (!(await validateSelectedInstallRoot())) return
 
   // Check disk space before proceeding
   if (instPath.value) {
@@ -837,49 +976,7 @@ async function handleSave(): Promise<void> {
     installPath: instPath.value,
     ...instData
   })
-  if (!result.ok) {
-    // Onboarding→install drop-off (#1224): the user reached save but no install
-    // record could be created. Leave `resolved` false — the wizard stays open
-    // and a later retry / cancel is still the truthful terminal outcome.
-    emitTelemetryAction('comfy.desktop.install.not_started', {
-      ...installHandoffProps(),
-      reason: 'add_installation_failed',
-      error_bucket: toErrorBucket(result.message || '')
-    })
-    await modal.alert({
-      title: t('errors.cannotAdd'),
-      message: result.message || ''
-    })
-    return
-  }
-  if (result.entry) {
-    // Reliable "install actually began" gate that pairs 1:1 with
-    // first_use.completed (#1224).
-    resolved.value = true
-    emitTelemetryAction('comfy.desktop.install.dispatched', {
-      ...installHandoffProps(),
-      installation_id: result.entry.id,
-      template_selected: templateHasModels.value
-    })
-    // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
-    emit('show-progress', {
-      installationId: result.entry.id,
-      title: `${t('newInstall.installing')} — ${result.entry.name}`,
-      apiCall: () => window.api.installInstance(result.entry!.id),
-      autoLaunchOnFinish: true,
-      opKind: 'install'
-    })
-    return
-  }
-  // Defensive: addInstallation reported ok but produced no entry.
-  // Dismiss the wizard so the user isn't stuck on it.
-  resolved.value = true
-  emitTelemetryAction('comfy.desktop.install.not_started', {
-    ...installHandoffProps(),
-    reason: 'dispatch_no_entry',
-    installation_id: null
-  })
-  emit('close')
+  await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)
 }
 
 function getSelectOptions(field: SourceField): BaseSelectOption[] {
@@ -1024,7 +1121,38 @@ defineExpose({ open })
             </div>
           </TooltipWrap>
 
-          <div ref="advancedRef" class="config-advanced" :class="{ 'is-open': advancedOpen }">
+          <div v-if="workspaceMode" class="config-field" data-testid="workspace-build-field">
+            <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
+            <BaseSelect
+              v-model="selectedBuildId"
+              :options="workspaceBuildOptions"
+              :placeholder="$t('newInstall.selectWorkspaceBuild')"
+              :disabled="authStore.loadingBuilds || workspaceBuildOptions.length === 0"
+              :aria-label="$t('newInstall.workspaceBuildLabel')"
+            />
+            <button
+              v-if="authStore.buildsError"
+              type="button"
+              class="wizard-error wizard-build-retry"
+              :disabled="authStore.loadingBuilds"
+              @click="authStore.fetchBuilds()"
+            >
+              {{ $t('devPlatform.build.loadError') }}
+            </button>
+            <div
+              v-else-if="!authStore.loadingBuilds && workspaceBuildOptions.length === 0"
+              class="wizard-loading"
+            >
+              {{ $t('newInstall.noCompatibleBuilds') }}
+            </div>
+          </div>
+
+          <div
+            v-else
+            ref="advancedRef"
+            class="config-advanced"
+            :class="{ 'is-open': advancedOpen }"
+          >
             <button
               type="button"
               class="config-advanced__summary"
@@ -1503,6 +1631,18 @@ defineExpose({ open })
 }
 .config-select--readonly .config-select__value {
   color: var(--text-muted);
+}
+
+.wizard-build-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wizard-build-retry:hover:not(:disabled) {
+  text-decoration: underline;
 }
 .config-select__value {
   flex: 1 1 auto;
