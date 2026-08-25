@@ -1,0 +1,42 @@
+name: Starter templates
+
+# Guards `assets/starter-templates.json`, which desktop reads from R2 at boot.
+# A bad edit is silent in the app: a short tab quietly backfills and a paid
+# auto-pick spends the user's credits, so it has to fail here instead.
+on:
+  pull_request:
+    paths:
+      - 'assets/starter-templates.json'
+      - 'scripts/starter-templates.mjs'
+      - '.github/workflows/starter-templates.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'assets/starter-templates.json'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Checks the tab counts and the one-paid-per-tab rule, and confirms every
+      # id still exists upstream.
+      - run: node scripts/starter-templates.mjs validate
+
+      # A hand-edit that skipped the script would drift from the index, so
+      # regenerating must be a no-op.
+      - name: display fields match the live index
+        run: |
+          node scripts/starter-templates.mjs regenerate >/dev/null
+          if ! git diff --quiet -- assets/starter-templates.json; then
+            echo "::error::Display fields are stale or hand-edited."
+            echo "Run: node scripts/starter-templates.mjs regenerate"
+            git diff -- assets/starter-templates.json
+            exit 1
+          fi
