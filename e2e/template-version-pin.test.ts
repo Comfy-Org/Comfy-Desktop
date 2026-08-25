@@ -20,6 +20,14 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { resolveStarterTemplateCards, type StarterTemplateCardLike } from './support/devHooks'
 
+/** The picker option shape, as it crosses `window.api.getFieldOptions`. */
+interface PickerOption {
+  value: string
+  label: string
+  recommended?: boolean
+  data?: { apiNode?: boolean }
+}
+
 /** In the index v0.30.2 pins, absent from the one v0.28.2 pins. */
 const NEWER_ONLY_TEMPLATE = 'video_minimax_h3_t2v'
 const OLDER_COMFY = 'v0.28.2'
@@ -103,4 +111,55 @@ test('the latest channel resolves against main @windows @macos @linux', async ()
   // Latest fast-forwards past the newest stable tag, so pinning it to that tag
   // would hide templates the install does support.
   expect(withThumb!.thumbnailUrl, 'latest must not wear an older tag').toContain('/main/')
+})
+
+/**
+ * The tests above call the resolver directly. These go through the renderer's
+ * own IPC instead, the same call the install wizard makes, so the wiring
+ * between a picked release/version and the cards the picker renders is covered
+ * rather than assumed.
+ */
+async function pickerOptions(release: string, comfyVersion?: string): Promise<PickerOption[]> {
+  const selections: Record<string, unknown> = {
+    release: { value: release, label: release, data: { latestStableTag: NEWER_COMFY } }
+  }
+  if (comfyVersion) selections.comfyVersion = { value: comfyVersion, label: comfyVersion }
+  return await ctx.panel.evaluate<PickerOption[]>(
+    `window.api.getFieldOptions('standalone', 'bundledTemplate', ${JSON.stringify(selections)})`
+  )
+}
+
+test('the wizard renders version-correct cards through its own IPC @windows @macos @linux', async () => {
+  const older = await pickerOptions('stable', OLDER_COMFY)
+  const newer = await pickerOptions('stable', NEWER_COMFY)
+  test.skip(older.length === 0 || newer.length === 0, 'needs network access')
+
+  const ids = (options: PickerOption[]): string[] => options.map((o) => o.value)
+  test.skip(!ids(newer).includes(NEWER_ONLY_TEMPLATE), 'template index unreachable')
+
+  expect(
+    ids(older),
+    `picking ${OLDER_COMFY} must not surface a card that release cannot open`
+  ).not.toContain(NEWER_ONLY_TEMPLATE)
+  expect(ids(newer), `${NEWER_COMFY} ships it, so it must still be offered`).toContain(
+    NEWER_ONLY_TEMPLATE
+  )
+})
+
+test('the wizard always offers a skip plus four cards per tab @windows @macos @linux', async () => {
+  const options = await pickerOptions('stable', OLDER_COMFY)
+  test.skip(options.length === 0, 'needs network access')
+
+  // "None" leads the list, then four cards in each of four modalities.
+  expect(options[0]!.value, 'the skip option must come first').toBe('none')
+  expect(options.length, 'skip + 4 cards x 4 tabs').toBe(17)
+
+  const recommended = options.filter((o) => o.recommended)
+  expect(recommended, 'one auto-pick per tab').toHaveLength(4)
+  for (const option of recommended) {
+    expect(
+      option.data?.apiNode,
+      `${option.value} is auto-selected, so it must not spend credits`
+    ).toBeFalsy()
+  }
 })
