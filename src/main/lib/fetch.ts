@@ -75,13 +75,47 @@ function _headerString(value: string | string[] | undefined): string | undefined
 // entirely. Splitting these lets the mirror-retry below run WITHOUT leaking the
 // primary's ETag to the mirror (cached: undefined) and WITHOUT poisoning the
 // primary's persisted cache entry with mirror-tagged data (cacheKey: undefined).
+function parseJson(body: string, url: string): unknown {
+  try {
+    return JSON.parse(body)
+  } catch {
+    throw new Error(`Invalid JSON response from ${url}`)
+  }
+}
+
 function fetchJSONOnce(
   url: string,
   cached: CacheEntry | undefined,
-  cacheKey: string | undefined
+  cacheKey: string | undefined,
+  parse: (body: string, url: string) => unknown = parseJson,
+  timeoutMs?: number
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const request = net.request({ url, cache: 'no-cache' })
+    // `net.request` has no timeout of its own, so a stalled connection would
+    // hang every caller awaiting it. `settled` keeps a late timer from
+    // rejecting a request that already finished.
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish =
+      <T>(fn: (v: T) => void) =>
+      (value: T) => {
+        if (settled) return
+        settled = true
+        if (timer) clearTimeout(timer)
+        fn(value)
+      }
+    const done = finish(resolve)
+    const fail = finish(reject)
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(() => {
+        try {
+          request.abort()
+        } catch {}
+        fail(new Error(`Timed out after ${timeoutMs}ms fetching ${url}`))
+      }, timeoutMs)
+      timer.unref?.()
+    }
     request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
 
     const ghToken = process.env.GITHUB_TOKEN
@@ -104,7 +138,7 @@ function fetchJSONOnce(
       response.on('data', (chunk) => (data += chunk.toString()))
       response.on('end', () => {
         if (response.statusCode === 304 && cached) {
-          resolve(structuredClone(cached.data))
+          done(structuredClone(cached.data))
           return
         }
         if (response.statusCode !== 200) {
@@ -125,14 +159,14 @@ function fetchJSONOnce(
               msg += ' (rate limited)'
             }
           }
-          reject(new Error(msg))
+          fail(new Error(msg))
           return
         }
         let parsed: unknown
         try {
-          parsed = JSON.parse(data)
-        } catch {
-          reject(new Error(`Invalid JSON response from ${url}`))
+          parsed = parse(data, url)
+        } catch (err) {
+          fail(err instanceof Error ? err : new Error(String(err)))
           return
         }
         if (cacheKey) {
@@ -141,10 +175,10 @@ function fetchJSONOnce(
             _cacheSet(cacheKey, { etag, data: parsed })
           }
         }
-        resolve(parsed)
+        done(parsed)
       })
     })
-    request.on('error', (err) => reject(err))
+    request.on('error', (err) => fail(err))
     request.end()
   })
 }
@@ -155,14 +189,39 @@ export function _resetCacheForTest(): void {
   _loaded = false
 }
 
-export async function fetchJSON(url: string, opts?: { refresh?: boolean }): Promise<unknown> {
+/**
+ * Plain-text sibling of `fetchJSON`, sharing its `net.request` stack, ETag
+ * cache, and R2-mirror retry. Used for manifests that are not JSON, such as
+ * ComfyUI's `requirements.txt`.
+ */
+export async function fetchText(
+  url: string,
+  opts?: { refresh?: boolean; timeoutMs?: number }
+): Promise<string> {
+  const body = await fetchOne(url, opts, (text) => text)
+  if (typeof body !== 'string') throw new Error(`Expected a text body from ${url}`)
+  return body
+}
+
+export async function fetchJSON(
+  url: string,
+  opts?: { refresh?: boolean; timeoutMs?: number }
+): Promise<unknown> {
+  return fetchOne(url, opts, parseJson)
+}
+
+async function fetchOne(
+  url: string,
+  opts: { refresh?: boolean; timeoutMs?: number } | undefined,
+  parse: (body: string, url: string) => unknown
+): Promise<unknown> {
   _ensureLoaded()
   // `refresh` ignores the persisted ETag so the response is never served from cache. Used
   // for R2 manifests where a stale value would strand users on an old release.
   const cached = opts?.refresh ? undefined : _cache.get(url)
 
   try {
-    return await fetchJSONOnce(url, cached, url)
+    return await fetchJSONOnce(url, cached, url, parse, opts?.timeoutMs)
   } catch (primaryErr) {
     // If this is an R2 URL with a configured mirror, retry once against it
     // before falling back to the persisted cache. The retry deliberately
@@ -172,7 +231,7 @@ export async function fetchJSON(url: string, opts?: { refresh?: boolean }): Prom
     const mirror = r2MirrorUrl(url)
     if (mirror && mirror !== url) {
       try {
-        return await fetchJSONOnce(mirror, undefined, undefined)
+        return await fetchJSONOnce(mirror, undefined, undefined, parse, opts?.timeoutMs)
       } catch {
         // fall through to cache / primary error
       }

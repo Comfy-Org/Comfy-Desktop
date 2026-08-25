@@ -555,7 +555,23 @@ export const standalone: SourcePlugin = {
       // "None" comes first as the skip option; the per-modality recommended
       // picks carry `recommended` on their own option so the wizard auto-selects
       // a real template (the lightest "wow"), not the skip.
-      const catalog = await loadTemplateCatalog()
+      // Resolve the picker against the ComfyUI the install will actually run,
+      // so a template that version cannot open is never offered. Only honour a
+      // comfyVersion pick on the stable channel: `getFieldOptions` returns []
+      // for 'latest', so a value left over from a channel toggle is stale.
+      const releaseData = selections.release?.data as
+        | { latestStableTag?: string | null }
+        | undefined
+      const isStableChannel = selections.release?.value === 'stable'
+      const pickedTag =
+        isStableChannel &&
+        typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+          ? selections.comfyVersion.value
+          : null
+      const targetComfyVersion =
+        pickedTag ?? releaseData?.latestStableTag ?? (await getLatestStableTag())
+      const catalog = await loadTemplateCatalog({ comfyVersion: targetComfyVersion })
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
       const installation = installId ? await installations.get(installId) : null
