@@ -10,6 +10,13 @@ import type { FieldOption, Installation, ShowProgressOpts, Source } from '../typ
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
 import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
 
+/** Mirrors `InstallWizardModal.vue`'s `NO_TEMPLATE_VALUE` — the "None"
+ *  sentinel value for the `bundledTemplate` field's options. Kept as a
+ *  local copy (not imported) because the canonical constant lives in the
+ *  main-process `standalone/curatedTemplates.ts` module, which the
+ *  renderer doesn't reach into. */
+const NO_TEMPLATE_VALUE = 'none'
+
 export interface FirstUseChainOpts {
   /** Routes the migrate-to-standalone op through the shared overlay
    *  pipeline (Tier 2 progress modal) and lets `usePanelOverlays`
@@ -365,7 +372,15 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
           })
           return false
         }
-        const pick = options.find((o) => o.recommended) ?? options[0]
+        // The starter-template field must never default to a `recommended`
+        // pick (e.g. MiniMax) — that silently pre-selects a workflow, and
+        // the ~57GB of models it pulls in, before the user has chosen
+        // anything. It always defaults to the "None" sentinel, matching
+        // the Configure picker's same carve-out (see `InstallWizardModal.vue`).
+        const pick =
+          field.id === 'bundledTemplate'
+            ? options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0]
+            : options.find((o) => o.recommended) ?? options[0]
         if (!pick) {
           emitTelemetryAction('comfy.desktop.install.express.fallback', {
             reason: 'precondition_failed'
