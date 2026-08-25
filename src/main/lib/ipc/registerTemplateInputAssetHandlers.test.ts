@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   getInstallation: vi.fn(),
   handle: vi.fn(),
   resolveAvailability: vi.fn(),
-  resolveAssets: vi.fn(),
   resolveSnapshot: vi.fn(),
   resolveInputDir: vi.fn(),
   getActiveAssetDownload: vi.fn(),
@@ -23,7 +22,6 @@ vi.mock('../../installations', () => ({
 
 vi.mock('../../sources/standalone/templateInputAssets', () => ({
   resolveTemplateInputAssetAvailability: mocks.resolveAvailability,
-  resolveTemplateInputAssets: mocks.resolveAssets,
   resolveTemplateInputAssetSnapshot: mocks.resolveSnapshot,
   resolveInputDir: mocks.resolveInputDir
 }))
@@ -33,10 +31,7 @@ vi.mock('../comfyDownloadManager', () => ({
   startManagedAssetDownload: mocks.startManagedAssetDownload
 }))
 
-const modulePath = './registerTemplateInputAssetHandlers'
-const handlerModule = await import(/* @vite-ignore */ modulePath).catch(() => ({
-  registerTemplateInputAssetHandlers: () => undefined
-}))
+import { registerTemplateInputAssetHandlers } from './registerTemplateInputAssetHandlers'
 
 type IpcHandler = (event: { sender: object }, payload: Record<string, unknown>) => Promise<unknown>
 
@@ -50,19 +45,31 @@ describe('registerTemplateInputAssetHandlers', () => {
   const sender = {}
   const win = { webContents: sender }
   const installation = { id: 'install-1', sourceId: 'standalone' }
+  const declaredAsset = {
+    assetId: 'sample-asset',
+    filename: 'sample.png',
+    url: 'https://example.com/sample.png'
+  }
+
+  function getAssets(templateId = 'template-1') {
+    return handler('desktop2-get-template-input-assets')({ sender }, { templateId })
+  }
+
+  function downloadAsset(assetId = declaredAsset.assetId, templateId = 'template-1') {
+    return handler('desktop2-download-template-input-asset')({ sender }, { templateId, assetId })
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.fromWebContents.mockReturnValue(win)
     mocks.getInstallation.mockResolvedValue(installation)
     mocks.resolveInputDir.mockReturnValue('/comfy/input')
-    mocks.resolveSnapshot.mockImplementation((...args) => mocks.resolveAssets(...args))
     const options = {
       findInstallationIdForWindow: () => 'install-1',
       isLocalInstallation: (candidate: { sourceId?: unknown }) =>
         candidate.sourceId === 'standalone'
     }
-    handlerModule.registerTemplateInputAssetHandlers(options)
+    registerTemplateInputAssetHandlers(options)
   })
 
   it('registers only template-scoped metadata and download channels', () => {
@@ -73,7 +80,7 @@ describe('registerTemplateInputAssetHandlers', () => {
   })
 
   it('returns template-scoped preview metadata, local availability, and active state', async () => {
-    mocks.resolveAssets.mockResolvedValue([
+    mocks.resolveSnapshot.mockResolvedValue([
       {
         assetId: 'sample.png',
         filename: 'sample.png',
@@ -93,9 +100,7 @@ describe('registerTemplateInputAssetHandlers', () => {
       status: 'downloading'
     })
 
-    await expect(
-      handler('desktop2-get-template-input-assets')({ sender }, { templateId: 'template-1' })
-    ).resolves.toEqual([
+    await expect(getAssets()).resolves.toEqual([
       {
         assetId: 'sample.png',
         filename: 'sample.png',
@@ -112,7 +117,7 @@ describe('registerTemplateInputAssetHandlers', () => {
         }
       }
     ])
-    expect(mocks.resolveAssets).toHaveBeenCalledWith(installation, 'template-1')
+    expect(mocks.resolveSnapshot).toHaveBeenCalledWith(installation, 'template-1')
     expect(mocks.resolveAvailability).toHaveBeenCalledWith(installation, ['sample.png'])
     expect(mocks.getActiveAssetDownload).toHaveBeenCalledWith(
       'https://example.com/sample.png',
@@ -122,24 +127,18 @@ describe('registerTemplateInputAssetHandlers', () => {
   })
 
   it('rejects invalid template metadata requests before resolving files', async () => {
-    await expect(
-      handler('desktop2-get-template-input-assets')({ sender }, { templateId: '../template-1' })
-    ).resolves.toBeNull()
-    expect(mocks.resolveAssets).not.toHaveBeenCalled()
+    await expect(getAssets('../template-1')).resolves.toBeNull()
+    expect(mocks.resolveSnapshot).not.toHaveBeenCalled()
   })
 
   it('does not claim there are no inputs when template metadata is unavailable', async () => {
-    mocks.resolveAssets.mockResolvedValue(null)
+    mocks.resolveSnapshot.mockResolvedValue(null)
 
-    await expect(
-      handler('desktop2-get-template-input-assets')({ sender }, { templateId: 'template-1' })
-    ).resolves.toBeNull()
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'sample.png' }
-      )
-    ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
+    await expect(getAssets()).resolves.toBeNull()
+    await expect(downloadAsset()).resolves.toEqual({
+      status: 'not-started',
+      reason: 'unavailable'
+    })
     expect(mocks.resolveAvailability).not.toHaveBeenCalled()
     expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
@@ -147,34 +146,26 @@ describe('registerTemplateInputAssetHandlers', () => {
   it('fails closed when the sender is not bound to an installation', async () => {
     mocks.fromWebContents.mockReturnValue(null)
 
-    await expect(
-      handler('desktop2-get-template-input-assets')({ sender }, { templateId: 'template-1' })
-    ).resolves.toBeNull()
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'sample.png' }
-      )
-    ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
+    await expect(getAssets()).resolves.toBeNull()
+    await expect(downloadAsset()).resolves.toEqual({
+      status: 'not-started',
+      reason: 'unavailable'
+    })
   })
 
   it('fails closed for a remote installation even when the sender is bound', async () => {
     mocks.getInstallation.mockResolvedValue({ id: 'cloud', sourceId: 'cloud' })
 
-    await expect(
-      handler('desktop2-get-template-input-assets')({ sender }, { templateId: 'template-1' })
-    ).resolves.toBeNull()
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'sample.png' }
-      )
-    ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
-    expect(mocks.resolveAssets).not.toHaveBeenCalled()
+    await expect(getAssets()).resolves.toBeNull()
+    await expect(downloadAsset()).resolves.toEqual({
+      status: 'not-started',
+      reason: 'unavailable'
+    })
+    expect(mocks.resolveSnapshot).not.toHaveBeenCalled()
   })
 
   it('does not accept an asset id that the template does not declare', async () => {
-    mocks.resolveAssets.mockResolvedValue([
+    mocks.resolveSnapshot.mockResolvedValue([
       {
         assetId: 'declared-asset',
         filename: 'declared.png',
@@ -182,41 +173,23 @@ describe('registerTemplateInputAssetHandlers', () => {
       }
     ])
 
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'other-asset' }
-      )
-    ).resolves.toEqual({ status: 'not-started', reason: 'not-declared' })
+    await expect(downloadAsset('other-asset')).resolves.toEqual({
+      status: 'not-started',
+      reason: 'not-declared'
+    })
     expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
 
   it('reports an exact file already present without creating a duplicate', async () => {
-    mocks.resolveAssets.mockResolvedValue([
-      {
-        assetId: 'sample-asset',
-        filename: 'sample.png',
-        url: 'https://example.com/sample.png'
-      }
-    ])
+    mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
     mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'present' }])
 
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'sample-asset' }
-      )
-    ).resolves.toEqual({ status: 'already-present' })
+    await expect(downloadAsset()).resolves.toEqual({ status: 'already-present' })
     expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
 
   it('hands a missing declared asset to the exact input-dir download owner', async () => {
-    const asset = {
-      assetId: 'opaque-asset-id',
-      filename: 'sample.png',
-      url: 'https://example.com/sample.png'
-    }
-    mocks.resolveAssets.mockResolvedValue([asset])
+    mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
     mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'missing' }])
     mocks.startManagedAssetDownload.mockResolvedValue({
       status: 'accepted',
@@ -230,12 +203,7 @@ describe('registerTemplateInputAssetHandlers', () => {
       status: 'pending'
     })
 
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'opaque-asset-id' }
-      )
-    ).resolves.toEqual({
+    await expect(downloadAsset()).resolves.toEqual({
       status: 'accepted',
       download: {
         downloadId: 'download-1',
@@ -246,8 +214,8 @@ describe('registerTemplateInputAssetHandlers', () => {
     })
     expect(mocks.startManagedAssetDownload).toHaveBeenCalledWith(
       win,
-      asset.url,
-      asset.filename,
+      declaredAsset.url,
+      declaredAsset.filename,
       '/comfy/input',
       undefined,
       sender,
@@ -256,21 +224,10 @@ describe('registerTemplateInputAssetHandlers', () => {
   })
 
   it('does not dispatch when filesystem availability is unknown', async () => {
-    mocks.resolveAssets.mockResolvedValue([
-      {
-        assetId: 'sample-asset',
-        filename: 'sample.png',
-        url: 'https://example.com/sample.png'
-      }
-    ])
+    mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
     mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'unknown' }])
 
-    await expect(
-      handler('desktop2-download-template-input-asset')(
-        { sender },
-        { templateId: 'template-1', assetId: 'sample-asset' }
-      )
-    ).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
+    await expect(downloadAsset()).resolves.toEqual({ status: 'not-started', reason: 'unavailable' })
     expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
 })

@@ -724,12 +724,17 @@ describe('asset download retries', () => {
       expect(otherDestination.downloadId).not.toBe(first.downloadId)
       expect(h.session.downloadURL).toHaveBeenCalledTimes(2)
 
-      for (const outputDir of [firstDir, secondDir]) {
+      const downloads = [firstDir, secondDir].map((outputDir) => {
         const item = h.createItem(url)
         h.getWillDownload()!({}, item.item, null)
         const tempPath = item.setSavePath.mock.calls[0]?.[0]
         expect(tempPath).toBeTypeOf('string')
-        await fs.promises.writeFile(tempPath!, outputDir)
+        return { item, outputDir, tempPath: tempPath! }
+      })
+      for (const { outputDir, tempPath } of downloads) {
+        await fs.promises.writeFile(tempPath, outputDir)
+      }
+      for (const { item } of downloads) {
         item.getDone()!({}, 'completed')
       }
     } finally {

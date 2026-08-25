@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ComfyDesktop2BridgeImplementation,
   ComfyDownloadProgress,
+  ComfyTemplateInputAssetDownload,
   TerminalRestore
 } from '../types/comfyDesktopBridge'
 
@@ -41,6 +42,32 @@ function downloadProgressHandler(): (event: unknown, progress: ComfyDownloadProg
   const call = mocks.on.mock.calls.find(([channel]) => channel === 'desktop2-download-progress')
   expect(call).toBeDefined()
   return call![1] as (event: unknown, progress: ComfyDownloadProgress) => void
+}
+
+const sampleUrl = 'https://example.com/sample.png'
+
+function downloadSnapshot(
+  downloadId: string,
+  status: ComfyDownloadProgress['status'] = 'pending',
+  progress = 0
+): ComfyTemplateInputAssetDownload {
+  return { downloadId, filename: 'sample.png', progress, status }
+}
+
+function downloadProgress(
+  id: string,
+  status: ComfyDownloadProgress['status'] = 'pending',
+  progress = 0,
+  error?: string
+): ComfyDownloadProgress {
+  return {
+    id,
+    url: sampleUrl,
+    filename: 'sample.png',
+    progress,
+    status,
+    ...(error === undefined ? {} : { error })
+  }
 }
 
 describe('comfyPreload model access bridge', () => {
@@ -105,24 +132,10 @@ describe('comfyPreload template input asset bridge', () => {
     const callback = vi.fn()
     const unsubscribe = bridge.onTemplateInputDownloadProgress(callback)
     mocks.invoke.mockImplementationOnce(async () => {
-      downloadProgressHandler()(
-        {},
-        {
-          id: 'download-1',
-          url: 'https://example.com/sample.png',
-          filename: 'sample.png',
-          progress: 0,
-          status: 'pending'
-        }
-      )
+      downloadProgressHandler()({}, downloadProgress('download-1'))
       return {
         status: 'accepted',
-        download: {
-          downloadId: 'download-1',
-          filename: 'sample.png',
-          progress: 0,
-          status: 'pending'
-        }
+        download: downloadSnapshot('download-1')
       }
     })
 
@@ -136,10 +149,7 @@ describe('comfyPreload template input asset bridge', () => {
     })
     expect(callback).toHaveBeenCalledTimes(1)
     expect(callback).toHaveBeenLastCalledWith({
-      downloadId: 'download-1',
-      filename: 'sample.png',
-      progress: 0,
-      status: 'pending',
+      ...downloadSnapshot('download-1'),
       templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
     })
     unsubscribe()
@@ -152,31 +162,18 @@ describe('comfyPreload template input asset bridge', () => {
     mocks.invoke
       .mockResolvedValueOnce({
         status: 'accepted',
-        download: {
-          downloadId: 'shared-download',
-          filename: 'sample.png',
-          progress: 0,
-          status: 'pending'
-        }
+        download: downloadSnapshot('shared-download')
       })
       .mockResolvedValueOnce({
         status: 'joined',
-        download: {
-          downloadId: 'shared-download',
-          filename: 'sample.png',
-          progress: 0.4,
-          status: 'downloading'
-        }
+        download: downloadSnapshot('shared-download', 'downloading', 0.4)
       })
 
     await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
     await bridge.downloadTemplateInputAsset('template-b', 'asset-b')
 
     expect(callback).toHaveBeenLastCalledWith({
-      downloadId: 'shared-download',
-      filename: 'sample.png',
-      progress: 0.4,
-      status: 'downloading',
+      ...downloadSnapshot('shared-download', 'downloading', 0.4),
       templateInputs: [
         { templateId: 'template-a', assetId: 'asset-a' },
         { templateId: 'template-b', assetId: 'asset-b' }
@@ -184,37 +181,16 @@ describe('comfyPreload template input asset bridge', () => {
     })
 
     const progress = downloadProgressHandler()
-    progress(
-      {},
-      {
-        id: 'shared-download',
-        url: 'https://example.com/sample.png',
-        filename: 'sample.png',
-        progress: 1,
-        status: 'completed'
-      }
-    )
+    progress({}, downloadProgress('shared-download', 'completed', 1))
     expect(callback).toHaveBeenLastCalledWith({
-      downloadId: 'shared-download',
-      filename: 'sample.png',
-      progress: 1,
-      status: 'completed',
+      ...downloadSnapshot('shared-download', 'completed', 1),
       templateInputs: [
         { templateId: 'template-a', assetId: 'asset-a' },
         { templateId: 'template-b', assetId: 'asset-b' }
       ]
     })
     const callsAfterCompletion = callback.mock.calls.length
-    progress(
-      {},
-      {
-        id: 'shared-download',
-        url: 'https://example.com/sample.png',
-        filename: 'sample.png',
-        progress: 0.5,
-        status: 'downloading'
-      }
-    )
+    progress({}, downloadProgress('shared-download', 'downloading', 0.5))
     expect(callback).toHaveBeenCalledTimes(callsAfterCompletion)
     unsubscribe()
   })
@@ -226,65 +202,24 @@ describe('comfyPreload template input asset bridge', () => {
     mocks.invoke
       .mockResolvedValueOnce({
         status: 'accepted',
-        download: {
-          downloadId: 'failed-download',
-          filename: 'sample.png',
-          progress: 0.6,
-          status: 'downloading'
-        }
+        download: downloadSnapshot('failed-download', 'downloading', 0.6)
       })
       .mockResolvedValueOnce({
         status: 'accepted',
-        download: {
-          downloadId: 'retry-download',
-          filename: 'sample.png',
-          progress: 0,
-          status: 'pending'
-        }
+        download: downloadSnapshot('retry-download')
       })
 
     await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
     const progress = downloadProgressHandler()
-    progress(
-      {},
-      {
-        id: 'failed-download',
-        url: 'https://example.com/sample.png',
-        filename: 'sample.png',
-        progress: 0.6,
-        status: 'error',
-        error: 'network error'
-      }
-    )
+    progress({}, downloadProgress('failed-download', 'error', 0.6, 'network error'))
     await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
     const callsAfterRetry = callback.mock.calls.length
-    progress(
-      {},
-      {
-        id: 'failed-download',
-        url: 'https://example.com/sample.png',
-        filename: 'sample.png',
-        progress: 1,
-        status: 'completed'
-      }
-    )
+    progress({}, downloadProgress('failed-download', 'completed', 1))
     expect(callback).toHaveBeenCalledTimes(callsAfterRetry)
 
-    progress(
-      {},
-      {
-        id: 'retry-download',
-        url: 'https://example.com/sample.png',
-        filename: 'sample.png',
-        progress: 0.25,
-        status: 'downloading'
-      }
-    )
+    progress({}, downloadProgress('retry-download', 'downloading', 0.25))
     expect(callback).toHaveBeenLastCalledWith({
-      downloadId: 'retry-download',
-      filename: 'sample.png',
-      progress: 0.25,
-      status: 'downloading',
+      ...downloadSnapshot('retry-download', 'downloading', 0.25),
       templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
     })
     unsubscribe()
@@ -302,10 +237,7 @@ describe('comfyPreload template input asset bridge', () => {
         previewUrl: 'https://example.com/sample.png',
         availability: 'missing',
         activeDownload: {
-          downloadId: 'active-download',
-          filename: 'sample.png',
-          progress: 0.2,
-          status: 'downloading'
+          ...downloadSnapshot('active-download', 'downloading', 0.2)
         }
       }
     ])
@@ -315,21 +247,9 @@ describe('comfyPreload template input asset bridge', () => {
       templateId: 'template-a'
     })
 
-    downloadProgressHandler()(
-      {},
-      {
-        id: 'active-download',
-        url: 'https://example.com/sample.png',
-        filename: 'sample.png',
-        progress: 0.5,
-        status: 'downloading'
-      }
-    )
+    downloadProgressHandler()({}, downloadProgress('active-download', 'downloading', 0.5))
     expect(callback).toHaveBeenLastCalledWith({
-      downloadId: 'active-download',
-      filename: 'sample.png',
-      progress: 0.5,
-      status: 'downloading',
+      ...downloadSnapshot('active-download', 'downloading', 0.5),
       templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
     })
     unsubscribe()

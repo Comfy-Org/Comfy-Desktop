@@ -12,30 +12,14 @@ vi.mock('./templateModels', () => ({
   loadTemplateJson: (...a: unknown[]) => loadTemplateJson(...a)
 }))
 
-import * as templateInputAssets from './templateInputAssets'
+import {
+  resolveInputDir,
+  resolveTemplateInputAssetAvailability,
+  resolveTemplateInputAssets,
+  resolveTemplateInputAssetSnapshot
+} from './templateInputAssets'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
-
-const { resolveTemplateInputAssets, resolveInputDir } = templateInputAssets
-const resolveTemplateInputAssetSnapshot =
-  (
-    templateInputAssets as typeof templateInputAssets & {
-      resolveTemplateInputAssetSnapshot?: (
-        installation: InstallationRecord,
-        templateId: string
-      ) => Promise<unknown>
-    }
-  ).resolveTemplateInputAssetSnapshot ?? resolveTemplateInputAssets
-const resolveTemplateInputAssetAvailability =
-  (
-    templateInputAssets as typeof templateInputAssets & {
-      resolveTemplateInputAssetAvailability?: (
-        installation: InstallationRecord,
-        filenames: readonly string[],
-        dependencies: { access: (filePath: string) => Promise<void> }
-      ) => Promise<unknown>
-    }
-  ).resolveTemplateInputAssetAvailability ?? (async () => [])
 
 const inst = { id: 'i1', bundledTemplateId: 't' } as unknown as InstallationRecord
 
