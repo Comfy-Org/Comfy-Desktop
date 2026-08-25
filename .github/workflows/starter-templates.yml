@@ -15,6 +15,7 @@ on:
     branches: [main]
     paths:
       - 'assets/starter-templates.json'
+      - '.github/workflows/starter-templates.yml'
 
 permissions:
   contents: read
@@ -47,3 +48,59 @@ jobs:
             git diff -- assets/starter-templates.json
             exit 1
           fi
+
+  # Merging to main publishes the list. Desktop reads it at boot, so users pick
+  # the change up on their next launch with no app release.
+  publish:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: starter-templates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Uploaded to both hosts: regions where R2's edge is throttled read the
+      # GCS mirror, and a list that exists on only one of them is invisible to
+      # half the users it was written for.
+      - name: publish to R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
+        run: |
+          npx --yes wrangler@3 r2 object put \
+            desktop-assets/standalone-environments/starter-templates.json \
+            --file assets/starter-templates.json \
+            --content-type application/json \
+            --remote
+
+      - name: publish to the GCS mirror
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_MIRROR_SA_KEY }}
+      - uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: assets/starter-templates.json
+          destination: comfy-desktop-public/standalone-environments
+          headers: |-
+            content-type: application/json
+
+      - name: confirm both hosts serve it
+        run: |
+          for url in \
+            https://desktop-assets.comfy.org/standalone-environments/starter-templates.json \
+            https://storage.googleapis.com/comfy-desktop-public/standalone-environments/starter-templates.json
+          do
+            code=$(curl -s -o /tmp/got.json -w '%{http_code}' "$url")
+            if [ "$code" != "200" ]; then
+              echo "::error::$url returned $code"
+              exit 1
+            fi
+            if ! diff -q /tmp/got.json assets/starter-templates.json >/dev/null; then
+              echo "::error::$url is serving different content than we just published"
+              exit 1
+            fi
+          done
+          echo "Published. Desktop users get this on their next launch."
