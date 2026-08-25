@@ -39,36 +39,29 @@ const LOAD_NODE_TYPES = new Set([
   'VHS_LoadVideo'
 ])
 
-/** Media extensions we'll place in `input/`. Excludes model/script types so a
- *  crafted widget value can't pull an arbitrary payload through this path. */
-const ALLOWED_INPUT_EXTENSIONS = [
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.gif',
-  '.bmp',
-  '.mp4',
-  '.webm',
-  '.mov',
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.ogg',
-  '.m4a'
-]
-
 type TemplateInputMediaType = TemplateInputAsset['mediaType']
 
-interface DeclaredInputAsset {
-  filename: string
-  mediaType: TemplateInputMediaType
+/** Media extensions we'll place in `input/`. Excludes model/script types so a
+ *  crafted widget value can't pull an arbitrary payload through this path. */
+const MEDIA_TYPE_BY_EXTENSION: Readonly<Record<string, TemplateInputMediaType>> = {
+  '.png': 'image',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.webp': 'image',
+  '.gif': 'image',
+  '.bmp': 'image',
+  '.mp4': 'video',
+  '.webm': 'video',
+  '.mov': 'video',
+  '.mp3': 'audio',
+  '.wav': 'audio',
+  '.flac': 'audio',
+  '.ogg': 'audio',
+  '.m4a': 'audio'
 }
 
-function mediaTypeForNode(nodeType: string): TemplateInputMediaType {
-  if (nodeType === 'LoadAudio') return 'audio'
-  if (nodeType === 'LoadVideo' || nodeType === 'VHS_LoadVideo') return 'video'
-  return 'image'
+function mediaTypeForFilename(filename: string): TemplateInputMediaType | undefined {
+  return MEDIA_TYPE_BY_EXTENSION[path.extname(filename).toLowerCase()]
 }
 
 /** A template-declared input filename must be a bare name (no separator, no
@@ -76,12 +69,11 @@ function mediaTypeForNode(nodeType: string): TemplateInputMediaType {
  *  pull a non-media payload. */
 function isSafeInputAsset(name: string): boolean {
   if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return false
-  const lower = name.toLowerCase()
-  return ALLOWED_INPUT_EXTENSIONS.some((ext) => lower.endsWith(ext))
+  return mediaTypeForFilename(name) !== undefined
 }
 
 /** Collect the first widget value (the filename) of every Load* node. */
-function walkLoadNodes(nodes: unknown, out: DeclaredInputAsset[]): void {
+function walkLoadNodes(nodes: unknown, out: string[]): void {
   if (!Array.isArray(nodes)) return
   for (const node of nodes) {
     if (!node || typeof node !== 'object') continue
@@ -92,9 +84,7 @@ function walkLoadNodes(nodes: unknown, out: DeclaredInputAsset[]): void {
       Array.isArray(n.widgets_values)
     ) {
       const first = n.widgets_values[0]
-      if (typeof first === 'string') {
-        out.push({ filename: first, mediaType: mediaTypeForNode(n.type) })
-      }
+      if (typeof first === 'string') out.push(first)
     }
     if (Array.isArray(n.nodes)) walkLoadNodes(n.nodes, out)
   }
@@ -102,7 +92,7 @@ function walkLoadNodes(nodes: unknown, out: DeclaredInputAsset[]): void {
 
 function extractTemplateInputAssets(json: object): TemplateInputAsset[] {
   const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
-  const declarations: DeclaredInputAsset[] = []
+  const declarations: string[] = []
   walkLoadNodes(doc.nodes, declarations)
   const subgraphs = doc.definitions?.subgraphs
   if (Array.isArray(subgraphs)) {
@@ -116,14 +106,15 @@ function extractTemplateInputAssets(json: object): TemplateInputAsset[] {
   const seen = new Set<string>()
   const result: TemplateInputAsset[] = []
   for (const declaration of declarations) {
-    const filename = stripQueryParams(declaration.filename)
-    if (!isSafeInputAsset(filename) || seen.has(filename)) continue
+    const filename = stripQueryParams(declaration)
+    const mediaType = mediaTypeForFilename(filename)
+    if (!isSafeInputAsset(filename) || !mediaType || seen.has(filename)) continue
     seen.add(filename)
     const url = `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}`
     result.push({
       assetId: filename,
       filename,
-      mediaType: declaration.mediaType,
+      mediaType,
       previewUrl: url,
       url
     })

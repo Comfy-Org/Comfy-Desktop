@@ -11,7 +11,11 @@ import {
   startManagedAssetDownload,
   type DownloadProgress
 } from '../comfyDownloadManager'
-import type { ComfyTemplateInputAssetDownload } from '../../../types/comfyDesktopBridge'
+import type {
+  ComfyTemplateInputAsset,
+  ComfyTemplateInputAssetDownload,
+  ComfyTemplateInputAssetDownloadResult
+} from '../../../types/comfyDesktopBridge'
 
 interface TemplateInputAssetHandlerOptions {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
@@ -53,7 +57,10 @@ export function registerTemplateInputAssetHandlers({
 
   ipcMain.handle(
     'desktop2-get-template-input-assets',
-    async (event, { templateId }: { templateId: unknown }) => {
+    async (
+      event,
+      { templateId }: { templateId: unknown }
+    ): Promise<ComfyTemplateInputAsset[] | null> => {
       if (!isPersistableTemplateId(templateId)) return null
       const context = await resolveRequestContext(event.sender)
       if (!context) return null
@@ -69,13 +76,14 @@ export function registerTemplateInputAssetHandlers({
       )
       const inputDir = resolveInputDir(context.installation)
 
-      return assets.map(({ url, ...asset }) => {
-        const activeDownload = toDownloadSnapshot(
-          getActiveAssetDownload(url, asset.filename, inputDir)
-        )
+      return assets.map(({ assetId, filename, mediaType, previewUrl, url }) => {
+        const activeDownload = toDownloadSnapshot(getActiveAssetDownload(url, filename, inputDir))
         return {
-          ...asset,
-          availability: availabilityByFilename.get(asset.filename) ?? 'unknown',
+          assetId,
+          filename,
+          mediaType,
+          previewUrl,
+          availability: availabilityByFilename.get(filename) ?? 'unknown',
           ...(activeDownload ? { activeDownload } : {})
         }
       })
@@ -84,7 +92,10 @@ export function registerTemplateInputAssetHandlers({
 
   ipcMain.handle(
     'desktop2-download-template-input-asset',
-    async (event, { templateId, assetId }: { templateId: unknown; assetId: unknown }) => {
+    async (
+      event,
+      { templateId, assetId }: { templateId: unknown; assetId: unknown }
+    ): Promise<ComfyTemplateInputAssetDownloadResult> => {
       if (!isPersistableTemplateId(templateId) || typeof assetId !== 'string') {
         return { status: 'not-started' as const, reason: 'invalid-request' as const }
       }

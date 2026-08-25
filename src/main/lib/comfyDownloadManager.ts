@@ -422,9 +422,8 @@ interface RetryParams {
   /** Install that initiated the download, so a retry resolves the same
    *  destination even after the originating comfy view is gone. */
   installationId?: string | null
-  /** Model jobs: the RESOLVED final destination of the original attempt.
-   *  Retry dedupe compares canonical destinations, never URL + directory -
-   *  two installs can share both while writing different files. */
+  /** Resolved final destination of the original attempt. Exact-destination
+   *  retries compare this path rather than the source URL. */
   savePath?: string
   /** Model jobs: expected sha256, so a retry keeps verifying integrity. */
   sha256?: string
@@ -1636,6 +1635,7 @@ export async function startManagedAssetDownload(
     authToken,
     window: win,
     senderContents,
+    savePath: requestedSavePath,
     existingFilePolicy
   })
 
@@ -2174,6 +2174,16 @@ export function retryDownload(ref: string): boolean {
     const destKey = canonicalDestKey(params.savePath)
     for (const active of pendingDownloads.values()) {
       if (active.kind === 'model' && canonicalDestKey(active.savePath) === destKey) return false
+    }
+  } else if (params.kind === 'asset' && params.existingFilePolicy === 'skip' && params.savePath) {
+    const destKey = canonicalDestKey(params.savePath)
+    for (const active of activeJobsForUrl(params.url)) {
+      if (
+        active.kind === 'asset' &&
+        canonicalDestKey(active.requestedSavePath ?? active.savePath) === destKey
+      ) {
+        return false
+      }
     }
   } else {
     for (const active of activeJobsForUrl(params.url)) {
