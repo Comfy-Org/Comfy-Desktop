@@ -1405,6 +1405,7 @@ defineExpose({ open })
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: var(--takeover-gap-md);
   justify-content: center;
   text-align: center;
   padding-block: clamp(1.5rem, 4vh, 3rem);
