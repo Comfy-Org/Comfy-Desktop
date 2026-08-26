@@ -35,6 +35,26 @@ describe('ComfyBuilderClient', () => {
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
   })
 
+  it("lists a build's releases at the right path and reads the releases envelope", async () => {
+    const f = mockFetch(200, { releases: [{ id: 'r1', version: 3, status: 'ready' }] })
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
+    const versions = await client.listVersions('d1')
+    expect(versions).toEqual([{ id: 'r1', version: 3, status: 'ready' }])
+    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(call[0]).toBe('https://api.test/builder/v1/builds/d1/releases')
+  })
+
+  it('getVersion hits the release detail path', async () => {
+    const f = mockFetch(200, { version: 3, artifacts: [{ id: 'a1' }] })
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
+    const detail = await client.getVersion('r1')
+    expect(detail).toEqual({ version: 3, artifacts: [{ id: 'a1' }] })
+    const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(call[0]).toBe('https://api.test/builder/v1/releases/r1')
+  })
+
   it('resolveDownloadUrl returns the presigned url', async () => {
     vi.stubGlobal('fetch', mockFetch(200, { downloadUrl: 'https://gcs/signed', expiresAt: 'x' }))
     const client = new ComfyBuilderClient({ auth: auth('t') })
@@ -65,7 +85,7 @@ describe('ComfyBuilderClient', () => {
     expect(m.modelPolicy).toBeNull()
     expect(m.partnerNodePolicy).toBeNull()
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/build-versions/ver-9/manifest')
+    expect(call[0]).toBe('https://api.test/builder/v1/releases/ver-9/manifest')
   })
 
   it('rejects a manifest response without an explicit model list', async () => {
