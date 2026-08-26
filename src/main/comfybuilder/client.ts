@@ -67,6 +67,7 @@ export interface ComfyBuilderClientOptions {
 
 interface BuildsResponse {
   distributions?: Build[]
+  builds?: Build[]
   nextCursor?: string
 }
 interface VersionsResponse {
@@ -87,6 +88,13 @@ interface CreatedBuildResponse {
   workspaceId?: unknown
 }
 
+type BuildApiVocabulary = 'distributions' | 'builds'
+
+interface BuildApiPaths {
+  distributions: string
+  builds: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -100,6 +108,8 @@ export class ComfyBuilderClient {
   private readonly baseUrl: string
   private readonly auth: TokenProvider
   private readonly timeoutMs: number
+  private vocabularyToken: string | null = null
+  private vocabulary: BuildApiVocabulary = 'distributions'
 
   constructor(options: ComfyBuilderClientOptions) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
@@ -115,8 +125,14 @@ export class ComfyBuilderClient {
     do {
       const query = new URLSearchParams({ limit: '100' })
       if (cursor) query.set('cursor', cursor)
-      const body = await this.get<BuildsResponse>(`/v1/distributions?${query}`, token)
-      builds.push(...(body.distributions ?? []))
+      const body = await this.requestBuildApi<BuildsResponse>(
+        {
+          distributions: `/v1/distributions?${query}`,
+          builds: `/v1/builds?${query}`
+        },
+        token
+      )
+      builds.push(...(body.builds ?? body.distributions ?? []))
       cursor = body.nextCursor || undefined
     } while (cursor)
     return builds
@@ -139,10 +155,10 @@ export class ComfyBuilderClient {
       throw new ComfyBuilderApiError('server', 'Builder returned an invalid snapshot resolution')
     }
 
-    const created = await this.post<CreatedBuildResponse>(
-      '/v1/distributions',
-      { name, definition: resolvedBody.definition },
-      token
+    const created = await this.requestBuildApi<CreatedBuildResponse>(
+      { distributions: '/v1/distributions', builds: '/v1/builds' },
+      token,
+      { name, definition: resolvedBody.definition }
     )
     if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
       throw new ComfyBuilderApiError('server', 'Builder returned an invalid draft Build')
@@ -160,8 +176,14 @@ export class ComfyBuilderClient {
 
   /** Published versions of one product Build. */
   async listVersions(buildId: string): Promise<BuildVersion[]> {
-    const body = await this.get<VersionsResponse>(
-      `/v1/distributions/${encodeURIComponent(buildId)}/versions`
+    const token = await this.accessToken()
+    const id = encodeURIComponent(buildId)
+    const body = await this.requestBuildApi<VersionsResponse>(
+      {
+        distributions: `/v1/distributions/${id}/versions`,
+        builds: `/v1/builds/${id}/versions`
+      },
+      token
     )
     return body.versions ?? []
   }
@@ -170,8 +192,14 @@ export class ComfyBuilderClient {
   async getVersion(
     versionId: string
   ): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
-    const body = await this.get<VersionDetailResponse>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}`
+    const token = await this.accessToken()
+    const id = encodeURIComponent(versionId)
+    const body = await this.requestBuildApi<VersionDetailResponse>(
+      {
+        distributions: `/v1/distribution-versions/${id}`,
+        builds: `/v1/build-versions/${id}`
+      },
+      token
     )
     return { version: body.version, artifacts: body.artifacts ?? [] }
   }
@@ -183,8 +211,14 @@ export class ComfyBuilderClient {
    * array is normal (a version may declare none).
    */
   async fetchModelManifest(versionId: string): Promise<ModelManifest> {
-    const body = await this.get<Partial<ModelManifest>>(
-      `/v1/distribution-versions/${encodeURIComponent(versionId)}/manifest`
+    const token = await this.accessToken()
+    const id = encodeURIComponent(versionId)
+    const body = await this.requestBuildApi<Partial<ModelManifest>>(
+      {
+        distributions: `/v1/distribution-versions/${id}/manifest`,
+        builds: `/v1/build-versions/${id}/manifest`
+      },
+      token
     )
     if (!Array.isArray(body.models)) {
       throw new ComfyBuilderApiError(
@@ -230,6 +264,29 @@ export class ComfyBuilderClient {
 
   private async post<T>(path: string, payload: unknown, token?: string): Promise<T> {
     return this.request<T>(path, payload, token)
+  }
+
+  /** Use the deployed vocabulary for this token, probing the other one on 404. */
+  private async requestBuildApi<T>(
+    paths: BuildApiPaths,
+    token: string,
+    payload?: unknown
+  ): Promise<T> {
+    if (this.vocabularyToken !== token) {
+      this.vocabularyToken = token
+      this.vocabulary = 'distributions'
+    }
+    const preferred = this.vocabulary
+    try {
+      return await this.request<T>(paths[preferred], payload, token)
+    } catch (error) {
+      if (!(error instanceof ComfyBuilderApiError) || error.kind !== 'not-found') throw error
+    }
+
+    const fallback: BuildApiVocabulary = preferred === 'distributions' ? 'builds' : 'distributions'
+    const body = await this.request<T>(paths[fallback], payload, token)
+    if (this.vocabularyToken === token) this.vocabulary = fallback
+    return body
   }
 
   private async accessToken(): Promise<string> {

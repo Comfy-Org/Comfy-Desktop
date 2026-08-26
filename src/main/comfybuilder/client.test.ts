@@ -116,6 +116,66 @@ describe('ComfyBuilderClient', () => {
     expect(getAccessToken).toHaveBeenCalledOnce()
   })
 
+  it('negotiates Build routes for workspaces without legacy distribution routes', async () => {
+    const resolution = snapshotResolution()
+    const f = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      let status = 200
+      let body: unknown
+      if (url.includes('/v1/distributions')) {
+        status = 404
+        body = { message: 'Not Found' }
+      } else if (url.includes('/v1/builds?')) {
+        body = { builds: [{ id: 'build/one', name: 'Build One' }] }
+      } else if (url.endsWith('/v1/builds/build%2Fone/versions')) {
+        body = { versions: [{ id: 'version/one', version: 1, status: 'complete' }] }
+      } else if (url.endsWith('/v1/build-versions/version%2Fone/manifest')) {
+        body = { models: [] }
+      } else if (url.endsWith('/v1/build-versions/version%2Fone')) {
+        body = { version: 1, artifacts: [] }
+      } else if (url.endsWith('/v1/snapshots/resolve')) {
+        body = resolution
+      } else if (url.endsWith('/v1/builds')) {
+        body = { id: 'draft-one', workspaceId: 'workspace-one' }
+      } else {
+        status = 500
+        body = { message: `Unexpected test URL: ${url}` }
+      }
+      return new Response(JSON.stringify(body), { status })
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', f)
+    const getAccessToken = vi.fn(async () => 'team-token')
+    const client = new ComfyBuilderClient({
+      baseUrl: 'https://api.test/builder',
+      auth: { getAccessToken }
+    })
+
+    await expect(client.listBuilds()).resolves.toEqual([{ id: 'build/one', name: 'Build One' }])
+    await expect(client.listVersions('build/one')).resolves.toHaveLength(1)
+    await expect(client.getVersion('version/one')).resolves.toEqual({ version: 1, artifacts: [] })
+    await expect(client.fetchModelManifest('version/one')).resolves.toEqual({
+      models: [],
+      modelPolicy: null,
+      partnerNodePolicy: null
+    })
+    await expect(client.createBuildDraft(snapshotExport())).resolves.toMatchObject({
+      buildId: 'draft-one',
+      workspaceId: 'workspace-one'
+    })
+
+    const urls = (f as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0])
+    expect(urls).toEqual([
+      'https://api.test/builder/v1/distributions?limit=100',
+      'https://api.test/builder/v1/builds?limit=100',
+      'https://api.test/builder/v1/builds/build%2Fone/versions',
+      'https://api.test/builder/v1/build-versions/version%2Fone',
+      'https://api.test/builder/v1/build-versions/version%2Fone/manifest',
+      'https://api.test/builder/v1/snapshots/resolve',
+      'https://api.test/builder/v1/builds'
+    ])
+    expect(getAccessToken).toHaveBeenCalledTimes(5)
+  })
+
   it('resolves a Desktop snapshot and creates a Build draft with the same token', async () => {
     const resolution = snapshotResolution()
     const f = vi.fn(async (input: string | URL | Request) => {
