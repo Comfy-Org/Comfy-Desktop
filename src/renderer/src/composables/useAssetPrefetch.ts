@@ -1,16 +1,13 @@
 import { onScopeDispose } from 'vue'
 
 /**
- * Idle-time URL warmer: pulls URLs into the browser HTTP cache during idle so a
- * later element renders/plays without a cold fetch. Defers entirely while
- * `isBusy()` or on a metered link, so it never competes with real work on a
- * low-spec machine. The transport is pluggable via `loader` — an `Image()` for
- * thumbnails, a `fetch()` for media — so the queue/idle/busy/network machinery
- * lives in one place (see `useThumbnailPrefetch`, `useMediaPrefetch`).
+ * Idle-time URL warmer: pulls URLs into the HTTP cache while idle so a later
+ * element renders/plays without a cold fetch, deferring under `isBusy()` or a
+ * metered link. The transport is pluggable via `loader`, so the queue/idle/busy
+ * machinery is shared by `useThumbnailPrefetch` and `useMediaPrefetch`.
  */
 
-/** Kicks off one warm for `url`, calls `done` when it settles (ok or error),
- *  and returns a canceller that aborts it and detaches handlers for GC. */
+/** Starts one warm for `url`, calls `done` when it settles, returns a canceller. */
 export type AssetLoader = (url: string, done: () => void) => () => void
 
 interface AssetPrefetchOptions {
@@ -28,13 +25,10 @@ interface IdleWindow {
   cancelIdleCallback?: (handle: IdleHandle) => void
 }
 
-/** Delay (ms) for the `setTimeout` fallback when `requestIdleCallback` is absent.
- *  A few frames — enough to yield to interactive work without forcing the full
- *  idle deadline (which is a max, not a delay). */
+/** `setTimeout` delay when `requestIdleCallback` is absent — yield a few frames. */
 const FALLBACK_DELAY_MS = 50
 
-/** Schedule on the idle queue, falling back to a low-priority timeout. Returns a
- *  canceller so callers don't branch on which path ran. */
+/** Schedule on the idle queue (or a low-priority timeout); returns a canceller. */
 function scheduleIdle(fn: () => void, timeoutMs: number): () => void {
   const w = window as unknown as IdleWindow
   if (typeof w.requestIdleCallback === 'function') {
@@ -45,8 +39,7 @@ function scheduleIdle(fn: () => void, timeoutMs: number): () => void {
   return () => window.clearTimeout(id)
 }
 
-/** True on a metered / very slow connection where speculative fetching would
- *  hurt more than help. Conservative: only bails on explicit data-saver or 2g. */
+/** Skip speculative fetching on an explicit data-saver or 2g connection. */
 function shouldSkipForNetwork(): boolean {
   const conn = (
     navigator as unknown as {
@@ -64,24 +57,20 @@ export function useAssetPrefetch(
 ): { prefetch: (urls: readonly (string | null | undefined)[]) => void } {
   const { isBusy = () => false, concurrency = 3, idleTimeoutMs = 3000 } = options
 
-  /** How long to wait before re-checking the busy gate, so a sustained
-   *  install/launch doesn't busy-spin the idle queue. */
+  /** Re-check delay for the busy gate, so a sustained install doesn't busy-spin. */
   const BUSY_BACKOFF_MS = 1500
 
   const queue: string[] = []
   const seen = new Set<string>()
   const cancellers = new Set<() => void>()
   const loaderCancellers = new Set<() => void>()
-  // Reserved synchronously as work is scheduled (not when the idle callback
-  // fires), so the pump loop enforces `concurrency` instead of scheduling the
-  // whole queue at once.
+  // Reserved when work is scheduled, not when it runs, so pump enforces concurrency.
   let inFlight = 0
   let disposed = false
 
   function pump(): void {
     if (disposed || queue.length === 0) return
-    // Important work wins: back off (timer, not idle) and re-check later rather
-    // than competing for the network/CPU now.
+    // Defer past important work rather than compete for the network now.
     if (isBusy()) {
       const id = window.setTimeout(() => {
         cancellers.delete(cancel)
@@ -130,8 +119,7 @@ export function useAssetPrefetch(
     queue.length = 0
     for (const cancel of cancellers) cancel()
     cancellers.clear()
-    // Abort still-running warms so their closures can be GC'd without waiting
-    // for the request to settle.
+    // Abort in-flight warms so their closures can be GC'd immediately.
     for (const cancel of loaderCancellers) cancel()
     loaderCancellers.clear()
   })

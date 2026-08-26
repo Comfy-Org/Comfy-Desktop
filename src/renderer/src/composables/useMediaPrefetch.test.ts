@@ -3,13 +3,13 @@ import { effectScope } from 'vue'
 
 import { useMediaPrefetch } from './useMediaPrefetch'
 
-// Drive idle callbacks manually so tests control exactly when a queued warm runs.
 let idleQueue: Array<() => void> = []
 let nextHandle = 1
 
-// Track each warm <video> + its listeners so tests can settle them one at a time.
 interface FakeVideo {
   src: string
+  muted: boolean
+  preload: string
   listeners: Record<string, Array<() => void>>
   fireLoaded: () => void
   loadCalled: boolean
@@ -88,16 +88,23 @@ describe('useMediaPrefetch', () => {
     expect(videos.map((v) => v.src).sort()).toEqual(['a.mp4', 'b.mp4'])
   })
 
+  it('warms muted with preload=auto so the element buffers without playing', () => {
+    const { result } = run(() => useMediaPrefetch())
+    result.prefetch(['a.mp4'])
+    flushIdle()
+    expect(videos[0]!.muted, 'a warm must not make sound').toBe(true)
+    expect(videos[0]!.preload, 'preload=auto is what fills the cache').toBe('auto')
+  })
+
   it('serialises to one warm at a time by default (large media)', () => {
     const { result } = run(() => useMediaPrefetch())
     result.prefetch(['a.mp4', 'b.mp4', 'c.mp4'])
     flushIdle()
-    expect(videos).toHaveLength(1)
+    expect(videos, 'only one warm in flight at a time').toHaveLength(1)
 
-    // Settle the first warm; its `done` pumps the next.
     videos[0]!.fireLoaded()
     flushIdle()
-    expect(videos).toHaveLength(2)
+    expect(videos, 'settling the first warm pumps the next').toHaveLength(2)
   })
 
   it('skips warming on a data-saver connection', () => {
@@ -114,8 +121,7 @@ describe('useMediaPrefetch', () => {
     flushIdle()
     expect(videos).toHaveLength(1)
     dispose()
-    // Cancel path detaches the source and calls load() so the element is freed.
-    expect(videos[0]!.src).toBe('')
-    expect(videos[0]!.loadCalled).toBe(true)
+    expect(videos[0]!.src, 'dispose detaches the element source').toBe('')
+    expect(videos[0]!.loadCalled, 'dispose calls load() to free the element').toBe(true)
   })
 })

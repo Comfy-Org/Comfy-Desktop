@@ -167,9 +167,8 @@ const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
 })
 
-// Warm the MCP setup film (a ~5 MB remote video) into cache once, so it isn't
-// black on first open. No `runningTabCount` gate: the modal is only reachable
-// from a running instance, which is exactly when we want it warmed.
+// Warm the ~5 MB MCP film into cache once so it isn't black on first open. No
+// `runningTabCount` gate: the modal is only reachable while an instance runs.
 const { prefetch: prefetchMedia } = useMediaPrefetch()
 let mcpVideoWarmed = false
 function warmMcpVideo(): void {
@@ -370,20 +369,15 @@ function handleMcpOpenTerminal(): void {
   window.api.openInstancePicker({ installationId, initialTab: 'console' })
 }
 
-/** Composite the live ComfyUI canvas through while an overlay panel (feedback
- *  or MCP setup) is mounted. Main holds the panel view hidden until we confirm
- *  the modal has painted (`signalOverlayReady`), so its opaque pre-transparent
- *  frame never flashes over the canvas. */
+/** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
   activePanel,
   (next) => {
     const isOverlay = next === 'feedback' || next === 'mcp-setup'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
-    // Signal once the modal has mounted (nextTick flushes the DOM). NOT gated on
-    // requestAnimationFrame: the panel view is hidden until main reveals it, and
-    // Chromium pauses rAF for an occluded view, so the callback would never fire
-    // and every open would fall back to main's reveal timeout.
+    // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
+    // and Chromium pauses rAF for an occluded view, so it would never fire.
     void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }
@@ -561,9 +555,7 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
-    // After bootstrap so it never competes with init; idle-deferred inside the
-    // prefetch. Long cached before the user could reach a running instance's
-    // MCP sidebar.
+    // After bootstrap so it never competes with init (idle-deferred internally).
     warmMcpVideo()
   }
 })

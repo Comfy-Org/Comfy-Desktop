@@ -82,10 +82,13 @@ export interface ComfyWindowEntry {
   /** Currently rendered panel — always a user-visible key, never the internal
    *  `'comfy-lifecycle'` / `'chooser'` body modes. */
   activePanel: ComfyPanelKey
-  /** Set between an overlay switch (feedback / mcp-setup) and the renderer's
-   *  `overlay-ready` ack; while set, `layoutViews` keeps the panel view hidden
-   *  so its pre-transparent frame can't flash over ComfyUI. */
+  /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
+   *  keeps the panel hidden so its pre-transparent frame can't flash. */
   pendingOverlayReveal?: boolean
+  /** Fallback timer that reveals the overlay if the ack never lands; cleared on
+   *  the next switch or the ack so a stale one can't reveal a later open early. */
+  overlayRevealTimer?: ReturnType<typeof setTimeout>
+
   /** Last theme reported by the ComfyUI frontend, applied to the panel on load. */
   lastTheme: { bg: string; text: string }
   /** Updates view bounds for the current activePanel. */

@@ -171,12 +171,13 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
-  // Overlay panels (feedback / mcp-setup) reveal only after the renderer acks it
-  // painted the modal (`overlay-ready`), so the panel's opaque pre-transparent
-  // frame never flashes over the canvas. Cleared for non-overlay targets so a
-  // stale flag can't strand the panel hidden.
+  // Overlay panels reveal only after the renderer's `overlay-ready` ack (see
+  // layoutViews); clear the flag for non-overlay targets so it can't strand.
   const isOverlay = mode === 'feedback' || mode === 'mcp-setup'
   entry.pendingOverlayReveal = isOverlay
+  // Drop any prior fallback timer so a stale one can't reveal this open early.
+  if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
+  entry.overlayRevealTimer = undefined
   forwardToPanelRenderer(entry, 'panel-switch', {
     panel: mode,
     installationId: entry.installationId ?? ''
@@ -184,7 +185,8 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   entry.layoutViews()
   // Reveal anyway if the ack never arrives (crash / lost IPC); a late ack no-ops.
   if (isOverlay) {
-    setTimeout(() => {
+    entry.overlayRevealTimer = setTimeout(() => {
+      entry.overlayRevealTimer = undefined
       if (!entry.pendingOverlayReveal || entry.window.isDestroyed()) return
       entry.pendingOverlayReveal = false
       entry.layoutViews()
@@ -281,6 +283,8 @@ export function registerPanelViewIpc(): void {
       if (entry.panelView?.webContents === event.sender) {
         if (!entry.pendingOverlayReveal) return
         entry.pendingOverlayReveal = false
+        if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
+        entry.overlayRevealTimer = undefined
         if (!entry.window.isDestroyed()) entry.layoutViews()
         return
       }

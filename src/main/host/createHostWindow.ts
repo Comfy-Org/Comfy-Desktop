@@ -658,9 +658,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
      *  bodyRect; the panel paints transparent (PanelApp's `panel-overlay-mode`) so it
      *  composites through on macOS CALayers. */
     const isOverlayMode = mode === 'feedback' || mode === 'mcp-setup'
-    // Hold the panel hidden until the renderer acks it has painted the overlay,
-    // so its opaque pre-transparent frame never flashes over ComfyUI. Non-overlay
-    // bodies (chooser / lifecycle / settings) are opaque by design and reveal now.
+    // Keep an overlay panel hidden until the renderer acks it painted, so its
+    // opaque pre-transparent frame can't flash over ComfyUI.
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)

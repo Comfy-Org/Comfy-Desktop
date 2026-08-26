@@ -660,11 +660,8 @@ function onLaunch({
       destroyPanelView(claimed)
       const ok = attachInstall(claimed, { installation, comfyUrl, isLocal: !url })
       if (ok) {
-        // Rebuild the (now install-backed) panel view immediately, hidden and
-        // collapsed, so it boots panel.html in the background while the user is
-        // in ComfyUI. Otherwise the first Settings/MCP click builds it cold and
-        // the ~300ms load composites through the overlay as an open/close/open
-        // flicker. computeBodyMode is 'comfy' here, so it stays invisible.
+        // Rebuild the panel view now (hidden, mode is 'comfy') so it boots in the
+        // background — otherwise the first Settings/MCP click builds it cold.
         ensurePanelView(claimed.windowKey, claimed, computeBodyMode(claimed))
         claimed.layoutViews()
         if (proc) {

@@ -109,6 +109,9 @@ export function useBrandScene(
   let rafId = 0
   let playing = false
   const reduced = ref(prefersReducedMotion())
+  // Clips whose first-frame reveal is mid-flight, so a loop re-activation can't
+  // stack a second set of listeners on the same element.
+  const watched = new WeakSet<HTMLVideoElement>()
 
   type RvfcVideo = HTMLVideoElement & {
     requestVideoFrameCallback?: (cb: () => void) => number
@@ -120,12 +123,16 @@ export function useBrandScene(
    *  the fallback gates on `readyState >= HAVE_CURRENT_DATA`, never a bare timer.
    *  Sticky once painted. */
   function markPaintedWhenReady(ve: HTMLVideoElement): void {
-    if (ve.classList.contains('is-painted')) return
+    // Skip if already painted, or already being watched — the scene loops and
+    // re-activates the same clip, which would otherwise stack fallback listeners.
+    if (ve.classList.contains('is-painted') || watched.has(ve)) return
+    watched.add(ve)
     const cleanup: Array<() => void> = []
     let done = false
     const paint = (): void => {
       if (done) return
       done = true
+      watched.delete(ve)
       ve.classList.add('is-painted')
       for (const c of cleanup) c()
     }
