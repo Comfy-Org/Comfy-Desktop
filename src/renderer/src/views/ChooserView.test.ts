@@ -70,7 +70,7 @@ const messages = {
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
-        unmanagedLabel: 'Unmanaged',
+        unmanagedLabel: 'No Workspace',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
         loadError: "Couldn't load workspaces. Retry",
@@ -654,14 +654,18 @@ describe('ChooserView', () => {
     expect(grids[0]!.classes()).toContain('chooser-family-grid--centered')
   })
 
-  it('places signed-in workspace controls before search', async () => {
+  it('keeps search centered above the signed-in workspace controls', async () => {
     installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
 
     const toolbarChildren = wrapper.get('.chooser-toolbar').element.children
-    expect(toolbarChildren[0]!.classList.contains('chooser-workspace-controls')).toBe(true)
-    expect(toolbarChildren[1]!.classList.contains('chooser-search')).toBe(true)
+    expect(toolbarChildren).toHaveLength(1)
+    expect(toolbarChildren[0]!.classList.contains('chooser-search')).toBe(true)
+    expect(wrapper.get('.chooser-workspace-bar').text()).toContain('Workspace')
+    expect(wrapper.get('.chooser-workspace-controls').element.parentElement).toBe(
+      wrapper.get('.chooser-workspace-bar').element
+    )
     expect(wrapper.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(true)
   })
 
@@ -829,7 +833,7 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('AvailableThing')
   })
 
-  it('switches between Unmanaged and workspaces without leaking other-workspace installs', async () => {
+  it('switches between No Workspace and workspaces without leaking other-workspace installs', async () => {
     const api = installMockApiSignedIn(
       [
         makeInstall({ id: 'local', name: 'LocalThing' }),

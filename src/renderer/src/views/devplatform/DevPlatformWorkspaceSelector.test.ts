@@ -22,7 +22,7 @@ const messages = {
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
-        unmanagedLabel: 'Unmanaged',
+        unmanagedLabel: 'No Workspace',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
         loadError: "Couldn't load workspaces. Retry"
@@ -97,11 +97,13 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(wrapper.find('[data-testid="devplatform-workspace-menu"]').exists()).toBe(false)
   })
 
-  it('selects Unmanaged without changing the authenticated workspace', async () => {
+  it('selects No Workspace without changing the authenticated workspace', async () => {
     const wrapper = mountSelector()
     await flushPromises()
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.find('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+    const noWorkspace = wrapper.find('[data-testid="devplatform-workspace-unmanaged"]')
+    expect(noWorkspace.text()).toContain('No Workspace')
+    await noWorkspace.trigger('click')
 
     expect(api.switchWorkspace).not.toHaveBeenCalled()
     expect(wrapper.emitted('update:modelValue')).toEqual([[null]])

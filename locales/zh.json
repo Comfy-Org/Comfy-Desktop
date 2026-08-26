@@ -1248,7 +1248,7 @@
     },
     "workspace": {
       "personalLabel": "个人",
-      "unmanagedLabel": "未管理",
+      "unmanagedLabel": "无工作区",
       "switchLabel": "工作区",
       "currentFallback": "当前工作区",
       "loadError": "无法加载工作区，请重试",

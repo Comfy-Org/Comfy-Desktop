@@ -28,8 +28,8 @@ import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Signed-in users choose either Unmanaged or one authenticated workspace next
- * to search. The grid contains only installed instances in that scope.
+ * Signed-in users choose either No Workspace or one authenticated workspace.
+ * The grid contains only installed instances in that scope.
  * Available Builds belong in the workspace New Instance flow, not this grid.
  */
 
@@ -121,7 +121,7 @@ watch(
       return
     }
     // Follow an external authenticated workspace switch only while the user is
-    // viewing that workspace. An explicit Unmanaged selection remains local.
+    // viewing that workspace. An explicit No Workspace selection remains local.
     if (selectedWorkspaceId.value !== null && selectedWorkspaceId.value === previous?.workspaceId) {
       selectedWorkspaceId.value = next.workspaceId ?? null
     }
@@ -346,7 +346,11 @@ const gridHandlers = {
 
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div class="chooser-view" :style="{ '--rows': clusterRows }">
+    <div
+      class="chooser-view"
+      :class="{ 'chooser-view--workspace': authStore.isSignedIn }"
+      :style="{ '--rows': clusterRows }"
+    >
       <!-- Signed-in account identity, pinned outside the centered content column. -->
       <div class="chooser-account">
         <DevPlatformAccountChip />
@@ -354,8 +358,24 @@ const gridHandlers = {
 
       <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
       <div class="chooser-toolbar">
-        <div v-if="authStore.isSignedIn" class="chooser-workspace-controls">
-          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
+        <div class="chooser-search">
+          <BaseInput
+            v-model="searchQuery"
+            :placeholder="t('chooser.searchPlaceholder')"
+            :aria-label="t('chooser.searchPlaceholder')"
+          >
+            <template #leading><Search :size="16" /></template>
+          </BaseInput>
+        </div>
+      </div>
+
+      <div v-if="authStore.isSignedIn" class="chooser-workspace-bar">
+        <div class="chooser-workspace-heading">
+          <h2>{{ t('devPlatform.workspace.switchLabel') }}</h2>
+          <span>{{ scopedInstallCount }}</span>
+        </div>
+        <div class="chooser-workspace-divider" aria-hidden="true" />
+        <div class="chooser-workspace-controls">
           <button
             type="button"
             class="chooser-workspace-refresh"
@@ -370,15 +390,7 @@ const gridHandlers = {
               :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
             />
           </button>
-        </div>
-        <div class="chooser-search">
-          <BaseInput
-            v-model="searchQuery"
-            :placeholder="t('chooser.searchPlaceholder')"
-            :aria-label="t('chooser.searchPlaceholder')"
-          >
-            <template #leading><Search :size="16" /></template>
-          </BaseInput>
+          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
         </div>
       </div>
 
@@ -457,7 +469,8 @@ const gridHandlers = {
    * as a group whenever it fits - looks deliberate at any viewport height.
    * When the (unfiltered) content is taller than the viewport, the
    * `minmax(0, 1fr)` spacers collapse to 0 and the grid scrolls internally.
-   * Rows: [top spacer] [wordmark] [search] [grid] [bottom spacer]
+   * Rows: [top spacer] [wordmark] [search] [workspace controls] [grid]
+   * [bottom spacer]. The workspace row is omitted while signed out.
    *
    * No-shift guarantee: the grid row reserves its height from the UNFILTERED
    * `--rows` (see `.chooser-grid` min-height), so typing in search empties
@@ -479,6 +492,16 @@ const gridHandlers = {
   max-width: 1280px;
   padding: var(--chooser-pad-y) 24px;
   row-gap: var(--chooser-row-gap);
+}
+
+.chooser-view--workspace {
+  grid-template-rows:
+    minmax(0, 1fr)
+    auto
+    auto
+    auto
+    minmax(0, auto)
+    minmax(0, 1fr);
 }
 
 /* Account chip: pinned to the frame's top-right, out of the centered column
@@ -545,6 +568,12 @@ const gridHandlers = {
   justify-content: center;
   opacity: 0.6;
   padding: 24px;
+}
+
+.chooser-view--workspace .chooser-loading,
+.chooser-view--workspace .chooser-empty,
+.chooser-view--workspace .chooser-shelves {
+  grid-row: 5;
 }
 
 /* The scoped install grid's scroll viewport - column, scroll and fade only;
@@ -624,6 +653,37 @@ const gridHandlers = {
   }
 }
 
+.chooser-workspace-bar {
+  grid-row: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 1168px;
+}
+.chooser-workspace-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.chooser-workspace-heading h2 {
+  margin: 0;
+  color: var(--neutral-100);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+.chooser-workspace-heading span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.chooser-workspace-divider {
+  flex: 1 1 auto;
+  min-width: 16px;
+  height: 1px;
+  background: var(--chooser-surface-border);
+}
 .chooser-workspace-controls {
   display: flex;
   flex: 0 1 290px;
@@ -677,12 +737,15 @@ const gridHandlers = {
   }
 }
 @media (max-width: 640px) {
-  .chooser-toolbar {
+  .chooser-workspace-bar {
     flex-wrap: wrap;
   }
 
-  .chooser-workspace-controls,
-  .chooser-search {
+  .chooser-workspace-divider {
+    display: none;
+  }
+
+  .chooser-workspace-controls {
     flex-basis: 100%;
   }
 }
