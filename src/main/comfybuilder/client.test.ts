@@ -234,7 +234,7 @@ describe('ComfyBuilderClient', () => {
     await expect(client.createBuildDraft(snapshot)).resolves.toEqual({
       buildId: 'build/id+1',
       workspaceId: 'workspace/id+1',
-      editUrl: '/profile/distributions/new?workspace=workspace%2Fid%2B1&edit=build%2Fid%2B1'
+      editUrl: '/profile/builds/new?workspace=workspace%2Fid%2B1&edit=build%2Fid%2B1'
     })
     const calls = (f as unknown as ReturnType<typeof vi.fn>).mock.calls
     expect(calls).toHaveLength(2)
