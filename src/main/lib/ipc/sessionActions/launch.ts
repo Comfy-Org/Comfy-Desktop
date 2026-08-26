@@ -94,6 +94,7 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
+import { getCoreCanaryConfigAsync, resolveCoreCanaryLaunchArgs } from '../../coreCanary'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
@@ -673,6 +674,11 @@ async function runLaunch(
         const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
         const userArgs = launchCmd.args.slice(sIdx + 2)
         const filtered = filterUnsupportedArgs(userArgs, schema)
+        const canaryConfig = await getCoreCanaryConfigAsync()
+        const coreCanaryArgs = resolveCoreCanaryLaunchArgs(canaryConfig, schema)
+        if (coreCanaryArgs.length > 0) {
+          console.info('[core-canary] Injecting Core beta feature flags:', coreCanaryArgs)
+        }
 
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
@@ -694,7 +700,9 @@ async function runLaunch(
           }
         }
 
-        launchCmd.args = [...prefixArgs, ...desktopFlagArgs, ...filtered]
+        // Canary args precede user args so a future paired `--disable-*`
+        // switch selected explicitly by the user remains authoritative.
+        launchCmd.args = [...prefixArgs, ...coreCanaryArgs, ...desktopFlagArgs, ...filtered]
       } catch {
         // Schema not available — pass args as-is.
       }

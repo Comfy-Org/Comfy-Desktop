@@ -110,6 +110,13 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
 // re-exported by `posthog-node`. Inlining the shape we actually use.
 export type FeatureFlagValue = string | boolean
+
+/** A single operational flag evaluation, including the JSON payload attached
+ * to the matched boolean/variant value in PostHog. */
+export interface OpsFlagResult {
+  value: FeatureFlagValue
+  payload: unknown
+}
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
@@ -1497,6 +1504,40 @@ export async function getOpsFlag(
     const result = await Promise.race([flagPromise, timeoutPromise])
     if (typeof result === 'string' || typeof result === 'boolean') return result
     return undefined
+  } catch {
+    return undefined
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+/**
+ * Fetch a single OPERATIONAL feature flag together with its matched payload.
+ *
+ * This has the same consent-bypass and fail-closed contract as `getOpsFlag`,
+ * but uses the SDK's combined result API so remote configuration needs only
+ * one evaluation. Implicit `$feature_flag_called` capture stays disabled.
+ */
+export async function getOpsFlagResult(
+  key: string,
+  distinctId: string,
+  timeoutMs: number
+): Promise<OpsFlagResult | undefined> {
+  if (!client) return undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const flagPromise = client.getFeatureFlagResult(key, distinctId, {
+      sendFeatureFlagEvents: false
+    })
+    const timeoutPromise = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), timeoutMs)
+    })
+    const result = await Promise.race([flagPromise, timeoutPromise])
+    if (!result) return undefined
+    return {
+      value: result.enabled ? (result.variant ?? true) : false,
+      payload: result.payload
+    }
   } catch {
     return undefined
   } finally {

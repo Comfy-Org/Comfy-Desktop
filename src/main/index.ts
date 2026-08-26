@@ -107,6 +107,7 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
+import { initCoreCanary } from './lib/coreCanary'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1479,6 +1480,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // experiments cache would never have a value to give it. See
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
+
+    // Core beta features are operational launch configuration, not analytics.
+    // Fetch once at boot so a targeted Desktop can inject the matched payload
+    // on every Core launch even when telemetry consent is undecided or denied.
+    void initCoreCanary({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud
