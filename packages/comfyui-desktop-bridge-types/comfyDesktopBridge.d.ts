@@ -69,9 +69,15 @@ export interface ComfyDesktop2TelemetryBridge {
   reportFirebaseAuthState?(state: ComfyDesktop2FirebaseAuthState): void
 }
 export interface ComfyDesktop2Bridge {
-  isRemote(): boolean
+  /** Reports whether the backend server is cloud/remote, not the user's location.
+   *  Optional: desktop builds predating it are still in the wild. */
+  isRemote?(): boolean
   openTerminal?: () => Promise<boolean>
   openMcpSetup?: () => Promise<boolean>
+  /** Opens a model provider access page in the hosted frontend's browser session.
+   *  Resolves `true` when the host has taken ownership of the request.
+   *  On `false` or rejection the frontend falls back to opening a new tab. */
+  openModelAccessPage?: (url: string) => Promise<boolean>
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
   downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>
   pauseDownload?: (url: string) => Promise<boolean>
@@ -83,6 +89,12 @@ export interface ComfyDesktop2Bridge {
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge
 }
+/**
+ * The `-?` mapper intentionally requires every top-level bridge member.
+ * Adding an optional top-level member to `ComfyDesktop2Bridge` is therefore a
+ * breaking change for implementations of this type. Optional members of nested
+ * bridge types remain optional because the mapper is not recursive.
+ */
 export type ComfyDesktop2BridgeImplementation = {
   [K in keyof ComfyDesktop2Bridge]-?: NonNullable<ComfyDesktop2Bridge[K]>
 }
