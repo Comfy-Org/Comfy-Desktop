@@ -74,7 +74,7 @@ describe('ComfyBuilderClient', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists builds with a Bearer token at the right path', async () => {
-    const f = mockFetch(200, { distributions: [{ id: 'b1', name: 'Build One' }] })
+    const f = mockFetch(200, { builds: [{ id: 'b1', name: 'Build One' }] })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({
       baseUrl: 'https://api.test/builder',
@@ -83,17 +83,17 @@ describe('ComfyBuilderClient', () => {
     const builds = await client.listBuilds()
     expect(builds).toEqual([{ id: 'b1', name: 'Build One' }])
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distributions?limit=100')
+    expect(call[0]).toBe('https://api.test/builder/v1/builds?limit=100')
     expect((call[1].headers as Record<string, string>).Authorization).toBe('Bearer tok-123')
   })
 
-  it('follows the legacy distribution cursor until every build is loaded', async () => {
+  it('follows the Build cursor until every build is loaded', async () => {
     const f = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.includes('cursor=next%2Fpage%2B2')
-        ? { distributions: [{ id: 'b2', name: 'Build Two' }] }
+        ? { builds: [{ id: 'b2', name: 'Build Two' }] }
         : {
-            distributions: [{ id: 'b1', name: 'Build One' }],
+            builds: [{ id: 'b1', name: 'Build One' }],
             nextCursor: 'next/page+2'
           }
       return new Response(JSON.stringify(body), { status: 200 })
@@ -111,28 +111,47 @@ describe('ComfyBuilderClient', () => {
     ])
     expect(f).toHaveBeenCalledTimes(2)
     expect((f as unknown as ReturnType<typeof vi.fn>).mock.calls[1]![0]).toBe(
-      'https://api.test/builder/v1/distributions?limit=100&cursor=next%2Fpage%2B2'
+      'https://api.test/builder/v1/builds?limit=100&cursor=next%2Fpage%2B2'
     )
     expect(getAccessToken).toHaveBeenCalledOnce()
   })
 
-  it('negotiates Build routes for workspaces without legacy distribution routes', async () => {
+  it('uses the deployed Build and release routes for the complete install flow', async () => {
     const resolution = snapshotResolution()
     const f = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       let status = 200
       let body: unknown
-      if (url.includes('/v1/distributions')) {
-        status = 404
-        body = { message: 'Not Found' }
-      } else if (url.includes('/v1/builds?')) {
+      if (url.includes('/v1/builds?')) {
         body = { builds: [{ id: 'build/one', name: 'Build One' }] }
-      } else if (url.endsWith('/v1/builds/build%2Fone/versions')) {
-        body = { versions: [{ id: 'version/one', version: 1, status: 'complete' }] }
-      } else if (url.endsWith('/v1/build-versions/version%2Fone/manifest')) {
+      } else if (url.endsWith('/v1/builds/build%2Fone/releases')) {
+        body = { releases: [{ id: 'release/one', version: 1, status: 'complete' }] }
+      } else if (url.endsWith('/v1/releases/release%2Fone/manifest')) {
         body = { models: [] }
-      } else if (url.endsWith('/v1/build-versions/version%2Fone')) {
-        body = { version: 1, artifacts: [] }
+      } else if (url.endsWith('/v1/releases/release%2Fone')) {
+        body = {
+          version: 1,
+          artifacts: [
+            {
+              id: 'archive-one',
+              os: 'windows',
+              gpu: 'cpu',
+              status: 'ready',
+              archiveRef: 'archives/one',
+              archiveSha256: 'a'.repeat(64)
+            },
+            {
+              id: 'image-one',
+              os: 'linux',
+              gpu: 'nvidia',
+              status: 'ready',
+              imageRef: 'images/one',
+              imageDigest: `sha256:${'b'.repeat(64)}`
+            }
+          ]
+        }
+      } else if (url.endsWith('/v1/build-artifacts/archive-one/download')) {
+        body = { downloadUrl: 'https://storage.test/archive-one' }
       } else if (url.endsWith('/v1/snapshots/resolve')) {
         body = resolution
       } else if (url.endsWith('/v1/builds')) {
@@ -152,12 +171,28 @@ describe('ComfyBuilderClient', () => {
 
     await expect(client.listBuilds()).resolves.toEqual([{ id: 'build/one', name: 'Build One' }])
     await expect(client.listVersions('build/one')).resolves.toHaveLength(1)
-    await expect(client.getVersion('version/one')).resolves.toEqual({ version: 1, artifacts: [] })
-    await expect(client.fetchModelManifest('version/one')).resolves.toEqual({
+    await expect(client.getVersion('release/one')).resolves.toEqual({
+      version: 1,
+      artifacts: [
+        {
+          id: 'archive-one',
+          os: 'windows',
+          gpu: 'cpu',
+          accelVariant: '',
+          status: 'ready',
+          archiveRef: 'archives/one',
+          archiveSha256: 'a'.repeat(64)
+        }
+      ]
+    })
+    await expect(client.fetchModelManifest('release/one')).resolves.toEqual({
       models: [],
       modelPolicy: null,
       partnerNodePolicy: null
     })
+    await expect(client.resolveDownloadUrl('archive-one')).resolves.toBe(
+      'https://storage.test/archive-one'
+    )
     await expect(client.createBuildDraft(snapshotExport())).resolves.toMatchObject({
       buildId: 'draft-one',
       workspaceId: 'workspace-one'
@@ -165,15 +200,15 @@ describe('ComfyBuilderClient', () => {
 
     const urls = (f as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0])
     expect(urls).toEqual([
-      'https://api.test/builder/v1/distributions?limit=100',
       'https://api.test/builder/v1/builds?limit=100',
-      'https://api.test/builder/v1/builds/build%2Fone/versions',
-      'https://api.test/builder/v1/build-versions/version%2Fone',
-      'https://api.test/builder/v1/build-versions/version%2Fone/manifest',
+      'https://api.test/builder/v1/builds/build%2Fone/releases',
+      'https://api.test/builder/v1/releases/release%2Fone',
+      'https://api.test/builder/v1/releases/release%2Fone/manifest',
+      'https://api.test/builder/v1/build-artifacts/archive-one/download',
       'https://api.test/builder/v1/snapshots/resolve',
       'https://api.test/builder/v1/builds'
     ])
-    expect(getAccessToken).toHaveBeenCalledTimes(5)
+    expect(getAccessToken).toHaveBeenCalledTimes(6)
   })
 
   it('resolves a Desktop snapshot and creates a Build draft with the same token', async () => {
@@ -213,7 +248,7 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({ snapshot: { ...snapshot, installationName: 'Local One' } })
     })
-    expect(calls[1]![0]).toBe('https://api.test/builder/v1/distributions')
+    expect(calls[1]![0]).toBe('https://api.test/builder/v1/builds')
     expect(calls[1]![1]).toMatchObject({
       method: 'POST',
       headers: {
@@ -276,14 +311,14 @@ describe('ComfyBuilderClient', () => {
     expect(await client.resolveDownloadUrl('a1')).toBe('https://gcs/signed')
   })
 
-  it('lists versions from the Builder path', async () => {
-    const f = mockFetch(200, { versions: [{ id: 'v1', version: 1, status: 'complete' }] })
+  it('lists versions from the release path', async () => {
+    const f = mockFetch(200, { releases: [{ id: 'v1', version: 1, status: 'complete' }] })
     vi.stubGlobal('fetch', f)
     const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
 
     await expect(client.listVersions('build/one')).resolves.toHaveLength(1)
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distributions/build%2Fone/versions')
+    expect(call[0]).toBe('https://api.test/builder/v1/builds/build%2Fone/releases')
   })
 
   it('rejects a non-HTTPS artifact URL outside loopback', async () => {
@@ -292,7 +327,7 @@ describe('ComfyBuilderClient', () => {
     await expect(client.resolveDownloadUrl('a1')).rejects.toMatchObject({ kind: 'server' })
   })
 
-  it('fetchModelManifest hits the version manifest path and normalizes absent fields', async () => {
+  it('fetchModelManifest hits the release manifest path and normalizes absent fields', async () => {
     const f = mockFetch(200, {
       models: [
         {
@@ -310,7 +345,7 @@ describe('ComfyBuilderClient', () => {
     expect(m.modelPolicy).toBeNull()
     expect(m.partnerNodePolicy).toBeNull()
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/ver-9/manifest')
+    expect(call[0]).toBe('https://api.test/builder/v1/releases/ver-9/manifest')
   })
 
   it('rejects a manifest response without an explicit model list', async () => {
@@ -369,7 +404,7 @@ describe('ComfyBuilderClient', () => {
       archiveRef: 'blob/a1'
     })
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
-    expect(call[0]).toBe('https://api.test/builder/v1/distribution-versions/version%2Fone')
+    expect(call[0]).toBe('https://api.test/builder/v1/releases/version%2Fone')
   })
 
   it('throws unauthorized (no network) when signed out', async () => {
