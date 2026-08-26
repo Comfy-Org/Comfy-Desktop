@@ -28,7 +28,7 @@ import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Signed-in users choose either No Workspace or one authenticated workspace.
+ * Signed-in users choose either No workspace or one authenticated workspace.
  * The grid contains only installed instances in that scope.
  * Available Builds belong in the workspace New Instance flow, not this grid.
  */
@@ -108,7 +108,7 @@ watch(
       return
     }
     // Follow an external authenticated workspace switch only while the user is
-    // viewing that workspace. An explicit No Workspace selection remains local.
+    // viewing that workspace. An explicit No workspace selection remains local.
     if (selectedWorkspaceId.value !== null && selectedWorkspaceId.value === previous?.workspaceId) {
       selectedWorkspaceId.value = next.workspaceId ?? null
     }

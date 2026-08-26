@@ -70,7 +70,7 @@ const messages = {
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
-        unmanagedLabel: 'No Workspace',
+        unmanagedLabel: 'No workspace',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
         loadError: "Couldn't load workspaces. Retry",
@@ -833,7 +833,7 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('AvailableThing')
   })
 
-  it('switches between No Workspace and workspaces without leaking other-workspace installs', async () => {
+  it('switches between No workspace and workspaces without leaking other-workspace installs', async () => {
     const api = installMockApiSignedIn(
       [
         makeInstall({ id: 'local', name: 'LocalThing' }),

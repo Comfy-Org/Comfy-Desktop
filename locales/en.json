@@ -1248,7 +1248,7 @@
     },
     "workspace": {
       "personalLabel": "Personal",
-      "unmanagedLabel": "No Workspace",
+      "unmanagedLabel": "No workspace",
       "switchLabel": "Workspace",
       "currentFallback": "Current workspace",
       "loadError": "Couldn't load workspaces. Retry",
