@@ -110,6 +110,42 @@ export function useBrandScene(
   let playing = false
   const reduced = ref(prefersReducedMotion())
 
+  type RvfcVideo = HTMLVideoElement & {
+    requestVideoFrameCallback?: (cb: () => void) => number
+  }
+
+  /** Fade a just-activated clip in only once a decoded frame exists — a clip
+   *  pinned off frame 0 seeks away from the preloaded frame, so revealing sooner
+   *  shows the mask ground. rVFC is authoritative (fires on a composited frame);
+   *  the fallback gates on `readyState >= HAVE_CURRENT_DATA`, never a bare timer.
+   *  Sticky once painted. */
+  function markPaintedWhenReady(ve: HTMLVideoElement): void {
+    if (ve.classList.contains('is-painted')) return
+    const cleanup: Array<() => void> = []
+    let done = false
+    const paint = (): void => {
+      if (done) return
+      done = true
+      ve.classList.add('is-painted')
+      for (const c of cleanup) c()
+    }
+
+    const rvfc = (ve as RvfcVideo).requestVideoFrameCallback
+    if (typeof rvfc === 'function') {
+      rvfc.call(ve, paint)
+      return
+    }
+
+    const tryPaint = (): void => {
+      if (ve.readyState >= 2 /* HAVE_CURRENT_DATA */) paint()
+    }
+    for (const ev of ['seeked', 'loadeddata', 'canplay', 'timeupdate']) {
+      ve.addEventListener(ev, tryPaint)
+      cleanup.push(() => ve.removeEventListener(ev, tryPaint))
+    }
+    tryPaint()
+  }
+
   /** Scale the comp-sized stage to its wrapper (contain fits, cover crops). */
   function fitStage(): void {
     const stage = stageRef.value
@@ -180,6 +216,7 @@ export function useBrandScene(
             /* seek before metadata; corrected on the next active switch */
           }
           ve.classList.add('is-active')
+          markPaintedWhenReady(ve)
           if (playing) void ve.play().catch(() => {})
         }
         s.activeIdx = activeIdx

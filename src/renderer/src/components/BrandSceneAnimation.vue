@@ -63,7 +63,7 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
   width: 0;
   height: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--neutral-900, #19131d);
   will-change: transform, width, height;
 }
 .brand-scene video {
@@ -78,5 +78,19 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
 }
 .brand-scene video.is-active {
   display: block;
+  opacity: 0;
+  /* Declared on the start state so the flip to `.is-painted` actually animates
+     (a transition set only on the end class applies simultaneously and hard-
+     cuts). Fades the video up from the neutral mask ground over the ~300ms
+     first-frame decode, so there's no flicker. */
+  transition: opacity 280ms ease;
+}
+.brand-scene video.is-active.is-painted {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-scene video.is-active {
+    transition: none;
+  }
 }
 </style>
