@@ -54,13 +54,13 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
-  it('uses the new-instance title without a subtitle', async () => {
+  it('uses the new-instance title and install-method subtitle', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
     expect(wrapper.get('.brand-title').text()).toBe('Create a New Instance')
-    expect(wrapper.find('.brand-lead').exists()).toBe(false)
+    expect(wrapper.get('.brand-lead').text()).toBe('How would you like this version installed?')
   })
 })
 

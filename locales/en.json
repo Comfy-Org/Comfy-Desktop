@@ -358,6 +358,7 @@
     "chooseMethod": "Choose Install Method",
     "configuration": "Configuration",
     "configureTitle": "Create a New Instance",
+    "configureLead": "How would you like this version installed?",
     "detectedGpuLabel": "Detected GPU",
     "notAvailableRemote": "Not available in Remote Connection mode",
     "helpImproveTitle": "Help improve Comfy",
