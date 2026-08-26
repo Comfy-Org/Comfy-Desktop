@@ -358,7 +358,6 @@
     "chooseMethod": "选择安装方式",
     "configuration": "配置",
     "configureTitle": "新建实例",
-    "configureLocalLead": "全新安装 ComfyUI。",
     "configureWorkspaceLead": "选择要安装的发布版本。",
     "detectedGpuLabel": "检测到的 GPU",
     "notAvailableRemote": "远程连接模式下不可用",

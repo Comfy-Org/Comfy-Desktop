@@ -60,7 +60,7 @@ describe('InstallWizardModal heading', () => {
     await flushPromises()
 
     expect(wrapper.get('.brand-title').text()).toBe('Create a New Instance')
-    expect(wrapper.get('.brand-lead').text()).toBe('Download and install ComfyUI.')
+    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
   })
 })
 
