@@ -358,7 +358,7 @@
     "chooseMethod": "Choose Install Method",
     "configuration": "Configuration",
     "configureTitle": "Create a New Instance",
-    "configureLocalLead": "Install fresh ComfyUI.",
+    "configureLocalLead": "Download and install ComfyUI.",
     "configureWorkspaceLead": "Select a release to install.",
     "detectedGpuLabel": "Detected GPU",
     "notAvailableRemote": "Not available in Remote Connection mode",
