@@ -45,11 +45,7 @@ const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
 /** PostHog flag gating the Local MCP sidebar icon. */
 const MCP_SIDEBAR_FLAG = 'mcp_sidebar_enabled'
 
-/** Gate for the async, flag-resolved MCP sidebar inject. All three must hold:
- *  the attach is still live (`attachActive` — a detach/hot-swap clears it), the
- *  flag resolved enabled, and the view wasn't destroyed. `attachActive` is the
- *  load-bearing one: detach leaves `comfyContents` alive, so `destroyed` alone
- *  would let a late resolution inject into a detached or re-attached view. */
+/** Allow MCP sidebar inject only if attach is active, flag is enabled, and view is not destroyed. */
 export function shouldInjectMcpSidebar(state: {
   attachActive: boolean
   enabled: boolean
@@ -194,10 +190,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // by `_installCleanup` below.
   let currentInstallName = installation.name
 
-  // Guards async work scheduled from this attach (e.g. the flag-gated MCP
-  // sidebar inject) that can resolve after the view is detached or hot-swapped
-  // — `_installCleanup` clears it, and `isDestroyed()` alone wouldn't, since
-  // detach leaves `comfyContents` alive.
+  // Flags async tasks for this attach; cleared by `_installCleanup`.
+  // `isDestroyed()` isn’t enough—`comfyContents` may outlive detachment.
   let attachActive = true
   let currentPageTitle = ''
   const refreshOsWindowTitle = (): void => {

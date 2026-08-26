@@ -24,12 +24,6 @@ describe('shouldInjectMcpSidebar', () => {
       true
     )
   })
-
-  // The finding: `getFlagAsync` can resolve up to ~10s later. If a detach /
-  // hot-swap ran `_installCleanup` in the meantime it clears `attachActive`,
-  // and because detach leaves `comfyContents` alive the destroyed check passes.
-  // Without the attachActive gate this would inject into a detached / re-attached
-  // view.
   it('does not inject when the attach was retired before the flag resolved', () => {
     expect(shouldInjectMcpSidebar({ attachActive: false, enabled: true, destroyed: false })).toBe(
       false
