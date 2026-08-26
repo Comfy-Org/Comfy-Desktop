@@ -19,6 +19,8 @@ export const useAuthStore = defineStore('auth', () => {
   const builds = ref<Build[]>([])
   const loadingWorkspaces = ref(false)
   const loadingBuilds = ref(false)
+  /** Distinguishes a successfully loaded empty catalog from one not fetched yet. */
+  const buildsLoaded = ref(false)
   // Load-failure flags so the UI can tell a transient error apart from an empty
   // workspace (both otherwise leave the arrays empty).
   const workspacesError = ref(false)
@@ -61,7 +63,10 @@ export const useAuthStore = defineStore('auth', () => {
     advanceRevision()
     status.value = next
     if (!next.signedIn) resetScopedState()
-    else builds.value = []
+    else {
+      builds.value = []
+      buildsLoaded.value = false
+    }
   }
 
   /** Drop workspace-scoped caches: the list and the builds both belong
@@ -69,6 +74,7 @@ export const useAuthStore = defineStore('auth', () => {
   function resetScopedState(): void {
     workspaces.value = []
     builds.value = []
+    buildsLoaded.value = false
   }
 
   async function fetchStatus(): Promise<AuthStatus> {
@@ -140,6 +146,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchBuilds(): Promise<Build[]> {
     if (!isSignedIn.value) {
       builds.value = []
+      buildsLoaded.value = false
       return builds.value
     }
     const seen = revision
@@ -147,7 +154,10 @@ export const useAuthStore = defineStore('auth', () => {
     if (revision === seen) buildsError.value = false
     try {
       const next = await comfybuilderApi.listBuilds()
-      if (revision === seen) builds.value = next
+      if (revision === seen) {
+        builds.value = next
+        buildsLoaded.value = true
+      }
       return builds.value
     } catch {
       if (revision === seen) buildsError.value = true
@@ -163,6 +173,7 @@ export const useAuthStore = defineStore('auth', () => {
     builds,
     loadingWorkspaces,
     loadingBuilds,
+    buildsLoaded,
     workspacesError,
     buildsError,
     isSignedIn,

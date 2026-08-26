@@ -70,6 +70,7 @@ describe('useAuthStore', () => {
     const rows = await store.fetchBuilds()
     expect(rows).toEqual([{ id: 'd1', name: 'Image', state: 'installable' }])
     expect(store.builds).toHaveLength(1)
+    expect(store.buildsLoaded).toBe(true)
   })
 
   it('flags a failed build fetch, and a successful retry clears it', async () => {
@@ -80,11 +81,13 @@ describe('useAuthStore', () => {
     api.listBuilds.mockRejectedValueOnce(new Error('network'))
     await store.fetchBuilds()
     expect(store.buildsError).toBe(true)
+    expect(store.buildsLoaded).toBe(false)
     expect(store.builds).toEqual([]) // stays empty, but flagged as an error not an empty workspace
 
     api.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
     await store.fetchBuilds()
     expect(store.buildsError).toBe(false)
+    expect(store.buildsLoaded).toBe(true)
     expect(store.builds).toHaveLength(1)
   })
 
@@ -146,6 +149,7 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     await store.signIn()
     store.builds = [{ id: 'd1', name: 'Old', state: 'installable' }]
+    store.buildsLoaded = true
 
     api.switchWorkspace.mockResolvedValue({
       signedIn: true,
@@ -155,6 +159,7 @@ describe('useAuthStore', () => {
     await store.switchWorkspace('w2')
     expect(store.status).toMatchObject({ workspaceId: 'w2' })
     expect(store.builds).toEqual([])
+    expect(store.buildsLoaded).toBe(false)
   })
 
   it('the duplicate switch status (push, then invoke result) keeps the sole build fetch alive', async () => {
@@ -221,10 +226,12 @@ describe('useAuthStore', () => {
     await store.signIn()
     store.workspaces = [{ id: 'w1', name: 'W1', type: 'team', role: 'owner' }]
     store.builds = [{ id: 'd1', name: 'D', state: 'installable' }]
+    store.buildsLoaded = true
 
     authChangedCb?.({ signedIn: false })
     expect(store.isSignedIn).toBe(false)
     expect(store.workspaces).toEqual([])
     expect(store.builds).toEqual([])
+    expect(store.buildsLoaded).toBe(false)
   })
 })

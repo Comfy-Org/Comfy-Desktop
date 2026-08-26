@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, HardDrive, CircleAlert } from 'lucide-vue-next'
+import { ChevronRight, HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -15,6 +15,7 @@ import type {
   ShowProgressOpts
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
+import { formatBytes } from '../lib/formatting'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { emitTelemetryAction, toSizeBucket, toVariantBucket, toErrorBucket } from '../lib/telemetry'
 import {
@@ -107,12 +108,58 @@ const workspaceBuildOptions = computed<BaseSelectOption[]>(() =>
   workspaceBuilds.value.map((build) => ({
     value: build.id,
     label: build.name,
-    description: build.description
+    description: buildOptionDescription(build)
   }))
 )
 const selectedBuild = computed(
   () => workspaceBuilds.value.find((build) => build.id === selectedBuildId.value) ?? null
 )
+
+function platformName(os: string): string {
+  if (os === 'windows') return 'Windows'
+  if (os === 'mac') return 'macOS'
+  if (os === 'linux') return 'Linux'
+  return os
+}
+
+function buildOptionDescription(build: Build): string | undefined {
+  const details = [
+    build.description?.trim(),
+    build.version ? t('newInstall.buildReleaseValue', { version: build.version }) : undefined,
+    build.creatorName
+      ? t('newInstall.buildCreatorValue', { creator: build.creatorName })
+      : undefined
+  ].filter((detail): detail is string => Boolean(detail))
+  return details.length ? details.join(' | ') : undefined
+}
+
+const selectedBuildMetadata = computed(() => {
+  const build = selectedBuild.value
+  if (!build) return []
+  const metadata: Array<{ label: string; value: string }> = []
+  if (build.version) {
+    metadata.push({ label: t('newInstall.buildRelease'), value: `v${build.version}` })
+  }
+  if (build.targetOs?.length) {
+    metadata.push({
+      label: t('newInstall.buildPlatforms'),
+      value: build.targetOs.map(platformName).join(', ')
+    })
+  }
+  if (build.creatorName) {
+    metadata.push({ label: t('newInstall.buildCreator'), value: build.creatorName })
+  }
+  const modelCount = build.numModels ?? build.numAllowedModels
+  if (typeof modelCount === 'number') {
+    metadata.push({ label: t('newInstall.buildModels'), value: String(modelCount) })
+  }
+  if (typeof build.numCustomNodes === 'number') {
+    metadata.push({ label: t('newInstall.buildCustomNodes'), value: String(build.numCustomNodes) })
+  }
+  const size = typeof build.sizeBytes === 'number' ? formatBytes(build.sizeBytes) : ''
+  if (size) metadata.push({ label: t('newInstall.buildSize'), value: size })
+  return metadata
+})
 
 watch(workspaceBuilds, (builds) => {
   if (!workspaceMode.value) return
@@ -558,13 +605,17 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       const targetWorkspaceId = workspaceId.value
       if (!targetWorkspaceId) return
       try {
-        const status = await authStore.switchWorkspace(targetWorkspaceId)
+        const status =
+          authStore.status.workspaceId === targetWorkspaceId
+            ? authStore.status
+            : await authStore.switchWorkspace(targetWorkspaceId)
         if (gen !== loadGeneration) return
         if (!status.signedIn || status.workspaceId !== targetWorkspaceId) {
           emit('close')
           return
         }
-        await authStore.fetchBuilds()
+        if (!authStore.buildsLoaded) await authStore.fetchBuilds()
+        if (gen === loadGeneration) selectedBuildId.value = workspaceBuilds.value[0]?.id ?? ''
       } catch {
         if (gen === loadGeneration) emit('close')
       }
@@ -1136,14 +1187,45 @@ defineExpose({ open })
           </TooltipWrap>
 
           <div v-if="workspaceMode" class="config-field" data-testid="workspace-build-field">
-            <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
+            <div class="workspace-build-label-row">
+              <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
+              <button
+                type="button"
+                class="workspace-build-refresh"
+                :title="$t('newInstall.refreshWorkspaceBuilds')"
+                :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
+                :disabled="authStore.loadingBuilds"
+                @click="authStore.fetchBuilds()"
+              >
+                <RefreshCw
+                  :size="14"
+                  :class="{ 'workspace-build-refresh__icon--spinning': authStore.loadingBuilds }"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
             <BaseSelect
               v-model="selectedBuildId"
               :options="workspaceBuildOptions"
               :placeholder="$t('newInstall.selectWorkspaceBuild')"
-              :disabled="authStore.loadingBuilds || workspaceBuildOptions.length === 0"
+              :disabled="workspaceBuildOptions.length === 0"
               :aria-label="$t('newInstall.workspaceBuildLabel')"
             />
+            <div
+              v-if="selectedBuild"
+              class="workspace-build-details"
+              data-testid="workspace-build-details"
+            >
+              <p v-if="selectedBuild.description" class="workspace-build-description">
+                {{ selectedBuild.description }}
+              </p>
+              <dl class="workspace-build-metadata">
+                <div v-for="item in selectedBuildMetadata" :key="item.label">
+                  <dt>{{ item.label }}</dt>
+                  <dd>{{ item.value }}</dd>
+                </div>
+              </dl>
+            </div>
             <button
               v-if="authStore.buildsError"
               type="button"
@@ -1628,6 +1710,69 @@ defineExpose({ open })
 .config-label {
   font-size: 13px;
   color: var(--neutral-200);
+}
+
+.workspace-build-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.workspace-build-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.workspace-build-refresh:hover:not(:disabled) {
+  color: var(--text);
+}
+.workspace-build-refresh:disabled {
+  cursor: wait;
+}
+.workspace-build-refresh__icon--spinning {
+  animation: workspace-build-spin 800ms linear infinite;
+}
+@keyframes workspace-build-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.workspace-build-details {
+  padding: 10px 12px;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 8px;
+  background: var(--brand-surface-bg);
+}
+.workspace-build-description {
+  margin: 0 0 8px;
+  color: var(--neutral-100);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.workspace-build-metadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+}
+.workspace-build-metadata > div {
+  min-width: 0;
+}
+.workspace-build-metadata dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.workspace-build-metadata dd {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--neutral-100);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Takes the row's flex 1 so the input and any sibling action button line up. */

@@ -34,3 +34,13 @@ export interface Workspace {
   createdAt?: string
   joinedAt?: string
 }
+
+/** One member of the active workspace (GET /api/workspace/members). */
+export interface WorkspaceMember {
+  id: string
+  name?: string
+  email?: string
+  role?: string
+  joinedAt?: string
+  isOriginalOwner?: boolean
+}

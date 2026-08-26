@@ -26,6 +26,9 @@ export interface DevPlatformBuild {
   id: string
   name: string
   description?: string
+  /** Builder identity-provider subject and its best-effort workspace display name. */
+  createdBy?: string
+  creatorName?: string
   version?: string
   /** The ComfyUI version this build bundles.
    *  TODO(builder-backend): not yet populated by `listBuildRows` - the
@@ -34,12 +37,14 @@ export interface DevPlatformBuild {
   /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number
+  numModels?: number
+  numAllowedModels?: number
   numCustomNodes?: number
+  updatedAt?: string
   state: DevPlatformBuildState
   /** Machine-readable reason for a blocking state. */
   blockedReason?: string
-  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
-   *  / `linux`). */
+  /** OSes targeted by ready artifacts in the latest complete release. */
   targetOs?: string[]
   minDesktopVersion?: string
   /** Local-only: present for installed / update-available. A build

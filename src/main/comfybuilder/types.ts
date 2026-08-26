@@ -15,8 +15,11 @@ export interface Build {
   id: string
   name: string
   description?: string
+  createdBy?: string
   numCustomNodes?: number
   numModels?: number
+  numAllowedModels?: number
+  sizeBytes?: number
   updatedAt?: string
 }
 

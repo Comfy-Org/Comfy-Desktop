@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   status: vi.fn(),
   isSignedIn: vi.fn(),
   listWorkspaces: vi.fn(),
+  listWorkspaceMembers: vi.fn(),
   switchWorkspace: vi.fn(),
   setUnauthorizedHandler: vi.fn(),
   clearVersionCache: vi.fn(),
@@ -55,6 +56,7 @@ vi.mock('../../devplatform/session', () => ({
     status: mocks.status,
     isSignedIn: mocks.isSignedIn,
     listWorkspaces: mocks.listWorkspaces,
+    listWorkspaceMembers: mocks.listWorkspaceMembers,
     switchWorkspace: mocks.switchWorkspace
   }),
   getBuilderClient: mocks.getBuilderClient,
@@ -137,6 +139,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.getSnapshotCount.mockResolvedValue(3)
     mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
     mocks.listBuilds.mockResolvedValue([])
+    mocks.listWorkspaceMembers.mockResolvedValue([])
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
       workspaceId: 'w1',
@@ -247,6 +250,46 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.associateUnownedBuildInstalls.mock.calls[0]![1]).toEqual(new Set(['d1']))
     expect(mocks.resolveBuildRows.mock.calls[0]![2]).toEqual([{ id: 'd1', name: 'Image' }])
     expect(mocks.broadcastToRenderer).toHaveBeenCalledWith('installations-changed', {})
+  })
+
+  it('resolves Build creator ids to workspace member names', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', createdBy: 'user-1' }])
+    mocks.resolveBuildRows.mockResolvedValue([
+      { id: 'd1', name: 'Image', createdBy: 'user-1', state: 'installable' }
+    ])
+    mocks.listWorkspaceMembers.mockResolvedValue([
+      { id: 'user-1', name: 'Builder Person', email: 'person@example.com' }
+    ])
+
+    await expect(handler('comfybuilder:listBuilds')({})).resolves.toEqual([
+      {
+        id: 'd1',
+        name: 'Image',
+        createdBy: 'user-1',
+        creatorName: 'Builder Person',
+        state: 'installable'
+      }
+    ])
+  })
+
+  it('keeps Builds usable when workspace member lookup fails', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', createdBy: 'user-1' }])
+    mocks.resolveBuildRows.mockResolvedValue([
+      { id: 'd1', name: 'Image', createdBy: 'user-1', state: 'installable' }
+    ])
+    mocks.listWorkspaceMembers.mockRejectedValue(new Error('members unavailable'))
+
+    await expect(handler('comfybuilder:listBuilds')({})).resolves.toEqual([
+      {
+        id: 'd1',
+        name: 'Image',
+        createdBy: 'user-1',
+        creatorName: 'user-1',
+        state: 'installable'
+      }
+    ])
   })
 
   it('does not backfill ownership when the build catalog fails to load', async () => {

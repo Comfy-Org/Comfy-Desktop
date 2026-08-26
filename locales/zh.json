@@ -372,7 +372,16 @@
     "urlInvalid": "请输入有效 URL（例如 http://localhost:8188）。",
     "workspaceBuildLabel": "构建",
     "selectWorkspaceBuild": "选择构建",
-    "noCompatibleBuilds": "没有可安装的兼容构建。"
+    "noCompatibleBuilds": "没有可安装的兼容构建。",
+    "refreshWorkspaceBuilds": "刷新构建",
+    "buildReleaseValue": "版本 v{version}",
+    "buildCreatorValue": "创建者 {creator}",
+    "buildRelease": "最新版本",
+    "buildPlatforms": "平台",
+    "buildCreator": "创建者",
+    "buildModels": "模型",
+    "buildCustomNodes": "自定义节点",
+    "buildSize": "大小"
   },
   "templateQuit": {
     "title": "模板模型仍在下载",

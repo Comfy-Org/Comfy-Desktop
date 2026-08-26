@@ -18,8 +18,8 @@ import {
   replaceWorkspaceTokens,
   saveTokens
 } from './tokenStore'
-import type { AuthStatus, AuthTokens, Workspace } from './types'
-import { listWorkspaces } from './workspaces'
+import type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'
+import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 /** Refresh an access token this many ms before it actually expires. */
 const REFRESH_SKEW_MS = 60_000
@@ -117,6 +117,13 @@ export class CloudSession {
     const token = await this.getAccessToken()
     if (!token) return []
     return listWorkspaces(token)
+  }
+
+  /** Members of the active workspace, used to resolve Builder creator ids. */
+  async listWorkspaceMembers(): Promise<WorkspaceMember[]> {
+    const token = await this.getAccessToken()
+    if (!token) return []
+    return listWorkspaceMembers(token)
   }
 
   /** Activate cached workspace credentials, using browser auth only when needed. */

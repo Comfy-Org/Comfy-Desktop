@@ -372,7 +372,16 @@
     "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188).",
     "workspaceBuildLabel": "Build",
     "selectWorkspaceBuild": "Select a Build",
-    "noCompatibleBuilds": "No compatible Builds are available to install."
+    "noCompatibleBuilds": "No compatible Builds are available to install.",
+    "refreshWorkspaceBuilds": "Refresh Builds",
+    "buildReleaseValue": "Release v{version}",
+    "buildCreatorValue": "By {creator}",
+    "buildRelease": "Latest release",
+    "buildPlatforms": "Platforms",
+    "buildCreator": "Created by",
+    "buildModels": "Models",
+    "buildCustomNodes": "Custom nodes",
+    "buildSize": "Size"
   },
   "templateQuit": {
     "title": "Template models are still downloading",

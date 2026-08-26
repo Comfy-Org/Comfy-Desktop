@@ -11,7 +11,10 @@ vi.mock('./tokenStore', () => ({
   replaceWorkspaceTokens: vi.fn(),
   saveTokens: vi.fn()
 }))
-vi.mock('./workspaces', () => ({ listWorkspaces: vi.fn(async () => [{ id: 'w-1' }]) }))
+vi.mock('./workspaces', () => ({
+  listWorkspaces: vi.fn(async () => [{ id: 'w-1' }]),
+  listWorkspaceMembers: vi.fn(async () => [{ id: 'user-1', name: 'One' }])
+}))
 
 import { statusFromAccessToken, workspaceIdOf } from './claims'
 import { refresh, signIn } from './oauth'
@@ -26,7 +29,7 @@ import {
   saveTokens
 } from './tokenStore'
 import type { AuthTokens } from './types'
-import { listWorkspaces } from './workspaces'
+import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 const mocked = vi.mocked
 const future = Date.now() + 3_600_000
@@ -323,5 +326,15 @@ describe('CloudSession workspaces', () => {
     provider.onUnauthorized?.(tokens.accessToken)
     expect(clearTokens).toHaveBeenCalledOnce()
     expect(onSignedOut).toHaveBeenCalledOnce()
+  })
+
+  it('lists members using only the active workspace token', async () => {
+    const tokens = makeTokens('w1')
+    cache(tokens, true)
+
+    await expect(new CloudSession().listWorkspaceMembers()).resolves.toEqual([
+      { id: 'user-1', name: 'One' }
+    ])
+    expect(listWorkspaceMembers).toHaveBeenCalledExactlyOnceWith(tokens.accessToken)
   })
 })

@@ -243,6 +243,12 @@ export function registerDevPlatformHandlers(): void {
     const host = await resolveHost()
     const client = getBuilderClient()
     const builds = await client.listBuilds()
+    const membersPromise = builds.some((build) => build.createdBy)
+      ? session.listWorkspaceMembers().catch((err) => {
+          console.warn('[dev-platform] Failed to resolve Build creators:', err)
+          return []
+        })
+      : Promise.resolve([])
     // Associate only unowned installs whose exact opaque id is present in the
     // successfully fetched catalog for the same active workspace.
     if (workspaceId && session.status().workspaceId === workspaceId) {
@@ -255,17 +261,26 @@ export function registerDevPlatformHandlers(): void {
         console.warn('[dev-platform] Failed to associate unowned build installs:', err)
       }
     }
-    const rows = await resolveBuildRows(
-      client,
-      host,
-      builds,
-      await installedBuildVersions(workspaceId),
-      cacheGeneration
+    const [rows, members] = await Promise.all([
+      resolveBuildRows(
+        client,
+        host,
+        builds,
+        await installedBuildVersions(workspaceId),
+        cacheGeneration
+      ),
+      membersPromise
+    ])
+    const creatorNames = new Map(
+      members.map((member) => [member.id, member.name || member.email || member.id])
     )
     // Catalog reads warm the synchronous source update cache. Re-pull
     // installations so existing managed instances gain their Update action.
     _broadcastToRenderer('installations-changed', {})
-    return rows
+    return rows.map((row) => ({
+      ...row,
+      ...(row.createdBy ? { creatorName: creatorNames.get(row.createdBy) || row.createdBy } : {})
+    }))
   })
 
   // Resolve the host artifact for one build and create an `installing`

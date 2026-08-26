@@ -17,11 +17,11 @@
  */
 export { CloudSession } from './session'
 export { signIn, refresh } from './oauth'
-export { listWorkspaces } from './workspaces'
+export { listWorkspaceMembers, listWorkspaces } from './workspaces'
 // Raw token accessors (`loadTokens`/`saveTokens`) stay off this barrel:
 // direct reads/writes would bypass CloudSession's single-flight refresh and
 // auth-generation guards. Callers go through CloudSession.
 export { getAuthStatus, clearTokens } from './tokenStore'
 export { statusFromAccessToken, workspaceIdOf } from './claims'
 export { CLOUD_CONFIG, CLOUD_ISSUER } from './config'
-export type { AuthStatus, AuthTokens, Workspace } from './types'
+export type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'

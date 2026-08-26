@@ -145,6 +145,65 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(buildSelect.props('modelValue')).toBe('ready')
   })
 
+  it('shows Build description, release, platform, creator, and package metadata', async () => {
+    signInToWorkspace([
+      {
+        id: 'ready',
+        name: 'Production Build',
+        description: 'Stable team environment',
+        creatorName: 'Alice Builder',
+        version: '3',
+        targetOs: ['linux', 'windows'],
+        numModels: 4,
+        numCustomNodes: 7,
+        sizeBytes: 2 * 1024 * 1024 * 1024,
+        state: 'installable'
+      }
+    ])
+    const wrapper = await openWorkspaceModal()
+
+    expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+      {
+        value: 'ready',
+        label: 'Production Build',
+        description: 'Stable team environment | Release v3 | By Alice Builder'
+      }
+    ])
+    expect(wrapper.get('[data-testid="workspace-build-details"]').text()).toContain(
+      'Stable team environment'
+    )
+    const details = wrapper.get('[data-testid="workspace-build-details"]').text()
+    expect(details).toContain('Latest releasev3')
+    expect(details).toContain('PlatformsLinux, Windows')
+    expect(details).toContain('Created byAlice Builder')
+    expect(details).toContain('Models4')
+    expect(details).toContain('Custom nodes7')
+    expect(details).toContain('Size2.00 GB')
+  })
+
+  it('reuses the loaded catalog on repeat opens and refreshes only on request', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    const wrapper = mountModal()
+    await flushPromises()
+    const open = (opts: { workspaceId: string }): Promise<void> =>
+      (wrapper.vm as unknown as { open: (options: { workspaceId: string }) => Promise<void> }).open(
+        opts
+      )
+
+    await open({ workspaceId: 'w1' })
+    await flushPromises()
+    await open({ workspaceId: 'w1' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
+    expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+    expect(wrapper.getComponent(BaseSelect).props('modelValue')).toBe('ready')
+
+    await wrapper.get('.workspace-build-refresh').trigger('click')
+    await flushPromises()
+    expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledTimes(2)
+  })
+
   it('shows an empty state when no compatible Builds can be installed', async () => {
     signInToWorkspace([{ id: 'none', name: 'No Build Yet', state: 'no-build' }])
     const wrapper = await openWorkspaceModal()

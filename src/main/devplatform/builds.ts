@@ -38,20 +38,25 @@ export interface BuildRow {
   id: string
   name: string
   description?: string
+  createdBy?: string
+  creatorName?: string
   version?: string
   /** ComfyUI version bundled by this build. TODO(builder-backend): the
    *  build metadata doesn't carry it yet, so this is currently never set. */
   comfyuiVersion?: string
   finishedAt?: string
+  numModels?: number
+  numAllowedModels?: number
   numCustomNodes?: number
+  sizeBytes?: number
+  updatedAt?: string
   state: BuildRowState
   /** The installed version of this build, when one backs it. Set for both
    *  an up-to-date install and an `update-available` one; absent when not installed. */
   installedVersion?: number
   /** Machine-readable reason for a blocked state. */
   blockedReason?: string
-  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
-   *  / `linux`), so clients can explain which machines can run it. */
+  /** OSes targeted by ready artifacts in the latest complete release. */
   targetOs?: string[]
 }
 
@@ -97,7 +102,14 @@ async function buildRow(
     id: build.id,
     name: build.name,
     ...(build.description ? { description: build.description } : {}),
+    ...(build.createdBy ? { createdBy: build.createdBy } : {}),
+    ...(typeof build.numModels === 'number' ? { numModels: build.numModels } : {}),
+    ...(typeof build.numAllowedModels === 'number'
+      ? { numAllowedModels: build.numAllowedModels }
+      : {}),
     ...(typeof build.numCustomNodes === 'number' ? { numCustomNodes: build.numCustomNodes } : {}),
+    ...(typeof build.sizeBytes === 'number' ? { sizeBytes: build.sizeBytes } : {}),
+    ...(build.updatedAt ? { updatedAt: build.updatedAt } : {}),
     state: 'no-build'
   }
 
@@ -132,17 +144,18 @@ async function buildRow(
   }
 
   const { artifacts } = await client.getVersion(latest.id)
+  const targetOs = [
+    ...new Set(
+      artifacts.filter((artifact) => artifact.status === 'ready').map((artifact) => artifact.os)
+    )
+  ].sort()
+  if (targetOs.length) withVersion.targetOs = targetOs
   const artifact = selectArtifactForHost(artifacts, host)
   if (!artifact) {
-    // Sorted so the label is stable across artifact orderings.
-    const targetOs = [
-      ...new Set(artifacts.filter((a) => a.status === 'ready').map((a) => a.os))
-    ].sort()
     return {
       ...withVersion,
       state: 'platform-mismatch',
-      blockedReason: 'noArtifactForMachine',
-      ...(targetOs.length ? { targetOs } : {})
+      blockedReason: 'noArtifactForMachine'
     }
   }
   // Installed at an older version, and the newer one runs here: offer the update.

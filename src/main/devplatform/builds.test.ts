@@ -48,7 +48,19 @@ function stubClient(opts: {
 describe('listBuildRows', () => {
   it('marks a build installable when the latest complete version has a host artifact', async () => {
     const client = stubClient({
-      builds: [{ id: 'd1', name: 'Image', description: 'desc', numCustomNodes: 3 }],
+      builds: [
+        {
+          id: 'd1',
+          name: 'Image',
+          description: 'desc',
+          createdBy: 'user-1',
+          numCustomNodes: 3,
+          numModels: 4,
+          numAllowedModels: 2,
+          sizeBytes: 1234,
+          updatedAt: '2026-07-21T00:00:00Z'
+        }
+      ],
       versionsByBuild: { d1: [version(1, 'complete'), version(2, 'complete')] },
       artifactsByVersion: { v2: [artifact()] }
     })
@@ -58,8 +70,14 @@ describe('listBuildRows', () => {
       id: 'd1',
       name: 'Image',
       description: 'desc',
+      createdBy: 'user-1',
       numCustomNodes: 3,
+      numModels: 4,
+      numAllowedModels: 2,
+      sizeBytes: 1234,
+      updatedAt: '2026-07-21T00:00:00Z',
       version: '2',
+      targetOs: ['linux'],
       state: 'installable'
     })
     // The latest complete version (2) is the one resolved, not version 1.
