@@ -566,7 +566,7 @@ defineExpose({ startOperation, showOperation })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="installationId && currentOp">
+  <BrandTakeoverLayout v-if="installationId && currentOp" beam-lift="clamp(44px, 6vh, 74px)">
     <template #logo-right>
       <InstallShowcase
         v-if="showShowcase"
@@ -856,6 +856,10 @@ defineExpose({ startOperation, showOperation })
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Reserve the footer bar's band so the centered stack (scene + bar + the
+     stepper that hangs below it) is centred in the space ABOVE the footer,
+     never descending into the button row. */
+  padding-bottom: clamp(88px, 12vh, 148px);
 }
 /* Soft circular ink pool, dead-center, behind the wordmark/bar/text so they
    stay legible over the glyph — without reading as a shape. Per Figma it's a

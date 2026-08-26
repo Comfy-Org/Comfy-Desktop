@@ -8,13 +8,16 @@ import beam2Svg from '../assets/lighting/beam_2.svg?raw'
 withDefaults(
   defineProps<{
     vignette?: boolean
+    /** Downward nudge (CSS length) for the anchored beams, so a surface that
+     *  lifts its beam-target off viewport-centre can keep the spotlights aimed. */
+    beamLift?: string
   }>(),
-  { vignette: false }
+  { vignette: false, beamLift: '0px' }
 )
 </script>
 
 <template>
-  <div class="brand-background" data-theme="dark">
+  <div class="brand-background" data-theme="dark" :style="{ '--brand-beam-lift': beamLift }">
     <div class="brand-outer-frame">
       <div class="brand-inner-frame" :class="{ 'brand-inner-frame--vignette': vignette }">
         <div class="brand-beam" aria-hidden="true" v-html="beamSvg" />
@@ -45,7 +48,7 @@ withDefaults(
 .brand-beam {
   position: absolute;
   position-anchor: --brand-beam-torch;
-  top: -17%;
+  top: calc(-17% + var(--brand-beam-lift, 0px));
   left: anchor(center, clamp(39%, calc(52.5vw - 135px), 44%));
   pointer-events: none;
   z-index: -1;
@@ -55,7 +58,7 @@ withDefaults(
 .brand-beam--2 {
   position-anchor: --brand-beam-target;
   anchor-name: --brand-beam-torch;
-  top: -10%;
+  top: calc(-10% + var(--brand-beam-lift, 0px));
   left: anchor(end, clamp(45%, calc(56vw - 115px), 50%));
 }
 .brand-beam :deep(svg) {
