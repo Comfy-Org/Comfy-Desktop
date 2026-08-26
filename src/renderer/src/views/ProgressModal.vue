@@ -575,6 +575,7 @@ defineExpose({ startOperation, showOperation })
       />
     </template>
     <div class="brand-progress">
+      <div class="brand-progress__beam-anchor" aria-hidden="true" />
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
         <!-- Plate wraps logo + status and carries the radial scrim that knocks
@@ -856,6 +857,7 @@ defineExpose({ startOperation, showOperation })
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-bottom: clamp(88px, 12vh, 148px);
 }
 /* Soft circular ink pool, dead-center, behind the wordmark/bar/text so they
    stay legible over the glyph — without reading as a shape. Per Figma it's a
@@ -978,7 +980,15 @@ defineExpose({ startOperation, showOperation })
   aspect-ratio: 1056 / 784;
   border-radius: 16px;
   overflow: hidden;
+}
+.brand-progress__beam-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
   anchor-name: --brand-beam-target;
+  pointer-events: none;
 }
 .brand-status-fade-enter-active,
 .brand-status-fade-leave-active {
