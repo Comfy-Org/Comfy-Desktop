@@ -566,7 +566,7 @@ defineExpose({ startOperation, showOperation })
 </script>
 
 <template>
-  <BrandTakeoverLayout v-if="installationId && currentOp" beam-lift="clamp(44px, 6vh, 74px)">
+  <BrandTakeoverLayout v-if="installationId && currentOp">
     <template #logo-right>
       <InstallShowcase
         v-if="showShowcase"
@@ -575,6 +575,10 @@ defineExpose({ startOperation, showOperation })
       />
     </template>
     <div class="brand-progress">
+      <!-- Fixed dead-centre point the beams aim at, independent of the loader
+           stack (which is lifted to clear the footer). Mirrors the original
+           behaviour where the beams pointed at the centred wordmark. -->
+      <div class="brand-progress__beam-anchor" aria-hidden="true" />
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
         <!-- Plate wraps logo + status and carries the radial scrim that knocks
@@ -982,7 +986,17 @@ defineExpose({ startOperation, showOperation })
   aspect-ratio: 1056 / 784;
   border-radius: 16px;
   overflow: hidden;
+}
+/* Zero-size beam target pinned to the hero's true centre, so the spotlights
+   aim at screen-centre regardless of the loader stack's lifted position. */
+.brand-progress__beam-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
   anchor-name: --brand-beam-target;
+  pointer-events: none;
 }
 .brand-status-fade-enter-active,
 .brand-status-fade-leave-active {

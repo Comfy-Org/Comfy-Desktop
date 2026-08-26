@@ -13,10 +13,8 @@ withDefaults(
     theme?: 'dark' | 'light'
     vignette?: boolean
     ariaLabel?: string
-    /** Passed to BrandBackground to re-aim the beams when this surface lifts its beam-target. */
-    beamLift?: string
   }>(),
-  { theme: 'dark', vignette: false, ariaLabel: undefined, beamLift: undefined }
+  { theme: 'dark', vignette: false, ariaLabel: undefined }
 )
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -58,7 +56,7 @@ onBeforeUnmount(() => {
       :aria-label="ariaLabel"
       tabindex="-1"
     >
-      <BrandBackground :vignette="vignette" :beam-lift="beamLift">
+      <BrandBackground :vignette="vignette">
         <div class="brand-logo-row">
           <ComfyCLogo class="brand-logo" />
         </div>
